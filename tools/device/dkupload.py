@@ -41,6 +41,7 @@ CMD_BEGIN, CMD_DATA, CMD_END, CMD_DELETE, CMD_CLEAR, CMD_ABORT = (
     0x14,
     0x15,
 )
+CMD_LOG, CMD_PEEK = 0x20, 0x21
 CLEAR_MAGIC = 0x434C5221
 MAX_CHUNK = 32768
 DEPTH = 2
@@ -59,6 +60,8 @@ STATUS = {
     -59: "E_NOFILE",
     -60: "E_PROTO",
     -61: "E_NOSTORE",
+    -62: "E_INUSE",
+    -63: "E_PEEK",
 }
 
 
@@ -227,6 +230,10 @@ class Uploader:
         end = b.index(0, 4)
         port = b[4:end].decode()
         free, max_chunk, flags = struct.unpack_from(">IIB", b, end + 1)
+        # runtime 3 appends the sequence numbers of the oldest and newest log event
+        oldest, newest = (
+            struct.unpack_from(">II", b, end + 10) if len(b) >= end + 18 else (0, 0)
+        )
         return {
             "protocol": proto,
             "runtime": runtime,
@@ -235,6 +242,11 @@ class Uploader:
             "max_chunk": max_chunk,
             "safe": bool(flags & 1),
             "upload_open": bool(flags & 2),
+            "card_read_only": bool(flags & 4),
+            "debug_on": bool(flags & 8),
+            "crash_found": bool(flags & 16),
+            "log_oldest": oldest,
+            "log_newest": newest,
         }
 
     def ls(self) -> list[tuple[str, int, str]]:
@@ -254,6 +266,27 @@ class Uploader:
             first += n
             if first >= total or n == 0:
                 return out
+
+    def log_page(
+        self, from_seq: int
+    ) -> tuple[int, int, list[tuple[int, int, int, int, tuple[int, ...]]]]:
+        """LOG (runtime 3): (oldest, newest, events) from `from_seq`; an event is (seq, time, kind, flags, (a0..a4)). Empty when the host has
+        read everything."""
+        b = self._ok(CMD_LOG, "log", struct.pack(">I", from_seq))
+        oldest, newest, n = struct.unpack_from(">IIB", b, 0)
+        events = []
+        for i in range(n):
+            seq, t, kind, flags, *a = struct.unpack_from(">IIHH5I", b, 9 + 32 * i)
+            events.append((seq, t, kind, flags, tuple(a)))
+        return oldest, newest, events
+
+    def peek(self, addr: int, length: int) -> bytes:
+        """PEEK (runtime 3): `length` (1 to 512) bytes of RAM at `addr`, inside the ranges the device file lists (`[digikit] peek`)."""
+        b = self._ok(CMD_PEEK, "peek", struct.pack(">IH", addr, length))
+        got, n = struct.unpack_from(">IH", b, 0)
+        if got != addr or n != length or len(b) < 6 + n:
+            raise UploadError(-50, "peek: malformed reply")
+        return b[6 : 6 + n]
 
     def begin(self, path: str, size: int, sha256: bytes) -> None:
         self._ok(
@@ -304,10 +337,10 @@ class Uploader:
         self.end()
 
 
-def _emu() -> Any:
+def _emu(run_dir: Path | None = None) -> Any:
     from tools.control.digi_client import Emu
 
-    return Emu.connect()
+    return Emu.connect(run_dir=run_dir)
 
 
 def main(argv: list[str] | None = None) -> int:

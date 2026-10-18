@@ -145,7 +145,7 @@ def run_ops(c: Any, quick: bool = False) -> None:
         c.check(
             "INFO: protocol 1, the runtime's version, the device, the free bytes of an empty store, 32 KiB chunks",
             info["protocol"] == 1
-            and info["runtime"] == 2
+            and info["runtime"] == B.RUNTIME_VERSION
             and info["port"] == c.device
             and info["free_bytes"] == FREE_FRESH
             and info["max_chunk"] == 32768

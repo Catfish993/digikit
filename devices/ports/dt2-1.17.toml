@@ -1811,6 +1811,16 @@ mark = "D"
 rule = "core/runtime:cf_func"
 
 [[anchor]]
+name = "dkrt.fw.exc_hook_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40001266
+len = 4
+sha256 = "0284af114bda28cc11b2781b9a24adf0e29e99f96fffd5de59c6341bd28d48a1"
+mark = "D"
+rule = "core/runtime:cf_words"
+
+[[anchor]]
 name = "dkrt.fw.free"
 cpu = "cf"
 kind = "code"
@@ -1917,6 +1927,16 @@ kind = "code"
 addr = 0x400cd420
 len = 2
 sha256 = "f465c3739385890c221dff1a05e578c6cae0d0430e46996d319db7439f884336"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.cf.rec_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4002dd62
+len = 4
+sha256 = "34210e1412e209d95d960c803098c94b6ae935878b7b9bf87621af6827c98d03"
 mark = "D"
 rule = "core/dsp-link:cf_func"
 

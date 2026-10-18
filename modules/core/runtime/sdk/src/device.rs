@@ -31,3 +31,7 @@ pub const ESDHC_BASE: u32 = 0xfc0cc000;
 pub const SAFE_KEY_CODE: u32 = 0x13;
 /// [board] dsp_clock_hz / dsp_blocks_per_second, rounded (the clock is open, finding 41)
 pub const DSP_BLOCK_CYCLES: u32 = 0xa2c2b;
+/// [digikit] keep_base (RAM a soft reset is assumed to keep: the crash record)
+pub const KEEP_BASE: u32 = 0x47fe0000;
+/// [digikit] keep_bytes
+pub const KEEP_BYTES: u32 = 0x1000;

@@ -17,6 +17,10 @@
  *   int dl_send_win(u32 win, u32 dst_word, const void *buf, u32 len);   the same into window `win` (1: the voices registry),
  *       the destination in words from the start of the window; the DSP checks it against the window's size (status 3)
  *   int dl_poll(DlStatus *st);                           the state (DL_IDLE, DL_BUSY, DL_DONE, DL_ERROR), and *st filled
+ *   int dl_diag(u32 *out, u32 n);                        the DSP's diagnostic words of the last block (layout: README.md and
+ *       src/dsp/dsp-link.inc); returns the number of words written (at most n, at most DL_DG_WORDS), -1 when the image has no record
+ *       address, -2 when the reply carries no diagnostic block (core/dsp-voice absent from the image, or the DSP halted
+ *       before it ran: the heartbeat words of an earlier call stop moving, the block stays in the record copy)
  * dst_l2 is a byte address in the DSP's reserved area (_dl_area, DL_AREA_BYTES long), 4-aligned; len is a multiple of 4;
  * buf must stay valid until the state is DL_DONE or DL_ERROR. DL_DONE means the DSP has taken every chunk, has the bytes
  * in L2 and has invalidated its instruction caches. */
@@ -28,6 +32,8 @@ typedef unsigned char u8;
 #define DL_MAGIC 0xD15Cu
 #define DL_ACK_MAGIC 0xA5D1u
 #define DL_ACK_OFF 0x60u
+#define DL_DG_MAGIC 0xD1A6u /* low half of diagnostic word 0; the high half is the word count */
+#define DL_DG_WORDS 14u
 #define DL_AREA_BYTES 0x80000u /* the largest area the 17-bit offset reaches; the DSP knows the real size (status 3) */
 #define DL_WINDOW 12u
 #define DL_STALL_FRAMES 900u /* 0.6 s without progress */
@@ -80,6 +86,7 @@ DlLink dl_link __attribute__((aligned(16)));
 
 extern char _dl_area[]; /* the DSP object's reserved area (a DSP address) */
 extern volatile u32 dl_tx_lit; /* the literal of the driver's `lea tx_queue,a0`: the queue's address */
+extern volatile u32 dl_rec_lit; /* the literal of the handler's first `pea`: the address of the reply record copy (dl_diag) */
 
 static u32 word_at(const u8 *p)
 {
@@ -152,6 +159,33 @@ int dl_poll(DlStatus *s)
     s->resent = l->resent;
     s->nerr = l->nerr;
     return (int)st;
+}
+
+/* Record byte offset of diagnostic word j: slot row 1 + j / 2 (0x1c + 0x54 row), +0x44 for even j, +0x48 for odd j. */
+static u32 diag_off(u32 j)
+{
+    return 0x1cu + 0x54u * (1u + j / 2u) + ((j & 1u) ? 0x48u : 0x44u);
+}
+
+int dl_diag(u32 *out, u32 n)
+{
+    const volatile u16 *rec = (const volatile u16 *)dl_rec_lit;
+    u32 j, w0, count;
+    if (!rec)
+        return -1;
+    w0 = (u32)rec[diag_off(0) / 2u] | ((u32)rec[diag_off(0) / 2u + 1u] << 16);
+    if ((w0 & 0xffffu) != DL_DG_MAGIC)
+        return -2;
+    count = w0 >> 16;
+    if (count > DL_DG_WORDS)
+        count = DL_DG_WORDS;
+    if (count > n)
+        count = n;
+    for (j = 0; j < count; j++) {
+        u32 h = diag_off(j) / 2u;
+        out[j] = (u32)rec[h] | ((u32)rec[h + 1u] << 16);
+    }
+    return (int)count;
 }
 
 static void finish(DlLink *l, u32 state, u32 err)

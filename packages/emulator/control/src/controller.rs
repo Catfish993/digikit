@@ -488,6 +488,10 @@ struct Actor {
     reset_overlay: Option<Vec<emmc_card::CardOverlaySector>>,
     /// Soft resets in a row before the boot got ready (a bound for boot loops).
     boot_resets: u32,
+    /// CPU exceptions run the guest's handler (RPC `cpu.exceptions`), for every runtime installed from now on.
+    deliver_exceptions: bool,
+    /// The RAM range the model keeps across a soft reset (`keep_ram` of the device profile), as the guest left it, for the cold boot that follows.
+    reset_ram: Option<Vec<u8>>,
 }
 
 fn no_firmware<T>() -> Result<T, RpcError> {
@@ -565,7 +569,16 @@ impl Actor {
             reset_pending: false,
             reset_overlay: None,
             boot_resets: 0,
+            deliver_exceptions: false,
+            reset_ram: None,
         }
+    }
+
+    /// The RAM range the device model keeps across a soft reset: `(base, bytes)` from the device file (`[digikit] keep_base`, `keep_bytes`).
+    fn keep_ram_range(&mut self) -> Option<(u32, u32)> {
+        let diag = self.runtime.as_mut()?.diagnostics();
+        let device = diag["device"].as_str()?;
+        plusdrive_format::device_profile::Registry::load().ok()?.keep_ram(device)
     }
 
     /// The guest asked for a soft reset (RCM.RCR): boot the same patched firmware again from the reset entry, on the card as the
@@ -581,12 +594,16 @@ impl Actor {
         );
         let Some(new) = loaded.current_analysis.clone() else { return };
         self.reset_overlay = self.runtime.as_ref().map(|r| r.card_overlay());
+        self.reset_ram = self.keep_ram_range().and_then(|(base, bytes)| {
+            self.runtime.as_mut().map(|r| r.peek_ram(base, bytes))
+        });
         let (tx, _rx) = mpsc::channel();
         let mut report = json!({});
         match self.load_patched_coupled(&bytes, &card, &new, &base_sha, &base_bytes, &mut report, "cold", &tx) {
             Ok(CoupledLoad::Started) => self.emit("cpu.reset", json!({"restart": "cold boot started"})),
             Ok(_) | Err(_) => {
                 self.reset_overlay = None;
+                self.reset_ram = None;
                 self.emit("cpu.reset", json!({"restart": "unsupported"}));
             }
         }
@@ -777,7 +794,8 @@ impl Actor {
             .and_then(|error| error.lock().ok().and_then(|mut slot| slot.take()))
     }
 
-    fn install(&mut self, runtime: Runtime, error: Option<ReadError>) {
+    fn install(&mut self, mut runtime: Runtime, error: Option<ReadError>) {
+        runtime.set_deliver_exceptions(self.deliver_exceptions);
         self.runtime = Some(runtime);
         self.read_error = error;
         if std::mem::take(&mut self.want_auto_no) {
@@ -1363,6 +1381,7 @@ impl Actor {
             "midi.out" | "midi.usb.out" => self.rpc_midi_out(method, &p).map(Some),
             "card.export" => self.rpc_card_export(&p).map(Some),
             "watchdog.config" => self.rpc_watchdog(&p).map(Some),
+            "cpu.exceptions" => self.rpc_cpu_exceptions(&p).map(Some),
             "diagnostics" => self.with_runtime(|r| Ok(r.diagnostics())).map(Some),
             "audio.report" => self
                 .with_runtime(|r| Ok(r.audio_status().unwrap_or(Value::Null)))
@@ -1510,6 +1529,19 @@ impl Actor {
                   "stall_count": self.health.stall_count,
                   "mainloop_hits": hits}),
         )
+    }
+
+    /// `cpu.exceptions {deliver}`: a CPU exception runs the guest's handler (`true`) or stops the run with an error (`false`, the default). Kept
+    /// for every runtime installed later (a soft reset boots a new one). The digikit runtime's crash capture needs it
+    /// (docs/findings/46-digikit-debug.md).
+    fn rpc_cpu_exceptions(&mut self, p: &Params) -> RpcResult {
+        if let Some(deliver) = p.opt_bool("deliver")? {
+            self.deliver_exceptions = deliver;
+            if let Some(r) = self.runtime.as_mut() {
+                r.set_deliver_exceptions(deliver);
+            }
+        }
+        Ok(json!({"deliver": self.deliver_exceptions}))
     }
 
     /// `mem.cf.peek {addr}`: one guest longword, read without side effects.
@@ -2473,6 +2505,8 @@ struct PatchJob {
     install: PatchInstall,
     /// The card writes of a boot that ended in a soft reset (see `digi_coupled::cold::SOFT_RESET`).
     reset_out: Arc<Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>,
+    /// The kept RAM range of a boot that ended in a soft reset (see `digi_coupled::cold::KeepRam`).
+    keep_out: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
 /// The file name stem of the ready pair of a (MAIN, DSP inputs, card): the
@@ -2596,6 +2630,29 @@ impl Actor {
             extra_key.extend_from_slice(b"soft-reset:");
             extra_key.extend_from_slice(&overlay_digest(o));
         }
+        // the RAM the model keeps across a soft reset (the guest's crash record): written before the first instruction, so the boot and its
+        // cached ready pair depend on it
+        let reset_ram = self.reset_ram.take().filter(|r| r.iter().any(|b| *b != 0));
+        let keep_out = Arc::new(Mutex::new(None));
+        let keep_range = plusdrive_format::device_profile::Registry::load()
+            .ok()
+            .and_then(|reg| reg.identify(base_sha).ok().and_then(|(device, _)| device.keep_ram));
+        let keep_ram = match (keep_range, &reset_ram) {
+            (Some((base, size)), r) => {
+                if let Some(r) = r {
+                    use sha2::{Digest, Sha256};
+                    extra_key.extend_from_slice(b"keep-ram:");
+                    extra_key.extend_from_slice(&Sha256::digest(r));
+                }
+                Some(digi_coupled::cold::KeepRam {
+                    base,
+                    bytes: size,
+                    input: r.clone().unwrap_or_default(),
+                    out: keep_out.clone(),
+                })
+            }
+            _ => None,
+        };
         let stem = patched_pair_key(main_sha, &image, &cold_idle, card.as_deref(), &extra_key)
             .map_err(&rejected)?;
         let pair = self.run_dir.join("patched").join(stem);
@@ -2665,6 +2722,7 @@ impl Actor {
             dsp_patch: boot_patch,
             relax_fs_check: reset_overlay.is_some() || relax_fs,
             reset_out: Some(reset_out.clone()),
+            keep_ram,
         };
         thread::Builder::new()
             .name("digi-patched-boot".into())
@@ -2698,6 +2756,7 @@ impl Actor {
             started: Instant::now(),
             install,
             reset_out,
+            keep_out,
         });
         Ok(CoupledLoad::Started)
     }
@@ -2787,6 +2846,7 @@ impl Actor {
         // again on the card as the guest left it. A boot loop is bounded.
         if matches!(&outcome, Err(e) if e == "soft reset") {
             let overlay = job.reset_out.lock().expect("reset overlay").take();
+            self.reset_ram = job.keep_out.lock().expect("kept ram").take();
             self.boot_resets += 1;
             if let (Some(overlay), true) = (overlay, self.boot_resets <= 8) {
                 self.emit("cpu.reset", json!({"during_boot": true, "count": self.boot_resets}));
@@ -2944,6 +3004,7 @@ fn run_card_job(
                         dsp_patch: None,
                         relax_fs_check: false,
                         reset_out: None,
+                        keep_ram: None,
                     },
                     &paths.ready,
                     cancel,

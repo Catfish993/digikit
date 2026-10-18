@@ -20,3 +20,14 @@
     .equ DL_AREA_WORDS, 0x14000    /* [digikit] dsp_area_bytes / 4 */
     .equ DL_TAIL_OFF, 0xa80    /* [digikit] dsp_tail_off */
     .equ DL_TAIL_WORDS, 0xf    /* [digikit] dsp_tail_words */
+    .equ KEEP_BASE, 0x47fe0000    /* [digikit] keep_base (RAM a soft reset is assumed to keep: the crash record) */
+    .equ KEEP_BYTES, 0x1000    /* [digikit] keep_bytes */
+    .equ PEEK_N, 0x2    /* [digikit] peek: number of ranges */
+    .equ PEEK_LO_0, 0x40000000    /* [digikit] peek range start (RAM the PEEK command may read) */
+    .equ PEEK_HI_0, 0x466c0000    /* [digikit] peek range end (exclusive) */
+    .equ PEEK_LO_1, 0x46712000    /* [digikit] peek range start (RAM the PEEK command may read) */
+    .equ PEEK_HI_1, 0x47fe1000    /* [digikit] peek range end (exclusive) */
+    .equ PEEK_LO_2, 0x0    /* [digikit] peek range start (RAM the PEEK command may read) */
+    .equ PEEK_HI_2, 0x0    /* [digikit] peek range end (exclusive) */
+    .equ PEEK_LO_3, 0x0    /* [digikit] peek range start (RAM the PEEK command may read) */
+    .equ PEEK_HI_3, 0x0    /* [digikit] peek range end (exclusive) */

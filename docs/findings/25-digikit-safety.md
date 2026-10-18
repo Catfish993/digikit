@@ -236,3 +236,7 @@ safety statement stands for everything that ran. `midirpc_info` and `midirpc_fil
 (Ping, SoftwareVersion, DeviceUID, StorageSpace, TempoRead, `ReadDir /`) give byte-identical replies before and after the fix; the longer
 payloads (`Query`, `ReadDir /factory`, `DataList`, `DataReadOpen`) now get real answers instead of "Invalid path" (docs/MIDI-SYSEX-RPC.md
 section 11 [C]).
+
+**[C]** (finding 44, 2026-10-18) The write check above did not prove "held in RAM": the probe sent handle 0, but the handle is the record id returned in
+the open reply, so the firmware rejected every write (status 3, empty file). With the handle from the reply the bytes reach the card at once (no
+deferred flush). A path without a folder part also made a directory named like the file.

@@ -16,6 +16,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   (any command that reads modules: [--modules-dir DIR], PATCHKIT_MODULES=dir:dir for extra module roots)
   explain --firmware X.syx (--modules a,b | --plan plan.json)   what a patch does, site by site
   verify  OUT.syx [--base X.syx]         re-decode and check an image
+  preflight OUT.syx                      before flashing: known stock base, sections 2/4/5/8 identical, checksum, HMAC, limits;
+                                         exit 1 on any failure (stock files are looked up in firmware/ by sha256)
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
   pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm
                                          (a `dynamic = true` module: its machine and param records for --device)
@@ -84,6 +86,21 @@ fn with_requires(lib: &Library, ids: Vec<String>) -> Result<Vec<String>> {
         println!("added by requires: {}", added.join(", "));
     }
     Ok(all)
+}
+
+fn preflight_known(root: &Path) -> Result<Vec<patchkit::preflight::Known>> {
+    let dir = root.join("devices");
+    let rd = std::fs::read_dir(&dir).map_err(|e| Error(format!("{}: {e}", dir.display())))?;
+    let mut paths: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    paths.sort();
+    let mut texts = vec![];
+    for p in paths
+        .iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "toml"))
+    {
+        texts.push(std::fs::read_to_string(p).map_err(|e| Error(format!("{}: {e}", p.display())))?);
+    }
+    patchkit::preflight::known_from_texts(texts.iter().map(|s| s.as_str()))
 }
 
 fn read(p: &str) -> Result<Vec<u8>> {
@@ -312,6 +329,39 @@ plan.json {}",
                 rep.device, rep.container_bytes
             );
         }
+        "preflight" => {
+            let path = need(rest)?;
+            let raw = read(path)?;
+            let reg = registry(&a.root)?;
+            let known = preflight_known(&a.root)?;
+            let fwdir = a.root.join("firmware");
+            let stock = |k: &patchkit::preflight::Known| -> Option<Vec<u8>> {
+                let mut files: Vec<PathBuf> = std::fs::read_dir(&fwdir)
+                    .ok()?
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.extension().is_some_and(|e| e == "syx"))
+                    .collect();
+                files.sort();
+                // the file name is a hint; the sha256 decides
+                files.sort_by_key(|p| {
+                    p.file_name()
+                        .is_none_or(|n| n.to_string_lossy() != k.filename)
+                });
+                files.into_iter().find_map(|p| {
+                    let b = std::fs::read(p).ok()?;
+                    (sha256_hex(&b) == k.sha256).then_some(b)
+                })
+            };
+            let out = patchkit::preflight::preflight(&raw, &reg, &known, &stock);
+            for l in &out.lines {
+                println!("{}  {}", if l.ok { "ok  " } else { "FAIL" }, l.text);
+            }
+            if !out.passed() {
+                println!("PREFLIGHT FAILED: do not flash {path}");
+                std::process::exit(1);
+            }
+            println!("PREFLIGHT OK: {path}");
+        }
         "rebuild" => {
             let fw = Firmware::parse(&read(need(rest)?)?)?;
             let o = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
@@ -350,8 +400,12 @@ plan.json {}",
             // a run-time module: its typed sections, lowered for one device, are the `register` records
             let mut dsp: Vec<u8> = vec![];
             let reg = if dynamic {
-                let dev = flag(rest, "--device")
-                    .ok_or_else(|| Error(format!("a run-time module needs --device {}", patchkit::devdata::short_list())))?;
+                let dev = flag(rest, "--device").ok_or_else(|| {
+                    Error(format!(
+                        "a run-time module needs --device {}",
+                        patchkit::devdata::short_list()
+                    ))
+                })?;
                 let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
                 let res = patchkit::typed::resolve(&m.manifest, &models)?;
                 let types: std::collections::BTreeMap<String, i64> = lib
@@ -497,7 +551,13 @@ plan.json {}",
             }
             if !d.register.is_empty() {
                 let r = patchkit::register::Register::parse(&d.register)?;
-                println!("  device {} ({} params, {} machines, {} pages)", r.device, r.params.len(), r.machines.len(), r.pages.len());
+                println!(
+                    "  device {} ({} params, {} machines, {} pages)",
+                    r.device,
+                    r.params.len(),
+                    r.machines.len(),
+                    r.pages.len()
+                );
                 for p in &r.params {
                     println!(
                         "  param {} {:?} {:?} template {:#x} slot {} range {}..{} default {}",
@@ -505,10 +565,16 @@ plan.json {}",
                     );
                 }
                 for m in &r.machines {
-                    println!("  machine type {} {:?} {:?} clone_of {} level {} own_dsp {} knobs {:x?}", m.type_no, m.name, m.short, m.clone_of, m.level, m.own_dsp, m.knobs);
+                    println!(
+                        "  machine type {} {:?} {:?} clone_of {} level {} own_dsp {} knobs {:x?}",
+                        m.type_no, m.name, m.short, m.clone_of, m.level, m.own_dsp, m.knobs
+                    );
                 }
                 for g in &r.pages {
-                    println!("  page of type {} {:?} {:?} level {} knobs {:x?}", g.type_no, g.name, g.title, g.level, g.knobs);
+                    println!(
+                        "  page of type {} {:?} {:?} level {} knobs {:x?}",
+                        g.type_no, g.name, g.title, g.level, g.knobs
+                    );
                 }
             }
         }

@@ -16,6 +16,9 @@ use dkrt_sdk::*;
 
 mod arena;
 pub mod boot;
+pub mod card;
+pub mod crash;
+pub mod dlog;
 mod dsp;
 mod loader;
 pub mod registry;
@@ -185,12 +188,32 @@ pub unsafe fn block_read(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
     f(sector, bytes, buf)
 }
 
-/// Write `bytes` (a multiple of 512) from `buf` (16-byte aligned) to `sector`. Only `boot.rs` calls this, for the two sectors of the
-/// selection record.
-pub unsafe fn block_write(sector: u32, bytes: u32, buf: *const u8) -> i32 {
+/// The firmware's block write, ungated. Only `block_write` and `card::claim` call it.
+pub unsafe fn raw_block_write(sector: u32, bytes: u32, buf: *const u8) -> i32 {
     let f: unsafe extern "C" fn(u32, u32, *const u8) -> i32 =
         core::mem::transmute(fw_block_write as unsafe extern "C" fn());
     f(sector, bytes, buf)
+}
+
+/// The one function that writes the card. Write `bytes` (a multiple of 512) from `buf` (16-byte aligned) to `sector`: refused with `E_RANGE`
+/// outside the store range of the device file, and with `E_CARD_RO` when the card's area is not ours (`card::admit`; finding 46). Every
+/// runtime card write goes through here: the selection record and the boot counter (boot.rs), uploads (upload.rs), and the claim of a blank
+/// range (card.rs, which calls `raw_block_write` for its own headers after the same checks).
+pub unsafe fn block_write(sector: u32, bytes: u32, buf: *const u8) -> i32 {
+    let g = card::admit(sector, bytes);
+    if g != OK {
+        return g;
+    }
+    card::info().writes = card::info().writes.wrapping_add(1);
+    raw_block_write(sector, bytes, buf)
+}
+
+pub fn irq_mask() -> u32 {
+    unsafe { dkrt_irq_mask() }
+}
+
+pub fn irq_restore(sr: u32) {
+    unsafe { dkrt_irq_restore(sr) }
 }
 
 /// Send one complete MIDI message (F0 .. F7 for SysEx) to `port` (2 = USB).
@@ -368,6 +391,11 @@ pub unsafe fn log(msg: *const u8, value: u32) {
     }
     e.value = value;
     s.log_next = s.log_next.wrapping_add(1);
+    dlog::ev(
+        logk::MOD_LOG,
+        0,
+        [dlog::word_of(e.msg.as_ptr(), 0, 24), dlog::word_of(e.msg.as_ptr(), 4, 24), dlog::word_of(e.msg.as_ptr(), 8, 24), dlog::word_of(e.msg.as_ptr(), 12, 24), value],
+    );
 }
 
 /// First-use setup: arena free list, API table fields, magic.
@@ -479,13 +507,24 @@ fn health_fn(f: unsafe extern "C" fn()) -> usize {
     core::hint::black_box(f as usize)
 }
 
+/// Is `core/health` in the image?
+pub fn health_present() -> bool {
+    health_fn(health_read) != 0
+}
+
 /// Fill `out` (a `DkrtHealth`): the measurements of core/health (CPU idle counter, the DSP's block cycle count, the heap) with the
 /// runtime's arena and DSP area. Heap figures come from walking the firmware's free lists (bounded, under its mutex): ask about twice
 /// a second at most. Without core/health the flag `HEALTH_MODULE` is 0 and only the arena and DSP area are filled. Task context.
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_health(out: *mut DkrtHealth) {
     init_once();
-    let o = &mut *out;
+    dkrt_health_light(&mut *out, true);
+    store::figures(&mut *out);
+}
+
+/// `dkrt_health` without the store figures (which can read the card) and, when `walk_heap` is false, without the heap walk: what the log's
+/// snapshot uses. The store figures are left 0 and `HEALTH_STORE` clear.
+pub unsafe fn dkrt_health_light(o: &mut DkrtHealth, walk_heap: bool) {
     let s = st();
     let (afree, alargest) = arena::stats();
     o.magic = HEALTH_MAGIC;
@@ -499,7 +538,7 @@ pub unsafe extern "C" fn dkrt_health(out: *mut DkrtHealth) {
     o.dsp_area_free = dfree;
     o.dsp_area_largest = dlargest;
     o.dsp_period = DSP_BLOCK_CYCLES;
-    store::figures(o);
+    o.store_total = dkrt_sdk::store::LIMIT * 512;
     if health_fn(health_read) == 0 {
         return;
     }
@@ -509,7 +548,7 @@ pub unsafe extern "C" fn dkrt_health(out: *mut DkrtHealth) {
     if r.magic != RAW_MAGIC {
         return;
     }
-    let mut fl = HEALTH_MODULE | (o.flags & HEALTH_STORE);
+    let mut fl = HEALTH_MODULE;
     o.blocks = r.blocks;
     o.windows = r.windows;
     o.idle_win = r.idle_win;
@@ -528,7 +567,7 @@ pub unsafe extern "C" fn dkrt_health(out: *mut DkrtHealth) {
         o.dsp_max_x10 = (r.dsp_max.min(DSP_BLOCK_CYCLES * 4) * 1000) / DSP_BLOCK_CYCLES;
         fl |= HEALTH_DSP;
     }
-    if health_fn(health_heap) != 0 {
+    if walk_heap && health_fn(health_heap) != 0 {
         let heap: unsafe extern "C" fn(*mut HealthRaw) = core::mem::transmute(health_fn(health_heap));
         heap(&mut r);
         if r.flags & RAW_HEAP != 0 {
@@ -581,6 +620,44 @@ pub unsafe extern "C" fn dkrt_status(out: *mut DkrtStatus) {
     let (dfree, dlargest) = dsp::area_stats();
     o.dsp_free = dfree;
     o.dsp_largest = dlargest;
+}
+
+/// `dkrt_diag(out)`: what the debug log, the card check and the DSP watch found (a `DkrtDiag`).
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_diag(out: *mut DkrtDiag) {
+    init_once();
+    let o = &mut *out;
+    let c = card::info();
+    let (oldest, newest) = dlog::range();
+    let (dsp_ok, hb) = dlog::heartbeat();
+    let k = crash::seen();
+    *o = DkrtDiag {
+        magic: DIAG_MAGIC,
+        version: 1,
+        card_state: c.state,
+        card_first_nonblank: c.first_nonblank,
+        card_hash: c.hash,
+        card_refused: c.refused,
+        card_read_errors: c.read_errors,
+        debug_on: dlog::debug_on() as u32,
+        log_oldest: oldest,
+        log_newest: newest,
+        dsp_diag_ok: dsp_ok as u32,
+        dsp_stopped: dlog::dsp_stopped() as u32,
+        dsp_heartbeat: hb,
+        crash_found: k.found,
+        crash_pc: k.pc,
+        crash_vec: k.vec,
+        ram_kept: k.ram_kept,
+    };
+}
+
+/// `dkrt_debug_set(on)`: the debug log keeps every event (1) or errors only (0), now, and saved in the selection record's flags for the next
+/// boot. Returns the result of the save (`E_CARD_RO` on a card the runtime does not write: the setting then holds until the next boot).
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_debug_set(on: u32) -> i32 {
+    init_once();
+    boot::debug_set(on != 0)
 }
 
 /// The `index`th loaded module (in load-slot order) into `out`; returns 0, or `E_NOT_FOUND` past the end.
@@ -680,6 +757,7 @@ pub unsafe extern "C" fn dkrt_restart() -> i32 {
     if card_busy() {
         return E_CARD_BUSY;
     }
+    dlog::ev(logk::MENU, 0, [logk::MENU_RESTART, 0, 0, 0, 0]);
     save_working_state();
     let sr = dkrt_irq_mask();
     if card_busy() {
@@ -697,7 +775,9 @@ pub unsafe extern "C" fn dkrt_tick() {
     let s = st();
     s.ticks = s.ticks.wrapping_add(1);
     boot::ui_pass();
+    crash::install();
     dsp::step();
+    dlog::tick();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));
     if cmd != 0 {
@@ -713,6 +793,10 @@ pub unsafe extern "C" fn dkrt_tick() {
         } else if cmd == CMD_HEALTH {
             dkrt_health(addr_of_mut!(DKRT_HEALTH));
             OK
+        } else if cmd == CMD_CARD_PROBE {
+            card::probe(mb.arg.as_ptr())
+        } else if cmd == CMD_DEBUG {
+            boot::debug_set(*mb.arg.as_ptr() != 0)
         } else {
             E_FORMAT
         };

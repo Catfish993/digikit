@@ -252,6 +252,10 @@ description = "Build the pinned m68k-elf binutils/gcc (about 15 min) and Selache
 run = "uv run python -m tools.patchkit.patchkit patch"
 description = "Apply modules to a stock firmware: mise run patch -- --firmware X.syx --modules a,b [-o OUT.syx] (writes out/patch/ and plan.json)"
 
+[tasks."preflight"]
+run = "uv run python -m tools.patchkit.patchkit preflight"
+description = "Before flashing: mise run preflight -- out/patch/X.syx (known stock base, sections 2/4/5/8 identical, checksum, HMAC, limits; exit 1 on failure)"
+
 [tasks."patch:build"]
 run = "uv run python -m tools.patchkit.pk_build"
 description = "Compile module sources to build/*.dko.json: mise run patch:build [-- modules/fx/NAME] [--check]"

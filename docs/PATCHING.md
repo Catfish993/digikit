@@ -399,6 +399,77 @@ The full table of 14 risks, with evidence and mitigation, is in [docs/plans/patc
 4. **Level.** A gain or drive module can raise the output. Start at the neutral setting with the monitor volume low.
 5. The MAIN OS image validator and the real flash writer were not run in the emulator. The bootstrap's own checks were.
 
+### Flashing a Digitakt II, rung by rung
+
+Phase 9 of `docs/plans/digikit-runtime.md`. Each rung is a patched image of the stock 1.17 firmware that adds one kind of risk to
+the one before. Flash one rung, look at the checks, and only then take the next. Stock `firmware/Digitakt_II_OS1.17.syx` is the way
+back from every rung. Nothing has been flashed yet; the module sets below were built and checked by `mise run preflight` on 2026-10-18
+(lane r1), the device steps are a plan.
+
+**Before each flash** (the patch needs the stock file in `firmware/` and the module objects built, `mise run patch:build`):
+
+```sh
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules RUNG_MODULES -o out/patch/dt2-1.17-rungX.syx
+mise run preflight -- out/patch/dt2-1.17-rungX.syx            # must end with "PREFLIGHT OK"; exit 1 and "PREFLIGHT FAILED" otherwise
+mise run emu -- out/patch/dt2-1.17-rungX.syx                  # optional: the same image in the emulator
+```
+
+`preflight` checks: the patch record names a base that is a `[[firmware]]` of `devices/*.toml` and the stock file with that sha256 is
+in `firmware/`; sections 2 (bootstrap), 4 (updater), 5 (meta) and 8 (boot data), and any other section but 3 and 7, are byte-identical
+to the base (stored and decoded; a difference fails); which of 3 (MAIN OS) and 7 (DSP) differ; the container checksum, the packet
+checksums, the HMAC and the section decode (`verify`); the size limits of the port, printed as used of maximum; and the sha256 of the
+patched image and of the base. A stock image is refused as "not patched". Compare the printed sha256 with the file you copy to the
+device.
+
+| Rung | What it adds | `--modules` (requires are added automatically) | Sections that change | Image bytes |
+| --- | --- | --- | --- | --- |
+| A | the runtime and the menu, no DSP change | `core/runtime,core/digikit-menu,core/health` | 3 only; 7 is the stock DSP | 1,869,472 |
+| B | A plus the DSP link and the run-time machine rows (no module installed) | `core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp` | 3 and 7 | 1,876,512 |
+| C | B, then the test module `test/dyn-pluck` uploaded at run time | same as B (the module is a file, not part of the image) | 3 and 7 | 1,876,512 |
+
+- Rung A: the requires added are `core/expansion` only. `core/health` has no DSP part: it reads the DSP's own cycle count from the reply
+  record and counts idle iterations on the ColdFire, so it needs no `dsp-link` and leaves section 7 stock (checked: the plan changes
+  section 3 only). A module with a DSP part cannot load on rung A. Its HEALTH page is the first thing to compare with the emulator.
+- Rung B: the requires added are `core/machines`, `core/params`, `core/dsp-link` and `core/dsp-voice`. The DSP section changes (a stub in
+  the block handler, finding 31, and the voice rows). `core/dsp-voice` carries the open silicon question of the pluck voice
+  (M6/M13, `docs/plans/digikit-runtime.md` Phase 9 "Pluck on silicon"): the image plays stock sounds normally in the emulator, but
+  nothing about the odd-voice copy has run on a device. Rung B is the first rung where the DSP boot ROM reads a changed stream (pre-flash
+  review item 1 above).
+- Rung C adds no image: build the module and upload it over USB MIDI SysEx to the running rung-B device:
+
+```sh
+mise run pack -- test/dyn-pluck --device dt2                  # out/patch/dyn-pluck-dt2.dkm
+uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info     # reads the device; nothing is written
+uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt put out/patch/dyn-pluck-dt2.dkm
+# on the device: SETTINGS > DIGIKIT > MODULES, tick the module, APPLY & RESTART (two presses)
+```
+
+**Flashing** (Em's description of the Transfer route; the screens were not checked here):
+
+1. Back up the card and the projects with Transfer. Keep the stock `.syx` at hand. Check the output volume is low.
+2. On the device: SETTINGS > SYSTEM > OS UPGRADE. The device waits for a firmware file.
+3. In Transfer, open the DROP page and drop `out/patch/dt2-1.17-rungX.syx`. Wait for the device to finish and restart. Do not touch it
+   or remove power while it writes.
+4. After the restart the device shows the main screen. Rung A: SETTINGS lists DIGIKIT; DIGIKIT > ABOUT shows the runtime; HEALTH shows
+   the CPU load and heap; the store line shows "STORE FREE" / "STORE USED" (a read of the store area, no write). Rung B: normal audio from
+   a pattern, and HEALTH shows the DSP block time. Rung C: the upload ends with a matching sha256, the module appears in MODULES, after
+   APPLY & RESTART the machine plays; HEALTH and ABOUT list it.
+5. If the device does not reach the main screen, or a rung misbehaves, go back to stock (below). Tell the maintainer which rung and what
+   was on the OLED before taking the next rung.
+
+**Safe mode.** If a module crashes the boot twice, the third boot is a safe boot (no module loads); a selection is kept. Holding RECORD at
+power-on is meant to force it, but that key route is read from code and was never observed **[O]** (finding 37).
+
+**Recovery** (the bootstrap is never changed by patchkit, so it works whatever MAIN OS or the DSP does; see also "Recovery" above):
+
+1. Power off. Hold **FUNC** and power on. The STARTUP menu comes from the bootstrap.
+2. Press **TRIG 4** (OS UPGRADE). This receives over **MIDI DIN only**; USB is not available here. Connect a DIN MIDI interface to the
+   device's MIDI IN.
+3. In Transfer, open the SysEx page, pick the DIN interface and send `firmware/Digitakt_II_OS1.17.syx` (the stock file, not a patched
+   one). Wait for the device to finish and restart. The stock firmware runs.
+4. A checksum or HMAC failure shows UPGRADE ABORTED and writes nothing; send again. Keep the stock file's sha256
+   (`26c22f66...`) next to you: `shasum -a 256 firmware/Digitakt_II_OS1.17.syx`.
+
 ### Status
 
 No patched image has been flashed to a device. Whether and when to flash is the maintainer's decision, every time.

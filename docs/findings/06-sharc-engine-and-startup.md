@@ -2569,6 +2569,10 @@ blocks the only other writer of each is a PM load in blk69 paired with a
 PM store of the same register at the same offset, an interrupt save and
 restore.
 
+**[C]** (finding 45) "Runtime constant" holds for the stock code, which never writes these registers and uses M5, M6 and M13 in the sample
+renderer itself. It is not a guarantee for code the patchkit adds: the context restore reloads them per DSP context, so `core/dsp-voice`
+now saves, sets and restores them around a machine routine instead of assuming them.
+
 All six immediates execute inside one `DO 0x1c0f7c UNTIL LCE` loop (trip
 count 2, `sw 0x1c0f37`, body `[0x1c0f3a, 0x1c0f7c)`), which also covers the
 L-register zeroing and the B7/I7/L7 setup below; both loop passes write
@@ -5535,6 +5539,8 @@ registered type costs +1,120 DSP instructions per block (+0.5 %) and its PCM is 
   `R14` = the voice loop counter (32 for voice 0, 1 for voice 31: `v = 32 - R14`; nothing else in the call carries
   the voice number), `M5 = 0`, `M6 = 1`, `M7 = -1`, `M13 = 0`, `M14 = 1`. The firmware calls this function for
   every voice whose selector is not 2 (STRETCH takes `0x1c5576`); types 7 and up never reach selector 2 (below).
+  **[C]** (finding 45) For a registered machine routine these values are not read from the context: the wrapper sets them (`M5 = 0`, `M6 = 1`,
+  `M7 = -1`, `M13 = 0`, `M14 = 1`, `M15 = -1`, `L0-L5 = 0`, MODE1 pinned) and restores the caller's.
 - Voice and track: track `t` owns voices `2t` and `2t + 1` (finding 15). The type is the short word `cache[t]` at
   `0x255970` (anchor `dsp.voice.type_cache`: the literal `I4 = 0x255970` in `FUN_1c24e9`, `reloc_hash`
   `d2c02a58..`, +0x1e5): the DSP's copy of frame word `0x94 + 2t`, written by `FUN_1c2b24`'s change detector.
@@ -5676,6 +5682,7 @@ I12, I13, M1-M4 (saved); it keeps I6-I11, I14, I15, M0, M5-M15, the L registers 
 M13 = 0, M14 = 1, M15 = -1 hold. There is no voice record: a routine keeps its own per-slot state. Helpers exported by
 the core: `_dv_exp2` and `_dv_frame_hw` / `_dv_frame_sw` (halfword k of the frame copy). What the routine writes is the
 signal **before** the engine's gain, amplitude envelope and gate, filter, overdrive and the rest of the track chain.
+**[C]** (finding 45) "hold" became "are set by the wrapper" (saved, pinned, restored); the same for the Digitakt II wrapper.
 Two consequences: the note's end is the engine's (the amplitude envelope releases the voice), and the routine sees no
 gate or note-on edge of its own (the frame carries none: pitch and velocity words are written at the trig and never
 cleared; the voice records at `0x241298 + ...` change at a trig but their flags stay set). A routine that needs the

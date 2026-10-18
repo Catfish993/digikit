@@ -88,6 +88,14 @@ safe_key = 19
 dsp_area_bytes = 327680
 dsp_tail_off = 0xa80
 dsp_tail_words = 15
+# RAM that neither the firmware nor the boot code touches (findings 01 "Expansion region": the first 4 KiB above cf.expansion), where the
+# runtime keeps its crash record and a probe word. Whether a soft reset leaves RAM alone on the real device is open **[O]**; the emulator
+# models that it does for this range (docs/findings/46-digikit-debug.md).
+keep_base = 0x47fe0000
+keep_bytes = 0x1000
+# RAM ranges [lo, hi) the PEEK command of the upload protocol may read (docs/design/digikit-upload.md): the firmware's data, then the
+# runtime's own region with the keep range. No peripheral registers; at most 4 ranges.
+peek = [[0x40000000, 0x466c0000], [0x46712000, 0x47fe1000]]
 
 # What patchkit needs of this device: the container and section limits of a port (written into devices/ports/*.toml by
 # tools/patchkit/port_resolve.py; docs/findings/01 "NOR flash map") and the DSP L2 range the free-region search runs in.

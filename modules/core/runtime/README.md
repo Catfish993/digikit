@@ -18,5 +18,12 @@ hot reload is archived, `docs/plans/digikit-hot-reload.md`). The DIGIKIT menu ch
   anchor `dkrt.fw.block_counter_lit`), not at the first UI pass; a hang or a fault before then counts as a bad boot (a CPU fault halts the device).
   `DKRT_STABLE_BLOCKS` and the record's `stable_blocks` shorten it for tests. Upload safety (finding 43): replies are dropped when the firmware's TX
   ring has no room (`dkrt.fw.tx_inflight_lit`), BEGIN makes the two store headers equal before staging, `DKRT_UPLOAD_TEAR` is a test knob.
+- Card safety (finding 46): every card write goes through `block_write` (`card.rs`): outside the store range it is refused (`E_RANGE`); on a card whose
+  area is neither ours (valid store header or selection copy) nor blank (all 0x00 or 0xFF) the runtime is read-only (`E_CARD_RO`: no boot counter, no
+  selection, uploads answer `E_INUSE`, ABOUT says so). `dkrt_diag` reports it. An upload on a blank card claims the range with an empty store header pair first.
+- Debug (finding 46): a RAM log ring (`dlog.rs`, 512 events, errors only when DEBUG is OFF: SETTINGS > DIGIKIT > DEBUG, selection flags bit 1) read over SysEx
+  (LOG 0x20, PEEK 0x21 over `[digikit] peek` of the device file) with `tools/device/dklog.py`; the DSP diagnostics poll (`dl_diag`, optional) and its
+  heartbeat watch; the firmware's exception hook (`dkrt.fw.exc_hook_lit`) records a crash in kept RAM (`[digikit] keep_base`) and soft-resets, the next boot
+  reports it and counts the boot as bad. Test knobs: `CMD_CARD_PROBE`, `CMD_DEBUG`; test module `test/dyn-crash`.
 - Health (finding 41): `dkrt_health(DkrtHealth *)` (CPU load, the DSP's block time, heap, arena, DSP area; the first three need `core/health`), `dkrt_blocks()` (a 1500 Hz
   clock), `dkrt_poll_set(fn)` (a function the UI-loop tick calls once per pass; the DIGIKIT HEALTH page refreshes itself with it), mailbox command `CMD_HEALTH`.

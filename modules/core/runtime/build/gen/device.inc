@@ -14,3 +14,5 @@
     .equ ESDHC_BASE, 0xfc0cc000    /* [board] esdhc_base */
     .equ SAFE_KEY_CODE, 0x13    /* [digikit] safe_key (a panel control code) */
     .equ DSP_BLOCK_CYCLES, 0xa2c2b    /* [board] dsp_clock_hz / dsp_blocks_per_second, rounded (the clock is open, finding 41) */
+    .equ KEEP_BASE, 0x47fe0000    /* [digikit] keep_base (RAM a soft reset is assumed to keep: the crash record) */
+    .equ KEEP_BYTES, 0x1000    /* [digikit] keep_bytes */

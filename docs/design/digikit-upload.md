@@ -1,6 +1,7 @@
 # digikit module upload over USB SysEx
 
-Status: built (device side, Python tool, exporter; lane r4, finding 43), 2026-10-18; spec (plan `docs/plans/digikit-runtime.md` Phase 7, decision 11; routes in
+Status: built (device side, Python tool, exporter; lane r4, finding 43), 2026-10-18; LOG and PEEK, the card-safety codes and INFO's log range added
+2026-10-18 (lane r4, finding 46; runtime 3, protocol version still 1: commands were only added); spec (plan `docs/plans/digikit-runtime.md` Phase 7, decision 11; routes in
 `docs/findings/42-usb-transfer-routes.md`). The device side is `core/runtime`; the hosts are a Python tool (tests, terminal),
 the desktop app and the web app. Every host and the device build against this file; change it first, then the code.
 
@@ -48,12 +49,14 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | -59 | E_NOFILE | DELETE of a path that is not in the store |
 | -60 | E_PROTO | unknown protocol version or command |
 | -61 | E_NOSTORE | the device has no `[card.store]` or the store header is unreadable (CLEAR still works) |
+| -62 | E_INUSE | BEGIN, DELETE or CLEAR on a card whose store area is not ours and not blank: the runtime writes nothing there (see "Card safety") |
+| -63 | E_PEEK | PEEK of a range that the device file does not list, or a length of 0 or over 512 |
 
 ## Commands
 
 | cmd | name | request body | reply body after status |
 |---|---|---|---|
-| 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION, device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags` (bit 0 safe mode, bit 1 upload open) |
+| 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION, device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags, u32 log_oldest, u32 log_newest` (flags: bit 0 safe mode, bit 1 upload open, bit 2 card read-only, bit 3 debug log ON, bit 4 a crash record was found at this boot; the two sequence numbers are those of the oldest and newest event in the log ring, 0 and 0 when empty; runtime 2 stops after the flags) |
 | 0x02 | LIST | `u32 first` | `u32 total, u8 n`, then n entries `path NUL, u32 size, sha256[32]` from index `first`, as many as fit the reply |
 | 0x10 | BEGIN | `path NUL, u32 size, sha256[32]` | (none). Opens an upload; a BEGIN while one is open drops the old one. |
 | 0x11 | DATA | `u32 offset, bytes` | (none). |
@@ -61,6 +64,8 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | 0x13 | DELETE | `path NUL` | (none). Commits a table without the path. |
 | 0x14 | CLEAR | `u32 0x434c5221` ("CLR!") | (none). Commits an empty store. |
 | 0x15 | ABORT | (none) | (none). Drops an open upload. |
+| 0x20 | LOG | `u32 from_seq` | `u32 oldest, u32 newest, u8 n`, then `n` events of 32 bytes from `from_seq` (or from `oldest` when `from_seq` is older), as many as fit one reply (27). An event is `u32 seq, u32 time, u16 kind, u16 flags, u32 a0..a4`, big endian; `time` is the firmware's block counter (1500 per second), `flags` bit 0 an error. The host polls: ask again from `last seq + 1` until `n` is 0. Nothing is ever sent unless a host asks. |
+| 0x21 | PEEK | `u32 addr, u16 len` | `u32 addr, u16 len`, then `len` bytes of RAM. `len` is 1 to 512 and `[addr, addr + len)` must lie wholly inside one range of `[digikit] peek` in the device file (`devices/*.toml`: the firmware's data and the runtime's own region with the crash-record area); no peripheral registers. |
 
 The device id is the device, not the firmware version: the runtime has no per-port constant (a port is a set of anchors, and a
 constant would be a fourth copy of a fact `devices/ports/` holds). A host that wants the version asks the stock MidiRpc
@@ -82,6 +87,26 @@ Behaviour the first draft left open (lane r4, built and tested):
 DATA rules: `offset` equals the next expected byte, or the offset of the previous chunk with the same length (a retry; the
 reply is ok and nothing is written again). The length is 1 to 32768 and a multiple of 512, except for the chunk that ends the
 file. The host may keep at most 2 DATA requests in flight; replies come in order.
+
+## The debug log (LOG and PEEK; finding 46)
+
+The runtime keeps a RAM ring of 512 events (`modules/core/runtime/src/rs/src/dlog.rs`): boot steps, safe mode and why, the card check, each module's
+load result, upload commands, menu actions, a health snapshot every ten seconds, the DSP diagnostics once a second (raw words of `dl_diag`), the DSP
+heartbeat watch, the crash record of the boot before. With DEBUG OFF (SETTINGS > DIGIKIT > DEBUG; bit 1 of the selection record's `flags`, so the zero
+value means ON) only error events are kept. The argument words of each kind are listed in `docs/findings/46-digikit-debug.md`; the host tool is
+`tools/device/dklog.py` (`follow`, `crash`, `peek`). LOG and PEEK follow the framing and the TX guard of every other command: a reply is sent only when the
+firmware's TX ring has room, so a host that does not read its input cannot hang the MIDI task (the host asks again). LOG, PEEK and INFO are not logged.
+
+## Card safety (finding 46)
+
+Every card write of the runtime goes through one function, which refuses (a) any write outside the store range of the device file (`[card.store]`; error
+`E_RANGE` inside the runtime, counted, logged) and (b) every write when the store area is neither ours nor blank. At boot (or at the first write when no boot
+hook ran) the runtime looks: the area is **ours** when store header A or B is a valid header or a selection copy is valid; otherwise every sector of the range
+must read all 0x00 or all 0xFF (**blank**, read once, 64 KiB at a time, stopping at the first sector that is not); else it is **foreign** (or **unreadable**
+when a read failed) and the runtime is read-only for this card: no boot counter (so no safe mode by counter), no selection, no upload (BEGIN, DELETE and CLEAR
+answer `E_INUSE`; INFO, LIST, LOG and PEEK still work), ABOUT shows `CARD READ-ONLY` and where the foreign data starts, and the log has one error event with the
+first non-blank sector and a crc32 of it. A write of data or a table into a blank range (an upload's staging) first writes an empty store header pair, so a cut
+upload leaves a card that the next boot calls ours; the selection record and the store headers are themselves marks of ours and need nothing first.
 
 ## Store writes and the commit
 

@@ -188,10 +188,35 @@ def _native_rows(
     check against Selache is that every row it lists either starts where ours does with the same length, or
     is a shorter listing of ours whose missing parcels are zero, and that each relocation Selache emitted
     sits on the start of one of our instructions."""
-    cmp = sel.compare_external_bytes(section)
-    native = [
-        (i.external.parcel_address, i.external.raw.hex()) for i in cmp.instructions
-    ]
+    # Width ties: a 16-bit short compute (Type 2c) and a 32-bit Type 2b share their leading bits, so a free-running decode
+    # of the object reads `R0 = R0 + R1;` (0xc001) plus the next word as one 2b. The emulator breaks the tie with a lookahead
+    # over the successors (packages/emulator/sharc-rt/src/decode.rs, `decode_width_resolved`); here the assembler, which
+    # chose the form, decides: its shorter extent is taken when that extent itself decodes to a form (finding 45).
+    selache_len = {parcel: len(raw) // 2 for parcel, raw in selache_rows}
+    isa = sel.load_instruction_set()
+    boot = sel.swap_parcels(section)
+    rows = []
+    offset = 0
+    while offset < len(boot):
+        result = isa.decode_bytes(boot[offset : offset + 6])
+        extent = (
+            min(2, len(boot) - offset)
+            if result.instruction is None
+            else result.instruction.extent_bytes
+        )
+        short = selache_len.get(offset // 2)
+        if short and short < extent and short in (2, 4):
+            narrow = isa.decode_bytes(boot[offset : offset + short], 8 * short)
+            if (
+                narrow.instruction is not None
+                and narrow.instruction.extent_bytes == short
+            ):
+                extent = short
+        rows.append(
+            (offset // 2, sel.swap_parcels(boot[offset : offset + extent]).hex())
+        )
+        offset += extent
+    native = rows
     nat = dict(native)
     for parcel, raw in selache_rows:
         if parcel in nat:
@@ -414,12 +439,32 @@ def verify(obj: SharcObject, linked: Linked, externs: dict[str, int]) -> None:
     cmp = sel.compare_rows(rows)
     problems = []
     by_parcel = {}
+    isa = sel.load_instruction_set()
     for item in cmp.instructions:
         by_parcel[item.external.parcel_address] = item
         if item.native_form_id is None or not item.extent_agrees:
+            # a width tie (Type 2c against Type 2b): the assembler's extent decides when a form of that width matches
+            n = item.external.extent_bytes
+            if n in (2, 4):
+                tie = isa.decode_bytes(item.boot_bytes, 8 * n)
+                if tie.instruction is not None and tie.instruction.extent_bytes == n:
+                    continue
             problems.append(
                 f"parcel {item.external.parcel_address:#x} {item.external.raw.hex()}: "
                 f"native {item.native_form_id or item.native_candidates} extent_agrees={item.extent_agrees}"
+            )
+    # The emulator breaks the 2b / 2c width tie with a lookahead over the successors; the silicon has no such choice. An
+    # instruction the emulator would read with another extent than the assembler's runs differently there (finding 45).
+    from tools.sharc_dev import sharc_disasm
+
+    for parcel, raw_hex in obj.rows:
+        mine = len(raw_hex) // 2
+        seen = sharc_disasm.decode_confident(linked.code_boot, parcel * 2)
+        if seen.length_bytes is not None and seen.length_bytes != mine:
+            problems.append(
+                f"parcel {parcel:#x} {raw_hex}: the emulator's width resolution reads {seen.type_name} of "
+                f"{seen.length_bytes} bytes, the assembler wrote {mine} (a 16-bit `Rn = Rn op Rx`: the emulator would run "
+                f"another instruction than the silicon; use distinct registers, e.g. `R0 = R1 + R2`; finding 45)"
             )
     for r in obj.relocs:
         item = by_parcel[r.parcel]

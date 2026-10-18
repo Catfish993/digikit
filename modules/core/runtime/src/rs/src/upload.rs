@@ -11,10 +11,10 @@
 //! dense one becomes a jump table, which is not ColdFire code), no `core::fmt`, no slice indexing (a bounds panic hangs the task).
 
 use crate::sha256::Sha;
-use crate::{block_read, block_write, boot, midi_send, rd32, tx_in_flight, wr32};
+use crate::{block_read, block_write, boot, card, dlog, midi_send, rd32, tx_in_flight, wr32};
 use core::ptr::{addr_of, addr_of_mut};
 use dkrt_sdk::store::{self, Hdr, ENTRY, FIRST, HEADER_B, LIMIT};
-use dkrt_sdk::{E_NOT_FOUND, OK, RUNTIME_VERSION};
+use dkrt_sdk::{logk, E_NOT_FOUND, OK, RUNTIME_VERSION};
 
 pub const E_MSG: i32 = -50;
 pub const E_PATH: i32 = -51;
@@ -28,6 +28,10 @@ pub const E_READ: i32 = -58;
 pub const E_NOFILE: i32 = -59;
 pub const E_PROTO: i32 = -60;
 pub const E_NOSTORE: i32 = -61;
+/// The card's store area is not ours and not blank: the runtime writes nothing there (finding 46).
+pub const E_INUSE: i32 = -62;
+/// PEEK: the range is not inside a range the device file lists, or the length is 0 or over 512.
+pub const E_PEEK: i32 = -63;
 
 const CMD_INFO: u32 = 0x01;
 const CMD_LIST: u32 = 0x02;
@@ -37,6 +41,8 @@ const CMD_END: u32 = 0x12;
 const CMD_DELETE: u32 = 0x13;
 const CMD_CLEAR: u32 = 0x14;
 const CMD_ABORT: u32 = 0x15;
+const CMD_LOG: u32 = 0x20;
+const CMD_PEEK: u32 = 0x21;
 
 /// Largest DATA chunk (INFO says so) and the unpacked body we accept: offset (4) + chunk.
 pub const MAX_CHUNK: u32 = 32768;
@@ -201,6 +207,9 @@ unsafe fn reply(cmd: u32, seq: u32, status: i32, extra: usize) -> i32 {
     let n = pack(rb, 1 + extra, w.add(7));
     *w.add(7 + n) = 0xf7;
     DKRT_UPLOAD_LAST = status;
+    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK {
+        dlog::ev(logk::UPLOAD, if status == 0 { 0 } else { logk::F_ERROR }, [cmd, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
+    }
     if !tx_room(8 + n) {
         DKRT_UPLOAD_DROPPED = DKRT_UPLOAD_DROPPED.wrapping_add(1);
         return 1; // the host reads nothing, or slowly: its retry asks again
@@ -470,9 +479,16 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     wr32(rb.add(4), crate::device_name()); // the device's short name from its device file
     put32(1 + 8, free);
     put32(1 + 12, MAX_CHUNK);
-    let flags = (boot::info().safe & 1) | if up().open { 2 } else { 0 };
+    let flags = (boot::info().safe & 1)
+        | if up().open { 2 } else { 0 }
+        | if card::writable() { 0 } else { 4 }
+        | if dlog::debug_on() { 8 } else { 0 }
+        | if crate::crash::seen().found != 0 { 16 } else { 0 };
     *rb.add(16) = flags as u8;
-    reply(CMD_INFO, seq, OK, 17)
+    let (oldest, newest) = dlog::range();
+    wr32(rb.add(17), oldest);
+    wr32(rb.add(21), newest);
+    reply(CMD_INFO, seq, OK, 25)
 }
 
 unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
@@ -513,6 +529,9 @@ unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
 
 unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     up().open = false;
+    if !card::writable() {
+        return reply(CMD_BEGIN, seq, E_INUSE, 0);
+    }
     let pl = match path_ok(body, blen) {
         Some(n) => n,
         None => return reply(CMD_BEGIN, seq, if blen < 1 + 4 + 32 { E_MSG } else { E_PATH }, 0),
@@ -660,6 +679,9 @@ unsafe fn cmd_end(seq: u32, buf: *mut u8) -> i32 {
 
 unsafe fn cmd_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     up().open = false;
+    if !card::writable() {
+        return reply(CMD_DELETE, seq, E_INUSE, 0);
+    }
     let pl = match path_ok(body, blen) {
         Some(n) if n + 1 == blen => n,
         _ => return reply(CMD_DELETE, seq, if blen < 2 { E_MSG } else { E_PATH }, 0),
@@ -693,6 +715,9 @@ unsafe fn cmd_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i3
 
 unsafe fn cmd_clear(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     up().open = false;
+    if !card::writable() {
+        return reply(CMD_CLEAR, seq, E_INUSE, 0);
+    }
     if blen != 4 || rd32(body) != CLEAR_MAGIC {
         return reply(CMD_CLEAR, seq, E_MSG, 0);
     }
@@ -721,6 +746,83 @@ unsafe fn highest_seq(buf: *mut u8) -> u32 {
         k += 1;
     }
     best
+}
+
+extern "C" {
+    /// Per-device data from the device file (`[digikit] peek`), defined by `src/cf/<dev>/device.s`: the number of ranges and `lo, hi` pairs.
+    static dkrt_peek_n: u32;
+    static dkrt_peek_ranges: [u32; 8];
+}
+
+/// Events in one LOG reply: the reply body holds a status byte, `oldest`, `newest`, a count and 32 bytes each, in at most `REPLY_BODY_MAX`.
+const LOG_PER_REPLY: u32 = ((REPLY_BODY_MAX - 1 - 9) / 32) as u32;
+
+/// LOG: body `u32 from_seq`. Reply: `u32 oldest, u32 newest, u8 n`, then `n` events of 32 bytes (`seq, time, kind u16, flags u16, a0..a4`, all
+/// big endian) from `from_seq` (or from the oldest kept, when `from_seq` is older), as many as fit one reply. Nothing is sent unless a host asks.
+unsafe fn cmd_log(seq: u32, body: *const u8, blen: usize) -> i32 {
+    if blen < 4 {
+        return reply(CMD_LOG, seq, E_MSG, 0);
+    }
+    let from = rd32(body);
+    let (oldest, newest) = dlog::range();
+    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
+    wr32(rb, oldest);
+    wr32(rb.add(4), newest);
+    let mut n = 0u32;
+    if newest != 0 {
+        let mut s = if from < oldest { oldest } else { from };
+        while s <= newest && n < LOG_PER_REPLY {
+            if dlog::copy_event(s, rb.add(9 + 32 * n as usize)) {
+                n += 1;
+            }
+            s += 1;
+        }
+    }
+    *rb.add(8) = n as u8;
+    reply(CMD_LOG, seq, OK, 9 + 32 * n as usize)
+}
+
+/// Is `[addr, addr + len)` inside one of the ranges of the device file?
+unsafe fn peek_allowed(addr: u32, len: u32) -> bool {
+    let n = core::ptr::read_volatile(addr_of!(dkrt_peek_n)) as usize;
+    let t = addr_of!(dkrt_peek_ranges) as *const u32;
+    let end = match addr.checked_add(len) {
+        Some(e) => e,
+        None => return false,
+    };
+    let mut i = 0;
+    while i < n && i < 4 {
+        let lo = core::ptr::read_volatile(t.add(2 * i));
+        let hi = core::ptr::read_volatile(t.add(2 * i + 1));
+        if addr >= lo && end <= hi {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// PEEK: body `u32 addr, u16 len` (1 to 512). Reply: `u32 addr, u16 len`, then the bytes. Reads RAM only, inside the ranges the device file lists
+/// (`[digikit] peek`): no peripheral registers.
+unsafe fn cmd_peek(seq: u32, body: *const u8, blen: usize) -> i32 {
+    if blen != 6 {
+        return reply(CMD_PEEK, seq, E_MSG, 0);
+    }
+    let addr = rd32(body);
+    let len = ((*body.add(4) as u32) << 8) | *body.add(5) as u32;
+    if len == 0 || len > 512 || !peek_allowed(addr, len) {
+        return reply(CMD_PEEK, seq, E_PEEK, 0);
+    }
+    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
+    wr32(rb, addr);
+    *rb.add(4) = (len >> 8) as u8;
+    *rb.add(5) = len as u8;
+    let mut i = 0;
+    while i < len as usize {
+        *rb.add(6 + i) = core::ptr::read_volatile((addr as usize + i) as *const u8);
+        i += 1;
+    }
+    reply(CMD_PEEK, seq, OK, 6 + len as usize)
 }
 
 unsafe fn buffer() -> *mut u8 {
@@ -776,6 +878,10 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
     } else if cmd == CMD_ABORT {
         up().open = false;
         reply(CMD_ABORT, seq, OK, 0)
+    } else if cmd == CMD_LOG {
+        cmd_log(seq, body, blen)
+    } else if cmd == CMD_PEEK {
+        cmd_peek(seq, body, blen)
     } else {
         reply(cmd, seq, E_PROTO, 0)
     }

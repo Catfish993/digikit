@@ -96,6 +96,7 @@ def test_anchors_are_in_the_port(image):
     assert set(a) == {
         "dl.cf.frame_call",
         "dl.cf.frame_fn",
+        "dl.cf.rec_lit",
         "dl.cf.tx_lit",
         "dl.dsp.block_tail",
     }
@@ -130,6 +131,12 @@ def test_call_site_geometry_matches_the_dsp_constants(image):
     for name, want in (("DL_TAIL_OFF", tail_off), ("DL_TAIL_WORDS", words)):
         assert define(gen_inc(dev), name) == want
     # the literal of `lea <tx queue>,a0` in the driver
+    # the literal of the first `pea` of the handler: the record copy (dl_diag reads it)
+    rl = a["dl.cf.rec_lit"]["addr"] - base
+    assert main[rl - 2 : rl] == b"\x48\x79"
+    assert (
+        struct.unpack(">I", main[rl : rl + 4])[0] == struct.unpack(">I", m.group(1))[0]
+    )
     lit = a["dl.cf.tx_lit"]["addr"] - base
     assert main[lit - 2 : lit] == b"\x41\xf9"
     assert 0x80000000 <= struct.unpack(">I", main[lit : lit + 4])[0] < 0x80010000
@@ -153,6 +160,7 @@ AREA = (
     0x2001AB00  # a stand-in for the DSP's reserved area (a DSP address; only compared)
 )
 TXLIT = DATA + 0x100  # holds the queue's address
+RECLIT = DATA + 0x110  # holds the record copy's address (0 until a test sets it)
 TXQ = DATA + 0x1000  # the fake queue: 4 bytes per entry
 REC = DATA + 0x8000
 
@@ -161,7 +169,12 @@ REC = DATA + 0x8000
 def built():
     if pk_toolchains.m68k_bin("gcc") is None:
         pytest.skip("m68k toolchain not installed")
-    syms = {"_dl_area": AREA, "dl_tx_lit": TXLIT, "dl_stock_send": BASE + 0x100}
+    syms = {
+        "_dl_area": AREA,
+        "dl_tx_lit": TXLIT,
+        "dl_rec_lit": RECLIT,
+        "dl_stock_send": BASE + 0x100,
+    }
     return pk_link.build([MOD / "src/cf/dsp-link.c"], BASE, syms)[1]
 
 
@@ -435,3 +448,91 @@ def test_window_transfers_carry_the_window_and_refuse_bad_arguments(machine, bui
     ]
     res = run(machine, built, {}, [call(built, "dl_send_win", a) for a in bad])
     assert [x.d0 & 0xFFFFFFFF for x in res] == [0xFFFFFFFE] * len(bad)
+
+
+DG_MAGIC, DG_WORDS = 0xD1A6, 14
+
+
+def diag_off(j: int) -> int:
+    """Record byte offset of diagnostic word j: slot row 1 + j // 2 (0x1c + 0x54 row), +0x44 or +0x48."""
+    return 0x1C + 0x54 * (1 + j // 2) + (0x48 if j & 1 else 0x44)
+
+
+def diag_record(words: list[int], magic: int = DG_MAGIC) -> bytes:
+    rec = bytearray(0xABC)
+    for j, w in enumerate([magic | (len(words) + 1) << 16, *words]):
+        struct.pack_into(">HH", rec, diag_off(j), w & 0xFFFF, w >> 16)
+    return bytes(rec)
+
+
+def test_diagnostic_words_have_the_same_slots_on_both_sides():
+    """The DSP writes word j at word index 7 + 21 (1 + j / 2) + 17 + j % 2 of the record (dsp-link.inc); dl_diag reads the same bytes.
+    None of them collides with the acknowledgement (row 0, +0x60 and +0x64) or with the entries the DSP writes (6 to 9 of each row)."""
+    inc = (MOD / "src/dsp/dsp-link.inc").read_text()
+    assert (
+        define(inc, "DL_DG_MAGIC")
+        == DG_MAGIC
+        == define((MOD / "src/cf/dsp-link.c").read_text(), "DL_DG_MAGIC")
+    )
+    assert define((MOD / "src/cf/dsp-link.c").read_text(), "DL_DG_WORDS") == DG_WORDS
+    # the stores of the DSP routine, as written in the source
+    stores = {
+        int(m.group(1)): int(m.group(2))
+        for m in re.finditer(r"DM\((\d+), I2\) = R0;\s+// word (\d+)", inc)
+    }
+    assert sorted(stores.values()) == list(range(DG_WORDS))
+    for widx, j in stores.items():
+        assert 4 * widx == diag_off(j), (j, widx)
+        row = (diag_off(j) - 0x1C) // 0x54
+        entry_off = (diag_off(j) - 0x1C) % 0x54
+        assert 1 <= row <= 7
+        assert (
+            entry_off >= 6 * 11 and entry_off + 4 <= 6 * 13 - 2
+        )  # entries 11 and 12 only
+    assert define(inc, "DL_ACK_OFF") not in {diag_off(j) for j in range(DG_WORDS)}
+
+
+@needs_gcc
+def test_dl_diag_reads_the_words_from_the_record_copy(machine, built):
+    out = DATA + 0x6000
+    regs = [
+        0,
+        1,
+        0xFFFFFFFF,
+        0,
+        1,
+        0xFFFFFFFF,
+        0x2CB2C8,
+        0x2CB2C0,
+        0x2CA5A0,
+        994,
+        0x39011CF8,
+    ]
+    words = [7, 100, *regs]  # tail beat, hook beat, M5 .. MODE1
+    rec = diag_record(words)
+    ptr = struct.pack(">I", REC)
+
+    def diag(n):
+        return call(built, "dl_diag", [out, n], [(out, 14 * 4)])
+
+    # the literal holds no address (0): -1; then the record
+    r = run(machine, built, {out: bytes(0x80)}, [diag(14)])
+    assert r[0].d0 & 0xFFFFFFFF == 0xFFFFFFFF
+    r = run(
+        machine,
+        built,
+        {RECLIT: ptr, REC: rec, out: bytes(0x80)},
+        [diag(14), diag(5)],
+    )
+    assert r[0].d0 == 14
+    assert list(struct.unpack(">14I", r[0].reads[0])) == [DG_MAGIC | 14 << 16, *words]
+    assert r[1].d0 == 5  # a shorter buffer
+    assert list(struct.unpack(">5I", r[1].reads[0][:20])) == [
+        DG_MAGIC | 14 << 16,
+        *words[:4],
+    ]
+    # a record with no diagnostic block (core/dsp-voice absent): -2
+    r = run(
+        machine, built, {RECLIT: ptr, REC: bytes(0xABC), out: bytes(0x80)}, [diag(14)]
+    )
+    assert r[0].d0 & 0xFFFFFFFF == 0xFFFFFFFE

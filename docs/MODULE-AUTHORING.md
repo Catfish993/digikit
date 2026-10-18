@@ -187,6 +187,21 @@ the DSP does not halt and the main loop keeps running.
 - **The web gallery** (`mise run web`, page `/patch`): pick modules, patch in the browser, boot the result, download
   it. The firmware never leaves the browser.
 
+### The register contract of a DSP voice routine
+
+The firmware restores M5, M6, M7, M13, M14, M15, the L registers and MODE1 per DSP context, so a routine that is entered from
+`core/dsp-voice` does not get them from the context: the wrapper saves them, **sets** them and restores them after the
+routine (finding 45). While your routine runs: M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1 (so `DM(I0, M6)`
+steps one word and `JUMP (M13, I13)` returns), L0-L5 = 0 (linear addressing), SIMD off, ALUSAT and TRUNCATE clear, RND32 set.
+You may use R0-R15, I0-I5, I13, M1-M4 and B3 freely; keep I6-I12, I14, I15, M0 and M5-M15 as they are, and do not change L or
+MODE1. The same holds on both devices (on the Digitone II the routine gets the slot's buffer in R4, on the Digitakt II the voice
+record and the output block; the headers of `core/dsp-voice/src/dsp/*.s` list the entry registers). Code that
+runs anywhere else on the DSP (a master-bus effect, a link hook) is not entered through the wrapper: it must not assume these
+values either, unless it saves, sets and restores them itself as `core/dsp-link` does (the two master-bus modules still use M5 = 0
+and M6 = 1 at the converter call they replace, where the stock code uses the same registers; finding 45). A 16-bit `Rn = Rn op Rx` followed by
+some instructions can make the emulator read a different instruction than the silicon; the build refuses such code and says
+so (use distinct registers, finding 45).
+
 Limits to know: type numbers 7..23 for added machines on the Digitakt II (17) and 5..23 on the Digitone II (19, a
 chosen bound); one master-bus module at a time until a master-effects framework exists; patched DSP code runs slower than real
 time in the emulator (correct, but not playable live yet); nothing has been flashed to a device yet.

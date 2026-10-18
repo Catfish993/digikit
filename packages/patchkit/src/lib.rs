@@ -25,6 +25,7 @@ pub mod link;
 pub mod modgen;
 pub mod module;
 pub mod port;
+pub mod preflight;
 pub mod prim;
 pub mod record;
 pub mod register;

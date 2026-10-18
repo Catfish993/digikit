@@ -190,6 +190,9 @@ pub struct Emulator {
     probe_hits: BTreeMap<u32, u64>,
     /// The DSPI1 peer's IRQ1 (EPORT, INTC0 source 1) after a transfer; not saved.
     irq1_pending: bool,
+    /// A CPU exception runs the guest's handler instead of stopping the run with an error (the digikit runtime's crash capture,
+    /// docs/findings/46-digikit-debug.md). Off by default: an exception in the firmware is a bug the harness must see.
+    deliver_exceptions: bool,
     /// (probed pc, word at the stack top = return address for a `jsr`) -> (hits, last icount)
     probe_rets: BTreeMap<(u32, u32, u32), (u64, u64)>,
     interpreted_instructions: u64,
@@ -530,6 +533,7 @@ impl Emulator {
             observed_outside_main: false,
             probe_hits: BTreeMap::new(),
             irq1_pending: false,
+            deliver_exceptions: false,
             probe_rets: BTreeMap::new(),
             interpreted_instructions: 0,
             idle_fast_forwarded_instructions: 0,
@@ -795,6 +799,28 @@ impl Emulator {
     /// Hits that were the first for their protected range since the last call.
     pub fn take_guard_first_hits(&mut self) -> Vec<GuardHit> {
         self.bus.guards.take_first_hits()
+    }
+
+    /// Let a CPU exception run the guest's handler (true) or stop the run with an error (false, the default).
+    pub fn set_deliver_exceptions(&mut self, deliver: bool) {
+        self.deliver_exceptions = deliver;
+    }
+
+    /// `len` bytes of guest RAM from `addr` (a multiple of 4), read without side effects; unmapped words read 0.
+    pub fn peek_ram(&mut self, addr: u32, len: u32) -> Vec<u8> {
+        let mut out = Vec::with_capacity(len as usize);
+        for a in (addr..addr + len).step_by(4) {
+            out.extend_from_slice(&self.peek32(a).unwrap_or(0).to_be_bytes());
+        }
+        out
+    }
+
+    /// Write `bytes` (a multiple of 4 long) of guest RAM at `addr` without bus side effects.
+    pub fn poke_ram(&mut self, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        for (i, w) in bytes.chunks_exact(4).enumerate() {
+            self.poke32(addr + 4 * i as u32, u32::from_be_bytes([w[0], w[1], w[2], w[3]]))?;
+        }
+        Ok(())
     }
 
     /// Write a guest longword without bus side effects (headless diagnosis:
@@ -1744,7 +1770,7 @@ impl Emulator {
         } else if self
             .cpu
             .last_exception
-            .is_some_and(|vector| vector != 32 && !timer_delivered)
+            .is_some_and(|vector| vector != 32 && !timer_delivered && !self.deliver_exceptions)
         {
             self.set_error(format!(
                 "exception vector {}",

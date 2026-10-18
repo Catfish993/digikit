@@ -8,7 +8,7 @@ A scenario is a TOML file in `tests/digikit/scenarios/`:
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload"
+    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -33,6 +33,11 @@ Kinds:
   menu       a set ticked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with APPLY & RESTART (two presses) is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
   cut        the card states a power cut leaves between the two copies of the selection record.
+  card       card safety (finding 46): the one card-write function refuses writes outside the store range; a blank card works as before, a card
+             with foreign bytes in the range goes read-only and the runtime writes nothing, a card with our store keeps working.
+  debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
+  crash      a CPU exception in a module's slot: the runtime's hook records it in RAM that a soft reset keeps and resets; the next boot reports
+             the record (right PC), two in a row lead to safe mode (before and after the stable period).
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
@@ -223,9 +228,11 @@ class Ctx:
         recs: tuple[bytes | None, bytes | None] | None = None,
         base: Path | None = None,
         stable_blocks: int = 0,
+        foreign: dict[int, bytes] | None = None,
     ) -> Path:
         """A card image, cached by content: the store of the folder and the record copies (or SELECTION), optionally
-        laid over a `base` card file (the card a scenario left behind). Returns the cached file."""
+        laid over a `base` card file (the card a scenario left behind). FOREIGN: sector images (absolute sector -> 512-byte multiple)
+        written over the card, bytes that are not ours in the store range. Returns the cached file."""
         h = hashlib.sha256(self.image.encode())
         store_dir = self.env.folder / "digikit"
         for f in sorted(x for x in store_dir.rglob("*") if x.is_file()):
@@ -237,6 +244,8 @@ class Ctx:
             h.update(x or b"-")
         if base is not None:  # a card made by `card_after` is named by its content
             h.update(base.name.encode())
+        for s, data in sorted((foreign or {}).items()):
+            h.update(b"foreign:%d:" % s + data)
         key = h.hexdigest()[:20]
         dst = CACHE / "cards" / f"{self.image}-{key}.img"
         if not dst.exists():
@@ -250,6 +259,11 @@ class Ctx:
                 tmp = self.env.card(None, tag=key)
             if a is not None or b is not None:
                 B.write_record_sectors(tmp, a, b)
+            if foreign:
+                with open(tmp, "r+b") as f:
+                    for s, data in sorted(foreign.items()):
+                        f.seek(s * 512)
+                        f.write(data)
             shutil.move(tmp, dst)
         return dst
 
@@ -1016,7 +1030,28 @@ def run_upload(c: Ctx) -> None:
     U.run_upload(c)
 
 
+def run_card(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_debug as DBG
+
+    DBG.run_card(c)
+
+
+def run_debug(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_debug as DBG
+
+    DBG.run_debug(c)
+
+
+def run_crash(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_debug as DBG
+
+    DBG.run_crash(c)
+
+
 KINDS = {
+    "card": run_card,
+    "debug": run_debug,
+    "crash": run_crash,
     "equiv": run_equiv,
     "upload": run_upload,
     "menu": run_menu,
@@ -1080,7 +1115,16 @@ def run_pairs(
     base = keep or Path(tempfile.mkdtemp(prefix="digikit-jobs-"))
     base.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
-    rank = {"cut": 1, "upload": 1, "roundtrip": 2, "safe": 3, "equiv": 4}
+    rank = {
+        "cut": 1,
+        "upload": 1,
+        "card": 1,
+        "debug": 1,
+        "roundtrip": 2,
+        "safe": 3,
+        "crash": 3,
+        "equiv": 4,
+    }
     order = sorted(
         pairs,
         key=lambda p: (

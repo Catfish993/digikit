@@ -50,6 +50,19 @@ pub struct ColdInputs {
     /// with the error [`SOFT_RESET`] and the caller boots again from those writes (a module whose `init` resets the machine
     /// takes the boot through safe mode this way).
     pub reset_out: Option<std::sync::Arc<std::sync::Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>>,
+    /// RAM a soft reset keeps (the digikit runtime's crash record; docs/findings/46-digikit-debug.md): the range, what the boot before left
+    /// in it (written before the first instruction) and where this boot leaves it if the guest resets before it is ready.
+    pub keep_ram: Option<KeepRam>,
+}
+
+/// See [`ColdInputs::keep_ram`].
+#[derive(Clone, Debug)]
+pub struct KeepRam {
+    pub base: u32,
+    pub bytes: u32,
+    /// The range's content from the boot before (empty: none; the range then starts as the machine's RAM does).
+    pub input: Vec<u8>,
+    pub out: std::sync::Arc<std::sync::Mutex<Option<Vec<u8>>>>,
 }
 
 /// The error of a cold boot that the guest cut short with a soft reset.
@@ -132,6 +145,11 @@ pub fn boot_emulator_to_ready(
     if inputs.relax_fs_check {
         emulator.relax_fs_check();
     }
+    if let Some(keep) = &inputs.keep_ram
+        && !keep.input.is_empty()
+    {
+        emulator.poke_ram(keep.base, &keep.input)?;
+    }
     let image = std::fs::read(&inputs.image).map_err(|e| format!("DSP image: {e}"))?;
     let dsp_patch = inputs.dsp_patch.clone();
     let sidecar =
@@ -189,6 +207,9 @@ pub fn boot_emulator_to_ready(
         if status.soft_reset {
             if let Some(out) = &inputs.reset_out {
                 *out.lock().expect("reset overlay") = Some(emulator.card_overlay());
+            }
+            if let Some(keep) = &inputs.keep_ram {
+                *keep.out.lock().expect("kept ram") = Some(emulator.peek_ram(keep.base, keep.bytes));
             }
             return Err(SOFT_RESET.into());
         }

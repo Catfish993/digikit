@@ -8,8 +8,9 @@
 //! in the UI-loop hook as before. The boot counter is cleared by `ui_pass` once the session has been stable: `STABLE_BLOCKS` DSP blocks (30 s)
 //! after the first UI-loop pass (at the first pass itself in a safe boot, where no module runs). A boot that dies before then counts as bad.
 //!
-//! The record is the only thing the runtime writes to the card, and only to its two sectors (`sel::SECTOR_A`/`SECTOR_B`).
-use crate::{block_read, block_write, dsp, loader, st};
+//! The record is the only thing the runtime writes to the card here, and only to its two sectors (`sel::SECTOR_A`/`SECTOR_B`), through
+//! `block_write`, which refuses a write when the card's area is not ours (`card.rs`): then the boot counter is not raised either.
+use crate::{block_read, block_write, card, crash, dlog, loader, st};
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_sdk::sel::{self, Record};
 use dkrt_sdk::*;
@@ -46,6 +47,8 @@ pub static mut DKRT_STABLE_BLOCKS: Knob = Knob(STABLE_BLOCKS);
 #[no_mangle]
 pub static mut DKRT_UI_START: Knob = Knob(0);
 static mut UI_PASSES: u32 = 0;
+/// The boot counter a stable session leaves behind: 1 after a boot that found the crash record of a session that had been stable, else 0.
+static mut LATE_FLOOR: u32 = 0;
 /// UI-loop passes after which a block counter that has not moved at all is taken for dead and the counter is cleared as in the first
 /// pass of old (the UI loop runs 30 to 120 times a second: 1800 passes are 15 s to a minute).
 const DEAD_CLOCK_PASSES: u32 = 1800;
@@ -100,7 +103,11 @@ unsafe fn write_copy(i: u32, r: &Record) -> i32 {
     let sector = if i == 0 { sel::SECTOR_A } else { sel::SECTOR_B };
     let b = &mut *(secbuf() as *mut [u8; 512]);
     sel::encode(r, b);
-    if block_write(sector, 512, secbuf()) != 0 {
+    let e = block_write(sector, 512, secbuf());
+    if e == E_CARD_RO || e == E_RANGE {
+        return e;
+    }
+    if e != 0 {
         return E_SEL_WRITE;
     }
     OK
@@ -119,6 +126,24 @@ unsafe fn path_ok(p: *const u8) -> bool {
         n += 1;
     }
     false
+}
+
+/// `dkrt_debug_set`: the debug log level now, and in the selection record's flags (bit 1 set = OFF, so the card's zero is ON).
+pub unsafe fn debug_set(on: bool) -> i32 {
+    dlog::set_debug(on);
+    dlog::ev(logk::DEBUG_SET, logk::F_ERROR, [on as u32, 0, 0, 0, 0]);
+    if !card::writable() {
+        return E_CARD_RO;
+    }
+    let (cur, copy) = current();
+    let valid = cur.is_some();
+    let mut r = cur.unwrap_or(Record::empty());
+    let want = if on { r.flags & !sel::FLAG_DEBUG_OFF } else { r.flags | sel::FLAG_DEBUG_OFF };
+    if valid && want == r.flags {
+        return OK;
+    }
+    r.flags = want;
+    update(r, copy, valid)
 }
 
 /// `dkrt_selection_get`.
@@ -151,13 +176,14 @@ pub unsafe fn selection_set(s: *const DkrtSelection) -> i32 {
     r.seq = cur.seq.wrapping_add(1);
     r.boot_counter = cur.boot_counter;
     r.stable_blocks = cur.stable_blocks;
-    r.flags = s.flags & 1;
+    r.flags = (s.flags & sel::FLAG_SAFE_ONCE) | (cur.flags & sel::FLAG_DEBUG_OFF);
     r.count = s.count;
     k = 0;
     while k < s.count as usize {
         r.paths[k] = s.paths[k];
         k += 1;
     }
+    dlog::ev(logk::MENU, 0, [logk::MENU_SELECT, s.count, 0, 0, 0]);
     let e = write_copy(0, &r);
     if e != OK {
         return e;
@@ -177,7 +203,7 @@ pub unsafe fn selection_set_one(i: u32, s: *const DkrtSelection) -> i32 {
     r.seq = cur.seq.wrapping_add(1);
     r.boot_counter = cur.boot_counter;
     r.stable_blocks = cur.stable_blocks;
-    r.flags = s.flags & 1;
+    r.flags = (s.flags & sel::FLAG_SAFE_ONCE) | (cur.flags & sel::FLAG_DEBUG_OFF);
     r.count = s.count;
     let mut k = 0;
     while k < s.count as usize {
@@ -248,6 +274,21 @@ pub unsafe extern "C" fn dkrt_boot() {
     let (rec, copy) = current();
     let valid = rec.is_some();
     let mut r = rec.unwrap_or(Record::empty());
+    dlog::set_debug(r.flags & sel::FLAG_DEBUG_OFF == 0);
+    dlog::ev(logk::BOOT_START, 0, [RUNTIME_VERSION, crate::device(), r.stable_blocks, r.seq, r.boot_counter]);
+    // the card's area: ours, blank or neither (read-only), before anything is written
+    card::check();
+    // the crash record and the RAM probe of the boot before
+    crash::keep_probe();
+    if crash::at_boot() {
+        let seen = crash::seen();
+        if seen.found != 0 && seen.stable != 0 {
+            // the crashed boot had already cleared its counter: count it as bad now, and keep that one count until a boot with no crash
+            // behind it has run 30 s (`ui_pass`)
+            r.boot_counter = r.boot_counter.wrapping_add(1);
+            LATE_FLOOR = 1;
+        }
+    }
     b.seq = if valid { r.seq } else { 0 };
     b.copy = copy;
     b.counter = r.boot_counter;
@@ -259,7 +300,7 @@ pub unsafe extern "C" fn dkrt_boot() {
         DKRT_STABLE_BLOCKS.0 = r.stable_blocks;
     }
     // safe mode: the record asked for it, or the key, or too many boots that did not reach the UI loop
-    let reason = if r.flags & 1 != 0 {
+    let reason = if r.flags & sel::FLAG_SAFE_ONCE != 0 {
         SAFE_FLAG
     } else if key_held() {
         SAFE_KEY
@@ -268,12 +309,19 @@ pub unsafe extern "C" fn dkrt_boot() {
     } else {
         SAFE_NONE
     };
+    dlog::ev(
+        logk::BOOT_RECORD,
+        0,
+        [r.seq, copy, r.boot_counter, r.count, r.flags],
+    );
     if reason != SAFE_NONE {
         b.safe = 1;
         b.reason = reason;
+        LATE_FLOOR = 0;
+        dlog::ev(logk::SAFE, logk::F_ERROR, [reason, r.boot_counter, r.seq, 0, 0]);
         if reason == SAFE_FLAG {
             // honoured once: clear the flag (the counter is left as it is; the UI loop clears it)
-            r.flags &= !1;
+            r.flags &= !sel::FLAG_SAFE_ONCE;
             update(r, copy, valid);
         }
         let mut k = 0;
@@ -283,8 +331,9 @@ pub unsafe extern "C" fn dkrt_boot() {
         }
         return;
     }
-    // raise the counter before anything of a module runs; the first UI-loop pass clears it
-    if r.count != 0 || r.boot_counter != 0 {
+    // raise the counter before anything of a module runs; the first UI-loop pass clears it. On a card the runtime does not write there is no
+    // counter, so no safe mode by counter (ABOUT says so).
+    if (r.count != 0 || r.boot_counter != 0) && card::writable() {
         r.boot_counter = r.boot_counter.wrapping_add(1);
         update(r, copy, valid);
     }
@@ -300,6 +349,21 @@ pub unsafe extern "C" fn dkrt_boot() {
         if res == OK {
             b.loaded += 1;
         }
+        let p = r.paths[k].as_ptr();
+        let mut at = 0;
+        let mut i = 0;
+        while i < SEL_PATH && *p.add(i) != 0 {
+            if *p.add(i) == b'/' {
+                at = i + 1;
+            }
+            i += 1;
+        }
+        let bad = if res == OK || res == LOADING { 0 } else { logk::F_ERROR };
+        dlog::ev(
+            logk::MOD_LOAD,
+            bad,
+            [k as u32, res as u32, dlog::word_of(p, at, SEL_PATH), dlog::word_of(p, at + 4, SEL_PATH), dlog::word_of(p, at + 8, SEL_PATH)],
+        );
         k += 1;
     }
     loader::EARLY = false;
@@ -308,6 +372,7 @@ pub unsafe extern "C" fn dkrt_boot() {
 
 /// The DSP part of the module loaded for selection index `idx` is over with result `r` (called by the DSP loader).
 pub unsafe fn note_result(idx: u32, r: i32) {
+    dlog::ev(logk::MOD_DSP, if r == OK { 0 } else { logk::F_ERROR }, [idx, r as u32, 0, 0, 0]);
     if (idx as usize) < SEL_MAX {
         let b = info();
         b.results[idx as usize] = r;
@@ -335,6 +400,7 @@ pub unsafe fn ui_pass() {
         b.ui_reached = 1;
         DKRT_UI_START.0 = now;
         UI_PASSES = 0;
+        dlog::ev(logk::UI_FIRST, 0, [now, b.safe, b.loaded, 0, 0]);
     }
     UI_PASSES = UI_PASSES.wrapping_add(1);
     let elapsed = now.wrapping_sub(DKRT_UI_START.0);
@@ -343,13 +409,16 @@ pub unsafe fn ui_pass() {
     if b.safe != 0 || elapsed >= period || dead {
         b.stable = 1;
         // The record as the card holds it now, not the one this boot started from: the menu may have saved a selection since.
+        // A boot that followed a crash in a stable session leaves one bad boot counted (`LATE_FLOOR`), so that a second such crash leads to safe mode.
+        let floor = LATE_FLOOR;
         let (cur, copy) = current();
         if let Some(mut r) = cur {
-            if r.boot_counter != 0 {
-                r.boot_counter = 0;
+            if r.boot_counter != floor {
+                r.boot_counter = floor;
                 update(r, copy, true);
             }
         }
+        dlog::ev(logk::STABLE, 0, [now, floor, 0, 0, 0]);
     }
 }
 

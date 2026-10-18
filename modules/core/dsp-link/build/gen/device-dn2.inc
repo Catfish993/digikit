@@ -42,3 +42,25 @@
 #define DL_TAIL_OFF 2688
 // [digikit] dsp_tail_words
 #define DL_TAIL_WORDS 15
+// [digikit] keep_base (RAM a soft reset is assumed to keep: the crash record)
+#define KEEP_BASE 1207828480
+// [digikit] keep_bytes
+#define KEEP_BYTES 4096
+// [digikit] peek: number of ranges
+#define PEEK_N 2
+// [digikit] peek range start (RAM the PEEK command may read)
+#define PEEK_LO_0 1073741824
+// [digikit] peek range end (exclusive)
+#define PEEK_HI_0 1181483008
+// [digikit] peek range start (RAM the PEEK command may read)
+#define PEEK_LO_1 1181818880
+// [digikit] peek range end (exclusive)
+#define PEEK_HI_1 1207832576
+// [digikit] peek range start (RAM the PEEK command may read)
+#define PEEK_LO_2 0
+// [digikit] peek range end (exclusive)
+#define PEEK_HI_2 0
+// [digikit] peek range start (RAM the PEEK command may read)
+#define PEEK_LO_3 0
+// [digikit] peek range end (exclusive)
+#define PEEK_HI_3 0

@@ -52,6 +52,9 @@ struct Digikit {
     dsp_area_bytes: u64,
     dsp_tail_off: u64,
     dsp_tail_words: u64,
+    keep_base: u64,
+    keep_bytes: u64,
+    peek: Vec<[u64; 2]>,
 }
 #[derive(Deserialize)]
 struct Card {
@@ -95,6 +98,9 @@ struct DigikitF {
     dsp_area_bytes: u64,
     dsp_tail_off: u64,
     dsp_tail_words: u64,
+    keep_base: u64,
+    keep_bytes: u64,
+    peek: Vec<[u64; 2]>,
 }
 #[derive(Debug)]
 struct StoreF {
@@ -116,6 +122,15 @@ impl Facts {
             let (Some(b), Some(k), Some(s)) = (d.board, d.digikit, d.card.and_then(|c| c.store)) else {
                 continue;
             };
+            if k.peek.len() > PEEK_MAX {
+                return Err(err!("{short}: [digikit] peek lists at most {PEEK_MAX} ranges"));
+            }
+            if k.peek.iter().any(|r| r[0] >= r[1] || r[0] & 3 != 0 || r[1] & 3 != 0) {
+                return Err(err!("{short}: [digikit] peek ranges are [lo, hi) with lo < hi, both multiples of 4"));
+            }
+            if k.keep_base & 0xfff != 0 || k.keep_bytes == 0 || k.keep_bytes & 0xfff != 0 {
+                return Err(err!("{short}: [digikit] keep_base and keep_bytes must be multiples of 4 KiB"));
+            }
             if k.name.len() > 3 || k.name.is_empty() || !k.name.is_ascii() {
                 return Err(err!("{short}: [digikit] name must be 1 to 3 ASCII characters"));
             }
@@ -139,6 +154,9 @@ impl Facts {
                             dsp_area_bytes: k.dsp_area_bytes,
                             dsp_tail_off: k.dsp_tail_off,
                             dsp_tail_words: k.dsp_tail_words,
+                            keep_base: k.keep_base,
+                            keep_bytes: k.keep_bytes,
+                            peek: k.peek,
                         },
                         store: StoreF {
                             first: s.first_sector,
@@ -173,6 +191,9 @@ impl Facts {
         Facts::from_texts(texts.iter().map(|s| s.as_str()))
     }
 }
+
+/// Ranges of RAM the PEEK command may read, at most (a device lists fewer; the rest are 0, 0).
+const PEEK_MAX: usize = 4;
 
 /// Is a constant the same on every device (it may go into a runtime that is one image for all devices)?
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -234,7 +255,7 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
         .chain(std::iter::repeat(0))
         .take(4)
         .fold(0u64, |a, x| (a << 8) | x as u64);
-    Ok(vec![
+    let mut v = vec![
         c("DEVICE_ID", k.id, PerDevice, "[digikit] id"),
         c(
             "DEVICE_NAME_WORD",
@@ -331,8 +352,35 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             PerDevice,
             "[digikit] dsp_tail_words",
         ),
-    ])
+        c(
+            "KEEP_BASE",
+            k.keep_base,
+            Shared,
+            "[digikit] keep_base (RAM a soft reset is assumed to keep: the crash record)",
+        ),
+        c("KEEP_BYTES", k.keep_bytes, Shared, "[digikit] keep_bytes"),
+        c("PEEK_N", k.peek.len() as u64, PerDevice, "[digikit] peek: number of ranges"),
+    ];
+    for i in 0..PEEK_MAX {
+        let r = k.peek.get(i).copied().unwrap_or([0, 0]);
+        v.push(C {
+            name: PEEK_LO[i],
+            value: r[0] as i64,
+            scope: PerDevice,
+            note: "[digikit] peek range start (RAM the PEEK command may read)",
+        });
+        v.push(C {
+            name: PEEK_HI[i],
+            value: r[1] as i64,
+            scope: PerDevice,
+            note: "[digikit] peek range end (exclusive)",
+        });
+    }
+    Ok(v)
 }
+
+const PEEK_LO: [&str; PEEK_MAX] = ["PEEK_LO_0", "PEEK_LO_1", "PEEK_LO_2", "PEEK_LO_3"];
+const PEEK_HI: [&str; PEEK_MAX] = ["PEEK_HI_0", "PEEK_HI_1", "PEEK_HI_2", "PEEK_HI_3"];
 
 fn hex(v: i64) -> String {
     format!("{v:#x}")

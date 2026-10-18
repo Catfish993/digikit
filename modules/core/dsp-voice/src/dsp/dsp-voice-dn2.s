@@ -20,7 +20,16 @@
 // ordinary CALL/RTS pairs for its own subroutines are fine):
 //   in   R4 = the slot's voice buffer (32 floats, written in full), R0 = type, R2 = slot v (0..15), R12 = 32
 //   may clobber  R0-R15, I0-I5, I12, I13, M1-M4 (saved and restored here); must keep I6-I11, I14, I15, M0, M5-M15,
-//        the L registers and MODE1 (SIMD off). M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1 hold on entry.
+//        the L registers and MODE1 (SIMD off).
+//   The context registers are SET by this wrapper, never assumed. The firmware restores M5, M6, M7, M13, M14, M15, the L
+//   registers and MODE1 per DSP context (blk69 context restore, finding 45), so their values at the hook are the context's,
+//   not constants of the machine. Before a registered type runs, the wrapper saves them (`_dv_ctx`) and pins
+//        M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1, L0-L5 = 0 (linear addressing),
+//        MODE1: SIMD (PEYEN), ALUSAT and TRUNCATE clear, RND32 set (the startup value; round to nearest, 32-bit floats),
+//   and restores the saved values when the routine returns. So a routine may use M5/M6/M7 as the constants above and
+//   JUMP (M13, I13) as written, and it must leave them pinned. The wrapper's own code before the pin (the type read and the
+//   registry scan) uses immediate offsets and no modify register; L4 (the register the wrapper's I4 pointer would wrap by)
+//   is zeroed for the whole call and put back at the end.
 //   frame words (`_dv_frame_hw`, halfword index k of the frame copy, big-endian values): pitch 1 + v (note << 8),
 //   velocity 26 + v (velocity << 8), type 74 + v. There is no voice record to mark: the routine keeps its own
 //   per-slot state. The voice's amplitude envelope, gate and level are the engine's: what the routine writes is the
@@ -38,6 +47,9 @@ _dv_entry:
     DM(_dv_s_r0) = R0;
     R0 = I4;
     DM(_dv_s_i4) = R0;
+    R0 = L4;
+    DM(_dv_s_l4) = R0;                    // I4 is a linear pointer for the whole call; put back at the end
+    L4 = 0;
     I4 = _dv_save;
     DM(0, I4) = R1;
     DM(1, I4) = R2;
@@ -81,6 +93,37 @@ _dv_entry:
     IF GT JUMP _dv_done;
     DM(_dv_t) = R1;
     DM(_dv_buf) = R12;
+    R1 = PASS R1;
+    IF NE JUMP _dv_nodiag;
+    // once per block (slot 0): the heartbeat and the context registers as the firmware left them (finding 45, dl_diag)
+    I4 = _dv_diag;
+    R1 = DM(0, I4);
+    R1 = R1 + 1;
+    DM(0, I4) = R1;
+    R1 = M5;
+    DM(1, I4) = R1;
+    R1 = M6;
+    DM(2, I4) = R1;
+    R1 = M7;
+    DM(3, I4) = R1;
+    R1 = M13;
+    DM(4, I4) = R1;
+    R1 = M14;
+    DM(5, I4) = R1;
+    R1 = M15;
+    DM(6, I4) = R1;
+    R1 = I6;
+    DM(7, I4) = R1;
+    R1 = I7;
+    DM(8, I4) = R1;
+    R1 = B7;
+    DM(9, I4) = R1;
+    R1 = L7;
+    DM(10, I4) = R1;
+    R1 = MODE1;
+    DM(11, I4) = R1;
+    R1 = DM(_dv_t);
+_dv_nodiag:
     R0 = 74;
     R0 = R1 + R0;                         // halfword 74 + v of the frame copy: the slot's machine type
     R1 = 0xffe;
@@ -89,7 +132,7 @@ _dv_entry:
     R2 = _fw_frame;
     R1 = R2 + R1;
     I4 = R1;
-    R1 = DM(I4, M5);
+    R1 = DM(0, I4);
     R2 = FEXT R0 BY 0:1;
     R2 = LSHIFT R2 BY 4;
     R0 = 0x400;
@@ -97,8 +140,9 @@ _dv_entry:
     R1 = FEXT R1 BY R2;                   // the type
     I4 = _dv_table;
 _dv_scan:
-    R0 = DM(I4, M6);                      // row type; 0 ends the table (the last row is always empty)
-    R2 = DM(I4, M6);                      // row pc
+    R0 = DM(0, I4);                       // row type; 0 ends the table (the last row is always empty)
+    R2 = DM(1, I4);                       // row pc
+    MODIFY(I4, 2) (NW);
     R0 = PASS R0;
     IF EQ JUMP _dv_done;
     COMP(R0, R1);
@@ -108,8 +152,53 @@ _dv_scan:
     R2 = DM(_dv_t);
     R4 = DM(_dv_buf);
     R12 = 32;
-    I13 = _dv_done;
+    // save the context registers, then pin them to the ABI's values (see the header)
+    I4 = _dv_ctx;
+    DM(0, I4) = M5;
+    DM(1, I4) = M6;
+    DM(2, I4) = M7;
+    DM(3, I4) = M13;
+    DM(4, I4) = M14;
+    DM(5, I4) = M15;
+    DM(6, I4) = L0;
+    DM(7, I4) = L1;
+    DM(8, I4) = L2;
+    DM(9, I4) = L3;
+    DM(10, I4) = L5;
+    R3 = MODE1;
+    DM(11, I4) = R3;
+    M5 = 0;
+    M6 = 1;
+    M7 = -1;
+    M13 = 0;
+    M14 = 1;
+    M15 = -1;
+    L0 = 0;
+    L1 = 0;
+    L2 = 0;
+    L3 = 0;
+    L5 = 0;
+    BIT CLR MODE1 0x20A000;               // PEYEN, TRUNCATE, ALUSAT
+    BIT SET MODE1 0x10000;                // RND32
+    NOP;
+    I13 = _dv_back;
     JUMP (M13, I12);                      // the routine returns with JUMP (M13, I13)
+_dv_back:
+    I4 = _dv_ctx;
+    R0 = DM(11, I4);
+    MODE1 = R0;
+    NOP;
+    M5 = DM(0, I4);
+    M6 = DM(1, I4);
+    M7 = DM(2, I4);
+    M13 = DM(3, I4);
+    M14 = DM(4, I4);
+    M15 = DM(5, I4);
+    L0 = DM(6, I4);
+    L1 = DM(7, I4);
+    L2 = DM(8, I4);
+    L3 = DM(9, I4);
+    L5 = DM(10, I4);
 _dv_done:
     I4 = _dv_save;
     R1 = DM(0, I4);
@@ -138,6 +227,8 @@ _dv_done:
     M2 = DM(23, I4);
     M3 = DM(24, I4);
     M4 = DM(25, I4);
+    R0 = DM(_dv_s_l4);
+    L4 = R0;
     R0 = DM(_dv_s_i4);
     I4 = R0;
     R0 = DM(_dv_s_r0);
@@ -187,7 +278,7 @@ _dv_frame_hw:
     R2 = _fw_frame;
     R1 = R2 + R1;
     I4 = R1;
-    R1 = DM(I4, M5);
+    R1 = DM(0, I4);
     R2 = FEXT R0 BY 0:1;
     R2 = LSHIFT R2 BY 4;
     R0 = 0x400;                           // len6 = 16 at Ry[11:6], bit6 below it
@@ -201,7 +292,7 @@ _dv_frame_sw:
     R2 = _fw_frame;
     R1 = R2 + R1;
     I4 = R1;
-    R1 = DM(I4, M5);
+    R1 = DM(0, I4);
     R2 = FEXT R0 BY 0:1;
     R2 = LSHIFT R2 BY 4;
     R0 = 0x400;                           // len6 = 16 at Ry[11:6], bit6 below it
@@ -216,5 +307,11 @@ _dv_frame_sw:
 .PKDATA _dv_save, 128;                     // R1-R15, I0-I3, I5, I12, I13, M1-M4
 .PKDATA _dv_s_r0, 4;
 .PKDATA _dv_s_i4, 4;
+.PKDATA _dv_s_l4, 4;
+.PKDATA _dv_ctx, 48;                       // M5, M6, M7, M13, M14, M15, L0-L3, L5, MODE1 of the context
+// The diagnostic block (finding 45): word 0 counts the blocks that reached the hook, words 1-11 are M5, M6, M7, M13, M14, M15,
+// I6, I7, B7, L7, MODE1 as the firmware left them at slot 0. core/dsp-link copies the block into the record it sends to the
+// ColdFire each block (dl_diag).
+.PKDATA _dv_diag, 48;
 .PKDATA _dv_t, 4;
 .PKDATA _dv_buf, 4;

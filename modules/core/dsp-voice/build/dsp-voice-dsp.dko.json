@@ -4,70 +4,105 @@
  "relocs": [
   {
    "addend": 0,
+   "offset": 2,
+   "section": "seg_pmco",
+   "symbol": "_dv_sv_l4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": "seg_pmco",
+   "symbol": "_dv_nodiag",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
    "offset": 13,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 75,
    "section": "seg_pmco",
    "symbol": "_fw_type_cache",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 35,
+   "offset": 98,
    "section": "seg_pmco",
    "symbol": "_dv_table",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 41,
+   "offset": 109,
    "section": "seg_pmco",
    "symbol": "_dv_stock",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 45,
+   "offset": 113,
    "section": "seg_pmco",
    "symbol": "_dv_scan",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 104,
+   "offset": 181,
+   "section": "seg_pmco",
+   "symbol": "_dv_sv_l4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 232,
    "section": "seg_pmco",
    "symbol": "_dv_odd",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 109,
+   "offset": 237,
    "section": "seg_pmco",
    "symbol": "_dv_back",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 114,
+   "offset": 242,
    "section": "seg_pmco",
    "symbol": "_dv_done",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 181,
+   "offset": 335,
+   "section": "seg_pmco",
+   "symbol": "_dv_sv_l4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 343,
    "section": "seg_pmco",
    "symbol": "_fw_render_next",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 237,
+   "offset": 399,
    "section": "seg_pmco",
    "symbol": "_fw_frame",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 266,
+   "offset": 429,
    "section": "seg_pmco",
    "symbol": "_fw_frame",
    "type": "sharc.abs32"
@@ -76,25 +111,39 @@
  "sections": [
   {
    "align": 8,
-   "hex": "800f20000ec13e0210082001810f0e00840121013e0200001101020f00000000800121113e703f8a51993e02100820013e02100022403e0200002204800f000420cda4011201140f000000009099929900c200060000000001c32006000000003f703f0e8715ffffe2ff089dfa01089df902089d7803089df703089df604089d7505089df405089df306089d7207089df107089d7008089def08089d6e09089ded09089dec0a089deb10089d6a11089de911089de821089de70e01c2810f20001ec13e02100821013e021000314033c22006000000008c0f20001d0f000000003f083f283e0600000000be70bf080116ffff80ffbe703f08000c00200600be5300000000be5100800000089cf902089c7803089cf703089cf604089c7505089cf405089cf306089c7207089cf107089c7008089cef08089c6e09089ced09089cec0a089ceb10089c6a11089ce911089ce821089ce70efe4d3f0e3f083f34089cfa0101198715ffffe6ff3e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe01840101013e0200001101020f00000000800121113e703f8a51993e02100020403e0200002204800f000420cda40112003e0a00000000810ffe01840101013e0200001101020f00000000800121113e703f8a51993e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a00000000",
+   "hex": "7e733f00001100000000b40f0000800f20000ec1200600000000140f000000000898800011c5089980007e72bf80089981007f72bf00089982007f72bf8008998300fe72bf8008998400ff72bf0008998500ff72bf80089986007f71bf00089987007f71bf80089988007f74bf80089989007f73bf8008998a003f77bf0008998b003e0210082001810f0e00840121013e0200001101020f00000000800121113e703f8a089880003e02100820013e02100022403e0200002204800f000420cda4011201140f00000000089800000898010184150000020000c200060000000001c32006000000003f703f0e8715ffffd8ff089dfa01089df902089d7803089df703089df604089d7505089df405089df306089d7207089df107089d7008089def08089d6e09089ded09089dec0a089deb10089d6a11089de911089de821089de70e089de612089d6513089de413089de316089d6217089de117089d6018089ddf18089d5e19089ddd19031000000000089ddc01089ddb1a3f77bf01089dda01a50f0000a60f0100a70fffffad0f0000ae0f0100af0fffffb00f0000b10f0000b20f0000b30f0000b50f00002214200000a0021401000000010001c2810f20001ec13e02100821013e021000314033c22006000000008c0f20001d0f000000003f083f283e0600000000be70bf080116ffff80ffbe703f08000c00200600be5300000000be5100800000089c5a003e703f390100089ce612089c6513089ce413089ce316089c6217089ce117089c6018089cdf18089c5e19089cdd19089c5c1a089cdb1a089cf902089c7803089cf703089cf604089c7505089cf405089cf306089c7207089cf107089c7008089cef08089c6e09089ced09089cec0a089ceb10089c6a11089ce911089ce821089ce70efe4d3f0e3f083f34089cfa0101190010000000003e703f1a8715ffffe6ff3e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe01840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0a00000000810ffe01840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a00000000",
    "kind": "text",
    "name": "seg_pmco",
-   "size": 590
+   "size": 918
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__dv_sv_l4",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__dv_diag",
+   "size": 48
   }
  ],
- "source_sha256": "ef191b95736ded8b9393eb6d18574b23e07c74b07139402bd24ecab6362ec983",
+ "source_sha256": "5779a10f6fef8daaf4bc56325644a88c5bf6eafaedb4a2719fc1d6c704e481a5",
  "symbols": [
   {
    "global": false,
    "name": "_dv_back",
    "section": "seg_pmco",
-   "value": 114
+   "value": 242
   },
   {
    "global": false,
    "name": "_dv_done",
    "section": "seg_pmco",
-   "value": 133
+   "value": 261
   },
   {
    "global": true,
@@ -106,37 +155,55 @@
    "global": true,
    "name": "_dv_exp2",
    "section": "seg_pmco",
-   "value": 184
+   "value": 346
   },
   {
    "global": true,
    "name": "_dv_frame_hw",
    "section": "seg_pmco",
-   "value": 230
+   "value": 392
   },
   {
    "global": true,
    "name": "_dv_frame_sw",
    "section": "seg_pmco",
-   "value": 259
+   "value": 422
+  },
+  {
+   "global": false,
+   "name": "_dv_nodiag",
+   "section": "seg_pmco",
+   "value": 65
   },
   {
    "global": false,
    "name": "_dv_odd",
    "section": "seg_pmco",
-   "value": 117
+   "value": 245
   },
   {
    "global": false,
    "name": "_dv_scan",
    "section": "seg_pmco",
-   "value": 38
+   "value": 101
   },
   {
    "global": false,
    "name": "_dv_stock",
    "section": "seg_pmco",
-   "value": 178
+   "value": 335
+  },
+  {
+   "global": true,
+   "name": "_dv_diag",
+   "section": "pkdata__dv_diag",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_sv_l4",
+   "section": "pkdata__dv_sv_l4",
+   "value": 0
   },
   {
    "global": true,
@@ -164,7 +231,7 @@
   }
  ],
  "toolchain": {
-  "instructions_redecoded": "141",
+  "instructions_redecoded": "218",
   "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
   "selas_sha256": "042aa5aa52ddfc9e687f627580e413b259b18a29874c28e2f2bf0251429514c0",
   "seldump_sha256": "527162a78a7b94377c310e31b025ba51dafe8b6194d71ee09a575b6a9eb78916"

@@ -81,6 +81,17 @@ def store() -> Store:
     return first
 
 
+def peek_ranges(short: str) -> list[tuple[int, int]]:
+    """RAM ranges `[lo, hi)` the PEEK command of the upload protocol may read (`[digikit] peek`)."""
+    return [(lo, hi) for lo, hi in load(short)["digikit"]["peek"]]
+
+
+def keep_range(short: str) -> tuple[int, int]:
+    """`(base, bytes)` of the RAM the crash record lives in and the emulator keeps across a soft reset (`[digikit] keep_base`, `keep_bytes`)."""
+    k = load(short)["digikit"]
+    return k["keep_base"], k["keep_bytes"]
+
+
 def working_project_sector() -> int:
     """First sector of the working project record (`[[card.regions]]` role `working-project`), the same on every digikit device:
     the card above it is the firmware's (project slots follow at the first project pool sector)."""

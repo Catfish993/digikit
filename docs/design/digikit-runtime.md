@@ -198,7 +198,14 @@ that did not stay up that long (a fault halts the CPU and the device needs a pow
 honours it). The key `SAFE_KEY_CODE` (RECORD, button 19) held at power-on is looked for in the UI queue's waiting key events: **[O]**
 untested on a device, and the emulator delivers no key before the main OS runs.
 
+**Crash capture and card safety** (finding 46). The firmware's default exception handler calls a function pointer in a RAM word and its own function halts
+the core; the runtime points the word at its hook, which records the frame, the registers, 32 stack words, the module and the last events in the keep area
+(`[digikit] keep_base`; RAM that the firmware does not touch and, **[O]** on the device, a soft reset may keep) and soft-resets as `dkrt_restart` does. The next
+boot logs the record and counts the crashed boot as bad (a crash after the stable period leaves one bad boot counted until a boot with no crash behind it has
+run its stable period). Every card write is gated by `card::admit` (store range; ours or blank), see `docs/findings/46-digikit-debug.md`.
+
 **Emulator.** A store of `0x80` into `RCM.RCR` is a soft reset: the controller cold-boots the same patched firmware again on the card as the
 guest left it (its writes laid over the image), the DSP as a device boots it (the image's own DSP code from the first
 instruction, the default since 2026-10-17). A reset before the boot is ready (a module that resets in `init`, as the firmware's exception path does) restarts the boot
-the same way, up to 8 times.
+the same way, up to 8 times. The range `[digikit] keep_base .. + keep_bytes` of the device file is carried across the reset (a model of a device that keeps RAM),
+and the RPC `cpu.exceptions {deliver: true}` makes a CPU exception run the guest's handler instead of failing the run (finding 46).

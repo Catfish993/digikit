@@ -53,12 +53,35 @@ fn the_runtime_constants_are_the_device_files_numbers() {
         "DYN_TYPE_LAST: u32 = 0x17;",
         "SAFE_KEY_CODE: u32 = 0x13;",
         "DSP_BLOCK_CYCLES: u32 = 0xa2c2b;",
+        "KEEP_BASE: u32 = 0x47fe0000;",
+        "KEEP_BYTES: u32 = 0x1000;",
     ] {
         assert!(rs.contains(want), "{want}");
     }
     let dn2 = get("build/gen/device-dn2.inc");
     assert!(dn2.contains(".equ DEVICE_ID, 0x2 "), "{dn2}");
     assert!(dn2.contains(".equ DL_AREA_BYTES, 0x50000 "), "{dn2}");
+    // the PEEK ranges are per device (the runtime's region differs), up to four, unused ones 0, 0
+    assert!(dn2.contains(".equ PEEK_N, 0x2 "), "{dn2}");
+    assert!(dn2.contains(".equ PEEK_LO_1, 0x46712000 "), "{dn2}");
+    assert!(dn2.contains(".equ PEEK_HI_3, 0x0 "), "{dn2}");
+    let dt2 = get("build/gen/device-dt2.inc");
+    assert!(dt2.contains(".equ PEEK_LO_1, 0x47e8b000 ") && dt2.contains(".equ PEEK_HI_1, 0x47fe1000 "), "{dt2}");
+}
+
+#[test]
+fn peek_and_keep_ranges_are_checked() {
+    let dt2 = std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap();
+    let dn2 = std::fs::read_to_string(root().join("devices/digitone-ii.toml")).unwrap();
+    for (what, bad) in [
+        ("an empty range", dt2.replace("[0x40000000, 0x47e30000]", "[0x40000000, 0x40000000]")),
+        ("an unaligned range", dt2.replace("[0x40000000, 0x47e30000]", "[0x40000001, 0x47e30000]")),
+        ("five ranges", dt2.replace("peek = [", "peek = [[4, 8], [8, 12], [12, 16], [16, 20], ")),
+        ("a keep area that is not a page multiple", dt2.replace("keep_bytes = 0x1000", "keep_bytes = 0x800")),
+    ] {
+        assert_ne!(bad, dt2, "{what}: the test text did not change");
+        assert!(Facts::from_texts([bad.as_str(), dn2.as_str()]).is_err(), "{what} is accepted");
+    }
 }
 
 #[test]

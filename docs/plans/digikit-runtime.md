@@ -367,16 +367,23 @@ through SETTINGS > SYSTEM > OS UPGRADE; recovery is the bootstrap's STARTUP menu
 The store location is per device in `devices/*.toml`; for the Digitakt II a folder in the sample filesystem is preferred if the spike clears it.
 
 Emulator first:
-- [ ] Store spike (DT2): a module folder in the sample filesystem: what the sample picker does with a `.dkm` (and a dot-folder), whether
+- [x] Store spike (DT2) (report: finding 44; Em decides): a module folder in the sample filesystem: what the sample picker does with a `.dkm` (and a dot-folder), whether
   the filesystem is mounted at the boot hook, the write path for uploads (and why FsSample writes never reached the card, finding 25),
   where the boot record lives. Report, then Em decides.
-- [ ] Pluck on silicon: `core/dsp-voice` M6 odd-voice copy and the M13 jump (DT2-HARDWARE-REPORT); the machine path saves, sets and
-  restores every register it relies on; tests render odd voices with randomised context registers; why the emulator gave M6 = 1, M13 = 0.
-- [ ] Card safety: a hard range check in the one card-write function; before the first write the runtime reads its area and writes only
-  when it is blank or ours (else read-only, reported).
-- [ ] Debug (toggle in DIGIKIT, on by default for now): a live log over the SysEx protocol, CPU exception capture across a soft reset,
-  a DSP heartbeat watch, a read-only memory peek over ranges in the device TOML, and a Mac tool that writes the log to a file.
-- [ ] Preflight: before every flash, check the base is the known stock image, sections 2, 4, 5 and 8 are byte-identical, the checksum and
+- [x] Pluck on silicon (finding 45): the machine path no longer depends on any context register: `core/dsp-voice` (both devices) reads with
+  immediate offsets and pins M5, M6, M7, M13, M14, M15, L0-L5 and MODE1 (saved, set, restored) around a routine; the rig draws hostile
+  contexts and runs odd voices (117 of 118 tests fail on the old wrapper); `dl_diag` and `tools/patchkit/pk_ctxprobe.py` read the context at
+  the hook. The emulator holds the constants and so does the stock renderer: the report's two causes do not by themselves explain the halt
+  (finding 45, section 1). Open: read the real context and heartbeat on the device (rung C).
+- [x] Card safety: a hard range check in the one card-write function; before the first write the runtime reads its area and writes only
+  when it is blank or ours (else read-only, reported). Lane r4, commit 3a6bd772, finding 46, scenario `card-safety`. Open: the torn first write
+  to a blank card.
+- [x] Debug (toggle in DIGIKIT, on by default for now): a live log over the SysEx protocol, CPU exception capture across a soft reset,
+  a DSP heartbeat watch, a read-only memory peek over ranges in the device TOML, and a Mac tool that writes the log to a file. Lane r4,
+  commit 3a6bd772, finding 46, scenarios `debug-log` and `crash-capture`, `tools/device/dklog.py`, cost measurement `pk_digikit_cost` (PCM equal, +0.004 %
+  instructions). Open: whether RAM survives a soft reset on the device (ABOUT `RAM KEPT` after one menu restart tells); the heartbeat watch has not run
+  with a real `dl_diag` (lane b).
+- [x] Preflight (`mise run preflight -- IMAGE`; rungs A, B, C defined in docs/PATCHING.md): before every flash, check the base is the known stock image, sections 2, 4, 5 and 8 are byte-identical, the checksum and
   HMAC hold, the sizes are in limits; print the hashes. Define the rung images.
 
 Device rungs (stock 1.17 is the way back each time):

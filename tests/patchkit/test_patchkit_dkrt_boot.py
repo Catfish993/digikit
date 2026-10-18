@@ -57,8 +57,8 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
-    # the record, the store header copies, and the reader against a commit that runs during it (finding 43): 12 tests
-    assert r.returncode == 0 and "12 passed; 0 failed" in r.stdout, r.stdout
+    # the record, the store header copies, the reader against a commit that runs during it (finding 43) and the card-write range (finding 46): 13 tests
+    assert r.returncode == 0 and "13 passed; 0 failed" in r.stdout, r.stdout
 
 
 def test_the_store_profile_reserves_the_two_record_sectors():

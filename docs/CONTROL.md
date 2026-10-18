@@ -71,6 +71,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `midi.in`, `midi.out` | `midi_in`, `midi_out` | `call` |
 | `midi.usb.in`, `midi.usb.out` | `usb_in`, `usb_out` | `call` |
 | `watchdog.config` | `watchdog` | `call` |
+| `cpu.exceptions` | `cpu_exceptions` | `call` |
 | `diagnostics` | | `call` |
 | `audio.report` | `audio` | `call` |
 | `state.digest` | `state_digest` | `call` |
@@ -84,6 +85,11 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 
 `framebuffer.get {hash?, data?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
 (the bytes `data_b64` carries; the hash the patchkit smoke goldens use); `data: false` omits `data_b64`.
+
+`cpu.exceptions {deliver?}` (a test aid): `deliver: true` makes a CPU exception run the guest's own handler; the default is a fault of the run
+(`step` fails with `exception vector N`), because an exception in the firmware is a bug the harness must see. The setting is kept for every runtime
+installed later, so it holds across a soft reset. A soft reset also carries the RAM range `[digikit] keep_base .. + keep_bytes` of the device file into the new
+cold boot (a model of a device whose RAM survives a reset; `docs/findings/46-digikit-debug.md`).
 
 `leds.get` returns `{led_revision, leds, rgb}`: `leds` is 128 hex digits (64 LED values), `rgb` 384 hex digits
 (64 x r, g, b) or null until any is set. It reads the emulator's current state and does not consume it from the UI.

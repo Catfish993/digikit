@@ -4,7 +4,7 @@
     uv run python -m tools.patchkit.patchkit bin                       print the path of the built binary
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx --modules a,b [-o OUT.syx]   apply; writes out/patch/
     uv run python -m tools.patchkit.patchkit explain --firmware X.syx --modules a,b              site-by-site account
-    uv run python -m tools.patchkit.patchkit list|inspect|check|verify|gen ...                     passed through
+    uv run python -m tools.patchkit.patchkit list|inspect|check|verify|preflight|gen ...                   passed through
     uv run python -m tools.patchkit.patchkit pack MODULE --device dt2|dn2 [-o OUT.dkm]  pack a run-time module (default out/patch/<name>-<device>.dkm)
     uv run python -m tools.patchkit.patchkit bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
     uv run python -m tools.patchkit.patchkit inject [OUT.syx] [--hot]  load a patched image into the running emulator
@@ -300,7 +300,16 @@ def main(argv: list[str]) -> int:
         return cmd_inject(args)
     if cmd == "pack":
         return cmd_pack(args)
-    if cmd in ("list", "inspect", "check", "verify", "apply", "rebuild", "gen"):
+    if cmd in (
+        "list",
+        "inspect",
+        "check",
+        "verify",
+        "preflight",
+        "apply",
+        "rebuild",
+        "gen",
+    ):
         return run([cmd, *args]).returncode
     print(__doc__)
     return 2

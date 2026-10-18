@@ -12,8 +12,10 @@
 //   in    I4 = the record pointer (live), R1 = the ring toggle value (live), R2 = the record's first word (live),
 //         I6 = the handler's frame: DM(I6 - 3) is the pointer to the receive ring in use, DM(I6 - 2) the record pointer.
 //   free  R10, R11, R13, R14, R15, I2, I3, I5: the epilogue reloads them from the frame right after.
-//   saved here  R0, R3, R4, R5, R6. Not touched: R1, R2, I4, I6, I7, I12, the M registers (M5 = 0, M6 = 1 are the
-//         firmware's constants, finding 06). No DO loop is open at the site of a hook that itself runs two (the epilogue's own).
+//   saved here  R0, R3, R4, R5, R6, and M5, M6, L2, L3 (set to 0, 1, 0, 0 for the routine and put back at the exit: the
+//         firmware restores these per DSP context, so their values here are the context's, not constants, finding 45).
+//         Not touched: R1, R2, I4, I6, I7, I12, the other M registers. No DO loop is open at the site of a hook that itself
+//         runs two (the epilogue's own).
 // The displaced instruction runs in the patchkit tail after the final jump.
 //
 // Wire format of a chunk (little-endian words of the ring; the ColdFire writes the halves, low half first):
@@ -34,9 +36,19 @@
 //   a0  bits 0-15 DL_ACK_MAGIC, bits 16-31 cum;   a1  bits 0-7 xid, bits 8-15 status, bits 16-31 nerr
 // status: 0 running, 1 done (every chunk taken, last one flagged, caches invalidated), 3 destination out of range.
 // It is written in every block while a transfer is active (xid != 0): the engine clears the record each block.
+//
+// Diagnostics (dl_diag, finding 45). In every block, when core/dsp-voice is in the image, 14 words go into the record, two in
+// each of the slot rows 1 to 7 (slot row r starts at record byte 0x1c + 0x54 r; the words are at +0x44 and +0x48, inside the
+// entries 11 and 12 that no DSP code writes and the ColdFire reads only for parameters 36 to 39, the place of the acknowledgement in
+// row 0). Word j (0 to 13) is at row 1 + j / 2, +0x44 for even j, +0x48 for odd j:
+//   0 DL_DG_MAGIC (low half 0xD1A6) and the word count 14 (high half)     1 blocks that ran this hook (the heartbeat)
+//   2 blocks that reached core/dsp-voice's hook (its heartbeat)            3 M5     4 M6     5 M7     6 M13     7 M14     8 M15
+//   9 I6     10 I7     11 B7     12 L7     13 MODE1  (registers as the firmware left them at the first voice of the block)
+// The ColdFire side is dl_diag(out, n) in dsp-link.c.
 
 #define DL_MAGIC 0xD15C
 #define DL_ACK_MAGIC 0xA5D1
+#define DL_DG_MAGIC 0xD1A6
 #define DL_ACK_OFF 0x60
 #define DL_SHL1C_CFG 0x3E000
 
@@ -46,6 +58,7 @@
 .EXTERN _dl_area;
 .EXTERN _dl_vrows;
 .EXTERN _dl_vcount;
+.EXTERN _dv_diag;
 
 _dl_hook:
     DM(_dl_sv0) = R0;
@@ -53,6 +66,18 @@ _dl_hook:
     DM(_dl_sv4) = R4;
     DM(_dl_sv5) = R5;
     DM(_dl_sv6) = R6;
+    R0 = M5;
+    DM(_dl_svm5) = R0;
+    R0 = M6;
+    DM(_dl_svm6) = R0;
+    R0 = L2;
+    DM(_dl_svl2) = R0;
+    R0 = L3;
+    DM(_dl_svl3) = R0;
+    M5 = 0;
+    M6 = 1;
+    L2 = 0;
+    L3 = 0;
     R0 = DM(-3, I6);                      // the receive ring in use
     R3 = DL_TAIL_OFF;
     R0 = R3 + R0;
@@ -203,6 +228,51 @@ _dl_ack:
     R4 = R5 OR R4;
     DM(I2, M6) = R4;                      // a1
 _dl_out:
+    R3 = _dv_diag;                        // 0 when core/dsp-voice is not in the image
+    R3 = PASS R3;
+    IF EQ JUMP _dl_nodiag;
+    I3 = R3;
+    R3 = I4;                              // the record pointer
+    I2 = R3;
+    R0 = DM(_dl_beat);
+    R0 = R0 + 1;
+    DM(_dl_beat) = R0;
+    DM(46, I2) = R0;                      // word 1
+    R0 = 0xED1A6;                         // DL_DG_MAGIC | 14 << 16
+    DM(45, I2) = R0;                      // word 0
+    R0 = DM(0, I3);
+    DM(66, I2) = R0;                      // word 2
+    R0 = DM(1, I3);
+    DM(67, I2) = R0;                      // word 3
+    R0 = DM(2, I3);
+    DM(87, I2) = R0;                      // word 4
+    R0 = DM(3, I3);
+    DM(88, I2) = R0;                      // word 5
+    R0 = DM(4, I3);
+    DM(108, I2) = R0;                      // word 6
+    R0 = DM(5, I3);
+    DM(109, I2) = R0;                      // word 7
+    R0 = DM(6, I3);
+    DM(129, I2) = R0;                      // word 8
+    R0 = DM(7, I3);
+    DM(130, I2) = R0;                      // word 9
+    R0 = DM(8, I3);
+    DM(150, I2) = R0;                      // word 10
+    R0 = DM(9, I3);
+    DM(151, I2) = R0;                      // word 11
+    R0 = DM(10, I3);
+    DM(171, I2) = R0;                      // word 12
+    R0 = DM(11, I3);
+    DM(172, I2) = R0;                      // word 13
+_dl_nodiag:
+    R0 = DM(_dl_svm5);
+    M5 = R0;
+    R0 = DM(_dl_svm6);
+    M6 = R0;
+    R0 = DM(_dl_svl2);
+    L2 = R0;
+    R0 = DM(_dl_svl3);
+    L3 = R0;
     R0 = DM(_dl_sv0);
     R3 = DM(_dl_sv3);
     R4 = DM(_dl_sv4);
@@ -225,3 +295,8 @@ _dl_out:
 .VAR _dl_sv4 = 0;
 .VAR _dl_sv5 = 0;
 .VAR _dl_sv6 = 0;
+.VAR _dl_svm5 = 0;
+.VAR _dl_svm6 = 0;
+.VAR _dl_svl2 = 0;
+.VAR _dl_svl3 = 0;
+.VAR _dl_beat = 0;

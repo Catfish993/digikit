@@ -23,7 +23,14 @@
 //   may clobber  R0-R15, I0-I5, I13, M1-M4, B3 and the ALU/multiplier state; this wrapper saves and restores the
 //        registers the stock renderer preserves (and I13). Must keep: I6, I7, I8-I12, I14, I15, M0, M5-M15, L registers,
 //        MODE1 (SIMD off).
-//        M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1 hold on entry.
+//   The context registers are SET by this wrapper, never assumed. The firmware restores M5, M6, M7, M13, M14, M15, the L
+//   registers and MODE1 per DSP context (blk69 context restore, finding 45), so their values at the hook are the context's,
+//   not a constant of the machine. Before a registered type runs, the wrapper saves them in the frame and pins
+//        M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1, L0-L5 = 0 (linear addressing),
+//        MODE1: SIMD (PEYEN), ALUSAT and TRUNCATE clear, RND32 set (the startup value; round to nearest, 32-bit floats),
+//   and restores the saved values before the stock epilogue runs. So a routine may use M5/M6/M7 as the constants above and
+//   JUMP (M13, I13) as written, and it must leave them pinned. The wrapper's own code before the pin (the type read and the
+//   registry scan) uses immediate offsets and no modify register; I4's L register is zeroed for it and put back on the stock path.
 //   The routine may read the frame copy at _fw_frame (512 short words: pitch word 0x02 + 2t = note << 8; velocity
 //   0x34 + 2t = velocity << 8; machine parameters from 0xda + 0x60 t + 2 (mirror index - 25)).
 //
@@ -41,8 +48,40 @@
 .EXTERN _dv_table;
 
 _dv_entry:
+    R0 = L4;
+    DM(_dv_sv_l4) = R0;                   // I4 is used below as a linear pointer: L4 = 0 until the stock path (put back there)
+    L4 = 0;
     R0 = 32;
     R0 = R0 - R14;                        // v, the voice index
+    IF NE JUMP _dv_nodiag;
+    // once per block (voice 0): the heartbeat and the context registers as the firmware left them (finding 45, dl_diag)
+    I4 = _dv_diag;
+    R1 = DM(0, I4);
+    R1 = R1 + 1;
+    DM(0, I4) = R1;
+    R1 = M5;
+    DM(1, I4) = R1;
+    R1 = M6;
+    DM(2, I4) = R1;
+    R1 = M7;
+    DM(3, I4) = R1;
+    R1 = M13;
+    DM(4, I4) = R1;
+    R1 = M14;
+    DM(5, I4) = R1;
+    R1 = M15;
+    DM(6, I4) = R1;
+    R1 = I6;
+    DM(7, I4) = R1;
+    R1 = I7;
+    DM(8, I4) = R1;
+    R1 = B7;
+    DM(9, I4) = R1;
+    R1 = L7;
+    DM(10, I4) = R1;
+    R1 = MODE1;
+    DM(11, I4) = R1;
+_dv_nodiag:
     R2 = FEXT R0 BY 1:4;                  // t, the track
     R1 = 0xe;
     R1 = R2 AND R1;                       // t & 14
@@ -50,7 +89,7 @@ _dv_entry:
     R2 = _fw_type_cache;
     R1 = R2 + R1;
     I4 = R1;
-    R1 = DM(I4, M5);                      // the two types
+    R1 = DM(0, I4);                       // the two types
     R2 = FEXT R0 BY 1:4;                  // t
     R2 = FEXT R2 BY 0:1;                  // t & 1
     R2 = LSHIFT R2 BY 4;                  // 0 or 16: the bit position of the half
@@ -59,8 +98,9 @@ _dv_entry:
     R1 = FEXT R1 BY R2;                   // cache[t]
     I4 = _dv_table;
 _dv_scan:
-    R0 = DM(I4, M6);                      // row type; 0 ends the table (the last row is always empty)
-    R2 = DM(I4, M6);                      // row pc
+    R0 = DM(0, I4);                       // row type; 0 ends the table (the last row is always empty)
+    R2 = DM(1, I4);                       // row pc
+    MODIFY(I4, 2) (NW);
     R0 = PASS R0;
     IF EQ JUMP _dv_stock;
     COMP(R0, R1);
@@ -69,7 +109,7 @@ _dv_scan:
     // A registered type: the even voice runs the routine, the odd voice copies the even voice's block (the buffers
     // are 0x80 bytes apart).
     I12 = R2;                             // the routine's pc
-    MODIFY(I7, -30) (NW);
+    MODIFY(I7, -40) (NW);
     DM(-6, I6) = R3;
     DM(-7, I6) = R5;
     DM(-8, I6) = R6;
@@ -90,6 +130,36 @@ _dv_scan:
     DM(-23, I6) = M3;
     DM(-24, I6) = B3;
     DM(-25, I6) = I13;
+    // save the context registers, then pin them to the ABI's values (see the header)
+    DM(-26, I6) = M5;
+    DM(-27, I6) = M6;
+    DM(-28, I6) = M7;
+    DM(-29, I6) = M13;
+    DM(-30, I6) = M14;
+    DM(-31, I6) = M15;
+    DM(-32, I6) = L0;
+    DM(-33, I6) = L1;
+    DM(-34, I6) = L2;
+    DM(-35, I6) = L3;
+    R3 = DM(_dv_sv_l4);                   // L4 at entry (zeroed since)
+    DM(-36, I6) = R3;
+    DM(-37, I6) = L5;
+    R3 = MODE1;
+    DM(-38, I6) = R3;
+    M5 = 0;
+    M6 = 1;
+    M7 = -1;
+    M13 = 0;
+    M14 = 1;
+    M15 = -1;
+    L0 = 0;
+    L1 = 0;
+    L2 = 0;
+    L3 = 0;
+    L5 = 0;
+    BIT CLR MODE1 0x20A000;               // PEYEN, TRUNCATE, ALUSAT
+    BIT SET MODE1 0x10000;                // RND32
+    NOP;
     R0 = R1;                              // type
     R1 = 32;
     R1 = R1 - R14;                        // v
@@ -110,6 +180,21 @@ _dv_odd:
         R0 = DM(I1, M6);
 _dv_copy: DM(I0, M6) = R0;
 _dv_done:
+    R0 = DM(-38, I6);
+    MODE1 = R0;
+    NOP;
+    M5 = DM(-26, I6);
+    M6 = DM(-27, I6);
+    M7 = DM(-28, I6);
+    M13 = DM(-29, I6);
+    M14 = DM(-30, I6);
+    M15 = DM(-31, I6);
+    L0 = DM(-32, I6);
+    L1 = DM(-33, I6);
+    L2 = DM(-34, I6);
+    L3 = DM(-35, I6);
+    L4 = DM(-36, I6);
+    L5 = DM(-37, I6);
     R5 = DM(-7, I6);
     R6 = DM(-8, I6);
     R7 = DM(-9, I6);
@@ -135,6 +220,8 @@ _dv_done:
     RFRAME;
 
 _dv_stock:
+    R0 = DM(_dv_sv_l4);
+    L4 = R0;                              // the context's L4 for the stock code
     MODIFY(I7, -26) (NW);                 // the displaced first instruction of the stock renderer
     JUMP _fw_render_next;
 
@@ -181,7 +268,7 @@ _dv_frame_hw:
     R2 = _fw_frame;
     R1 = R2 + R1;
     I4 = R1;
-    R1 = DM(I4, M5);
+    R1 = DM(0, I4);
     R2 = FEXT R0 BY 0:1;
     R2 = LSHIFT R2 BY 4;
     R0 = 0x400;                           // len6 = 16 at Ry[11:6], bit6 below it
@@ -195,7 +282,7 @@ _dv_frame_sw:
     R2 = _fw_frame;
     R1 = R2 + R1;
     I4 = R1;
-    R1 = DM(I4, M5);
+    R1 = DM(0, I4);
     R2 = FEXT R0 BY 0:1;
     R2 = LSHIFT R2 BY 4;
     R0 = 0x400;                           // len6 = 16 at Ry[11:6], bit6 below it
@@ -207,3 +294,8 @@ _dv_frame_sw:
     RTS;
 
 .SECTION/DM seg_dmda;
+.PKDATA _dv_sv_l4, 4;
+// The diagnostic block (finding 45): word 0 counts the blocks that reached the hook, words 1-11 are M5, M6, M7, M13, M14, M15,
+// I6, I7, B7, L7, MODE1 as the firmware left them at the first voice's entry. core/dsp-link copies the block into the record
+// it sends to the ColdFire each block (dl_diag).
+.PKDATA _dv_diag, 48;

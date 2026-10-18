@@ -112,3 +112,16 @@ dkrt_midi_hook:
     bne.s   1f
     jmp     dkrt_midi_next
 1:  jmp     dkrt_midi_ret
+
+/* dkrt_exc_hook: the function the firmware's default exception handler calls instead of its own (finding 46). The handler has set sr to 0x2700,
+ * saved d0, d1, a0, a1 below the exception frame, and pushed the frame pointer: 0(sp) = return address into the handler, 4(sp) = frame pointer. d2-d7
+ * and a2-a6 are still the faulting code's, so they are saved here before any compiled code runs; dkrt_exc(frame, saved) records and resets and
+ * does not return. (ColdFire movem has no predecrement form: lea, then movem.) */
+    .globl dkrt_exc_hook
+dkrt_exc_hook:
+    lea     -44(%sp),%sp
+    movem.l %d2-%d7/%a2-%a6,(%sp)
+    move.l  %sp,-(%sp)          /* saved */
+    move.l  52(%sp),-(%sp)      /* frame: 4 (saved) + 44 + 4 (return address) = 52, read before the push */
+    jsr     dkrt_exc
+1:  bra.s   1b

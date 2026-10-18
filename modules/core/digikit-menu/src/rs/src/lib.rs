@@ -13,7 +13,7 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
-use dkrt_sdk::{store, DkrtBootInfo, DkrtHealth, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
+use dkrt_sdk::{store, DkrtBootInfo, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -77,6 +77,10 @@ extern "C" {
     fn dkrt_blocks() -> u32;
     /// A function the UI loop calls once per pass (0 removes it).
     fn dkrt_poll_set(f: usize);
+    /// The card check, the debug log, the DSP watch and the crash record (finding 46).
+    fn dkrt_diag(out: *mut DkrtDiag);
+    /// The debug log keeps every event (1) or errors only (0); saved in the selection record. 0 or an `E_*` code (`E_CARD_RO`: held until the next boot).
+    fn dkrt_debug_set(on: u32) -> i32;
 }
 
 // ---- std::function and shared_ptr as the firmware lays them out -----------------------------------------------
@@ -252,6 +256,15 @@ impl Text {
         while k > 0 {
             k -= 1;
             self.s(&tmp[k..k + 1]);
+        }
+        self
+    }
+    fn hex(&mut self, v: u32) -> &mut Text {
+        let mut k = 8;
+        while k > 0 {
+            k -= 1;
+            let d = ((v >> (4 * k)) & 15) as u8;
+            self.s(&[if d < 10 { b'0' + d } else { b'A' + d - 10 }]);
         }
         self
     }
@@ -510,7 +523,7 @@ const TEXT_REGISTRY: [&str; 10] = [
 const TEXT_DSP: [&str; 10] = [
     "NO DSP LINK", "BAD DSP CODE", "DSP IMPORT", "NO DSP SPACE", "NO VOICE ROW", "DSP XFER", "OTHER DEVICE", "BAD VOICE TYPE", "", "",
 ];
-const TEXT_BOOT: [&str; 10] = ["BAD PATH", "TOO MANY", "WRITE FAILED", "CARD BUSY", "SAFE MODE", "", "", "", "", ""];
+const TEXT_BOOT: [&str; 10] = ["BAD PATH", "TOO MANY", "WRITE FAILED", "CARD BUSY", "SAFE MODE", "", "OUT OF RANGE", "READ ONLY", "", ""];
 
 fn status_text(t: &mut Text, code: i32) {
     let k = code.unsigned_abs() as usize;
@@ -625,6 +638,7 @@ const A_APPLY: u32 = 4;
 const A_CLEAR: u32 = 5;
 const A_SAFE: u32 = 6;
 const A_OPEN_HEALTH: u32 = 7;
+const A_DEBUG: u32 = 8;
 const A_TOGGLE: u32 = 0x100;
 
 unsafe fn fill_main() {
@@ -639,6 +653,9 @@ unsafe fn fill_main() {
     row(m, b"MODULES\0", A_OPEN_LOAD, 0);
     row(m, b"ABOUT\0", A_OPEN_ABOUT, 0);
     row(m, b"HEALTH\0", A_OPEN_HEALTH, 0);
+    let mut d: DkrtDiag = core::mem::zeroed();
+    dkrt_diag(&mut d);
+    row(m, if d.debug_on != 0 { b"DEBUG: ON\0" } else { b"DEBUG: OFF\0" }, A_DEBUG, 0);
     end_rebuild(m, sel);
 }
 
@@ -698,25 +715,72 @@ unsafe fn fill_load() {
     end_rebuild(m, sel);
 }
 
+/// The rows of the ABOUT page as text (24 bytes each, NUL-terminated) and how many there are. Read by the proof.
+#[no_mangle]
+pub static mut DK_ABOUT: [[u8; 24]; 24] = [[0; 24]; 24];
+#[no_mangle]
+pub static mut DK_ABOUT_N: u32 = 0;
+
+/// One ABOUT row; its text is also kept in `DK_ABOUT`.
+unsafe fn arow(m: *mut u8, text: &[u8]) {
+    let k = DK_ABOUT_N as usize;
+    if k < 24 {
+        let mut n = 0;
+        while n < 23 && n < text.len() && text[n] != 0 {
+            DK_ABOUT[k][n] = text[n];
+            n += 1;
+        }
+        while n < 24 {
+            DK_ABOUT[k][n] = 0;
+            n += 1;
+        }
+        DK_ABOUT_N += 1;
+    }
+    row(m, text, A_NOP, 0);
+}
+
 unsafe fn fill_about() {
     let m = ABOUTV.obj;
     let sel = begin_rebuild(m);
-    row(m, b"DIGIKIT 0.1.0\0", A_NOP, 0);
+    DK_ABOUT_N = 0;
+    arow(m, b"DIGIKIT 0.1.0\0");
     let mut st: DkrtStatus = core::mem::zeroed();
     dkrt_status(&mut st);
     read_boot();
     let mut t = Text::new();
     t.s(b"RUNTIME ABI ").num(st.runtime);
-    row(m, &t.b, A_NOP, 0);
+    arow(m, &t.b);
+    let mut d: DkrtDiag = core::mem::zeroed();
+    dkrt_diag(&mut d);
+    // a card the runtime does not write: why, and what that switches off
+    if d.card_state == CARD_FOREIGN || d.card_state == CARD_UNREADABLE {
+        arow(m, b"CARD READ-ONLY\0");
+        let mut t = Text::new();
+        if d.card_state == CARD_FOREIGN {
+            t.s(b"NOT OURS AT ").num(d.card_first_nonblank);
+        } else {
+            t.s(b"CARD UNREADABLE");
+        }
+        arow(m, &t.b);
+        arow(m, b"NO BOOT COUNTER\0");
+    }
+    if d.dsp_stopped != 0 {
+        arow(m, b"DSP STOPPED\0");
+    }
+    if d.crash_found != 0 {
+        let mut t = Text::new();
+        t.s(b"CRASH PC ").hex(d.crash_pc);
+        arow(m, &t.b);
+    }
     if BOOT.safe != 0 {
         let mut t = Text::new();
         t.s(b"SAFE MODE: ");
         safe_reason(&mut t, BOOT.reason);
-        row(m, &t.b, A_NOP, 0);
+        arow(m, &t.b);
     }
     let mut t = Text::new();
     t.s(b"BOOT: ").num(BOOT.loaded).s(b" OF ").num(BOOT.count).s(b" OK");
-    row(m, &t.b, A_NOP, 0);
+    arow(m, &t.b);
     // each module of this boot's selection with its result; the names come from the saved selection, which is what the boot
     // loaded unless it was saved again without a restart
     let mut sel_now: DkrtSelection = core::mem::zeroed();
@@ -730,15 +794,16 @@ unsafe fn fill_about() {
             l += 1;
         }
         name_of(&p[..l], 17, &mut t);
-        row(m, &t.b, A_NOP, 0);
+        arow(m, &t.b);
         let mut t = Text::new();
         t.s(b"- ");
         result_text(&mut t, BOOT.results[k]);
-        row(m, &t.b, A_NOP, 0);
+        arow(m, &t.b);
     }
     let mut t = Text::new();
     t.s(b"FREE ").num(st.arena_free / 1024).s(b" KB");
-    row(m, &t.b, A_NOP, 0);
+    arow(m, &t.b);
+    arow(m, if d.ram_kept != 0 { b"RAM KEPT: YES\0" } else { b"RAM KEPT: NO\0" });
     end_rebuild(m, sel);
 }
 
@@ -1001,6 +1066,14 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         TICK = [0; MAX_ENT];
         RESULT.clear();
         fill_load();
+    } else if act == A_DEBUG {
+        let mut d: DkrtDiag = core::mem::zeroed();
+        dkrt_diag(&mut d);
+        let r = dkrt_debug_set((d.debug_on == 0) as u32);
+        if r != OK {
+            fail_text(b"NOT SAVED", r);
+        }
+        fill_main();
     } else if act == A_SAFE {
         safe_popup();
     } else if act >= A_TOGGLE {

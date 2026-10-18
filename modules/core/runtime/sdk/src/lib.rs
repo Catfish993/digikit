@@ -8,8 +8,9 @@
 /// Version of the `Api` table layout. A field is only ever appended; `Api::size` tells a module how much is there.
 pub const API_VERSION: u32 = 1;
 /// Version of the runtime a module was packed against (`runtime_min` in the `.dkm` header). 2: DSP sections and asynchronous loads
-/// (finding 32), `register` PAGE records and `own_dsp` (finding 33), codes -25/-26 and -30 to -37.
-pub const RUNTIME_VERSION: u32 = 2;
+/// (finding 32), `register` PAGE records and `own_dsp` (finding 33), codes -25/-26 and -30 to -37. 3: card safety (codes -46/-47, -62), the
+/// debug log and its SysEx commands LOG and PEEK, `dkrt_diag`, `dkrt_debug_set`, the crash record (finding 46).
+pub const RUNTIME_VERSION: u32 = 3;
 
 /// Facts from the device files (`devices/*.toml`) and `core/machines` types.toml that every device agrees on, written by
 /// `patchkit gen` (the `[[gen]]` of core/runtime's module.toml; docs/design/device-data.md). `Api::device` is the device's
@@ -247,6 +248,12 @@ pub const CMD_RESTART: u32 = 4;
 pub const CMD_SELECT_ONE: u32 = 5;
 /// Run `dkrt_health` into the exported `DKRT_HEALTH` (the proof reads it; `result` is 0).
 pub const CMD_HEALTH: u32 = 6;
+/// Test hook: `arg[0..4]` = sector, `arg[4..8]` = byte count (big endian); the runtime calls its one card-write function with the staging
+/// buffer and answers its result (0, `E_RANGE` or `E_CARD_RO`). The proof uses it with sectors outside the store range and on a card that
+/// is not ours; it never targets a sector of a store that is ours.
+pub const CMD_CARD_PROBE: u32 = 7;
+/// Test hook: `arg[0]` = 1 or 0: `dkrt_debug_set` (the menu's DEBUG row); the answer is its result.
+pub const CMD_DEBUG: u32 = 8;
 
 /// Codes of boot-time loading (-40 to -49, finding 37).
 pub const E_SEL_PATH: i32 = -40; // a path of the selection is empty, too long or has a bad character
@@ -255,6 +262,8 @@ pub const E_SEL_WRITE: i32 = -42; // the firmware's block write failed
 pub const E_CARD_BUSY: i32 = -43; // `dkrt_restart`: a card transfer is in flight
 pub const E_SAFE_MODE: i32 = -44; // this boot is in safe mode: no module was loaded
 pub const E_BOOT_ONLY: i32 = -45; // `dkrt_load` after the boot hook: the module set is fixed per session (hot reload is archived)
+pub const E_RANGE: i32 = -46; // a card write outside the store range (refused by the one card-write function)
+pub const E_CARD_RO: i32 = -47; // the card's store area is not ours and not blank: the runtime never writes it (finding 46)
 
 /// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
 /// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
@@ -319,6 +328,11 @@ pub mod sel {
     /// Absolute sectors of the two copies (devices/*.toml `[card.store]`: `end_sector - 2` and `end_sector - 1`).
     pub const SECTOR_A: u32 = device::STORE_SEL_A;
     pub const SECTOR_B: u32 = device::STORE_SEL_B;
+
+    /// `Record::flags` bit 0: start in safe mode once. Bit 1: the debug log is OFF (the zero value of the field means ON, so an older record
+    /// and a card with no record log by default).
+    pub const FLAG_SAFE_ONCE: u32 = 1;
+    pub const FLAG_DEBUG_OFF: u32 = 2;
 
     #[derive(Clone, Copy)]
     pub struct Record {
@@ -522,6 +536,16 @@ pub mod store {
     /// before the selection record. Files end before it: `LIMIT` sectors may hold the header A, a table and data.
     pub const HEADER_B: u32 = device::STORE_HEADER_B;
     pub const LIMIT: u32 = HEADER_B;
+
+    /// May a card write of `bytes` (a multiple of 512, not 0) starting at absolute `sector` happen? Only inside the store range
+    /// `[FIRST, FIRST + SECTORS)` of the device file: the runtime's one card-write function refuses anything else (finding 46).
+    pub const fn write_allowed(sector: u32, bytes: u32) -> bool {
+        if bytes == 0 || bytes & 511 != 0 {
+            return false;
+        }
+        let n = bytes / 512;
+        sector >= FIRST && n <= SECTORS && sector - FIRST <= SECTORS - n
+    }
 
     /// One header copy as decoded (version 1: `table_first` 1, `seq` 1).
     #[derive(Clone, Copy)]
@@ -789,6 +813,86 @@ pub mod store {
     }
 }
 
+/// State of the card's store area as the runtime found it at boot (`DkrtDiag::card_state`; docs/findings/46-digikit-debug.md).
+pub const CARD_UNKNOWN: u32 = 0;
+/// A valid store header, or a valid selection copy: the area is ours.
+pub const CARD_OURS: u32 = 1;
+/// No structure of ours, and every sector of the range reads all 0x00 or all 0xFF: the first write may claim it.
+pub const CARD_BLANK: u32 = 2;
+/// Something else is there: the runtime never writes the card.
+pub const CARD_FOREIGN: u32 = 3;
+/// A read of the area failed: the runtime cannot tell, so it never writes the card.
+pub const CARD_UNREADABLE: u32 = 4;
+
+/// `dkrt_diag` result (finding 46): what the debug log and the card check found. The caller owns the memory; the layout only grows at the end.
+#[repr(C)]
+pub struct DkrtDiag {
+    pub magic: u32, // 'DIAG'
+    pub version: u32,
+    /// `CARD_*`, the first sector (relative to the store) that was not blank (`u32::MAX`: none) and a crc32 of it, card writes refused
+    /// (range or read-only), and reads that failed in the check.
+    pub card_state: u32,
+    pub card_first_nonblank: u32,
+    pub card_hash: u32,
+    pub card_refused: u32,
+    pub card_read_errors: u32,
+    /// 1 when the debug log keeps every event (SETTINGS > DIGIKIT > DEBUG), 0 when it keeps errors only.
+    pub debug_on: u32,
+    /// Sequence numbers of the oldest and the newest event in the log ring (0, 0: empty).
+    pub log_oldest: u32,
+    pub log_newest: u32,
+    /// 1 when `dl_diag` is in the image and answered; 1 when the heartbeat watch decided the DSP stopped; the last heartbeat word.
+    pub dsp_diag_ok: u32,
+    pub dsp_stopped: u32,
+    pub dsp_heartbeat: u32,
+    /// A crash record from the boot before was found at this boot: 1, its program counter, vector and the module slot it was in
+    /// (`u32::MAX`: none).
+    pub crash_found: u32,
+    pub crash_pc: u32,
+    pub crash_vec: u32,
+    /// 1 when the keep-probe word of the boot before was still in RAM at this boot (RAM survived the reset that led here).
+    pub ram_kept: u32,
+}
+
+pub const DIAG_MAGIC: u32 = 0x4449_4147; // "DIAG"
+
+/// Event kinds of the debug log (docs/findings/46-digikit-debug.md has the argument meanings; `tools/device/dklog.py` the readable names).
+/// An event is 32 bytes: `seq`, `time` (the firmware's block counter, 1500 per second), `kind`, `flags` (bit 0: an error, kept when debug is
+/// off), five argument words.
+pub mod logk {
+    pub const BOOT_START: u16 = 1;
+    pub const CARD_CHECK: u16 = 2;
+    pub const SAFE: u16 = 3;
+    pub const BOOT_RECORD: u16 = 4;
+    pub const MOD_LOAD: u16 = 5;
+    pub const MOD_DSP: u16 = 6;
+    pub const UPLOAD: u16 = 7;
+    pub const MENU: u16 = 8;
+    pub const HEALTH: u16 = 9;
+    pub const DSP_DIAG: u16 = 10;
+    pub const DSP_STOPPED: u16 = 11;
+    pub const CRASH_FOUND: u16 = 12;
+    pub const CARD_REFUSED: u16 = 13;
+    pub const MOD_LOG: u16 = 14;
+    pub const UI_FIRST: u16 = 15;
+    pub const STABLE: u16 = 16;
+    pub const DEBUG_SET: u16 = 17;
+    pub const RAM_KEEP: u16 = 18;
+    pub const CRASH_DETAIL: u16 = 19;
+    pub const DSP_ABSENT: u16 = 20;
+    pub const MOD_LIST: u16 = 21;
+    pub const CRASH_MOD: u16 = 22;
+    pub const CRASH_REG: u16 = 23;
+    pub const CRASH_STACK: u16 = 24;
+    pub const CRASH_TAIL: u16 = 25;
+    /// `MENU` argument 0: what the menu did.
+    pub const MENU_SELECT: u32 = 1;
+    pub const MENU_RESTART: u32 = 2;
+    pub const MENU_DEBUG: u32 = 3;
+    /// Event flag bits.
+    pub const F_ERROR: u16 = 1;
+}
+
 #[cfg(test)]
 mod tests {
     use super::sel::*;
@@ -840,6 +944,25 @@ mod tests {
         r3.paths[0] = [b'x'; SEL_PATH];
         encode(&r3, &mut c);
         assert!(decode(&c).is_none());
+    }
+
+    #[test]
+    fn card_writes_are_allowed_only_inside_the_store_range() {
+        let (lo, n) = (store::FIRST, store::SECTORS);
+        assert!(store::write_allowed(lo, 512));
+        assert!(store::write_allowed(lo + n - 1, 512));
+        assert!(store::write_allowed(lo, n * 512));
+        assert!(store::write_allowed(SECTOR_A, 1024)); // both record sectors
+        assert!(!store::write_allowed(lo - 1, 512));
+        assert!(!store::write_allowed(lo + n, 512));
+        assert!(!store::write_allowed(lo + n - 1, 1024)); // runs past the end
+        assert!(!store::write_allowed(lo - 1, 1024)); // starts before and runs in
+        assert!(!store::write_allowed(lo, (n + 1) * 512));
+        assert!(!store::write_allowed(lo, 0));
+        assert!(!store::write_allowed(lo, 100));
+        assert!(!store::write_allowed(0, 512));
+        assert!(!store::write_allowed(u32::MAX, 512));
+        assert!(!store::write_allowed(u32::MAX - 1, u32::MAX & !511));
     }
 
     #[test]

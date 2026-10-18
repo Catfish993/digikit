@@ -464,6 +464,11 @@ class Emu:
         """The heartbeat; STALL_MS sets the stall threshold in emulated ms (0 disables)."""
         return self.call("watchdog.config", **_opt(stall_ms=stall_ms))
 
+    def cpu_exceptions(self, deliver: bool | None = None) -> dict[str, Any]:
+        """`cpu.exceptions`: True makes a CPU exception run the guest's handler (the digikit runtime's crash capture) instead of stopping the run
+        with an error (the default); kept for every runtime installed afterwards, a soft reset's cold boot included."""
+        return self.call("cpu.exceptions", **_opt(deliver=deliver))
+
     def quit(self) -> dict[str, Any]:
         return self.call("quit")
 

@@ -4,6 +4,7 @@ The wrapper (core/dsp-voice) and the routine are assembled from the module sourc
 the engine calls them (see tests/patchkit/test_dsp_voice.py). The routine's delay line (reserved, unloaded L2 on the
 device) is carried from call to call as DM words. Skips when Selache is not built."""
 
+import random
 import struct
 
 import numpy as np
@@ -37,15 +38,12 @@ def val(x: int) -> float:
 
 
 class PluckRig(dv.Rig):
-    def __init__(self) -> None:
+    def __init__(self, seed: int = 0xD1617) -> None:
+        self.ctx_rng = random.Random(seed)
+        self.last_ctx: dict[str, int] = {}
         self.core = pk_sharc.assemble(dv.CORE.read_text())
         self.pluck = pk_sharc.assemble(PLUCK.read_text())
-        ext_core = {
-            "_fw_type_cache": dv.TYPE_CACHE,
-            "_fw_render_next": dv.STOCK_BP,
-            "_fw_frame": dv.FRAME,
-            "_dv_table": dv.TABLE,
-        }
+        ext_core = dv.core_externs()
         self.core_linked = pk_sharc.link(self.core, dv.CORE_BASE, ext_core)
         core_syms = self.core_linked.symbols
         ext = {
@@ -208,7 +206,8 @@ def test_instruction_counts_per_block():
     assert first["instructions"] < 60000, first["instructions"]
     rig.rec_word(0, 0x1B8, 0)
     idle = rig.call(0)
-    assert idle["instructions"] < 140  # wrapper (~100) + 32 stores
+    # wrapper (about 200: it saves, pins and restores the context registers, finding 45) + 32 stores
+    assert idle["instructions"] < 260
 
 
 def test_the_voice_ends_when_it_is_quiet_and_clears_its_flags():

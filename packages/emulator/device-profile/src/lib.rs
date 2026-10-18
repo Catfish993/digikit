@@ -51,6 +51,9 @@ pub struct DeviceProfile {
     pub panel: Option<PanelProfile>,
     /// Where the card keeps slots, project records, the path filesystem and the module store.
     pub card: Option<CardLayout>,
+    /// RAM the emulator keeps across a soft reset (`[digikit] keep_base`, `keep_bytes`): the digikit runtime's crash record. The real
+    /// device may or may not keep it **[O]** (docs/findings/46-digikit-debug.md); this is the model.
+    pub keep_ram: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,6 +186,13 @@ struct SourceDocument {
     firmware: Vec<SourceFirmware>,
     panel: Option<SourcePanel>,
     card: Option<CardLayout>,
+    digikit: Option<SourceDigikit>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SourceDigikit {
+    keep_base: Option<u32>,
+    keep_bytes: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -294,6 +304,9 @@ impl Registry {
                 firmwares,
                 panel,
                 card: parsed.card,
+                keep_ram: parsed
+                    .digikit
+                    .and_then(|k| Some((k.keep_base?, k.keep_bytes?))),
             });
         }
         Ok(Self { devices })
@@ -366,6 +379,14 @@ impl Registry {
             .iter()
             .find(|d| d.short == device)
             .and_then(|d| d.card.as_ref())
+    }
+
+    /// The RAM range `(base, bytes)` a soft reset keeps in the emulator's model, for a device named by its short id.
+    pub fn keep_ram(&self, device: &str) -> Option<(u32, u32)> {
+        self.devices
+            .iter()
+            .find(|d| d.short == device)
+            .and_then(|d| d.keep_ram)
     }
 
     /// The DSP profile of a firmware named by device short id and version.
