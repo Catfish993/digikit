@@ -448,7 +448,7 @@ Question (after the device run of rung C3a, finding 47: the SHARC stops after fi
 ### 10.1 The rule **[V]**
 
 A store through an index register (Types 15a, 15b, 3a, 3b, 3d) cannot take a register of the same DAG as its source: through DM (a DAG1 index) not a DAG1
-register, through PM not a DAG2 register. The direct-address form Type 14a (`DM(<addr32>) = Ureg`, p.14-x, `p0382`) takes the full `UREG` class and is exempt; the stock image
+register, through PM not a DAG2 register. The direct-address form Type 14a (`DM(<addr32>) = Ureg`, file `p0382`) takes the full `UREG` class and is exempt; the stock image
 has 304 such DM stores of DAG1 registers, which are legal. (Second-agent check, 2026-10-19: the encode tables and the quoted text, pages as below; the post-modify load of a
 same-DAG register, Type 3a `UREGXDAG1 = dm(I1,M1)`, is also excluded, so "loads are allowed" holds for the pre-modify and immediate forms only.) The manual encodes the source of such a store as a register
 class that leaves the same-DAG registers out, and says it in words:
