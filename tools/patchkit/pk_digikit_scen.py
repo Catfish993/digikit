@@ -890,6 +890,66 @@ def run_roundtrip(c: Ctx) -> None:
     P.run_roundtrip(c)
 
 
+def run_dkrun(
+    c: Ctx, rig: B.BootRig, D: Any, blobs: dict[str, bytes], files: dict[str, str]
+) -> None:
+    """`tools.device.dkrun.run` against the emulator on a boot with no module: upload, SELECT, RESTART, the new boot's MOD_LOAD and MOD_DSP."""
+    from tools.device import dkrun as R
+    from tools.device import dkupload as DK
+    from tools.patchkit import pk_digikit_upload as U
+
+    (module,) = c.table()["modules"]
+    (path,) = blobs
+    dkm = c.work / "dkrun" / f"{module.split('/')[-1]}.dkm"
+    dkm.parent.mkdir(exist_ok=True)
+    dkm.write_bytes(blobs[path])
+    up = DK.Uploader(U.transport(rig))
+    steps = {"n": 0}
+
+    def sleep(s: float) -> None:
+        rig.emu.step(int(s * R.EMU_IPS))
+        steps["n"] += int(s * R.EMU_IPS)
+
+    out = R.run(
+        up,
+        module,
+        wait_boot=lambda: D._wait_restart(rig),
+        sleep=sleep,
+        now=lambda: steps["n"] / R.EMU_IPS,
+        seconds=0,
+        dkm=dkm,
+    )
+    c.check(
+        "dkrun: runtime 4 or newer",
+        out["info"]["runtime"] >= R.MIN_RUNTIME,
+        str(out["info"]),
+    )
+    c.check("dkrun: the module was uploaded", out["uploaded"] and out["path"] == path)
+    res = {(d["kind"], d["args"][0]): d["args"][1] for d in out["results"]}
+    c.check(
+        "dkrun: after the reboot MOD_LOAD result=1 (LOADING) and MOD_DSP result=0",
+        res.get(("MOD_LOAD", 0)) == 1 and res.get(("MOD_DSP", 0)) == 0,
+        str(res),
+    )
+    rec = B.current(rig.sel_records())
+    c.check(
+        "dkrun: SELECT wrote the record: the module and nothing else",
+        rec is not None and rec["paths"] == [path],
+        str(rec),
+    )
+    # a second run finds the file on the device (the same sha256) and uploads nothing (it stops after SELECT: one boot is enough here)
+    out2 = R.run(
+        DK.Uploader(U.transport(rig)),
+        module,
+        sleep=sleep,
+        now=lambda: steps["n"] / R.EMU_IPS,
+        seconds=0,
+        dkm=dkm,
+        restart=False,
+    )
+    c.check("dkrun: a second run uploads nothing (same sha256)", not out2["uploaded"])
+
+
 def run_menu(c: Ctx) -> None:
     """Through the menu: boot with an empty selection, SETTINGS > DIGIKIT > MODULES, tick the set, APPLY & RESTART (two presses), and
     after the boot compare with the patched-in set as `equiv` does (rows, machine in the list, PCM of a note). The set may hold a
@@ -900,7 +960,10 @@ def run_menu(c: Ctx) -> None:
     names = {m: m.split("/")[-1] for m in t["modules"]}
     files = {m: c.pack(m, f"{names[m]}.dkm") for m in t["modules"]}
     rows = sorted(names.values())  # the menu lists the store's files in name order
-    upload = bool(t.get("upload"))
+    dkrun = bool(
+        t.get("dkrun")
+    )  # the selection and the restart come from `tools.device.dkrun` (SELECT, RESTART), not from the menu
+    upload = bool(t.get("upload")) or dkrun
     blobs = {}
     if upload:  # the store is filled over USB SysEx, not by the card build: take the packed files out of the folder
         for path in files.values():
@@ -944,7 +1007,7 @@ def run_menu(c: Ctx) -> None:
     with c.rig(menu_img, empty, "menu") as rig:
         b0 = rig.boot_info()
         c.check("the first boot has no module", b0["count"] == 0 and b0["loaded"] == 0)
-        if upload:
+        if upload and not dkrun:
             from tools.device import dkupload as DK
             from tools.patchkit import pk_digikit_upload as U
 
@@ -956,42 +1019,47 @@ def run_menu(c: Ctx) -> None:
                 sorted(p for p, _, _ in up.ls()) == sorted(blobs),
                 str(up.ls()),
             )
-        tap(rig, "NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES
-        tap(rig, "SETTINGS", 600)
-        for _ in range(8):
-            tap(rig, "DOWN", 200)
-        tap(rig, "YES", 700)
-        tap(rig, "YES", 900)
-        n = w(rig, "NENT")
-        c.check("the store lists the packed modules", n == len(rows), f"{n} rows")
-        c.check("APPLY not offered before a tick", w(rig, "DK_OFFER") == 0)
-        want = set(names.values())
-        for name in rows:  # tick the set, in list order
-            if name in want:
-                tap(rig, "YES", 500)
-            tap(rig, "DOWN", 200)
-        tick = [
-            rig.w(plan.addr("TICK") + 0) >> (24 - 8 * k) & 0xFF
-            for k in range(len(rows))
-        ]
-        c.check(
-            "the pending selection is the whole set", tick == [1] * len(rows), str(tick)
-        )
-        c.check(
-            "the card's selection is still empty", rig.sel_records() == [None, None]
-        )
-        c.check("APPLY offered", w(rig, "DK_OFFER") == 1)
-        n0 = w(rig, "DK_POPUPS")
-        tap(rig, "YES", 700)  # first press: the popup, nothing saved
-        c.check(
-            "first press: one popup, nothing saved",
-            w(rig, "DK_POPUPS") == n0 + 1 and rig.sel_records() == [None, None],
-        )
-        tap(rig, "NO", 500)
-        rig.emu.drain_events()
-        tap(rig, "YES", 300)  # second press: save and restart
-        c.check("dkrt_selection_set answered 0", w(rig, "DK_APPLY_SET") == 0)
-        D._wait_restart(rig)
+        if dkrun:
+            run_dkrun(c, rig, D, blobs, files)
+        else:
+            tap(rig, "NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES
+            tap(rig, "SETTINGS", 600)
+            for _ in range(8):
+                tap(rig, "DOWN", 200)
+            tap(rig, "YES", 700)
+            tap(rig, "YES", 900)
+            n = w(rig, "NENT")
+            c.check("the store lists the packed modules", n == len(rows), f"{n} rows")
+            c.check("APPLY not offered before a tick", w(rig, "DK_OFFER") == 0)
+            want = set(names.values())
+            for name in rows:  # tick the set, in list order
+                if name in want:
+                    tap(rig, "YES", 500)
+                tap(rig, "DOWN", 200)
+            tick = [
+                rig.w(plan.addr("TICK") + 0) >> (24 - 8 * k) & 0xFF
+                for k in range(len(rows))
+            ]
+            c.check(
+                "the pending selection is the whole set",
+                tick == [1] * len(rows),
+                str(tick),
+            )
+            c.check(
+                "the card's selection is still empty", rig.sel_records() == [None, None]
+            )
+            c.check("APPLY offered", w(rig, "DK_OFFER") == 1)
+            n0 = w(rig, "DK_POPUPS")
+            tap(rig, "YES", 700)  # first press: the popup, nothing saved
+            c.check(
+                "first press: one popup, nothing saved",
+                w(rig, "DK_POPUPS") == n0 + 1 and rig.sel_records() == [None, None],
+            )
+            tap(rig, "NO", 500)
+            rig.emu.drain_events()
+            tap(rig, "YES", 300)  # second press: save and restart
+            c.check("dkrt_selection_set answered 0", w(rig, "DK_APPLY_SET") == 0)
+            D._wait_restart(rig)
         info = rig.boot_info()
         k = len(rows)
         c.check(

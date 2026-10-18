@@ -722,6 +722,49 @@ shasum -a 256 out/patch/rungC3d?-dt2-1.17.syx
 
 Each is the rung C flow with the run-time pluck on track 1: 19,574 dispatches and as many returns, no `DSP_STOPPED`, write-watch and flush checks clean, the note equal to the patched-in pluck.
 
+### Runtime 4: dk run and screenshots (Digitakt II 1.17)
+
+Runtime 4 adds two commands to the upload protocol (SELECT writes the selection record, RESTART does what APPLY & RESTART does; docs/design/digikit-upload.md),
+so a module goes from source to running with one command and no menu. One flash of the runtime-4 image, then no further flash for a module change.
+Rehearsed in the emulator on 2026-10-19 (scenarios `menu-dkrun-pluck` and `upload-screenshot`); **the device has not run it yet**.
+
+**1. Build and check the image** (the rung C module list; nothing else changed except the runtime, 3 to 4):
+
+```sh
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rt4-dt2-1.17.syx
+mise run preflight -- out/patch/rt4-dt2-1.17.syx     # PREFLIGHT OK and "ISA check: ok"; sections 3 and 7 differ from stock, nothing else
+shasum -a 256 out/patch/rt4-dt2-1.17.syx
+```
+
+Image: 1,886,112 bytes, sha256 `17ba5a0714cb0669ecef4ef86a53678def6502eeba3069d3c216efc19ca32324` (a different hash means the sources changed since this text was
+written: use the printed value and the preflight result).
+
+**2. Flash it** as before (Transfer, SETTINGS > SYSTEM > OS UPGRADE, drop the `.syx` on DROP). Keep the volume low. A card that already holds the store and the
+selection of rung C4 keeps both.
+
+**3. Check the runtime version** (read-only): `uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info` must print `runtime: 4`.
+
+**4. Run a module** (build, pack, upload if the sha256 differs, SELECT, RESTART, wait for the boot, then the log for 30 s; the Digitakt restarts and its USB port
+comes back, the tool connects again within 90 s):
+
+```sh
+uv run --with python-rtmidi python -m tools.device.dkrun test/dyn-pluck --port Digitakt --seconds 30
+# or: mise run dk:run -- test/dyn-pluck --port Digitakt --seconds 30
+```
+
+It prints one `dk run:` line per step, then the boot's `MOD_LOAD ... result=1` (the DSP part is loading) and `MOD_DSP ... result=0` (loaded), and exits 1 with the reason
+when a step fails (a runtime older than 4 says "flash a runtime-4 image"; a card that is not ours and not blank says so). The selection becomes this module
+only. Play a note of the machine on track 1.
+
+**5. Screenshot** (the firmware's own MidiRpc Screenshot, read-only, no runtime needed):
+
+```sh
+uv run --with python-rtmidi python -m tools.device.dkscreen --port Digitakt out/runs/shots/screen.png
+uv run --with python-rtmidi python -m tools.device.dkscreen --port Digitakt --every 2 --count 5 out/runs/shots/screen.png    # screen-000.png ... screen-004.png
+```
+
+The PNG is 512x256 (4 times the OLED); `--scale N` changes it. It sends only a request the stock firmware answers.
+
 ### Status
 
 No patched image has been flashed to a device. Whether and when to flash is the maintainer's decision, every time.

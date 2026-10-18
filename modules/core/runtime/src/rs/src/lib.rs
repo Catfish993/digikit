@@ -781,6 +781,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     let s = st();
     s.ticks = s.ticks.wrapping_add(1);
     boot::ui_pass();
+    upload::restart_poll();
     crash::install();
     dsp::step();
     dlog::tick();

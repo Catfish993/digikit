@@ -66,3 +66,50 @@ def test_a_put_is_begin_data_end_with_two_in_flight():
     assert max(n for c, n in sent if c == D.CMD_DATA) <= 1
     with pytest.raises(ValueError):
         D.Uploader(Fake(), chunk=100)
+
+
+def test_select_and_restart_bodies_and_frames():
+    # SELECT (runtime 4): u8 n, then each path and a NUL
+    assert D.select_body([]) == b"\x00"
+    body = D.select_body(["modules/a.dkm", "modules/b.dkm"])
+    assert body == b"\x02modules/a.dkm\0modules/b.dkm\0"
+    with pytest.raises(ValueError):
+        D.select_body(["x"] * 9)
+    msg = D.frame(D.CMD_SELECT, 3, body)
+    assert msg[:7] == bytes.fromhex("f07d646b01 30 03".replace(" ", ""))
+    from tools.device.midisniff import unpack_8in7
+
+    assert unpack_8in7(msg[7:-1]) == body
+    assert D.frame(D.CMD_RESTART, 4) == bytes.fromhex(
+        "f07d646b01 31 04 f7".replace(" ", "")
+    )
+    assert D.STATUS[-40] == "E_SEL_PATH" and D.STATUS[-47] == "E_CARD_RO"
+
+
+def test_uploader_select_and_restart_send_the_commands():
+    from tools.firmware.build import encode_8in7
+
+    seen: list[tuple[int, bytes]] = []
+
+    class Fake:
+        def __init__(self):
+            self.q: list[bytes] = []
+
+        def send(self, msg: bytes) -> None:
+            from tools.device.midisniff import unpack_8in7
+
+            seen.append((msg[5], unpack_8in7(msg[7:-1])))
+            self.q.append(
+                msg[:4]
+                + bytes([1, msg[5] | 0x40, msg[6]])
+                + encode_8in7(b"\x00")
+                + b"\xf7"
+            )
+
+        def recv(self) -> bytes:
+            return self.q.pop(0)
+
+    up = D.Uploader(Fake())
+    up.select(["modules/a.dkm"])
+    up.restart()
+    assert seen == [(D.CMD_SELECT, b"\x01modules/a.dkm\0"), (D.CMD_RESTART, b"")]

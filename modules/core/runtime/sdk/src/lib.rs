@@ -10,7 +10,7 @@ pub const API_VERSION: u32 = 1;
 /// Version of the runtime a module was packed against (`runtime_min` in the `.dkm` header). 2: DSP sections and asynchronous loads
 /// (finding 32), `register` PAGE records and `own_dsp` (finding 33), codes -25/-26 and -30 to -37. 3: card safety (codes -46/-47, -62), the
 /// debug log and its SysEx commands LOG and PEEK, `dkrt_diag`, `dkrt_debug_set`, the crash record (finding 46).
-pub const RUNTIME_VERSION: u32 = 3;
+pub const RUNTIME_VERSION: u32 = 4;
 
 /// Facts from the device files (`devices/*.toml`) and `core/machines` types.toml that every device agrees on, written by
 /// `patchkit gen` (the `[[gen]]` of core/runtime's module.toml; docs/design/device-data.md). `Api::device` is the device's

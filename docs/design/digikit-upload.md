@@ -1,6 +1,6 @@
 # digikit module upload over USB SysEx
 
-Status: built (device side, Python tool, exporter; lane r4, finding 43), 2026-10-18; LOG and PEEK, the card-safety codes and INFO's log range added
+Status: built (device side, Python tool, exporter; lane r4, finding 43), 2026-10-18; SELECT and RESTART added 2026-10-19 (lane dkrun; runtime 4, protocol version still 1: commands were only added; host `tools/device/dkrun.py`, `dk run MODULE`); LOG and PEEK, the card-safety codes and INFO's log range added
 2026-10-18 (lane r4, finding 46; runtime 3, protocol version still 1: commands were only added); spec (plan `docs/plans/digikit-runtime.md` Phase 7, decision 11; routes in
 `docs/findings/42-usb-transfer-routes.md`). The device side is `core/runtime`; the hosts are a Python tool (tests, terminal),
 the desktop app and the web app. Every host and the device build against this file; change it first, then the code.
@@ -10,7 +10,7 @@ the desktop app and the web app. Every host and the device build against this fi
 A host writes, replaces, deletes and lists the files of the module store (`docs/design/digikit-store.md`) while the
 firmware runs. Nothing is loaded: an uploaded module appears in DIGIKIT > MODULES and loads after APPLY & RESTART, as
 any store file does. The upload works in safe mode (that is how a bad module is replaced). It writes only store sectors;
-it never touches the path filesystem, a project or the selection record.
+it never touches the path filesystem or a project. Only SELECT (runtime 4) writes the selection record, and RESTART (runtime 4) resets the device; nothing else does.
 
 ## Framing
 
@@ -52,11 +52,13 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | -62 | E_INUSE | BEGIN, DELETE or CLEAR on a card whose store area is not ours and not blank: the runtime writes nothing there (see "Card safety") |
 | -63 | E_PEEK | PEEK of a range that the device file does not list, or a length of 0 or over 512 |
 
+SELECT also answers the selection record's own codes (runtime codes -40 to -49): -40 `E_SEL_PATH` (a path is empty, too long (over 55 bytes) or has a character outside 0x21 to 0x7e), -41 `E_SEL_COUNT` (more than 8 paths), -42 `E_SEL_WRITE` (the firmware's block write failed), -46 `E_RANGE`, -47 `E_CARD_RO`.
+
 ## Commands
 
 | cmd | name | request body | reply body after status |
 |---|---|---|---|
-| 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION, device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags, u32 log_oldest, u32 log_newest` (flags: bit 0 safe mode, bit 1 upload open, bit 2 card read-only, bit 3 debug log ON, bit 4 a crash record was found at this boot; the two sequence numbers are those of the oldest and newest event in the log ring, 0 and 0 when empty; runtime 2 stops after the flags) |
+| 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION (4 since SELECT and RESTART), device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags, u32 log_oldest, u32 log_newest` (flags: bit 0 safe mode, bit 1 upload open, bit 2 card read-only, bit 3 debug log ON, bit 4 a crash record was found at this boot; the two sequence numbers are those of the oldest and newest event in the log ring, 0 and 0 when empty; runtime 2 stops after the flags) |
 | 0x02 | LIST | `u32 first` | `u32 total, u8 n`, then n entries `path NUL, u32 size, sha256[32]` from index `first`, as many as fit the reply |
 | 0x10 | BEGIN | `path NUL, u32 size, sha256[32]` | (none). Opens an upload; a BEGIN while one is open drops the old one. |
 | 0x11 | DATA | `u32 offset, bytes` | (none). |
@@ -66,6 +68,8 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | 0x15 | ABORT | (none) | (none). Drops an open upload. |
 | 0x20 | LOG | `u32 from_seq` | `u32 oldest, u32 newest, u8 n`, then `n` events of 32 bytes from `from_seq` (or from `oldest` when `from_seq` is older), as many as fit one reply (27). An event is `u32 seq, u32 time, u16 kind, u16 flags, u32 a0..a4`, big endian; `time` is the firmware's block counter (1500 per second), `flags` bit 0 an error. The host polls: ask again from `last seq + 1` until `n` is 0. Nothing is ever sent unless a host asks. |
 | 0x21 | PEEK | `u32 addr, u16 len` | `u32 addr, u16 len`, then `len` bytes of RAM. `len` is 1 to 512 and `[addr, addr + len)` must lie wholly inside one range of `[digikit] peek` in the device file (`devices/*.toml`: the firmware's data and the runtime's own region with the crash-record area); no peripheral registers. |
+| 0x30 | SELECT (runtime 4) | `u8 n` (0 to 8), then `n` store paths, each followed by a NUL | (none). Saves the selection record (what the next boot loads): `boot::selection_set`, the function the menu's APPLY & RESTART calls through `dkrt_selection_set`, so the card range check and the "blank or ours" rule apply and the boot counter and the DEBUG bit carry over. `E_INUSE` on a card that is not ours and not blank. The paths are not looked up in the store (a missing file is reported by the boot as `E_NOT_FOUND`, as for the menu). `n` 0 clears the selection. No effect until the next boot. |
+| 0x31 | RESTART (runtime 4) | (none) | (none). The reply is sent first; the soft reset (`dkrt_restart`, the one APPLY & RESTART runs) follows from the UI task's next passes, once the TX ring has drained (at most 4000 passes). `E_STATE` while an upload is open. When `dkrt_restart` refuses (a card transfer is in flight) the request is dropped and the log gets an UPLOAD error event `{cmd 0x31, status}`; the host sees the runtime still running and asks again. A host that wants the new boot reads LOG: the new boot's log holds no UPLOAD event for cmd 0x31 (the ring starts again), and holds BOOT_START. |
 
 The device id is the device, not the firmware version: the runtime has no per-port constant (a port is a set of anchors, and a
 constant would be a fourth copy of a fact `devices/ports/` holds). A host that wants the version asks the stock MidiRpc
@@ -155,3 +159,12 @@ anchor on all four ports (`dkrt.fw.*`). The runtime's upload buffer is a static 
 - stock MidiRpc unchanged: a Ping and a SoftwareVersion reply are byte-identical with and without the runtime.
 - the +Drive round trip: after an upload in the emulator, the exporter writes the store's files back to
   `plus_drive/<device>/digikit/`, so the next card build holds them.
+
+## `dk run` (runtime 4; `tools/device/dkrun.py`)
+
+One command from a module id to a running module: INFO (the runtime must be 4 or newer; its device id picks the pack target), `pk_build` and
+`patchkit pack`, PUT to `modules/<name>.dkm` unless LIST shows the same sha256, SELECT with that one path, RESTART, wait for the new boot (poll LOG
+until the old boot's RESTART event is gone and BOOT_START is there; the USB port may vanish and return, the tool connects again), print MOD_LOAD and
+MOD_DSP (MOD_LOAD result 1 is LOADING, MOD_DSP result 0 the DSP part loaded), then follow the log for `--seconds`. The selection becomes this module
+only; the other store files stay. Against the emulator the same code runs (`--emu`; the scenario `menu-dkrun-pluck` proves it: upload, SELECT, RESTART,
+the next boot loads the module and the machine plays like the patched-in pluck).
