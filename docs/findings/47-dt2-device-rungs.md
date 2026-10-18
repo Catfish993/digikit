@@ -112,3 +112,12 @@ Image `out/patch/rungC3d2-dt2-1.17.syx` (sha256 `18d7a6d5...`; `DV_C3_FINE,DV_C3
 - Em: the pluck sounds on TRIG 1 and its parameters respond. Page 2 of SRC showed the knob page again (the interim fix of finding 50), which Em
   read as a bug; added machines now have one SRC page (finding 50, the section on one page; not yet on the device).
 - So the halt of rung C was the excluded stores (finding 49 section 10.7).
+
+## Rung C4: the default build and one SRC page **[D]** (2026-10-19)
+
+Image `out/patch/rungC4-dt2-1.17.syx` (sha256 `cc9828c8...`; the default `core/dsp-voice`, no variant option, and the one-page SRC hook of finding 50), the
+same module (`e66c4660...`, not re-uploaded). Log `out/runs/device-logs/rungC4.log` (not committed; it holds two boots, the second is the run).
+
+- `MACHINE_CHANGE track=1 0 -> 18` at 9.6 s; `crumb=EPILOGUE_DONE voice=1 type=18`, `dispatches` = `returns` (691, 15,691, 30,744), no `DSP_STOPPED`.
+- `MACHINE_CHANGE track=1 18 -> 0` at 42.6 s; the counts stop at 43,024 (= returns) and the stock path runs on (`HOOK_ENTERED type=0`, heartbeats rising).
+- Em: the pluck plays and the switch back to ONESHOT works. So the default build matches C3d2 on the device.
