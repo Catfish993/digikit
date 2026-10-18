@@ -23,3 +23,23 @@ only, sections 2, 4, 5, 7 and 8 identical to stock), flashed through SETTINGS > 
   (emulator 26.7 MB). The DSP figure is about 1.3 times the emulator's 31 % on an idle sample card, inside the DT2 cycle factors of
   `devices/cycle-factors.json` (1.13 nominal, 1.41 high); with the same project on both sides it would calibrate the factor, or show the
   clock is not 1 GHz **[O]**.
+
+## Rung B: with the DSP link and the voice hook, no modules **[D]**
+
+Image `out/patch/rungB-dt2-1.17.syx` (rung A plus `core/dynreg,core/dyndsp`, which add `core/machines`, `core/params`, `core/dsp-link`,
+`core/dsp-voice`; sha256 `7d2851ee8f7460eb...`; preflight: sections 3 and 7). Em played a project with sample tracks for about a minute and
+previewed a sample; `dklog follow` ran for 172 s.
+
+- The DSP ran the whole session: no `DSP_STOPPED`; both heartbeats of `dl_diag` (finding 45) rose by exactly 1500 per second (the link
+  hook's word 1 and the voice hook's word 2: the hook ran every block on stock voices).
+- **The context registers at the voice hook on silicon equal the emulator's, all eleven**, constant over the session:
+  M5 0, M6 1, M7 -1, M13 0, M14 1, M15 -1, I6 `0x2cb2c8`, I7 `0x2cb2c0`, B7 `0x2ca5a0`, L7 `0x3e2`, MODE1 `0x39011cf8`
+  (`uv run python -m tools.patchkit.pk_ctxprobe --device dt2 --fw 1.17 --modules core/dsp-voice,core/dsp-link` gives the same words). So the
+  2026-10 hardware report's two causes (M6 and M13 not having these values) did not hold at this hook on this device, which agrees with
+  finding 45; what halted the SHARC there is still **[O]**.
+- `RAM_KEEP kept=1 generation=1`: the keep marker that rung A's boot wrote survived the reboot that ends the OS update, so RAM above
+  `cf.expansion` (`[digikit] keep_base`) is kept across that reset on this board. That the same holds for the runtime's own soft reset is
+  likely but not yet seen.
+- HEALTH: idle CPU about 30 %, DSP 41.5 % average idle (rung A: 40.8 %; the hook and link cost about 0.7 points), 55 % average and 59.6 %
+  maximum while the pattern played; CPU 95-100 % for about 20 s while the project loaded. Heap free 27,416-27,449 KiB.
+- The card check again reported the store range blank; nothing was written.

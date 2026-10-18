@@ -389,7 +389,8 @@ Emulator first:
 Device rungs (stock 1.17 is the way back each time):
 - [x] A: the runtime with no DSP change (section 3 only): boot, DIGIKIT, the log, the store-area check (read-only). Device, 2026-10-18:
   boots, log over USB, store range blank (finding 47).
-- [ ] B: with the DSP link, no modules: normal audio, the DSP heartbeat in the log.
+- [x] B: with the DSP link, no modules: normal audio, the DSP heartbeat in the log. Device, 2026-10-18: heartbeats steady, the context
+  registers at the hook equal the emulator's (finding 47).
 - [ ] C: upload pluck over SysEx, APPLY & RESTART, play, with the log capturing the DSP registers.
 - [ ] D: debug off by default.
 
