@@ -115,6 +115,50 @@ _dv_scan:
     // A registered type: the even voice runs the routine, the odd voice copies the even voice's block (the buffers
     // are 0x80 bytes apart).
     I12 = R2;                             // the routine's pc
+#ifdef DV_C3_FINE
+    // Rung C3 (docs/PATCHING.md): fine breadcrumb 8, the type matched (R0, R2, I4 are free here; written inline, no CALL, no RTS)
+    R0 = 32;
+    R0 = R0 - R14;
+    R0 = LSHIFT R0 BY 8;
+    R2 = LSHIFT R1 BY 16;
+    R0 = R0 OR R2;
+    DM(_dv_bcw) = R0;
+    R2 = BSET R0 BY 3;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_f1a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_f1a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_f1b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_f1b:
+#endif
+#ifdef DV_C3_NOIRQ
+    // Rung C3: interrupts masked from here to the epilogue (MODE1.IRPTEN clear; the saved MODE1 keeps it set). R0 holds the original MODE1.
+    R0 = MODE1;
+    BIT CLR MODE1 0x1000;
+    NOP;
+#endif
     MODIFY(I7, -40) (NW);
     DM(-6, I6) = R3;
     DM(-7, I6) = R5;
@@ -150,8 +194,46 @@ _dv_scan:
     R3 = DM(_dv_sv_l4);                   // L4 at entry (zeroed since)
     DM(-36, I6) = R3;
     DM(-37, I6) = L5;
+#ifdef DV_C3_NOIRQ
+    DM(-38, I6) = R0;                     // the MODE1 of the hook entry (IRPTEN set), read before the mask
+#else
     R3 = MODE1;
     DM(-38, I6) = R3;
+#endif
+#ifdef DV_C3_FINE
+    // fine breadcrumb 9, the frame is saved
+    R3 = 9;
+    R5 = DM(_dv_bcw);
+    R3 = R3 OR R5;
+    I4 = _dv_diag;
+    DM(12, I4) = R3;
+    I4 = _dv_rec;
+    R5 = DM(0, I4);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_f2a;
+    I4 = R5;
+    DM(192, I4) = R3;
+    R5 = 0x11D1A6;
+    DM(45, I4) = R5;
+    R5 = DM(_dv_diag + 52);
+    DM(193, I4) = R5;
+    R5 = DM(_dv_diag + 56);
+    DM(213, I4) = R5;
+    I4 = _dv_rec;
+_dv_f2a:
+    R5 = DM(1, I4);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_f2b;
+    I4 = R5;
+    DM(192, I4) = R3;
+    R5 = 0x11D1A6;
+    DM(45, I4) = R5;
+    R5 = DM(_dv_diag + 52);
+    DM(193, I4) = R5;
+    R5 = DM(_dv_diag + 56);
+    DM(213, I4) = R5;
+_dv_f2b:
+#endif
     M5 = 0;
     M6 = 1;
     M7 = -1;
@@ -163,9 +245,45 @@ _dv_scan:
     L2 = 0;
     L3 = 0;
     L5 = 0;
+#ifndef DV_C3_NOSYS
     BIT CLR MODE1 0x20A000;               // PEYEN, TRUNCATE, ALUSAT
     BIT SET MODE1 0x10000;                // RND32
     NOP;
+#endif
+#ifdef DV_C3_FINE
+    // fine breadcrumb 10, the context is pinned
+    R3 = 10;
+    R5 = DM(_dv_bcw);
+    R3 = R3 OR R5;
+    I4 = _dv_diag;
+    DM(12, I4) = R3;
+    I4 = _dv_rec;
+    R5 = DM(0, I4);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_f3a;
+    I4 = R5;
+    DM(192, I4) = R3;
+    R5 = 0x11D1A6;
+    DM(45, I4) = R5;
+    R5 = DM(_dv_diag + 52);
+    DM(193, I4) = R5;
+    R5 = DM(_dv_diag + 56);
+    DM(213, I4) = R5;
+    I4 = _dv_rec;
+_dv_f3a:
+    R5 = DM(1, I4);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_f3b;
+    I4 = R5;
+    DM(192, I4) = R3;
+    R5 = 0x11D1A6;
+    DM(45, I4) = R5;
+    R5 = DM(_dv_diag + 52);
+    DM(193, I4) = R5;
+    R5 = DM(_dv_diag + 56);
+    DM(213, I4) = R5;
+_dv_f3b:
+#endif
     R3 = 32;
     R3 = R3 - R14;                        // v
     R3 = LSHIFT R3 BY 8;
@@ -173,7 +291,13 @@ _dv_scan:
     R3 = R3 OR R5;                        // v << 8 | type << 16: the breadcrumb word without its stage
     DM(_dv_bcw) = R3;
     R3 = 2;
+#ifdef DV_C3_DB
+    CALL _dv_crumb (DB);
+    NOP;
+    NOP;
+#else
     CALL _dv_crumb;                       // stage 2: the type is registered
+#endif
     R0 = R1;                              // type
     R1 = 32;
     R1 = R1 - R14;                        // v
@@ -185,7 +309,13 @@ _dv_scan:
     R3 = R3 + 1;
     DM(_dv_diag + 52) = R3;               // dispatches to registered types
     R3 = 4;
+#ifdef DV_C3_DB
+    CALL _dv_crumb (DB);
+    NOP;
+    NOP;
+#else
     CALL _dv_crumb;                       // stage 4: the routine is about to be called (R3, R5, I4 are free here)
+#endif
     R12 = 32;
     I13 = _dv_back;
     JUMP (M13, I12);                      // the routine returns with JUMP (M13, I13)
@@ -194,7 +324,13 @@ _dv_back:
     R3 = R3 + 1;
     DM(_dv_diag + 56) = R3;               // routines that returned
     R3 = 5;
+#ifdef DV_C3_DB
+    CALL _dv_crumb (DB);
+    NOP;
+    NOP;
+#else
     CALL _dv_crumb;                       // stage 5: the routine returned
+#endif
     JUMP _dv_done;
 _dv_odd:
     I1 = R8;
@@ -204,11 +340,19 @@ _dv_odd:
         R0 = DM(I1, M6);
 _dv_copy: DM(I0, M6) = R0;
     R3 = 6;
+#ifdef DV_C3_DB
+    CALL _dv_crumb (DB);
+    NOP;
+    NOP;
+#else
     CALL _dv_crumb;                       // stage 6: the odd voice's copy is done
+#endif
 _dv_done:
+#ifndef DV_C3_NOSYS
     R0 = DM(-38, I6);
     MODE1 = R0;
     NOP;
+#endif
     M5 = DM(-26, I6);
     M6 = DM(-27, I6);
     M7 = DM(-28, I6);
@@ -220,9 +364,18 @@ _dv_done:
     L2 = DM(-34, I6);
     L3 = DM(-35, I6);
     R3 = 7;
+#ifdef DV_C3_DB
+    CALL _dv_crumb (DB);
+    NOP;
+    NOP;
+#else
     CALL _dv_crumb;                       // stage 7: the epilogue is done but for the saved R registers and L4 (I4 needs L4 = 0 until here)
+#endif
     L4 = DM(-36, I6);
     L5 = DM(-37, I6);
+#ifdef DV_C3_BFIRST
+    B3 = DM(-24, I6);                     // a B register load also loads its I register (PRM p.6-24): B3 before I3, as the stock epilogue
+#endif
     R5 = DM(-7, I6);
     R6 = DM(-8, I6);
     R7 = DM(-9, I6);
@@ -240,7 +393,9 @@ _dv_done:
     M1 = DM(-21, I6);
     M2 = DM(-22, I6);
     M3 = DM(-23, I6);
+#ifndef DV_C3_BFIRST
     B3 = DM(-24, I6);
+#endif
     I13 = DM(-25, I6);
     I12 = DM(M7, I6);                     // the return address, as the stock renderer's epilogue
     JUMP (M14, I12) (DB);
@@ -296,7 +451,13 @@ _dv_i1:
     DM(213, I4) = R5;
 _dv_i2:
 #else
+#ifdef DV_C3_DB
+    CALL _dv_crumb (DB);
+    NOP;
+    NOP;
+#else
     CALL _dv_crumb;
+#endif
 #endif
     R3 = DM(_dv_sv3);
     R5 = DM(_dv_sv5);
@@ -344,7 +505,13 @@ _dv_cb:
     R5 = DM(_dv_diag + 56);
     DM(213, I4) = R5;
 _dv_cc:
+#ifdef DV_C3_DB
+    RTS (DB);
+    NOP;
+    NOP;
+#else
     RTS;
+#endif
 
 // ---- helpers for machine routines (ordinary subroutines: CALL _dv_..., return with RTS) ----
 
@@ -376,7 +543,13 @@ _dv_exp2:
     R3 = -64;
     R1 = R3 + R1;
     F0 = SCALB F2 BY R1;
+#ifdef DV_C3_DB
+    RTS (DB);
+    NOP;
+    NOP;
+#else
     RTS;
+#endif
 
 // R0 = the unsigned 16-bit word k of the DSP's frame copy (R0 = k, 0..511); _dv_frame_sw sign-extends.
 // Clobbers R0-R2, I4.
@@ -395,7 +568,13 @@ _dv_frame_hw:
     R0 = 0x400;                           // len6 = 16 at Ry[11:6], bit6 below it
     R2 = R2 OR R0;
     R0 = FEXT R1 BY R2;
+#ifdef DV_C3_DB
+    RTS (DB);
+    NOP;
+    NOP;
+#else
     RTS;
+#endif
 _dv_frame_sw:
     R1 = 0x1fe;
     R1 = R0 AND R1;
@@ -412,7 +591,13 @@ _dv_frame_sw:
     R0 = LSHIFT R0 BY 16;
     R1 = -16;
     R0 = ASHIFT R0 BY R1;
+#ifdef DV_C3_DB
+    RTS (DB);
+    NOP;
+    NOP;
+#else
     RTS;
+#endif
 
 .SECTION/DM seg_dmda;
 .PKDATA _dv_sv_l4, 4;

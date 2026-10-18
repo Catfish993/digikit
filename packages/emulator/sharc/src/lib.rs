@@ -29,6 +29,7 @@
 pub mod canon;
 mod cycmix;
 mod diag;
+mod irq_probe;
 pub mod fast;
 pub mod frames;
 mod live_capture;
@@ -313,6 +314,8 @@ pub struct Engine {
     pcdump: Option<Box<pc_dump::PcDump>>,
     /// SHARC_CYCMIX (diagnostic): see `cycmix`.
     cycmix: Option<Box<cycmix::CycMix>>,
+    /// SHARC_IRQ_PROBE (diagnostic): interrupts at arbitrary instruction boundaries, see `irq_probe`.
+    irq_probe: Option<irq_probe::IrqProbe>,
     /// Any of `cov`, `hist`, `wwatch`, `pcdump` is set: the interpreter loop
     /// tests this one flag per instruction and nothing else when it is off.
     diag_on: bool,
@@ -601,6 +604,24 @@ fn image_insn_at() -> fn(Int) -> Option<Insn> {
 
 impl Drop for Engine {
     fn drop(&mut self) {
+        if let Some(p) = &self.irq_probe {
+            eprintln!(
+                "irq_probe: windows {:x?} mask {:#x} every {}: {} latched, {} interrupts taken ({})",
+                p.windows,
+                p.mask,
+                p.every,
+                p.latched,
+                self.model_stats.irq_taken,
+                self.model_stats
+                    .irq_by_vector
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, n)| **n > 0)
+                    .map(|(bit, n)| format!("bit {bit}: {n}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
         if let Some(h) = &self.hist {
             let mut v: Vec<_> = h.iter().map(|(a, b)| (*b, *a)).collect();
             v.sort_unstable_by(|a, b| b.cmp(a));
@@ -694,6 +715,7 @@ impl Engine {
             wwatch: write_watch::WriteWatch::from_env(),
             pcdump: pc_dump::PcDump::from_env(),
             cycmix: cycmix::CycMix::from_env(),
+            irq_probe: irq_probe::IrqProbe::from_env(),
             diag_on: false,
         };
         engine.refresh_diag();
@@ -1624,10 +1646,27 @@ impl Engine {
                     Some("diagnostic: unmasked software interrupt; entry not modeled".into());
                 break;
             }
-            if self.software_interrupts || self.s.cfg.core_timer || self.s.cfg.peripheral_model {
+            if let Some(p) = &mut self.irq_probe
+                && p.due(self.s.pc_sw as u32)
+            {
+                // IRPTL (ureg 122) as the SEC line latches it: a hardware latch at an instruction boundary, not a guest write.
+                let latch = self.s.r[122];
+                if latch.is_c() {
+                    self.s.begin();
+                    match self.s.set_r(122, V::c((latch.b | p.mask) as Int)) {
+                        Ok(()) => self.s.commit_host(),
+                        Err(_) => self.s.rollback(),
+                    }
+                }
+            }
+            if self.software_interrupts
+                || self.s.cfg.core_timer
+                || self.s.cfg.peripheral_model
+                || self.irq_probe.is_some()
+            {
                 #[cfg(sharc_gen)]
                 {
-                    let allowed = (if self.software_interrupts {
+                    let allowed = self.irq_probe.as_ref().map_or(0, |p| p.mask as Int) | (if self.software_interrupts {
                         0xf000_0000
                     } else {
                         0

@@ -19,6 +19,7 @@ import random  # noqa: E402
 
 from support.dsp_voice_rig import (  # noqa: E402
     CONTEXT_REGS,
+    CORE,
     DIAG,
     M6_HOSTILE,
     M13_HOSTILE,
@@ -37,7 +38,7 @@ from support.dsp_voice_rig import (  # noqa: E402
     stops_at,
 )
 
-from tools.patchkit import pk_sharc, pk_toolchains  # noqa: E402
+from tools.patchkit import pk_build, pk_sharc, pk_toolchains  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
@@ -401,6 +402,129 @@ def test_the_bisect_build_takes_the_stock_path_for_added_types_with_no_call():
     rig.set_type(2, 6)
     out = rig.call(5, extra_reads=reads, ctx="friendly")
     assert out["diag"][12] == crumb(1, 5, 0)
+
+
+C3_COMMON = ("DV_C3_FINE", "DV_C3_BFIRST")
+C3_VARIANTS = {
+    "a-delayed": frozenset({*C3_COMMON, "DV_C3_DB"}),
+    "b-noirq": frozenset({*C3_COMMON, "DV_C3_NOIRQ"}),
+    "c-nosys": frozenset({*C3_COMMON, "DV_C3_NOSYS"}),
+}
+
+
+@pytest.mark.parametrize("name", sorted(C3_VARIANTS))
+def test_the_c3_variants_keep_the_registered_path_working(name):
+    """Rung C3 (finding 49 section 9, docs/PATCHING.md): each variant removes one suspect from the registered path and must still do what
+    the rung C build does: dispatch the routine on the even voice, copy on the odd voice, end at the epilogue breadcrumb, leave the
+    context as found. The fine breadcrumbs 8, 9 and 10 are written inline in that order before the CALL of stage 2."""
+    defines = C3_VARIANTS[name]
+    reads = {
+        "diag": (nw(DIAG), 16),
+        "ra": (nw(RING_A), 0x400 // 4),
+        "rb": (nw(RING_B), 0x400 // 4),
+    }
+    for v in (0, 2, 3, 30):
+        t = v // 2
+        rig = CrumbRig(defines)
+        rig.set_rings()
+        rig.set_type(t, TYPE)
+        rig.set_note(t, 60)
+        rig.rec_word(v, 0x1B8, 1)
+        out = rig.call(v, extra_reads=reads, ctx="friendly")
+        assert stops_at(out, RETURN_SW), (name, v, out["halt"])
+        want = crumb(7, v, TYPE)
+        even = v % 2 == 0
+        assert out["diag"][12:15] == [want, int(even), int(even)], (name, v)
+        for ring in ("ra", "rb"):
+            assert out[ring][192] == want and out[ring][45] == 0x11D1A6
+        context_intact(out)
+        assert (
+            out["regs"]["I7"] == out["in"]["I6"]
+        )  # RFRAME: I7 = I6, as the stock epilogue
+    # the fine breadcrumbs, in order, at the label after each one
+    rig = CrumbRig(defines)
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    rig.rec_word(2, 0x1B8, 1)
+    for label, stage in (("_dv_f1b", 8), ("_dv_f2b", 9), ("_dv_f3b", 10)):
+        out = rig.call(
+            2,
+            extra_reads=reads,
+            ctx="friendly",
+            breaks=(rig.core_linked.symbols[label],),
+        )
+        assert out["diag"][12] == crumb(stage, 2, TYPE), (
+            name,
+            label,
+            hex(out["diag"][12]),
+        )
+        assert out["ra"][192] == crumb(stage, 2, TYPE) and out["rb"][192] == crumb(
+            stage, 2, TYPE
+        )
+        # none of the fine breadcrumbs counts as a dispatch
+        assert out["diag"][13:15] == [0, 0]
+
+
+def test_the_c3_noirq_variant_masks_interrupts_inside_and_restores_mode1():
+    defines = C3_VARIANTS["b-noirq"]
+    rig = CrumbRig(defines)
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    rig.rec_word(2, 0x1B8, 1)
+    ctx = {
+        "MODE1": 0x1011800 | 0x8000
+    }  # IRPTEN set, TRUNCATE set: the pin clears it, the epilogue puts it back
+    inside = rig.call(2, ctx=ctx, breaks=(rig.core_linked.symbols["_dv_f3b"],))
+    assert inside["regs"]["MODE1"] & 0x1000 == 0, (
+        "IRPTEN is clear once the registered path is past its mask"
+    )
+    assert inside["regs"]["MODE1"] & 0x8000 == 0, "the pins still apply"
+    out = rig.call(2, ctx=ctx)
+    assert stops_at(out, RETURN_SW), out["halt"]
+    assert (
+        u32(out["regs"]["MODE1"]) == u32(out["in"]["MODE1"])
+        and out["regs"]["MODE1"] & 0x1000
+    )
+    # the stock path and the engine's own types never touch IRPTEN
+    rig.set_type(2, 6)
+    out = rig.call(5, ctx=ctx)
+    assert stops_at(out, STOCK_BP) and u32(out["regs"]["MODE1"]) == u32(
+        out["in"]["MODE1"]
+    )
+
+
+def test_the_c3_nosys_variant_writes_no_system_register_on_the_registered_path():
+    text = pk_build.apply_conditionals(CORE.read_text(), C3_VARIANTS["c-nosys"])
+    path = text.split("_dv_stock:")[0]
+    assert (
+        "MODE1 =" not in path
+        and "BIT SET MODE1" not in path
+        and "BIT CLR MODE1" not in path
+    )
+    assert "R3 = MODE1;" in path  # the read stays (harmless); only the writes are gone
+
+
+def test_the_c3_variants_restore_b3_before_i3():
+    """A load of a B register also loads its I register (PRM p.6-24, "Circular Buffer Programming Model"); the stock epilogue restores B3
+    first. The default build restores B3 after I3 (open: the emulator does not model the I load), the C3 variants fix the order."""
+
+    def order(defines):
+        lines = [
+            x.strip()
+            for x in pk_build.apply_conditionals(CORE.read_text(), defines).splitlines()
+        ]
+
+        def at(prefix):
+            return next(k for k, x in enumerate(lines) if x.startswith(prefix))
+
+        return at("B3 = DM(-24, I6);"), at("I3 = DM(-19, I6);")
+
+    b, i = order(C3_VARIANTS["a-delayed"])
+    assert b < i
+    b, i = order(frozenset())
+    assert b > i  # the default build, until the device says the order does not matter
 
 
 def test_without_reply_records_the_breadcrumb_stays_local():

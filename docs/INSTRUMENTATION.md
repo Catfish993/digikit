@@ -47,6 +47,12 @@ the default directory for every native `*_OUT` that is unset.
 Not a `spikes` name: `SHARC_UNINIT=<hex seed>` makes DSP bytes that no boot block loaded and no store wrote read as a seeded non-zero pattern
 instead of zero (default off, part of the render cache key); `SHARC_UNINIT_LOG=FILE` lists the first reads (finding 49).
 
+`SHARC_IRQ_PROBE=LO-HI[,LO-HI...]:MASK[:EVERY]` (hex software PCs, an IRPTL bit mask, a decimal divisor; default off, part of the render cache key)
+latches the interrupt bits MASK just before the interpreter executes an instruction in a window, once per visit of that PC and for every EVERY-th
+visit, so the DSP takes the kernel's tick (`400000`) or context-switch request (`80000000`) between any two instructions of patched code, as silicon can
+and the coupled model otherwise does not (it delivers peripheral events between runs of the core). The emulator prints the counters when it exits.
+Scenario key `[rungc] irq_probe` (finding 49 section 9).
+
 `DSP_FRAME_POKE=OFF=VAL[/TRACKS][,...]` sets the big-endian 16-bit word at frame byte OFF (with `/N`, at
 OFF + 0x60*t for t < N) in every frame sent to the DSP, to drive a frame word no stock control reaches
 (finding 06, "Parameter channel"). `tools/patchkit/hook_ab.py` renders and compares paired runs with a DSP patch.

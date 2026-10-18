@@ -75,6 +75,11 @@ def test_dsp_events_show_the_breadcrumb_as_names():
     assert d["error"] and d["fields"]["crumb"] == "ROUTINE_CALLED voice=12 type=18"
     assert d["fields"]["dispatches"] == 55 and d["fields"]["resumed"] is False
     assert L.crumb_of(crumb) == {"stage": "ROUTINE_CALLED", "voice": 12, "type": 18}
+    assert L.crumb_of(9 | 2 << 8 | 18 << 16) == {
+        "stage": "C3_FRAME_SAVED",
+        "voice": 2,
+        "type": 18,
+    }
     # the diagnostic set, chunk 3 of 4: L7, MODE1, the breadcrumb, the dispatch count
     d = L.event_dict(ev(8, "DSP_DIAG", (16 << 8 | 3, 0x3E2, 0x39011CF8, crumb, 55)))
     assert d["fields"]["crumb"] == "ROUTINE_CALLED voice=12 type=18"
