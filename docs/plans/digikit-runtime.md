@@ -387,7 +387,8 @@ Emulator first:
   HMAC hold, the sizes are in limits; print the hashes. Define the rung images.
 
 Device rungs (stock 1.17 is the way back each time):
-- [ ] A: the runtime with no DSP change (section 3 only): boot, DIGIKIT, the log, the store-area check (read-only).
+- [x] A: the runtime with no DSP change (section 3 only): boot, DIGIKIT, the log, the store-area check (read-only). Device, 2026-10-18:
+  boots, log over USB, store range blank (finding 47).
 - [ ] B: with the DSP link, no modules: normal audio, the DSP heartbeat in the log.
 - [ ] C: upload pluck over SysEx, APPLY & RESTART, play, with the log capturing the DSP registers.
 - [ ] D: debug off by default.
