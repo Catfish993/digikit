@@ -39,6 +39,9 @@ DENYLIST: frozenset[str] = frozenset(
         "DIGI_TIER_JOBS",
         "DIGI_PY_JOBS",
         "DIGI_PY_TIMEOUT",
+        "DIGI_CONFORM_JOBS",
+        "DIGI_PK_JOBS",
+        "DIGI_VERIFY_BUDGET",  # the verify gate's CPU budget (tools/devtools/verify_budget.py)
         "DIGI_RENDER_CACHE",
         "DIGI_RENDER_CACHE_CHECK",  # cache controls, not render inputs
         "DIGI_DIAG_DIR",
@@ -75,7 +78,7 @@ DENYLIST: frozenset[str] = frozenset(
 # Prefixes: SHARC_FAST_TL*, SHARC_FAST_DUMP* and SHARC_PCDUMP* are trace and
 # dump outputs; DIGI_DSP_WATCH* are watch-only diagnostics; DIGI_EMU_SYX_* and
 # DIGI_EMU_READY_DIR_* are per-device path selectors (like their unsuffixed
-# forms). DIGI_DEVICES_DIR, DIGI_CARD_IDENTITY, DIGI_INTC_FORCE,
+# forms); DIGI_EMUD* name a daemon binary. DIGI_DEVICES_DIR, DIGI_CARD_IDENTITY, DIGI_INTC_FORCE,
 # DIGI_DSP_PERIOD and DIGI_DSP_RX_PHASE change behavior and stay in the key.
 DENY_PREFIXES: tuple[str, ...] = (
     "SHARC_FAST_TL",
@@ -84,6 +87,7 @@ DENY_PREFIXES: tuple[str, ...] = (
     "DIGI_DSP_WATCH",
     "DIGI_EMU_SYX_",
     "DIGI_EMU_READY_DIR_",
+    "DIGI_EMUD",  # the digi-emud binary the patchkit harness runs: DIGI_EMUD, DIGI_EMUD_DN2, DIGI_EMUD_DT2
 )
 
 # Environment variables read by native code linked into coupled-run that do not change

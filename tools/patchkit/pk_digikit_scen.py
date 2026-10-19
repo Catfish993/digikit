@@ -84,6 +84,18 @@ CACHE = ROOT / "out" / "cache" / "digikit"
 ALL_IMAGES = {d: pk_device.port_images(d) for d in pk_device.digikit_devices()}
 QUICK_IMAGES = {d: imgs[-1] for d, imgs in ALL_IMAGES.items()}
 RT = B.RT
+
+
+def every_image(tier: str) -> bool:
+    """Whether a run covers every image with a port (the older ones too), not only the newest per device.
+    DIGIKIT_IMAGES=all|newest decides; unset, the full tier takes all and the quick tier the newest. The verify gate
+    sets it (tools/devtools/verify.py): the device runs the newest image, the older ones are checked only when
+    their port files or the port resolution change, or on request (`verify --old-images`)."""
+    return (
+        os.environ.get("DIGIKIT_IMAGES", "all" if tier == "full" else "newest") == "all"
+    )
+
+
 # emulated ms a rig runs after its boot before the scenario looks: the first UI-loop passes (a module's DSP part is waited for by
 # `wait_dsp`); the boot tool's own proof keeps 1500
 SETTLE_MS = int(os.environ.get("DIGIKIT_SETTLE_MS", "300"))
@@ -109,13 +121,15 @@ class Scenario:
     path: Path
 
     def images(self, tier: str) -> list[str]:
-        """The images a run at TIER covers: the quick tier takes the newest image of each device."""
+        """The images a run at TIER covers: the newest image of each device, or all of them (see
+        `every_image`)."""
+        every = every_image(tier)
         explicit = self.data["scenario"].get("images")
         if explicit:
-            return list(explicit) if tier == "full" else explicit[-1:]
+            return list(explicit) if every else explicit[-1:]
         out: list[str] = []
         for dev in self.devices:
-            out += list(ALL_IMAGES[dev]) if tier == "full" else [QUICK_IMAGES[dev]]
+            out += list(ALL_IMAGES[dev]) if every else [QUICK_IMAGES[dev]]
         return out
 
 

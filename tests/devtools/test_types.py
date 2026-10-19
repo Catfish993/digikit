@@ -40,6 +40,7 @@ TYPED = [
     "tests/dsp/test_audiocheck.py",
     "tools/sharc_dev/aot_fxprof.py",
     "tools/devtools/benchlock.py",
+    "tools/devtools/verify_budget.py",
     "tools/control/digi_client.py",
     "tools/sharc_dev/sharc_peer.py",
     "tools/coldfire/cf.py",
