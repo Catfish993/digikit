@@ -9,10 +9,10 @@ Use mise (`mise tasks` lists every task). Cargo needs the generated SHARC+ core;
 the tools set `SHARC_GEN_DIR` and the target dir for you (see "Target dirs").
 
 ```
-mise run emu -- --build-only   # build the desktop emulator without launching it
-mise run emu               # build and run it (DN2 audio when the ready inputs exist)
+mise run workbench -- --build-only   # build the desktop emulator without launching it
+mise run workbench         # build and run it (DN2 audio when the ready inputs exist)
 mise run scenario:build    # build the headless runner coupled-run
-mise run scenarios         # run every DN2 scenario against its pinned PCM hash
+mise run scenario:all      # run every DN2 scenario against its pinned PCM hash
 mise run test:quick        # fast checks; mise run test runs cargo test --workspace too
 uv run python -m tools.devtools.rust_ws check    # cargo check --workspace --all-targets
 mise run web:wasm          # browser cores

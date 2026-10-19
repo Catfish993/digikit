@@ -378,7 +378,7 @@ def main() -> int:
     c.add_argument("--check", action="store_true")
     c.add_argument("--root", type=Path, default=ROOT / "modules")
     argv = sys.argv[1:]
-    # `mise run patch:build [-- MODULE] [--check]`: no subcommand builds every module, a path builds that one
+    # `mise run module:build [-- MODULE] [--check]`: no subcommand builds every module, a path builds that one
     if not argv or argv[0].startswith("-"):
         argv = ["build-all", *argv]
     elif argv[0] not in ("build", "build-all"):

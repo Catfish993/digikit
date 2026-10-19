@@ -3,7 +3,7 @@
 
     uv run python -m tools.emulator.ready dn2|dt2 [--out DIR] [--syx SYX]
                                  [--card-image IMG] [--force]
-    mise run ready -- dt2 [--card-image IMG]
+    mise run emu:ready -- dt2 [--card-image IMG]
 
 Steps (each skipped when its output exists and --force is not given):
   1. digi-audio-dn2-image.bin  packed section 7 image (from the .syx's own section 7,
@@ -44,13 +44,13 @@ EXTRA_AFTER_READY = "1000000"
 
 DEVICES = {
     "dn2": {
-        "image": "dn2-1.11",
-        "out": "out/snapshots/dn2-audio-ready-cold-2026-10-07",
+        "image": "dn2-1.12",
+        "out": "out/snapshots/dn2-audio-ready-cold-2026-10-20",
         "env": {},
     },
     "dt2": {
-        "image": "dt2-1.16",
-        "out": "out/snapshots/dt2-audio-ready-cold-2026-10-07",
+        "image": "dt2-1.17",
+        "out": "out/snapshots/dt2-audio-ready-cold-2026-10-20",
         "env": {
             "DSP_DEVICE": "dt2",
             "DSP_SAMPLE_LINK": "lp0",

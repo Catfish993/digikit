@@ -16,7 +16,7 @@ names the largest cost of every window that fell behind real time:
 The DSP load line (busy time per audio s, and per window) is the headroom:
 above 1.0 the DSP alone cannot keep up.
 
-    DIGI_SPIKE_LOG=DIR mise run emu        # or any coupled-run
+    DIGI_SPIKE_LOG=DIR mise run workbench  # or any coupled-run
     uv run python -m tools.devtools.spikes DIR [--top 20] [--json OUT]
 """
 

@@ -16,9 +16,7 @@ from tools.patchkit import pk_build, pk_dkrt, pk_dkrt_boot, pk_toolchains  # noq
 
 RUNTIME = ROOT / "modules/core/runtime"
 IMAGES = {
-    "dt2-1.16": "Digitakt_II_OS1.16.syx",
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
-    "dn2-1.11": "Digitone_II_OS1.11.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
 }
 

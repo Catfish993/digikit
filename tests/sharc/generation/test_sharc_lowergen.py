@@ -55,7 +55,7 @@ def test_simd_leaves_exist() -> None:
 
 def test_shared_core_is_not_stale() -> None:
     """The transpiled core the Rust tests build against must come from the
-    current tools/sharc_dev/sharc_core (`mise run regen`)."""
+    current tools/sharc_dev/sharc_core (`mise run gen:regen`)."""
     import re
 
     from tools.sharc_dev import sharc_transpile
@@ -66,4 +66,4 @@ def test_shared_core_is_not_stale() -> None:
 
         pytest.skip("no shared core generated here")
     m = re.search(r'CORE_SHA256: &str = "([0-9a-f]+)"', tables.read_text())
-    assert m and m.group(1) == sharc_transpile.core_hash(), "run: mise run regen"
+    assert m and m.group(1) == sharc_transpile.core_hash(), "run: mise run gen:regen"

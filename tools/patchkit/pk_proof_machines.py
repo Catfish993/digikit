@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """patchkit Phase 3 proof: core/machines on Digitakt II 1.17 (machines/xslice and a second clone).
 
-    uv run python -m tools.patchkit.pk_proof_machines [--fw 1.16|1.17] [--out DIR] [--only a,b,c] [--quick] [--jobs N]
+    uv run python -m tools.patchkit.pk_proof_machines [--fw 1.17] [--out DIR] [--only a,b,c] [--quick] [--jobs N]
 
 Drives patched images on coupled daemons through the harness (`tools/patchkit/pk_harness.py` Session: panel inputs, health
 asserted after every input) and reads back:
@@ -480,7 +480,7 @@ PARTS = [
 def main() -> int:
     global FW
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--fw", default="1.17", choices=("1.16", "1.17"))
+    ap.add_argument("--fw", default="1.17", choices=("1.17",))
     K.add_args(ap, PARTS)
     a = ap.parse_args()
     a.out = a.out or (

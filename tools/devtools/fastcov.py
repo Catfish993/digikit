@@ -16,7 +16,7 @@ tier configurations and reports, for each:
     uv run python -m tools.devtools.fastcov [--scenario trig1-taps] [--seconds S]
         [--config NAME ...] [--diag yes|no|only] [--timeout S] [--top N]
         [--image dn2-1.11] [--no-build] [--out DIR]
-    mise run fastcov -- --config default --config fast-auto:256,64
+    mise run perf:cov -- --config default --config fast-auto:256,64
 
 Configurations (``--config``, repeatable; default ``default fast-auto``):
 

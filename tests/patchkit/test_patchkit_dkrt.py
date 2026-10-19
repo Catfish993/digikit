@@ -54,7 +54,7 @@ def test_pack_is_deterministic_and_the_file_checks_itself(tmp_path):
                           capture_output=True).returncode != 0  # fmt: skip
 
 
-@pytest.mark.parametrize("image", ["dt2-1.16", "dn2-1.11"])
+@pytest.mark.parametrize("image", ["dt2-1.17", "dn2-1.12"])
 def test_boot_loads_the_module_and_refuses_the_bad_files(image, tmp_path):
     if not config.stock(pk_dkrt.DEVICE_SYX[image]).exists():
         pytest.skip(f"{pk_dkrt.DEVICE_SYX[image]} missing")
@@ -69,8 +69,8 @@ def test_boot_loads_the_module_and_refuses_the_bad_files(image, tmp_path):
 
 def test_the_write_watch_sees_the_runtime_when_its_code_is_not_allowed(tmp_path):
     """Control: with the allowed PC range moved elsewhere the same run reports the runtime's own writes."""
-    if not config.stock("Digitakt_II_OS1.16.syx").exists():
-        pytest.skip("Digitakt_II_OS1.16.syx missing")
-    report = pk_dkrt.proof("dt2-1.16", tmp_path, control=True)
+    if not config.stock("Digitakt_II_OS1.17.syx").exists():
+        pytest.skip("Digitakt_II_OS1.17.syx missing")
+    report = pk_dkrt.proof("dt2-1.17", tmp_path, control=True)
     watch = next(c for c in report["checks"] if c["name"].startswith("control"))
     assert watch["ok"], watch

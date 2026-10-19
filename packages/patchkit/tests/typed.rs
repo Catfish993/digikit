@@ -37,21 +37,6 @@ const PINS: &[(&str, &str, &str)] = &[
     // The four Digitakt II pins with machines/pluck moved on 2026-10-19 (pluck.s clears its 4096-sample line at note-on): section 7 only (the other sections of the old and
     // new patched images compared equal, port_resolve.sections_of); the Digitone II pin and the xslice-only pins did not move.
     (
-        "Digitakt_II_OS1.16.syx",
-        "machines/pluck",
-        "a24fd3dd9af65fdcdc59380cf1beb4a88c4683a6f736a7c600d534013bd7d456",
-    ),
-    (
-        "Digitakt_II_OS1.16.syx",
-        "machines/xslice",
-        "2c871a0d7deaf632f6567e2e7a82318c4be3ba143ba3640ec73272191190d7b5",
-    ),
-    (
-        "Digitakt_II_OS1.16.syx",
-        "machines/pluck,machines/xslice",
-        "8f6c168bdcaeaae7c63e152d6862e8d740200589d3e9a5410b80e9618ef98754",
-    ),
-    (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
         "53b7b8e1a5c8d163f8bf6a7766c981dcf52e240a7c9d7da52354d9c1773a0e83",

@@ -65,7 +65,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   triggers and the changed test files; not all of tests/, which `mise run test` runs) — one process per file (the step's share; DIGI_PY_TIMEOUT), rust-tests (cargo nextest run
   --workspace: each test its own process; JUnit at `<target-dir>/nextest/default/junit.xml`), card
   (in-process DT2 card: trigs play the files), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
-- Digikit scenarios (tests/digikit) run on the newest image of each device (DT2 1.17, DN2 1.12). DT2 1.16 and DN2 1.11 run only with `verify --old-images`, or in `verify --full` when their port files (devices/ports/dt2-1.16.toml, dn2-1.11.toml) or tools/patchkit/port_resolve.py changed (DIGIKIT_IMAGES=all|newest).
+- Tests and the gate run on the newest image of each device only (DT2 1.17, DN2 1.12); 1.16 and 1.11 remain analysis references.
 - Scenario renders are cached by content (out/cache/renders; tools/devtools/render_cache.py): a render reruns only when the binary, input files, scenario, peeks, device TOMLs or a SHARC_/DIGI_/DSP_ variable changed. `--no-cache` or DIGI_RENDER_CACHE=0 forces renders; `uv run python -m tools.emulator.coupled cache clear` empties it. Only emulator output is cached; oracles, hash compares and pins run fresh. Guard 1: tests/devtools/test_render_inputs.py fails when a render input (env read or file read) is not classified; regenerate counts with `uv run python -m tests.devtools.test_render_inputs --scan` after review. Guard 2: verify sets DIGI_RENDER_CACHE_CHECK=0.03, which re-renders about 3% of hits and fails on any difference. Use `verify --no-cache` for release gates.
 - While working, run only the tests for the code you changed.
 - Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
@@ -78,8 +78,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 ## Build and run
 
 - Python tools: `tools/` is a package with one subpackage per owner (docs/LAYOUT.md); the repository root is the only import root. Run a tool as `uv run python -m tools.<owner>.<module>` from the repository root and import it as `from tools.<owner> import <module>`. Never change `sys.path`. A tool that starts another tool runs `[sys.executable, "-m", "tools.<owner>.<module>", ...]` with `env=tools.python_env()`.
-- mise tasks: `mise run emu [-- firmware/FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:ctl`, `web` (browser dev page),
-  `web:bench`, `scenario NAME`, `scenarios`, `scenarios:check`, `scenarios:dt2`, `perf`, `pgo` (both devices, then rebuilds the launcher), `pgo:dn2`, `pgo:dt2`, `gen:core`.
+- mise tasks: `mise run workbench [-- firmware/FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:serve`, `emu:ctl`, `web` (browser dev page), `web:bench`, `scenario NAME`, `scenario:all`, `scenario:check`, `scenario:check:dt2`, `perf`, `perf:pgo` (both devices, then rebuilds the launcher), `perf:pgo:dn2`, `perf:pgo:dt2`, `gen:core`; `module:*` (new, build, check, pack, dev), `patch:*` (firmware patching), `dk:*` (`--emu` or `--port NAME`). `mise tasks` lists them; `mise run TASK -- --help` prints a tool's options.
 - Paths, toolchain and fast-region tables: tools/emulator/digi_env.py, tools/emulator/fast_regions.json.
 - SHARC crates: packages/emulator/sharc-rt (runtime), packages/emulator/sharc-gen (the generated core from `SHARC_GEN_DIR`; relative
   paths resolve from the repo root), packages/emulator/sharc (engine and fast tier), packages/emulator/sharc-fast-cl and
@@ -89,7 +88,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   regenerate every core (DN2 and DT2 from out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt, the shared core with
   `mise run gen:core`), backing up each gen dir first.
 - `out/native/target/*/pgo-use` belongs to the launcher; experiments build elsewhere (`DIGI_EMU_PGO_VARIANT`).
-  PGO profiles are per device (`mise run pgo:dn2`, `mise run pgo:dt2`, or `mise run pgo` for both; underlying
+  PGO profiles are per device (`mise run perf:pgo:dn2`, `mise run perf:pgo:dt2`, or `mise run perf:pgo` for both; underlying
   `uv run python -m tools.emulator.native_pgo train [--device dt2]`); retrain at milestones.
 - Builds and timed runs share the machine through tools/devtools/benchlock.py (shared for builds, exclusive for
   benchmarks). tools/devtools/coupled_ab.py, native_pgo.py and sharc_regionbench.py take the lock themselves (wrapping them
@@ -102,7 +101,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 
 ## Instrumentation (details in docs/INSTRUMENTATION.md)
 
-- App real time: `DIGI_SPIKE_LOG=DIR mise run emu`, then `uv run python -m tools.devtools.spikes DIR`; unattended runs:
+- App real time: `DIGI_SPIKE_LOG=DIR mise run workbench`, then `uv run python -m tools.devtools.spikes DIR`; unattended runs:
   `uv run python -m tools.devtools.app_soak`; app audio capture: `DIGI_EMU_SINK_WAV=FILE`.
 - Browser throughput: `mise run web:bench`. DSP performance: `mise run perf`, tools/devtools/perf.py, tools/devtools/coupled_ab.py.
 

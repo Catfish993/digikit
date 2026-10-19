@@ -5,8 +5,8 @@ layout. For modules see [MODULE-AUTHORING.md](MODULE-AUTHORING.md) and [PATCHING
 
 ## Firmware files
 
-Modules and patchkit target Digitakt II 1.17 and Digitone II 1.12. The emulator also runs
-1.16 and 1.11, which most earlier analysis used; they are its default files (see below).
+Modules and patchkit target Digitakt II 1.17 and Digitone II 1.12. The emulator runs
+these two by default. It also runs 1.16 and 1.11, which most earlier analysis used.
 1.15C and 1.10E are kept for old analysis. Get the `.syx` files from Elektron's support
 site for your device; the repository never includes them.
 
@@ -38,11 +38,11 @@ mise run setup      # uv sync, pnpm install
 ## Extract the firmware
 
 ```sh
-uv run python -m tools.firmware.extract firmware/Digitone_II_OS1.11.syx -o out/sections/dn2-1.11
-uv run python -m tools.firmware.extract firmware/Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16
+uv run python -m tools.firmware.extract firmware/Digitone_II_OS1.12.syx -o out/sections/dn2-1.12
+uv run python -m tools.firmware.extract firmware/Digitakt_II_OS1.17.syx -o out/sections/dt2-1.17
 ```
 
-Keep each firmware in its own directory (`out/sections/dt2-1.16`, ...): the analysis
+Keep each firmware in its own directory (`out/sections/dt2-1.17`, ...): the analysis
 tools find images by these names. A sections directory records the SHA-256 of its
 `.syx` in `out/sections/<image>/.source-sha256`, and the tools refuse to mix firmwares. Compare it with
 `shasum -a 256 <the .syx>` before you trust a run.
@@ -53,8 +53,8 @@ The native emulator starts from a ready state: ColdFire booted to the main scree
 running. Build it from the `.syx` alone:
 
 ```sh
-mise run emu:ready -- dn2                     # Digitone II 1.11 (about 2 minutes)
-mise run emu:ready -- dt2 [--card-image IMG]  # Digitakt II 1.16, optionally with a +Drive image
+mise run emu:ready -- dn2                     # Digitone II 1.12 (about 2 minutes)
+mise run emu:ready -- dt2 [--card-image IMG]  # Digitakt II 1.17, optionally with a +Drive image
 ```
 
 The files go to `out/snapshots/<device>-audio-ready-cold-*`. Git ignores them.
@@ -62,13 +62,13 @@ The files go to `out/snapshots/<device>-audio-ready-cold-*`. Git ignores them.
 ## Desktop emulator
 
 ```sh
-mise run emu                      # build once and run (`mise run emu -- --build-only` builds only)
-mise run emu -- --cf-only --plus-drive DIR firmware/Digitakt_II_OS1.16.syx   # a +Drive folder (default: plus_drive/<device>/; --samples is the same option)
-mise run emu -- --dsp-patch FILE  # overlay a DSP patch (DN2 audio)
-mise run emu -- --cf-only         # ColdFire only: no DSP, no audio
+mise run workbench                # build once and run (`mise run workbench -- --build-only` builds only)
+mise run workbench -- --cf-only --plus-drive DIR firmware/Digitakt_II_OS1.17.syx   # a +Drive folder (default: plus_drive/<device>/; --samples is the same option)
+mise run workbench -- --dsp-patch FILE  # overlay a DSP patch (DN2 audio)
+mise run workbench -- --cf-only   # ColdFire only: no DSP, no audio
 ```
 
-With the DN2 ready inputs present, `mise run emu` plays DN2 audio. Without them it
+With the DN2 ready inputs present, `mise run workbench` plays DN2 audio. Without them it
 starts the ColdFire-only emulator. The DSP needs about 1.6 CPU seconds per audio second
 ([finding 18](findings/18-dsp-performance.md)), so real time is not reached yet.
 The +Drive comes from `plus_drive/dt2/` or `plus_drive/dn2/` (git ignores both) when it exists, or from `--plus-drive DIR` (`--samples DIR` is the same option): the launcher builds a card image from the folder and caches it by content ([docs/SAMPLES.md](SAMPLES.md)).
@@ -108,7 +108,7 @@ The browser DSP is slow; the browser host is parked on the branch `wip/browser-h
 mise run emu:serve                      # headless, paused; serves the control socket
 mise run emu:ctl status                 # status, step N, tap CODE, frame out.png, events
 uv run python -m tools.control.digi_client inject PATCHED.syx   # hot DSP injection
-uv run python -m tools.patchkit.dsp_patch syx firmware/BASE.syx tools/patchkit/dsp_patches/dn2-1.11-master-half.patch OUT.syx
+uv run python -m tools.patchkit.dsp_patch syx firmware/BASE.syx tools/patchkit/dsp_patches/dn2-1.12-master-half.patch OUT.syx
 ```
 
 `tools/patchkit/dsp_patch.py` edits DSP code or data by SHARC+ address and writes a patched
@@ -121,18 +121,18 @@ runner plays against a ready state. It reports the PCM hash and level
 ([tests/scenarios/README.md](../tests/scenarios/README.md)).
 
 ```sh
-mise run scenarios            # every DN2 scenario; fails when a pinned PCM hash differs
+mise run scenario:all         # every DN2 scenario; fails when a pinned PCM hash differs
 mise run scenario trig1-taps --wav
 mise run test:quick           # fast checks
 mise run test                 # pytest, cargo test --workspace, web tests, all scenario pins
 mise run test:slow            # slow runs and gates that need private fixtures
 mise run lint                 # ruff, oxlint, cargo fmt on the clean crates
-mise run check                # lint + test:quick, a quick local check
+mise run verify:pre           # quick lane check, not the merge gate
 mise run verify               # the gate: the steps your changed files need
 mise run verify:full          # every step; run before merging to main
 ```
 
-`mise run verify` is the gate, not `mise run check`. Test layout and commands:
+`mise run verify` is the gate, not `mise run verify:pre`. Test layout and commands:
 [docs/TESTING.md](TESTING.md).
 
 Pins are valid only for the firmware and ready state they were recorded with.
@@ -151,9 +151,9 @@ writes `out/runs/<scenario-or-kind>/<UTC stamp>/` (report, audio, logs);
 ## Analysis tools
 
 For the DSP, `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin`
-builds `out/sharcdb/<image>.sqlite`. `tools/sharc_dev/sharc.py` queries it: `sharc.load("dt2-1.16")`
+builds `out/sharcdb/<image>.sqlite`. `tools/sharc_dev/sharc.py` queries it: `sharc.load("dt2-1.17")`
 gives `func`, `callers`, `callees`, `reach`, `last_def`, `refs`, `trace` and `sql`, and
-`uv run python -m tools.sharc_dev.sharc dt2-1.16 "SQL"` runs one query. For the ColdFire OS, `tools/coldfire/ghidradump.py` exports a
+`uv run python -m tools.sharc_dev.sharc dt2-1.17 "SQL"` runs one query. For the ColdFire OS, `tools/coldfire/ghidradump.py` exports a
 Ghidra project, `tools/coldfire/cfdb.py build` makes a database from the dump, and `tools/coldfire/cf.py`
 queries it. Decoding uses only public manuals ([docs/sharc/SOURCES.md](sharc/SOURCES.md)).
 All tools are indexed in [docs/TOOLS.md](TOOLS.md).
@@ -164,9 +164,9 @@ patchkit applies modules (new machines, parameters, master-bus effects) to your 
 `.syx`. Modules hold our code only, never firmware bytes.
 
 ```sh
-mise run toolchains    # once: pinned ColdFire and SHARC+ toolchains for building modules
+mise run patch:toolchains   # once: pinned ColdFire and SHARC+ toolchains for building modules
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
-mise run inject -- out/patch/mg.syx     # into a running emulator (mise run emu, or emu:serve)
+mise run patch:inject -- out/patch/mg.syx   # into a running emulator (mise run workbench, or emu:serve)
 mise run web                            # the gallery at /patch: patch in the browser, nothing is uploaded
 ```
 
@@ -175,10 +175,19 @@ mise run web                            # the gallery at /patch: patch in the br
 [docs/PATCHING.md](PATCHING.md). Manifest reference: [modules/README.md](../modules/README.md). Facts behind it: [findings 01](findings/01-container-and-patching.md),
 [02](findings/02-machines-and-parameters.md) and [21](findings/21-patchkit-core.md).
 
+## Module loop
+
+1. Create the module: `mise run module:new -- fx/NAME` (`--cf` for ColdFire code only, `--dsp` for a SHARC+ stub only).
+2. Check it without an emulator: `mise run module:check -- NAME [--device dt2|dn2]` (NAME is `fx/NAME` or `NAME`; machine modules run the conformance suite, then the module's own tests).
+3. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
+4. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 4 or newer): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
+
+Each task takes `-- --help`.
+
 **Hardware warning**
 
 - Patched images have run on a Digitakt II (OS 1.17) since 2026-10-18 (docs/findings/47-dt2-device-rungs.md). Flash
-  only images that pass `mise run preflight`.
+  only images that pass `mise run patch:preflight`.
 - Never change section 2 (bootstrap), section 4 (updater) or section 8. patchkit refuses.
 - Recovery is the bootstrap's STARTUP menu (hold FUNC at power-on, then the stock OS over MIDI DIN); it has not been rehearsed.
 - Read `docs/findings/01-container-and-patching.md` before you install anything.

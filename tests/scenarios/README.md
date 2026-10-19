@@ -10,7 +10,7 @@ app's `--scenario` mode and the browser parity check). One file per device:
   --scenarios tests/scenarios/dt2-trackfx.json --all` (or `DIGI_DT2_CARD=1`), and a peek of
   the Sound and Fx arrays (finding 18, "DT2 FX scenarios"). `tools/emulator/dt2fx.py render|check|tiers`
   renders both files with the peeks, prints the `tools/emulator/fxcheck.py` tables and compares the
-  PCM hashes of two renders; the oracle tests are `mise run scenarios:dt2`.
+  PCM hashes of two renders; the oracle tests are `mise run scenario:check:dt2`.
 
 ## Format
 
@@ -40,7 +40,7 @@ app's `--scenario` mode and the browser parity check). One file per device:
 ## Run
 
 ```
-mise run scenarios                      # every DN2 scenario, exit 1/2 on a bad pin
+mise run scenario:all                   # every DN2 scenario, exit 1/2 on a bad pin
 mise run scenario trig1-taps [--wav]    # named scenarios
 uv run python -m tools.emulator.coupled scenario --all --device dt2
 mise run scenario:replay FILE           # a desktop "Export diagnostics" file
@@ -74,8 +74,8 @@ translator or performance change cannot silently break an effect. All of it is
 marked `slow`, so plain `pytest tests` skips it.
 
 ```
-mise run scenarios:check      # fast subset (61 tests, about 3 min)
-mise run scenarios:sweep      # plus the full sweeps (every tf-* and sf-* scenario)
+mise run scenario:check       # fast subset (61 tests, about 3 min)
+mise run scenario:sweep       # plus the full sweeps (every tf-* and sf-* scenario)
 uv run python -m pytest tests/scenarios --slow -k delay      # only what you select is rendered
 ```
 

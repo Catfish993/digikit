@@ -706,7 +706,7 @@ def main() -> int:
     rs.add_argument("pc", type=lambda s: int(s, 0))
     rs.add_argument("--len", type=int)
     argv = sys.argv[1:]
-    # `mise run port:resolve [-- X.syx]`: a firmware resolves that one, nothing resolves all four
+    # `mise run patch:port [-- X.syx]`: a firmware resolves that one, nothing resolves all four
     if not argv:
         argv = ["resolve-all"]
     elif argv[0] not in ("resolve", "resolve-all", "rule-sharc") and not argv[

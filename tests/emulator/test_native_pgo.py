@@ -184,7 +184,7 @@ def test_launch_plan_skips_a_stale_profile_with_one_line(tree, monkeypatch):
     plan, notice = native_pgo.launch_plan({})
     assert plan is None
     assert "stale for this core; building without PGO" in notice
-    assert "mise run pgo" in notice
+    assert "mise run perf:pgo" in notice
     assert "-no-pgo-warn-mismatch" in native_pgo.profile_use_flags("p")
 
 
@@ -204,7 +204,7 @@ def test_launch_plan_uses_a_partly_stale_profile(tree, monkeypatch):
     assert str(tree / "state" / "p.profdata") in plan.env["RUSTFLAGS"]
     assert notice == (
         "PGO profile partly stale (sources changed since training); using it. "
-        "Retrain at milestones with `mise run pgo`."
+        "Retrain at milestones with `mise run perf:pgo`."
     )
 
 
@@ -232,7 +232,7 @@ def test_dt2_notices_name_the_dt2_train_command():
     assert "train --device dt2" in native_pgo.fallback_notice("stale", "x", "dt2")
     assert "train --device dt2" in native_pgo.stale_notice("x", "dt2")
     assert "--device" not in native_pgo.fallback_notice("stale", "x")
-    assert "mise run pgo" in native_pgo.stale_notice("x")
+    assert "mise run perf:pgo" in native_pgo.stale_notice("x")
 
 
 def test_pgo_variant_can_be_redirected_for_a_scratch_build():

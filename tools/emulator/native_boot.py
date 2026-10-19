@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-USAGE = "usage: mise run boot -- SYX [--out DIR] [--card-image FILE] [--limit N] [--stop-at ready|limit]"
+USAGE = "usage: mise run dev:boot -- SYX [--out DIR] [--card-image FILE] [--limit N] [--stop-at ready|limit]"
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 

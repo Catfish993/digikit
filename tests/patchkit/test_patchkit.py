@@ -3,7 +3,6 @@
 Needs the stock images in the repository root and a built `patchkit` binary (built here with cargo, offline).
 """
 
-import hashlib
 import json
 import os
 import subprocess
@@ -20,14 +19,11 @@ from tools.firmware import config  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import port_resolve  # noqa: E402
 
-DT2_116 = config.stock("Digitakt_II_OS1.16.syx")
 DT2_117 = config.stock("Digitakt_II_OS1.17.syx")
-DN2_111 = config.stock("Digitone_II_OS1.11.syx")
 DN2_112 = config.stock("Digitone_II_OS1.12.syx")
-XSLICE_SECTION3 = "cdbd772639d22c8a06231958e00a600fd7fd29df3b057e33ff4d76f837ecb86a"
 
 pytestmark = pytest.mark.skipif(
-    not all(p.exists() for p in (DT2_116, DT2_117, DN2_111, DN2_112)),
+    not all(p.exists() for p in (DT2_117, DN2_112)),
     reason="stock firmware images not present",
 )
 
@@ -61,7 +57,7 @@ def apply(patchkit, tmp_path, fw, mods, *extra):
     return out, json.loads(plan.read_text())
 
 
-@pytest.mark.parametrize("fw", [DT2_116, DT2_117, DN2_111, DN2_112])
+@pytest.mark.parametrize("fw", [DT2_117, DN2_112])
 def test_unchanged_image_rebuilds_byte_for_byte(patchkit, tmp_path, fw):
     out = tmp_path / "rebuilt.syx"
     patchkit("rebuild", fw, "-o", out)
@@ -75,7 +71,7 @@ def test_aplib_packer_equals_python_on_small_sections(patchkit):
     assert rust.exists()
     r = subprocess.run(
         [sys.executable, "-m", "tools.patchkit.pk_aplib_eq", "--only", "2,7,8", "--rust", str(rust),
-         str(config.stock("Digitakt_II_OS1.16.syx")), str(config.stock("Digitone_II_OS1.12.syx"))],
+         str(config.stock("Digitakt_II_OS1.17.syx")), str(config.stock("Digitone_II_OS1.12.syx"))],
         cwd=ROOT,
         env=python_env(),
         capture_output=True,
@@ -92,54 +88,17 @@ def test_dn2_master_half_equals_dsp_patch_py(patchkit, tmp_path):
         check=True,
         capture_output=True,
     )
-    out, _ = apply(patchkit, tmp_path, DN2_111, "oracle/dn2-master-half", "--no-record")
+    out, _ = apply(patchkit, tmp_path, DN2_112, "oracle/dn2-master-half", "--no-record")
     ref = tmp_path / "ref.syx"
     subprocess.run(
-        [sys.executable, "-m", "tools.patchkit.dsp_patch", "syx", str(DN2_111),
-         str(ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.11-master-half.patch"), str(ref)],
+        [sys.executable, "-m", "tools.patchkit.dsp_patch", "syx", str(DN2_112),
+         str(ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.12-master-half.patch"), str(ref)],
         env=python_env(),
         check=True,
         capture_output=True,
     )  # fmt: skip
     a, b = port_resolve.sections_of(out), port_resolve.sections_of(ref)
     assert a == b, {k: a[k] == b[k] for k in a}
-
-
-@pytest.fixture(scope="module")
-def xslice_module():
-    """The XSLICE oracle is generated (it holds words of the 1.16 image) under out/modules, never committed."""
-    r = subprocess.run(
-        [sys.executable, "-m", "tools.patchkit.pk_oracle_xslice"],
-        cwd=ROOT,
-        env=python_env(),
-        capture_output=True,
-        text=True,
-    )
-    if r.returncode:
-        pytest.skip("cannot generate the XSLICE module: " + r.stderr[-300:])
-
-
-def test_xslice_raw_writes_pin_section_3(patchkit, tmp_path, xslice_module):
-    out, plan = apply(
-        patchkit, tmp_path, DT2_116, "oracle/xslice-dt2-1-16", "--no-record"
-    )
-    secs = port_resolve.sections_of(out)
-    assert hashlib.sha256(secs[3]).hexdigest() == XSLICE_SECTION3
-    stock = port_resolve.sections_of(DT2_116)
-    assert all(secs[k] == stock[k] for k in secs if k != 3)
-    assert len(plan["writes"]) == 41
-
-
-def test_xslice_is_refused_on_another_firmware(patchkit, xslice_module):
-    r = patchkit(
-        "check",
-        "--firmware",
-        DT2_117,
-        "--modules",
-        "oracle/xslice-dt2-1-16",
-        check=False,
-    )
-    assert "not compatible" in r.stdout + r.stderr
 
 
 @pytest.mark.parametrize("fw", [DT2_117, DN2_112])
@@ -206,9 +165,7 @@ def test_pk_build_objects_are_current():
 
 def test_ports_are_current():
     for name, fw in (
-        ("dt2-1.16", DT2_116),
         ("dt2-1.17", DT2_117),
-        ("dn2-1.11", DN2_111),
         ("dn2-1.12", DN2_112),
     ):
         got_name, text = port_resolve.resolve(fw)

@@ -2,7 +2,7 @@
 """patchkit proof: the PLUCK machine end to end on Digitakt II (core/dsp-voice + core/machines + core/params +
 machines/pluck), in the emulator, through the panel.
 
-    uv run python -m tools.patchkit.pk_proof_pluck [--fw 1.17|1.16] [--out DIR] [--only a,b,c,d,e,f,g] [--quick] [--jobs N]
+    uv run python -m tools.patchkit.pk_proof_pluck [--fw 1.17] [--out DIR] [--only a,b,c,d,e,f,g] [--quick] [--jobs N]
 
 Drives one patched image per part on coupled daemons through the harness (`tools/patchkit/pk_harness.py` Session: panel inputs,
 health asserted after every input) and reads back:
@@ -872,7 +872,7 @@ PARTS = [
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--fw", default="1.17", choices=("1.16", "1.17"))
+    ap.add_argument("--fw", default="1.17", choices=("1.17",))
     K.add_args(ap, PARTS)
     a = ap.parse_args()
     a.out = a.out or (

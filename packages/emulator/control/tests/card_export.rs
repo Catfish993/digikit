@@ -1,6 +1,6 @@
 //! A project saved by the DT2 firmware reaches the +Drive folder: boot the DT2 on a card built from a folder of
 //! WAV files, save the project with the panel keys (FUNC+SETTINGS, YES), then `card.export` and check the
-//! folder. ColdFire only (no DSP): the save path does not need audio. Skipped without the DT2 1.16 firmware.
+//! folder. ColdFire only (no DSP): the save path does not need audio. Skipped without the DT2 1.17 firmware.
 
 use std::{fs, path::PathBuf};
 
@@ -38,7 +38,7 @@ fn dt2_syx() -> Option<PathBuf> {
     std::env::var_os("DT2_SYX").map(PathBuf::from).or_else(|| {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
-            .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.16.syx"))
+            .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.17.syx"))
             .find(|path| path.exists())
     })
 }

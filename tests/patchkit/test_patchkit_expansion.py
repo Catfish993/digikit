@@ -124,7 +124,7 @@ def test_patched_image_boots_and_the_module_runs_in_place(fw, base_sha, tmp_path
     assert r[1].ok and r[1].d0 == 0x1234 + 36
 
 
-@pytest.mark.parametrize("fw", ["Digitakt_II_OS1.16.syx", "Digitakt_II_OS1.17.syx"])
+@pytest.mark.parametrize("fw", ["Digitakt_II_OS1.17.syx"])
 def test_machines_shims_live_in_the_expansion_region_not_the_cave(fw, tmp_path):
     """The native core executes from DDR (finding 07): core/machines keeps its code in cf.expansion and the flash cave holds
     the expansion loader only (56 bytes), however many machines are added."""

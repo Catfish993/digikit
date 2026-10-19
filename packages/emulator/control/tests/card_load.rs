@@ -33,7 +33,7 @@ fn dt2_syx() -> Option<PathBuf> {
     std::env::var_os("DT2_SYX").map(PathBuf::from).or_else(|| {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
-            .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.16.syx"))
+            .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.17.syx"))
             .find(|path| path.exists())
     })
 }

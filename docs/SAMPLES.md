@@ -1,13 +1,13 @@
 # The emulated +Drive: `plus_drive/` and `samples/`
 
-`mise run emu` builds the emulated +Drive from a folder, `plus_drive/<device>/`
+`mise run workbench` builds the emulated +Drive from a folder, `plus_drive/<device>/`
 (`plus_drive/dt2/` for the Digitakt II, `plus_drive/dn2/` for the Digitone II),
 ignored by git. The device is the one the firmware file belongs to. Use
-`mise run emu -- --plus-drive DIR` for another folder (`--samples DIR` is the same
+`mise run workbench -- --plus-drive DIR` for another folder (`--samples DIR` is the same
 option, kept for the old `samples/` flow). A folder that is missing or holds nothing
 the device can use leaves the emulator on its built-in empty card; `--card-image`
 overrides the folder. The image is built by `packages/emulator/plusdrive`
-(`plusdrive build`, also `mise run plusdrive -- build DIR -o IMAGE --syx FW`) and cached by
+(`plusdrive build`, also `mise run dev:plusdrive -- build DIR -o IMAGE --syx FW`) and cached by
 content in `out/plusdrive/native/<key>/<device>.img` (key: firmware, builder
 binary, device, every file's relative path and bytes).
 
@@ -52,7 +52,7 @@ binary, device, every file's relative path and bytes).
 
 ## Exit export
 
-`mise run emu` builds the card from the folder and starts the app with `--card-folder <folder>`: when the app exits, the
+`mise run workbench` builds the card from the folder and starts the app with `--card-folder <folder>`: when the app exits, the
 firmware's changes to the card are exported back into the folder (files of the path filesystem, `.mmcfs/` slots and
 regions; finding 24) and a line says how many files changed:
 
@@ -60,7 +60,7 @@ regions; finding 24) and a line says how many files changed:
 card: exported 2 changed files to plus_drive/dt2 (2 added, 0 replaced; 0 deleted by the firmware, kept; 0 issues); backup out/plusdrive/backup/<stamp>
 ```
 
-Replaced files are moved to `out/plusdrive/backup/<stamp>/` first. `mise run emu -- --no-sync` leaves the folder alone on
+Replaced files are moved to `out/plusdrive/backup/<stamp>/` first. `mise run workbench -- --no-sync` leaves the folder alone on
 exit (`card.export` still works by hand). A saved project is 14.5 MB, and the working project is another 14.5 MB, so a
 folder grows by that much once the firmware has saved. The exported project changes the folder's content, so the next
 start builds a new card image and, with audio, boots its ready state again (the cache key is the folder's content).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the DN2 master-half oracle module from tools/patchkit/dsp_patches/dn2-1.11-master-half.patch.
+"""Generate the DN2 master-half oracle module from tools/patchkit/dsp_patches/dn2-1.12-master-half.patch.
 
     uv run python -m tools.patchkit.pk_oracle_dn2_half
 
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PATCH = ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.11-master-half.patch"
+PATCH = ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.12-master-half.patch"
 OUT = ROOT / "out" / "modules" / "oracle" / "dn2-master-half" / "module.toml"
 CONVERTER_PC = 0x1C9D3F  # entry of the Q31 converter (anchor dsp.master.q31_converter)
 
@@ -39,11 +39,10 @@ version = "0.1.0"
 name = "DN2 master half (oracle)"
 category = "oracle"
 status = "pinned"
-summary = "One write: the master Q31 scale 31 -> 30 (-6 dB). Must equal tools/patchkit/dsp_patches/dn2-1.11-master-half.patch applied by tools/patchkit/dsp_patch.py"
-ports = ["dn2-1.11", "dn2-1.12"]
+summary = "One write: the master Q31 scale 31 -> 30 (-6 dB). Must equal tools/patchkit/dsp_patches/dn2-1.12-master-half.patch applied by tools/patchkit/dsp_patch.py"
+ports = ["dn2-1.12"]
 
 [targets]
-"dn2-1.11" = "tested"
 "dn2-1.12" = "tested"
 
 [[op]]

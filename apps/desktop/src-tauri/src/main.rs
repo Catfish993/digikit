@@ -21,7 +21,7 @@ struct Host {
     handle: Handle,
     /// Where the webview's chosen sample files are staged before the card is built.
     staging: PathBuf,
-    /// The .syx the app was started with (`mise run emu -- FILE`); the console shows it and reloads it
+    /// The .syx the app was started with (`mise run workbench -- FILE`); the console shows it and reloads it
     /// when it changes. The page can read only this file.
     source: Option<PathBuf>,
 }
@@ -76,7 +76,7 @@ async fn emu_diagnostics(host: State<'_, Host>, session_id: u64) -> Result<Value
 }
 
 /// Writes an exported diagnostics report to `out/native/diagnostics/` under
-/// the working directory (the repository root under `mise run emu`); the
+/// the working directory (the repository root under `mise run workbench`); the
 /// webview cannot save `<a download>` links.
 #[tauri::command]
 fn emu_save_diagnostics(name: String, json: String) -> Result<String, String> {

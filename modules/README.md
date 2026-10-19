@@ -34,7 +34,7 @@ must equal the module id.
 - **Module id**: `category/name`, lower case, hyphens (`fx/master-gain`). The id is the path under `modules/`;
   patchkit refuses a manifest whose id differs from its directory.
 - **Categories**: `core` (frameworks other modules require), `fx`, `machines`, `ui`, `tools`, `test` (fixtures and
-  research probes; they are not for users). `mise run patch:new` accepts these.
+  research probes; they are not for users). `mise run module:new` accepts these.
 - **Entry ids** (in `[[entry]]`): `[a-z][a-z0-9_]*`. They become symbols (`machines.pluck.index`).
 - **Symbols** in expressions: `[A-Za-z_.][A-Za-z0-9_.]*`.
 - **Version**: `major.minor.patch`; raise it when the module's behaviour or its interface to other modules changes.
@@ -106,7 +106,7 @@ A built object that patchkit places in a region. One module may have several (fo
 | Key | Meaning |
 |---|---|
 | `path` | built object, relative to the module (`build/x.dko.json`) |
-| `sources` | source files `patch:build` compiles into it (`.c`, `.s`), relative to the module; all of one CPU |
+| `sources` | source files `module:build` compiles into it (`.c`, `.s`), relative to the module; all of one CPU |
 | `place` | region: `dsp.l2` (SHARC+ code and data), `cf.expansion` (ColdFire code, data, bss) or `cf.flash_cave` (only the built-in loader) |
 | `devices` | optional: `["dt2"]`, `["dn2"]` or both (default: both) |
 | `[object.externs]` | undefined symbol of the object = anchor name (a symbol named exactly like an anchor needs no entry) |
@@ -209,7 +209,7 @@ What registers are free at a hook site is the module's business: document it in 
 
 ### `[[anchor_rule]]`
 
-How `mise run port:resolve` finds a firmware site. It writes the result (address, length, SHA-256) into
+How `mise run patch:port` finds a firmware site. It writes the result (address, length, SHA-256) into
 `devices/ports/*.toml`. The same anchor name may have one rule per device (`devices = [...]`). A rule that finds no
 match or two matches is an error.
 
@@ -241,7 +241,7 @@ mark = "D"
 
 To write a SHARC rule for a site: `uv run python -m tools.patchkit.port_resolve rule-sharc dt2-1.17 0x1c7734 --len 6` prints the
 hash and offset. ColdFire rules come from the function hashes of the `cfdb` database (`tools/coldfire/cf.py`,
-`tools/patchkit/pk_machine_rules.py` as an example generator). Then run `mise run port:resolve` and check that the diff of
+`tools/patchkit/pk_machine_rules.py` as an example generator). Then run `mise run patch:port` and check that the diff of
 `devices/ports/` shows your anchors on every firmware you claim. Full syntax: the docstring of `tools/patchkit/port_resolve.py`.
 
 ### `[[registry]]` and `[[registry.field]]`
@@ -278,7 +278,7 @@ last = 23                          # the highest number the framework supports o
 "machines/pluck:pluck" = 9         # "<module id>:<entry id>" = number
 ```
 
-The numbers are allocated by hand (or by `mise run patch:new -- machines/NAME --machine`, which takes the next free
+The numbers are allocated by hand (or by `mise run module:new -- machines/NAME --machine`, which takes the next free
 number on each device and prints it) and committed with the module. A number is never reused or changed, also not
 after its machine is removed. Digitakt II numbers start at 7, Digitone II at 5 (stock types are never allocated); `last`
 is 23 on both (Digitakt II: the DSP selector table was read to entry 23). patchkit refuses an entry without a number,
@@ -451,7 +451,7 @@ Module tests live in `tests/*.toml` and run in the smoke matrix for every module
 [test]
 name = "audible"            # unique within the module
 devices = ["dt2", "dn2"]    # which devices
-quick = true                # also run by `patch:dev` after every edit
+quick = true                # also run by `module:dev` after every edit
 
 [[step]]
 tap = "TRIG 1"              # one action per step
@@ -471,15 +471,15 @@ main-loop stall. The complete list is the docstring of `tools/patchkit/pk_harnes
 
 Workflow:
 
-1. `mise run patch:new -- category/name` and fill in the manifest and the sources.
-2. `mise run patch:dev -- --modules category/name`: edit, see one summary line per save.
+1. `mise run module:new -- category/name` and fill in the manifest and the sources.
+2. `mise run module:dev -- --modules category/name`: edit, see one summary line per save.
 3. Add module tests; the template's `smoke.toml` only checks that the patched firmware is audible and does not fault.
 4. Add a cell to `tests/patchkit/smoke/matrix.toml` for each device and firmware you support, then
    `mise run patch:test -- --cell "dt2-1.17:category/name" --update` records the frame goldens (hashes only) once,
    and later runs compare against them. A change that is invisible on screen must give the stock frames.
 5. A module that changes sound needs a proof against a reference (PCM level, pitch, bit-identity at the neutral
    setting). The proofs are `tools/patchkit/pk_proof_*.py`; write one the same way and report numbers in a finding.
-6. `mise run patch:build -- --check` must pass (committed objects equal fresh builds).
+6. `mise run module:build -- --check` must pass (committed objects equal fresh builds).
 
 ## Worked example 1: `fx/master-gain` (SHARC+ only, both devices)
 
@@ -502,10 +502,10 @@ them to the 24-bit output.
 - **Test.** `tests/smoke.toml`: tap TRIG 1, expect audible output and no fault.
 
 ```sh
-mise run patch:build -- modules/fx/master-gain --check
+mise run module:build -- modules/fx/master-gain --check
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
 mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain
-mise run patch:dev -- --modules fx/master-gain
+mise run module:dev -- --modules fx/master-gain
 mise run patch:test -- --cell "dt2-1.17:fx/master-gain,test/cf-demo"
 ```
 
@@ -528,7 +528,7 @@ of its own: three frameworks do the firmware work, and the module only declares 
   stock row to copy the formatter and value class from, `slot` (the engine slot the value travels in), `min`, `max`
   and `default`.
 - **No numbers of the firmware's types.** The machine's type number is permanent: its row in
-  `modules/core/machines/types.toml` (`mise run patch:new -- machines/NAME --machine` adds the next free one). The
+  `modules/core/machines/types.toml` (`mise run module:new -- machines/NAME --machine` adds the next free one). The
   parameter indices are assigned in canonical module order. The DSP entry and the machine entry both name `machines.pluck.index`, so they always agree.
 - **Tests.** `tests/select.toml` opens the machine list, selects PLUCK, checks the committed type, the SRC page frame,
   that a trig sounds, that the DSP knows the type and that turning a knob changes the page. `tests/smoke.toml` checks

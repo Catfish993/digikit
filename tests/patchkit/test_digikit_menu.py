@@ -18,8 +18,6 @@ from tools.patchkit import pk_build, pk_menu_rules, pk_toolchains  # noqa: E402
 
 MODULE = ROOT / "modules/core/digikit-menu"
 IMAGES = {
-    "dt2-1.16": "Digitakt_II_OS1.16.syx",
-    "dn2-1.11": "Digitone_II_OS1.11.syx",
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
 }
@@ -106,7 +104,7 @@ def test_plan_helpers(tmp_path):
     plan.write_text(
         json.dumps(
             {
-                "base": {"device": "dt2", "version": "1.16"},
+                "base": {"device": "dt2", "version": "1.17"},
                 "regions": {"cf.expansion": [0x1000, 0x100000]},
                 "symbols": {
                     "core/digikit-menu@0.1.0:.sec..bss._RNvCsAbC_15pk_digikit_menu4TICK": 0x47E8C100,
@@ -117,7 +115,7 @@ def test_plan_helpers(tmp_path):
     )
     p = digikit_menu_proof.Plan(plan)
     assert p.addr("TICK") == 0x47E8C100 and p.addr("DKRT_STATE") == 0x47E8C200
-    lo, hi = arena_safety.expansion("dt2-1.16")
+    lo, hi = arena_safety.expansion("dt2-1.17")
     assert arena_safety.plan_allow_pc(plan) == "0x%x-0x%x" % (lo, lo + 0x1000)
 
 

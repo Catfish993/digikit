@@ -40,7 +40,7 @@ def inputs(device: str, monkeypatch: pytest.MonkeyPatch):
             "needs a coupled digi-emud (DIGI_EMUD_DN2 / DIGI_EMUD_DT2) and the firmware"
         )
     if not (ready / "digi-audio-m5.snap").is_file():
-        pytest.skip(f"needs the ready inputs {ready} (mise run ready)")
+        pytest.skip(f"needs the ready inputs {ready} (mise run emu:ready)")
     monkeypatch.setenv("DIGI_EMUD", emud)
     return syx, ready
 

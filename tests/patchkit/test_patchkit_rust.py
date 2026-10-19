@@ -17,8 +17,6 @@ from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import pk_build, pk_cfcall, pk_toolchains  # noqa: E402
 
 IMAGES = [
-    "Digitakt_II_OS1.16.syx",
-    "Digitone_II_OS1.11.syx",
     "Digitakt_II_OS1.17.syx",
     "Digitone_II_OS1.12.syx",
 ]
@@ -149,9 +147,9 @@ def test_rust_functions_run_in_place(name, tmp_path):
 def test_instrumented_boot_and_call_have_no_stray_writes_or_fetches(tmp_path):
     """A boot with the write watch on cf.expansion (code range allowed) and the flush check: the loader runs before the
     caches, the module runs from loaded code: 0 events, 0 flush hits (finding 26)."""
-    fw = config.stock("Digitakt_II_OS1.16.syx")
+    fw = config.stock("Digitakt_II_OS1.17.syx")
     if not fw.exists():
-        pytest.skip("Digitakt_II_OS1.16.syx missing")
+        pytest.skip("Digitakt_II_OS1.17.syx missing")
     out, plan, sym = patched(fw, tmp_path)
     lo, hi = code_range(sym)
     log = tmp_path / "ww.jsonl"

@@ -28,10 +28,10 @@ Run every command from the repository root.
 ```sh
 mise install
 mise run setup        # Python and web dependencies
-mise run toolchains   # pinned m68k-elf gcc/binutils and the public SHARC+ assembler, into out/tools (about 15 min)
+mise run patch:toolchains   # pinned m68k-elf gcc/binutils and the public SHARC+ assembler, into out/tools (about 15 min)
 ```
 
-`mise run toolchains` is needed only to build module sources (`patch:build`, `patch:new`, `patch:dev`). Applying
+`mise run patch:toolchains` is needed only to build module sources (`module:build`, `module:new`, `module:dev`). Applying
 modules that are already built needs no toolchain. Put your firmware files in `firmware/`
 (`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`, ...). `uv run python -m tools.patchkit.pk_toolchains status` prints the
 installed versions.
@@ -84,10 +84,10 @@ mise run patch:mem -- fx/master-gain machines/pluck --device dt2 --firmware 1.17
 ### Run it in the emulator
 
 ```sh
-mise run emu                  # desktop emulator, or:
+mise run workbench            # desktop emulator, or:
 mise run emu:serve -- ...     # headless daemon on the control socket (see below)
-mise run inject -- out/patch/mg.syx
-mise run inject -- out/patch/mg.syx --hot
+mise run patch:inject -- out/patch/mg.syx
+mise run patch:inject -- out/patch/mg.syx --hot
 ```
 
 `inject` loads the image into the running emulator through the control socket (`firmware.load`). Without an
@@ -124,12 +124,12 @@ in the firmware and a card.
 ```sh
 uv run python -m tools.patchkit.patchkit patch --firmware firmware/Digitakt_II_OS1.17.syx \
   --modules core/dynreg,core/dyndsp,core/digikit-menu,core/health -o out/patch/rt-dt2.syx
-mise run pack -- test/dyn-pluck --device dt2       # out/patch/dyn-pluck-dt2.dkm (--device dn2 for the Digitone II)
+mise run module:pack -- test/dyn-pluck --device dt2       # out/patch/dyn-pluck-dt2.dkm (--device dn2 for the Digitone II)
 mkdir -p plus_drive/dt2 && cp notes.txt plus_drive/dt2/    # any file: the card is built only when the folder has content
-mise run emu -- out/patch/rt-dt2.syx
+mise run workbench -- out/patch/rt-dt2.syx
 ```
 
-`mise run emu` reads the patch record of the image (`DKPR`, through `patchkit inspect`), so a patched image gets the
+`mise run workbench` reads the patch record of the image (`DKPR`, through `patchkit inspect`), so a patched image gets the
 device, the stock base image for the card builder and the `plus_drive/<device>/` card, the same card that `inject`
 keeps. Then:
 
@@ -145,8 +145,8 @@ Use `DIGI_PLUS_DRIVE=DIR` or `-- --plus-drive DIR` for a scratch folder instead 
 ### Developer loop
 
 ```sh
-mise run patch:dev -- --modules fx/master-gain [--device dt2|dn2] [--firmware 1.17]
-mise run patch:dev -- --modules fx/master-gain --once      # one iteration, then exit
+mise run module:dev -- --modules fx/master-gain [--device dt2|dn2] [--firmware 1.17]
+mise run module:dev -- --modules fx/master-gain --once      # one iteration, then exit
 ```
 
 One daemon stays up on the stock firmware. Each time a file under the module's `src/` or its `module.toml` changes,
@@ -184,10 +184,10 @@ module family) are slower and are run before a merge, not in the loop.
 ### Create a module
 
 ```sh
-mise run patch:new -- fx/my-effect            # ColdFire and SHARC+ stubs
-mise run patch:new -- fx/my-effect --dsp      # SHARC+ master-bus hook that passes audio through
-mise run patch:new -- test/my-demo --cf       # ColdFire only: code, data and bss in cf.expansion
-mise run patch:build                          # rebuild all objects (`-- modules/fx/my-effect` for one, `-- --check` only checks)
+mise run module:new -- fx/my-effect            # ColdFire and SHARC+ stubs
+mise run module:new -- fx/my-effect --dsp      # SHARC+ master-bus hook that passes audio through
+mise run module:new -- test/my-demo --cf       # ColdFire only: code, data and bss in cf.expansion
+mise run module:build                         # rebuild all objects (`-- modules/fx/my-effect` for one, `-- --check` only checks)
 ```
 
 The command writes `modules/<category>/<name>/` (manifest, source stubs, `tests/smoke.toml`, `README.md`, `gallery/icon.svg`) and
@@ -197,8 +197,8 @@ the manifest reference.
 ### Resolve a port for a firmware
 
 ```sh
-mise run port:resolve -- firmware/Digitakt_II_OS1.17.syx   # one firmware -> devices/ports/dt2-1.17.toml
-mise run port:resolve                             # the four supported firmwares
+mise run patch:port -- firmware/Digitakt_II_OS1.17.syx   # one firmware -> devices/ports/dt2-1.17.toml
+mise run patch:port                             # the four supported firmwares
 ```
 
 A port records the anchors that modules need (address, length, SHA-256 of the bytes there) and the free regions of
@@ -239,7 +239,7 @@ frameworks are modules built on them. One implementation serves the command line
 
 Modules never contain addresses. A firmware site is a named **anchor** (`dsp.master.q31_call`,
 `cf.machines.dispatch`). The module that needs it declares how to find it with an `[[anchor_rule]]`, and
-`port:resolve` turns the rules into the lockfile. Rule kinds:
+`patch:port` turns the rules into the lockfile. Rule kinds:
 
 - SHARC+: `sharc_func` (a function found by its relocation-insensitive hash, plus an offset), `sharc_literal`,
   `sharc_mem_addr`, `sharc_table`.
@@ -403,15 +403,15 @@ The full table of 14 risks, with evidence and mitigation, is in [docs/plans/patc
 
 Phase 9 of `docs/plans/digikit-runtime.md`. Each rung is a patched image of the stock 1.17 firmware that adds one kind of risk to
 the one before. Flash one rung, look at the checks, and only then take the next. Stock `firmware/Digitakt_II_OS1.17.syx` is the way
-back from every rung. Nothing has been flashed yet; the module sets below were built and checked by `mise run preflight` on 2026-10-18
+back from every rung. Nothing has been flashed yet; the module sets below were built and checked by `mise run patch:preflight` on 2026-10-18
 (lane r1), the device steps are a plan.
 
-**Before each flash** (the patch needs the stock file in `firmware/` and the module objects built, `mise run patch:build`):
+**Before each flash** (the patch needs the stock file in `firmware/` and the module objects built, `mise run module:build`):
 
 ```sh
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules RUNG_MODULES -o out/patch/dt2-1.17-rungX.syx
-mise run preflight -- out/patch/dt2-1.17-rungX.syx            # must end with "PREFLIGHT OK"; exit 1 and "PREFLIGHT FAILED" otherwise
-mise run emu -- out/patch/dt2-1.17-rungX.syx                  # optional: the same image in the emulator
+mise run patch:preflight -- out/patch/dt2-1.17-rungX.syx            # must end with "PREFLIGHT OK"; exit 1 and "PREFLIGHT FAILED" otherwise
+mise run workbench -- out/patch/dt2-1.17-rungX.syx                  # optional: the same image in the emulator
 ```
 
 `preflight` checks: the patch record names a base that is a `[[firmware]]` of `devices/*.toml` and the stock file with that sha256 is
@@ -462,8 +462,8 @@ guessed. Rehearsed in the emulator on 2026-10-18 with exactly these images and c
 
 ```sh
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rungC-dt2-1.17.syx
-mise run preflight -- out/patch/rungC-dt2-1.17.syx     # must end with PREFLIGHT OK; sections 3 and 7 differ from stock, nothing else
-mise run pack -- test/dyn-pluck --device dt2           # out/patch/dyn-pluck-dt2.dkm
+mise run patch:preflight -- out/patch/rungC-dt2-1.17.syx     # must end with PREFLIGHT OK; sections 3 and 7 differ from stock, nothing else
+mise run module:pack -- test/dyn-pluck --device dt2           # out/patch/dyn-pluck-dt2.dkm
 shasum -a 256 out/patch/rungC-dt2-1.17.syx out/patch/dyn-pluck-dt2.dkm
 ```
 
@@ -586,7 +586,7 @@ touched, and `DIGI_PK_ROOT` makes `patch` and `preflight` use that tree):
 ```sh
 R=$(uv run python -m tools.patchkit.pk_variant make core/dsp-voice DV_BISECT_C2 dv-c2)
 DIGI_PK_ROOT=$R mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rungC2-dt2-1.17.syx
-mise run preflight -- out/patch/rungC2-dt2-1.17.syx       # PREFLIGHT OK; sections 3 and 7 differ from stock, nothing else
+mise run patch:preflight -- out/patch/rungC2-dt2-1.17.syx       # PREFLIGHT OK; sections 3 and 7 differ from stock, nothing else
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rungC-dt2-1.17.syx   # the matching rung C
 shasum -a 256 out/patch/rungC2-dt2-1.17.syx out/patch/rungC-dt2-1.17.syx
 ```
@@ -639,7 +639,7 @@ All three: 1,885,472 bytes, `PREFLIGHT OK` (sections 3 and 7 differ from stock, 
 for v in a:DV_C3_FINE,DV_C3_DB b:DV_C3_FINE,DV_C3_NOIRQ c:DV_C3_FINE,DV_C3_NOSYS; do
   n=${v%%:*}; R=$(uv run python -m tools.patchkit.pk_variant make core/dsp-voice ${v#*:} dv-c3$n)
   DIGI_PK_ROOT=$R mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rungC3$n-dt2-1.17.syx
-  DIGI_PK_ROOT=$R mise run preflight -- out/patch/rungC3$n-dt2-1.17.syx    # PREFLIGHT OK
+  DIGI_PK_ROOT=$R mise run patch:preflight -- out/patch/rungC3$n-dt2-1.17.syx    # PREFLIGHT OK
 done
 shasum -a 256 out/patch/rungC3?-dt2-1.17.syx
 ```
@@ -670,13 +670,13 @@ All three `PREFLIGHT OK` (sections 3 and 7 differ from stock, nothing else); 1,8
 Emulator (scenarios `rung-c3d1`, `rung-c3d2`, `rung-c3d3`, full tier): see "Emulator proof" below. The emulator accepts the excluded stores, so d1 does not halt there; a pass in the emulator says the
 variants keep the path working, not that the cause is found.
 
-**Build** (a module build with a store the ISA does not allow fails, and `mise run preflight` scans section 7 for them: `tools/patchkit/pk_isacheck.py`; d1 can no longer be built, the old image shows 17):
+**Build** (a module build with a store the ISA does not allow fails, and `mise run patch:preflight` scans section 7 for them: `tools/patchkit/pk_isacheck.py`; d1 can no longer be built, the old image shows 17):
 
 ```sh
 for v in d2:DV_C3_FINE d3:DV_C3_FINE,DV_C3_DEEP; do
   n=${v%%:*}; R=$(uv run python -m tools.patchkit.pk_variant make core/dsp-voice ${v#*:} dv-c3$n)
   DIGI_PK_ROOT=$R mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rungC3$n-dt2-1.17.syx
-  DIGI_PK_ROOT=$R mise run preflight -- out/patch/rungC3$n-dt2-1.17.syx    # PREFLIGHT OK
+  DIGI_PK_ROOT=$R mise run patch:preflight -- out/patch/rungC3$n-dt2-1.17.syx    # PREFLIGHT OK
 done
 shasum -a 256 out/patch/rungC3d?-dt2-1.17.syx
 ```
@@ -732,7 +732,7 @@ Rehearsed in the emulator on 2026-10-19 (scenarios `menu-dkrun-pluck` and `uploa
 
 ```sh
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rt4-dt2-1.17.syx
-mise run preflight -- out/patch/rt4-dt2-1.17.syx     # PREFLIGHT OK and "ISA check: ok"; sections 3 and 7 differ from stock, nothing else
+mise run patch:preflight -- out/patch/rt4-dt2-1.17.syx     # PREFLIGHT OK and "ISA check: ok"; sections 3 and 7 differ from stock, nothing else
 shasum -a 256 out/patch/rt4-dt2-1.17.syx
 ```
 
@@ -778,9 +778,9 @@ One flash, and the `.dkm` files must be packed again (a DSP section of version 2
 
 ```sh
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rt5-dt2-1.17.syx
-mise run preflight -- out/patch/rt5-dt2-1.17.syx     # PREFLIGHT OK and "ISA check: ok"; sections 3 and 7 differ from stock, nothing else
+mise run patch:preflight -- out/patch/rt5-dt2-1.17.syx     # PREFLIGHT OK and "ISA check: ok"; sections 3 and 7 differ from stock, nothing else
 shasum -a 256 out/patch/rt5-dt2-1.17.syx
-mise run pack -- test/dyn-pluck --device dt2          # the machine as a .dkm (DSP section version 2)
+mise run module:pack -- test/dyn-pluck --device dt2          # the machine as a .dkm (DSP section version 2)
 ```
 
 Image: 1,887,392 bytes, sha256 `ced22f18eb8c1a955be440b3d6bffe8b776fd00d0ce1d20053d1c90e46f8d16f` (a different hash means the sources changed since this text was written: use the printed value and the preflight result).

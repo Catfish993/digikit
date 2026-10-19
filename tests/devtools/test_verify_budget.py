@@ -244,60 +244,6 @@ def test_check_no_aot_selection_names_real_tests() -> None:
             assert f"def {word}(" in source, word
 
 
-# ---- the digikit images --------------------------------------------------------------------------------------
-
-
-def test_digikit_images_default_is_the_newest(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DIGIKIT_IMAGES", raising=False)
-    assert verify.digikit_images(False, False, [])[0] is None  # quick tier: newest
-    mode, why = verify.digikit_images(True, False, ["tools/devtools/verify.py"])
-    assert (
-        mode == "newest" and "dt2-1.17" in why and "dt2-1.16" not in why.split("(")[0]
-    )
-    assert verify.digikit_images(False, True, [])[0] == "all"  # --old-images
-    older = [p for p in verify.old_image_paths() if p.startswith("devices/ports/")]
-    assert "devices/ports/dt2-1.16.toml" in older
-    assert "devices/ports/dt2-1.17.toml" not in older
-    assert (
-        verify.digikit_images(True, False, ["devices/ports/dt2-1.16.toml"])[0] == "all"
-    )
-    assert (
-        verify.digikit_images(True, False, ["tools/patchkit/port_resolve.py"])[0]
-        == "all"
-    )
-    assert (
-        verify.digikit_images(True, False, ["devices/ports/dt2-1.17.toml"])[0]
-        == "newest"
-    )
-    assert (
-        verify.digikit_images(True, False, ["devices/ports/dn2-1.12.toml"])[0]
-        == "newest"
-    )
-    assert (
-        verify.digikit_images(True, False, ["devices/ports/dn2-1.11.toml"])[0] == "all"
-    )
-
-
-def test_scenario_images_follow_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tools.patchkit import pk_digikit_scen as S
-
-    scen = next(
-        s
-        for s in S.load_scenarios()
-        if len(s.devices) == 2 and not s.data["scenario"].get("images")
-    )
-    newest = [S.QUICK_IMAGES[d] for d in scen.devices]
-    every = [i for d in scen.devices for i in S.ALL_IMAGES[d]]
-    monkeypatch.delenv("DIGIKIT_IMAGES", raising=False)
-    assert scen.images("quick") == newest  # the tool's own defaults are unchanged
-    assert scen.images("full") == every
-    monkeypatch.setenv("DIGIKIT_IMAGES", "newest")  # what verify --full sets
-    assert scen.images("full") == newest
-    monkeypatch.setenv("DIGIKIT_IMAGES", "all")  # --old-images
-    assert scen.images("quick") == every
-    assert "dt2-1.16" in every and "dn2-1.11" in every
-
-
 def test_pk_jobs_variable_caps_the_harness(monkeypatch: pytest.MonkeyPatch) -> None:
     from tools.patchkit import pk_harness
 

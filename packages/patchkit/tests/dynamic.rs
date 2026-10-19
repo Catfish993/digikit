@@ -45,7 +45,7 @@ fn a_dynamic_module_is_not_lowered_and_not_patched() {
         "no registry rows are made for a run-time module"
     );
     let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
-    for file in ["Digitakt_II_OS1.16.syx", "Digitakt_II_OS1.17.syx"] {
+    for file in ["Digitakt_II_OS1.17.syx"] {
         let Ok(raw) = std::fs::read(root().join("firmware").join(file)) else {
             continue;
         };
@@ -142,7 +142,7 @@ fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
     let lib = library();
     let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
     let mut ran = 0;
-    for file in ["Digitakt_II_OS1.16.syx", "Digitakt_II_OS1.17.syx"] {
+    for file in ["Digitakt_II_OS1.17.syx"] {
         let Ok(raw) = std::fs::read(root().join("firmware").join(file)) else {
             continue;
         };

@@ -10,7 +10,7 @@
 //! timer reads per 0.667 ms period and one hash/sum pass over the PCM.
 //!
 //! ```text
-//! coupled-run --syx firmware/Digitone_II_OS1.11.syx \
+//! coupled-run --syx firmware/Digitone_II_OS1.12.syx \
 //!   --dsp-image out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-dn2-image.bin \
 //!   --dsp-state out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap.dsp \
 //!   --cf-snapshot out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
@@ -239,7 +239,7 @@ fn do_peeks(rt: &mut CoupledRuntime, peeks: &[(String, Peek)]) -> Value {
 
 fn parse_args() -> Result<Args, String> {
     let mut a = Args {
-        syx: "firmware/Digitone_II_OS1.11.syx".into(),
+        syx: "firmware/Digitone_II_OS1.12.syx".into(),
         image: PathBuf::new(),
         state: PathBuf::new(),
         snapshot: PathBuf::new(),

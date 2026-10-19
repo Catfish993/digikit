@@ -282,7 +282,7 @@ def capture_pack(
     capture: str | os.PathLike[str],
     *,
     lp0: str | os.PathLike[str] | None = None,
-    image: str = "dt2-1.16",
+    image: str = "dt2-1.17",
     start_frame: int = 74,
 ) -> str:
     """The live pack for CAPTURE (``sharc_transpile_run.live_pack``: built
@@ -307,7 +307,7 @@ def state_pack(
     lp0: str | os.PathLike[str] | None,
     card_sha256: str | None,
     *,
-    image: str = "dt2-1.16",
+    image: str = "dt2-1.17",
 ) -> str:
     """The frameless live pack for frames pushed live
     (``sharc_transpile_run.state_pack``: the start state with the LP0 feed

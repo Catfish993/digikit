@@ -17,9 +17,7 @@ from tools.patchkit import pk_build, pk_device, pk_link, pk_toolchains
 ROOT = REPO_ROOT
 MOD = ROOT / "modules" / "core" / "dsp-link"
 IMAGES = {
-    "dt2-1.16": "Digitakt_II_OS1.16.syx",
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
-    "dn2-1.11": "Digitone_II_OS1.11.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
 }
 
@@ -149,7 +147,7 @@ def test_dsp_site_is_the_ring_toggle_store(image):
     if not config.stock(IMAGES[image]).exists():
         pytest.skip("firmware not present")
     pm = anchors(image)["dl.dsp.block_tail"]["pm"]
-    img = sharc.load("dt2-1.16" if image[:3] == "dt2" else "dn2-1.11")
+    img = sharc.load("dt2-1.17" if image[:3] == "dt2" else "dn2-1.12")
     rows = dict(img.listing(pm - 1, 4))
     assert re.fullmatch(r"DM\(0x[0-9a-f]+\) = R1", rows[hex(pm)]), rows
 

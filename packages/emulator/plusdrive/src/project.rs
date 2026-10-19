@@ -357,8 +357,8 @@ pub fn build_project_record(
 mod tests {
     use super::*;
 
-    /// The built-in project stream is found in 1.16 and in the relinked 1.17
-    /// (where it moves by +0x53c) and decodes to the same container.
+    /// The built-in project stream is found in the relinked 1.17 (where it
+    /// moves by +0x53c).
     #[test]
     fn finds_the_builtin_stream_in_relinked_firmware() {
         let main_of = |file: &str| {
@@ -366,19 +366,10 @@ mod tests {
             let parsed = dt2_firmware_loader::parse(&syx).ok()?;
             parsed.sections.into_iter().find(|s| s.id == 3).map(|s| s.bytes)
         };
-        let (Some(a), Some(b)) = (
-            main_of("Digitakt_II_OS1.16.syx"),
-            main_of("Digitakt_II_OS1.17.syx"),
-        ) else {
+        let Some(b) = main_of("Digitakt_II_OS1.17.syx") else {
             return;
         };
-        assert_eq!(stream_offset(&a), BUILTIN_STREAM_OFFSET);
         assert_eq!(stream_offset(&b), BUILTIN_STREAM_OFFSET + 0x53c);
-        let seed = |main| ProjectSeed {
-            main,
-            contract: PlusdriveProjectContract::Dt2V3Default116,
-        };
-        assert_eq!(extract(seed(&a)).unwrap(), extract(seed(&b)).unwrap());
     }
     #[test]
     fn malformed_streams_fail_before_depacking() {
@@ -434,7 +425,7 @@ mod tests {
             .or_else(|| {
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .ancestors()
-                    .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.16.syx"))
+                    .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.17.syx"))
                     .find(|path| path.exists())
             })?;
         let bytes = std::fs::read(path).ok()?;

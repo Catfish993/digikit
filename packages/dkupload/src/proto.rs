@@ -299,14 +299,14 @@ mod tests {
     #[test]
     fn info_and_list_parse() {
         let mut b = vec![0, 1, 0, 3];
-        b.extend(b"dt2-1.16\0");
+        b.extend(b"dt2-1.17\0");
         b.extend(1024u32.to_be_bytes());
         b.extend(32768u32.to_be_bytes());
         b.push(1);
         let i = parse_info(&b).unwrap();
         assert_eq!(
             (i.port.as_str(), i.free_bytes, i.max_chunk),
-            ("dt2-1.16", 1024, 32768)
+            ("dt2-1.17", 1024, 32768)
         );
         assert!(i.safe_mode() && !i.upload_open());
         assert!(parse_info(&b[..b.len() - 1]).is_err());

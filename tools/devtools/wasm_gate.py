@@ -12,7 +12,7 @@ time. The gate is <= 1.2 ns per instruction.
 
 With no step named, all three run. Everything lands in out/native/wasmgate/
 (dump/, wasm/, results.txt). Needs the DN2 firmware and ready inputs like
-tools/devtools/fastcov.py (DIGI_EMU_SYX), the shared core (`mise run core`, made here if
+tools/devtools/fastcov.py (DIGI_EMU_SYX), the shared core (`mise run gen:core`, made here if
 missing), node, and the pinned Rust toolchain.
 """
 

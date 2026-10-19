@@ -2,7 +2,7 @@
 
 Start the app with its log captured, then run this against the log:
 
-    DIGI_SPIKE_LOG=/tmp/spikes mise run emu -- [FIRMWARE] [--audio-buffer S] > app.log 2>&1 &
+    DIGI_SPIKE_LOG=/tmp/spikes mise run workbench -- [FIRMWARE] [--audio-buffer S] > app.log 2>&1 &
     uv run python -m tools.devtools.app_soak app.log 60 [--dt2]
     uv run python -m tools.devtools.spikes /tmp/spikes
 

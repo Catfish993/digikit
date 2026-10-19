@@ -1,5 +1,5 @@
-# DN2 OS 1.11: master Q31 conversion scale 31 -> 30, i.e. -6 dB on the output.
+# DN2 OS 1.12: master Q31 conversion scale 31 -> 30, i.e. -6 dB on the output.
 # 0x1c9d51 is `R2 = 0x1f` in the block handler's L/R conversion loop (findings
 # 07 ~4893: 0x1c9d3f converts master L/R to Q31 in the SPORT4A buffer).
-BASE 2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0
+BASE 7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35
 PM 1c9d51 0f82001e was 0f82001f

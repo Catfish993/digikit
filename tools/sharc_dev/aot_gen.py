@@ -2,7 +2,7 @@
 """Generate a firmware's block library (AOT core) and register it by DSP image.
 
     uv run python -m tools.sharc_dev.aot_gen dt2 --card-image IMG [--extra 110000000]
-    mise run aot-gen -- dt2 --card-image IMG
+    mise run perf:aot -- dt2 --card-image IMG
 
 The cheap, single-cycle version of tools/sharc_dev/sharc_dn2_aot.py:
   1. an interpreter profile of a trig run from the device's ready snapshot

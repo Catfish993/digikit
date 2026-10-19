@@ -2,10 +2,8 @@
 
 use patchkit::firmware::Firmware;
 
-const FILES: [&str; 4] = [
-    "Digitakt_II_OS1.16.syx",
+const FILES: [&str; 2] = [
     "Digitakt_II_OS1.17.syx",
-    "Digitone_II_OS1.11.syx",
     "Digitone_II_OS1.12.syx",
 ];
 

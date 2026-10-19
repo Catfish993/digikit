@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The firmware's own view of a +Drive image built from a folder (DT2 1.16, and the module store on DN2 1.11).
+"""The firmware's own view of a +Drive image built from a folder (DT2 1.16, and the module store on DN2 1.12).
 
     uv run python -m tools.firmware.plusdrive_check [--syx FILE] [--keep DIR] [--dn2]
 
@@ -13,7 +13,7 @@ firmware's mount flag, directory iterator, name lookup and file open, size and
 read. The listings, sizes and SHA-256 sums must equal the folder's. The fixture's
 `digikit/` files go to the module store (sectors 0x38000-0x3E000, not to the path
 filesystem); the firmware's block read (DT2 `FUN_4012deda`) must return the store
-header, the table and each file's bytes. With --dn2 a Digitone II 1.11 boots a
+header, the table and each file's bytes. With --dn2 a Digitone II 1.12 boots a
 card that holds only `digikit/` files and the same block read (`FUN_4012c59a`)
 is checked. Exit status 0 only when everything matches.
 
@@ -34,17 +34,24 @@ import struct
 import subprocess
 import sys
 import tempfile
+import tomllib
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_device  # noqa: E402
 
 MANY = 700
 STORE_FIRST = pk_device.store().first  # devices/*.toml [card.store]
-# The firmware's block read: (sector, bytes, buffer). DT2 1.16 and DN2 1.11.
-BLOCK_READ = {"dt2": 0x4012DEDA, "dn2": 0x4012C59A}
+
+
+def block_read(syx: pathlib.Path) -> int:
+    """The firmware's block read (sector, bytes, buffer): anchor dkrt.fw.block_read of the image's port file."""
+    image = config.image_key(syx)
+    port = tomllib.loads((ROOT / "devices" / "ports" / f"{image}.toml").read_text())
+    return next(a["addr"] for a in port["anchor"] if a["name"] == "dkrt.fw.block_read")
 
 
 def write_wav(path: pathlib.Path) -> None:
@@ -142,7 +149,7 @@ def store_listing(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument(
-        "--syx", type=pathlib.Path, help="DT2 1.16 .syx (default: the repo's)"
+        "--syx", type=pathlib.Path, help="DT2 .syx (default: the repo's 1.16)"
     )
     ap.add_argument(
         "--keep",
@@ -152,11 +159,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--dn2",
         action="store_true",
-        help="check the module store on a Digitone II 1.11 boot instead (--syx: its .syx)",
+        help="check the module store on a Digitone II boot instead (--syx: its .syx)",
     )
     args = ap.parse_args(argv)
     device = "dn2" if args.dn2 else "dt2"
-    syx = args.syx or digi_env.firmware_for(device)
+    # The DT2 probe's filesystem addresses (plusdrive_check.rs) are DT2 1.16 literals with no port anchor yet:
+    # the DT2 check stays on 1.16 until they are ported. DN2 needs only the block read, from the port file.
+    dt2_116 = config.stock("Digitakt_II_OS1.16.syx")
+    syx = args.syx or (dt2_116 if device == "dt2" else digi_env.firmware_for(device))
     if digi_env.device_for_syx(syx) != device:
         raise SystemExit(f"{syx} is not a known {device.upper()} firmware")
     env = digi_env.rust_env()
@@ -207,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         example = [str(release / "examples" / "plusdrive_check")]
         example += [
             "--block-read",
-            f"{BLOCK_READ[device]:x}",
+            f"{block_read(syx):x}",
             str(syx),
             str(image),
             *ops,

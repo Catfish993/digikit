@@ -8,7 +8,7 @@ the numbers are **[D]** (measured here, one machine, other lanes running).
 ## Hot DSP injection (DN2 1.11, ready inputs of 2026-10-06, fast regions on)
 
 Scenario: `trig1-tap-release` events, 3 s of audio, DSP output hashed in the
-controller (`pcm.tap`). Patch: `tools/patchkit/dsp_patches/dn2-1.11-master-half.patch`
+controller (`pcm.tap`). Patch: `07e58305:tools/patchkit/dsp_patches/dn2-1.11-master-half.patch` (now `tools/patchkit/dsp_patches/dn2-1.12-master-half.patch`)
 (`R2 = 0x1f` -> `0x1e` at 0x1c9d51, master Q31 scale, -6 dB), written into a
 .syx with `tools/patchkit/dsp_patch.py syx` (one changed byte in section 7).
 

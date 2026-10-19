@@ -4,8 +4,8 @@
     uv run python -m tools.devtools.clock_sweep run [--rates 33,66,...] [--suites dn2,pins,dt2]
     uv run python -m tools.devtools.clock_sweep analyze
 
-``run`` executes the DN2 oracles (``mise run scenarios:check``), the DN2 pin scenarios
-(``coupled scenario --all``) and the DT2 oracles (``mise run scenarios:dt2``) once per rate with
+``run`` executes the DN2 oracles (``mise run scenario:check``), the DN2 pin scenarios
+(``coupled scenario --all``) and the DT2 oracles (``mise run scenario:check:dt2``) once per rate with
 ``DIGI_CF_IPS`` set, harvests the coupled-run reports they leave under ``out/runs`` (a report counts
 when its ``cf_ips`` equals the rate and it is newer than the start of the run) and writes one raw
 file per (rate, suite) to ``out/clock/raw/``. Oracle and pin assertions are not touched; their
@@ -54,9 +54,9 @@ SUITE_TIMEOUT_S = 3 * 3600
 
 def suite_command(suite: str, junit: Path, jobs: str | None) -> list[str]:
     extra = ["--keep-runs", "--junitxml", str(junit), "-p", "no:cacheprovider"]
-    if suite == "dn2":  # mise run scenarios:check
+    if suite == "dn2":  # mise run scenario:check
         return [*PYTEST, "tests/scenarios", "--slow", "-q", *extra]
-    if suite == "dt2":  # mise run scenarios:dt2
+    if suite == "dt2":  # mise run scenario:check:dt2
         return [
             *PYTEST,
             "tests/scenarios/test_dt2_fx.py",
