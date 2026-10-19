@@ -264,6 +264,12 @@ _pk_marked:
     R0 = LSHIFT R5 BY 14;
     R1 = _pk_buf;
     R3 = R1 + R0;
+    // the whole line starts silent: a later block may read further back than this note's N (TUNE or the pitch moved the period),
+    // and the part the excitation does not cover would otherwise hold whatever the memory held (stale notes, or garbage at power-up)
+    I2 = R3;
+    R0 = 0;
+    LCNTR = 4096, DO _pk_zline UNTIL LCE;
+_pk_zline: DM(I2, M6) = R0;
     R0 = DM(11, I3);
     R4 = LSHIFT R0 BY 2;                  // 4 N
     R6 = 0x4000;

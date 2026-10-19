@@ -4,10 +4,12 @@ The wrapper (core/dsp-voice) and the routine are assembled from the module sourc
 the engine calls them (see tests/patchkit/test_dsp_voice.py). The generic machine rig keeps the core's memory (the routine's
 delay line, reserved unloaded L2 on the device) from call to call. Skips when Selache is not built."""
 
+import struct
+
 import numpy as np
 import pytest
 
-from support.machine_rig import MachineRig
+from support.machine_rig import MachineRig, nw
 from support.paths import REPO_ROOT
 from tools.patchkit import (
     pk_toolchains,
@@ -20,6 +22,11 @@ SKIP_NO_SELACHE = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
     reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
+
+
+def val(x: int) -> float:
+    """The float32 value of a DM word."""
+    return struct.unpack("<f", struct.pack("<I", x & 0xFFFFFFFF))[0]
 
 
 class PluckRig(MachineRig):
@@ -61,6 +68,9 @@ class PluckRig(MachineRig):
         b = MachineRig.block(self)
         assert b.returned, b.halt
         b.out["flags"] = [self.read_rec_word(2 * track, 0x1B8)]
+        # the routine's state row of this track (`_pk_state`: 16 rows of 32 words)
+        row = nw(self.built.data["_pk_state"]) + 32 * track
+        b.out["state"] = [self.sess.peek(row + k) or 0 for k in range(32)]
         return np.array(b.samples, dtype=np.float32), b.out | {
             "instructions": b.instructions
         }

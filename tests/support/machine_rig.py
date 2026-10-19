@@ -56,6 +56,7 @@ class Block:
     halt: dict
     context_bad: list[str]  # context registers that did not come back as they went in
     out: dict = field(default_factory=dict)
+    faults: int = 0  # DT2: the runtime guard's fault count of the type since the start (registry row word 13); DN2 has no guard
 
 
 @dataclass
@@ -294,8 +295,15 @@ class MachineRig:
             for n in dv.CONTEXT_REGS
             if (res["regs"][n] or 0) & 0xFFFFFFFF != ctx[n] & 0xFFFFFFFF
         ]
+        faults = (self.sess.peek(nw(dv.TABLE) + 13) or 0) if self.device == "dt2" else 0
         return Block(
-            samples, res["instructions"], returned, halt, bad if returned else [], res
+            samples,
+            res["instructions"],
+            returned,
+            halt,
+            bad if returned else [],
+            res,
+            faults & 0xFFFF,
         )
 
     def _hw_get(self, k: int) -> int:

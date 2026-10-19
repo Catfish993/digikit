@@ -11,6 +11,8 @@ the invariants of every block:
   context    the context registers (M5 ... MODE1) are as they went in
   finite     every output sample is finite (the output block is NaN before the call: a sample the routine did not write fails)
   bound      |sample| <= LEVEL_BOUND
+  guard      the runtime guard of core/dsp-voice did not step in (DT2: its fault count stays 0; a guarded block is zeroed, so
+             finite and bound alone would pass a broken routine)
   budget     instructions of the block <= the voice-block budget; the block of a trigger (DN2: and the one after the edge)
              <= the note-on budget (pk_conform.budget)
 
@@ -61,6 +63,8 @@ def run_case(
         if not b.returned:
             h = b.halt
             failure = f"{where}: the call did not return to the caller within {rig.step_limit} steps (halt {h.get('reason')} at {b.out.get('final_pc_sw', 0):#x}, {b.instructions} instructions)"
+        elif b.faults:
+            failure = f"{where}: the runtime guard stepped in ({b.faults} fault(s) counted: the routine's output was not finite or above {pk_conform.LEVEL_BOUND}, and the guard zeroed the block)"
         elif b.context_bad:
             failure = f"{where}: the context registers {','.join(b.context_bad)} did not come back as they went in (in {', '.join(f'{n}={rig.last_ctx[n]:#x}' for n in b.context_bad)})"
         else:

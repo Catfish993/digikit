@@ -55,7 +55,10 @@ RETRIG_BLOCKS = 280
 
 
 # Fixtures that must FAIL the suite: the suite's own test runs them and expects the named failure.
-NEGATIVE = {"test/dyn-dsp-hang": "did not return"}
+NEGATIVE = {
+    "test/dyn-dsp-hang": "did not return",
+    "test/dyn-guard-nan": "guard stepped in",
+}
 
 
 class ConformError(RuntimeError):

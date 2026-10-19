@@ -188,6 +188,7 @@ class Pluck:
         mean = f32(total * q.inc)
         vals = [f32(v - mean) for v in vals]
         line = self.line
+        line[:] = 0  # the routine clears the whole line first
         line[start : start + n + 1] = vals
         if q.p >= 1:
             for k in range(LINE - 1, start + q.p - 1, -1):
