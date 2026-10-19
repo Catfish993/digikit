@@ -84,6 +84,14 @@ MAX_JOBS = 6
 MIN_JOBS = 4
 
 
+def part_jobs(parts: int) -> int:
+    """How many of PARTS independent parts of one scenario (each boots its own daemon) run at once:
+    DIGIKIT_PART_JOBS, else all of them. verify sets it to 1: a pool of N files must not start 3 or 4
+    daemons each (1.3 busy cores per daemon, measured) beyond the cores of its share."""
+    env = os.environ.get("DIGIKIT_PART_JOBS")
+    return max(1, min(parts, int(env))) if env else max(1, parts)
+
+
 def performance_cores() -> int:
     """Logical performance cores (Apple silicon: the efficiency cores run a coupled daemon several times slower)."""
     try:

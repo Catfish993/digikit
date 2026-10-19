@@ -77,6 +77,7 @@ from tools import python_env  # noqa: E402
 from tools.patchkit import pk_device  # noqa: E402
 from tools.patchkit import pk_dkrt_boot as B  # noqa: E402
 from tools.patchkit import pk_dkrt_machine as M  # noqa: E402
+from tools.patchkit import pk_harness as H  # noqa: E402
 
 SCENARIOS = ROOT / "tests" / "digikit" / "scenarios"
 CACHE = ROOT / "out" / "cache" / "digikit"
@@ -196,15 +197,18 @@ class Ctx:
         self.t0 = time.monotonic()
 
     def parallel(self, *fns: Callable[[], None]) -> None:
-        """Run independent parts of a scenario (each boots its own daemon) in threads; the first error is raised after all have ended."""
+        """Run independent parts of a scenario (each boots its own daemon) in threads, at most
+        pk_harness.part_jobs(parts) at once (DIGIKIT_PART_JOBS); the first error is raised after all have ended."""
         errors: list[BaseException] = []
+        width = threading.Semaphore(H.part_jobs(len(fns)))
 
         def guarded(fn: Callable[[], None]) -> Callable[[], None]:
             def inner() -> None:
-                try:
-                    fn()
-                except BaseException as e:  # noqa: BLE001  raised in the scenario's thread
-                    errors.append(e)
+                with width:
+                    try:
+                        fn()
+                    except BaseException as e:  # noqa: BLE001  raised in the scenario's thread
+                        errors.append(e)
 
             return inner
 

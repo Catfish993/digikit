@@ -14,6 +14,22 @@ from tools.devtools import verify, verify_budget
 
 BUDGETS = (1, 2, 3, 4, 8, 14, 16, 32, 64)
 ALL_NODES = [*verify.STEPS, "build-dt2", "build-daemons"]
+GB = verify_budget.GB
+# What a gate step passes down (verify runs this file inside the gate, which sets these): the tests below
+# must not depend on the caller's environment.
+CALLER_VARS = (
+    *verify_budget.step_env("", 1),
+    "DIGI_VERIFY_BUDGET",
+    "DIGI_EMUD",
+    "DIGI_EMUD_DT2",
+    "DIGI_EMUD_DN2",
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in CALLER_VARS:
+        monkeypatch.delenv(key, raising=False)
 
 
 def test_budget_default_is_physical_cores_minus_two() -> None:
@@ -123,6 +139,7 @@ def test_step_env_names_every_pool() -> None:
         "DIGIKIT_JOBS",
         "DIGI_CONFORM_JOBS",
         "DIGI_PK_JOBS",
+        "DIGIKIT_PART_JOBS",
     }
     py = verify_budget.step_env("python-tests", 6)
     assert (py["DIGI_PY_JOBS"], py["DIGIKIT_JOBS"], py["CARGO_BUILD_JOBS"]) == (
@@ -133,7 +150,6 @@ def test_step_env_names_every_pool() -> None:
 
 
 def test_user_variables_override_the_share(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DIGIKIT_JOBS", raising=False)
     monkeypatch.setenv("DIGI_TIER_JOBS", "7")
     env = verify_budget.bounded_env("tier-sweep", 10, {"A": "1"})
     assert "DIGI_TIER_JOBS" not in env  # the user's 7 stays in the environment
@@ -292,8 +308,6 @@ def test_pk_jobs_variable_caps_the_harness(monkeypatch: pytest.MonkeyPatch) -> N
 def test_gate_passes_the_share_to_every_pool(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    for key in verify_budget.step_env("", 1):
-        monkeypatch.delenv(key, raising=False)
     gate = verify.Gate(tmp_path, budget=14)
     gate.local.node = "python-tests"
     gate.local.share = 6
@@ -303,3 +317,186 @@ def test_gate_passes_the_share_to_every_pool(
     assert gate.step_env()["DIGI_EMUD_DT2"] == "/x/digi-emud"
     gate.local.node = "check"  # a rendering step never carries the daemon variables
     assert "DIGI_EMUD_DT2" not in gate.step_env()
+
+
+def test_digikit_parts_run_one_at_a_time_in_the_gate() -> None:
+    """A scenario with 3 or 4 parts boots a daemon per part: a pool of files would start 3 to 4 times its
+    daemons (measured: card-safety, 3 digi-emud at DIGIKIT_JOBS=1). The gate sets DIGIKIT_PART_JOBS=1."""
+    for node in ALL_NODES:
+        assert verify_budget.step_env(node, 6)["DIGIKIT_PART_JOBS"] == "1"
+
+
+def test_part_jobs_bounds_the_parallel_parts(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+    import time
+
+    from tools.patchkit import pk_digikit_scen, pk_harness, pk_proofkit
+
+    assert pk_harness.part_jobs(4) == 4  # unset: all parts, as before
+    monkeypatch.setenv("DIGIKIT_PART_JOBS", "1")
+    assert pk_harness.part_jobs(4) == 1
+    monkeypatch.setenv("DIGIKIT_PART_JOBS", "9")
+    assert pk_harness.part_jobs(3) == 3
+
+    def peak(run: object, width: str | None) -> int:
+        if width is None:
+            monkeypatch.delenv("DIGIKIT_PART_JOBS", raising=False)
+        else:
+            monkeypatch.setenv("DIGIKIT_PART_JOBS", width)
+        live = top = 0
+        lock = threading.Lock()
+
+        def part() -> None:
+            nonlocal live, top
+            with lock:
+                live += 1
+                top = max(top, live)
+            time.sleep(0.05)
+            with lock:
+                live -= 1
+
+        run([part] * 4)  # type: ignore[operator]
+        return top
+
+    ctx = pk_digikit_scen.Ctx.__new__(pk_digikit_scen.Ctx)  # parallel() uses no state
+    proof = pk_proofkit.Proof.__new__(pk_proofkit.Proof)
+    for run in (lambda fns: ctx.parallel(*fns), lambda fns: proof.parallel(*fns)):
+        assert peak(run, "1") == 1
+        assert peak(run, "2") == 2
+        assert peak(run, None) == 4
+
+
+# ---- the machine: cores, memory, one budget for any machine ------------------------------------------------
+
+
+def make_cpus(root: Path, cores: int, threads: int, sockets: int = 1) -> None:
+    """A fake sysfs: CORES physical cores per socket with THREADS hardware threads each."""
+    cpu = 0
+    for _ in range(threads):
+        for socket in range(sockets):
+            for core in range(cores):
+                topo = root / f"cpu{cpu}" / "topology"
+                topo.mkdir(parents=True)
+                (topo / "physical_package_id").write_text(f"{socket}\n")
+                (topo / "core_id").write_text(f"{core}\n")
+                cpu += 1
+
+
+def machine(cores: int, ram_gb: float | None) -> verify_budget.Machine:
+    return verify_budget.Machine(cores, None if ram_gb is None else int(ram_gb * GB))
+
+
+@pytest.mark.parametrize(
+    ("cores", "ram_gb", "budget", "limit"),
+    [
+        (16, 128, 14, "cores"),  # Em's M3 Max
+        (8, 16, 6, "cores"),  # 16 GB carries 12 emulators: cores bind
+        (8, 8, 6, "cores"),
+        (4, 16, 2, "cores"),  # 4 vCPU as 4 cores
+        (2, 16, 1, "cores"),
+        (1, 16, 1, "cores"),
+        (32, 16, 24, "memory"),  # (16 - 4) GB at 1 GB per emulator of 2 cores
+        (64, 8, 8, "memory"),
+        (16, 4, 1, "memory"),  # nothing left after the reserve: one core
+        (16, None, 14, "cores"),  # RAM unknown (Windows without ctypes): cores only
+    ],
+)
+def test_budget_is_the_smaller_of_cores_and_memory(
+    cores: int, ram_gb: float | None, budget: int, limit: str
+) -> None:
+    d = verify_budget.decide(machine(cores, ram_gb))
+    assert (d.budget, d.limit) == (budget, limit)
+    assert d.text.startswith(f"budget {budget} ({limit}")
+    assert d.budget >= 1
+
+
+def test_budget_text_names_the_limit() -> None:
+    assert (
+        verify_budget.decide(machine(16, 128)).text == "budget 14 (cores: 16 physical)"
+    )
+    assert verify_budget.decide(machine(32, 16)).text == "budget 24 (memory: 16 GB)"
+    assert verify_budget.budget_text(5) == "budget 5 (--jobs)"
+    assert verify_budget.budget_text(0, {"DIGI_VERIFY_BUDGET": "9"}) == (
+        "budget 9 (DIGI_VERIFY_BUDGET)"
+    )
+
+
+def test_cargo_jobs_follow_memory() -> None:
+    cap = verify_budget.cargo_jobs_cap
+    assert cap(128 * GB) == 20  # (128 - 4) / 6
+    assert cap(16 * GB) == 2
+    assert cap(8 * GB) == 1  # one rustc of the generated core, at most
+    assert cap(4 * GB) == 1 and cap(1 * GB) == 1
+    assert cap(None) is None
+    assert verify_budget.step_env("build", 6, cargo_cap=1)["CARGO_BUILD_JOBS"] == "1"
+    assert verify_budget.step_env("build", 6, cargo_cap=20)["CARGO_BUILD_JOBS"] == "6"
+    assert (
+        verify_budget.step_env("build", 6)["CARGO_BUILD_JOBS"] == "6"
+    )  # unknown: uncapped
+    assert (
+        verify_budget.step_env("python-tests", 6, cargo_cap=1)["CARGO_BUILD_JOBS"]
+        == "1"
+    )
+
+
+def test_bounded_env_caps_cargo_by_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(verify_budget, "machine_cargo_cap", lambda: 1)
+    assert verify_budget.bounded_env("build", 6, {})["CARGO_BUILD_JOBS"] == "1"
+
+
+def test_linux_smt_counts_physical_cores(tmp_path: Path) -> None:
+    make_cpus(tmp_path, cores=8, threads=2)  # 16 logical, 8 physical
+    assert verify_budget.linux_physical_cores(tmp_path, set(range(16))) == 8
+    assert verify_budget.decide(machine(8, 64)).budget == 6
+    make_cpus(
+        tmp_path / "two", cores=4, threads=2, sockets=2
+    )  # two sockets: core ids repeat
+    assert verify_budget.linux_physical_cores(tmp_path / "two", set(range(16))) == 8
+
+
+def test_linux_affinity_limits_the_cores(tmp_path: Path) -> None:
+    make_cpus(tmp_path, cores=8, threads=2)
+    # cpus 0-7 are the first thread of each core, 8-15 the second
+    assert verify_budget.linux_physical_cores(tmp_path, {0, 1, 2, 3, 8, 9}) == 4
+    assert verify_budget.linux_physical_cores(tmp_path / "none", set()) is None
+
+
+def test_cgroup_cpu_quota(tmp_path: Path) -> None:
+    assert verify_budget.parse_cpu_max("max 100000") is None
+    assert verify_budget.parse_cpu_max("200000 100000") == 2.0
+    assert verify_budget.parse_cpu_max("150000 100000") == 1.5
+    assert verify_budget.parse_cpu_max("garbage") is None
+    v2 = tmp_path / "v2"
+    v2.mkdir()
+    (v2 / "cpu.max").write_text("200000 100000\n")
+    assert verify_budget.cgroup_cpu_limit(v2) == 2.0
+    v1 = tmp_path / "v1" / "cpu"
+    v1.mkdir(parents=True)
+    (v1 / "cpu.cfs_quota_us").write_text("-1\n")
+    (v1 / "cpu.cfs_period_us").write_text("100000\n")
+    assert verify_budget.cgroup_cpu_limit(tmp_path / "v1") is None
+    (v1 / "cpu.cfs_quota_us").write_text("200000\n")
+    assert verify_budget.cgroup_cpu_limit(tmp_path / "v1") == 2.0
+    assert verify_budget.cgroup_cpu_limit(tmp_path / "missing") is None
+    # a quota of 2 CPUs is 2 cores: budget cores - 2, at least 1
+    assert verify_budget.decide(machine(2, 16)).budget == 1
+
+
+def test_cgroup_memory_limit(tmp_path: Path) -> None:
+    (tmp_path / "memory.max").write_text("max\n")
+    assert verify_budget.cgroup_memory_limit(tmp_path) is None
+    (tmp_path / "memory.max").write_text(str(8 * GB))
+    assert verify_budget.cgroup_memory_limit(tmp_path) == 8 * GB
+    v1 = tmp_path / "v1" / "memory"
+    v1.mkdir(parents=True)
+    (v1 / "memory.limit_in_bytes").write_text("9223372036854771712\n")  # "no limit"
+    assert verify_budget.cgroup_memory_limit(tmp_path / "v1") is None
+    (v1 / "memory.limit_in_bytes").write_text(str(4 * GB))
+    assert verify_budget.cgroup_memory_limit(tmp_path / "v1") == 4 * GB
+
+
+def test_detect_machine_here_is_sane() -> None:
+    m = verify_budget.detect_machine()
+    assert 1 <= m.cores <= (os.cpu_count() or m.cores)
+    assert m.ram is None or m.ram > GB
+    assert verify_budget.default_budget() >= 1

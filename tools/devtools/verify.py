@@ -1009,11 +1009,14 @@ def rust_scope(files: list[str]) -> list[str] | None:
 
 
 def worker_plan_lines(
-    nodes: list[str], deps: dict[str, tuple[str, ...]], budget: int
+    nodes: list[str],
+    deps: dict[str, tuple[str, ...]],
+    budget: int,
+    label: str | None = None,
 ) -> list[str]:
     """The worker plan: the share of every node in waves (verify_budget.wave_plan) and what the share sets."""
     lines = [
-        f"worker plan: budget {budget} cores, one emulator process = {verify_budget.EMULATOR_CORES} cores "
+        f"worker plan: {label or f'budget {budget} cores'}, one emulator process = {verify_budget.EMULATOR_CORES} cores "
         "(waves are an estimate: a run starts a node as soon as the cores are free)"
     ]
     for number, wave in enumerate(verify_budget.wave_plan(nodes, deps, budget), 1):
@@ -1036,6 +1039,7 @@ def explain(
     budget: int = 1,
     all_no_aot: bool = False,
     images: str = "",
+    budget_label: str | None = None,
 ) -> None:
     """Print the routing, the node plan, the worker plan and the python-tests files; run nothing."""
     if per_file:
@@ -1052,7 +1056,7 @@ def explain(
     print("plan:")
     for node in nodes:
         print(f"  {node} <- {', '.join(deps[node]) or 'no dependencies'}")
-    print("\n".join(worker_plan_lines(nodes, deps, budget)))
+    print("\n".join(worker_plan_lines(nodes, deps, budget, budget_label)))
     if any(s in steps for s in NO_AOT_STEPS):
         print(
             f"no-AOT comparison: {'all scenarios (--all-no-aot)' if all_no_aot else 'the fixed subset (NO_AOT_SUBSET)'}"
@@ -1398,6 +1402,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         py_plan = python_test_plan(files, args.full)
     budget = verify_budget.resolve_budget(args.jobs)
+    budget_label = verify_budget.budget_text(args.jobs)
     image_files = files if files else (changed_files(args.base) if full else [])
     image_env, image_why = digikit_images(full, args.old_images, image_files)
     if args.explain:
@@ -1411,6 +1416,7 @@ def main(argv: list[str] | None = None) -> int:
             budget=budget,
             all_no_aot=args.all_no_aot,
             images=image_why,
+            budget_label=budget_label,
         )
         return 0
     if image_env:
@@ -1433,12 +1439,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     nodes, deps = plan(steps, gate.py_tests)
     print(
-        f"verify: nice {niced if niced is not None else 'unchanged (--foreground or not allowed)'}; "
+        f"verify: {budget_label}; nice {niced if niced is not None else 'unchanged (--foreground or not allowed)'}; "
         f"digikit images: {image_why}; no-AOT comparison: "
         f"{'all scenarios' if args.all_no_aot else 'the fixed subset'}",
         flush=True,
     )
-    print("\n".join(worker_plan_lines(nodes, deps, budget)), flush=True)
+    print("\n".join(worker_plan_lines(nodes, deps, budget, budget_label)), flush=True)
     own = verify_budget.user_overrides()
     if own:
         print(
