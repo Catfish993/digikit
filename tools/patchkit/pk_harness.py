@@ -84,6 +84,14 @@ MAX_JOBS = 6
 MIN_JOBS = 4
 
 
+def part_jobs(parts: int) -> int:
+    """How many of PARTS independent parts of one scenario (each boots its own daemon) run at once:
+    DIGIKIT_PART_JOBS, else all of them. verify sets it to 1: a pool of N files must not start 3 or 4
+    daemons each (1.3 busy cores per daemon, measured) beyond the cores of its share."""
+    env = os.environ.get("DIGIKIT_PART_JOBS")
+    return max(1, min(parts, int(env))) if env else max(1, parts)
+
+
 def performance_cores() -> int:
     """Logical performance cores (Apple silicon: the efficiency cores run a coupled daemon several times slower)."""
     try:
@@ -101,7 +109,13 @@ def performance_cores() -> int:
 def default_jobs(n: int) -> int:
     """Processes to run side by side: the free performance cores / 2 (a coupled daemon keeps two threads busy: the
     ColdFire and the DSP worker), at most MAX_JOBS, and never fewer than MIN_JOBS (bounded by the cores / 2) when
-    there are two or more parts: a busy machine slows the parts down, but running them in sequence is slower."""
+    there are two or more parts: a busy machine slows the parts down, but running them in sequence is slower.
+    DIGI_PK_JOBS (the verify gate sets it from its CPU budget, tools/devtools/verify_budget.py) replaces all that."""
+    cap = os.environ.get(
+        "DIGI_PK_JOBS"
+    )  # set by `verify` from the step's share of its CPU budget
+    if cap:
+        return max(1, min(n, int(cap)))
     cores = performance_cores()
     free = cores - os.getloadavg()[0]
     floor = min(MIN_JOBS, max(1, cores // 2))

@@ -73,8 +73,8 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run check` | `lint` and `test:quick` | Quick local check. Not the merge gate. |
 | `mise run verify:pre` | Quick lane checks (`tools/devtools/verify_pre.py`, 1 to 2 min): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the changed test files, the Rust tests of the affected crates (`rust_ws.affected_packages`). No emulator, pin or scenario; it prints that it is not the merge gate. | In a lane, while iterating and before handing the branch over |
-| `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch); a lane checks the routing with `--explain` |
-| `mise run verify:full` | Every step, with the full 134-scenario tier sweep (about 7 min with a warm render cache, about 20 min when DSP/native code changed) | Only after changes to the generated core |
+| `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--old-images` and `--all-no-aot` widen the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch); a lane checks the routing with `--explain` |
+| `mise run verify:full` | Every step (about 7 min with a warm render cache, about 20 min when DSP/native code changed). The AOT = no-AOT sweep runs the fixed subset; `-- --all-no-aot` runs all 134 scenarios and all 61 oracle tests. | Only after changes to the generated core |
 | `mise run scenarios` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
 | `mise run scenarios:check` | `pytest tests/scenarios --slow`: DN2 FX oracles, fast subset (about 3 min) | After DSP or scenario changes |
 | `mise run plusdrive:check` | The firmware's own view (mount, readdir, lookup, read) of an image built from a folder: nested folders, plain files, a multi-page directory, multi-extent files (about 1 min; `verify` runs it in the `card-fs` step when `packages/emulator/plusdrive/` changes) | After +Drive builder changes |
@@ -126,13 +126,13 @@ cells (`uv run python -m tools.patchkit.pk_harness run`, run by the coordinator)
 Tiers: `DIGIKIT_TIER=quick` (default; the scenarios marked `tier = "quick"`, the newest image of each device) is what `mise run verify` runs when
 a framework module (see the routing table), a scenario, a module a scenario names, the `.dkm` packer, `plusdrive`, the boot tools or `tests/digikit` changed (the
 suite `digikit-boot` in `tools/devtools/verify.py` and `verify_route.py`; one pytest file per group, so they run in parallel); `verify --full` sets `DIGIKIT_TIER=full`: every
-scenario on all four images. The quick tier is the pluck equivalence (both devices), the DN2 set and the DT2 round trip (under a minute in parallel);
+scenario, on the newest image of each device (DT2 1.17, DN2 1.12: `DIGIKIT_IMAGES=newest`). DT2 1.16 and DN2 1.11 run only with `verify --old-images`, or in `--full` when `devices/ports/dt2-1.16.toml`, `devices/ports/dn2-1.11.toml` or `tools/patchkit/port_resolve.py` changed (`DIGIKIT_IMAGES=all`; the direct `pk_digikit_scen --tier full` still takes all four unless the variable says otherwise). The quick tier is the pluck equivalence (both devices), the DN2 set and the DT2 round trip (under a minute in parallel);
 safe mode and the power cut run in the full tier. Cards are cached by content in `out/cache/digikit/cards/` (read-only for the guest; its writes live in an overlay),
 so a repeated scenario reuses the daemon's boot cache; most of the time of a scenario is emulated panel time (a project save and load take about 10 s each), not the boots.
 A scenario file is `tests/digikit/scenarios/NAME.toml`: `[scenario] name, kind, devices, tier`, and a table named like the kind (the runner's docstring lists the keys).
 Speed (finding 39, "Time: where it went"): the coupled daemon runs the panel at about a quarter of real time, the ColdFire alone at real time and faster, so the panel script of
 the `roundtrip` kind runs on ColdFire-only daemons (`engine = "cf"`, the default; `engine = "coupled"` is `roundtrip-dt2-coupled`, full tier) while a coupled boot of the same card checks the
-DSP part of the modules. Independent boots of a scenario run in threads; the cases of a test file run side by side (`DIGIKIT_JOBS`, default 3; `pk_digikit_scen run --jobs N`).
+DSP part of the modules. Independent boots of a scenario run in threads; the cases of a test file run side by side (`DIGIKIT_JOBS`, default 3 outside `verify`, which sets it from the python-tests share; `pk_digikit_scen run --jobs N`).
 The `equiv` keys `trig_frame` (the frame the note starts at; the rigs must be before it) set it close to the end of the setup. Timing: `DIGIKIT_PROFILE=1` prints the phase table of a run,
 `DIGIKIT_RUN_SALT=x` forces cold boots, `DIGIKIT_SETTLE_MS` changes the 300 ms the rigs run after their boot. Measured on a quiet machine: the quick tier (three scenarios at once) 38 s with warm boot caches and 44 s cold;
 the full tier (five test files at once) 250 s.
@@ -208,6 +208,32 @@ high load exceeds `--dsp-budget` (default 85 %); `--no-dsp-budget` skips the ste
 written to `out/runs/patchkit/dsp-budget.json`. The default note exercises the always-on cost of a module; the cost of a
 module's own voice needs its own run (`tools/patchkit/pk_tiers.py`). Resolution is about 5 instructions per block.
 Unit test: `tests/patchkit/test_pk_dsp_budget.py`.
+
+## CPU budget of the gate
+
+`verify` has one budget of cores for everything it runs (`tools/devtools/verify_budget.py`). Before it, every step had its own pool (tier sweep cpus - 4 coupled-run
+processes, python-tests one process per file with 3 digikit daemons each, cargo and libtest on all cores) and up to 8 steps ran at once, so the pools multiplied: a
+`verify:full` after a core regeneration ran at load average 141 on a 16-core M3 Max (2026-10-19: build 1131 s instead of 21 s, rust-tests 3963 s instead of 190 to 790 s,
+check-no-aot 1333 s).
+
+- Budget: min(physical cores - 2, memory limit), at least 1, or `verify --jobs N`, or `DIGI_VERIFY_BUDGET`. Physical cores: macOS `sysctl hw.physicalcpu` (14 on a 16-core machine with 12 performance and 4 efficiency cores);
+  Linux unique (package, core) pairs of `/sys/devices/system/cpu/cpu*/topology` (else `lscpu -p`) within `sched_getaffinity`, capped by a cgroup CPU quota (v2 `cpu.max`, v1 `cfs_quota_us`); Windows and any fallback: logical CPUs / 2 (they count SMT threads).
+  Memory limit: (RAM - `RESERVE_GB` 4) at `GB_PER_EMULATOR` 1 GB per emulator process (2 cores), RAM = macOS `hw.memsize`, Linux `MemTotal` or a lower cgroup `memory.max`, Windows `GlobalMemoryStatusEx`; unknown RAM = no limit.
+  Cargo jobs of every step are also capped at (RAM - 4 GB) / `GB_PER_CARGO_JOB` 6 GB (a rustc job of the generated core, measured 5.9 GB; a digi-emud 0.5 to 1.0 GB), at least 1. Examples: 16 cores / 128 GB = 14 (cores), cargo jobs 20; 8 cores / 16 GB = 6 (cores), cargo jobs 2; 4 cores = 2; 2 cores = 1; 32 cores / 16 GB = 24 (memory: 16 GB); 8 cores / 8 GB, cargo jobs 1. The start of a run and `--explain` print `budget 14 (cores: 16 physical)` or `budget 24 (memory: 16 GB)`.
+- Admission: each step asks for a fraction of the budget (`WANT`: builds 45 %, rust-tests 30 %, python-tests 45 %, scenario pools 50 %, tier steps 75 %, desktop, web, card 15 %). It starts when at least half of its ask is free (alone it always starts) and gets what is free, at most the ask.
+  At most 6 steps run at once. The shares of the running steps never add up to more than the budget (`tests/devtools/test_verify_budget.py` checks it for budgets from 1 to 64).
+- The share sets every pool of the step through the environment: `CARGO_BUILD_JOBS`, `RUST_TEST_THREADS`, `RAYON_NUM_THREADS` (ruff, oxlint), `DIGI_JOBS` and `DIGI_TIER_JOBS` (coupled-run processes), `DIGI_PY_JOBS` (test files), `DIGIKIT_JOBS`, `DIGI_CONFORM_JOBS` and `DIGI_PK_JOBS` (daemons inside a file), `DIGIKIT_PART_JOBS=1` (the 2 to 4 parts of one digikit scenario, each its own daemon, run one at a time; without it a file with `DIGIKIT_JOBS=1` ran 3 daemons at once, measured on `card-safety`), `--test-concurrency` of the node tests.
+  One coupled emulator process keeps two threads busy (the ColdFire loop and the `sharc-dsp` worker; no variable changes that), so a pool of processes has share // 2 workers (`EMULATOR_CORES`). In python-tests a file holds at most `share // files` cores. A pool variable you set yourself replaces the share (verify prints which).
+- `--explain` and the start of a run print the worker plan. Its waves are an estimate; a run starts a node as soon as the cores are free.
+- Priority: verify, `verify:pre` and every child run at nice 10 (`os.setpriority`; `--foreground` leaves the priority alone). Not `taskpolicy -b`: it pins a process to the efficiency cores.
+- Builds: `build` (coupled-run, the prod core in `out/native/target/prod`), then `build-dt2` (coupled-run, the DT2 core in `target/g-<hash>`), then `build-daemons` (`digi-emud` of both devices, plain, and the PGO daemons of `pgo-emud-<device>` when a profile exists; `tools/devtools/verify_build.py`) run one after the other, never beside each other. Steps wait for the build of their binary (python-tests and card for the daemons when a daemon test is in the plan, rust-tests for `build`), run with `--no-build`, and python-tests runs the PGO daemon copies the build made (`DIGI_EMUD_<DEV>`, immutable copies by `tools/devtools/stablebin.py`), so no test file asks cargo. The target dirs differ for a reason (generated core, PGO flags, `cargo check`), none is a duplicate; the launcher's `pgo-use` is not built here.
+- Not measured yet: the shares come from the old pools and the timings above. Compare one quiet-machine `verify:full` with the previous baseline before changing `WANT` or `EMULATOR_CORES`.
+
+### AOT versus interpreter equality (a fixed subset)
+
+Em approved the reduction on 2026-10-19. `check-no-aot` and the no-AOT halves of `tier-quick` / `tier-sweep` (DN2, and the interpreter-only DT2 halves) run `NO_AOT_SUBSET` / `CHECK_NO_AOT_K` of `tools/devtools/verify.py`, in routed `verify` and in `verify:full`:
+17 of the 134 DN2 FX scenarios (and 8 of 60 DT2 ones) for the PCM comparison, 17 of the 61 oracle tests for `check-no-aot`. The pick has one or two scenarios per DSP path, at the strongest setting: the voice alone (`tf-dry-hold`), bit reduction, overdrive (with the filter and routing-1 variant), SRR, track and send delay (feedback above unity, pingpong width), reverb (decay, shimmer), chorus (speed) and the master compressor (`sf-mst-ratio`, the mixer's last stage).
+`verify:full --all-no-aot` runs the old sets (tier-sweep: all 134; tier-quick: every seventh; check-no-aot: all 61). Since tier-sweep compares the same scenarios as tier-quick now, the default `--full` sweep and the routed quick tier cover the same set.
 
 ## Render cache
 

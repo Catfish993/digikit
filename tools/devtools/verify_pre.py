@@ -7,7 +7,9 @@ ruff (check and format) on the changed Python files of tests/ and tools/, mypy o
 the TYPED list (tests/devtools/test_types.py), the path check, `pk_build build-all --check` when
 modules, patchkit tools or ports changed, the changed test files (and the tests that import a changed
 tests/support module), and the Rust tests of the affected crates (verify.rust_scope). It runs no
-emulator, no PCM pin and no scenario. `mise run verify` is the merge gate.
+emulator, no PCM pin and no scenario. `mise run verify` is the merge gate. It runs at nice 10
+(--foreground: normal priority) and sets cargo's and libtest's pools from the verify CPU budget
+(tools/devtools/verify_budget.py), as `verify` does for its steps.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools import python_env  # noqa: E402
-from tools.devtools import verify  # noqa: E402
+from tools.devtools import verify, verify_budget  # noqa: E402
 from tools.emulator import digi_env  # noqa: E402
 
 PATCHKIT_PREFIXES = (
@@ -92,7 +94,11 @@ def plan(files: list[str], out_dir: Path) -> list[tuple[str, list[str] | None, s
         ),
         (
             "changed-tests",
-            verify.python_tests_command(out_dir, tests) if tests else None,
+            verify.python_tests_command(
+                out_dir, tests, verify.python_jobs(verify_budget.resolve_budget())
+            )
+            if tests
+            else None,
             "no changed test files",
         ),
     ]
@@ -113,7 +119,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--explain", action="store_true", help="print the checks, run nothing"
     )
+    ap.add_argument(
+        "--foreground",
+        action="store_true",
+        help="run at normal priority (default: nice 10, like `verify`)",
+    )
     args = ap.parse_args(argv)
+    if not args.explain:
+        verify_budget.lower_priority(args.foreground)
     files = verify.changed_files(args.base)
     failed: list[str] = []
     out_dir = Path("OUT") if args.explain else Path(digi_env.run_dir("verify-pre"))
@@ -125,8 +138,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"RUN  {name}: {' '.join(cmd[:8])}{' ...' if len(cmd) > 8 else ''}")
             continue
         start = time.monotonic()
+        # the checks run one after the other: each gets the whole budget of the gate
+        node = {"changed-tests": "python-tests", "rust-tests": "rust-tests"}.get(
+            name, ""
+        )
+        env = verify_budget.bounded_env(node, verify_budget.resolve_budget())
         done = subprocess.run(
-            cmd, cwd=ROOT, env=python_env(), capture_output=True, text=True
+            cmd, cwd=ROOT, env=python_env(env), capture_output=True, text=True
         )
         seconds = time.monotonic() - start
         if done.returncode:

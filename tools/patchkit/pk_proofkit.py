@@ -158,12 +158,14 @@ class Proof:
         in order; the first exception is raised after all have finished."""
         out: list[Any] = [None] * len(calls)
         errors: list[BaseException] = []
+        width = threading.Semaphore(H.part_jobs(len(calls)))  # DIGIKIT_PART_JOBS
 
         def run(i: int) -> None:
-            try:
-                out[i] = calls[i]()
-            except BaseException as e:  # noqa: BLE001
-                errors.append(e)
+            with width:
+                try:
+                    out[i] = calls[i]()
+                except BaseException as e:  # noqa: BLE001
+                    errors.append(e)
 
         threads = [threading.Thread(target=run, args=(i,)) for i in range(len(calls))]
         for t in threads:

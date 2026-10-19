@@ -2,14 +2,24 @@
 
     uv run python -m tools.devtools.verify                  # steps for the uncommitted changes
     uv run python -m tools.devtools.verify --base BRANCH    # a lane: its commits since BRANCH plus uncommitted changes
-    uv run python -m tools.devtools.verify --full           # every step, with the full 134-scenario tier sweep
+    uv run python -m tools.devtools.verify --full           # every step (the tier sweep on NO_AOT_SUBSET; --all-no-aot: all 134 scenarios)
     uv run python -m tools.devtools.verify --full --dt2     # plus the full DT2 FX tier sweep
     uv run python -m tools.devtools.verify --only pins,check
     uv run python -m tools.devtools.verify --rerun-failed   # only the steps that failed in the last run
-    uv run python -m tools.devtools.verify --jobs 1        # sequential (default: half the CPUs in parallel)
+    uv run python -m tools.devtools.verify --jobs 8        # a CPU budget of 8 cores for the whole gate (default: physical cores - 2); 1 = sequential
+    uv run python -m tools.devtools.verify --foreground    # normal priority (default: nice 10)
+    uv run python -m tools.devtools.verify --full --old-images   # digikit scenarios on DT2 1.16 and DN2 1.11 too
+    uv run python -m tools.devtools.verify --full --all-no-aot   # AOT = no-AOT equality on every FX scenario, not the fixed subset
     uv run python -m tools.devtools.verify --explain        # show the routing and the plan, run nothing
     uv run python -m tools.devtools.verify --base A --head B --explain   # the same for the commits A..B
 (`mise run verify:pre` is the quick lane check, tools/devtools/verify_pre.py; this is the merge gate.)
+
+CPU budget (tools/devtools/verify_budget.py, docs/TESTING.md "CPU budget"): the whole gate has a budget of
+cores (--jobs N, DIGI_VERIFY_BUDGET, else the physical cores - 2); a step starts when its share is free and
+the shares of the running steps never add up to more; the share sets the step's inner pools (cargo jobs, libtest
+threads, tier and scenario workers, python-tests files and daemons per file, node tests). Verify and its children run at nice 10
+(--foreground: normal priority). The builds run once, one after the other, before the steps that use their
+binaries (build, build-dt2, build-daemons: tools/devtools/verify_build.py).
 
 Scenario renders go through the content-addressed render cache (tools/devtools/render_cache.py). Each
 cache hit is also re-rendered from scratch with probability DIGI_RENDER_CACHE_CHECK (verify
@@ -17,10 +27,12 @@ default 0.03; 0 = off) and compared by PCM sha256 and peeks; a mismatch fails th
 stale cache. verify.py sets the variable for all steps once, in main(). --no-cache sets
 DIGI_RENDER_CACHE=0 so everything is rendered (the release/publication gate).
 
-python-tests runs one pytest process per file, in parallel (DIGI_PY_JOBS, default
-max(2, cpus // 4); DIGI_PY_TIMEOUT per file in seconds, default 3600), through tools/devtools/test_outcomes.py; a run that passed no test fails. The
-tier steps cut their (default/no-aot x file) groups into small chunks of scenarios and run
-them from one shared queue, longest first, on DIGI_TIER_JOBS workers (default cpus - 4).
+python-tests runs one pytest process per file, in parallel (the step's share of the budget; DIGI_PY_JOBS replaces it;
+DIGI_PY_TIMEOUT per file in seconds, default 3600), through tools/devtools/test_outcomes.py; a run that passed no test fails. The
+tier steps run NO_AOT_SUBSET (a fixed subset of the FX scenarios, documented there; --all-no-aot: every seventh
+for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups into small chunks of scenarios and run
+them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
+check-no-aot runs CHECK_NO_AOT_K, 17 of the 61 oracle tests (--all-no-aot: all).
 python-tests runs the PY_GATE files, the PY_SUITES whose trigger prefixes match a changed file,
 every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
 test files that import a changed tests/support module. With
@@ -57,6 +69,7 @@ from tools.devtools import (  # noqa: E402
     benchlock,  # noqa: E402
     fastcov,  # noqa: E402
     rust_ws,  # noqa: E402
+    verify_budget,  # noqa: E402
     verify_route,  # noqa: E402
 )
 from tools.emulator import (  # noqa: E402
@@ -130,6 +143,8 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "tools/devtools/verify.py",
             "tools/devtools/verify_route.py",
             "tools/devtools/verify_pre.py",
+            "tools/devtools/verify_budget.py",
+            "tools/devtools/verify_build.py",
             "tools/devtools/rust_ws.py",
             "tools/patchkit/pk_proofs.py",
             "tools/devtools/benchlock.py",
@@ -137,6 +152,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         (
             "tests/devtools/test_verify.py",
+            "tests/devtools/test_verify_budget.py",
             "tests/devtools/test_test_outcomes.py",
             "tests/devtools/test_benchlock.py",
             "tests/patchkit/test_pk_proofs.py",
@@ -177,8 +193,67 @@ STEPS = (
     "dt2-tier-quick",
     "dt2-tier-sweep",
 )
-# Every seventh FX scenario of each file: about 20 of 134, at least one per FX family.
+# Every seventh FX scenario of each file: about 20 of 134, at least one per FX family. Only with --all-no-aot.
 TIER_QUICK_EVERY = 7
+# AOT versus interpreter (no-AOT) PCM equality runs on this fixed subset of the FX scenario files, not on
+# all 134 (Em approved the reduction on 2026-10-19; `--all-no-aot` restores the full sets: every scenario
+# of tier-sweep, every seventh of tier-quick, all oracle tests of check-no-aot). The pick covers distinct
+# DSP paths, one or two scenarios each, always at the strongest setting (a clipped, saturated or
+# fully-wet signal exercises the most code and shows a rounding difference first):
+#   voice, no FX            tf-dry-hold       (the synth/sample voice alone: the base of every other scenario)
+#   bit reduction           tf-br-127         track FX, quantiser
+#   overdrive               tf-over-71        track FX, waveshaper; tf-over-127-flt-rt1: the filter and the
+#   sample-rate reduction   tf-srr-127        routing-1 (256) paths that three track-FX scenarios share
+#   delay                   tf-del-71 (track send); sf-del-ref, sf-del-fb-u127 (feedback above unity),
+#                           sf-del-ppwidth-u127 (pingpong + stereo width)
+#   reverb                  tf-rev-71; sf-rev-ref, sf-rev-decay-u127 (longest tail), sf-rev-shfreq-u127 (shimmer)
+#   chorus                  tf-chr-71; sf-chr-ref, sf-chr-speed-u127
+#   mixer / master          sf-mst-ratio      (the master compressor page: the mixer's last stage)
+# The DT2 files have fewer scenarios (their numbers differ) and run in the interpreter alone (about 80 s per
+# audio second), so the DT2 pick is the shortest one per path.
+NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
+    "tests/scenarios/dn2-trackfx.json": (
+        "tf-dry-hold",
+        "tf-br-127",
+        "tf-over-71",
+        "tf-over-127-flt-rt1",
+        "tf-srr-127",
+        "tf-del-71",
+        "tf-rev-71",
+        "tf-chr-71",
+    ),
+    "tests/scenarios/dn2-sendfx.json": (
+        "sf-del-ref",
+        "sf-del-fb-u127",
+        "sf-del-ppwidth-u127",
+        "sf-rev-ref",
+        "sf-rev-decay-u127",
+        "sf-rev-shfreq-u127",
+        "sf-chr-ref",
+        "sf-chr-speed-u127",
+        "sf-mst-ratio",
+    ),
+    "tests/scenarios/dt2-trackfx.json": (
+        "tf-dry-hold",
+        "tf-br-127",
+        "tf-over-127",
+        "tf-srr-127",
+        "tf-del-127",
+        "tf-rev-127",
+        "tf-chr-127",
+    ),
+    "tests/scenarios/dt2-sendfx.json": ("sf-mst-ratio",),
+}
+# check-no-aot without --all-no-aot: 17 of the 61 oracle tests of tests/scenarios/test_dn2_fx.py (pytest -k):
+# health and read-back of one scenario per effect (voice, bit reduction, overdrive, SRR, delay, reverb, chorus)
+# and the relation test of each effect whose series renders a sweep (SRR rate, reverb RT60, chorus speed) and the delay
+# default feedback level. The tier steps compare the PCM itself on NO_AOT_SUBSET.
+CHECK_NO_AOT_K = (
+    "(test_healthy or test_readback) and "
+    "(tf-dry-hold or tf-br-127 or tf-over-127 or tf-srr-127 or sf-del-time-u20 or sf-rev-decay-u20 or sf-chr-speed-u20)"
+    " or test_delay_default_feedback_minus_6_db or test_srr_rate_falls or test_chorus_rate_rises_with_speed"
+    " or test_reverb_rt60_rises_with_decay"
+)
 EVERYTHING = tuple(s for s in STEPS if s not in ("tier-sweep", "dt2-tier-sweep"))
 FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
 # A change to the routing itself selects every step and the whole python plan: a routing bug
@@ -491,8 +566,11 @@ def python_tests_passed(out_dir: Path) -> str | None:
     return None if passed > 0 else "nothing passed (0 tests passed)"
 
 
-def python_tests_command(out: Path, files: list[str]) -> list[str]:
-    """The per-file runner for the python-tests step (one pytest process per file)."""
+def python_tests_command(
+    out: Path, files: list[str], jobs: int | None = None
+) -> list[str]:
+    """The per-file runner for the python-tests step (one pytest process per file; JOBS files at
+    once, default python_jobs())."""
     cmd = [
         *PY,
         "-m",
@@ -503,7 +581,7 @@ def python_tests_command(out: Path, files: list[str]) -> list[str]:
         str(out),
     ]
     cmd = [*cmd, "--timeout", str(python_timeout())]
-    return [*cmd, "--jobs", str(python_jobs()), *files]
+    return [*cmd, "--jobs", str(jobs if jobs is not None else python_jobs()), *files]
 
 
 class Gate:
@@ -515,13 +593,34 @@ class Gate:
         out: Path,
         py_tests: list[str] | None = None,
         rust_packages: list[str] | None = None,
+        all_no_aot: bool = False,
+        budget: int = 1,
     ) -> None:
         self.out = out
         self.rust_packages = rust_packages
+        self.all_no_aot = all_no_aot
+        self.budget = budget
+        # variables set by an earlier node for the later ones (the pinned PGO daemons of build-daemons)
+        self.shared_env: dict[str, str] = {}
         self.py_tests = py_tests if py_tests is not None else list(PY_GATE)
         self.failed: list[str] = []
         self.local = threading.local()
         self.lock = threading.Lock()
+
+    def share(self) -> int:
+        """The cores the running node holds (the whole budget outside run_steps)."""
+        return getattr(self.local, "share", self.budget)
+
+    def step_env(self, env: dict[str, str] | None = None) -> dict[str, str]:
+        """ENV (default os.environ) plus the node's pool bounds (verify_budget.step_env) and the
+        variables earlier nodes shared."""
+        node = getattr(self.local, "node", "")
+        base = dict(os.environ if env is None else env)
+        if (
+            node in DAEMON_NODES
+        ):  # only these run the pinned daemons (others render: no stray DIGI_ variables)
+            base.update(self.shared_env)
+        return verify_budget.bounded_env(node, self.share(), base)
 
     def say(self, line: str) -> None:
         buf = getattr(self.local, "lines", None)
@@ -553,7 +652,11 @@ class Gate:
         start = time.monotonic()
         with benchlock.hold("shared", f"verify {name}"):
             proc = subprocess.run(
-                cmd, cwd=cwd, env=python_env(env), capture_output=True, text=True
+                cmd,
+                cwd=cwd,
+                env=python_env(self.step_env(env)),
+                capture_output=True,
+                text=True,
             )
         text = proc.stdout + proc.stderr
         (self.out / f"{name}.log").write_text(text)
@@ -564,23 +667,29 @@ class Gate:
         self.report(name, problem, time.monotonic() - start, text)
 
 
-def tier_jobs_budget() -> int:
-    """Coupled-run processes for all tier groups together: DIGI_TIER_JOBS, else
-    cpus - 4 (the performance cores of a 16-core machine)."""
+def tier_jobs_budget(share: int | None = None) -> int:
+    """Coupled-run processes for all tier groups together: the node's share of the verify budget
+    in emulator processes (verify_budget.workers_for), which step_env hands to the step as
+    DIGI_TIER_JOBS. Outside verify (SHARE None, no variable): cpus - 4."""
     env = os.environ.get("DIGI_TIER_JOBS")
     if env:
         jobs = int(env)
         if jobs < 1:
             raise SystemExit("verify: DIGI_TIER_JOBS must be at least 1")
         return jobs
+    if share is not None:
+        return verify_budget.workers_for("tier-sweep", share).emulators
     return max(1, (os.cpu_count() or 1) - 4)
 
 
-def python_jobs() -> int:
-    """Test files run at once in python-tests: DIGI_PY_JOBS, else max(2, cpus // 4)."""
+def python_jobs(share: int | None = None) -> int:
+    """Test files run at once in python-tests: DIGI_PY_JOBS, else the node's share of the verify
+    budget (verify_budget.workers_for), outside verify max(2, cpus // 4)."""
     env = os.environ.get("DIGI_PY_JOBS")
     if env:
         return max(1, int(env))
+    if share is not None:
+        return verify_budget.workers_for("python-tests", share).py_files
     return max(2, (os.cpu_count() or 1) // 4)
 
 
@@ -638,8 +747,27 @@ def plan_chunks(
     return chunks
 
 
+def tier_names(
+    path: str, seconds: dict[str, float], every: int, all_no_aot: bool
+) -> list[str]:
+    """The scenarios of one FX file a tier step compares: NO_AOT_SUBSET, or with ALL_NO_AOT every
+    EVERYth of the file (the whole file for 1)."""
+    if all_no_aot:
+        return sorted(seconds)[::every]
+    names = list(NO_AOT_SUBSET[path])
+    missing = [n for n in names if n not in seconds]
+    if missing:
+        raise SystemExit(
+            f"verify: NO_AOT_SUBSET names unknown scenarios in {path}: {missing}"
+        )
+    return names
+
+
 def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
     """FX scenarios must give the same PCM in the default and no-AOT configurations.
+
+    The scenarios are NO_AOT_SUBSET (documented there); with --all-no-aot every EVERYth scenario
+    of the FX files (tier-quick 7, tier-sweep 1).
 
     DT2 runs its scenarios on the one-sample card; its no-AOT configuration is the
     interpreter alone (`SHARC_AOT=0`, about 80 s per audio second), as DT2 has no
@@ -653,10 +781,12 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
     for label in envs:
         for path in DT2_FX_FILES if dt2 else FX_FILES:
             seconds = coupled.scenario_seconds(path)
-            names = sorted(seconds)[::every]
+            names = tier_names(path, seconds, every, gate.all_no_aot)
             factor = TIER_NO_AOT_COST if label == "no-aot" else 1.0
             groups.append((label, path, names, seconds, factor))
-    budget = tier_jobs_budget()
+    budget = tier_jobs_budget(gate.share())
+    # built here, in the node's thread: the pool threads below do not carry its share
+    step_envs = {label: gate.step_env(env) for label, env in envs.items()}
     chunks = plan_chunks(groups, budget)
 
     def report_of(chunk: Chunk) -> Path:
@@ -686,7 +816,7 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
             proc = subprocess.run(
                 cmd,
                 cwd=ROOT,
-                env=python_env(envs[chunk.label]),
+                env=python_env(step_envs[chunk.label]),
                 capture_output=True,
                 text=True,
             )
@@ -756,22 +886,44 @@ def web_check(gate: Gate) -> None:
     )
     gate.run("web-lint", ["pnpm", "exec", "oxlint"])
     gate.run("web-format", ["pnpm", "exec", "prettier", "--check", "."])
-    gate.run("web-tests", ["node", "--test", "tests/*.test.mjs"], cwd=web)
+    gate.run(
+        "web-tests",
+        ["node", f"--test-concurrency={gate.share()}", "--test", "tests/*.test.mjs"],
+        cwd=web,
+    )
     gate.run("web-types", ["npx", "astro", "check"], cwd=web)
-
-
-def default_step_jobs() -> int:
-    return max(1, (os.cpu_count() or 2) // 2)
 
 
 # Steps that need a built binary: DN2 steps the DN2 coupled-run, DT2 steps the DT2 one.
 # The build nodes run first; the others are independent of each other.
 DN2_BINARY = ("pins", "check", "check-no-aot", "tier-quick", "tier-sweep")
 DT2_BINARY = ("dt2-tone", "dt2-check", "dt2-tier-quick", "dt2-tier-sweep")
+# Test files that drive a `digi-emud` daemon: python-tests builds the daemons once (build-daemons) when
+# its plan has one of them (a file not listed here still works: it builds the daemon itself).
+DAEMON_NODES = ("python-tests", "card")
+DAEMON_TESTS = (
+    "tests/digikit/",
+    "tests/patchkit/smoke/",
+    "tests/patchkit/test_patchkit_dkrt_boot.py",
+)
+# Builds into the generated-core target dirs (tools/emulator/native_target.py), one after the other and
+# never beside each other: `build` (coupled-run, prod core: out/native/target/prod), `build-dt2`
+# (coupled-run, the DT2 core: target/g-<hash>), `build-daemons` (digi-emud of both, plain in those two
+# dirs and PGO in their pgo-emud-<device> variants; tools/devtools/verify_build.py). The launcher's
+# `pgo-use` is never built here.
+NO_AOT_STEPS = (
+    "check-no-aot",
+    "tier-quick",
+    "tier-sweep",
+    "dt2-tier-quick",
+    "dt2-tier-sweep",
+)
+BUILD_CHAIN = ("build", "build-dt2", "build-daemons")
 # Longest first, so the pool is not left waiting on one long step at the end.
 PRIORITY = (
     "build",
     "build-dt2",
+    "build-daemons",
     "tier-sweep",
     "dt2-tier-sweep",
     "dt2-tier-quick",
@@ -783,23 +935,50 @@ PRIORITY = (
 )
 
 
-def plan(steps: tuple[str, ...]) -> tuple[list[str], dict[str, tuple[str, ...]]]:
-    """The nodes to run (steps plus the builds they need) and each node's dependencies."""
+def needs_daemons(steps: tuple[str, ...], py_tests: list[str] | None) -> bool:
+    """Whether a step drives a digi-emud daemon: card, or python-tests with a DAEMON_TESTS file."""
+    if "card" in steps:
+        return True
+
+    def overlaps(test: str) -> bool:  # a file or a directory of the plan
+        mine = test.rstrip("/") + "/" if "." not in test.rsplit("/", 1)[-1] else test
+        return any(d.startswith(mine) or mine.startswith(d) for d in DAEMON_TESTS)
+
+    return "python-tests" in steps and any(overlaps(t) for t in (py_tests or []))
+
+
+def plan(
+    steps: tuple[str, ...], py_tests: list[str] | None = None
+) -> tuple[list[str], dict[str, tuple[str, ...]]]:
+    """The nodes to run (steps plus the builds they need) and each node's dependencies.
+
+    The builds form a chain (BUILD_CHAIN order): each waits for the builds before it. A step waits
+    for the build that makes its binary; rust-tests waits for `build` when that runs (both fill the
+    prod target dir, so the generated core compiles once)."""
     nodes = list(steps)
-    if any(s in DN2_BINARY for s in steps) and "build" not in nodes:
-        nodes.append("build")
-    if any(s in DT2_BINARY for s in steps) and "build-dt2" not in nodes:
-        nodes.append("build-dt2")
+    wanted = {
+        "build": any(s in DN2_BINARY for s in steps),
+        "build-dt2": any(s in DT2_BINARY for s in steps),
+        "build-daemons": needs_daemons(steps, py_tests),
+    }
+    for build in BUILD_CHAIN:
+        if (wanted[build] or build in steps) and build not in nodes:
+            nodes.append(build)
+    chain = [b for b in BUILD_CHAIN if b in nodes]
     deps: dict[str, tuple[str, ...]] = {}
     for node in nodes:
-        if node in DN2_BINARY:
+        if node in chain:
+            deps[node] = tuple(chain[: chain.index(node)])
+        elif node in DN2_BINARY:
             deps[node] = ("build",)
         elif node in DT2_BINARY:
             deps[node] = ("build-dt2",)
+        elif node == "rust-tests" and "build" in nodes:
+            deps[node] = ("build",)
+        elif node in ("card", "python-tests") and "build-daemons" in nodes:
+            deps[node] = ("build-daemons",)
         else:
             deps[node] = ()
-    # "build" also builds DT2 when only DT2 steps need it, via its own node; when the
-    # user picked "build" and DT2 steps, build-dt2 is added above.
     order = {n: i for i, n in enumerate(PRIORITY)}
     nodes.sort(
         key=lambda n: (order.get(n, len(PRIORITY)), STEPS.index(n) if n in STEPS else 0)
@@ -829,6 +1008,27 @@ def rust_scope(files: list[str]) -> list[str] | None:
     return rust_ws.affected_packages(files)
 
 
+def worker_plan_lines(
+    nodes: list[str],
+    deps: dict[str, tuple[str, ...]],
+    budget: int,
+    label: str | None = None,
+) -> list[str]:
+    """The worker plan: the share of every node in waves (verify_budget.wave_plan) and what the share sets."""
+    lines = [
+        f"worker plan: {label or f'budget {budget} cores'}, one emulator process = {verify_budget.EMULATOR_CORES} cores "
+        "(waves are an estimate: a run starts a node as soon as the cores are free)"
+    ]
+    for number, wave in enumerate(verify_budget.wave_plan(nodes, deps, budget), 1):
+        used = sum(share for _, share in wave)
+        lines.append(f"  wave {number} ({used} of {budget} cores):")
+        for node, share in wave:
+            lines.append(
+                f"    {node}: {share} cores ({verify_budget.describe(node, share)})"
+            )
+    return lines
+
+
 def explain(
     steps: tuple[str, ...],
     files: list[str],
@@ -836,8 +1036,12 @@ def explain(
     per_file: bool,
     origin: dict[str, str] | None = None,
     rust_packages: list[str] | None = None,
+    budget: int = 1,
+    all_no_aot: bool = False,
+    images: str = "",
+    budget_label: str | None = None,
 ) -> None:
-    """Print the routing, the node plan and the python-tests files; run nothing."""
+    """Print the routing, the node plan, the worker plan and the python-tests files; run nothing."""
     if per_file:
         print("changed files:")
         for path in files:
@@ -848,10 +1052,17 @@ def explain(
     if "rust-tests" in steps:
         scope = ", ".join(rust_packages) if rust_packages else "whole workspace"
         print(f"rust-tests packages: {scope}")
-    nodes, deps = plan(steps)
+    nodes, deps = plan(steps, [p for p, _ in py_plan])
     print("plan:")
     for node in nodes:
         print(f"  {node} <- {', '.join(deps[node]) or 'no dependencies'}")
+    print("\n".join(worker_plan_lines(nodes, deps, budget, budget_label)))
+    if any(s in steps for s in NO_AOT_STEPS):
+        print(
+            f"no-AOT comparison: {'all scenarios (--all-no-aot)' if all_no_aot else 'the fixed subset (NO_AOT_SUBSET)'}"
+        )
+    if images:
+        print(f"digikit images: {images}")
     if "python-tests" in steps:
         print("python-tests files:")
         for path, source in py_plan:
@@ -868,7 +1079,9 @@ def run_step(gate: Gate, step: str) -> None:
         "-q",
         "--no-build",
     ]
-    jobs = str(coupled.default_jobs())
+    jobs = gate.step_env()[
+        "DIGI_JOBS"
+    ]  # coupled-run processes at once: the node's share
     if step == "build":
         gate.run("build", [*PY, "-m", "tools.emulator.coupled", "build"])
     elif step == "build-dt2":
@@ -876,6 +1089,23 @@ def run_step(gate: Gate, step: str) -> None:
             "build-dt2",
             [*PY, "-m", "tools.emulator.coupled", "build", "--device", "dt2"],
         )
+    elif step == "build-daemons":
+        env_file = gate.out / "build-daemons.env.json"
+        gate.run(
+            "build-daemons",
+            [
+                *PY,
+                "-m",
+                "tools.devtools.verify_build",
+                "daemons",
+                "--env-out",
+                str(env_file),
+            ],
+        )
+        if (
+            env_file.is_file()
+        ):  # the pinned PGO daemons: the later nodes run these copies
+            gate.shared_env.update(json.loads(env_file.read_text()))
     elif step == "desktop":
         desktop_check(gate)
     elif step == "web":
@@ -895,7 +1125,13 @@ def run_step(gate: Gate, step: str) -> None:
     elif step == "check":
         gate.run("check", scenario_tests, check=pytest_ran)
     elif step == "check-no-aot":
-        gate.run("check-no-aot", scenario_tests, env=no_aot_env(), check=pytest_ran)
+        subset = [] if gate.all_no_aot else ["-k", CHECK_NO_AOT_K]
+        gate.run(
+            "check-no-aot",
+            [*scenario_tests, *subset],
+            env=no_aot_env(),
+            check=pytest_ran,
+        )
     elif step == "tier-quick":
         tier(gate, "tier-quick", TIER_QUICK_EVERY)
     elif step == "tier-sweep":
@@ -904,7 +1140,7 @@ def run_step(gate: Gate, step: str) -> None:
         out = gate.out / "python-tests"
         gate.run(
             "python-tests",
-            python_tests_command(out, gate.py_tests),
+            python_tests_command(out, gate.py_tests, python_jobs(gate.share())),
             check=lambda _text: python_tests_passed(out),
         )
     elif step == "rust-tests":
@@ -925,20 +1161,25 @@ def run_step(gate: Gate, step: str) -> None:
         tier(gate, "dt2-tier-sweep", 1, "dt2")
 
 
-def run_steps(gate: Gate, steps: tuple[str, ...], jobs: int) -> list[tuple[str, float]]:
-    """Run the steps in a pool of JOBS threads, after the builds they need.
+def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
+    """Run the steps after the builds they need, within the CPU budget (gate.budget).
 
-    Each step's output is buffered and printed whole when it finishes. A step whose
-    build failed is skipped. Returns (node, seconds) in completion order."""
-    nodes, deps = plan(steps)
+    A node starts when its dependencies passed and the budget admits it (verify_budget.Budget): it
+    gets a share of the cores, which sets its inner pools, and the shares of the running nodes never
+    add up to more than the budget. Each step's output is buffered and printed whole when it
+    finishes. A step whose build failed is skipped. Returns (node, seconds) in completion order."""
+    nodes, deps = plan(steps, gate.py_tests)
+    budget = verify_budget.Budget(max(1, gate.budget))
     done: set[str] = set()
     failed_nodes: set[str] = set()
     pending = list(nodes)
     running: dict[object, tuple[str, float]] = {}
     times: list[tuple[str, float]] = []
 
-    def work(node: str) -> list[str]:
+    def work(node: str, share: int) -> list[str]:
         gate.local.lines = []
+        gate.local.node = node
+        gate.local.share = share
         try:
             run_step(gate, node)
         except BaseException as exc:  # a crashed step is a failed step
@@ -947,7 +1188,7 @@ def run_steps(gate: Gate, steps: tuple[str, ...], jobs: int) -> list[tuple[str, 
             gate.say(f"FAIL {node}: {type(exc).__name__}: {exc}")
         return gate.local.lines
 
-    with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+    with ThreadPoolExecutor(max_workers=verify_budget.MAX_STEPS) as pool:
         while pending or running:
             for node in list(pending):
                 if any(d in failed_nodes for d in deps[node]):
@@ -956,14 +1197,23 @@ def run_steps(gate: Gate, steps: tuple[str, ...], jobs: int) -> list[tuple[str, 
                     print(f"SKIP {node}: its build failed", flush=True)
                     with gate.lock:
                         gate.failed.append(node)
-                elif all(d in done for d in deps[node]) and len(running) < max(1, jobs):
+                elif all(d in done for d in deps[node]):
+                    share = budget.admit(node)
+                    if share is None:
+                        continue
                     pending.remove(node)
-                    running[pool.submit(work, node)] = (node, time.monotonic())
+                    print(
+                        f"START {node}: {share} of {budget.total} cores "
+                        f"({verify_budget.describe(node, share)})",
+                        flush=True,
+                    )
+                    running[pool.submit(work, node, share)] = (node, time.monotonic())
             if not running:
                 continue
             finished, _ = wait(list(running), return_when=FIRST_COMPLETED)
             for fut in finished:
                 node, began = running.pop(fut)
+                budget.release(node)
                 lines = fut.result()
                 print("\n".join(lines), flush=True)
                 times.append((node, time.monotonic() - began))
@@ -997,6 +1247,44 @@ def rerun_plan(result: dict) -> tuple[tuple[str, ...], list[str]]:
     return steps, list(result.get("py_tests", []))
 
 
+def old_image_paths() -> tuple[str, ...]:
+    """The files whose change asks for the digikit scenarios on the older images: the port file of every
+    image that is not the newest of its device, and the port resolution."""
+    from tools.patchkit import pk_device
+
+    paths = ["tools/patchkit/port_resolve.py"]
+    for device in pk_device.digikit_devices():
+        paths += [
+            f"devices/ports/{image}.toml"
+            for image in pk_device.port_images(device)[:-1]
+        ]
+    return tuple(paths)
+
+
+def digikit_images(full: bool, flag: bool, files: list[str]) -> tuple[str | None, str]:
+    """(DIGIKIT_IMAGES value to set or None to leave unset, why). The scenarios of tests/digikit run on the
+    newest image of each device (DT2 1.17, DN2 1.12: what the device runs); the older ones (DT2 1.16, DN2 1.11)
+    in `--full` only when their port files or the port resolution changed, and on request (--old-images)."""
+    from tools.patchkit import pk_device
+
+    by_device = {d: pk_device.port_images(d) for d in pk_device.digikit_devices()}
+    newest = ", ".join(sorted(imgs[-1] for imgs in by_device.values()))
+    older = ", ".join(sorted(i for imgs in by_device.values() for i in imgs[:-1]))
+    if os.environ.get("DIGIKIT_IMAGES"):
+        return None, f"DIGIKIT_IMAGES={os.environ['DIGIKIT_IMAGES']} (set by you)"
+    if flag:
+        return "all", f"all, with the older {older} (--old-images)"
+    touched = [f for f in files if f in old_image_paths()]
+    if full and touched:
+        return "all", f"all, with the older {older} ({', '.join(touched)} changed)"
+    if full:
+        return (
+            "newest",
+            f"newest only: {newest} (older: --old-images, or a change to their port files)",
+        )
+    return None, f"newest only: {newest} (quick tier; older: --old-images)"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Run the exactness gate for what changed, one line per step."
@@ -1022,7 +1310,26 @@ def main(argv: list[str] | None = None) -> int:
         "--jobs",
         type=int,
         default=0,
-        help="steps run at once (default: half the CPUs); 1 is sequential",
+        help="the CPU budget of the whole gate in cores (default: DIGI_VERIFY_BUDGET, else the "
+        "physical cores - 2); the running steps share it and it sets their inner pools; 1 is sequential",
+    )
+    ap.add_argument(
+        "--foreground",
+        action="store_true",
+        help="run at normal priority (default: nice 10, the whole gate and its children)",
+    )
+    ap.add_argument(
+        "--old-images",
+        action="store_true",
+        help="run the digikit scenarios (tests/digikit) on the older images too: DT2 1.16, DN2 1.11 "
+        "(default: the newest image of each device; --full adds the older ones when their port "
+        "files or the port resolution changed)",
+    )
+    ap.add_argument(
+        "--all-no-aot",
+        action="store_true",
+        help="AOT = no-AOT equality on every FX scenario (default: the fixed NO_AOT_SUBSET; "
+        "tier-sweep all 134, tier-quick every seventh, check-no-aot all 61 oracle tests)",
     )
     ap.add_argument(
         "--explain",
@@ -1048,7 +1355,7 @@ def main(argv: list[str] | None = None) -> int:
     origin: dict[str, str] = {}
     rust_packages: list[str] | None = None
     full, dt2 = args.full, args.dt2
-    if full:  # tests/digikit: every scenario on all four images (the gate runs the quick tier)
+    if full:  # tests/digikit: every scenario (the gate runs the quick tier); the images follow digikit_images
         os.environ["DIGIKIT_TIER"] = "full"
     rerun_tests: list[str] | None = None
     if args.rerun_failed:
@@ -1094,6 +1401,10 @@ def main(argv: list[str] | None = None) -> int:
         py_plan = [(path, "rerun") for path in rerun_tests]
     else:
         py_plan = python_test_plan(files, args.full)
+    budget = verify_budget.resolve_budget(args.jobs)
+    budget_label = verify_budget.budget_text(args.jobs)
+    image_files = files if files else (changed_files(args.base) if full else [])
+    image_env, image_why = digikit_images(full, args.old_images, image_files)
     if args.explain:
         explain(
             steps,
@@ -1102,8 +1413,15 @@ def main(argv: list[str] | None = None) -> int:
             per_file=not (args.only or args.full or args.rerun_failed),
             origin=origin,
             rust_packages=rust_packages,
+            budget=budget,
+            all_no_aot=args.all_no_aot,
+            images=image_why,
+            budget_label=budget_label,
         )
         return 0
+    if image_env:
+        os.environ["DIGIKIT_IMAGES"] = image_env
+    niced = verify_budget.lower_priority(args.foreground)
     # Every step, and no_aot_env(), inherits os.environ: set the cache env once.
     os.environ.update(cache_env(None, args.no_cache))
     out = Path(digi_env.run_dir("verify"))
@@ -1112,13 +1430,34 @@ def main(argv: list[str] | None = None) -> int:
         f"verify: {', '.join(steps) or 'nothing to run'} ({why}); logs in {out}",
         flush=True,
     )
-    gate = Gate(out, [path for path, _ in py_plan], rust_packages)
-    jobs = args.jobs if args.jobs else default_step_jobs()
+    gate = Gate(
+        out,
+        [path for path, _ in py_plan],
+        rust_packages,
+        all_no_aot=args.all_no_aot,
+        budget=budget,
+    )
+    nodes, deps = plan(steps, gate.py_tests)
+    print(
+        f"verify: {budget_label}; nice {niced if niced is not None else 'unchanged (--foreground or not allowed)'}; "
+        f"digikit images: {image_why}; no-AOT comparison: "
+        f"{'all scenarios' if args.all_no_aot else 'the fixed subset'}",
+        flush=True,
+    )
+    print("\n".join(worker_plan_lines(nodes, deps, budget, budget_label)), flush=True)
+    own = verify_budget.user_overrides()
+    if own:
+        print(
+            f"verify: your {', '.join(own)} replace the share of the budget", flush=True
+        )
     start = time.monotonic()
-    times = run_steps(gate, steps, jobs)
+    times = run_steps(gate, steps)
     for name, seconds in times:
         print(f"  {name:<16} {seconds:6.0f} s", flush=True)
-    print(f"verify: wall {time.monotonic() - start:.0f} s with {jobs} jobs", flush=True)
+    print(
+        f"verify: wall {time.monotonic() - start:.0f} s with a budget of {budget} cores",
+        flush=True,
+    )
     result = {
         "steps": list(steps),
         "failed": [s for s in gate.failed if s in STEPS],

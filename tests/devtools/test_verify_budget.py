@@ -1,0 +1,502 @@
+"""The CPU budget of the verify gate (tools/devtools/verify_budget.py) and what hangs on it."""
+
+from __future__ import annotations
+
+import json
+import os
+import random
+from pathlib import Path
+
+import pytest
+from support.paths import REPO_ROOT
+
+from tools.devtools import verify, verify_budget
+
+BUDGETS = (1, 2, 3, 4, 8, 14, 16, 32, 64)
+ALL_NODES = [*verify.STEPS, "build-dt2", "build-daemons"]
+GB = verify_budget.GB
+# What a gate step passes down (verify runs this file inside the gate, which sets these): the tests below
+# must not depend on the caller's environment.
+CALLER_VARS = (
+    *verify_budget.step_env("", 1),
+    "DIGI_VERIFY_BUDGET",
+    "DIGI_EMUD",
+    "DIGI_EMUD_DT2",
+    "DIGI_EMUD_DN2",
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in CALLER_VARS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_budget_default_is_physical_cores_minus_two() -> None:
+    assert verify_budget.default_budget(16) == 14
+    assert verify_budget.default_budget(2) == 1
+    assert verify_budget.default_budget(1) == 1
+
+
+def test_budget_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DIGI_VERIFY_BUDGET", raising=False)
+    assert verify_budget.resolve_budget(5) == 5  # --jobs
+    monkeypatch.setenv("DIGI_VERIFY_BUDGET", "9")
+    assert verify_budget.resolve_budget(0) == 9
+    assert verify_budget.resolve_budget(5) == 5  # the flag wins
+    monkeypatch.setenv("DIGI_VERIFY_BUDGET", "0")
+    with pytest.raises(SystemExit):
+        verify_budget.resolve_budget(0)
+
+
+@pytest.mark.parametrize("total", BUDGETS)
+def test_shares_never_exceed_the_budget(total: int) -> None:
+    """Random schedules: nodes arrive in plan order, finish in random order; the shares of the running
+    nodes never add up to more than the budget, every node gets at least one core, and all finish."""
+    rng = random.Random(total)
+    for _ in range(50):
+        nodes = list(ALL_NODES)
+        rng.shuffle(nodes)
+        budget = verify_budget.Budget(total)
+        pending = list(nodes)
+        finished = 0
+        while pending or budget.running:
+            for node in list(pending):
+                share = budget.admit(node)
+                if share is not None:
+                    pending.remove(node)
+                    assert 1 <= share <= verify_budget.want_cores(node, total)
+                assert sum(budget.running.values()) <= total
+                assert len(budget.running) <= verify_budget.MAX_STEPS
+            assert budget.running, "nothing running and nothing admitted: deadlock"
+            done = rng.choice(sorted(budget.running))
+            budget.release(done)
+            finished += 1
+        assert finished == len(nodes)
+
+
+@pytest.mark.parametrize("total", BUDGETS)
+def test_a_node_alone_always_starts(total: int) -> None:
+    for node in ALL_NODES:
+        assert verify_budget.Budget(total).admit(node) is not None
+
+
+def test_a_node_waits_for_half_of_its_ask() -> None:
+    budget = verify_budget.Budget(14)
+    assert budget.admit("tier-sweep") == verify_budget.want_cores("tier-sweep", 14)
+    free = budget.free
+    want = verify_budget.want_cores("pins", 14)
+    assert (budget.admit("pins") is None) == (free < -(-want // 2))
+
+
+@pytest.mark.parametrize("total", BUDGETS)
+def test_wave_plan_fits_and_covers_every_node(total: int) -> None:
+    for steps in (verify.EVERYTHING, verify.STEPS, ("rust-tests",), ("pins",)):
+        nodes, deps = verify.plan(steps, ["tests/digikit"])
+        waves = verify_budget.wave_plan(nodes, deps, total)
+        assert sorted(n for w in waves for n, _ in w) == sorted(nodes)
+        for wave in waves:
+            assert sum(share for _, share in wave) <= total
+        earlier: set[str] = set()
+        for wave in waves:  # a node runs after its dependencies
+            for node, _ in wave:
+                assert set(deps[node]) <= earlier
+            earlier |= {n for n, _ in wave}
+
+
+@pytest.mark.parametrize("total", BUDGETS)
+@pytest.mark.parametrize("node", ALL_NODES)
+def test_inner_pools_fit_the_share(node: str, total: int) -> None:
+    w = verify_budget.workers_for(node, total)
+    assert min(w.cargo, w.libtest, w.rayon, w.emulators, w.py_files, w.per_file) >= 1
+    assert w.cargo <= total and w.rayon <= total and w.node <= total
+    if total >= verify_budget.EMULATOR_CORES:
+        assert w.emulators * verify_budget.EMULATOR_CORES <= total
+    if node == "python-tests":
+        # files at once x what one file holds (its cargo, or its daemons of two threads each)
+        assert w.py_files * w.cargo <= max(total, w.py_files)
+        assert w.py_files * w.per_file * verify_budget.EMULATOR_CORES <= max(
+            total, w.py_files * 2
+        )
+
+
+def test_the_default_step_set_fits_a_16_core_machine() -> None:
+    """The sum over the first wave of a full run on 16 physical cores (budget 14) is at most the budget."""
+    nodes, deps = verify.plan(verify.EVERYTHING, ["tests/digikit"])
+    for wave in verify_budget.wave_plan(nodes, deps, 14):
+        assert sum(share for _, share in wave) <= 14
+
+
+def test_step_env_names_every_pool() -> None:
+    env = verify_budget.step_env("tier-sweep", 10)
+    assert env["DIGI_TIER_JOBS"] == "5"
+    assert env["DIGI_JOBS"] == "5"
+    assert env["CARGO_BUILD_JOBS"] == "10"
+    assert env["RAYON_NUM_THREADS"] == "10"
+    assert set(env) >= {
+        "RUST_TEST_THREADS",
+        "DIGI_PY_JOBS",
+        "DIGIKIT_JOBS",
+        "DIGI_CONFORM_JOBS",
+        "DIGI_PK_JOBS",
+        "DIGIKIT_PART_JOBS",
+    }
+    py = verify_budget.step_env("python-tests", 6)
+    assert (py["DIGI_PY_JOBS"], py["DIGIKIT_JOBS"], py["CARGO_BUILD_JOBS"]) == (
+        "3",
+        "1",
+        "2",
+    )
+
+
+def test_user_variables_override_the_share(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DIGI_TIER_JOBS", "7")
+    env = verify_budget.bounded_env("tier-sweep", 10, {"A": "1"})
+    assert "DIGI_TIER_JOBS" not in env  # the user's 7 stays in the environment
+    assert env["DIGIKIT_JOBS"] == "1" and env["A"] == "1"
+    assert verify_budget.user_overrides() == ["DIGI_TIER_JOBS"]
+
+
+def test_lower_priority(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[int] = []
+    monkeypatch.setattr(os, "getpriority", lambda *_: 0)
+    monkeypatch.setattr(os, "setpriority", lambda _w, _i, n: seen.append(n))
+    assert verify_budget.lower_priority(True) is None and not seen  # --foreground
+    assert verify_budget.lower_priority(False) == verify_budget.NICE == 10
+    assert seen == [10]
+    monkeypatch.setattr(os, "getpriority", lambda *_: 15)  # already nicer: kept
+    assert verify_budget.lower_priority(False) == 15 and seen == [10]
+
+
+# ---- builds: once, in one place --------------------------------------------------------------------------------
+
+
+def test_builds_are_a_chain_and_steps_wait_for_theirs() -> None:
+    nodes, deps = verify.plan(verify.EVERYTHING, ["tests/digikit"])
+    assert deps["build"] == ()
+    assert deps["build-dt2"] == ("build",)
+    assert deps["build-daemons"] == ("build", "build-dt2")
+    assert deps["pins"] == deps["check"] == ("build",)
+    assert deps["dt2-check"] == ("build-dt2",)
+    assert deps["python-tests"] == deps["card"] == ("build-daemons",)
+    assert deps["rust-tests"] == (
+        "build",
+    )  # one compile of the generated core in the prod target dir
+
+
+def test_no_build_node_without_a_step_that_needs_it() -> None:
+    nodes, deps = verify.plan(("rust-tests", "web"), None)
+    assert sorted(nodes) == ["rust-tests", "web"]
+    assert deps["rust-tests"] == ()
+    nodes, _ = verify.plan(("python-tests",), ["tests/devtools/test_verify.py"])
+    assert "build-daemons" not in nodes
+    for tests in (
+        ["tests/digikit"],
+        ["tests/patchkit"],
+        ["tests/digikit/test_menu_dt2.py"],
+    ):
+        nodes, deps = verify.plan(("python-tests",), tests)
+        assert deps["python-tests"] == ("build-daemons",)
+    nodes, _ = verify.plan(("dt2-check",), None)
+    assert nodes.index("build-dt2") < nodes.index("dt2-check") and "build" not in nodes
+
+
+# ---- AOT versus interpreter equality on a fixed subset ----------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", sorted(verify.NO_AOT_SUBSET))
+def test_no_aot_subset_names_exist(path: str) -> None:
+    doc = json.loads((REPO_ROOT / path).read_text())
+    names = {s["name"] for s in doc["scenarios"]}
+    assert set(verify.NO_AOT_SUBSET[path]) <= names
+    assert len(verify.NO_AOT_SUBSET[path]) == len(set(verify.NO_AOT_SUBSET[path]))
+    seconds = {s["name"]: float(s.get("seconds") or 0) for s in doc["scenarios"]}
+    assert all(seconds[n] > 0 for n in verify.NO_AOT_SUBSET[path])
+
+
+def test_no_aot_subset_covers_the_fx_paths() -> None:
+    dn2 = set(verify.NO_AOT_SUBSET["tests/scenarios/dn2-trackfx.json"]) | set(
+        verify.NO_AOT_SUBSET["tests/scenarios/dn2-sendfx.json"]
+    )
+    for family in ("dry", "br", "over", "srr", "del", "rev", "chr", "mst"):
+        assert any(f"-{family}-" in n for n in dn2), family
+    assert {f for f in verify.NO_AOT_SUBSET} == set(verify.FX_FILES) | set(
+        verify.DT2_FX_FILES
+    )
+
+
+def test_tier_names_subset_and_full() -> None:
+    path = "tests/scenarios/dn2-sendfx.json"
+    seconds = {f"s{i:03d}": 1.0 for i in range(20)}
+    with pytest.raises(SystemExit):  # a subset name that the file lacks
+        verify.tier_names(path, seconds, 7, False)
+    assert verify.tier_names(path, seconds, 7, True) == sorted(seconds)[::7]
+    assert verify.tier_names(path, seconds, 1, True) == sorted(seconds)
+    real = {n: 1.0 for n in verify.NO_AOT_SUBSET[path]}
+    assert verify.tier_names(path, real, 1, False) == list(verify.NO_AOT_SUBSET[path])
+
+
+def test_check_no_aot_selection_names_real_tests() -> None:
+    source = (REPO_ROOT / "tests/scenarios/test_dn2_fx.py").read_text()
+    for word in verify.CHECK_NO_AOT_K.replace("(", " ").replace(")", " ").split():
+        if word.startswith("test_"):
+            assert f"def {word}(" in source, word
+
+
+# ---- the digikit images --------------------------------------------------------------------------------------
+
+
+def test_digikit_images_default_is_the_newest(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DIGIKIT_IMAGES", raising=False)
+    assert verify.digikit_images(False, False, [])[0] is None  # quick tier: newest
+    mode, why = verify.digikit_images(True, False, ["tools/devtools/verify.py"])
+    assert (
+        mode == "newest" and "dt2-1.17" in why and "dt2-1.16" not in why.split("(")[0]
+    )
+    assert verify.digikit_images(False, True, [])[0] == "all"  # --old-images
+    older = [p for p in verify.old_image_paths() if p.startswith("devices/ports/")]
+    assert "devices/ports/dt2-1.16.toml" in older
+    assert "devices/ports/dt2-1.17.toml" not in older
+    assert (
+        verify.digikit_images(True, False, ["devices/ports/dt2-1.16.toml"])[0] == "all"
+    )
+    assert (
+        verify.digikit_images(True, False, ["tools/patchkit/port_resolve.py"])[0]
+        == "all"
+    )
+    assert (
+        verify.digikit_images(True, False, ["devices/ports/dt2-1.17.toml"])[0]
+        == "newest"
+    )
+    assert (
+        verify.digikit_images(True, False, ["devices/ports/dn2-1.12.toml"])[0]
+        == "newest"
+    )
+    assert (
+        verify.digikit_images(True, False, ["devices/ports/dn2-1.11.toml"])[0] == "all"
+    )
+
+
+def test_scenario_images_follow_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tools.patchkit import pk_digikit_scen as S
+
+    scen = next(
+        s
+        for s in S.load_scenarios()
+        if len(s.devices) == 2 and not s.data["scenario"].get("images")
+    )
+    newest = [S.QUICK_IMAGES[d] for d in scen.devices]
+    every = [i for d in scen.devices for i in S.ALL_IMAGES[d]]
+    monkeypatch.delenv("DIGIKIT_IMAGES", raising=False)
+    assert scen.images("quick") == newest  # the tool's own defaults are unchanged
+    assert scen.images("full") == every
+    monkeypatch.setenv("DIGIKIT_IMAGES", "newest")  # what verify --full sets
+    assert scen.images("full") == newest
+    monkeypatch.setenv("DIGIKIT_IMAGES", "all")  # --old-images
+    assert scen.images("quick") == every
+    assert "dt2-1.16" in every and "dn2-1.11" in every
+
+
+def test_pk_jobs_variable_caps_the_harness(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tools.patchkit import pk_harness
+
+    monkeypatch.setenv("DIGI_PK_JOBS", "2")
+    assert pk_harness.default_jobs(10) == 2
+    assert pk_harness.default_jobs(1) == 1
+
+
+def test_gate_passes_the_share_to_every_pool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    gate = verify.Gate(tmp_path, budget=14)
+    gate.local.node = "python-tests"
+    gate.local.share = 6
+    env = gate.step_env()
+    assert env["DIGI_PY_JOBS"] == "3" and env["DIGIKIT_JOBS"] == "1"
+    gate.shared_env["DIGI_EMUD_DT2"] = "/x/digi-emud"
+    assert gate.step_env()["DIGI_EMUD_DT2"] == "/x/digi-emud"
+    gate.local.node = "check"  # a rendering step never carries the daemon variables
+    assert "DIGI_EMUD_DT2" not in gate.step_env()
+
+
+def test_digikit_parts_run_one_at_a_time_in_the_gate() -> None:
+    """A scenario with 3 or 4 parts boots a daemon per part: a pool of files would start 3 to 4 times its
+    daemons (measured: card-safety, 3 digi-emud at DIGIKIT_JOBS=1). The gate sets DIGIKIT_PART_JOBS=1."""
+    for node in ALL_NODES:
+        assert verify_budget.step_env(node, 6)["DIGIKIT_PART_JOBS"] == "1"
+
+
+def test_part_jobs_bounds_the_parallel_parts(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+    import time
+
+    from tools.patchkit import pk_digikit_scen, pk_harness, pk_proofkit
+
+    assert pk_harness.part_jobs(4) == 4  # unset: all parts, as before
+    monkeypatch.setenv("DIGIKIT_PART_JOBS", "1")
+    assert pk_harness.part_jobs(4) == 1
+    monkeypatch.setenv("DIGIKIT_PART_JOBS", "9")
+    assert pk_harness.part_jobs(3) == 3
+
+    def peak(run: object, width: str | None) -> int:
+        if width is None:
+            monkeypatch.delenv("DIGIKIT_PART_JOBS", raising=False)
+        else:
+            monkeypatch.setenv("DIGIKIT_PART_JOBS", width)
+        live = top = 0
+        lock = threading.Lock()
+
+        def part() -> None:
+            nonlocal live, top
+            with lock:
+                live += 1
+                top = max(top, live)
+            time.sleep(0.05)
+            with lock:
+                live -= 1
+
+        run([part] * 4)  # type: ignore[operator]
+        return top
+
+    ctx = pk_digikit_scen.Ctx.__new__(pk_digikit_scen.Ctx)  # parallel() uses no state
+    proof = pk_proofkit.Proof.__new__(pk_proofkit.Proof)
+    for run in (lambda fns: ctx.parallel(*fns), lambda fns: proof.parallel(*fns)):
+        assert peak(run, "1") == 1
+        assert peak(run, "2") == 2
+        assert peak(run, None) == 4
+
+
+# ---- the machine: cores, memory, one budget for any machine ------------------------------------------------
+
+
+def make_cpus(root: Path, cores: int, threads: int, sockets: int = 1) -> None:
+    """A fake sysfs: CORES physical cores per socket with THREADS hardware threads each."""
+    cpu = 0
+    for _ in range(threads):
+        for socket in range(sockets):
+            for core in range(cores):
+                topo = root / f"cpu{cpu}" / "topology"
+                topo.mkdir(parents=True)
+                (topo / "physical_package_id").write_text(f"{socket}\n")
+                (topo / "core_id").write_text(f"{core}\n")
+                cpu += 1
+
+
+def machine(cores: int, ram_gb: float | None) -> verify_budget.Machine:
+    return verify_budget.Machine(cores, None if ram_gb is None else int(ram_gb * GB))
+
+
+@pytest.mark.parametrize(
+    ("cores", "ram_gb", "budget", "limit"),
+    [
+        (16, 128, 14, "cores"),  # Em's M3 Max
+        (8, 16, 6, "cores"),  # 16 GB carries 12 emulators: cores bind
+        (8, 8, 6, "cores"),
+        (4, 16, 2, "cores"),  # 4 vCPU as 4 cores
+        (2, 16, 1, "cores"),
+        (1, 16, 1, "cores"),
+        (32, 16, 24, "memory"),  # (16 - 4) GB at 1 GB per emulator of 2 cores
+        (64, 8, 8, "memory"),
+        (16, 4, 1, "memory"),  # nothing left after the reserve: one core
+        (16, None, 14, "cores"),  # RAM unknown (Windows without ctypes): cores only
+    ],
+)
+def test_budget_is_the_smaller_of_cores_and_memory(
+    cores: int, ram_gb: float | None, budget: int, limit: str
+) -> None:
+    d = verify_budget.decide(machine(cores, ram_gb))
+    assert (d.budget, d.limit) == (budget, limit)
+    assert d.text.startswith(f"budget {budget} ({limit}")
+    assert d.budget >= 1
+
+
+def test_budget_text_names_the_limit() -> None:
+    assert (
+        verify_budget.decide(machine(16, 128)).text == "budget 14 (cores: 16 physical)"
+    )
+    assert verify_budget.decide(machine(32, 16)).text == "budget 24 (memory: 16 GB)"
+    assert verify_budget.budget_text(5) == "budget 5 (--jobs)"
+    assert verify_budget.budget_text(0, {"DIGI_VERIFY_BUDGET": "9"}) == (
+        "budget 9 (DIGI_VERIFY_BUDGET)"
+    )
+
+
+def test_cargo_jobs_follow_memory() -> None:
+    cap = verify_budget.cargo_jobs_cap
+    assert cap(128 * GB) == 20  # (128 - 4) / 6
+    assert cap(16 * GB) == 2
+    assert cap(8 * GB) == 1  # one rustc of the generated core, at most
+    assert cap(4 * GB) == 1 and cap(1 * GB) == 1
+    assert cap(None) is None
+    assert verify_budget.step_env("build", 6, cargo_cap=1)["CARGO_BUILD_JOBS"] == "1"
+    assert verify_budget.step_env("build", 6, cargo_cap=20)["CARGO_BUILD_JOBS"] == "6"
+    assert (
+        verify_budget.step_env("build", 6)["CARGO_BUILD_JOBS"] == "6"
+    )  # unknown: uncapped
+    assert (
+        verify_budget.step_env("python-tests", 6, cargo_cap=1)["CARGO_BUILD_JOBS"]
+        == "1"
+    )
+
+
+def test_bounded_env_caps_cargo_by_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(verify_budget, "machine_cargo_cap", lambda: 1)
+    assert verify_budget.bounded_env("build", 6, {})["CARGO_BUILD_JOBS"] == "1"
+
+
+def test_linux_smt_counts_physical_cores(tmp_path: Path) -> None:
+    make_cpus(tmp_path, cores=8, threads=2)  # 16 logical, 8 physical
+    assert verify_budget.linux_physical_cores(tmp_path, set(range(16))) == 8
+    assert verify_budget.decide(machine(8, 64)).budget == 6
+    make_cpus(
+        tmp_path / "two", cores=4, threads=2, sockets=2
+    )  # two sockets: core ids repeat
+    assert verify_budget.linux_physical_cores(tmp_path / "two", set(range(16))) == 8
+
+
+def test_linux_affinity_limits_the_cores(tmp_path: Path) -> None:
+    make_cpus(tmp_path, cores=8, threads=2)
+    # cpus 0-7 are the first thread of each core, 8-15 the second
+    assert verify_budget.linux_physical_cores(tmp_path, {0, 1, 2, 3, 8, 9}) == 4
+    assert verify_budget.linux_physical_cores(tmp_path / "none", set()) is None
+
+
+def test_cgroup_cpu_quota(tmp_path: Path) -> None:
+    assert verify_budget.parse_cpu_max("max 100000") is None
+    assert verify_budget.parse_cpu_max("200000 100000") == 2.0
+    assert verify_budget.parse_cpu_max("150000 100000") == 1.5
+    assert verify_budget.parse_cpu_max("garbage") is None
+    v2 = tmp_path / "v2"
+    v2.mkdir()
+    (v2 / "cpu.max").write_text("200000 100000\n")
+    assert verify_budget.cgroup_cpu_limit(v2) == 2.0
+    v1 = tmp_path / "v1" / "cpu"
+    v1.mkdir(parents=True)
+    (v1 / "cpu.cfs_quota_us").write_text("-1\n")
+    (v1 / "cpu.cfs_period_us").write_text("100000\n")
+    assert verify_budget.cgroup_cpu_limit(tmp_path / "v1") is None
+    (v1 / "cpu.cfs_quota_us").write_text("200000\n")
+    assert verify_budget.cgroup_cpu_limit(tmp_path / "v1") == 2.0
+    assert verify_budget.cgroup_cpu_limit(tmp_path / "missing") is None
+    # a quota of 2 CPUs is 2 cores: budget cores - 2, at least 1
+    assert verify_budget.decide(machine(2, 16)).budget == 1
+
+
+def test_cgroup_memory_limit(tmp_path: Path) -> None:
+    (tmp_path / "memory.max").write_text("max\n")
+    assert verify_budget.cgroup_memory_limit(tmp_path) is None
+    (tmp_path / "memory.max").write_text(str(8 * GB))
+    assert verify_budget.cgroup_memory_limit(tmp_path) == 8 * GB
+    v1 = tmp_path / "v1" / "memory"
+    v1.mkdir(parents=True)
+    (v1 / "memory.limit_in_bytes").write_text("9223372036854771712\n")  # "no limit"
+    assert verify_budget.cgroup_memory_limit(tmp_path / "v1") is None
+    (v1 / "memory.limit_in_bytes").write_text(str(4 * GB))
+    assert verify_budget.cgroup_memory_limit(tmp_path / "v1") == 4 * GB
+
+
+def test_detect_machine_here_is_sane() -> None:
+    m = verify_budget.detect_machine()
+    assert 1 <= m.cores <= (os.cpu_count() or m.cores)
+    assert m.ram is None or m.ram > GB
+    assert verify_budget.default_budget() >= 1
