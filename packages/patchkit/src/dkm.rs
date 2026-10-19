@@ -18,8 +18,15 @@ pub const NAME_LEN: usize = 32;
 pub const IMPORT_LEN: usize = 32;
 /// Largest module file the v0 runtime stages (its staging buffer).
 pub const MAX_FILE: usize = 64 * 1024;
-/// The runtime version this packer targets (`dkrt_sdk::RUNTIME_VERSION`).
-pub const RUNTIME_VERSION: u32 = 1;
+/// The runtime version this packer targets (`dkrt_sdk::RUNTIME_VERSION`), packed major << 16 | minor << 8 | patch, from sdk/sdk.toml.
+pub fn runtime_version() -> u32 {
+    crate::sdkgen::embedded_runtime()
+}
+
+/// A packed runtime version as "major.minor.patch" (a plain integer below 256 from an old runtime reads as 0.0.N).
+pub fn fmt_runtime(v: u32) -> String {
+    format!("{}.{}.{}", v >> 16, v >> 8 & 255, v & 255)
+}
 
 // header field offsets
 pub const H_SIZE: usize = 0x08;
@@ -27,7 +34,8 @@ pub const H_HDRSIZE: usize = 0x0c;
 pub const H_SHA: usize = 0x10;
 pub const H_RUNTIME: usize = 0x30;
 pub const H_VERSION: usize = 0x34;
-pub const H_FLAGS: usize = 0x38;
+/// 0x38..0x40: contract versions built against, (major, minor) of api, machine, fx, service; major 0 = not implemented.
+pub const H_CONTRACT: usize = 0x38;
 pub const H_NAME: usize = 0x40;
 pub const H_IMAGE_OFF: usize = 0x60;
 pub const H_IMAGE_SIZE: usize = 0x64;
@@ -138,6 +146,7 @@ pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Resu
         }],
         relocs: vec![],
     };
+    let has_obj = obj.is_some();
     let obj = obj.unwrap_or(&stub);
     if obj.arch != "cf" {
         return Err(err!(
@@ -275,6 +284,20 @@ pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Resu
         },
     );
     put(&mut f, H_VERSION, o.version);
+    // contracts: api always; machine with a DSP section; service with slot functions or a real `dkm_init`/`dkm_fini` (not the stub)
+    let sdk = crate::sdkgen::embedded();
+    let has_service = !slots.is_empty() || has_obj && (init.is_some() || fini.is_some());
+    let none = (0, 0);
+    let pairs = [
+        sdk.api,
+        if dsp.is_empty() { none } else { sdk.machine },
+        none,
+        if has_service { sdk.service } else { none },
+    ];
+    for (i, (maj, min)) in pairs.iter().enumerate() {
+        f[H_CONTRACT + 2 * i] = *maj;
+        f[H_CONTRACT + 2 * i + 1] = *min;
+    }
     f[H_NAME..H_NAME + o.name.len()].copy_from_slice(o.name.as_bytes());
     put(&mut f, H_IMAGE_OFF, image_off as u32);
     put(&mut f, H_IMAGE_SIZE, image.len() as u32);
@@ -560,6 +583,24 @@ mod tests {
         assert!(pack(&object(), &o).is_err());
         o.name = "x".repeat(32);
         assert!(pack(&object(), &o).is_err());
+    }
+
+    #[test]
+    fn the_header_carries_the_contract_versions() {
+        // 0x38..0x40: api, machine, fx, service as (major, minor)
+        let c = |f: &[u8]| f[H_CONTRACT..H_CONTRACT + 8].to_vec();
+        // ColdFire code with slots and init, no DSP section: api and service
+        let f = pack(&object(), &opts()).unwrap();
+        assert_eq!(c(&f), vec![1, 1, 0, 0, 0, 0, 1, 0]);
+        // with a DSP section: machine too (the section's bytes are not parsed by pack)
+        let f = pack_full(Some(&object()), &[], &[0u8; 16], &opts()).unwrap();
+        assert_eq!(c(&f), vec![1, 1, 1, 0, 0, 0, 1, 0]);
+        // a data-only module with a DSP section: machine, no service
+        let f = pack_full(None, &[], &[0u8; 16], &opts()).unwrap();
+        assert_eq!(c(&f), vec![1, 1, 1, 0, 0, 0, 0, 0]);
+        // a data-only module without DSP code: api only
+        let f = pack_with(None, &[], &opts()).unwrap();
+        assert_eq!(c(&f), vec![1, 1, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]

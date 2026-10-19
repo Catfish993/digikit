@@ -376,16 +376,30 @@ unsafe fn file_word(first: u32, off: u32) -> Option<u32> {
 }
 
 /// Whether the file at store sector `first` can be loaded by this runtime on this device, judged from its header: the `.dkm`
-/// format's `runtime_min`, and the device of its register records (docs/design/digikit-dkm.md; a module without records runs on
+/// format's SDK contracts (header 0x38..0x3f, the loader's rule: a declared contract with another major or a minor above the
+/// runtime's refuses), and the device of its register records (docs/design/digikit-dkm.md; a module without records runs on
 /// either device). A file that is not a `.dkm` or cannot be read passes: the runtime then names the real reason at boot.
-unsafe fn compatible(first: u32, runtime: u32, device: u32) -> bool {
+unsafe fn compatible(first: u32, device: u32) -> bool {
     match file_word(first, 0) {
         Some(DKM_MAGIC) => {}
         _ => return true,
     }
-    if let Some(min) = file_word(first, 0x30) {
-        if min > runtime {
-            return false;
+    let rt = [
+        dkrt_sdk::contract::API,
+        dkrt_sdk::contract::MACHINE,
+        dkrt_sdk::contract::FX,
+        dkrt_sdk::contract::SERVICE,
+    ];
+    for half in 0..2u32 {
+        if let Some(w) = file_word(first, 0x38 + 4 * half) {
+            for k in 0..2usize {
+                let c = 2 * half as usize + k;
+                let major = (w >> (24 - 16 * k as u32)) as u8;
+                let minor = (w >> (16 - 16 * k as u32)) as u8;
+                if major != 0 && (major != rt[c].0 || minor > rt[c].1) {
+                    return false;
+                }
+            }
         }
     }
     let (Some(off), Some(size)) = (file_word(first, 0x90), file_word(first, 0x94)) else {
@@ -484,7 +498,7 @@ unsafe fn scan_once() {
     dkrt_status(&mut st);
     for i in 0..NENT {
         let f = store::file(TAB, ENT[i] as usize);
-        if !compatible(f.first, st.runtime, st.device) {
+        if !compatible(f.first, st.device) {
             NOK[i] = 1;
         }
     }
@@ -748,7 +762,12 @@ unsafe fn fill_about() {
     dkrt_status(&mut st);
     read_boot();
     let mut t = Text::new();
-    t.s(b"RUNTIME ABI ").num(st.runtime);
+    t.s(b"RUNTIME ")
+        .num(st.runtime >> 16)
+        .s(b".")
+        .num(st.runtime >> 8 & 255)
+        .s(b".")
+        .num(st.runtime & 255);
     arow(m, &t.b);
     let mut d: DkrtDiag = core::mem::zeroed();
     dkrt_diag(&mut d);

@@ -12,7 +12,9 @@ pub const API_VERSION: u32 = 1;
 /// debug log and its SysEx commands LOG and PEEK, `dkrt_diag`, `dkrt_debug_set`, the crash record (finding 46). 4: SELECT and RESTART.
 /// 5: the DSP guard (finding 51): voice rows of 16 words with the knob ranges, DSP sections of version 2 (voices of 48 bytes), the 24-word
 /// DSP diagnostics with the guard's fault words, the log events `MACHINE_FAULT` and `MACHINE_DISABLED`.
-pub const RUNTIME_VERSION: u32 = 5;
+/// Versions 1 to 5 were plain integers (they read as 0.0.1 to 0.0.5 packed).
+/// 0.1.0 = semantic version; contract versions in the .dkm header (a module is refused only on a contract mismatch, docs/design/module-sdk.md 11.5 D3); LOGCFG, log levels and sources, Api.log_lv.
+pub use gen_sdk::RUNTIME_VERSION;
 
 /// Facts from the device files (`devices/*.toml`) and `core/machines` types.toml that every device agrees on, written by
 /// `patchkit gen` (the `[[gen]]` of core/runtime's module.toml; docs/design/device-data.md). `Api::device` is the device's
@@ -90,6 +92,8 @@ pub struct Api {
     pub muldi3: usize,
     pub udivdi3: usize,
     pub umoddi3: usize,
+    /// Like `log`, with a level: 0 error, 1 warn, 2 info, 3 debug, 4 trace (above 4: 4).
+    pub log_lv: unsafe extern "C" fn(level: u32, msg: *const u8, value: u32),
 }
 
 /// `dkrt_status` result. The caller owns the memory; the layout only grows at the end.
@@ -266,6 +270,7 @@ pub const E_SAFE_MODE: i32 = -44; // this boot is in safe mode: no module was lo
 pub const E_BOOT_ONLY: i32 = -45; // `dkrt_load` after the boot hook: the module set is fixed per session (hot reload is archived)
 pub const E_RANGE: i32 = -46; // a card write outside the store range (refused by the one card-write function)
 pub const E_CARD_RO: i32 = -47; // the card's store area is not ours and not blank: the runtime never writes it (finding 46)
+pub const E_CONTRACT: i32 = -48; // the module was built for another SDK contract (major differs, or its minor is above the runtime's): rebuild it
 
 /// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
 /// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
@@ -863,46 +868,9 @@ pub const DIAG_MAGIC: u32 = 0x4449_4147; // "DIAG"
 /// Event kinds of the debug log (docs/findings/46-digikit-debug.md has the argument meanings; `tools/device/dklog.py` the readable names).
 /// An event is 32 bytes: `seq`, `time` (the firmware's block counter, 1500 per second), `kind`, `flags` (bit 0: an error, kept when debug is
 /// off), five argument words.
-pub mod logk {
-    pub const BOOT_START: u16 = 1;
-    pub const CARD_CHECK: u16 = 2;
-    pub const SAFE: u16 = 3;
-    pub const BOOT_RECORD: u16 = 4;
-    pub const MOD_LOAD: u16 = 5;
-    pub const MOD_DSP: u16 = 6;
-    pub const UPLOAD: u16 = 7;
-    pub const MENU: u16 = 8;
-    pub const HEALTH: u16 = 9;
-    pub const DSP_DIAG: u16 = 10;
-    pub const DSP_STOPPED: u16 = 11;
-    pub const CRASH_FOUND: u16 = 12;
-    pub const CARD_REFUSED: u16 = 13;
-    pub const MOD_LOG: u16 = 14;
-    pub const UI_FIRST: u16 = 15;
-    pub const STABLE: u16 = 16;
-    pub const DEBUG_SET: u16 = 17;
-    pub const RAM_KEEP: u16 = 18;
-    pub const CRASH_DETAIL: u16 = 19;
-    pub const DSP_ABSENT: u16 = 20;
-    pub const MOD_LIST: u16 = 21;
-    pub const CRASH_MOD: u16 = 22;
-    pub const CRASH_REG: u16 = 23;
-    pub const CRASH_STACK: u16 = 24;
-    pub const CRASH_TAIL: u16 = 25;
-    /// A track's machine type changed: track (0 based), old type, new type, 0xffffffff when none (finding 46).
-    pub const MACHINE_CHANGE: u16 = 26;
-    /// The DSP guard (core/dsp-voice) zeroed a machine's block: type | voice << 16, kind (1 Inf or NaN, 2 over the level bound) | faults << 8,
-    /// the parameter words of the call, knobs 0 to 5 in pairs (finding 51). An error event.
-    pub const MACHINE_FAULT: u16 = 27;
-    /// The guard switched a machine type off after 8 faults in a second: type, types disabled so far, faults so far. An error event.
-    pub const MACHINE_DISABLED: u16 = 28;
-    /// `MENU` argument 0: what the menu did.
-    pub const MENU_SELECT: u32 = 1;
-    pub const MENU_RESTART: u32 = 2;
-    pub const MENU_DEBUG: u32 = 3;
-    /// Event flag bits.
-    pub const F_ERROR: u16 = 1;
-}
+/// Written by `patchkit gen` from `sdk/sdk.toml` (`gen_sdk.rs`), with the contract version numbers (`contract`).
+mod gen_sdk;
+pub use gen_sdk::{contract, logk};
 
 #[cfg(test)]
 mod tests {

@@ -287,7 +287,7 @@ description = "Smoke tour and module tests over the matrix (tests/patchkit/smoke
 
 [tasks."patch:runtime-proof"]
 run = "uv run python -m tools.patchkit.pk_dkrt proof"
-description = "digikit runtime in the emulator: patch core/runtime, boot with a selection of three bad files and test/dyn-demo, boot report, counter, E_BOOT_ONLY after the boot, write-watch and flush check: mise run patch:runtime-proof [-- --image dn2-1.12 --keep DIR]"
+description = "digikit runtime in the emulator: patch core/runtime, boot with a selection of five bad files and test/dyn-demo, boot report, counter, E_BOOT_ONLY after the boot, write-watch and flush check: mise run patch:runtime-proof [-- --image dn2-1.12 --keep DIR]"
 
 [tasks."patch:proofs"]
 run = "uv run python -m tools.patchkit.pk_proofs"

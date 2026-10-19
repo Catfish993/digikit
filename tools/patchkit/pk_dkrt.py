@@ -4,10 +4,11 @@
     uv run python -m tools.patchkit.pk_dkrt proof [--image dt2-1.17] [--keep DIR] [--control]
 
 `proof` is the loader gate on one image (docs/findings/29-runtime-v0.md, converted to boot-time loading in finding 37 when hot reload
-was archived): it patches core/runtime into the stock firmware, packs test/dyn-demo (and two broken variants) into `.dkm` files,
+was archived): it patches core/runtime into the stock firmware, packs test/dyn-demo (and four broken variants) into `.dkm` files,
 builds a +Drive card with them in the module store and a selection record that names, in order, a file with a bad sha256, a file
-with an import the runtime does not have, a file that is not there, the good module, and the good module again. The boot hook loads
-the selection (through packages/emulator/boot/examples/cf_script.rs); the proof reads the boot report (the three refusals, the load,
+with an import the runtime does not have, a file that is not there, the good module with api major 2, the good module with api
+minor 9 (both E_CONTRACT), the good module, and the good module again. The boot hook loads
+the selection (through packages/emulator/boot/examples/cf_script.rs); the proof reads the boot report (the five refusals, the load,
 the duplicate refused), the module's counter rising while the UI task runs, and checks that the refused files left nothing behind
 (arena, slots, module records). After the boot a `dkrt_load` (mailbox and direct call) answers `E_BOOT_ONLY` and a command 2 (the
 old unload) is refused as unknown. The write-watch on `cf.expansion` (the runtime's code and the arena allowed as writers) and
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import os
 import struct
@@ -48,7 +50,7 @@ OK, E_NOT_FOUND, E_BAD_STORE, E_READ, E_SHA, E_FORMAT, E_RUNTIME, E_IMPORT = (
     -7,
 )
 E_NOMEM, E_INIT, E_LOADED, E_SLOT = -8, -9, -10, -11
-E_FORMAT_CMD, E_BOOT_ONLY = -5, -45
+E_FORMAT_CMD, E_BOOT_ONLY, E_CONTRACT = -5, -45, -48
 SEL_MAGIC, SEL_VERSION, SEL_PATH, SEL_MAX = 0x444B534C, 1, 56, 8
 _STORE = pk_device.store()  # devices/*.toml [card.store]
 SECTOR_A, SECTOR_B = _STORE.sel_a, _STORE.sel_b
@@ -145,7 +147,8 @@ def pack(tools: Tools, module: str, out: Path, *extra: object) -> None:
 
 def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None:
     """From a module's object: `bad-sha.dkm` (one byte of the image changed after packing) and `bad-import.dkm`
-    (a relocation against a name the runtime does not provide)."""
+    (a relocation against a name the runtime does not provide), and `contract-major.dkm` / `contract-minor.dkm` (api major 2; api
+    minor 9, the file sha256 recomputed)."""
     man = (ROOT / "modules" / module / "module.toml").read_text()
     obj_path = next(
         ln.split("=", 1)[1].strip().strip('"')
@@ -193,6 +196,17 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
                   "-o", folder / "modules" / "bad-import.dkm", "--name", "bad-import")  # fmt: skip
     if r.returncode:
         raise ProofError(f"pack bad-import: {r.stderr}")
+    # the api contract of the header (bytes 0x38 major, 0x39 minor) changed, the file sha256 made right again
+    for name, offset, value in (
+        ("contract-major", 0x38, 2),
+        ("contract-minor", 0x39, 9),
+    ):
+        forged = bytearray(good.read_bytes())
+        forged[offset] = value
+        struct.pack_into(">I", forged, 0x08, len(forged))
+        forged[0x10:0x30] = bytes(32)
+        forged[0x10:0x30] = hashlib.sha256(bytes(forged)).digest()
+        (folder / "modules" / f"{name}.dkm").write_bytes(forged)
 
 
 def build_card(tools: Tools, folder: Path, image: Path, syx: Path, device: str) -> None:
@@ -332,6 +346,8 @@ def proof(
         "modules/bad-sha.dkm",
         "modules/bad-import.dkm",
         "modules/nope.dkm",
+        "modules/contract-major.dkm",
+        "modules/contract-minor.dkm",
         "modules/dyn-demo.dkm",
         "modules/dyn-demo.dkm",
     ]
@@ -420,15 +436,17 @@ def proof(
         E_SHA,
         E_IMPORT,
         E_NOT_FOUND,
+        E_CONTRACT,
+        E_CONTRACT,
         OK,
         E_SLOT,
     ]  # the duplicate meets the taken slot before the name check
     check(
-        "boot report: three refusals, the load, the duplicate refused (slot taken)",
+        "boot report: five refusals, the load, the duplicate refused (slot taken)",
         results == want,
         f"{results}, want {want}",
     )
-    check("boot report: count 5, loaded 1", be32(bi, 4 * 7) == len(selection) and be32(bi, 4 * 8) == 1,
+    check("boot report: count 7, loaded 1", be32(bi, 4 * 7) == len(selection) and be32(bi, 4 * 8) == 1,
           f"count {be32(bi, 4 * 7)}, loaded {be32(bi, 4 * 8)}")  # fmt: skip
     m0 = ST_MODULES
     base = be32(s0, m0 + 40)

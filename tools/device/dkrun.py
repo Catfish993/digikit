@@ -76,7 +76,7 @@ def build_pack(module: str, device: str, build: bool = True) -> Path:
 def require_runtime(info: dict[str, Any]) -> None:
     if info["runtime"] < MIN_RUNTIME:
         raise RunError(
-            f"the device runs runtime {info['runtime']}; dk run needs {MIN_RUNTIME} "
+            f"the device runs runtime {D.fmt_runtime(info['runtime'])}; dk run needs {D.fmt_runtime(MIN_RUNTIME)} "
             "(SELECT and RESTART): flash a runtime-4 image (docs/PATCHING.md, 'Runtime 4: dk run and screenshots')"
         )
     if info["card_read_only"]:
@@ -180,7 +180,7 @@ def run(
     require_runtime(info)
     out["info"] = info
     say(
-        f"{info['port']}, runtime {info['runtime']}, free {info['free_bytes']} bytes"
+        f"{info['port']}, runtime {D.fmt_runtime(info['runtime'])}, free {info['free_bytes']} bytes"
         + (", safe mode" if info["safe"] else "")
     )
     dev = device or info["port"]

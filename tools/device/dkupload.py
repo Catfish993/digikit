@@ -43,7 +43,7 @@ CMD_BEGIN, CMD_DATA, CMD_END, CMD_DELETE, CMD_CLEAR, CMD_ABORT = (
     0x14,
     0x15,
 )
-CMD_LOG, CMD_PEEK = 0x20, 0x21
+CMD_LOG, CMD_PEEK, CMD_LOGCFG = 0x20, 0x21, 0x22
 CMD_SELECT, CMD_RESTART = 0x30, 0x31  # runtime 4
 CLEAR_MAGIC = 0x434C5221
 MAX_CHUNK = 32768
@@ -71,6 +71,11 @@ STATUS = {
     -42: "E_SEL_WRITE",
     -47: "E_CARD_RO",
 }
+
+
+def fmt_runtime(packed: int) -> str:
+    """A packed runtime version (major << 16 | minor << 8 | patch) as "major.minor.patch"; the plain integers 1 to 5 of old runtimes read as 0.0.N."""
+    return f"{packed >> 16}.{packed >> 8 & 255}.{packed & 255}"
 
 
 class UploadError(RuntimeError):
@@ -307,6 +312,26 @@ class Uploader:
         if got != addr or n != length or len(b) < 6 + n:
             raise UploadError(-50, "peek: malformed reply")
         return b[6 : 6 + n]
+
+    def logcfg(
+        self, default: int | None = None, modules: dict[int, int | None] | None = None
+    ) -> dict[str, Any]:
+        """LOGCFG: the log levels. With no argument, read them; else set `default` and/or the levels of module records (`modules`: record index ->
+        level, None for the default). Returns {"default": int, "modules": [8 levels, 0xff = the default], "debug": bool}."""
+
+        def parse(b: bytes) -> dict[str, Any]:
+            if len(b) < 10:
+                raise UploadError(-50, "logcfg: malformed reply")
+            return {"default": b[0], "modules": list(b[1:9]), "debug": bool(b[9])}
+
+        cur = parse(self._ok(CMD_LOGCFG, "logcfg", b"\x00"))
+        if default is None and not modules:
+            return cur
+        lv = list(cur["modules"])
+        for i, v in (modules or {}).items():
+            lv[i] = 0xFF if v is None else v
+        d = cur["default"] if default is None else default
+        return parse(self._ok(CMD_LOGCFG, "logcfg", bytes([1, d, *lv])))
 
     def select(self, paths: list[str]) -> None:
         """SELECT (runtime 4): save the selection record (what the next boot loads); the menu's code path, so its card rules apply."""

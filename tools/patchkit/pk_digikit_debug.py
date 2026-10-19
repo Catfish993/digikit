@@ -392,6 +392,31 @@ def run_debug(c: Any) -> None:
             and st513 == E_PEEK,
             f"{refused} {st0} {st513}",
         )
+        # LOGCFG: levels (finding 46; docs/design/module-sdk.md 13.2)
+        cfg = up.logcfg()
+        c.check(
+            "LOGCFG get: default level info (2), no module level set, debug on",
+            cfg == {"default": 2, "modules": [0xFF] * 8, "debug": True},
+            str(cfg),
+        )
+        m0 = len(events(rig, "UPLOAD"))
+        up.logcfg(default=0)
+        up.request(DK.CMD_ABORT)  # an info event: dropped at level error
+        mid = len(events(rig, "UPLOAD"))
+        up.request(DK.CMD_DELETE, b"..\0")  # an error event: kept
+        m1 = len(events(rig, "UPLOAD"))
+        c.check(
+            "LOGCFG default error (0): an info event is dropped, an error event is kept",
+            mid == m0 and m1 == mid + 1,
+            f"{m0} {mid} {m1}",
+        )
+        back = up.logcfg(default=2)
+        up.request(DK.CMD_ABORT)
+        c.check(
+            "LOGCFG default back to info: the upload command is logged again",
+            back["default"] == 2 and len(events(rig, "UPLOAD")) == m1 + 1,
+            str(back),
+        )
         # debug off: errors only
         n0 = len(events(rig, "UPLOAD"))
         up.request(DK.CMD_ABORT)

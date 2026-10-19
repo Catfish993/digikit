@@ -109,7 +109,7 @@ def make_card(image: str) -> pathlib.Path:
         forge(good, device=other)
     )
     (folder / "digikit" / "modules" / "future.dkm").write_bytes(
-        forge(good, runtime_min=99)
+        forge(good, api_major=99)
     )
     (folder / "digikit" / "readme.txt").write_bytes(b"readme")
     img = CARDS / f"{dev}.img"
@@ -122,10 +122,10 @@ def make_card(image: str) -> pathlib.Path:
 
 
 def forge(
-    good: bytes, device: int | None = None, runtime_min: int | None = None
+    good: bytes, device: int | None = None, api_major: int | None = None
 ) -> bytes:
     """A copy of a good `.dkm` with a header field changed and the file sha256 made right again: register records for another
-    device (an empty `DKRG` record, 16 bytes appended) or a higher `runtime_min`. The menu reads only these header fields."""
+    device (an empty `DKRG` record, 16 bytes appended) or another `api` contract major. The menu reads only these header fields."""
     import hashlib
     import struct
 
@@ -135,8 +135,8 @@ def forge(
         struct.pack_into(">I", b, 0x90, len(b))
         struct.pack_into(">I", b, 0x94, 16)
         b += struct.pack(">4sIII", b"DKRG", 1, device, 0)
-    if runtime_min is not None:
-        struct.pack_into(">I", b, 0x30, runtime_min)
+    if api_major is not None:
+        b[0x38] = api_major
     struct.pack_into(">I", b, 0x08, len(b))
     b[0x10:0x30] = bytes(32)
     b[0x10:0x30] = hashlib.sha256(bytes(b)).digest()

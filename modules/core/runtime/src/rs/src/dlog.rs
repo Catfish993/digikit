@@ -39,10 +39,89 @@ pub fn set_debug(on: bool) {
     unsafe { write_volatile(addr_of_mut!(DEBUG_OFF), if on { 0 } else { 1 }) }
 }
 
-/// Append an event. An event without `logk::F_ERROR` is dropped when the debug log is off.
+/// The flags of a non-error event at the info level (an error event is `logk::F_ERROR`: level 0).
+pub const INFO: u16 = logk::L_INFO << logk::LEVEL_SHIFT;
+
+/// Events above this level are dropped, unless a module has its own (`LEVEL_MODULE`).
+static mut LEVEL_DEFAULT: u8 = logk::L_INFO as u8;
+/// The level per module record (0xff: use the default).
+static mut LEVEL_MODULE: [u8; crate::MAX_MODULES] = [0xff; crate::MAX_MODULES];
+/// The module whose code is running (record index + 1; 0: the runtime).
+static mut CURRENT_SRC: u8 = 0;
+
+pub fn level_default() -> u8 {
+    unsafe { read_volatile(addr_of!(LEVEL_DEFAULT)) }
+}
+
+pub fn set_level_default(v: u8) {
+    unsafe { write_volatile(addr_of_mut!(LEVEL_DEFAULT), v) }
+}
+
+pub fn level_module(i: usize) -> u8 {
+    if i >= crate::MAX_MODULES {
+        return 0xff;
+    }
+    unsafe { read_volatile((addr_of!(LEVEL_MODULE) as *const u8).add(i)) }
+}
+
+pub fn set_level_module(i: usize, v: u8) {
+    if i < crate::MAX_MODULES {
+        unsafe { write_volatile((addr_of_mut!(LEVEL_MODULE) as *mut u8).add(i), v) }
+    }
+}
+
+/// Module code is about to run: events it logs carry its source. Returns the previous source for `leave_module`.
+pub fn enter_module(idx: usize) -> u8 {
+    unsafe {
+        let prev = read_volatile(addr_of!(CURRENT_SRC));
+        write_volatile(addr_of_mut!(CURRENT_SRC), idx as u8 + 1);
+        prev
+    }
+}
+
+pub fn leave_module(prev: u8) {
+    unsafe { write_volatile(addr_of_mut!(CURRENT_SRC), prev) }
+}
+
+/// Call a module's `init` (record `idx`) with its source set.
+pub unsafe fn call_init(idx: usize, f: unsafe extern "C" fn(*const Api) -> i32, api: *const Api) -> i32 {
+    let prev = enter_module(idx);
+    let r = f(api);
+    leave_module(prev);
+    r
+}
+
+/// Call a module's `fini` (record `idx`) with its source set, then reset its log level.
+pub unsafe fn call_fini(idx: usize, f: unsafe extern "C" fn(*const Api), api: *const Api) {
+    let prev = enter_module(idx);
+    f(api);
+    leave_module(prev);
+    set_level_module(idx, 0xff);
+}
+
+/// Append an event. The source (flags bits 8 to 15) defaults to the module that is running. An event without `logk::F_ERROR` is dropped when the
+/// debug log is off, or when its level is above the threshold of its source.
 pub unsafe fn ev(kind: u16, flags: u16, a: [u32; 5]) {
-    if flags & logk::F_ERROR == 0 && !debug_on() {
-        return;
+    let mut flags = flags;
+    let mut src = (flags >> logk::SOURCE_SHIFT) & logk::SOURCE_MASK;
+    if src == 0 {
+        src = read_volatile(addr_of!(CURRENT_SRC)) as u16;
+        flags |= src << logk::SOURCE_SHIFT;
+    }
+    if flags & logk::F_ERROR == 0 {
+        if !debug_on() {
+            return;
+        }
+        let mut limit = read_volatile(addr_of!(LEVEL_DEFAULT));
+        if src > 0 {
+            let m = level_module(src as usize - 1);
+            if m != 0xff {
+                limit = m;
+            }
+        }
+        if ((flags >> logk::LEVEL_SHIFT) & logk::LEVEL_MASK) > limit as u16 {
+            return;
+        }
     }
     let time = fw_blocks().unwrap_or(0);
     let sr = irq_mask();
@@ -241,7 +320,7 @@ pub unsafe fn tick() {
         w.next_tracks = now.wrapping_add(TRACKS_FROM);
         w.changed_at = now;
         if !w.present {
-            ev(logk::DSP_ABSENT, 0, [0; 5]);
+            ev(logk::DSP_ABSENT, INFO, [0; 5]);
         }
         return;
     }
@@ -283,7 +362,7 @@ unsafe fn watch_tracks(w: &mut Watch) {
     while t < TRACKS {
         let ty = track_type(kit, t as i32) as u32;
         if w.types_valid && ty != w.types[t] {
-            ev(logk::MACHINE_CHANGE, 0, [t as u32, w.types[t], ty, 0, 0]);
+            ev(logk::MACHINE_CHANGE, INFO, [t as u32, w.types[t], ty, 0, 0]);
         }
         w.types[t] = ty;
         t += 1;
@@ -378,7 +457,7 @@ unsafe fn poll_diag(w: &mut Watch, now: u32) {
         w.logged = true;
         w.logged_words = buf;
         w.next_log = now.wrapping_add(DIAG_LOG_EVERY);
-        log_words(&buf, n, 0);
+        log_words(&buf, n, INFO);
     }
     // the heartbeat watch. The two reply records alternate and a stopped DSP leaves each with its last words, so a heartbeat that
     // differs from the last one may be the older record: only a larger value counts as a beat.
@@ -397,7 +476,7 @@ unsafe fn poll_diag(w: &mut Watch, now: u32) {
                 // it moves again
                 write_volatile(addr_of_mut!(DKRT_DSP_STOPPED), 0);
                 w.sampling = 0;
-                ev(logk::DSP_STOPPED, 0, [hb, buf[2], buf[14], buf[15], 1]);
+                ev(logk::DSP_STOPPED, INFO, [hb, buf[2], buf[14], buf[15], 1]);
             }
         } else {
             if ahead > 0 {
@@ -487,7 +566,7 @@ unsafe fn snapshot(w: &mut Watch) {
             a[4] = h.heap_free / 1024;
         }
     }
-    ev(logk::HEALTH, 0, a);
+    ev(logk::HEALTH, INFO, a);
 }
 
 /// The last words `dl_diag` returned and how many (for the proofs).

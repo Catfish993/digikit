@@ -27,9 +27,9 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x08 | 4 | file size in bytes |
 | 0x0c | 4 | header size = 0xa0 |
 | 0x10 | 32 | sha256 of the whole file with these 32 bytes read as zeros |
-| 0x30 | 4 | `runtime_min`: the lowest runtime version that can load it (`dkrt_sdk::RUNTIME_VERSION`, now 1; PAGE records and `own_dsp` were added without a bump: an older runtime refuses the file with `E_FORMAT`) |
+| 0x30 | 4 | `runtime_min`: informational, the runtime version the module was built for (packed semantic version; informational; `dkrt_sdk::RUNTIME_VERSION`, now 0.1.0); since runtime 0.1.0 the loader does not refuse on it (the contract bytes at 0x38 decide) |
 | 0x34 | 4 | module version, `major << 16 \| minor << 8 \| patch` |
-| 0x38 | 8 | flags, reserved (0) |
+| 0x38 | 8 | contracts built against, a (major, minor) byte pair each: api, machine, fx, service. Major 0 = the module does not implement that contract (api is never 0). `pack` writes api always, machine when the file has a DSP section, service when it has slot functions or a real `dkm_init`/`dkm_fini`, fx 0 |
 | 0x40 | 32 | name, NUL padded |
 | 0x60 | 4 | `image_off` (multiple of 16) |
 | 0x64 | 4 | `image_size`: text and data, as the patch-time linker lays them out at base 0 |
@@ -49,7 +49,7 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x9c | 4 | `dsp_size`: its size in bytes |
 
 After the header, in this order, each table where its offset says: imports, relocations, slot bindings, the `register` records,
-the DSP section (16-byte aligned), padding to 16, then the image. A file with a DSP section has `runtime_min` 5 or more (a section of version 2; runtime 5 also loads version 1).
+the DSP section (16-byte aligned), padding to 16, then the image. A file with a DSP section carries the machine contract at 0x38 (a section of version 2; runtime 5 and later also load version 1).
 
 - **Imports**: `import_count` entries of 32 bytes, a NUL-padded name. Every undefined symbol of the object that a relocation
   names. The names the v0 runtime provides: `fw_block_read`, `fw_alloc`, `fw_free`, `memcpy`, `memset`, `memcmp`, `__muldi3`,
@@ -132,7 +132,7 @@ type 0's (finding 30). A machine that clones SAMPLE, like `pluck`, is right alre
 
 1. Store: header, table checksum, the path, the table's sha256 of the file (`E_NOT_FOUND`, `E_BAD_STORE`, `E_SHA`, `E_TOO_BIG`).
 2. Magic, format 1, size fields equal the file (`E_FORMAT`); the file's own sha256 (`E_SHA`).
-3. `runtime_min` not above the runtime's version (`E_RUNTIME`).
+3. Contracts (0x38): for each contract the module declares (major not 0), its major equals the runtime's and its minor is not above the runtime's (`E_CONTRACT`: built for another SDK contract, rebuild the module). `runtime_min` is not checked.
 4. Name, alignment, table bounds, reloc kinds and offsets, slot numbers and function offsets (`E_FORMAT`).
 5. Every import resolves (`E_IMPORT`); every slot it binds is free (`E_SLOT`); no module of that name is loaded (`E_LOADED`); a
    free module record (`E_TABLE_FULL`).

@@ -4,7 +4,7 @@ use crate::dsp;
 use crate::sha256::Sha;
 use crate::{
     arena, cstr_eq, cstr_len, dkrt_api, flush, import_addr, init_once, rd32, st, store, wr32,
-    Module, MAX_MODULES, RUNTIME_VERSION,
+    Module, MAX_MODULES,
 };
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
@@ -18,8 +18,10 @@ const SPIN: u32 = 2_000_000;
 const H_SIZE: usize = 0x08;
 const H_HDRSIZE: usize = 0x0c;
 const H_SHA: usize = 0x10;
-const H_RUNTIME: usize = 0x30;
+#[allow(dead_code)]
+const H_RUNTIME: usize = 0x30; // informational since runtime 0.1.0
 const H_VERSION: usize = 0x34;
+const H_CONTRACT: usize = 0x38; // api, machine, fx, service: (major, minor) bytes
 const H_NAME: usize = 0x40;
 const H_IMAGE_OFF: usize = 0x60;
 const H_IMAGE_SIZE: usize = 0x64;
@@ -83,8 +85,22 @@ pub unsafe fn load(path: *const u8) -> i32 {
     if got != want {
         return E_SHA;
     }
-    if rd32(f.add(H_RUNTIME)) > RUNTIME_VERSION {
-        return E_RUNTIME;
+    // contracts (D3): refused only when a contract the module declares (major != 0) has another major than the runtime's, or a
+    // minor above the runtime's. The runtime version in H_RUNTIME is informational.
+    let rt = [
+        contract::API,
+        contract::MACHINE,
+        contract::FX,
+        contract::SERVICE,
+    ];
+    let mut c = 0;
+    while c < 4 {
+        let major = *f.add(H_CONTRACT + 2 * c);
+        let minor = *f.add(H_CONTRACT + 2 * c + 1);
+        if major != 0 && (major != rt[c].0 || minor > rt[c].1) {
+            return E_CONTRACT;
+        }
+        c += 1;
     }
     let name = f.add(H_NAME);
     let nlen = cstr_len(name, 32);
@@ -345,7 +361,7 @@ unsafe fn complete(
     }
     if init != 0 {
         let call: unsafe extern "C" fn(*const Api) -> i32 = core::mem::transmute(init as usize);
-        let r = call(addr_of!(dkrt_api));
+        let r = crate::dlog::call_init(rec as usize, call, addr_of!(dkrt_api));
         if r != 0 {
             crate::registry::remove(owner);
             dsp::release(rec);
@@ -421,7 +437,7 @@ pub unsafe fn unload_rec(rec: usize) -> i32 {
     // 3. fini, 4. free
     if m.fini != 0 {
         let call: unsafe extern "C" fn(*const Api) = core::mem::transmute(m.fini as usize);
-        call(addr_of!(dkrt_api));
+        crate::dlog::call_fini(rec as usize, call, addr_of!(dkrt_api));
     }
     // the machine row first, then the DSP voice rows, then the range in the DSP area
     crate::registry::remove(rec as u8 + 1);
