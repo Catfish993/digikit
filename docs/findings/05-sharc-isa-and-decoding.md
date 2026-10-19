@@ -1430,3 +1430,44 @@ Does silicon do the same? Public programming reference (`sc58x-2158x-prm`, print
 - Not covered: banks with the IMDW (40-bit) bit set scale by 6 (PRM p.7-7); no DT2/DN2 code path in this work sets it
   (the voice and master code runs on 32-bit blocks), but the register is not read by anything we emulate **[O]**.
   Misaligned long-word accesses are forced to the lower aligned address on silicon (p.6-32) and are not modelled.
+
+## Type2b and the 16-bit Type2c: the decoder no longer takes Type2b **[V][C][O]**
+
+The PRM's Type2b figure fixes bits 47..39 at `110000000` (mask `0xff8000000000`, value
+`0xc00000000000`). Every first parcel in `0xc000..0xc07f` matches it, and every one of those
+parcels is also a 16-bit Type2c short compute (`Rn = Rn + Rx`, opcode `0000`). The table
+gave Type2b more fixed bits, so the raw pick was the 32-bit reading. The confidence
+lookahead had to pull each case back to 2c.
+
+The lookahead did not catch every case. selache's selas assembled a 16-bit `R2 = R2 + R3`
+(`0xc023`) into a dn2_firmware DSP routine. The executor ran it as a 32-bit 2b, with the next
+parcel as its low compute half. Every later instruction lost its boundary.
+
+**What the silicon does** **[V]**:
+
+- Three parcels sit in code that runs every audio block on the instrument: DN2 1.11
+  `sw 0x1c0e13` (`0xc020`) and `sw 0x1c4f4a` (`0xc029`), and DT2 1.16 `sw 0x1c32ab` (`0xc011`).
+  The source is dn2_firmware's `docs/for-digikit-sharc-runner-dn2.md`, section 10. A 32-bit reading desyncs the
+  stream at each one. The instrument plays.
+- On a Digitone II, one build rewrote a 16-bit `0xc018` in a mod's DSP code as a 32-bit
+  form. It behaved the same as the build with the 16-bit form (dn2_firmware
+  `docs/waverider-dsp-compare.md`, `stages-fix`).
+- selache's selas, an independent assembler, never emits a 2b at this prefix. It encodes a
+  32-bit full compute with the PGR prefix `000000011` (`r1 = r0 + r1` is `0x0180 0x1101`).
+- In DN2 1.11, all 31 decoded 2b were either the two misreads above or sat in one block
+  (`0xb8f69a..0xb96bc4`) that decodes like data.
+
+**The change** **[V]**: `build_table.py` has `NOT_VISA = {"Type2b"}`. Type2b stays in
+`decode_table.json` with `"visa": false`, so neither the Python decoder (`sharc_isa`, mode
+`visa`) nor the generated Rust table (`sharc_decode_rsgen.py`, `sharc-rt`) takes it. A
+`0xc000..0xc07f` first parcel is now a 2c on the raw pick, with no lookahead. The 2b arms of
+`decode.rs`'s width resolution no longer run, but they stay in the code.
+
+**Checked** **[V]**: `sharc-rt` 17 of 17. The Python SHARC tests on Windows: 1,645 passed, and 22
+failed exactly as they fail on unmodified main (paths and missing peers). The six tests built
+around the 2b/2c collision now assert the 2c on the raw pick, and they keep the firmware
+shapes (DT2 1.16 `sw 0x1c4b99`, `sw 0x1c4e10`). selache and the native decoder now agree on
+`0xc001`.
+
+**Open** **[O]**: whether the PGR prefix `000000011` is the real Type2b. No firmware instance
+of it is known, so the table does not take it.

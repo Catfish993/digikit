@@ -511,3 +511,75 @@ and N = 50 gives 113 (`gen_dt2fx.py OUT --ladder` measures it). The DN2 counts (
 127) do not carry over: 44 events reach UI 90 on DT2. A scenario is therefore calibrated by read-back in its own
 event layout, and the filter-closed layout (sweep 60M instructions later) needs N = 46 for 127.
 
+## Panel input: the "encoder accumulator" counts turns since a push, it is not an undrained delta (Digitone II 1.11) **[D]**
+
+Relevant to issue #6 (encoder deltas arrive but the value never moves). The
+per-encoder counter at `0x445a0dc4` climbs with every detent and never clears
+under emulation, which read like a missing drain. Reading its only clearing
+code says otherwise.
+
+- The panel MCU's UART stream is dispatched on the wire tag at `0x4011fd5c`:
+  tag 3 accumulates encoder detents, tag 7 is the console block, tag 2 calls
+  `0x4011f9ac`. **[D]**
+- `0x4011f9ac(obj, byte)` is the **button-byte handler for one channel**. For
+  each changed bit it looks the control code up in
+  `0x401f39dc[channel*32 + bit]`. Only codes **41..48 -- ENCODER A..H pressed
+  as buttons** -- reach the clear at `0x4011fbb0` (counter and pending bit).
+  On release (`0x4011fc08`) the push is timestamped if the counter is <= 9. **[D]**
+- On the instrument, turning an encoder **while it is pushed** changes the value
+  in a coarser, rounder step (for example whole units instead of 0.01; the step
+  is set per control). The owner reports this from the hardware. **[V on
+  hardware]** So the counter plausibly tracks turns made during or since a push,
+  for that coarse mode, and a push released with few turns may count as a click.
+  Which code applies the coarse step has **not** been read. **[O]**
+- The counter clears only on a push of its own encoder. A test that sends only
+  turns, or button frames for other controls, will never clear it, and that is
+  correct firmware behaviour. **[D]** Five +1 deltas give 5 with the
+  pending bit set; a no-edge frame, a press and a release of channel 0 bit 5
+  (not an encoder push) each leave it at 5; five more give 10.
+- The encoder's own event still reaches the main task's loop with the right
+  code and delta (hooking `queue_send`). So #6's stuck value lies downstream of
+  that loop, in how the page applies a delta, not in panel input. **[O]**
+
+Measured with Digitone II OS 1.11, `boot400M.snap`, `--weakptr --slc`.
+
+## Where the stuck value was: an encoder filter swallows the first counts after idle (Digitone II 1.11) **[D]**
+
+Follows the section above, which left #6's stuck value "downstream of that loop, in how the
+page applies a delta". It is a filter between the two, `0x4011336e` (72 direct callers, among
+them the arpeggiator menu's MODE and RANGE, `0x40018ed2`..), and it is not stuck: it returns
+0 for the first counts after the knob has been idle, then lets one unit through.
+
+- **Per encoder it keeps a counter that starts at 48.** A periodic tick (`0x40113314`..
+  `0x40113320`) adds 1 up to 48. A count that arrives while the counter is above 24 takes
+  `3 * |delta|` off it (not below 0) and returns 0 (`0x40113426`..`0x401134ac`). At 24 or
+  below the delta is accumulated and scaled, and the filter returns the result; one unit is
+  256 (8.8 fixed point, `lsll #8` at `0x401134a8`) for a plain value, a whole number for a
+  menu value. Each unit emitted puts 48 back (`0x4011349e`). **[D]**
+- **Measured**, Digitone II 1.11 booted from reset, TRIG page, knob A, `+1` counts 20 M
+  instructions apart: the counter read 48, then 47, 45, 44, 42, 41, 39, 38, 36, 35, 33, 32,
+  30, 29, 27 after each count, and every call returned 0. At the 28th count the call
+  returned 256 and the page changed (303 pixels); after 30 counts the counter read 65. 200
+  counts in packets of 10 gave seven units. The tick adds about 1 per 13 M instructions here
+  (3 off per count, 1.5 net per 20 M). **[D]**
+- **Menus take the same filter and a whole unit.** The ARPEGGIATOR menu's MODE (knob A) moved
+  one step per 28 counts and `setMode` (`0x4004bea4`) saw 0, 1, 2 for 56 counts; its RANGE
+  (knob C) needed 56 counts for one step (`setRng` `0x4004c0da` saw 0 then 1). **[D]**
+- **So a test that turns a knob a few counts and sees nothing is inside the lead-in, not
+  looking at a dead path.** The seqplay tool of #67 to #70 (not merged) used 28 counts a unit,
+  packets of 10 with 15 M between them. Pressing the knob (codes 41..48) is not needed, as on the unit.
+- **Not known:** the filter's role on hardware. The unit's encoders are smooth, with no
+  detents (owner), so a "count" is a position step and 28 of them for one unit may be the real
+  mapping, with the lead-in a jitter rejection. The tick rate there is not measured. #6's own
+  case (45 counts, 0.00 after) was not re-run; this explains it only if its page uses this
+  filter. **[O]**
+
+### The panel's button names, read from the image **[D]**
+
+`panel_button_names` (resolved by `emu.symbols`) for 1.11, code to name: 1 TRIG, 2 SRC,
+3 FLTR, 4 AMP, 5 FX, 6 MOD, 7 PRESET, 8 SETTINGS, 9 TEMPO, 10 YES, 11 UP, 12 NO, 13 LEFT,
+14 DOWN, 15 RIGHT, 16 TRK, 17 FUNC, 18 KEYBOARD, 19 RECORD, 20 PLAY, 21 STOP, 22 PAGE,
+23 PTN, 24 SONG, 25..40 TRIG 1..16, 41..48 ENCODER A..H (pushed), 49 LEVEL, 50 VOICE,
+51 ARP, 52 PLUS, 53 STACK, 54 MINUS. The device profile maps 52..54 to channel 6 bits 5..7
+(not `code * ...`, which holds for 1..48 only). PLUS and MINUS transpose a held trig; they
+do not set a note. **[D]**

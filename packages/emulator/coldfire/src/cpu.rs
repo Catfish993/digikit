@@ -684,6 +684,8 @@ impl Cpu {
     }
 
     /// The address of a memory EA, applying (An)+/-(An) updates.
+    /// A word index, or a scale factor of eight without an FPU, takes an
+    /// address error (CFPRM, address error exception).
     #[inline(always)]
     fn ea_addr(&mut self, ea: &Ea, size: Size) -> Result<u32, Exc> {
         let n = match size {
@@ -711,7 +713,7 @@ impl Cpu {
                 scale,
                 d8,
             } => {
-                if !wl {
+                if !wl || scale == 3 && self.fpu.is_none() {
                     return Err(Exc::new(vector::ADDRESS_ERROR, 0));
                 }
                 self.a[an as usize]
@@ -727,7 +729,7 @@ impl Cpu {
                 wl,
                 scale,
             } => {
-                if !wl {
+                if !wl || scale == 3 && self.fpu.is_none() {
                     return Err(Exc::new(vector::ADDRESS_ERROR, 0));
                 }
                 // disp = base + d8; wrapping addition is associative

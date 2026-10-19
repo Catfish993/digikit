@@ -35,7 +35,7 @@ root). The directory name is not always the package name; use the package name w
 | `packages/emulator/loader` | `dt2-firmware-loader` | Decoder for the `.syx` container (ELE3 sections, no I/O). |
 | `packages/emulator/device-profile` | `device-profile` | Hash-bound device and firmware identities, embedded from `devices/*.toml`. |
 | `packages/emulator/plusdrive` | `plusdrive-format` | +Drive image format encoders; the `plusdrive` CLI. |
-| `packages/emulator/boot` | `elektron-native-boot` | Bounded cold boot, the ColdFire runtime, the DSP peer (`sharc_peer`), DSP patches, and the examples (`card_boot`, `dsp_cold`, `sharc_live`, `turn_probe`). Also the wasm ABI. |
+| `packages/emulator/boot` | `elektron-native-boot` | Bounded cold boot, the ColdFire runtime, the DSP peer (`sharc_peer`), DSP patches, and the examples (`card_boot`, `dsp_cold`, `sharc_live`, `turn_probe`; the headless tools `boot_gate`, `panel_drive` and `sysex_bridge`, see their headers). Also the wasm ABI. |
 | `packages/emulator/sharc-rt` | `sharc-rt` | Runtime under the generated core: state, memory, decoder, instruction table. |
 | `packages/emulator/sharc-gen` | `sharc-gen` | The generated SHARC+ core (from `SHARC_GEN_DIR`), compiled apart from the engine. |
 | `packages/emulator/sharc` | `sharc-native` | The DSP engine: interpreter, AOT block dispatch and the fast tier (`src/fast/`). |

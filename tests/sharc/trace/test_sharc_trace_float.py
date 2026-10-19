@@ -382,6 +382,31 @@ class FloatComputeTest(unittest.TestCase):
         self.assertIsNone(T._astatx_known_bit(astatx, T.AZ_BIT))
         self.assertIsNone(T._astatx_known_bit(astatx, T.AN_BIT))
 
+    # -- Rn = clip Rx by Ry (PRM Table 18-5, opcode 0110 0011 = 0x63) -------
+
+    def test_fixed_clip(self):
+        for rx, ry, expected, label in (
+            (100, 32767, 100, "within range passes through"),
+            (40000, 32767, 32767, "positive out-of-range clips to +|Ry|"),
+            (-40000, 32767, -32767, "negative out-of-range clips to -|Ry|"),
+            (-40000, -32767, -32767, "Ry's sign does not matter"),
+            (32767, 32767, 32767, "|Rx| == |Ry| gives Rx"),
+        ):
+            with self.subTest(label):
+                values = {1: T.Const(rx & 0xFFFFFFFF), 2: T.Const(ry & 0xFFFFFFFF)}
+                _, value, op, astatx = self.astatx_after(
+                    full_compute(0, 0x63, 0, 1, 2), values, T.Unknown("start")
+                )
+                self.assertEqual((op, value), ("clip", T.Const(expected & 0xFFFFFFFF)))
+                self.assertEqual(T._astatx_known_bit(astatx, T.AN_BIT), expected < 0)
+                self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), False)
+        _, value, _, _ = self.astatx_after(
+            full_compute(0, 0x63, 0, 1, 2),
+            {1: T.Unknown("uninitialized R1"), 2: T.Const(5)},
+            T.Unknown("start"),
+        )
+        self.assertIsInstance(value, T.Unknown)
+
     # -- Fn = clip Fx by Fy (PGR p.11-48) ------------------------------------
 
     def test_float_clip(self):
@@ -1035,17 +1060,16 @@ class PhaseAOpcodeRegressionTest(TraceRunMixin, unittest.TestCase):
             },
         )
 
-    def test_type2b_decodes_and_executes_an_unconditional_full_compute(self):
-        # Type2b is the PRM Figure 14-4 32-bit 110000000 prefix; its sole
-        # payload is a full compute field (decode_table.json).
-        compute = (0x01 << 12) | (2 << 8) | (3 << 4) | 4  # R2 = R3 + R4
-        record = T.decode_at(encode("2b", compute), 0, 0)
-        self.assertEqual(
-            (record.type_name, record.length_bytes, record.kind), ("2b", 4, "confident")
-        )
-        self.assertEqual(record.fields, {"compute[22:16]": 0, "compute[15:0]": compute})
-        state = self.run_one(T.State(0x10, {3: T.Const(7), 4: T.Const(9)}), record)
-        self.assertEqual((state.pc_sw, state.uregs[2]), (0x12, T.Const(16)))
+    def test_prm_type2b_prefix_is_a_16_bit_type2c(self):
+        # The PRM Figure 14-4 Type2b prefix 110000000 is a first parcel in
+        # 0xc000..0xc07f, and the silicon runs those as the 16-bit Type2c (DN2 1.11
+        # sw 0x1c0e13 and 0x1c4f4a, DT2 1.16 sw 0x1c32ab, in code that plays every
+        # block). build_table.py's NOT_VISA keeps Type2b out of the VISA table.
+        from tools.sharc_dev import sharc_visa_tables
+
+        self.assertIsNone(sharc_visa_tables.get_type("2b"))
+        record = T.decode_at(encode("2c", 0) + b"\x00" * 4, 0, 0)
+        self.assertEqual((record.type_name, record.length_bytes), ("2c", 2))
 
     def test_alu_copysign_uses_magnitude_and_sign_operands(self):
         # ALUOP 0xe0: FN = FX copysign FY (PRM Table 18-5).

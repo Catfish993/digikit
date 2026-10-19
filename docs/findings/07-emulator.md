@@ -4704,6 +4704,82 @@ Not modeled:
 
 Unsupported cases raise or trap.
 
+**[D]** The same option also models the two filter accelerators, IIR0 (HWR
+chapter 39) and FIR0 (HWR chapter 38). The sources are
+tools/sharc_dev/sharc_core/iir.py and tools/sharc_dev/sharc_core/fir.py. Their
+twins are packages/emulator/sharc-rt/src/rt/iir.rs and
+packages/emulator/sharc-rt/src/rt/fir.rs. Neither DN2 1.11 nor DT2 1.16 starts
+them. A mod that moves filter work off the core can use them.
+- Both run legacy and Auto Configuration Mode TCB chains, 32-bit floats, and
+  circular buffers with the index write-back. WDONE, ACDONE and the DMA source
+  go through the SEC (SID 120 for IIR0, SID 118 for FIR0).
+- IIR0: transposed direct form II biquads, up to 64 a channel, windows of 1 to
+  1024 samples, and Save State.
+- FIR0: single-rate filters of 1 to 1024 taps, coefficients stored C[N-1]
+  first, and FIR_COEFCNT counting down by the tap count.
+- A run starts when CTL1 goes to EN | DMAEN, and it completes at once.
+- The models refuse 40-bit or fixed-point data, truncation rounding, sample
+  rate conversion, more than 1024 FIR taps, Channel Auto Iterate, HALT and
+  trigger waits. Timing, MACSTAT and the debug registers are not modeled.
+
+**[C]** The HWR does not give the order of the float operations. The first
+models guessed it, and the silicon showed three of the guesses wrong. A probe
+build ran five jobs on the ADSP-21569 of a Digitone II on 2026-10-17 and read
+the results back over USB (dn2_firmware's `accelprobe1`). The jobs were IIR0
+with 2 biquads and Save State, run twice, IIR0 in ACM, FIR0 with 11 taps, and
+FIR0 in ACM with 37 taps. The inputs are full-mantissa floats, so a different
+rounding order shows in the last bits. The models now match every word the chip
+wrote: 40 IIR0 outputs, 4 saved states, 24 FIR0 outputs and the write-backs.
+- IIR0 adds stored word 5 of a biquad to the output. The HWR lists the stored
+  states as Dk2, Dk1. The first model read Figure 39-2 as Dk1 feeding the
+  output, so it used word 6. Each product and each sum rounds to float32. With
+  s1 = word 5 and s2 = word 6, the chip computes these terms:
+
+      y  = A0 x + s1
+      s1 = (A1 x + s2) + B1 y
+      s2 = A2 x + B2 y
+- FIR0's four MACs take the taps k, k + 4, k + 8 and so on, oldest sample
+  first, as modelled. The four sums add in pairs: (acc0 + acc1) + (acc2 +
+  acc3). Fewer than four taps is not measured.
+- In ACM, the chip writes 0xFFFFFFFF to the TCB's INIDX and 0 to its OUTIDX.
+  The HWR says 0 and 0xFFFFFFFF in that order, for both accelerators.
+- The tests `test_silicon_*` hold the five jobs and the chip's words, for both
+  twins. They are in tests/sharc/semantics/test_sharc_iir.py and test_sharc_fir.py.
+
+**[V]** The same run kept each job's time in core cycles, from the start to
+ACDONE. The core polled about every 30 cycles. The models do not model timing.
+
+| Job | Cycles |
+|---|---|
+| IIR0, 2 biquads, 16 samples (two runs) | 706 and 731 |
+| IIR0 in ACM, 1 biquad, 8 samples | 493 |
+| FIR0, 11 taps, 16 samples | 791 |
+| FIR0 in ACM, 37 taps, 8 samples | 1,344 |
+
+**[V]** A second check of the native IIR0 twin, on a mod's own workload
+(2026-10-18, main at 5c9e717). dn2_firmware's Waverider Formant starts IIR0 on
+each voice: legacy TCB, one channel of 5 biquads, 32 samples in place, with
+Save State. Its coefficients change every block.
+- dn2_firmware built the library from main, interpreter only (`sharc_transpile`, then
+  `SHARC_GEN_DIR=... cargo build --release` of packages/emulator/sharc), with
+  option 22 set on the native core.
+- Five cases of 48 blocks on two tracks ran IIR0 440 times. Every output
+  sample equals dn2_firmware's float32 model of the voice, bit for bit, and
+  every DMASTAT poll read ACDONE from the engine.
+- The same cases with the Python model (`iir.py`) run from the host on the
+  engine's memory also match. So the Rust twin and the Python model agree on
+  these 440 runs.
+- Control: with option 22 off, no poll reads ACDONE, and the filtered cases
+  differ by 1,535 samples on one track.
+- Correction (2026-10-18, later): the second track had no sound in two of the
+  cases, so its check could not fail there. With the harness fixed
+  (dn2_firmware PR #248), the native run again matches bit for bit on both
+  tracks in all five cases. The control now differs on each track: 1,535
+  samples in each filtered case, and 895 in the case that switches the filter
+  on and off. The host-model run is from before the fix.
+- Not covered: ACM, FIR0, more than one channel, and windows other than 32
+  samples.
+
 **[C]** PM-bus scalar and long-word data loads and stores now use the unified
 memory, as normal-word UREG loads already did ("single, unified address
 space"). Previously PM loads were Unknown and PM stores wrote nothing. The DN2

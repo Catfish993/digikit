@@ -91,6 +91,64 @@ pub struct Snapshot {
     pub polled: bool,
 }
 
+/// The registers at one execution of a PC `record_regs_at` names.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct RegHit {
+    pub pc: u32,
+    pub icount: u64,
+    pub d: [u32; 8],
+    pub a: [u32; 8],
+    /// The four longwords at A7: on a function's first instruction, the
+    /// first is the return address, so it names the caller.
+    pub stack: [u32; 4],
+}
+
+/// How many executions `record_regs_at` keeps; later ones are counted only.
+pub const REG_LOG_MAX: usize = 4096;
+
+/// A routine the host asks the guest to run: when the guest itself next reaches
+/// `at`, the registers are saved, each `data` block is written, `args` are pushed
+/// (C order, the first nearest the return address) with `at` as the return
+/// address, and the CPU jumps to `func`. When it returns to `at` with the stack
+/// back where the call left it, every register is restored and the guest carries
+/// on as if nothing ran. Choose `at` in the task whose context the routine needs
+/// (`call_function` runs a routine from the host's own stack instead).
+///
+/// A data block at `GuestCall::STACK` goes on the guest's own stack, below the
+/// arguments, which is mapped wherever the guest runs; any argument equal to
+/// `STACK` is then replaced by the block's address.
+#[derive(Clone, Debug)]
+pub struct GuestCall {
+    pub at: u32,
+    pub func: u32,
+    pub args: Vec<u32>,
+    pub data: Vec<(u32, Vec<u8>)>,
+}
+
+impl GuestCall {
+    pub const STACK: u32 = 0xFFFF_FFF0;
+}
+
+/// The bytes a guest routine was handed, captured on its first instruction: the
+/// first four stack arguments, and `len` bytes from the pointer in argument `buf`.
+#[derive(Clone, Debug, Serialize)]
+pub struct Capture {
+    pub pc: u32,
+    pub icount: u64,
+    pub args: [u32; 4],
+    pub bytes: Vec<u8>,
+}
+
+/// The most bytes one capture copies; a longer length is cut.
+pub const CAPTURE_MAX: usize = 1 << 16;
+
+struct ActiveCall {
+    at: u32,
+    sp_after: u32,
+    d: [u32; 8],
+    a: [u32; 8],
+}
+
 /// Persistent, bounded Oracle diagnostic state. It has no host I/O and does
 /// not claim a hardware or interrupt-device model.
 pub struct Emulator {
@@ -195,6 +253,18 @@ pub struct Emulator {
     deliver_exceptions: bool,
     /// (probed pc, word at the stack top = return address for a `jsr`) -> (hits, last icount)
     probe_rets: BTreeMap<(u32, u32, u32), (u64, u64)>,
+    /// PCs whose registers a host asked to record (`record_regs_at`), and the
+    /// record: every execution, up to `REG_LOG_MAX`, then the count only.
+    reg_watch: Vec<u32>,
+    reg_log: Vec<RegHit>,
+    reg_log_dropped: u64,
+    /// Host calls not yet started, oldest first, the one running, and how many returned.
+    calls: VecDeque<GuestCall>,
+    call_active: Option<ActiveCall>,
+    calls_done: u64,
+    /// (pc, argument holding the buffer, argument holding the length).
+    capture_at: Vec<(u32, usize, usize)>,
+    captures: Vec<Capture>,
     interpreted_instructions: u64,
     idle_fast_forwarded_instructions: u64,
     ram_clear_fast_forwarded_instructions: u64,
@@ -535,6 +605,14 @@ impl Emulator {
             irq1_pending: false,
             deliver_exceptions: false,
             probe_rets: BTreeMap::new(),
+            reg_watch: Vec::new(),
+            reg_log: Vec::new(),
+            reg_log_dropped: 0,
+            calls: VecDeque::new(),
+            call_active: None,
+            calls_done: 0,
+            capture_at: Vec::new(),
+            captures: Vec::new(),
             interpreted_instructions: 0,
             idle_fast_forwarded_instructions: 0,
             ram_clear_fast_forwarded_instructions: 0,
@@ -726,6 +804,203 @@ impl Emulator {
     /// ((pc, word at the stack top), (hits, last icount)).
     pub fn probe_rets(&self) -> Vec<((u32, u32, u32), (u64, u64))> {
         self.probe_rets.iter().map(|(k, v)| (*k, *v)).collect()
+    }
+
+    /// Every RAM page the guest touched that nothing had mapped beforehand, with
+    /// its first touch: (page base, PC, "read" or "write", address). A page is
+    /// 1 MiB. What the image load and the flash reads mapped is not listed.
+    pub fn touched_pages(&self) -> Vec<(u32, u32, &'static str, u32)> {
+        self.bus
+            .unknown_touches
+            .iter()
+            .map(|(page, touch)| (*page, touch.pc, touch.kind, touch.addr))
+            .collect()
+    }
+
+    /// Reads `len` bytes of guest memory for a host tool, as a debugger's peek:
+    /// straight from the board at any address (SRAM included), so no
+    /// instruction runs and no bus trace, timer or peripheral observer sees it.
+    /// A peripheral register's read side effects are the board's.
+    pub fn peek(&mut self, addr: u32, len: usize) -> Result<Vec<u8>, String> {
+        (0..len)
+            .map(|i| {
+                let at = addr.wrapping_add(i as u32);
+                self.bus
+                    .board
+                    .read8(at)
+                    .map_err(|e| format!("peek {at:#010x}: {e:?}"))
+            })
+            .collect()
+    }
+
+    /// Writes guest memory for a host tool, as a debugger's poke: straight to
+    /// the board at any address, then drops any decoded instructions over the
+    /// written bytes, so a poke over code runs as written.
+    pub fn poke(&mut self, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        for (i, &value) in bytes.iter().enumerate() {
+            let at = addr.wrapping_add(i as u32);
+            self.bus
+                .board
+                .write8(at, value)
+                .map_err(|e| format!("poke {at:#010x}: {e:?}"))?;
+        }
+        self.cpu.invalidate_external_write(addr, bytes.len());
+        Ok(())
+    }
+
+    /// Records D0-D7 and A0-A7 each time one of PCS is about to execute (replacing
+    /// any PCs asked for before, and the record): a debugger's breakpoint that
+    /// logs and goes on. See `reg_log`.
+    pub fn record_regs_at(&mut self, pcs: &[u32]) {
+        self.reg_watch = pcs.to_vec();
+        self.reg_log.clear();
+        self.reg_log_dropped = 0;
+        self.rebuild_watch();
+    }
+
+    /// What `record_regs_at` recorded, oldest first, and how many executions past
+    /// `REG_LOG_MAX` were only counted.
+    pub fn reg_log(&self) -> (&[RegHit], u64) {
+        (&self.reg_log, self.reg_log_dropped)
+    }
+
+    /// Queues a routine for the guest to run from a PC it reaches itself. See
+    /// `GuestCall`.
+    pub fn queue_call(&mut self, call: GuestCall) {
+        self.calls.push_back(call);
+        self.rebuild_watch();
+    }
+
+    /// Calls queued and not yet returned (running included), and calls returned.
+    pub fn calls_pending(&self) -> (usize, u64) {
+        (
+            self.calls.len() + usize::from(self.call_active.is_some()),
+            self.calls_done,
+        )
+    }
+
+    /// Captures bytes at the pointer in stack argument `buf` each time PC runs;
+    /// `buf` and `len` count arguments from 0, and a `len` above 3 is itself the
+    /// byte count. Replaces any asked for before.
+    pub fn capture_at(&mut self, at: &[(u32, usize, usize)]) {
+        self.capture_at = at.to_vec();
+        self.captures.clear();
+        self.rebuild_watch();
+    }
+
+    /// The captures so far, oldest first; taking them empties the list.
+    pub fn take_captures(&mut self) -> Vec<Capture> {
+        std::mem::take(&mut self.captures)
+    }
+
+    fn stack_long(&mut self, at: u32) -> u32 {
+        (0..4).fold(0u32, |word, j| {
+            let byte = self.bus.board.read8(at.wrapping_add(j)).unwrap_or(0);
+            (word << 8) | u32::from(byte)
+        })
+    }
+
+    /// The host's register log, captures and calls, on a watched PC before it
+    /// executes: -> true when the PC was redirected, so this step executes nothing.
+    fn host_observers(&mut self, pc: u32) -> bool {
+        if self.reg_watch.contains(&pc) {
+            if self.reg_log.len() < REG_LOG_MAX {
+                let sp = self.cpu.a[7];
+                let mut stack = [0u32; 4];
+                for (i, word) in stack.iter_mut().enumerate() {
+                    *word = self.stack_long(sp.wrapping_add(4 * i as u32));
+                }
+                self.reg_log.push(RegHit {
+                    pc,
+                    icount: self.cpu.icount,
+                    d: self.cpu.d,
+                    a: self.cpu.a,
+                    stack,
+                });
+            } else {
+                self.reg_log_dropped += 1;
+            }
+        }
+        for k in 0..self.capture_at.len() {
+            let (at, buf, len) = self.capture_at[k];
+            if at != pc {
+                continue;
+            }
+            let sp = self.cpu.a[7];
+            let mut args = [0u32; 4];
+            for (i, arg) in args.iter_mut().enumerate() {
+                *arg = self.stack_long(sp.wrapping_add(4 + 4 * i as u32));
+            }
+            let (ptr, n) = (
+                args.get(buf).copied().unwrap_or(0),
+                args.get(len).map_or(len, |&n| n as usize),
+            );
+            let bytes = (0..n.min(CAPTURE_MAX))
+                .map(|i| self.bus.board.read8(ptr.wrapping_add(i as u32)).unwrap_or(0))
+                .collect();
+            self.captures.push(Capture {
+                pc,
+                icount: self.cpu.icount,
+                args,
+                bytes,
+            });
+        }
+        if let Some(active) = &self.call_active {
+            if pc == active.at && self.cpu.a[7] == active.sp_after {
+                self.cpu.d = active.d;
+                self.cpu.a = active.a;
+                self.cpu.pc = active.at;
+                self.call_active = None;
+                self.calls_done += 1;
+                self.rebuild_watch();
+                return true;
+            }
+            return false;
+        }
+        if self.calls.front().is_none_or(|c| c.at != pc) {
+            return false;
+        }
+        let mut call = self.calls.pop_front().expect("checked");
+        let mut sp0 = self.cpu.a[7];
+        let saved_a = self.cpu.a;
+        for block in &mut call.data {
+            if block.0 == GuestCall::STACK {
+                let at = (sp0.wrapping_sub(block.1.len() as u32 + 64)) & !3;
+                block.0 = at;
+                for arg in &mut call.args {
+                    if *arg == GuestCall::STACK {
+                        *arg = at;
+                    }
+                }
+                sp0 = at;
+            }
+        }
+        for (at, bytes) in &call.data {
+            if let Err(e) = self.poke(*at, bytes) {
+                self.set_error(format!("guest call data: {e}"));
+                return true;
+            }
+        }
+        let n = call.args.len() as u32;
+        let sp = sp0.wrapping_sub(4 * (n + 1));
+        let words: Vec<u8> = std::iter::once(pc)
+            .chain(call.args.iter().copied())
+            .flat_map(u32::to_be_bytes)
+            .collect();
+        if let Err(e) = self.poke(sp, &words) {
+            self.set_error(format!("guest call stack: {e}"));
+            return true;
+        }
+        self.call_active = Some(ActiveCall {
+            at: pc,
+            sp_after: sp0.wrapping_sub(4 * n),
+            d: self.cpu.d,
+            a: saved_a,
+        });
+        self.cpu.a[7] = sp;
+        self.cpu.pc = call.func;
+        self.rebuild_watch();
+        true
     }
 
     /// The guest's writes to the eMMC card, per touched sector (for `card.overlay`).
@@ -1261,6 +1536,10 @@ impl Emulator {
         if self.midi.usb.enabled {
             pcs.extend([self.midi.usb.tx_fn, self.midi.usb.ret_pc].into_iter().filter(|&pc| pc != 0));
         }
+        pcs.extend(self.reg_watch.iter().copied());
+        pcs.extend(self.capture_at.iter().map(|c| c.0));
+        pcs.extend(self.calls.front().map(|c| c.at));
+        pcs.extend(self.call_active.as_ref().map(|c| c.at));
         if let Some(clear) = &self.ram_clear {
             pcs.push(clear.loop_pc);
         }
@@ -1589,6 +1868,9 @@ impl Emulator {
         let watched = self.watched(pc);
         if watched {
             self.observe_marks(pc);
+            if self.host_observers(pc) {
+                return;
+            }
         }
         self.frames.complete_at_return(
             &mut self.bus.board,

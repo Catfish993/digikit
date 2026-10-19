@@ -554,6 +554,46 @@ emulator keeps the cached and alias views as separate memory). The stack page
 shows one 4 KiB page used; the 128 KiB reserve is a margin, not a measurement
 of the worst case.
 
+### DN2 1.11: the arena's top, measured on the paths the canary misses (dn2_firmware, 2026-10-11)
+
+dn2_firmware measured the top of the DN2 1.11 arena on project save and load,
+in both views. Its mods keep data below this region's start, at
+`0x46708000-0x46712000`. The sources are dn2_firmware's
+`docs/mod-memory-regions.md` and `docs/lfo4-state-memory.md`.
+
+- **[C]** The cached view alone shows nothing about the arena, and on the unit
+  the split matters. LFO4 kept its state at `0x46700000-0x46702a00`, over the
+  top of the eMMC bounce buffer (`0x4e6f1300`, RAM `0x466f1300-0x46701300`). Every
+  project saved on such a unit carried LFO state in 196 windows of its
+  12,890,116-byte image. Scans and emulator watches over `0x466...` saw
+  nothing, because stock names the buffer only as `0x4e6f1300`.
+- **[V]** A touch map of stock in the Rust emulator, both views, at 1 MiB
+  pages. The run covered the boot and SAVE PROJECT AS three times. It uploaded
+  a compressed project (394 LZ4 decompress calls, 396 eMMC writes). It read the
+  project back compressed and raw (654 eMMC reads). It walked every page, play,
+  record and stop.
+- **[V]** In the alias view only `0x4e600000` and `0x4e700000` were touched.
+  Below `0x4e700000 + 0x1340` the bytes are not zero, and above it they are. So
+  on these paths the arena ends at `0x46701340`, 0x40 above the bounce buffer's
+  end. The literal `0x4e701300` names a second object there.
+- **[V]** refscan over all nine views of the RAM (the DDR decode repeats every
+  0x08000000 up to `0x8c000000`) finds no address in `0x46701340-0x48000000`.
+  Of the 25,450 values in that range in the data from `0x401d0400`, 115 sit
+  among pointers. Each was read, and none is an address.
+- **[D]** One instrument result: project slot 25 read back identical, 0 of
+  12,890,116 bytes, across a flash and a wavetable write while playing. The
+  build was a Waverider build, with mod data below this region's start.
+- **[O]** So on 1.11 the 64 KiB margin is wider than stock's measured use, but
+  only on these paths. The sequencer playing in full, USB audio and the update
+  path were not run.
+
+On 1.12 the arena moves +0x8000. The same six bounce-buffer sites, with code
+shifted +0x2e0, name `0x4e6f9300`, so the buffer covers RAM
+`0x466f9300-0x46709300`. The region rule above follows the arena. A 1.11 data
+address carried across by the code shift does not: `0x46708000` lands inside
+the 1.12 buffer. Data placements need the arena of the image they run on, in
+both views.
+
 Not recommended: holes inside bss. The ready snapshot shows 13 MiB at
 `0x44000000` and 24 MiB at `0x45700000` as zero, and a 64 KiB canary at three
 places in them passes (boot, and boot plus play with the card), but they are
