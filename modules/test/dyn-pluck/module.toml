@@ -19,23 +19,17 @@ conflicts = []
 # The same machine as machines/pluck, loaded at run time (docs/findings/32-runtime-dsp-machines.md). `patchkit pack test/dyn-pluck
 # --device dt2 -o ...dkm` lowers the typed sections below into the `register` records and links the DSP object into the `.dkm`
 # DSP section; the digikit runtime sends the code to the DSP and publishes the voice row (type 18) and the machine row.
-# The DSP object is built from the SAME source file as machines/pluck, so the routine that runs is the patched-in routine.
+# The DSP object is built from the SAME source file as machines/pluck (one body for both devices), so the routine that runs is the patched-in routine.
 [[object]]
 path = "build/dyn-pluck-dsp.dko.json"
 sources = ["../../machines/pluck/src/dsp/pluck.s"]
 place = "dsp.l2"
-devices = ["dt2"]
-
-# Digitone II: the routine on the voice hook's ABI (one buffer per voice slot), from the same source as machines/pluck's DN2 object.
-[[object]]
-path = "build/dyn-pluck-dn2-dsp.dko.json"
-sources = ["../../machines/pluck/src/dsp/pluck_dn2.s"]
-place = "dsp.l2"
-devices = ["dn2"]
 
 [[voice]]
 machine = "pluck"
-entry = "_pk_render"
+render = "_pk_render"
+note_on = "_pk_note_on"
+desc = "_pk_desc"
 
 [[machine]]
 id = "pluck"

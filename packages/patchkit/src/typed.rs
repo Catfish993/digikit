@@ -298,6 +298,17 @@ pub struct RVoice {
     pub entry: String,
     pub note_on: Option<String>,
     pub desc: Option<String>,
+    /// A patched-in contract voice: the state block `Library::lower` reserved for it (`desc` read from the object).
+    pub state: Option<VoiceState>,
+}
+
+/// The state of a patched-in contract voice (`dk_machine_desc`): the global bss symbol that `Library::lower` added to the module's DSP object
+/// (`voices` x `stride` bytes), the bytes between two voices' states and the bytes the adapter zeroes at note-on.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VoiceState {
+    pub symbol: String,
+    pub stride: u32,
+    pub clear: u32,
 }
 
 /// The typed sections of one module as one device sees them.
@@ -529,6 +540,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 entry,
                 note_on: v.note_on.clone(),
                 desc: v.desc.clone(),
+                state: m.voice_state.get(&v.machine).cloned(),
             });
         }
         if machines.is_empty() && params.is_empty() && pages.is_empty() && voices.is_empty() {
@@ -585,12 +597,10 @@ fn knob_value(k: Option<&Knob>) -> toml::Value {
 
 /// The declared ranges of a machine's eight knobs for the voice row (core/dsp-voice's runtime guard): knob j of the machine is a `Param` whose
 /// `min`/`max` become `min | max << 16`; a stock code, an empty knob or a range outside 0 ..= 0xffff stays 0 (undeclared: the guard
-/// clamps to 0 .. 0x7f00). Only devices whose knobs are the machine's own (`to = "machine"`, the Digitakt II) have a frame position the guard knows.
+/// clamps to 0 .. 0x7f00). Both devices: the adapter of a contract voice clamps the parameter in knob position j (the Digitone II's page knobs
+/// are the machine's knob list too) to the range of knob j.
 pub fn voice_ranges(r: &DevResolved, machine: &str) -> [u32; 8] {
     let mut out = [0u32; 8];
-    if r.model.knobs.to != "machine" {
-        return out;
-    }
     let Some(m) = r.machines.iter().find(|m| m.id == machine) else {
         return out;
     };
@@ -623,6 +633,14 @@ pub fn entries(resolved: &[DevResolved]) -> Vec<EntryDef> {
                 if *w != 0 {
                     f.push(kv(&format!("rng{j}"), int(*w as i64)));
                 }
+            }
+            if let Some(n) = &v.note_on {
+                f.push(kv("note_on", s(n)));
+            }
+            if let Some(st) = &v.state {
+                f.push(kv("state_base", s(&st.symbol)));
+                f.push(kv("stride", int(st.stride as i64)));
+                f.push(kv("clear", int(st.clear as i64)));
             }
             out.push(ent(&v.machine, "voices", dev, f));
         }
@@ -849,13 +867,15 @@ entry = "_t_render"
                 .iter()
                 .all(|k| field(v[0], k).is_none())
         );
-        // the Digitone II's knobs live in a page: no ranges
+        // the Digitone II's knobs live in a page, and the adapter clamps the parameter in knob position j to the range of knob j: t_a and t_b are knobs 0 and 1
         let v2 = m
             .entry
             .iter()
             .find(|e| e.devices == ["dn2"] && e.registry == "voices")
             .unwrap();
-        assert!((0..8).all(|j| field(v2, &format!("rng{j}")).is_none()));
+        assert_eq!(field(v2, "rng0"), Some(&int(100 << 16)));
+        assert_eq!(field(v2, "rng1"), Some(&int(100 << 16)));
+        assert!((2..8).all(|j| field(v2, &format!("rng{j}")).is_none()));
         let r = resolve(&manifest(MOD), &models()).unwrap();
         let dt2 = r.iter().find(|x| x.dev == "dt2").unwrap();
         assert_eq!(

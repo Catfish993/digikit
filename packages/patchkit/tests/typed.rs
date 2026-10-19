@@ -36,10 +36,13 @@ const PINS: &[(&str, &str, &str)] = &[
     // images compared equal for each of the five (port_resolve.sections_of); the xslice-only pins did not move.
     // The four Digitakt II pins with machines/pluck moved on 2026-10-19 (pluck.s clears its 4096-sample line at note-on): section 7 only (the other sections of the old and
     // new patched images compared equal, port_resolve.sections_of); the Digitone II pin and the xslice-only pins did not move.
+    // The three pins with machines/pluck moved on 2026-10-20 (SDK P3b-1): core/dsp-voice has the machine adapter (24-word voice rows, the contract path on both devices, the
+    // Digitone II guard) and machines/pluck is one contract source (pluck.s; pluck_dn2.s is gone) with a patched-in state block. Section 7 only: all other sections of the old
+    // (0713be96) and new patched images compared equal for each of the three (port_resolve.sections_of); the xslice-only pin did not move.
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
-        "53b7b8e1a5c8d163f8bf6a7766c981dcf52e240a7c9d7da52354d9c1773a0e83",
+        "42099c54a053e55bea32072f220899153353e149ffe64f9dde86d4d884ec8eb8",
     ),
     (
         "Digitakt_II_OS1.17.syx",
@@ -49,12 +52,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck,machines/xslice",
-        "b5076fdb6175241690b60325543352c36bc2e1a88f04586774bdfe20340e273a",
+        "a7ac4d502cee4a66e2fba9d25ec6a80b64e29bf16b2aff36907326750dac8724",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "machines/pluck",
-        "bcc908f0ac25b49e3da1f253c84f93e0b4166ff500a1d07902d4406b60ae3ea8",
+        "9d61035da052cbe5b8dcb971d97dc1e46742ddec648f49d02f43de963e7f5d2e",
     ),
 ];
 

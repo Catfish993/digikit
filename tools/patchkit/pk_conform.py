@@ -72,6 +72,7 @@ class Param:
     lo: int
     hi: int
     default: int
+    stock: bool = False  # a stock knob of the base machine (the tune knob), not a `[[param]]` of the module
 
     @property
     def mid(self) -> int:
@@ -109,6 +110,8 @@ class MachineSpec:
     params: tuple[Param, ...]
     frame: Frame
     declared: dict = field(default_factory=dict)  # the manifest's [conformance] table
+    note_on: str | None = None  # a contract voice (docs/design/module-sdk.md 4.1): the note_on routine's symbol and the `dk_machine_desc` symbol
+    desc: str | None = None
 
     @property
     def label(self) -> str:
@@ -138,15 +141,21 @@ def moddir_of(mid: str) -> Path:
 
 
 def _entry_row(man: dict) -> tuple[str, str | None] | None:
-    """(entry symbol, literal type or None) of the module's voice."""
+    """(render symbol, literal type or None) of the module's voice."""
     for v in man.get("voice", []):
-        return v["entry"], None
+        return v.get("render") or v["entry"], None
     for e in man.get("entry", []):
         if e.get("registry") == "voices" and isinstance(
             e.get("pc"), str
         ):  # core/dyndsp reserves rows with pc = 0
             return e["pc"], e.get("type")
     return None
+
+
+def _contract(man: dict) -> tuple[str | None, str | None]:
+    for v in man.get("voice", []):
+        return v.get("note_on"), v.get("desc")
+    return None, None
 
 
 def _dsp_sources(man: dict, moddir: Path, device: str) -> tuple[Path, ...]:
@@ -202,7 +211,7 @@ def _params(man: dict, device: str) -> tuple[Param, ...]:
             out.append(Param(k, j, int(p["min"]), int(p["max"]), int(p["default"])))
         elif isinstance(k, int) and k in STOCK_KNOBS:
             name, lo, hi, dflt = STOCK_KNOBS[k]
-            out.append(Param(name, j, lo, hi, dflt))
+            out.append(Param(name, j, lo, hi, dflt, True))
     return tuple(out)
 
 
@@ -230,6 +239,7 @@ def spec(mid: str, device: str) -> MachineSpec | None:
         _params(man, device),
         frame,
         dict(man.get("conformance", {})),
+        *_contract(man),
     )
 
 

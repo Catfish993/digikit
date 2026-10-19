@@ -36,6 +36,17 @@
 //   signal before them.
 //
 // Called once per DSP block and slot. A slot with the same type is called with the same arguments every block.
+//
+// Two kinds of registered row (docs/design/module-sdk.md 4.1 and 5): a row whose word 16 (note_on) is 0 is a routine of the form above. A row
+// with a note_on pc is a machine of the SDK contract (sdk/dk_machine.h) and runs through `_dv_contract` below: the adapter finds the note-on
+// (the rising edge of bit v of frame halfword ADM_TRIG_HW: the edge block is silent, the next block runs note_on and render), zeroes the first
+// `clear` bytes of the slot's state (row words 17 state base, 18 stride, 19 clear), builds the `dk_voice_in` and the parameter words (the knobs
+// of `ADM_PARAM_SLOT*`, clamped to the row's ranges, in a buffer of its own), calls the module, ends the voice on DK_DONE or a fault, and
+// checks the block (the guard of the Digitakt II file: finite samples of at most 8.0, the fault counts in row words 10 to 13, a type
+// disabled after 8 faults in 1500 blocks). An idle slot is silent.
+
+#include "adapter-dn2.inc"
+#include "dk_machine.inc"
 
 .SECTION/PM seg_pmco;
 .GLOBAL _dv_entry;
@@ -156,7 +167,13 @@ _dv_scan:
     IF EQ JUMP _dv_done;
     COMP(R0, R1);
     IF NE JUMP _dv_scan;
-    I12 = R2;                             // the routine's pc
+    R0 = I4;
+    DM(_dv_row) = R0;                     // the row's end: the contract adapter reads its other words
+    R3 = DM(-8, I4);                      // row word 16: the note_on pc; 0 is a routine of the old form
+    R3 = PASS R3;
+    R0 = _dv_contract;
+    IF NE R2 = PASS R0;
+    I12 = R2;                             // the routine's pc (or the contract adapter)
     R0 = R1;                              // type
     R2 = DM(_dv_t);
     R4 = DM(_dv_buf);
@@ -252,6 +269,270 @@ _dv_done:
     MODIFY(I7, -18) (NW);                 // the displaced first instruction of the stock helper
     JUMP _fw_render_next;
 
+// ---- a machine of the SDK contract (the row has a note_on pc), slot v ----
+// Entered with JUMP (M13, I12) from the code above, the context pinned: R0 = type, R2 = v, R4 = the voice buffer, DM(_dv_row) = the row's end
+// (word k of the row is DM(k - 24, end)). The adapter's scalars are _dv_c: 0 type, 1 v, 2 buffer, 3 slot record, 4 note-on, 5 parameter index,
+// 6 knob slot, 7 state, 8 status, 9 fault kind, 10 faults so far, 11 types disabled. The slot's record (_dv_cst + 16 v): 0 phase (0 silent,
+// 1 armed by the edge, 2 running), 1 previous trig bit, 2 blocks since the note-on.
+_dv_contract:
+    DM(_dv_c + 0) = R0;
+    DM(_dv_c + 4) = R2;
+    DM(_dv_c + 8) = R4;
+    R3 = DM(_dv_row);
+    I4 = R3;
+    R3 = DM(-14, I4);                     // the row's disabled type
+    COMP(R3, R0);
+    IF EQ JUMP _dv_cz;
+    R3 = LSHIFT R2 BY 4;
+    R5 = _dv_cst;
+    R5 = R5 + R3;
+    DM(_dv_c + 12) = R5;
+    I3 = R5;
+    R0 = ADM_TRIG_HW;
+    CALL _dv_frame_hw;
+    R2 = DM(_dv_c + 4);
+    R1 = 0;
+    R1 = R1 - R2;
+    R0 = LSHIFT R0 BY R1;
+    R1 = 1;
+    R9 = R0 AND R1;                       // cur
+    R12 = DM(0, I3);                      // phase
+    R13 = DM(1, I3);                      // previous trig bit
+    DM(1, I3) = R9;
+    COMP(R9, R13);
+    IF GT JUMP _dv_cedge;
+    R12 = PASS R12;
+    IF EQ JUMP _dv_cz;
+    R11 = 0;
+    R1 = 1;
+    COMP(R12, R1);
+    IF EQ R11 = PASS R1;                  // phase 1: the note-on block
+    R1 = 2;
+    DM(0, I3) = R1;
+    DM(_dv_c + 16) = R11;
+    // the dk_voice_in: blocks since the note-on, pitch, velocity, the output block
+    R0 = DM(2, I3);
+    R1 = 0;
+    R11 = PASS R11;
+    IF NE R0 = PASS R1;
+    DM(_dv_in + DK_IN_BLOCK) = R0;
+    R0 = R0 + 1;
+    DM(2, I3) = R0;
+    R2 = DM(_dv_c + 4);
+    R0 = ADM_PITCH_HW;
+    R0 = R0 + R2;
+    CALL _dv_frame_hw;
+    DM(_dv_in + DK_IN_PITCH) = R0;
+    R2 = DM(_dv_c + 4);
+    R0 = ADM_VELOCITY_HW;
+    R0 = R0 + R2;
+    CALL _dv_frame_hw;
+    DM(_dv_in + DK_IN_VELOCITY) = R0;
+    R4 = DM(_dv_c + 8);
+    DM(_dv_in + DK_IN_OUT) = R4;
+    // the parameter words: knob ADM_PARAM_SLOTi of the slot, until a slot of 255 (the buffer's other words stay 0)
+    R0 = 0;
+    DM(_dv_c + 20) = R0;
+_dv_cpl:
+    R0 = DM(_dv_c + 20);
+    R1 = LSHIFT R0 BY 2;
+    R2 = _dv_slots;
+    R2 = R2 + R1;
+    I1 = R2;
+    R6 = DM(0, I1);
+    R2 = 255;
+    COMP(R6, R2);
+    IF EQ JUMP _dv_cpe;
+    DM(_dv_c + 24) = R6;
+    R2 = DM(_dv_c + 4);
+    R3 = ADM_PARAM_STRIDE;
+    R3 = R3 * R2 (SSI);
+    R0 = ADM_PARAM_BASE;
+    R0 = R0 + R3;
+    R0 = R0 + R6;                         // the knob's halfword: base + stride v + slot (the Digitone II frame has no groups)
+    CALL _dv_frame_hw;
+    R6 = DM(_dv_c + 24);
+    R13 = DM(_dv_row);
+    R14 = LSHIFT R6 BY 2;
+    R13 = R13 + R14;
+    R14 = 88;
+    R13 = R13 - R14;                      // the row's word 2 + slot: the range of the knob, min | max << 16 (0: 0 .. 0x7f00)
+    I3 = R13;
+    R13 = DM(0, I3);
+    R14 = 0x7f000000;
+    R13 = PASS R13;
+    IF EQ R13 = PASS R14;
+    R14 = FEXT R13 BY 16:16;
+    R13 = FEXT R13 BY 0:16;
+    R0 = MIN(R0, R14);
+    R0 = MAX(R0, R13);
+    R1 = DM(_dv_c + 20);
+    R2 = LSHIFT R1 BY 2;
+    R3 = _dv_params;
+    R3 = R3 + R2;
+    I1 = R3;
+    DM(0, I1) = R0;
+    R1 = R1 + 1;
+    DM(_dv_c + 20) = R1;
+    R2 = DK_MAX_PARAMS;
+    COMP(R1, R2);
+    IF LT JUMP _dv_cpl;
+_dv_cpe:
+    // the slot's state, cleared at the note-on
+    R2 = DM(_dv_c + 4);
+    R3 = DM(_dv_row);
+    I4 = R3;
+    R1 = DM(-7, I4);                      // state base
+    R3 = DM(-6, I4);                      // stride
+    R3 = R3 * R2 (SSI);
+    R4 = R1 + R3;
+    DM(_dv_c + 28) = R4;
+    R11 = DM(_dv_c + 16);
+    R11 = PASS R11;
+    IF EQ JUMP _dv_crender;
+    R5 = DM(-5, I4);                      // clear bytes
+    R6 = -2;
+    R5 = LSHIFT R5 BY R6;                 // clear bytes -> words
+    IF EQ JUMP _dv_cnoclr;
+    I2 = R4;
+    R0 = 0;
+    LCNTR = R5, DO _dv_czero UNTIL LCE;
+_dv_czero: DM(I2, M6) = R0;
+_dv_cnoclr:
+    R0 = DM(-8, I4);
+    I12 = R0;                             // the note_on pc
+    R8 = _dv_in;
+    R12 = _dv_params;
+    I13 = _dv_nback;
+    JUMP (M13, I12);
+_dv_nback:
+    R0 = PASS R0;
+    IF LT JUMP _dv_nfault;
+_dv_crender:
+    R3 = DM(_dv_row);
+    I4 = R3;
+    R0 = DM(-23, I4);
+    I12 = R0;                             // the render pc
+    R4 = DM(_dv_c + 28);
+    R8 = _dv_in;
+    R12 = _dv_params;
+    I13 = _dv_rback;
+    JUMP (M13, I12);
+_dv_rback:
+    DM(_dv_c + 32) = R0;                  // the status
+    // the guard: finite samples of at most 8.0 in magnitude (one integer test: the magnitude bits of 8.0 are 0x41000000, Inf and NaN lie above 0x7f800000)
+    R8 = DM(_dv_c + 8);
+    I0 = R8;
+    R13 = 0;
+    R9 = 0x7fffffff;
+    LCNTR = 32, DO _dv_gchk UNTIL LCE;
+        R0 = DM(I0, M6);
+        R0 = R0 AND R9;
+_dv_gchk: R13 = MAX(R13, R0);
+    R0 = 0x41000000;
+    COMP(R13, R0);
+    IF GT JUMP _dv_gfault;
+    R1 = DK_DONE;
+    R0 = DM(_dv_c + 32);
+    COMP(R0, R1);
+    IF NE JUMP _dv_back;
+    R5 = DM(_dv_c + 12);                  // DK_DONE: the voice has ended, silent until the next edge
+    I3 = R5;
+    R0 = 0;
+    DM(0, I3) = R0;
+    JUMP _dv_back;
+_dv_nfault:
+    R12 = 3;                              // note_on returned a negative number
+    JUMP _dv_gfaultk;
+_dv_gfault:
+    R12 = 1;                              // 1 = Inf or NaN, 2 = over the level bound
+    R0 = 0x7f800000;
+    COMP(R13, R0);
+    R3 = 2;
+    IF LT R12 = PASS R3;
+_dv_gfaultk:
+    DM(_dv_c + 36) = R12;
+    // the words the module saw, packed in pairs, and the zeroed block, the ended voice
+    I1 = _dv_params;
+    I2 = _dv_diag;
+    MODIFY(I2, 68);
+    LCNTR = 4, DO _dv_gpk UNTIL LCE;
+        R3 = DM(I1, M6);
+        R9 = DM(I1, M6);
+        R9 = LSHIFT R9 BY 16;
+        R3 = R3 OR R9;
+_dv_gpk: DM(I2, M6) = R3;
+    R5 = DM(_dv_c + 12);
+    I3 = R5;
+    R0 = 0;
+    DM(0, I3) = R0;
+    R8 = DM(_dv_c + 8);
+    I0 = R8;
+    R3 = 0;
+    LCNTR = 32, DO _dv_gz UNTIL LCE;
+_dv_gz: DM(I0, M6) = R3;
+    R3 = DM(_dv_row);
+    I4 = R3;
+    R5 = DM(_dv_diag);                    // blocks so far
+    R6 = DM(-13, I4);                     // the row's window start
+    R7 = R5 - R6;
+    R3 = 1500;
+    COMP(R7, R3);
+    IF LT JUMP _dv_gwin;
+    DM(-13, I4) = R5;
+    R7 = 0;
+    DM(-12, I4) = R7;
+_dv_gwin:
+    R7 = DM(-12, I4);
+    R7 = R7 + 1;
+    DM(-12, I4) = R7;                     // faults in this window
+    R9 = DM(-11, I4);
+    R9 = R9 + 1;
+    DM(-11, I4) = R9;                     // faults of the type since the start
+    R3 = 8;
+    COMP(R7, R3);
+    IF LT JUMP _dv_gnd;
+    R0 = DM(_dv_c + 0);
+    R3 = DM(-14, I4);
+    COMP(R3, R0);
+    IF EQ JUMP _dv_gnd;                   // already disabled
+    DM(-14, I4) = R0;
+    DM(_dv_diag + 84) = R0;               // the last disabled type
+    R3 = DM(_dv_c + 44);
+    R3 = R3 + 1;
+    DM(_dv_c + 44) = R3;
+_dv_gnd:
+    R3 = DM(_dv_c + 40);
+    R3 = R3 + 1;
+    DM(_dv_c + 40) = R3;
+    R0 = 0xffff;
+    R3 = R3 AND R0;
+    R0 = DM(_dv_c + 36);
+    R0 = LSHIFT R0 BY 16;
+    R3 = R3 OR R0;
+    R0 = DM(_dv_c + 44);
+    R0 = LSHIFT R0 BY 24;
+    R3 = R3 OR R0;
+    DM(_dv_diag + 60) = R3;               // faults (16 bits) | kind << 16 | disabled types << 24
+    R0 = DM(_dv_c + 0);
+    R3 = DM(_dv_c + 4);
+    R3 = LSHIFT R3 BY 16;
+    R0 = R0 OR R3;
+    DM(_dv_diag + 64) = R0;               // type | voice << 16
+    JUMP _dv_back;
+// The rising edge: the slot is armed, this block is silent; the next block runs note_on and render.
+_dv_cedge:
+    R1 = 1;
+    DM(0, I3) = R1;
+// A silent block: a disabled type, a slot that has not been triggered, the edge block.
+_dv_cz:
+    R8 = DM(_dv_c + 8);
+    I0 = R8;
+    R3 = 0;
+    LCNTR = 32, DO _dv_gdz UNTIL LCE;
+_dv_gdz: DM(I0, M6) = R3;
+    JUMP _dv_back;
+
 // ---- helpers for machine routines (ordinary subroutines: CALL _dv_..., return with RTS) ----
 
 // F0 = 2 ** F0 for F0 > -64 (relative error 8e-8: a degree-5 minimax polynomial of 2^f on [0, 1) and an exact
@@ -334,3 +615,18 @@ _dv_frame_sw:
 .PKDATA _dv_rec, 8;
 .PKDATA _dv_t, 4;
 .PKDATA _dv_buf, 4;
+.PKDATA _dv_row, 4;
+// The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), its scalars (see `_dv_contract`), the slots'
+// records (4 words each) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
+.PKDATA _dv_in, 16;
+.PKDATA _dv_params, 32;
+.PKDATA _dv_c, 64;
+.PKDATA _dv_cst, 256;
+.VAR _dv_slots = ADM_PARAM_SLOT0;
+.VAR _dv_slots1 = ADM_PARAM_SLOT1;
+.VAR _dv_slots2 = ADM_PARAM_SLOT2;
+.VAR _dv_slots3 = ADM_PARAM_SLOT3;
+.VAR _dv_slots4 = ADM_PARAM_SLOT4;
+.VAR _dv_slots5 = ADM_PARAM_SLOT5;
+.VAR _dv_slots6 = ADM_PARAM_SLOT6;
+.VAR _dv_slots7 = ADM_PARAM_SLOT7;

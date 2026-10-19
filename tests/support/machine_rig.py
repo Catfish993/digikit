@@ -28,7 +28,7 @@ from functools import cache
 from pathlib import Path
 
 import support.dsp_voice_rig as dv
-from tools.patchkit import pk_conform, pk_sharc
+from tools.patchkit import pk_build, pk_conform, pk_sharc
 
 ROOT = pk_conform.ROOT
 WRAPPER = {
@@ -43,6 +43,7 @@ NAN = 0xFFFFFFFF
 OUT_DN2 = (
     dv.OUT + 0x1000
 )  # DN2 voice buffers (low 7 bits of the address are 0x10: the wrapper checks)
+ROW_WORDS = 24  # words of a registry row of core/dsp-voice
 nw = dv.nw
 
 
@@ -56,7 +57,7 @@ class Block:
     halt: dict
     context_bad: list[str]  # context registers that did not come back as they went in
     out: dict = field(default_factory=dict)
-    faults: int = 0  # DT2: the runtime guard's fault count of the type since the start (registry row word 13); DN2 has no guard
+    faults: int = 0  # the runtime guard's fault count of the type since the start (registry row word 13)
 
 
 @dataclass
@@ -66,9 +67,19 @@ class _Built:
     data: dict[str, int]  # data symbol -> byte address
     inits: list[tuple[int, bytes, bool]]  # (byte address, bytes, is_bss)
     symbols: dict[str, int]
+    state: int = 0  # contract voice: byte address of voice 0's state block (the rig reserves it behind the data symbols)
+    stride: int = 0  # bytes between two voices' states
+    clear: int = 0  # bytes the adapter zeroes at note-on
+    desc: tuple[int, ...] = ()  # the module's `dk_machine_desc` words
     base: dict[int, int] = field(
         default_factory=dict
     )  # the core's memory after reset's static pokes (filled by the first rig)
+
+
+def _assemble(path: Path, moddir: Path) -> pk_sharc.SharcObject:
+    """A DSP source the way tools/patchkit/pk_build.py reads it: `#include` from the module's build/gen, the SDK and the source's directory."""
+    dirs = [moddir / "build" / "gen", pk_conform.ROOT / "sdk", path.parent]
+    return pk_sharc.assemble(pk_build.expand_includes(path.read_text(), dirs))
 
 
 def _externs_fixed(device: str, spec: pk_conform.MachineSpec) -> dict[str, int]:
@@ -88,8 +99,8 @@ def build(module: str, device: str) -> _Built:
         raise pk_conform.ConformError(
             f"{module} has no machine DSP object for {device}"
         )
-    objs = [pk_sharc.assemble(WRAPPER[device].read_text())]
-    objs += [pk_sharc.assemble(Path(s).read_text()) for s in sp.sources]
+    objs = [_assemble(WRAPPER[device], WRAPPER[device].parents[2])]
+    objs += [_assemble(Path(s), sp.moddir) for s in sp.sources]
     # data symbols: one 4-byte aligned run per section, in L2 above the stand-ins
     addr = DATA_BASE
     data: dict[str, int] = {}
@@ -102,6 +113,22 @@ def build(module: str, device: str) -> _Built:
             addr += (len(raw) + 3) & ~3
         for name, (sec, off, _g) in o.data_symbols.items():
             data[name] = where[sec] + off
+    # a contract voice: the module's description, and its state blocks behind the data symbols (what the runtime reserves at load)
+    desc: tuple[int, ...] = ()
+    state = stride = clear = 0
+    if sp.desc is not None:
+        at = data[sp.desc]
+        for a0, raw, _bss in inits:
+            if a0 <= at < a0 + len(raw):
+                desc = struct.unpack("<10I", raw[at - a0 : at - a0 + 40])
+        if len(desc) != 10 or desc[0] != 0x444B4D41:
+            raise pk_conform.ConformError(f"{module}: {sp.desc} is no dk_machine_desc")
+        stride = (desc[4] + 7) & ~7
+        clear = desc[5]
+        addr = (addr + 7) & ~7
+        state = addr
+        inits.append((addr, bytes(desc[3] * stride), True))
+        addr += desc[3] * stride
     if addr > DATA_END:
         raise pk_conform.ConformError(
             f"{module}: data symbols need {addr - DATA_BASE:#x} bytes of L2, {DATA_END - DATA_BASE:#x} are free"
@@ -121,7 +148,7 @@ def build(module: str, device: str) -> _Built:
         syms.update({n: b + off for n, (off, _g) in o.symbols.items()})
     ext = {**externs, **syms}
     linked = [pk_sharc.link(o, b, ext) for o, b in zip(objs, bases, strict=True)]
-    return _Built(objs, linked, data, inits, syms)
+    return _Built(objs, linked, data, inits, syms, state, stride, clear, desc)
 
 
 class MachineRig:
@@ -162,10 +189,18 @@ class MachineRig:
                 poke(nw(dv.TYPE_CACHE) + k, 0)
             for k in range(32 * dv.REC // 4):
                 poke(nw(dv.RECORDS) + k, 0)
-            for k in range(34):
+            for k in range(2 * ROW_WORDS):
                 poke(nw(dv.TABLE) + k, 0)
             poke(nw(dv.TABLE), self.spec.machine_type)
             poke(nw(dv.TABLE) + 1, b.symbols[self.spec.entry])
+            for p in self.spec.params:  # words 2 to 9: the declared range of knob j (min | max << 16; none for a stock knob)
+                if not p.stock and 0 <= p.lo <= p.hi <= 0xFFFF:
+                    poke(nw(dv.TABLE) + 2 + p.knob, p.lo | p.hi << 16)
+            if self.spec.note_on is not None:  # words 16 to 19: note_on pc, state base, stride, clear bytes
+                poke(nw(dv.TABLE) + 16, b.symbols[self.spec.note_on])
+                poke(nw(dv.TABLE) + 17, b.state)
+                poke(nw(dv.TABLE) + 18, b.stride)
+                poke(nw(dv.TABLE) + 19, b.clear)
             for addr, raw, is_bss in b.inits:
                 for k in range(len(raw) // 4):
                     w = (
@@ -295,7 +330,7 @@ class MachineRig:
             for n in dv.CONTEXT_REGS
             if (res["regs"][n] or 0) & 0xFFFFFFFF != ctx[n] & 0xFFFFFFFF
         ]
-        faults = (self.sess.peek(nw(dv.TABLE) + 13) or 0) if self.device == "dt2" else 0
+        faults = self.sess.peek(nw(dv.TABLE) + 13) or 0
         return Block(
             samples,
             res["instructions"],
