@@ -246,6 +246,11 @@
       "pattern": "^(docs/x\\.md|tests/devtools/test_x\\.py)$",
       "file": "tests/devtools/test_rust_ws_select.py",
       "reason": "made-up changed-file names in selection tests"
+    },
+    {
+      "pattern": "^(tests/fixtures/modules/|tools/patchkit/pk_sdkgen\\.py|packages/patchkit/src/modschema\\.rs)$",
+      "file": "docs/design/module-sdk.md",
+      "reason": "paths the SDK design proposes; they do not exist yet"
     }
   ],
   "moved_local": {

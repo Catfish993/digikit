@@ -447,13 +447,26 @@ twice (a conformance suite before shipping, the runtime on the device), a templa
    `MACHINE_FAULT` in the log with the parameters. Emulator first, then one flash.
 2. [x] (lane srcpage; the guard's fault count is an invariant, which found pluck's unwritten line) Machine conformance suite from the manifest on the routine rig (every parameter at its limits, notes x pitch parameters, per-block
    modulation, long notes, retriggers; finite, bounded, returns, within budget), `mise run module:check NAME`, routed by verify.
-3. [ ] Layout: one module per machine (patched in or loaded at run time is a build choice; `test/dyn-pluck`, `test/dyn-xslice`, `twin-*`
+3. [ ] (folded into Phase 12) Layout: one module per machine (patched in or loaded at run time is a build choice; `test/dyn-pluck`, `test/dyn-xslice`, `twin-*`
    removed), framework fixtures from `modules/test/` to a fixtures folder under `tests/` (new), framework scenarios on fixtures, a module's own tests
    in its `tests/`. Oracle: images and `.dkm` byte-identical except the module ids.
-4. [ ] Manifest with author concepts only: firmware codes (templates, knob codes, placement, entry) into the device profiles, parameter kinds.
-5. [ ] `mise run module:new machine NAME` and docs/MODULE-AUTHORING.md rewritten around new, build, `module:check`, emulator, device.
+4. [ ] (folded into Phase 12) Manifest with author concepts only: firmware codes (templates, knob codes, placement, entry) into the device profiles, parameter kinds.
+5. [ ] (folded into Phase 12) `mise run module:new machine NAME` and docs/MODULE-AUTHORING.md rewritten around new, build, `module:check`, emulator, device.
 6. [ ] `Target` (emulator and device backends over MIDI, our SysEx, the firmware screenshot, audio capture) and system scenarios
    (`module:emu`, `module:device`); FX sends, LFO on every parameter, machine and track changes.
+
+### Phase 12: the module SDK (design: docs/design/module-sdk.md; agreed to build, 2026-10-19)
+
+Em, 2026-10-19: generic modules per type with one contract and entry point; one adapter per device driven by the device profile;
+the runtime tracks what is loaded and where, prevents clobbering and enforces limits; checks at build time where possible; readable
+for humans and LLMs; hot reload kept possible (not built); logging with levels from emulator and device alike. Pluck first, other
+modules untouched until pluck is migrated and tested on the device; then FX and the other types.
+
+1. [ ] Answer the design's open questions (section 11.2 and 13.7) with Em.
+2. [ ] Migration steps of section 10.1, pluck first, each with its oracle (section 10.2: rig samples and scenario PCM equal to today's,
+   conformance and guard tests pass, stock pins unchanged); Phase 11 items 3-5 are part of this.
+3. [ ] Pluck on the device through the SDK (one flash for the new runtime, then `dk run`).
+4. [ ] The FX contract with the first FX module; then the other types.
 
 ### Later
 
