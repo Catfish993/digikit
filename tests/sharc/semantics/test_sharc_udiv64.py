@@ -1,4 +1,4 @@
-"""The unsigned 64/64 divide of DT2 1.16 (short-word 0xb88e4e) runs to the end.
+"""The unsigned 64/64 divide of DT2 1.17 (short-word 0xb88e4e) runs to the end.
 
 Its quotient assembly uses the register-form FEXT (0xb88e8b, 0xb88edb), which
 the core once did not implement: a per-voice 64-bit counter passing 2^48
@@ -24,7 +24,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-BLOB = ROOT / "out/sections/dt2-1.16/section_7_BLOB.bin"
+BLOB = ROOT / "out/sections/dt2-1.17/section_7_BLOB.bin"
 pytestmark = pytest.mark.skipif(not BLOB.exists(), reason="DT2 1.16 image absent")
 
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
@@ -41,7 +41,7 @@ def memory():
     cwd = os.getcwd()
     os.chdir(ROOT)  # the loader resolves out/ from the working directory
     try:
-        return sr._load_image_memory("dt2-1.16")
+        return sr._load_image_memory("dt2-1.17")
     finally:
         os.chdir(cwd)
 

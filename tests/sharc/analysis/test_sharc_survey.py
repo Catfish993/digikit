@@ -3,7 +3,7 @@
 Pure-Python pieces (load_patch_table, apply_patches, category
 classification, the ASTAT-group-from-unknowns mapping) are tested against
 synthetic loader streams, following tests/sharc/semantics/test_sharc_run.py's convention.
-The end-to-end SurveyStopTest class needs the real dt2-1.16 program
+The end-to-end SurveyStopTest class needs the real dt2-1.17 program
 database and firmware blob (out/sharcdb, out/sections -- see the worktree's
 symlinks); it is skipped, not marked slow, when they are not available,
 matching tests/sharc/analysis/test_sharc_graph.py.
@@ -26,8 +26,8 @@ T = import_module("tools.sharc_dev.sharc_trace")
 sharc = import_module("tools.sharc_dev.sharc")
 from support.sharc_trace_build import loader_memory  # noqa: E402
 
-DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.17.sqlite")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 
 
 class LoadPatchTableTest(unittest.TestCase):
@@ -265,7 +265,7 @@ class CollectStopJsonTest(unittest.TestCase):
 # real fork: FUN_1c2b24+0x1e7 (0x1c2d08, "R1 = leftz(R1, R0)") computes its
 # SV (shift overflow) flag from R1 = DM(I4, M0), a read of a cell this bare
 # run never wrote, so the JUMP IF NOT SV at 0x1c2d0b cannot be resolved.
-# Verified live on out/sharcdb/dt2-1.16.sqlite + out/sections/dt2-1.16
+# Verified live on out/sharcdb/dt2-1.17.sqlite + out/sections/dt2-1.17
 # (2026-09-26, branch work/sharc-emulator @ 34a8d38): deterministic across
 # repeated runs, same pc and instruction count every time.
 _ROOT = 0x1C2B24
@@ -285,7 +285,7 @@ _REG_PATCH_PC = 0x1C2D08
 
 @unittest.skipUnless(
     DT2_116_DB.exists() and DT2_116_BLOB.exists(),
-    "out/sharcdb/dt2-1.16.sqlite or out/sections/dt2-1.16/section_7_BLOB.bin "
+    "out/sharcdb/dt2-1.17.sqlite or out/sections/dt2-1.17/section_7_BLOB.bin "
     "is not available",
 )
 class SurveyEndToEndTest(unittest.TestCase):
@@ -301,7 +301,7 @@ class SurveyEndToEndTest(unittest.TestCase):
 
     def _survey(self, **kwargs):
         kwargs.setdefault("explicit_memory_model", False)
-        return sv.survey(image="dt2-1.16", root=self.START, **kwargs)
+        return sv.survey(image="dt2-1.17", root=self.START, **kwargs)
 
     def test_bare_survey_reaches_the_known_first_fork(self):
         stop = self._survey()
@@ -339,7 +339,7 @@ class SurveyEndToEndTest(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             sv.main(
                 [
-                    "dt2-1.16",
+                    "dt2-1.17",
                     "--root",
                     hex(self.START),
                     "--max-steps",
@@ -358,7 +358,7 @@ class SurveyEndToEndTest(unittest.TestCase):
 
 @unittest.skipUnless(
     DT2_116_DB.exists() and DT2_116_BLOB.exists(),
-    "out/sharcdb/dt2-1.16.sqlite or out/sections/dt2-1.16/section_7_BLOB.bin "
+    "out/sharcdb/dt2-1.17.sqlite or out/sections/dt2-1.17/section_7_BLOB.bin "
     "is not available",
 )
 class CollectAllEndToEndTest(unittest.TestCase):
@@ -381,7 +381,7 @@ class CollectAllEndToEndTest(unittest.TestCase):
 
     def _collect_all(self, **kwargs):
         kwargs.setdefault("explicit_memory_model", False)
-        return sv.collect_all(image="dt2-1.16", root=self.START, **kwargs)
+        return sv.collect_all(image="dt2-1.17", root=self.START, **kwargs)
 
     def test_continues_past_the_first_fork_with_a_default_guess(self):
         # Just past the first fork: the second known one (0x1c2d18) sits
@@ -457,7 +457,7 @@ class CollectAllEndToEndTest(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             sv.main(
                 [
-                    "dt2-1.16",
+                    "dt2-1.17",
                     "--root",
                     hex(self.START),
                     "--max-steps",
@@ -490,14 +490,14 @@ class CollectAllFrameRunTest(unittest.TestCase):
         )
 
         cls.h = h
-        cls.img = sharc.load("dt2-1.16")
-        memory = h.load_image_memory("dt2-1.16")
-        init = h.run_init(memory, "dt2-1.16")
+        cls.img = sharc.load("dt2-1.17")
+        memory = h.load_image_memory("dt2-1.17")
+        init = h.run_init(memory, "dt2-1.17")
         if not init.ran:  # pragma: no cover - defensive, see run_init
             raise RuntimeError("run_init did not complete: %s" % init.error)
         cls.base_runner = init.runner
-        h.setup_voice(cls.base_runner.state, "dt2-1.16", 0, sample_len=4096)
-        cls.block_handler = h.setup_frame(cls.base_runner.state, "dt2-1.16")
+        h.setup_voice(cls.base_runner.state, "dt2-1.17", 0, sample_len=4096)
+        cls.block_handler = h.setup_frame(cls.base_runner.state, "dt2-1.17")
 
     def _fresh_call(self):
         return self.base_runner.fresh_call(self.block_handler, diagnose_unknown=True)

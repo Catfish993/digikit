@@ -16,7 +16,7 @@ import pytest
 from tools.sharc_dev import sharc_calltrace as ct  # noqa: E402
 from tools.sharc_dev import sharc_trace as st  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-running-idle.dt2cap")
 
 
@@ -78,15 +78,15 @@ class ParseFramesTest(unittest.TestCase):
 
 class ParseArgsTest(unittest.TestCase):
     def test_defaults_to_the_builtin_entry_list(self):
-        args = ct.parse_args(["dt2-1.16", "a.dt2cap"])
-        self.assertEqual(args.image, "dt2-1.16")
+        args = ct.parse_args(["dt2-1.17", "a.dt2cap"])
+        self.assertEqual(args.image, "dt2-1.17")
         self.assertEqual(args.capture, "a.dt2cap")
         self.assertEqual(args.function, [])
         self.assertIsNone(args.frames)
 
     def test_function_is_repeatable(self):
         args = ct.parse_args(
-            ["dt2-1.16", "a.dt2cap", "--function", "0x1c7442", "--function", "0x1c4e70"]
+            ["dt2-1.17", "a.dt2cap", "--function", "0x1c7442", "--function", "0x1c4e70"]
         )
         self.assertEqual(args.function, ["0x1c7442", "0x1c4e70"])
 
@@ -124,7 +124,7 @@ class CalltraceIntegrationTest(unittest.TestCase):
 
     def test_voice_render_entry_and_return_are_matched(self):
         result = ct.calltrace(
-            "dt2-1.16",
+            "dt2-1.17",
             str(IDLE_CAPTURE),
             entry_pcs=(0x1C4F81,),
             frame_hi=1,

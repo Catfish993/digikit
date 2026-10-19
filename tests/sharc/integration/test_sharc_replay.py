@@ -20,7 +20,7 @@ from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay_mod  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
 TRIG_CAPTURE = pathlib.Path("out/captures/dt2-1.16-running-trig.dt2cap")
 
@@ -207,8 +207,8 @@ class FirstNonzeroWriteTest(unittest.TestCase):
 
 class ParseArgsTest(unittest.TestCase):
     def test_defaults(self):
-        args = replay_mod.parse_args(["dt2-1.16", "cap.dt2cap"])
-        self.assertEqual(args.image, "dt2-1.16")
+        args = replay_mod.parse_args(["dt2-1.17", "cap.dt2cap"])
+        self.assertEqual(args.image, "dt2-1.17")
         self.assertEqual(args.capture, "cap.dt2cap")
         self.assertIsNone(args.frames)
         self.assertEqual(args.freq, 1000.0)
@@ -218,13 +218,13 @@ class ParseArgsTest(unittest.TestCase):
         self.assertEqual(args.frame_override, [])
 
     def test_force_command_flag(self):
-        args = replay_mod.parse_args(["dt2-1.16", "cap.dt2cap", "--force-command", "3"])
+        args = replay_mod.parse_args(["dt2-1.17", "cap.dt2cap", "--force-command", "3"])
         self.assertEqual(args.force_command, 3)
 
     def test_frame_override_flag_may_repeat(self):
         args = replay_mod.parse_args(
             [
-                "dt2-1.16",
+                "dt2-1.17",
                 "cap.dt2cap",
                 "--frame-override",
                 "2:0=0x8045a6c8",
@@ -237,7 +237,7 @@ class ParseArgsTest(unittest.TestCase):
     def test_provisional_flag_may_repeat(self):
         args = replay_mod.parse_args(
             [
-                "dt2-1.16",
+                "dt2-1.17",
                 "cap.dt2cap",
                 "--provisional",
                 "21p_undoc16=nop",
@@ -319,7 +319,7 @@ class ReplayIdleCaptureTest(unittest.TestCase):
 
     def test_three_frame_replay_milestone(self):
         result = replay_mod.replay(
-            "dt2-1.16", str(IDLE_CAPTURE), n_frames=3, tone_freq=1000.0
+            "dt2-1.17", str(IDLE_CAPTURE), n_frames=3, tone_freq=1000.0
         )
         self.assertEqual(result["frames_replayed"], 3)
         self.assertEqual(result["rx_base"], "%#x" % replay_mod.RX_BASE)
@@ -401,12 +401,12 @@ class CallFrameCollectAllWithHitsTest(unittest.TestCase):
     1 (2026-09-25/26, docs/findings/06's "Lane E2" section)."""
 
     def _runner(self):
-        memory = h.load_image_memory("dt2-1.16")
-        init = h.run_init(memory, "dt2-1.16")
+        memory = h.load_image_memory("dt2-1.17")
+        init = h.run_init(memory, "dt2-1.17")
         self.assertTrue(init.ran, init.error)
-        runner = h.new_runner(memory, "dt2-1.16", init=init)
-        h.setup_voice(runner.state, "dt2-1.16", voice=0, sample_len=4096)
-        h.setup_frame(runner.state, "dt2-1.16", command=3, ring_flag=0)
+        runner = h.new_runner(memory, "dt2-1.17", init=init)
+        h.setup_voice(runner.state, "dt2-1.17", voice=0, sample_len=4096)
+        h.setup_frame(runner.state, "dt2-1.17", command=3, ring_flag=0)
         return runner
 
     def test_reachable_pc_is_hit_and_frame_still_completes(self):
@@ -415,7 +415,7 @@ class CallFrameCollectAllWithHitsTest(unittest.TestCase):
         # calls FUN_1c642a (0x1c3083)"), runs exactly once per frame.
         runner, result, hits = replay_mod.call_frame_collect_all_with_hits(
             self._runner(),
-            "dt2-1.16",
+            "dt2-1.17",
             trace_pcs={0x1C3083},
             patch_table=h.FRAME_PATCH_TABLE,
         )
@@ -443,7 +443,7 @@ class CallFrameCollectAllWithHitsTest(unittest.TestCase):
         concrete register values."""
         runner, result, hits = replay_mod.call_frame_collect_all_with_hits(
             self._runner(),
-            "dt2-1.16",
+            "dt2-1.17",
             trace_pcs={0x1C60A2},
             patch_table=h.FRAME_PATCH_TABLE,
         )
@@ -486,7 +486,7 @@ class ArmedVoiceReplayTest(unittest.TestCase):
 
     def test_start_frame_shortcut_matches_full_replay_and_pins_the_wav(self):
         result = replay_mod.replay_armed_voice(
-            "dt2-1.16",
+            "dt2-1.17",
             str(TRIG_CAPTURE),
             voice=4,
             extra_frames=20,
@@ -590,7 +590,7 @@ class ArmedVoiceRealSampleReplayTest(unittest.TestCase):
     )
     def test_start_frame_shortcut_matches_full_replay_and_renders_real_audio(self):
         result = replay_mod.replay_armed_voice(
-            "dt2-1.16",
+            "dt2-1.17",
             str(TRIG_CAPTURE),
             voice=4,
             extra_frames=20,

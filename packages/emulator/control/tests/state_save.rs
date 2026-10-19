@@ -1,6 +1,6 @@
 //! `state.save` and `state.load`: a snapshot taken after some steps, restored into a freshly loaded
 //! runtime, gives the same state digest, and both go on the same way. Needs a stock firmware
-//! (`DT2_SYX`, else the DT2 1.17 or 1.16 image in `firmware/`); without one the test returns.
+//! (`DT2_SYX`, else the DT2 1.17 image in `firmware/`); without one the test returns.
 
 use std::{fs, path::PathBuf};
 
@@ -10,7 +10,7 @@ use serde_json::json;
 fn dt2_syx() -> Option<PathBuf> {
     std::env::var_os("DT2_SYX").map(PathBuf::from).or_else(|| {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        ["Digitakt_II_OS1.17.syx", "Digitakt_II_OS1.16.syx"]
+        ["Digitakt_II_OS1.17.syx"]
             .iter()
             .find_map(|name| {
                 root.ancestors()

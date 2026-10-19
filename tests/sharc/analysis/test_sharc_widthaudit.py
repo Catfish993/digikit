@@ -14,7 +14,7 @@ import pytest
 
 from tools.sharc_dev import sharc_widthaudit as wa  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 
 
 class FormsWithWidthFieldsTest(unittest.TestCase):
@@ -130,12 +130,12 @@ class ConcreteAuditTest(unittest.TestCase):
     FrameRenderFromInitTest, not a unit test."""
 
     def test_voice_root_has_zero_mismatches(self):
-        report = wa.audit_root("voice", image="dt2-1.16")
+        report = wa.audit_root("voice", image="dt2-1.17")
         self.assertEqual(report.mismatches, [])
         self.assertGreater(report.events_checked, 0)
 
     def test_frame_root_has_zero_mismatches(self):
-        report = wa.audit_root("frame", image="dt2-1.16", max_steps=500_000)
+        report = wa.audit_root("frame", image="dt2-1.17", max_steps=500_000)
         self.assertEqual(report.mismatches, [])
         self.assertGreater(report.events_checked, 0)
         # Every width-bearing form this lane fixed (3d, 4b) is actually

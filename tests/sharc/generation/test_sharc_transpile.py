@@ -112,7 +112,7 @@ def test_native_compute_corpus_matches():
 @pytest.mark.skipif(not os.path.exists(CAPTURE), reason="no drive3 capture")
 def test_native_frames_match_the_python_replay(tmp_path):
     out = run.run_frames(
-        "dt2-1.16",
+        "dt2-1.17",
         CAPTURE,
         range(0, 3),
         snapshot=str(tmp_path / "start.snap"),
@@ -173,7 +173,7 @@ def test_partially_static_tuples_merge():
     assert tp._merge_item([1, 2]) is tp._NOCONST
 
 
-IMAGE_DB = os.path.join(ROOT, "out", "sharcdb", "dt2-1.16.sqlite")
+IMAGE_DB = os.path.join(ROOT, "out", "sharcdb", "dt2-1.17.sqlite")
 
 
 @pytest.mark.skipif(not os.path.exists(IMAGE_DB), reason="no program database")
@@ -187,8 +187,8 @@ def test_block_mode_keeps_registers_static(translated):
     _core, out = translated
     tr = out.translator
     tr.blk = True
-    img = sharc.load("dt2-1.16")
-    (block,) = rg.load_blocks(IMAGE_DB, "dt2-1.16", [0x1CB463], img._mem())
+    img = sharc.load("dt2-1.17")
+    (block,) = rg.load_blocks(IMAGE_DB, "dt2-1.17", [0x1CB463], img._mem())
     for pc, insn in block.insns:
         tr.static_names[id(insn)] = "(&I_%X)" % pc
         tr.static_names[id(insn.fields)] = "(&F_%X)" % pc

@@ -1,4 +1,4 @@
-"""sharc_harness voice and init rendering on the DT2 1.16 image."""
+"""sharc_harness voice and init rendering on the DT2 1.17 image."""
 
 import pathlib
 import unittest
@@ -6,33 +6,33 @@ import unittest
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 
 
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class FirmwareBackedTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
 
     def test_voice_zero_matches_contract(self):
-        self.assertEqual(h.voice_record_address("dt2-1.16", 0), 0x2412CC)
+        self.assertEqual(h.voice_record_address("dt2-1.17", 0), 0x2412CC)
 
     def test_stride_matches_contract(self):
-        self.assertEqual(h.voice_record_address("dt2-1.16", 1), 0x2412CC + 0x1D8)
-        self.assertEqual(h.voice_record_address("dt2-1.16", 31), 0x2412CC + 31 * 0x1D8)
+        self.assertEqual(h.voice_record_address("dt2-1.17", 1), 0x2412CC + 0x1D8)
+        self.assertEqual(h.voice_record_address("dt2-1.17", 31), 0x2412CC + 31 * 0x1D8)
 
     def test_rejects_out_of_range(self):
         with self.assertRaises(ValueError):
-            h.voice_record_address("dt2-1.16", 32)
+            h.voice_record_address("dt2-1.17", 32)
         with self.assertRaises(ValueError):
-            h.voice_record_address("dt2-1.16", -1)
+            h.voice_record_address("dt2-1.17", -1)
 
     def test_setup_voice_writes_documented_fields(self):
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         record = h.setup_voice(
             runner.state,
-            "dt2-1.16",
+            "dt2-1.17",
             0,
             sample_len=256,
             pitch_step=1.0,
@@ -76,10 +76,10 @@ class FirmwareBackedTest(unittest.TestCase):
         # command_record_table + (command_word_shift_src << 12); with
         # setup_frame()'s own default (shift left at 0), that is simply
         # command_record_table itself (0x266220 on DT2 1.16).
-        runner = h.new_runner(self.memory, "dt2-1.16")
-        h.setup_frame(runner.state, "dt2-1.16", command=3, ring_flag=0)
+        runner = h.new_runner(self.memory, "dt2-1.17")
+        h.setup_frame(runner.state, "dt2-1.17", command=3, ring_flag=0)
         self.assertEqual(
-            h.companding_record_address(runner.state, "dt2-1.16"), 0x266220
+            h.companding_record_address(runner.state, "dt2-1.17"), 0x266220
         )
 
     def test_companding_record_fields_are_zero_from_run_init(self):
@@ -88,10 +88,10 @@ class FirmwareBackedTest(unittest.TestCase):
         # (companding_record_fields()'s own COMPANDING_RECORD_TARGETS) is
         # this lane's own trace of exactly why: the whole record is
         # unwritten (explicit_memory_model), not just that one field.
-        init = h.run_init(self.memory, "dt2-1.16")
+        init = h.run_init(self.memory, "dt2-1.17")
         self.assertTrue(init.ran, init.error)
         self.assertEqual(
-            h.companding_record_fields(init.runner.state, "dt2-1.16"),
+            h.companding_record_fields(init.runner.state, "dt2-1.17"),
             [0, 0, 0, 0],
         )
 
@@ -100,16 +100,16 @@ class FirmwareBackedTest(unittest.TestCase):
         # the buffer just filled, so the LANDING address for a NEW transfer
         # is always the OTHER ring instance -- shift 0 (run_init()'s own
         # starting value) lands at command_word's shift-1 instance.
-        init = h.run_init(self.memory, "dt2-1.16")
+        init = h.run_init(self.memory, "dt2-1.17")
         self.assertTrue(init.ran, init.error)
-        p = h.profile("dt2-1.16")
+        p = h.profile("dt2-1.17")
         self.assertEqual(
-            h.dma_landing_address(init.runner.state, "dt2-1.16"),
+            h.dma_landing_address(init.runner.state, "dt2-1.17"),
             p.command_word + 0x1000,
         )
         h._poke(init.runner.state, p.command_word_shift_src, 1)
         self.assertEqual(
-            h.dma_landing_address(init.runner.state, "dt2-1.16"), p.command_word
+            h.dma_landing_address(init.runner.state, "dt2-1.17"), p.command_word
         )
 
     def test_write_dma_transfer_then_drive_completion_yields_correct_command_word(
@@ -121,21 +121,21 @@ class FirmwareBackedTest(unittest.TestCase):
         # check (sw 0x1c750a-0x1c7511) would then always take the "clear"
         # path. write_dma_transfer()'s own 16-bit-unit swap (default) fixes
         # this; swap16=False reproduces the bug for the A/B.
-        init = h.run_init(self.memory, "dt2-1.16")
+        init = h.run_init(self.memory, "dt2-1.17")
         self.assertTrue(init.ran, init.error)
-        runner = h.new_runner(self.memory, "dt2-1.16", init=init)
+        runner = h.new_runner(self.memory, "dt2-1.17", init=init)
         payload = bytes([0x00, 0x03]) + bytes(100)
 
-        h.write_dma_transfer(runner.state, "dt2-1.16", payload)
-        new_runner = h.drive_dma_completion(runner, "dt2-1.16")
-        p = h.profile("dt2-1.16")
+        h.write_dma_transfer(runner.state, "dt2-1.17", payload)
+        new_runner = h.drive_dma_completion(runner, "dt2-1.17")
+        p = h.profile("dt2-1.17")
         shift = h._dm_word(new_runner.state, p.command_word_shift_src)
         cw_addr = p.command_word + (shift << 12)
         self.assertEqual(h._dm_word(new_runner.state, cw_addr), 3)
 
-        runner2 = h.new_runner(self.memory, "dt2-1.16", init=init)
-        h.write_dma_transfer(runner2.state, "dt2-1.16", payload, swap16=False)
-        new_runner2 = h.drive_dma_completion(runner2, "dt2-1.16")
+        runner2 = h.new_runner(self.memory, "dt2-1.17", init=init)
+        h.write_dma_transfer(runner2.state, "dt2-1.17", payload, swap16=False)
+        new_runner2 = h.drive_dma_completion(runner2, "dt2-1.17")
         shift2 = h._dm_word(new_runner2.state, p.command_word_shift_src)
         cw_addr2 = p.command_word + (shift2 << 12)
         self.assertEqual(h._dm_word(new_runner2.state, cw_addr2), 0x300)
@@ -144,27 +144,27 @@ class FirmwareBackedTest(unittest.TestCase):
         # The copy gate is re-armed only on request: the per-frame re-arm
         # made the post-trig sample load unreachable (drive_dma_completion's
         # docstring, 2026-09-28).
-        init = h.run_init(self.memory, "dt2-1.16")
+        init = h.run_init(self.memory, "dt2-1.17")
         self.assertTrue(init.ran, init.error)
-        runner = h.new_runner(self.memory, "dt2-1.16", init=init)
-        p = h.profile("dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17", init=init)
+        p = h.profile("dt2-1.17")
         self.assertEqual(h._dm_word(runner.state, p.command_word_shift_src), 0)
         h._poke(runner.state, h.COPY_GATE_ADDRESS, 0, width=1)
 
-        new_runner = h.drive_dma_completion(runner, "dt2-1.16")
+        new_runner = h.drive_dma_completion(runner, "dt2-1.17")
         self.assertEqual(h._dm_word(new_runner.state, p.command_word_shift_src), 1)
         gate = sr.st._dm_read(new_runner.state, h.COPY_GATE_ADDRESS, 1)
         self.assertEqual(gate.value, 0)
 
-        rearmed = h.drive_dma_completion(new_runner, "dt2-1.16", rearm_copy_gate=True)
+        rearmed = h.drive_dma_completion(new_runner, "dt2-1.17", rearm_copy_gate=True)
         self.assertEqual(h._dm_word(rearmed.state, p.command_word_shift_src), 0)
         gate = sr.st._dm_read(rearmed.state, h.COPY_GATE_ADDRESS, 1)
         self.assertEqual(gate.value, 1)
 
     def test_setup_frame_dma_does_not_poke_command_word(self):
-        runner = h.new_runner(self.memory, "dt2-1.16")
-        p = h.profile("dt2-1.16")
-        entry = h.setup_frame_dma(runner.state, "dt2-1.16", ring_flag=0)
+        runner = h.new_runner(self.memory, "dt2-1.17")
+        p = h.profile("dt2-1.17")
+        entry = h.setup_frame_dma(runner.state, "dt2-1.17", ring_flag=0)
         self.assertEqual(entry, p.block_handler)
         self.assertEqual(h._dm_word(runner.state, p.command_word_shift_src), 0)
         self.assertEqual(h._dm_word(runner.state, p.command_word), 0)
@@ -172,10 +172,10 @@ class FirmwareBackedTest(unittest.TestCase):
     def test_setup_voice_reverse_seeds_phase_to_end_minus_one_sample(self):
         # Finding 06's "Flags and seed": "if set, it clears it and sets the
         # phase to end - 1.0 sample ... when +0x1bb is set, else to start."
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         record = h.setup_voice(
             runner.state,
-            "dt2-1.16",
+            "dt2-1.17",
             0,
             sample_len=256,
             start=10,
@@ -204,17 +204,17 @@ class FirmwareBackedTest(unittest.TestCase):
         from tools.sharc_dev.sharc_core.encoding import UREG_CODES
 
         sample_ptr = 0x310000
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         record = h.setup_voice(
             runner.state,
-            "dt2-1.16",
+            "dt2-1.17",
             0,
             sample_len=256,
             pitch_step=1.0,
             sample_base=sample_ptr,
         )
         state = runner.state
-        state.pc_sw = h.profile("dt2-1.16").voice_render
+        state.pc_sw = h.profile("dt2-1.17").voice_render
         state.stopped = None
         state.pending = None
         state.call_stack = []
@@ -232,7 +232,7 @@ class FirmwareBackedTest(unittest.TestCase):
         self.assertEqual(i0, sr.st.Const(sample_ptr))
 
     def test_render_blocks_runs_the_real_render_path_without_error_halts(self):
-        blocks, results = h.render_blocks(self.memory, "dt2-1.16", 0, 2)
+        blocks, results = h.render_blocks(self.memory, "dt2-1.17", 0, 2)
         self.assertEqual(len(blocks), 2)
         for block in blocks:
             self.assertEqual(len(block), 64)
@@ -290,7 +290,7 @@ class FirmwareBackedTest(unittest.TestCase):
         # PRM-documented *floor*, not a round (p.3-10), that a pure-float
         # reference cannot match past about 1 ULP of Q15 without
         # reimplementing the same truncation.
-        report = h.check_correctness(self.memory, "dt2-1.16", n_blocks=8)
+        report = h.check_correctness(self.memory, "dt2-1.17", n_blocks=8)
         self.assertEqual(
             set(report),
             {
@@ -328,7 +328,7 @@ class FirmwareBackedTest(unittest.TestCase):
                     self.assertEqual(set(entry), {"offset", "before", "after"}, name)
 
     def test_coeff_table_reads_plausible_taps(self):
-        table = h.read_coeff_table(self.memory, "dt2-1.16", phases=4)
+        table = h.read_coeff_table(self.memory, "dt2-1.17", phases=4)
         self.assertEqual(len(table), 4)
         for taps in table:
             self.assertEqual(len(taps), h.COEFF_TABLE_TAPS)
@@ -346,7 +346,7 @@ class FirmwareBackedTest(unittest.TestCase):
         # of a linear-phase polyphase filter bank (pivoting near, not
         # exactly at, the table's own midpoint), not a pattern a wrong
         # stride into unrelated data would produce.
-        table = h.read_coeff_table(self.memory, "dt2-1.16")
+        table = h.read_coeff_table(self.memory, "dt2-1.17")
         self.assertEqual(len(table), 256)
         self.assertEqual(table[124], list(reversed(table[124])))
         for i in (0, 1, 4, 40, 120, 121, 200, 248):
@@ -361,9 +361,9 @@ class FirmwareBackedTest(unittest.TestCase):
         # left at init's stale default, the past-limit test deactivates the
         # voice one block after the record's own END/START/LOOP_START span
         # says it should not (see FIELD_SAMPLE_LENGTH's own docstring).
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         record = h.setup_voice(
-            runner.state, "dt2-1.16", 0, sample_len=999, sample_base=0x310000
+            runner.state, "dt2-1.17", 0, sample_len=999, sample_base=0x310000
         )
         length = sr.st._dm_read(runner.state, record + h.FIELD_SAMPLE_LENGTH, 4)
         length_hi = sr.st._dm_read(runner.state, record + h.FIELD_SAMPLE_LENGTH_HI, 4)
@@ -378,17 +378,17 @@ class FirmwareBackedTest(unittest.TestCase):
         # the callee spills its doubled copy (sw 0x1c4f1b).
         from tools.sharc_dev.sharc_core.encoding import UREG_CODES
 
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         state = runner.state
         h._poke(state, h.SESSION_TICK_ADDR, 5)
         record = h.setup_voice(
-            state, "dt2-1.16", 0, sample_len=256, sample_base=0x310000
+            state, "dt2-1.17", 0, sample_len=256, sample_base=0x310000
         )
         # Poison R12 first, the way a leftover register value would --
         # call_render() must overwrite it, not trust whatever is already
         # there.
         state.uregs[UREG_CODES["R12"]] = sr.st.Const(0xDEAD)
-        state.pc_sw = h.profile("dt2-1.16").voice_render
+        state.pc_sw = h.profile("dt2-1.17").voice_render
         state.stopped = None
         state.pending = None
         state.call_stack = []
@@ -430,12 +430,12 @@ class FirmwareBackedTest(unittest.TestCase):
         n_blocks = 4
         sample_len = 100
         samples = [0.1 * ((i % 7) - 3) for i in range(sample_len)]
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         state = runner.state
         h._write_samples(state, 0x310000, samples, "int16")
         record = h.setup_voice(
             state,
-            "dt2-1.16",
+            "dt2-1.17",
             0,
             sample_len=sample_len,
             loop=True,
@@ -445,7 +445,7 @@ class FirmwareBackedTest(unittest.TestCase):
         )
         phases, actives = [], []
         for _ in range(n_blocks):
-            h.call_render(runner, "dt2-1.16", record)
+            h.call_render(runner, "dt2-1.17", record)
             self.assertEqual(h._read_byte(state, record + h.FIELD_LOOP), 1)
             phases.append(h._read_q31_pair(state, record + h.FIELD_PHASE) / h.Q31)
             actives.append(h._read_byte(state, record + h.FIELD_ACTIVE))
@@ -468,12 +468,12 @@ class FirmwareBackedTest(unittest.TestCase):
         n_blocks = 16
         sample_len = 100
         samples = [0.1 * ((i % 7) - 3) for i in range(sample_len)]
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         state = runner.state
         h._write_samples(state, 0x310000, samples, "int16")
         record = h.setup_voice(
             state,
-            "dt2-1.16",
+            "dt2-1.17",
             0,
             sample_len=sample_len,
             loop=True,
@@ -483,7 +483,7 @@ class FirmwareBackedTest(unittest.TestCase):
         )
         phases, actives, halts = [], [], []
         for _ in range(n_blocks):
-            result, floats = h.call_render(runner, "dt2-1.16", record)
+            result, floats = h.call_render(runner, "dt2-1.17", record)
             phases.append(h._read_q31_pair(state, record + h.FIELD_PHASE) / h.Q31)
             actives.append(h._read_byte(state, record + h.FIELD_ACTIVE))
             halts.append(result.halt.reason)
@@ -526,12 +526,12 @@ class FirmwareBackedTest(unittest.TestCase):
         # describes, and this fixup must not undo that.
         sample_len = 40  # short enough to run past END within a few blocks
         samples = [0.1 * ((i % 7) - 3) for i in range(sample_len)]
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         state = runner.state
         h._write_samples(state, 0x310000, samples, "int16")
         record = h.setup_voice(
             state,
-            "dt2-1.16",
+            "dt2-1.17",
             0,
             sample_len=sample_len,
             loop=False,
@@ -539,7 +539,7 @@ class FirmwareBackedTest(unittest.TestCase):
         )
         actives = []
         for _ in range(4):
-            h.call_render(runner, "dt2-1.16", record)
+            h.call_render(runner, "dt2-1.17", record)
             actives.append(h._read_byte(state, record + h.FIELD_ACTIVE))
         # Deactivates and stays deactivated -- not held active by the fixup.
         self.assertIn(0, actives)
@@ -554,8 +554,8 @@ class InitStateRenderTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
-        cls.init = h.run_init(cls.memory, "dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
+        cls.init = h.run_init(cls.memory, "dt2-1.17")
         if not cls.init.ran:  # pragma: no cover - defensive, see run_init
             raise RuntimeError("run_init did not complete: %s" % cls.init.error)
 
@@ -567,7 +567,7 @@ class InitStateRenderTest(unittest.TestCase):
     def test_new_runner_raises_on_failed_init(self):
         failed = h.InitResult(False, None, "max-steps at 0x0 (?)", None)
         with self.assertRaises(ValueError):
-            h.new_runner(self.memory, "dt2-1.16", init=failed)
+            h.new_runner(self.memory, "dt2-1.17", init=failed)
 
     def test_new_runner_with_init_does_not_mutate_the_source(self):
         # Finding 06's "Init writes": every voice is inactive with word +0
@@ -575,7 +575,7 @@ class InitStateRenderTest(unittest.TestCase):
         # must hand back a *copy* -- calling setup_voice()/call_render() on
         # it must not touch init.runner.state itself, so init can seed more
         # than one independent render.
-        record = h.voice_record_address("dt2-1.16", 0)
+        record = h.voice_record_address("dt2-1.17", 0)
         source_state = self.init.runner.state
         active_before = h._read_byte(source_state, record + h.FIELD_ACTIVE)
         sample_ptr_before = sr.st._dm_read(
@@ -584,10 +584,10 @@ class InitStateRenderTest(unittest.TestCase):
         self.assertEqual(active_before, 0)
         self.assertEqual(sample_ptr_before, 0x8045A6C8)
 
-        runner = h.new_runner(self.memory, "dt2-1.16", init=self.init)
+        runner = h.new_runner(self.memory, "dt2-1.17", init=self.init)
         self.assertIsNot(runner.state, source_state)
-        record2 = h.setup_voice(runner.state, "dt2-1.16", 0, sample_len=256)
-        h.call_render(runner, "dt2-1.16", record2)
+        record2 = h.setup_voice(runner.state, "dt2-1.17", 0, sample_len=256)
+        h.call_render(runner, "dt2-1.17", record2)
 
         # The clone changed (ACTIVE poked to 1 by setup_voice at least);
         # the source init.runner.state did not.
@@ -603,13 +603,13 @@ class InitStateRenderTest(unittest.TestCase):
         # Each check_correctness() case gets its own new_runner(init=...)
         # clone; one case's writes (e.g. voice 0's record) must not leak
         # into another's.
-        runner_a = h.new_runner(self.memory, "dt2-1.16", init=self.init)
-        runner_b = h.new_runner(self.memory, "dt2-1.16", init=self.init)
+        runner_a = h.new_runner(self.memory, "dt2-1.17", init=self.init)
+        runner_b = h.new_runner(self.memory, "dt2-1.17", init=self.init)
         record_a = h.setup_voice(
-            runner_a.state, "dt2-1.16", 0, sample_len=256, sample_base=0x310000
+            runner_a.state, "dt2-1.17", 0, sample_len=256, sample_base=0x310000
         )
         record_b = h.setup_voice(
-            runner_b.state, "dt2-1.16", 0, sample_len=256, sample_base=0x320000
+            runner_b.state, "dt2-1.17", 0, sample_len=256, sample_base=0x320000
         )
         self.assertEqual(record_a, record_b)
         ptr_a = sr.st._dm_read(runner_a.state, record_a + h.FIELD_SAMPLE_PTR, 4).value
@@ -618,7 +618,7 @@ class InitStateRenderTest(unittest.TestCase):
         self.assertEqual(ptr_b, 0x320000)
 
     def test_render_blocks_from_init_state_runs_without_error(self):
-        blocks, results = h.render_blocks(self.memory, "dt2-1.16", 0, 2, init=self.init)
+        blocks, results = h.render_blocks(self.memory, "dt2-1.17", 0, 2, init=self.init)
         self.assertEqual(len(blocks), 2)
         ok_reasons = {"return without followed call", "max-steps"}
         for result in results:
@@ -626,7 +626,7 @@ class InitStateRenderTest(unittest.TestCase):
 
     def test_check_correctness_from_init_state_reports_active_and_diffs(self):
         report = h.check_correctness(
-            self.memory, "dt2-1.16", n_blocks=2, init=self.init
+            self.memory, "dt2-1.17", n_blocks=2, init=self.init
         )
         for name, case in report.items():
             self.assertEqual(len(case["active"]), 2, name)

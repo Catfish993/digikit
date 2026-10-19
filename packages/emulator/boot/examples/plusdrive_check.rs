@@ -1,4 +1,4 @@
-//! The firmware's own view of a +Drive image (DT2 1.16): mount flag, directory
+//! The firmware's own view of a +Drive image (DT2 1.17): mount flag, directory
 //! listing, name lookup, file open/size/read, called on a booted machine.
 //!
 //! usage: plusdrive_check [--block-read ADDR] SYX CARD.img OP...
@@ -10,11 +10,12 @@
 //!   read:/PATH         open `FUN_40158626`, size `FUN_4015ba22`, read `FUN_4015832e`
 //!                      in 32 KiB chunks, close `FUN_401585e4`; length and SHA-256
 //!   lookup:ID:NAME     name lookup `FUN_401572e0` (the 0x10000 hash index)
-//!   block:SECTOR:BYTES the firmware's block read (DT2 1.16 `FUN_4012deda`, DN2 1.11 `FUN_4012c59a`, selected
-//!                      with --block-read; arguments sector, bytes, buffer; 16-byte aligned buffer, 512 multiples):
+//!   block:SECTOR:BYTES the firmware's block read (passed with --block-read, from the port file;
+//!                      arguments sector, bytes, buffer; 16-byte aligned buffer, 512 multiples):
 //!                      reads BYTES rounded up to 512 and reports the first 32 bytes and the SHA-256 of BYTES
-//! The addresses are DT2 1.16 (docs/findings/14-plus-drive-format.md,
-//! docs/findings/23-digikit-runtime-spikes.md S3). Scratch memory is the free
+//! The addresses are DT2 1.17, matched by function hash from the DT2 1.16 functions
+//! that docs/findings/14-plus-drive-format.md names (the FUN_40156fc4 etc. above are
+//! the 1.16 names; docs/findings/23-digikit-runtime-spikes.md S3). Scratch memory is the free
 //! RAM at 0x47f00000 (cf.expansion), the stack the one cf_call uses.
 
 use elektron_native_boot::{CallSpec, Emulator};
@@ -28,14 +29,14 @@ use std::{
 };
 
 const MOUNT_FLAG: u32 = 0x44f2_bd68;
-const OPEN_DIR: u32 = 0x4015_6fc4;
-const NEXT_ENTRY: u32 = 0x4015_7072;
-const OPEN: u32 = 0x4015_8626;
-const READ: u32 = 0x4015_832e;
-const CLOSE: u32 = 0x4015_85e4;
-const SIZE: u32 = 0x4015_ba22;
-const LOOKUP: u32 = 0x4015_72e0;
-const DT2_BLOCK_READ: u32 = 0x4012_deda;
+const OPEN_DIR: u32 = 0x4015_72a0;
+const NEXT_ENTRY: u32 = 0x4015_734e;
+const OPEN: u32 = 0x4015_8902;
+const READ: u32 = 0x4015_860a;
+const CLOSE: u32 = 0x4015_88c0;
+const SIZE: u32 = 0x4015_bcfe;
+const LOOKUP: u32 = 0x4015_75bc;
+const DT2_BLOCK_READ: u32 = 0x4012_e1b6;
 const PATH: u32 = 0x47f0_0000;
 const MODE: u32 = 0x47f0_0200;
 const ITER: u32 = 0x47f0_1000;

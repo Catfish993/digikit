@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The firmware's own view of a +Drive image built from a folder (DT2 1.16, and the module store on DN2 1.12).
+"""The firmware's own view of a +Drive image built from a folder (DT2 1.17, and the module store on DN2 1.12).
 
     uv run python -m tools.firmware.plusdrive_check [--syx FILE] [--keep DIR] [--dn2]
 
@@ -12,9 +12,9 @@ WAV that becomes a native sample), builds the card image with `plusdrive build`
 firmware's mount flag, directory iterator, name lookup and file open, size and
 read. The listings, sizes and SHA-256 sums must equal the folder's. The fixture's
 `digikit/` files go to the module store (sectors 0x38000-0x3E000, not to the path
-filesystem); the firmware's block read (DT2 `FUN_4012deda`) must return the store
+filesystem); the firmware's block read must return the store
 header, the table and each file's bytes. With --dn2 a Digitone II 1.12 boots a
-card that holds only `digikit/` files and the same block read (`FUN_4012c59a`)
+card that holds only `digikit/` files and the firmware's block read
 is checked. Exit status 0 only when everything matches.
 
 The former Python emulator ran the same functions on a snapshot
@@ -148,9 +148,7 @@ def store_listing(
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument(
-        "--syx", type=pathlib.Path, help="DT2 .syx (default: the repo's 1.16)"
-    )
+    ap.add_argument("--syx", type=pathlib.Path, help="DT2 .syx (default: the repo's)")
     ap.add_argument(
         "--keep",
         type=pathlib.Path,
@@ -163,10 +161,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     device = "dn2" if args.dn2 else "dt2"
-    # The DT2 probe's filesystem addresses (plusdrive_check.rs) are DT2 1.16 literals with no port anchor yet:
-    # the DT2 check stays on 1.16 until they are ported. DN2 needs only the block read, from the port file.
-    dt2_116 = config.stock("Digitakt_II_OS1.16.syx")
-    syx = args.syx or (dt2_116 if device == "dt2" else digi_env.firmware_for(device))
+    # The DT2 probe's filesystem addresses (plusdrive_check.rs) are DT2 1.17; the block read comes from the port file.
+    syx = args.syx or digi_env.firmware_for(device)
     if digi_env.device_for_syx(syx) != device:
         raise SystemExit(f"{syx} is not a known {device.upper()} firmware")
     env = digi_env.rust_env()

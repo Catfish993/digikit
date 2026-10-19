@@ -43,9 +43,9 @@ def test_compresses_repetitive_data():
 
 
 def test_rebuild_keeps_untouched_sections_verbatim():
-    syx = config.stock("Digitakt_II_OS1.16.syx")
+    syx = config.stock("Digitakt_II_OS1.17.syx")
     if not syx.exists():
-        pytest.skip("needs the 1.16 .syx")
+        pytest.skip("needs the 1.17 .syx")
     cont, secs = sections(str(syx))
     stock = {sid: bytes(cont[off : off + clen]) for sid, off, clen, _ in secs}
     new8 = bytearray(elz.depack_section(stock[8]))

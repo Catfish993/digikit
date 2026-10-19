@@ -16,7 +16,7 @@ from tools.sharc_dev import sharc_armpath as armpath  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay_mod  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 FULLTX_CAPTURE = pathlib.Path("out/captures/dt2-1.16-play-pretracks-fulltx.dt2cap")
 
 
@@ -139,7 +139,7 @@ class TraceArmPathTest(unittest.TestCase):
     the module docstring)."""
 
     def test_render_frame_never_arms_a_voice_on_real_capture(self):
-        result = armpath.trace_arm_path("dt2-1.16", str(FULLTX_CAPTURE), n_frames=2)
+        result = armpath.trace_arm_path("dt2-1.17", str(FULLTX_CAPTURE), n_frames=2)
         self.assertEqual(result["frames_replayed"], 2)
         self.assertFalse(result["any_guard_a_taken"])
         self.assertFalse(result["any_guard_b_taken"])
@@ -173,9 +173,9 @@ class TraceArmPathTest(unittest.TestCase):
         run over the same two frames (this project's null-companding-record
         finding does not depend on prior frames -- see the function's own
         docstring)."""
-        baseline = armpath.trace_arm_path("dt2-1.16", str(FULLTX_CAPTURE), n_frames=2)
+        baseline = armpath.trace_arm_path("dt2-1.17", str(FULLTX_CAPTURE), n_frames=2)
         skipped = armpath.trace_arm_path(
-            "dt2-1.16", str(FULLTX_CAPTURE), n_frames=1, start_frame=1
+            "dt2-1.17", str(FULLTX_CAPTURE), n_frames=1, start_frame=1
         )
         self.assertEqual(skipped["frames_replayed"], 1)
         self.assertEqual(skipped["start_frame"], 1)
@@ -198,7 +198,7 @@ class TraceArmPathTest(unittest.TestCase):
         asked for (a crafted DMA transfer): no transfer content reaches
         this byte, so none was built (see the report's own "crafted
         transfer" verdict)."""
-        image = "dt2-1.16"
+        image = "dt2-1.17"
         cap_path = str(FULLTX_CAPTURE)
         from tools.sharc_dev import sharc_capture
 

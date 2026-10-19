@@ -23,8 +23,8 @@ st = import_module("tools.sharc_dev.sharc_trace")
 L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_trace_build import loader_memory  # noqa: E402
 
-DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.17.sqlite")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
 PLAY_PRETRACKS_CAPTURE = pathlib.Path("out/captures/dt2-1.16-play-pretracks.dt2cap")
 
@@ -173,7 +173,7 @@ class JsonShapeTest(unittest.TestCase):
 
     def test_inputs_report_counts_and_json(self):
         report = si.InputsReport(
-            image="dt2-1.16",
+            image="dt2-1.17",
             root=0x1C2B24,
             n_inputs=2,
             labels=[
@@ -213,7 +213,7 @@ class JsonShapeTest(unittest.TestCase):
 
 @unittest.skipUnless(
     DT2_116_DB.exists() and DT2_116_BLOB.exists(),
-    "out/sharcdb/dt2-1.16.sqlite or out/sections/dt2-1.16/section_7_BLOB.bin "
+    "out/sharcdb/dt2-1.17.sqlite or out/sections/dt2-1.17/section_7_BLOB.bin "
     "is not available",
 )
 class BuildStaticTest(unittest.TestCase):
@@ -222,7 +222,7 @@ class BuildStaticTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.img = sharc.load("dt2-1.16")
+        cls.img = sharc.load("dt2-1.17")
 
     def test_boot_writer_is_labelled_sharc_root_without_init(self):
         # docs/findings/06 / test_sharc_contract.py's own
@@ -267,8 +267,8 @@ class BuildWithInitTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.img = sharc.load("dt2-1.16")
-        cls.init_state = si.run_init_state("dt2-1.16")
+        cls.img = sharc.load("dt2-1.17")
+        cls.init_state = si.run_init_state("dt2-1.17")
 
     def test_boot_writer_moves_to_init_once_checked_against_a_live_overlay(self):
         # Same address as BuildStaticTest's own case: FUN_1c15e3 is boot/init
@@ -310,7 +310,7 @@ class DynamicViewTest(unittest.TestCase):
     def test_reaches_the_known_return_mismatch_and_logs_reads(self):
         from tools.sharc_dev import sharc_harness as h
 
-        view = si.dynamic_view("dt2-1.16", patch_table=h.FRAME_PATCH_TABLE)
+        view = si.dynamic_view("dt2-1.17", patch_table=h.FRAME_PATCH_TABLE)
         self.assertEqual(view.instructions, h.FRAME_MILESTONE["instructions"])
         self.assertEqual(view.halt["reason"], h.FRAME_MILESTONE["reason"])
         self.assertGreater(view.n_read_addrs, 0)
@@ -323,11 +323,11 @@ class DynamicViewTest(unittest.TestCase):
     def test_unexplained_reads_cross_check_a_known_static_no_writer_address(self):
         from tools.sharc_dev import sharc_harness as h
 
-        img = sharc.load("dt2-1.16")
+        img = sharc.load("dt2-1.17")
         static = si.build(img, 0x1C2B24)
         by_addr = {lbl.address: lbl for lbl in static.labels}
         no_writer_addrs = {a for a, lbl in by_addr.items() if lbl.label == "no_writer"}
-        view = si.dynamic_view("dt2-1.16", patch_table=h.FRAME_PATCH_TABLE)
+        view = si.dynamic_view("dt2-1.17", patch_table=h.FRAME_PATCH_TABLE)
         unexplained = set(view.unexplained_reads)
         # At least one address the static pass could not find a writer for
         # is genuinely read at runtime with nothing in the run (or init)
@@ -367,7 +367,7 @@ class DynamicViewCaptureTest(unittest.TestCase):
         # per-voice paths, which roughly doubles a render (FRAME_MILESTONE
         # went 96,044 -> 213,504 the same way). The run still stops at the
         # same 0x1c32b0 opcode in the third frame.
-        view = si.dynamic_view_capture("dt2-1.16", str(IDLE_CAPTURE), n_frames=3)
+        view = si.dynamic_view_capture("dt2-1.17", str(IDLE_CAPTURE), n_frames=3)
         self.assertEqual(view.instructions, 419200)
         self.assertEqual(view.halt["category"], "frame-returned")
         self.assertEqual(view.halt["pc"], 0x1C75D3)
@@ -379,14 +379,14 @@ class DynamicViewCaptureTest(unittest.TestCase):
         "dt2-1.16-play-pretracks.dt2cap capture is not available",
     )
     def test_static_no_writer_count_shrinks_against_a_real_capture_replay(self):
-        img = sharc.load("dt2-1.16")
-        init_state = si.run_init_state("dt2-1.16")
+        img = sharc.load("dt2-1.17")
+        init_state = si.run_init_state("dt2-1.17")
         static = si.build(img, 0x1C2B24, init_state=init_state)
         no_writer_addrs = {
             lbl.address for lbl in static.labels if lbl.label == "no_writer"
         }
         view = si.dynamic_view_capture(
-            "dt2-1.16",
+            "dt2-1.17",
             str(PLAY_PRETRACKS_CAPTURE),
             n_frames=3,
         )

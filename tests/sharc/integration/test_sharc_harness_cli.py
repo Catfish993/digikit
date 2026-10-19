@@ -9,7 +9,7 @@ import wave
 
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 SCRATCH = (
     pathlib.Path(os.environ.get("CLAUDE_SCRATCHPAD", "/tmp")) / "test_sharc_harness"
 )
@@ -36,7 +36,7 @@ class CliFrequencyTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
         SCRATCH.mkdir(parents=True, exist_ok=True)
 
     def _dominant_frequency_power_ratio(
@@ -74,7 +74,7 @@ class CliFrequencyTest(unittest.TestCase):
         path = str(SCRATCH / ("cli_freq_%g_%g.wav" % (freq, pitch_step)))
         rc = h.main(
             [
-                "dt2-1.16",
+                "dt2-1.17",
                 "--blocks",
                 str(blocks),
                 "--pitch-step",
@@ -116,7 +116,7 @@ class CliFrequencyTest(unittest.TestCase):
         path = str(SCRATCH / "cli_auto_len.wav")
         rc = h.main(
             [
-                "dt2-1.16",
+                "dt2-1.17",
                 "--blocks",
                 "96",
                 "--pitch-step",

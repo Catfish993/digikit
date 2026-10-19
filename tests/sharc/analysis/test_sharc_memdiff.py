@@ -14,7 +14,7 @@ import pytest
 
 from tools.sharc_dev import sharc_memdiff as md  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
 
 
@@ -119,8 +119,8 @@ class ParseFramesTest(unittest.TestCase):
 
 class ParseArgsTest(unittest.TestCase):
     def test_defaults(self):
-        args = md.parse_args(["dt2-1.16", "a.dt2cap", "b.dt2cap"])
-        self.assertEqual(args.image, "dt2-1.16")
+        args = md.parse_args(["dt2-1.17", "a.dt2cap", "b.dt2cap"])
+        self.assertEqual(args.image, "dt2-1.17")
         self.assertEqual(args.capture_a, "a.dt2cap")
         self.assertEqual(args.capture_b, "b.dt2cap")
         self.assertIsNone(args.frames)
@@ -145,7 +145,7 @@ class MemdiffSelfCompareTest(unittest.TestCase):
 
     def test_no_divergence_against_itself(self):
         result = md.memdiff(
-            "dt2-1.16", str(IDLE_CAPTURE), str(IDLE_CAPTURE), frame_hi=2
+            "dt2-1.17", str(IDLE_CAPTURE), str(IDLE_CAPTURE), frame_hi=2
         )
         self.assertEqual(result["frames_executed"], 3)
         self.assertIsNone(result["first_divergence_frame"])
