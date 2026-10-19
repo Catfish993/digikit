@@ -68,7 +68,11 @@ def test_dsp_section_is_deterministic_and_relocates_like_the_reference(tmp_path)
     assert (
         "voice type 18 entry +0x0" in info and "imports _dv_exp2, _dv_frame_hw" in info
     )
-    assert "runtime   >= 2" in info
+    # the guard's ranges: DECAY, PICK, BRIGHT, COLOR (knobs 1, 2, 4, 5) declare 0 .. 0x7f00; TUNE and LEV are stock rows (undeclared)
+    assert "ranges [0, 7f000000, 7f000000, 0, 7f000000, 7f000000, 0, 0]" in info
+    assert (
+        "runtime   >= 5" in info
+    )  # DSP sections of version 2 (voices with knob ranges) need runtime 5
     sec = pk_dkrt_machine.parse_dsp_section(a.read_bytes())
     imports = {"_dv_exp2": 0xB9D7E0, "_dv_frame_hw": 0xB9D80E}
     for base in (0x2000_0000, 0x2001_AE80, 0x2003_F000):

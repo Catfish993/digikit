@@ -46,7 +46,7 @@ pub const H_REG_SIZE: usize = 0x94;
 pub const H_DSP_OFF: usize = 0x98;
 pub const H_DSP_SIZE: usize = 0x9c;
 /// The runtime version that loads a DSP section (`dkrt_sdk::RUNTIME_VERSION` is at least this).
-pub const RUNTIME_DSP: u32 = 2;
+pub const RUNTIME_DSP: u32 = 5; // DSP sections of version 2 (voices with knob ranges, finding 51); a runtime 2 to 4 loads version 1 only
 
 pub struct Options {
     pub name: String,

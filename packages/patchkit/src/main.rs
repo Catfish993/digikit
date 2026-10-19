@@ -445,7 +445,10 @@ plan.json {}",
                     let t = types.get(&v.machine).ok_or_else(|| {
                         Error(format!("voice {}: no run-time type number", v.machine))
                     })?;
-                    voices.push((*t as u32, v.entry.clone()));
+                    let ranges = resolved
+                        .map(|r| patchkit::typed::voice_ranges(r, &v.machine))
+                        .unwrap_or([0; 8]);
+                    voices.push((*t as u32, v.entry.clone(), ranges));
                 }
                 for v in m
                     .manifest
@@ -453,7 +456,7 @@ plan.json {}",
                     .iter()
                     .filter(|v| v.devices.is_empty() || v.devices.iter().any(|d| *d == dev))
                 {
-                    voices.push((v.type_no as u32, v.entry.clone()));
+                    voices.push((v.type_no as u32, v.entry.clone(), [0; 8]));
                 }
                 match sharc.first() {
                     Some((o, _)) => {
@@ -546,7 +549,10 @@ plan.json {}",
                     x.imports.join(", ")
                 );
                 for v in &x.voices {
-                    println!("  voice type {} entry +{:#x}", v.type_no, v.entry);
+                    println!(
+                        "  voice type {} entry +{:#x} ranges {:x?}",
+                        v.type_no, v.entry, v.ranges
+                    );
                 }
             }
             if !d.register.is_empty() {

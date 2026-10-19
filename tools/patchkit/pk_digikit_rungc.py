@@ -422,12 +422,12 @@ def _run_rungc(
                 if e[4][0] & 0xFF == 0:
                     last_sets.append(len(last_sets))
             words: list[int] = []
-            for e in diags[-5:]:
+            for e in diags[-6:]:  # a set is six events (24 words, runtime 5)
                 words += list(e[4][1:])
-            c.report["last_logged_diag_words"] = [f"{w:08x}" for w in words[:17]]
+            c.report["last_logged_diag_words"] = [f"{w:08x}" for w in words[:24]]
             c.check(
                 "the last logged DSP_DIAG set (every ten seconds) shows dispatches and returns of the registered type",
-                len(words) >= 17 and words[15] > 0 and 0 <= words[15] - words[16] <= 1,
+                len(words) >= 24 and words[15] > 0 and 0 <= words[15] - words[16] <= 1,
                 f"dispatches {words[15] if len(words) > 15 else None}, returns {words[16] if len(words) > 16 else None}",
             )
             c.done(rig)
@@ -436,7 +436,7 @@ def _run_rungc(
     if probe:
         # the registered path (from the instruction after the scan's last branch to the stock path's label) and the breadcrumb routine:
         # the stock path runs for all 32 voices of every block, so the whole wrapper would swamp the core with interrupts.
-        # `_dv_scan + 15` short words is `I12 = R2` (the first instruction of the registered path) in every build of the wrapper.
+        # `_dv_scan + 15` short words is the first instruction after the scan's last branch (`R0 = I4`, which keeps the row for the guard; `I12 = R2` follows) in every build of the wrapper.
         mask = PROBE_MASKS.get(probe) or int(probe, 16)
         reg_lo, reg_hi = plan.addr("_dv_scan") + 15, plan.addr("_dv_stock")
         probe_spec = f"{reg_lo:x}-{reg_hi:x},{plan.addr('_dv_crumb'):x}-{plan.addr('_dv_exp2'):x}:{mask:x}:{every}"

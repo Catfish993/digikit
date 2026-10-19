@@ -40,6 +40,7 @@ dynamic_first = 16
 "test/dyn-params:dynp" = 17
 "test/dyn-pluck:pluck" = 18
 "test/dyn-dsp-hang:hang" = 19
+"test/dyn-guard-nan:guardnan" = 20
 
 [dn2]
 last = 23

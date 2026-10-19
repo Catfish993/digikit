@@ -45,13 +45,14 @@ def test_instruction_counts_per_block():
     _, first = rig.block()
     _, steady = rig.block()
     # note-on block includes the excitation (N + 1 samples of noise, mean, comb); the steady block is 32 samples
-    assert steady["instructions"] < 1500, steady["instructions"]
+    # 1362 before the runtime guard (finding 51), +414 with it (the knob clamp and the output check of core/dsp-voice)
+    assert steady["instructions"] < 1900, steady["instructions"]
     assert first["instructions"] < 60000, first["instructions"]
     rig.rec_word(0, 0x1B8, 0)
     idle = rig.call(0)
     # wrapper (about 270: it saves, pins and restores the context registers, finding 45, and writes four breadcrumbs, finding 48; the
-    # breadcrumbs go into the reply records as well on a device, about 70 more) + 32 stores
-    assert idle["instructions"] < 300
+    # breadcrumbs go into the reply records as well on a device, about 70 more) + 32 stores + the guard (about 400, finding 51)
+    assert idle["instructions"] < 750
 
 
 def test_the_voice_ends_when_it_is_quiet_and_clears_its_flags():

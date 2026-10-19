@@ -323,7 +323,7 @@ def test_breadcrumbs_name_each_step_and_reach_both_reply_records():
         for ring in ("ra", "rb"):
             r = out[ring]
             assert r[192] == want and r[193] == 1 and r[213] == 1, (ring, v)
-            assert r[45] == 0x11D1A6, (ring, v)  # the header: 0xD1A6, 17 words
+            assert r[45] == 0x18D1A6, (ring, v)  # the header: 0xD1A6, 17 words
             # nothing else in the record was written
             assert sum(1 for x in r if x) == 4, (ring, v)
 
@@ -439,7 +439,7 @@ def test_the_c3_variants_keep_the_registered_path_working(name):
         even = v % 2 == 0
         assert out["diag"][12:15] == [want, int(even), int(even)], (name, v)
         for ring in ("ra", "rb"):
-            assert out[ring][192] == want and out[ring][45] == 0x11D1A6
+            assert out[ring][192] == want and out[ring][45] == 0x18D1A6
         context_intact(out)
         assert (
             out["regs"]["I7"] == out["in"]["I6"]

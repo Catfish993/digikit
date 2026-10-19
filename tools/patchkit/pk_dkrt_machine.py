@@ -92,7 +92,12 @@ def parse_dsp_section(dkm: bytes) -> dict[str, Any]:
     for i in range(nreloc):
         o, w = struct.unpack_from(">II", s, reloc_off + 8 * i)
         relocs.append((o, w >> 28, (w >> 24) & 15, w & 0xFFFF))
-    voices = [struct.unpack_from(">II", s, voice_off + 16 * i) for i in range(nvoice)]
+    stride = (
+        16 if be32(s, 4) == 1 else 48
+    )  # version 1: type, entry; version 2 adds the eight knob ranges
+    voices = [
+        struct.unpack_from(">II", s, voice_off + stride * i) for i in range(nvoice)
+    ]
     return {
         "device": be32(s, 8),
         "image": bytes(s[image_off : image_off + be32(s, 0x0C)]),
@@ -271,9 +276,10 @@ class Rig:
         return self.w(sym(self.plan, "core/dyndsp", "dyndsp_info") + 4 * k)
 
     def voice_row(self, k: int) -> tuple[int, int]:
+        """(type, pc) of voice row k; a row is 16 words (core/dsp-voice module.toml), the first two are these."""
         rows = sym(self.plan, "core/dsp-voice", "voices.rows")
         first = self.info_word(6)
-        raw = self.dsp_bytes(rows + 8 * (first + k), 8)
+        raw = self.dsp_bytes(rows + 64 * (first + k), 8)
         return struct.unpack(
             "<II", raw
         )  # dsp_peek returns memory bytes: DSP words are little endian

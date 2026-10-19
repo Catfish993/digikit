@@ -70,7 +70,7 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 7 | UPLOAD | command, status, card writes so far | status != 0 |
 | 8 | MENU | 1 select (count), 2 restart | |
 | 9 | HEALTH | health flags << 16 \| cpu x10, dsp avg x10, dsp max x10, arena free, heap free KiB (0xffffffff: not walked) | |
-| 10 | DSP_DIAG | count << 8 \| chunk, then four `dl_diag` words raw (17 words: five events; named fields in `dklog`) | error flag in a stop's own set |
+| 10 | DSP_DIAG | count << 8 \| chunk, then four `dl_diag` words raw (24 words since runtime 5, six events; 17 words and five events before; named fields in `dklog`) | error flag in a stop's own set |
 | 11 | DSP_STOPPED | heartbeat, voice hook's beat, breadcrumb word, dispatches to registered types (a4 = 1: it moves again) | yes |
 | 12 | CRASH_FOUND | pc, vector \| format << 8, sr, a7, block counter of the crash | yes |
 | 13 | CARD_REFUSED | sector, bytes, reason (1 outside the range, 2 read-only, 3 claim failed), card state | yes |
@@ -83,6 +83,8 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 21 | MOD_LIST | index, slots mask, name (when the DSP stopped: the loaded modules) | yes |
 | 22..25 | CRASH_MOD, CRASH_REG, CRASH_STACK, CRASH_TAIL | the crash record, decoded by `dklog crash` | yes |
 | 26 | MACHINE_CHANGE | track (0 based; `dklog` shows 1 based), old machine type, new type (0xffffffff: none) | |
+| 27 | MACHINE_FAULT | type \| voice << 16, kind (1 Inf or NaN, 2 over the level bound) \| faults << 8, knobs 0 to 5 of the call in pairs (runtime 5, finding 51) | yes |
+| 28 | MACHINE_DISABLED | type, machine types disabled so far, faults so far (runtime 5, finding 51) | yes |
 
 **Periodic work** (`dlog::tick`, once per UI pass, reads the block counter): the DSP poll once a second (1500 blocks), a HEALTH snapshot every ten seconds
 (the heap walk only in every fourth, because it takes the heap's mutex: the snapshot uses `dkrt_health_light`, which skips the store figures and, when asked,

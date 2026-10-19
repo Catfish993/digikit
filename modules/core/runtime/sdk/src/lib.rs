@@ -9,8 +9,10 @@
 pub const API_VERSION: u32 = 1;
 /// Version of the runtime a module was packed against (`runtime_min` in the `.dkm` header). 2: DSP sections and asynchronous loads
 /// (finding 32), `register` PAGE records and `own_dsp` (finding 33), codes -25/-26 and -30 to -37. 3: card safety (codes -46/-47, -62), the
-/// debug log and its SysEx commands LOG and PEEK, `dkrt_diag`, `dkrt_debug_set`, the crash record (finding 46).
-pub const RUNTIME_VERSION: u32 = 4;
+/// debug log and its SysEx commands LOG and PEEK, `dkrt_diag`, `dkrt_debug_set`, the crash record (finding 46). 4: SELECT and RESTART.
+/// 5: the DSP guard (finding 51): voice rows of 16 words with the knob ranges, DSP sections of version 2 (voices of 48 bytes), the 24-word
+/// DSP diagnostics with the guard's fault words, the log events `MACHINE_FAULT` and `MACHINE_DISABLED`.
+pub const RUNTIME_VERSION: u32 = 5;
 
 /// Facts from the device files (`devices/*.toml`) and `core/machines` types.toml that every device agrees on, written by
 /// `patchkit gen` (the `[[gen]]` of core/runtime's module.toml; docs/design/device-data.md). `Api::device` is the device's
@@ -889,6 +891,11 @@ pub mod logk {
     pub const CRASH_TAIL: u16 = 25;
     /// A track's machine type changed: track (0 based), old type, new type, 0xffffffff when none (finding 46).
     pub const MACHINE_CHANGE: u16 = 26;
+    /// The DSP guard (core/dsp-voice) zeroed a machine's block: type | voice << 16, kind (1 Inf or NaN, 2 over the level bound) | faults << 8,
+    /// the parameter words of the call, knobs 0 to 5 in pairs (finding 51). An error event.
+    pub const MACHINE_FAULT: u16 = 27;
+    /// The guard switched a machine type off after 8 faults in a second: type, types disabled so far, faults so far. An error event.
+    pub const MACHINE_DISABLED: u16 = 28;
     /// `MENU` argument 0: what the menu did.
     pub const MENU_SELECT: u32 = 1;
     pub const MENU_RESTART: u32 = 2;
