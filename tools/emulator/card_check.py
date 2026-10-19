@@ -160,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     ne = native_emu()
     args = ne.default_audio_args([str(syx)])
     if "--auto-coupled" not in args:
-        raise SystemExit("no DT2 ready inputs: run `mise run ready -- dt2` once")
+        raise SystemExit("no DT2 ready inputs: run `mise run emu:ready -- dt2` once")
     ne.set_fast_regions(args, os.environ)
     binary = build_daemon(syx)
     t0 = time.monotonic()

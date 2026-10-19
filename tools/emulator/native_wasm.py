@@ -11,7 +11,9 @@ Writes four files:
   apps/web/.local/emulator-core-sharc.wasm
       coupled ColdFire + SHARC+ core (large, firmware-derived, gitignored). The
       dev server serves it; it must never be in public/ or dist/. Built when a
-      generated core is available and --cf-only is not given. A stale copy in
+      generated core is available and --cf-only is not given; --cf-only leaves an
+      existing copy in place (it may then be older than emulator-core.wasm);
+      without a generated core the copy is removed. A stale copy in
       apps/web/public is deleted on every run.
 """
 
@@ -257,8 +259,12 @@ if coupled:
             f"wasm-opt: raw {raw_wasm.stat().st_size} bytes, optimised {sharc_wasm.stat().st_size} bytes, "
             f"{time.monotonic() - started:.1f} s"
         )
+elif args.cf_only:
+    print(
+        f"coupled SHARC+ core skipped (--cf-only); kept {sharc_wasm.relative_to(root) if sharc_wasm.is_relative_to(root) else sharc_wasm} as it was"
+    )
 else:
     sharc_wasm.unlink(missing_ok=True)
     print(
-        "coupled SHARC+ core skipped (--cf-only or no generated core); removed any stale emulator-core-sharc.wasm"
+        "coupled SHARC+ core skipped (no generated core); removed any stale emulator-core-sharc.wasm"
     )

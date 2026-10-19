@@ -60,7 +60,7 @@ def test_default_ready_inputs_select_live_coupled_audio(monkeypatch, tmp_path):
     ready = tmp_path / "snapshots" / "dn2-audio-ready-2026-10-03"
     ready.mkdir(parents=True)
     for name in [
-        "Digitone_II_OS1.11.syx",
+        "Digitone_II_OS1.12.syx",
         "digi-audio-dn2-image.bin",
         "digi-audio-m5.snap.dsp",
         "digi-audio-m5.snap",
@@ -68,7 +68,7 @@ def test_default_ready_inputs_select_live_coupled_audio(monkeypatch, tmp_path):
         (tmp_path / name if name.endswith(".syx") else ready / name).touch()
     generated = tmp_path / "generated"
     generated.mkdir()
-    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.11.syx")
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.12.syx")
     monkeypatch.setattr(digi_env, "READY", ready)
     monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
@@ -88,10 +88,10 @@ def test_default_no_audio_keeps_coupling_but_mutes_playback(monkeypatch, tmp_pat
         "digi-audio-m5.snap",
     ]:
         (ready / name).touch()
-    (tmp_path / "Digitone_II_OS1.11.syx").touch()
+    (tmp_path / "Digitone_II_OS1.12.syx").touch()
     generated = tmp_path / "generated"
     generated.mkdir()
-    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.11.syx")
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.12.syx")
     monkeypatch.setattr(digi_env, "READY", ready)
     monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
@@ -110,11 +110,11 @@ def test_selected_firmware_keeps_its_path_but_profile_stays_known(
         "digi-audio-m5.snap",
     ]:
         (ready / name).touch()
-    profile = tmp_path / "Digitone_II_OS1.11.syx"
+    profile = tmp_path / "Digitone_II_OS1.12.syx"
     profile.touch()
     generated = tmp_path / "generated"
     generated.mkdir()
-    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.11.syx")
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.12.syx")
     monkeypatch.setattr(digi_env, "READY", ready)
     monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
@@ -135,11 +135,11 @@ def test_normal_launcher_arguments_get_audio_without_replacing_firmware(
         "digi-audio-m5.snap",
     ]:
         (ready / name).touch()
-    profile = tmp_path / "Digitone_II_OS1.11.syx"
+    profile = tmp_path / "Digitone_II_OS1.12.syx"
     profile.touch()
     generated = tmp_path / "generated"
     generated.mkdir()
-    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.11.syx")
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.12.syx")
     monkeypatch.setattr(digi_env, "READY", ready)
     monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
@@ -192,17 +192,17 @@ def test_fast_regions_follow_the_firmware_hash(monkeypatch, tmp_path):
     assert scope["fast_regions_for"](tmp_path / "missing.syx") == ""
 
 
-def test_known_dn2_1_11_hash_has_the_verified_regions():
+def test_known_dn2_1_12_hash_has_the_verified_regions():
     table = launcher()["FAST_REGIONS"]
     assert (
-        table["2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0"]
+        table["7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35"]
         == "0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8,0xb80509"
     )
 
 
-def test_known_dn2_1_11_hash_has_the_cluster_roots():
+def test_known_dn2_1_12_hash_has_the_cluster_roots():
     table = launcher()["BLOCKTRANS_ROOTS"]
-    roots = table["2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0"]
+    roots = table["7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35"]
     assert roots == (
         "0xb8276c,0x1c369b,0xb809f2,0x1c5796,0xb84a8c,0xb8212b,"
         "0xb827b7,0x1c5110,0xb82568,0xb813cf,0xb8040f,0xb826a5"
@@ -420,14 +420,14 @@ def test_stale_profile_builds_without_pgo_and_without_training(
     assert trained(pgo) == []
     err = capsys.readouterr().err
     assert "stale for this core" in err
-    assert "mise run pgo" in err
+    assert "mise run perf:pgo" in err
 
 
 def test_missing_profile_does_not_train_by_default(pgo, capsys):
     pgo.states = [("missing", "no manifest")]
     assert launcher()["pgo_plan"](COUPLED) is None
     assert trained(pgo) == []
-    assert "mise run pgo" in capsys.readouterr().err
+    assert "mise run perf:pgo" in capsys.readouterr().err
 
 
 def test_pgo_opt_out_is_silent(pgo, monkeypatch, capsys):

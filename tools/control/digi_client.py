@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive a running emulator over its control socket (docs/design/emulator-control.md).
 
-The desktop app (`mise run emu`) and the daemon (`mise run emu:serve`) listen
+The desktop app (`mise run workbench`) and the daemon (`mise run emu:serve`) listen
 on `out/native/run/<pid>.sock`; `out/native/run/current.json` names the
 current one. Standard library only.
 

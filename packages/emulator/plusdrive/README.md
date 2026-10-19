@@ -22,9 +22,9 @@ section of `devices/<device>.toml`, parsed by `device-profile` into `CardLayout`
 parses no TOML itself.
 
 ```sh
-mise run plusdrive -- build plus_drive/dt2 -o out/plusdrive/dt2.img --device dt2 --syx firmware/Digitakt_II_OS1.16.syx
-mise run plusdrive -- ls out/plusdrive/dt2.img
-mise run plusdrive -- store ls out/plusdrive/dt2.img --device dt2     # the digikit/ module store
+mise run dev:plusdrive -- build plus_drive/dt2 -o out/plusdrive/dt2.img --device dt2 --syx firmware/Digitakt_II_OS1.16.syx
+mise run dev:plusdrive -- ls out/plusdrive/dt2.img
+mise run dev:plusdrive -- store ls out/plusdrive/dt2.img --device dt2     # the digikit/ module store
 ```
 
 `DIR` follows the `plus_drive/<device>/` contract in `docs/SAMPLES.md`: files and folders
@@ -34,4 +34,4 @@ file into extents of at most N pages (only useful to test multi-extent records).
 
 Tests: `cargo test -p plusdrive-format` (layout invariants, hash index search, a
 multi-page directory, multi-extent and 64 MiB files, slot import, boot regions, the store); the firmware's own view
-of a folder-built image and of the store (block read, DT2 and DN2) is `mise run plusdrive:check`.
+of a folder-built image and of the store (block read, DT2 and DN2) is `mise run dev:plusdrive-check`.

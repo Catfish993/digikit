@@ -60,4 +60,4 @@ Committed generated files:
 | --- | --- | --- |
 | `packages/emulator/sharc/src/fast/gen_helpers.rs` | `tools/sharc_dev/sharc_lowergen_helpers.py` from `tools/sharc_dev/sharc_core` | `mise run gen:regen` |
 | `packages/emulator/sharc/src/fast/lower/gen_forms.rs` | `tools/sharc_dev/sharc_lowergen.py` from `tools/sharc_dev/sharc_core` | `mise run gen:regen` |
-| `modules/*/*/build/*.dko.json` | Module builds (built module objects; no firmware bytes) | `mise run patch:build [-- modules/fx/NAME] [--check]` |
+| `modules/*/*/build/*.dko.json` | Module builds (built module objects; no firmware bytes) | `mise run module:build [-- modules/fx/NAME] [--check]` |

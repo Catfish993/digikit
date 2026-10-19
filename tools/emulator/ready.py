@@ -3,7 +3,7 @@
 
     uv run python -m tools.emulator.ready dn2|dt2 [--out DIR] [--syx SYX]
                                  [--card-image IMG] [--force]
-    mise run ready -- dt2 [--card-image IMG]
+    mise run emu:ready -- dt2 [--card-image IMG]
 
 Steps (each skipped when its output exists and --force is not given):
   1. digi-audio-dn2-image.bin  packed section 7 image (from the .syx's own section 7,

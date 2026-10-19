@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The patchkit developer loop: watch a module, rebuild, patch, inject into a running emulator, run its quick tests.
 
-    mise run patch:dev -- --modules fx/my-drive[,test/cf-demo] [--device dt2] [--firmware 1.17] [--once] [--no-tests]
+    mise run module:dev -- --modules fx/my-drive[,test/cf-demo] [--device dt2] [--firmware 1.17] [--once] [--no-tests]
 
 One daemon stays up on the stock firmware's ready inputs (DT2 with a one-sample card). Each time a file under a
 module's `src/` or its `module.toml` changes, the loop runs: `pk_build` (src -> .dko), `patchkit patch` (from the stock

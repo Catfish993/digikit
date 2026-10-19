@@ -2623,7 +2623,7 @@ impl Actor {
         let cold_idle = dir.join("cold-idle.dsp");
         if !cold_idle.is_file() {
             return unavailable(format!(
-                "{} not found (run `mise run ready -- <device>`)",
+                "{} not found (run `mise run emu:ready -- <device>`)",
                 cold_idle.display()
             ));
         }
@@ -2644,7 +2644,7 @@ impl Actor {
             .main_sha256()
             .ok_or_else(|| rejected("the firmware has no MAIN section".into()))?;
         // The cold boot runs the .syx's own DSP code from the first instruction, as a device does. (Until 2026-10-17 it booted
-        // the base's DSP and patched it after the ready state, so `mise run emu -- PATCHED.syx` ran stock DSP code during the
+        // the base's DSP and patched it after the ready state, so `mise run workbench -- PATCHED.syx` ran stock DSP code during the
         // boot; a boot-time DSP load of the runtime, and any DSP code that initialises itself at boot, needs the real order.)
         let mut boot_patch = None;
         if let (Some(base), Some(new_dsp)) = (
@@ -3037,7 +3037,7 @@ fn run_card_job(
                     .parent()
                     .map(|parent| parent.join("cold-idle.dsp"))
                     .filter(|path| path.is_file())
-                    .ok_or("cold-idle.dsp not found next to the DSP image (run `mise run ready -- dt2` once)")?;
+                    .ok_or("cold-idle.dsp not found next to the DSP image (run `mise run emu:ready -- dt2` once)")?;
                 let card = elektron_native_boot::card_file::card_from_image(&paths.image)?;
                 let boot_started = Instant::now();
                 digi_coupled::cold::boot_to_ready(

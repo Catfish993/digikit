@@ -52,7 +52,7 @@ instrumented desktop APP binary with ``--pgo-train`` (not the test binary:
 cargo gives the test target's dependencies other crate hashes than the app's,
 so a profile trained on it never matched the app). It needs the private ready fixtures and a generated DSP core (``SHARC_GEN_DIR``).
 The launcher (``tools/emulator/native_emu.py``) does not retrain: it warns about a stale
-profile and uses it anyway. Retrain with ``mise run pgo`` or by launching with
+profile and uses it anyway. Retrain with ``mise run perf:pgo`` or by launching with
 DIGI_EMU_PGO_TRAIN=1. The key covers the emulation crates only (not apps/),
 so a desktop-crate edit leaves the profile current; the fast-region lists are
 read at run time and are not part of the key.
@@ -492,7 +492,7 @@ def fallback_notice(status: str, detail: str, device: str = "dn2") -> str:
         return f"WARNING: native PGO: skipped ({detail}); building without PGO"
     what = detail if status == "failed" else f"profile {status} ({detail})"
     hint = (
-        f"({'mise run pgo' if device == 'dn2' else train_hint(device)} to train)"
+        f"({'mise run perf:pgo' if device == 'dn2' else train_hint(device)} to train)"
         if status == "missing"
         else f"Run {train_hint(device)}"
     )
@@ -506,14 +506,14 @@ def stale_notice(detail: str = "", device: str = "dn2") -> str:
     """The one line printed when a stale profile is not used."""
     return (
         "PGO profile is stale for this core; building without PGO. Retrain with "
-        "`mise run pgo` (both devices), `mise run pgo:dn2` or `mise run pgo:dt2` "
+        "`mise run perf:pgo` (both devices), `mise run perf:pgo:dn2` or `mise run perf:pgo:dt2` "
         "(`uv run python -m tools.emulator.native_pgo train --device dt2`)."
     )
 
 
 PARTIAL_NOTICE = (
     "PGO profile partly stale (sources changed since training); using it. "
-    "Retrain at milestones with `mise run pgo`."
+    "Retrain at milestones with `mise run perf:pgo`."
 )
 
 

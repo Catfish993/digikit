@@ -153,14 +153,14 @@ patching never rebuilds the emulator (patched images boot through `boot_for_base
 
 | Task | Does |
 |---|---|
-| `mise run patch:new -- category/name` | Module from template |
-| `mise run patch:build [-- MODULE]` | Compile `src/` to `build/*.dko` |
+| `mise run module:new -- category/name` | Module from template |
+| `mise run module:build [-- MODULE]` | Compile `src/` to `build/*.dko` |
 | `mise run patch -- --firmware X.syx --modules a,b [-o OUT]` | Link, apply, verify; writes `out/patch/` |
 | `mise run patch:explain -- ...` | Human-readable listing of a patch |
-| `mise run inject [-- OUT.syx] [--hot]` | Load into the running emulator (`emu:ctl inject`) |
-| `mise run patch:dev -- --modules a,b` | Watch, rebuild, patch, inject |
+| `mise run patch:inject [-- OUT.syx] [--hot]` | Load into the running emulator (`emu:ctl inject`) |
+| `mise run module:dev -- --modules a,b` | Watch, rebuild, patch, inject |
 | `mise run patch:test [-- --matrix]` | Harness over the control socket |
-| `mise run port:resolve -- X.syx` | Generate or check a port file |
+| `mise run patch:port -- X.syx` | Generate or check a port file |
 | `mise run fw:onboard -- X.syx` | **Not built (backlog)**: extract, databases, names, port for a new firmware |
 
 Inject modes: DSP-only changes hot (exists); ColdFire changes through a coupled cold boot to ready cached by

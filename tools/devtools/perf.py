@@ -433,7 +433,7 @@ def main() -> int:
     if args.seconds <= 0:  # 0: each scenario's own length
         args.seconds = None
 
-    # The shared core (`mise run core`): current semantics, no firmware-derived
+    # The shared core (`mise run gen:core`): current semantics, no firmware-derived
     # blocks, so no AOT configs; `--gen prod` keeps the prod generated core.
     if args.gen == "shared":
         core = ROOT / "out" / "native" / "shared-core" / "gen"

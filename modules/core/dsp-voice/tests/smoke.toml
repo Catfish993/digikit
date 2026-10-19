@@ -1,4 +1,4 @@
-# Quick tests of core/dsp-voice: `mise run patch:dev` runs them after every rebuild, `mise run patch:test` with the smoke tour.
+# Quick tests of core/dsp-voice: `mise run module:dev` runs them after every rebuild, `mise run patch:test` with the smoke tour.
 # Steps (tools/patchkit/pk_harness.py): tap, hold, turn, wait_ms, expect_frame, expect_pcm_db, expect_no_fault.
 # Frame goldens are recorded with `uv run python -m tools.patchkit.pk_harness run --update` (hashes only are committed).
 [test]

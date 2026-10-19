@@ -10,7 +10,7 @@
 #   (`(u8)(type+1) < imm`, imm up to 255), the page tables (rows built per type by core/machines) and the FM engine, which
 #   knows types 0..4 and treats the rest as MIDI; no firmware table caps it lower (finding 02, "Stable machine type
 #   numbers"). Keeping it equal to the Digitakt's leaves one rule for both.
-# - A new machine takes the next free number of its device (`mise run patch:new` does that); a removed machine's number
+# - A new machine takes the next free number of its device (`mise run module:new` does that); a removed machine's number
 #   stays retired, so an old project never loads as another machine.
 
 # - Run-time machines (modules with `dynamic = true`, loaded by the digikit runtime from the card) take their permanent number

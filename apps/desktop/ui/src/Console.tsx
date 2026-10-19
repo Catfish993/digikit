@@ -1,5 +1,5 @@
 // The desktop developer console: the file the app runs, the live panel, and the audio and CPU meters.
-// `mise run emu -- FILE` starts it on FILE; with "watching" on, a change to FILE on disk reloads it, so a
+// `mise run workbench -- FILE` starts it on FILE; with "watching" on, a change to FILE on disk reloads it, so a
 // module can be patched from the command line and heard here a second later.
 import { invoke } from '@tauri-apps/api/core';
 import { Show, createSignal, onCleanup, onMount } from 'solid-js';
@@ -341,7 +341,7 @@ export default function Console() {
 
       <Show when={error() || outsideApp()}>
         <p class="alert" role="alert">
-          {outsideApp() ? 'This page is the desktop app’s console; start it with mise run emu.' : error()}
+          {outsideApp() ? 'This page is the desktop app’s console; start it with mise run workbench.' : error()}
         </p>
       </Show>
 

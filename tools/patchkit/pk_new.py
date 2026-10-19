@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a patchkit module from a template (`mise run patch:new -- category/name [--cf] [--dsp]`).
+"""Create a patchkit module from a template (`mise run module:new -- category/name [--cf] [--dsp]`).
 
     uv run python -m tools.patchkit.pk_new fx/my-drive              # ColdFire and SHARC+ stubs
     uv run python -m tools.patchkit.pk_new fx/my-drive --dsp        # SHARC+ only: a master-bus hook that passes audio through
@@ -8,7 +8,7 @@
                                                            # a machine type: a clone of type 0 with a permanent number
 
 Writes `modules/<category>/<name>/`: `module.toml`, `src/cf/<name>.c` and/or `src/dsp/<name>.s`, `tests/smoke.toml`
-(the quick tests `patch:dev` and `patch:test` run), `README.md`, `gallery/icon.svg`; then builds the objects with
+(the quick tests `module:dev` and `patch:test` run), `README.md`, `gallery/icon.svg`; then builds the objects with
 tools/patchkit/pk_build.py, so the template is known to compile. The DSP stub reuses the anchor rules of fx/master-gain (rules
 only: masked signatures and hashes, never firmware bytes). A new module claims `dsp.master.hook` when it has a DSP
 part, so it conflicts with fx/master-gain: pick one at a time until the master-fx framework (Phase 3) exists.
@@ -39,7 +39,7 @@ CF_C = """/* {id}: ColdFire code in the expansion region (cf.expansion).
  * The core/expansion loader copies code, data and bss here before the reset clear; nothing calls this module yet.
  * Hook it with an `[[op]]` in module.toml (op = "retarget": rewrite a jsr/bsr/jmp at an anchor to a symbol of this
  * object). Anchors come from `[[anchor_rule]]` (masked signatures, never addresses); build with
- * `mise run patch:build -- modules/{id}`. */
+ * `mise run module:build -- modules/{id}`. */
 
 const unsigned {sym}_version = 1;
 unsigned {sym}_calls;
@@ -72,7 +72,7 @@ DSP_S = """// {id}: SHARC+ master-bus hook (placed in free L2, dsp.l2).
 .VAR {sym}_param = 0x3f800000;
 """
 
-SMOKE = """# Quick tests of {id}: `mise run patch:dev` runs them after every rebuild, `mise run patch:test` with the smoke tour.
+SMOKE = """# Quick tests of {id}: `mise run module:dev` runs them after every rebuild, `mise run patch:test` with the smoke tour.
 # Steps (tools/patchkit/pk_harness.py): tap, hold, turn, wait_ms, expect_frame, expect_pcm_db, expect_no_fault.
 # Frame goldens are recorded with `uv run python -m tools.patchkit.pk_harness run --update` (hashes only are committed).
 [test]
@@ -328,7 +328,7 @@ def main(argv: list[str]) -> int:
 
         for line in pk_build.build_module(base, check=False):
             print(line)
-    print(f"next: mise run patch:dev -- --modules {a.id}")
+    print(f"next: mise run module:dev -- --modules {a.id}")
     return 0
 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Regenerate everything derived from tools/sharc_dev/sharc_core for the generated
-lowering, in one step (`mise run regen`):
+lowering, in one step (`mise run gen:regen`):
 
-1. the shared transpiled core (`mise run core`: out/native/shared-core/gen),
+1. the shared transpiled core (`mise run gen:core`: out/native/shared-core/gen),
 2. packages/emulator/sharc/src/fast/lower/gen_forms.rs for the forms in its GENERATED
    list (add a form by listing it in FORMS_EXTRA, or on the command line),
 3. the fuzz vectors and the test programs.

@@ -48,10 +48,10 @@ from tools.sharc_dev.sharcldr import LoadedMemory  # noqa: E402
 # The optimised build (native-opt): regenerate it after any sharc_core change,
 # or it runs the old semantics (see docs/plans/native-emulator.md).
 # Order: SHARC_NATIVE_LIB, the firmware-free shared-core build (`mise run
-# sharc:native-lib`, rebuilt from the current core), else the image-specific
+# gen:native-lib`, rebuilt from the current core), else the image-specific
 # build (kept for perf/AOT work; it may be stale, and an old one that lacks
 # symbols makes the tests skip). With neither, the shared-core path, so the
-# skip message points at what `mise run sharc:native-lib` builds.
+# skip message points at what `mise run gen:native-lib` builds.
 _LIB_NAME = (
     "sharc_native.dll"  # cargo names a Windows cdylib without the lib prefix
     if sys.platform == "win32"

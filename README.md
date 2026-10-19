@@ -5,7 +5,7 @@ the stock firmware with a small runtime. The runtime loads modules from the devi
 a machine without flashing again. An emulator runs the real firmware on your computer, so you can test everything
 before it goes near the device.
 
-> **Experimental.** Flashing modified firmware is at your own risk. Only flash images that pass `mise run preflight`.
+> **Experimental.** Flashing modified firmware is at your own risk. Only flash images that pass `mise run patch:preflight`.
 > digikit never changes the bootloader, so the stock OS can always be restored (see [Recovery](#recovery)).
 > **No Elektron firmware is in this repository**: you supply your own `.syx` file.
 
@@ -40,7 +40,7 @@ You need [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). The
 ```sh
 mise install
 mise run setup        # Python and web dependencies
-mise run toolchains   # the compilers for module code
+mise run patch:toolchains   # the compilers for module code
 ```
 
 ## Flash the runtime (Digitakt II)
@@ -49,7 +49,7 @@ mise run toolchains   # the compilers for module code
    ```sh
    mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx \
      --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/digikit-dt2.syx
-   mise run preflight -- out/patch/digikit-dt2.syx      # must print PREFLIGHT OK
+   mise run patch:preflight -- out/patch/digikit-dt2.syx      # must print PREFLIGHT OK
    ```
 2. Open Elektron Transfer, connect the Digitakt over USB, and drop `out/patch/digikit-dt2.syx` on it while the device
    shows its main screen. When the transfer ends, the device asks to upgrade: press **YES**.
@@ -79,8 +79,8 @@ mise run dk:store -- --port Digitakt ls                         # the modules on
 
 ```sh
 mise run emu:ready -- dt2 --syx firmware/Digitakt_II_OS1.17.syx   # once: boot the firmware and save its state (about 2 minutes)
-mise run emu -- firmware/Digitakt_II_OS1.17.syx   # the stock firmware
-mise run emu -- out/patch/digikit-dt2.syx         # your patched image
+mise run workbench -- firmware/Digitakt_II_OS1.17.syx   # the stock firmware
+mise run workbench -- out/patch/digikit-dt2.syx         # your patched image
 ```
 
 The emulator's DSP does not run in real time yet, so audio plays slower than on the device. The `dk:*` commands work

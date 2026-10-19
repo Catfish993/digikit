@@ -22,18 +22,18 @@ Shell 1, the emulator on Digitakt II 1.17 (`DIGI_EMU_READY_DIR_DT2` points the a
 one is for 1.16). The first launch builds the app, which takes several minutes:
 
 ```sh
-DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run emu -- firmware/Digitakt_II_OS1.17.syx
+DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run workbench -- firmware/Digitakt_II_OS1.17.syx
 ```
 
 Shell 2, patch and inject:
 
 ```sh
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
-mise run inject -- out/patch/pluck.syx
+mise run patch:inject -- out/patch/pluck.syx
 ```
 
 `patch` adds the frameworks PLUCK needs (`core/machines`, `core/params`, `core/dsp-voice`) and verifies the image.
-`inject` boots the patched firmware inside the running app with DSP audio (about 15 s the first time, under 1 s after).
+`patch:inject` boots the patched firmware inside the running app with DSP audio (about 15 s the first time, under 1 s after).
 
 On the faceplate:
 
@@ -50,7 +50,7 @@ without PGO), so in the desktop app the screens and knobs behave normally but PL
 clean, record the app's output, which is generated in emulated time:
 
 ```sh
-DIGI_EMU_SINK_WAV=out/pluck.wav DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run emu -- firmware/Digitakt_II_OS1.17.syx
+DIGI_EMU_SINK_WAV=out/pluck.wav DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run workbench -- firmware/Digitakt_II_OS1.17.syx
 ```
 
 Other modules to try the same way:
@@ -64,11 +64,11 @@ mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master
 mise run patch -- --firmware firmware/Digitone_II_OS1.12.syx --modules machines/pluck -o out/patch/pluck-dn2.syx
 ```
 
-Inject each with `mise run inject -- <file>`. To see what a patch changed, and to go back to stock:
+Inject each with `mise run patch:inject -- <file>`. To see what a patch changed, and to go back to stock:
 
 ```sh
 mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/pluck
-mise run inject -- firmware/Digitakt_II_OS1.17.syx
+mise run patch:inject -- firmware/Digitakt_II_OS1.17.syx
 ```
 
 If the app starts without audio it prints which ready inputs are missing; rebuild them with the `tools/emulator/ready.py` line
@@ -84,7 +84,7 @@ Run every command from the repository root. Put your own stock firmware files in
 ```sh
 mise install
 mise run setup         # Python and web dependencies
-mise run toolchains    # pinned ColdFire gcc/binutils and the SHARC+ assembler, into out/tools (about 15 min)
+mise run patch:toolchains    # pinned ColdFire gcc/binutils and the SHARC+ assembler, into out/tools (about 15 min)
 uv run python -m tools.emulator.ready dt2 --syx firmware/Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # about 2 min
 ```
 
@@ -94,9 +94,9 @@ The last line builds the emulator's ready state for that firmware (it is derived
 ### 2. Create a module
 
 ```sh
-mise run patch:new -- machines/my-synth --machine --devices dt2,dn2   # a new machine type
-mise run patch:new -- fx/my-drive --dsp                                # a master-bus DSP effect
-mise run patch:new -- ui/my-tweak --cf                                 # ColdFire code only
+mise run module:new -- machines/my-synth --machine --devices dt2,dn2   # a new machine type
+mise run module:new -- fx/my-drive --dsp                                # a master-bus DSP effect
+mise run module:new -- ui/my-tweak --cf                                 # ColdFire code only
 ```
 
 This writes `modules/<category>/<name>/` with `module.toml`, source stubs (`src/cf/*.c`, `src/dsp/*.s`),
@@ -107,7 +107,7 @@ module: projects store this number).
 Edit the sources and `module.toml`, then rebuild:
 
 ```sh
-mise run patch:build -- modules/machines/my-synth
+mise run module:build -- modules/machines/my-synth
 ```
 
 The build decodes every ColdFire instruction with the repository's own decoder and refuses a form the MCF54418 does not have (a 68020 or FPU
@@ -134,13 +134,13 @@ mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules m
 In one shell, start the emulator:
 
 ```sh
-mise run emu                          # the desktop app, or the headless daemon (flags in PATCHING.md, "Run it in the emulator")
+mise run workbench                    # the desktop app, or the headless daemon (flags in PATCHING.md, "Run it in the emulator")
 ```
 
 In another shell, load your image into it:
 
 ```sh
-mise run inject -- out/patch/my-synth.syx
+mise run patch:inject -- out/patch/my-synth.syx
 ```
 
 A DSP-only change is applied while the firmware runs (about 1 s). A ColdFire change boots the patched firmware with
@@ -150,7 +150,7 @@ with FUNC + SRC, turn its knobs, play trigs.
 ### 5. Iterate
 
 ```sh
-mise run patch:dev -- --modules machines/my-synth --device dt2
+mise run module:dev -- --modules machines/my-synth --device dt2
 ```
 
 This watches your sources, rebuilds, patches, injects into the running emulator and runs the module's quick tests on
@@ -183,7 +183,7 @@ the DSP does not halt and the main loop keeps running.
 - **ColdFire code and data** in a 1.3 MiB (Digitakt II) or 24.8 MiB (Digitone II) expansion region, hooks at firmware
   sites, tables copied from the user's own image at patch time and extended with rows.
 - **One module source for several firmware versions**: modules name firmware sites through anchor rules, never
-  addresses; a new firmware version needs only `mise run port:resolve`.
+  addresses; a new firmware version needs only `mise run patch:port`.
 - **The web gallery** (`mise run web`, page `/patch`): pick modules, patch in the browser, boot the result, download
   it. The firmware never leaves the browser.
 

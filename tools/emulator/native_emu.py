@@ -9,7 +9,7 @@ emulator available.
 The panel is rebuilt only when its sources changed (DIGI_EMU_PANEL=1 forces
 it). The app is built once with cargo build and the binary is run directly;
 --build-only stops after the build and prints the binary path. A stale PGO
-profile is used with a warning; `mise run pgo` retrains it (or launch once
+profile is used with a warning; `mise run perf:pgo` retrains it (or launch once
 with DIGI_EMU_PGO_TRAIN=1).
 """
 
@@ -306,7 +306,7 @@ def pgo_plan(args: list[str]) -> object | None:
     profile gives a DT2 build only the shared-engine 3%, a DT2 profile 19%.
     The launcher never trains on its own. A stale or missing profile falls back
     to the ordinary build (its own target dir, not the launcher's pgo-use). DIGI_EMU_PGO_TRAIN=1 trains a stale or missing
-    profile here when the training inputs exist (`mise run pgo` is the usual
+    profile here when the training inputs exist (`mise run perf:pgo` is the usual
     way); DIGI_EMU_PGO=0 skips PGO. Any failure falls back to the ordinary
     build with a WARNING line: launching is never blocked.
     """

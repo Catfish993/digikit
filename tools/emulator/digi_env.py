@@ -137,7 +137,7 @@ def check_generated(gen: pathlib.Path, environ: Environ | None = None) -> None:
     message = (
         f"generated core {gen} is stale: its {CORE_FINGERPRINT_FILE} is {have}, "
         f"tools/sharc_dev/sharc_core is {want}.\n"
-        "Regenerate it: DT2: mise run aot-gen -- dt2 --card-image IMG; "
+        "Regenerate it: DT2: mise run perf:aot -- dt2 --card-image IMG; "
         "DN2: uv run python -m tools.sharc_dev.sharc_dn2_aot (recipe in gen/PROVENANCE.txt); "
         "shared core: mise run gen:core.\n"
         "Or set DIGI_ALLOW_STALE_GEN=1 to use it anyway."

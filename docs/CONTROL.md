@@ -18,7 +18,7 @@ lists what is implemented. The design, including parts that are not built, is in
 
 | Server | Start | Notes |
 |---|---|---|
-| Desktop app | `mise run emu` | On by default. `--no-control` turns it off. Prints `control socket: <path>` to stderr. |
+| Desktop app | `mise run workbench` | On by default. `--no-control` turns it off. Prints `control socket: <path>` to stderr. |
 | Daemon `digi-emud` | `mise run emu:serve` | No window. Starts paused: a client steps it or sets `run.mode free`. `--free` runs it live. |
 
 Coupled DSP audio in the daemon needs `--auto-coupled` and the ready inputs; see [PATCHING.md](PATCHING.md).
@@ -44,7 +44,7 @@ flags. `--scenario` needs a coupled-audio build.
 
 Global options: `--socket PATH` (default: discover), `--run-dir DIR` (where to look for `current.json`).
 
-`mise run inject -- OUT.syx [--hot]` loads a patched image through `tools/patchkit/patchkit.py inject`.
+`mise run patch:inject -- OUT.syx [--hot]` loads a patched image through `tools/patchkit/patchkit.py inject`.
 
 ## Methods
 
@@ -175,7 +175,7 @@ same numbers). Each closed window is blended 50/50 into the shown value; a resto
 | 2 | stale session | 9 | timeout |
 | 3 | busy | | |
 
-`card.load {dir, sync?, export_out?}` builds a card from `dir` (a `plus_drive/dt2/`-style folder: docs/SAMPLES.md) and also records `dir` as the card's +Drive folder. The same holds for a card given at start with `--card-image` and `--card-folder` (`mise run emu` passes both; `sync` is on unless `--no-card-sync`). `card.export` and the quit export use the running device's `[card]` layout (found by the base firmware's hash). `card.export {dir?, out?, prune?}` brings
+`card.load {dir, sync?, export_out?}` builds a card from `dir` (a `plus_drive/dt2/`-style folder: docs/SAMPLES.md) and also records `dir` as the card's +Drive folder. The same holds for a card given at start with `--card-image` and `--card-folder` (`mise run workbench` passes both; `sync` is on unless `--no-card-sync`). `card.export` and the quit export use the running device's `[card]` layout (found by the base firmware's hash). `card.export {dir?, out?, prune?}` brings
 that folder (or `dir`) up to date with what the firmware wrote to the card: files of the path filesystem by name in the
 native format, `.mmcfs/{projects,sounds,kits}/NNNN.bin` slots and `.mmcfs/boot/SSSSSS.bin` regions (finding 24). The tree goes
 to `<out>/export/<stamp>/` first, each replaced file to `<out>/backup/<stamp>/` (`out` default `$DIGI_PLUSDRIVE_OUT` or
@@ -188,8 +188,8 @@ stopping) saves `overlay.bin` next to the card image and runs the same export, a
 ```sh
 mise run emu:serve                            # headless, paused
 mise run emu:ctl status
-mise run inject -- out/patch/mg.syx           # cold or snapshot start, as needed
-mise run inject -- out/patch/mg.syx --hot     # never cold boots; fails if no saved state fits
+mise run patch:inject -- out/patch/mg.syx     # cold or snapshot start, as needed
+mise run patch:inject -- out/patch/mg.syx --hot # never cold boots; fails if no saved state fits
 mise run emu:ctl step 1000000
 mise run emu:ctl frame out.png
 mise run emu:ctl tap 25 --hold 1000000
