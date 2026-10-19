@@ -783,8 +783,8 @@ shasum -a 256 out/patch/rt5-dt2-1.17.syx
 mise run pack -- test/dyn-pluck --device dt2          # the machine as a .dkm (DSP section version 2)
 ```
 
-Image: RT5_BYTES bytes, sha256 `RT5_SHA` (a different hash means the sources changed since this text was written: use the printed value and the preflight result).
-`test/dyn-pluck` for dt2: `DKM_SHA` (the sha256 of the `.dkm`).
+Image: 1,887,392 bytes, sha256 `ced22f18eb8c1a955be440b3d6bffe8b776fd00d0ce1d20053d1c90e46f8d16f` (a different hash means the sources changed since this text was written: use the printed value and the preflight result).
+`test/dyn-pluck` for dt2: `d0463cbbfb90db2d196563e23f165cfd3cdf57e1b015151c15d6d956f175edc7` (4,580 bytes, `out/patch/dyn-pluck-dt2.dkm`).
 
 **2. Flash it** as for runtime 4 (Transfer, SETTINGS > SYSTEM > OS UPGRADE, drop the `.syx` on DROP). Keep the volume low.
 
