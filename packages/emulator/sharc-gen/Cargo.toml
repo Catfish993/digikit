@@ -17,3 +17,8 @@ sharc-rt = { path = "../sharc-rt" }
 [lib]
 name = "sharc_gen"
 crate-type = ["rlib"]
+# No tests and no doctests in this crate. Without these two lines `cargo test --workspace` compiled the
+# whole generated core a second time as a test harness with no test in it (measured 723 s on a 16-core
+# machine, 2026-10-19) and ran rustdoc over it.
+test = false
+doctest = false
