@@ -50,7 +50,7 @@
 //   16 routines that returned (15 - 16 is 1 while a routine runs; a core stopped inside one leaves it at 1)
 //   17 the guard's fault count (low 16 bits) | kind of the last fault << 16 (1 Inf or NaN, 2 over the level bound) | types it disabled << 24
 //   18 type | voice << 16 of the last fault   19 to 22 the 8 parameter words of that call, in pairs (knob 2k | knob 2k + 1 << 16)
-//   23 the machine type the guard disabled last (docs/findings/53)
+//   23 the machine type the guard disabled last (docs/findings/51)
 // The block tail also stores this block's record address into core/dsp-voice's _dv_rec ([0] this block's, [1] the one before).
 // The ColdFire side is dl_diag(out, n) in dsp-link.c.
 

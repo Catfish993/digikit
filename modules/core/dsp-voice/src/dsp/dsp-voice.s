@@ -743,7 +743,7 @@ _dv_f3b:
 #else
     CALL _dv_crumb;                       // stage 4: the routine is about to be called (R3, R5, I4 are free here)
 #endif
-    // ---- the guard, before the routine (docs/findings/53): the machine parameter words are clamped to the row's declared ranges
+    // ---- the guard, before the routine (docs/findings/51): the machine parameter words are clamped to the row's declared ranges
     // in place in the frame copy and put back when the routine has returned; a type disabled by its faults is not called. ----
     DM(_dv_g + 4) = R0;                   // type
     DM(_dv_g + 8) = R1;                   // voice
@@ -893,7 +893,7 @@ _dv_done:
     R3 = DM(-6, I6);
     RFRAME;
 
-// ---- the guard, after the routine (docs/findings/53) ----
+// ---- the guard, after the routine (docs/findings/51) ----
 // The block must hold finite samples of at most 8.0 in magnitude (+18 dB over the full scale of a voice; the stock voices stay below 2). One
 // integer test covers both: the magnitude bits (sign cleared) of 8.0 are 0x41000000, and Inf and NaN lie above 0x7f800000. A block that fails
 // is zeroed, the voice ends (ACTIVE and the mark clear: the routine takes its note-on path at the next trig) and the fault is counted in the

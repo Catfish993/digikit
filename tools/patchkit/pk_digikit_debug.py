@@ -312,6 +312,8 @@ def run_card(c: Any) -> None:
 def run_debug(c: Any) -> None:
     if c.table().get("part") == "hang":
         return run_hang(c)
+    if c.table().get("part") == "guard":
+        return run_guard(c)
     img = c.image_for(B.RT, "run")
     blank = c.card(None)
     has_diag = any(k.endswith(":dl_diag") for k in img.plan["symbols"])
@@ -536,30 +538,31 @@ def run_hang(c: Any) -> None:
             str([(e[4][:3]) for e in chg]),
         )
         c.check(
-            "before the note: the DSP runs, the log has its first DSP_DIAG set (17 words in five events) and no DSP_STOPPED",
-            len([e for e in before if e[2] == L.K["DSP_DIAG"]]) in (5, 10)
+            "before the note: the DSP runs, the log has its first DSP_DIAG set (24 words in six events) and no DSP_STOPPED",
+            len([e for e in before if e[2] == L.K["DSP_DIAG"]]) in (6, 12)
             and not [e for e in before if e[2] == L.K["DSP_STOPPED"]],
             f"{len(before)} events",
         )
         # the first set only (the wait for the machine-change baseline may let the ten-second refresh of the set in)
-        first = [e for e in before if e[2] == L.K["DSP_DIAG"]][:5]
+        first = [e for e in before if e[2] == L.K["DSP_DIAG"]][:6]
         words = [
             w for e in sorted(first, key=lambda e: e[4][0] & 0xFF) for w in e[4][1:]
-        ][:17]
+        ][:24]
         c.check(
-            "the first set is the layout of the README: header 0xD1A6 and 17 words, beats rising, context registers, the breadcrumb of the last voice's hook entry, no dispatch yet",
-            len(words) == 17
-            and words[0] == 0xD1A6 | 17 << 16
+            "the first set is the layout of the README: header 0xD1A6 and 24 words, beats rising, context registers, the breadcrumb of the last voice's hook entry, no dispatch yet",
+            len(words) == 24
+            and words[0] == 0xD1A6 | 24 << 16
             and words[1] > 0
             and words[2] > 0
             and words[3:9] == [0, 1, 0xFFFFFFFF, 0, 1, 0xFFFFFFFF]
             and words[14] == 0x1F01
-            and words[15:17] == [0, 0],
+            and words[15:24]
+            == [0] * 9,  # no dispatch yet, and the guard's words 17 to 23 are 0
             " ".join(f"{w:08x}" for w in words),
         )
         n_diag0 = len(
             [e for e in before if e[2] == L.K["DSP_DIAG"]]
-        )  # 5, or 10 with the refresh
+        )  # 6, or 12 with the refresh
         # the key down, held: the voice is active and the routine loops on its third block
         # (a stopped core burns the DSP's whole period every frame, so the emulator runs this part slowly: look every emulated second)
         rig.emu.button(H.button(M.TRIG1), True)
@@ -610,20 +613,20 @@ def run_hang(c: Any) -> None:
         for e in err_diag:
             sets.setdefault(e[0] - (e[4][0] & 0xFF), []).append(e)
         c.check(
-            "after the stop the full diagnostic set is logged, all 17 words (five DSP_DIAG error events per distinct reply)",
-            len(err_diag) >= 5
-            and len(err_diag) % 5 == 0
+            "after the stop the full diagnostic set is logged, all 24 words (six DSP_DIAG error events per distinct reply)",
+            len(err_diag) >= 6
+            and len(err_diag) % 6 == 0
             and all(
-                [e[4][0] & 0xFF for e in g] == [0, 1, 2, 3, 4] for g in sets.values()
+                [e[4][0] & 0xFF for e in g] == [0, 1, 2, 3, 4, 5] for g in sets.values()
             ),
             f"{len(err_diag)} events, {len(sets)} sets",
         )
-        stop_set = sorted(err_diag[:5], key=lambda e: e[4][0] & 0xFF)
-        sw = [w for e in stop_set for w in e[4][1:]][:17]
+        stop_set = sorted(err_diag[:6], key=lambda e: e[4][0] & 0xFF)
+        sw = [w for e in stop_set for w in e[4][1:]][:24]
         c.check(
-            "the full set logged with the stop says one routine is still running: dispatches - returns = 1, the breadcrumb word again, the 17-word header",
-            len(sw) == 17
-            and sw[0] == 0xD1A6 | 17 << 16
+            "the full set logged with the stop says one routine is still running: dispatches - returns = 1, the breadcrumb word again, the 24-word header",
+            len(sw) == 24
+            and sw[0] == 0xD1A6 | 24 << 16
             and sw[14] == crumb
             and sw[15] - sw[16] == 1,
             " ".join(f"{w:08x}" for w in sw),
@@ -643,7 +646,7 @@ def run_hang(c: Any) -> None:
         )
         c.check(
             "the quiet log: the running DSP logged one set before the note, none changed after it except the stop's own",
-            n_diag0 in (5, 10)
+            n_diag0 in (6, 12)
             and len([e for e in evs if e[2] == L.K["DSP_DIAG"] and not e[3] & 1])
             <= n_diag0 + 10,
             f"{n_diag0} before, {len([e for e in evs if e[2] == L.K['DSP_DIAG'] and not e[3] & 1])} non-error in all",
@@ -676,6 +679,135 @@ def run_hang(c: Any) -> None:
     c.common_checks_upload(project_writes_ok=True)
 
 
+GUARD_NAN = (
+    20,
+    8,
+)  # test/dyn-guard-nan: its permanent run-time type and the list position (the pluck, type 18, is the 7th entry)
+GUARD_PLUCK = (18, 7)
+
+
+def run_guard(c: Any) -> None:
+    """The runtime guard of core/dsp-voice (docs/findings/51-pluck-tune-guard.md), on the coupled emulator. A run-time pluck on track 1 and the NaN
+    fixture (test/dyn-guard-nan) on track 2, whose delay send is up: the fixture's block is NaN while its voice is active, which without the
+    guard reaches the send FX and silences every track. Ten TRIG 2 presses in a second: the guard zeroes each block, counts it, logs MACHINE_FAULT
+    and switches the type off after the 8th (MACHINE_DISABLED); the pluck on track 1 stays audible and finite, and the master output holds no
+    NaN or Inf. (The stock sample machine has no sample on this card, so the audible track is a second run-time machine; the guard treats both alike.)"""
+    import numpy as np
+
+    from tools.patchkit import hook_ab
+
+    nan = c.pack("test/dyn-guard-nan", "nan.dkm")
+    plk = c.pack("test/dyn-pluck", "pluck.dkm")
+    img = c.image_for(B.RT, "guard")
+    card = c.card([plk, nan])
+    with c.rig(img, card, "guard") as rig:
+        info = rig.boot_info()
+        c.check(
+            "both modules loaded at boot (CF part, DSP part, two voice rows)",
+            info["count"] == 2
+            and info["results"] == [0, 0]
+            and len([r for r in rig.voice_rows() if r[0] != B.FREE_TYPE]) == 2,
+            str(info["results"]),
+        )
+        ui_first = next(e for e in events(rig) if e[2] == L.K["UI_FIRST"])[4][0]
+        for _ in range(60):
+            if int(rig.emu.call("status")["dsp_frames"]) >= ui_first + 3300:
+                break
+            rig.s.run_ms(500)
+
+        def pick(track: int, want: int, hint: int) -> None:
+            if track > 1:
+                rig.s.do_tap(["TRK", f"TRIG {track}"])
+                rig.s.run_ms(300)
+            for downs in (hint, hint + 1, hint - 1):
+                rig.select(downs)
+                rig.s.run_ms(800)
+                chg = [
+                    e
+                    for e in events(rig, "MACHINE_CHANGE")
+                    if e[4][0] == track - 1 and e[4][2] == want
+                ]
+                if chg:
+                    return
+            raise M.Fail(f"no list position gives type {want} on track {track}")
+
+        pick(1, *GUARD_PLUCK)
+        pick(2, *GUARD_NAN)
+        # track 2's delay send up: FX page, encoder E (docs/findings: the panel of the DT2 FX pages)
+        rig.s.do_tap("FX")
+        rig.s.run_ms(300)
+        rig.s.turn_burst("ENC E", 4, 30)
+        wav = c.work / "guard.wav"
+        rig.emu.call("pcm.tap", action="capture", path=str(wav))
+        rig.emu.button(H.button("TRIG 1"), True)  # the pluck, held
+        rig.s.run_ms(400)
+        for _ in range(10):  # ten presses of the NaN machine in about a second
+            rig.s.do_tap("TRIG 2")
+            rig.s.run_ms(100)
+        rig.s.run_ms(1500)  # a poll of the guard's words is a second apart
+        rig.emu.call("pcm.tap", action="capture_stop")
+        rig.emu.button(H.button("TRIG 1"), False)
+        rig.s.run_ms(2500)
+        evs = events(rig)
+        faults = [e for e in evs if e[2] == L.K["MACHINE_FAULT"]]
+        disabled = [e for e in evs if e[2] == L.K["MACHINE_DISABLED"]]
+        pcm = hook_ab.read_wav(wav)
+        c.check(
+            "MACHINE_FAULT is logged (an error event): type 20, voice 2 (track 2), kind nonfinite, the parameter words of the call",
+            len(faults) >= 1
+            and all(e[3] & 1 for e in faults)
+            and L.event_dict(faults[-1])["fields"]["type"] == GUARD_NAN[0]
+            and L.event_dict(faults[-1])["fields"]["track"] == 2
+            and L.event_dict(faults[-1])["fields"]["kind"] == "nonfinite",
+            str([L.event_dict(e)["fields"] for e in faults]),
+        )
+        last = L.event_dict(faults[-1])["fields"] if faults else {}
+        c.check(
+            "the faults are counted: at least 8 (the type is switched off at the 8th within a second)",
+            bool(faults) and last.get("faults", 0) >= 8,
+            str(last),
+        )
+        c.check(
+            "MACHINE_DISABLED is logged once for type 20",
+            len(disabled) == 1
+            and disabled[0][4][0] == GUARD_NAN[0]
+            and disabled[0][3] & 1,
+            str([L.event_dict(e)["fields"] for e in disabled]),
+        )
+        # no fault after the switch-off: a press now changes nothing
+        n_before = len(faults)
+        rig.s.do_tap("TRIG 2")
+        rig.s.run_ms(2500)
+        faults2 = events(rig, "MACHINE_FAULT")
+        c.check(
+            "a press after the switch-off causes no new fault",
+            len(faults2) == n_before,
+            f"{n_before} -> {len(faults2)}",
+        )
+        left = pcm if pcm.ndim == 1 else pcm[:, 0]
+        win = 4800  # 100 ms
+        rms = [
+            float(np.sqrt(np.mean(left[i : i + win] ** 2)))
+            for i in range(0, len(left) - win, win)
+        ]
+        c.check(
+            "the master output stays finite (no NaN or Inf in the capture)",
+            bool(np.all(np.isfinite(pcm))) and len(pcm) > 48000,
+            f"{len(pcm)} samples",
+        )
+        c.check(
+            "the pluck on track 1 stays audible while the fixture faults (every 100 ms window of the first 1.1 s above -70 dBFS: the string decays about 3 dB per window)",
+            len(rms) >= 20 and min(rms[0:11]) > 10 ** (-70 / 20),
+            f"{[round(20 * np.log10(max(r, 1e-9)), 1) for r in rms[:24]]}",
+        )
+        c.report["guard_wav"] = str(wav)
+        text = c.work / "guard.log"
+        L.follow(uploader(rig), text, once=True, echo=False)
+        c.report["guard_log"] = str(text)
+        c.done(rig)
+    c.common_checks_upload(project_writes_ok=True)
+
+
 def periodic(c: Any, img: Any, card: Path, has_diag: bool) -> None:
     """The periodic events need the firmware's block counter, which only a coupled daemon (with the DSP) advances: a health snapshot every ten
     seconds, the stable-period event after 30, and the DSP poll's events."""
@@ -702,8 +834,8 @@ def periodic(c: Any, img: Any, card: Path, has_diag: bool) -> None:
         if has_diag:
             starts = [e[1] for e in diag if (e[4][0] & 0xFF) == 0]
             c.check(
-                "DSP diagnostics are logged quietly: a full set (17 words, five events) at the first poll, then only every ten seconds while just the beats move",
-                len(diag) == 5 * len(starts)
+                "DSP diagnostics are logged quietly: a full set (24 words, six events) at the first poll, then only every ten seconds while just the beats move",
+                len(diag) == 6 * len(starts)
                 and 3 <= len(starts) <= 5
                 and all(
                     b - a in range(14_000, 16_500)

@@ -117,7 +117,7 @@ extern "C" {
 /// Words asked of `dl_diag`, and the word of its output that the DSP counts up while it runs (the heartbeat). The layout is `core/dsp-link`'s
 /// (its README): word 0 is `0xD1A6` with the count in the high half, word 1 the link hook's block beat, word 2 the voice hook's, words 3 to 13 the
 /// context registers, word 14 the last breadcrumb (stage | voice << 8 | machine type << 16), word 15 the dispatches to registered machine types, word 16 the routines that returned,
-/// words 17 to 23 the guard of `core/dsp-voice` (finding 53): 17 faults (16 bits) | kind << 16 | machine types disabled << 24, 18 type | voice << 16 of the last fault, 19 to 22 the
+/// words 17 to 23 the guard of `core/dsp-voice` (finding 51): 17 faults (16 bits) | kind << 16 | machine types disabled << 24, 18 type | voice << 16 of the last fault, 19 to 22 the
 /// eight parameter words of that call in pairs, 23 the type disabled last.
 /// If it moves the heartbeat, change `DIAG_HEARTBEAT` here and nothing else.
 pub const DIAG_WORDS: usize = 24;

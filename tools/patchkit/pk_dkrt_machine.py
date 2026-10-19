@@ -92,8 +92,12 @@ def parse_dsp_section(dkm: bytes) -> dict[str, Any]:
     for i in range(nreloc):
         o, w = struct.unpack_from(">II", s, reloc_off + 8 * i)
         relocs.append((o, w >> 28, (w >> 24) & 15, w & 0xFFFF))
-    stride = 16 if be32(s, 4) == 1 else 48  # version 1: type, entry; version 2 adds the eight knob ranges
-    voices = [struct.unpack_from(">II", s, voice_off + stride * i) for i in range(nvoice)]
+    stride = (
+        16 if be32(s, 4) == 1 else 48
+    )  # version 1: type, entry; version 2 adds the eight knob ranges
+    voices = [
+        struct.unpack_from(">II", s, voice_off + stride * i) for i in range(nvoice)
+    ]
     return {
         "device": be32(s, 8),
         "image": bytes(s[image_off : image_off + be32(s, 0x0C)]),

@@ -1,0 +1,11 @@
+# The runtime guard of core/dsp-voice (docs/findings/51-pluck-tune-guard.md): a run-time machine whose routine outputs NaN (test/dyn-guard-nan) on
+# track 2 with its delay send up, a run-time pluck on track 1. The guard zeroes the blocks, logs MACHINE_FAULT, switches the type off after 8 faults
+# in a second (MACHINE_DISABLED), and the pluck and the master output stay finite and audible.
+[scenario]
+name = "debug-guard"
+kind = "debug"
+devices = ["dt2"]
+tier = "full"
+
+[debug]
+part = "guard"

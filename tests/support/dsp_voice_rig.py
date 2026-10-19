@@ -154,7 +154,9 @@ class Rig:
         for k in range(256):
             self.dm[nw(FRAME) + k] = 0
         for k in range(32 * 32):
-            self.dm[nw(OUT) + k] = 0  # the voice buffers hold the last block (a routine that writes none leaves them)
+            self.dm[nw(OUT) + k] = (
+                0  # the voice buffers hold the last block (a routine that writes none leaves them)
+            )
         for k in range(32 * REC // 4):
             self.dm[nw(RECORDS) + k] = 0
         self.dm[nw(TABLE)] = TYPE

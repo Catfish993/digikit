@@ -31,10 +31,13 @@ const PINS: &[(&str, &str, &str)] = &[
     // The six Digitakt II pins moved again on 2026-10-19 (lane srcpage, finding 50 section "One page"): the SRC-page hook is now the first test of
     // SourcePageView::vfunc_4 and cuts the page vector; section 3 only (sections 2, 4, 5, 7, 8 of the old and new dt2-1.17 + machines/pluck images compared
     // equal); the Digitone II pin did not move.
+    // The five pins with machines/pluck moved on 2026-10-19 (lane b, finding 51): the runtime guard of core/dsp-voice (voice rows of 16 words, the guard code, the
+    // wider diagnostic block, both devices) and the three clamps of pluck.s / pluck_dn2.s. Section 7 only: sections 1 to 6 and 8 of the old (a80274dc) and new patched
+    // images compared equal for each of the five (port_resolve.sections_of); the xslice-only pins did not move.
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck",
-        "fa6c28318ebc88db4f8b955a9a76bc56c4fe5cd6333831ca1c0c02a0d324fc6d",
+        "1ebf4442c435842a9beee4030aa9ff3ede49a2bbb23052bf53238c0471e95252",
     ),
     (
         "Digitakt_II_OS1.16.syx",
@@ -44,12 +47,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck,machines/xslice",
-        "47eb95c3f774a0759e2082b7be7aad0d03dbd00639a66e8760df8867e56a8fa0",
+        "b6d58d50a0140cc5f4b232f7c01baa1950b7ecb4919755ab6d711e78d2480635",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
-        "34e0280e560af86e6a134a40a1520433181017362e9e18492a550c278cee5c79",
+        "1ddb32a3cc2d7eb2b3b0080817e478682ba54e4f117f04fb2a7b0b97c30f978e",
     ),
     (
         "Digitakt_II_OS1.17.syx",
@@ -59,12 +62,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck,machines/xslice",
-        "81c82442589bfff9af18e4ca4ecb35069ab3f9ec0e27f41d98dc34864aaf3ab7",
+        "390555484a98c0ebd1e977bfc21457954b3b2b42760f2f118457a01afd3ffa6d",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "machines/pluck",
-        "fad9f218cd0297b9fedd417bcbbd4272a35e861fa8387b1c26a99d5189378532",
+        "bcc908f0ac25b49e3da1f253c84f93e0b4166ff500a1d07902d4406b60ae3ea8",
     ),
 ];
 

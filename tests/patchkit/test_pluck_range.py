@@ -2,7 +2,7 @@
 
 On the Digitakt II an LFO on TUNE silenced every track: the loop period P = fs / f0 left what the delay line can serve
 (about P < 2.5 or P > 4091.5), the fractional-delay fraction left [0.5, 1.5), the allpass coefficient passed the stability
-limit and the string state held Inf/NaN until the next note-on (docs/findings/53-pluck-tune-guard.md). The routine now clamps x, P - tau
+limit and the string state held Inf/NaN until the next note-on (docs/findings/51-pluck-tune-guard.md). The routine now clamps x, P - tau
 and a. This file checks it three ways: the coefficients of the float32 model over a dense grid of note and TUNE words
 (cheap, exhaustive), 200 blocks of the model's string for every note 0 .. 127 and six TUNE words, and the routine itself
 (concrete SHARC+ core) on the corners, against the model. Skips the routine part when Selache is not built."""
@@ -64,4 +64,6 @@ def test_the_routine_stays_finite_and_matches_the_model_at_the_corners(note, tun
         assert np.all(np.isfinite(state)), state
     got = np.concatenate(got)
     want = model_blocks(8, **kw)
-    assert float(np.max(np.abs(got - want))) < 2e-5 * max(1.0, float(np.max(np.abs(want))))
+    assert float(np.max(np.abs(got - want))) < 2e-5 * max(
+        1.0, float(np.max(np.abs(want)))
+    )

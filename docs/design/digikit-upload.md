@@ -58,7 +58,7 @@ SELECT also answers the selection record's own codes (runtime codes -40 to -49):
 
 | cmd | name | request body | reply body after status |
 |---|---|---|---|
-| 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION (4 since SELECT and RESTART), device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags, u32 log_oldest, u32 log_newest` (flags: bit 0 safe mode, bit 1 upload open, bit 2 card read-only, bit 3 debug log ON, bit 4 a crash record was found at this boot; the two sequence numbers are those of the oldest and newest event in the log ring, 0 and 0 when empty; runtime 2 stops after the flags) |
+| 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION (4 since SELECT and RESTART, 5 since the DSP guard: voice rows of 16 words, DSP sections of version 2, 24 DSP diagnostic words, log events 27 and 28; the commands are unchanged), device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags, u32 log_oldest, u32 log_newest` (flags: bit 0 safe mode, bit 1 upload open, bit 2 card read-only, bit 3 debug log ON, bit 4 a crash record was found at this boot; the two sequence numbers are those of the oldest and newest event in the log ring, 0 and 0 when empty; runtime 2 stops after the flags) |
 | 0x02 | LIST | `u32 first` | `u32 total, u8 n`, then n entries `path NUL, u32 size, sha256[32]` from index `first`, as many as fit the reply |
 | 0x10 | BEGIN | `path NUL, u32 size, sha256[32]` | (none). Opens an upload; a BEGIN while one is open drops the old one. |
 | 0x11 | DATA | `u32 offset, bytes` | (none). |

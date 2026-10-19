@@ -14,10 +14,10 @@ conflicts = []
 "dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
-# Like test/dyn-dsp-hang, with a routine that outputs NaN (src/dsp/nan.s). The other routines in src/dsp (loud.s, clean.s, parrot.s) are fixtures of the
+# Like test/dyn-dsp-hang, with a routine that outputs NaN (src/dsp/nan.s). The other routines in src/dsp (loud.s, clean.s) are fixtures of the
 # guard's rig tests (tests/patchkit/test_dsp_guard.py) and are not linked into this module. Emulator scenario: debug-guard. The machine
 # is harmless on a device: the guard zeroes the block and, after 8 faults in a second, switches the machine off until the next start
-# (docs/findings/53-pluck-tune-guard.md).
+# (docs/findings/51-pluck-tune-guard.md).
 [[object]]
 path = "build/dyn-guard-nan-dsp.dko.json"
 sources = ["src/dsp/nan.s"]

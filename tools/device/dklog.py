@@ -242,7 +242,13 @@ def fields_of(kind: int, a: tuple[int, ...]) -> dict[str, Any]:
                 break
             if DIAG_NAMES[j] == "crumb":
                 f["crumb"] = crumb_text(w)
-            elif DIAG_NAMES[j] in ("link_beat", "voice_beat", "dispatches", "returns", "guard_disabled_type"):
+            elif DIAG_NAMES[j] in (
+                "link_beat",
+                "voice_beat",
+                "dispatches",
+                "returns",
+                "guard_disabled_type",
+            ):
                 f[DIAG_NAMES[j]] = w
             else:
                 f[DIAG_NAMES[j]] = f"{w:08x}"

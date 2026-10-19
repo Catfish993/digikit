@@ -1,5 +1,5 @@
 // test/dyn-guard-nan: a DSP routine of the core/dsp-voice ABI that outputs NaN while its voice is active (fixture of the runtime guard,
-// docs/findings/53-pluck-tune-guard.md). An idle voice renders silence. Entry: R4 = voice record (byte +0x1b8 ACTIVE), R8 = output block.
+// docs/findings/51-pluck-tune-guard.md). An idle voice renders silence. Entry: R4 = voice record (byte +0x1b8 ACTIVE), R8 = output block.
 
 .SECTION/PM seg_pmco;
 .GLOBAL _gn_render;

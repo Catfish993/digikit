@@ -49,7 +49,7 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x9c | 4 | `dsp_size`: its size in bytes |
 
 After the header, in this order, each table where its offset says: imports, relocations, slot bindings, the `register` records,
-the DSP section (16-byte aligned), padding to 16, then the image. A file with a DSP section has `runtime_min` 2 or more.
+the DSP section (16-byte aligned), padding to 16, then the image. A file with a DSP section has `runtime_min` 5 or more (a section of version 2; runtime 5 also loads version 1).
 
 - **Imports**: `import_count` entries of 32 bytes, a NUL-padded name. Every undefined symbol of the object that a relocation
   names. The names the v0 runtime provides: `fw_block_read`, `fw_alloc`, `fw_free`, `memcpy`, `memset`, `memcmp`, `__muldi3`,
@@ -90,7 +90,7 @@ All integers are big endian. Offsets are from the start of the section.
 | Offset | Size | Field |
 | --- | --- | --- |
 | 0x00 | 4 | magic `DKDS` (0x444b4453) |
-| 0x04 | 4 | version = 1 |
+| 0x04 | 4 | version = 2 (version 1, voices of 16 bytes without ranges, is still loaded: every range undeclared) |
 | 0x08 | 4 | device (1 DT2, 2 DN2): must equal the runtime's |
 | 0x0c | 4 | `image_size`: bytes of text and data that are sent (a multiple of 4) |
 | 0x10 | 4 | `bss_size`: bytes reserved behind the image (`.PKBSS`; not sent, not zeroed) |
@@ -110,14 +110,15 @@ All integers are big endian. Offsets are from the start of the section.
   L2 byte address where the image is placed); class 1: a byte address of this object (add `B - 0x20000000`); class 2: the addend of
   the import `import` (add its value). `abs24` with class 1 is refused by the packer (a data address does not fit 24 bits).
   A result that does not fit its field fails the load.
-- **Voices**: 16 bytes: `u32` machine type, `u32` byte offset of the entry routine in the image, two reserved words. The type is in
-  the run-time range 16 to 23, not used by a loaded module. The routine's pc at placement `B` is `0xb80000 + (B - 0x20000000 + entry) / 2`.
+- **Voices**: 48 bytes (version 2): `u32` machine type, `u32` byte offset of the entry routine in the image, eight `u32` ranges of machine
+  knob 0 to 7 (`min | max << 16`, from the `[[param]]` the knob names; 0: a stock code, an empty knob or no range declared) for the runtime guard of
+  `core/dsp-voice` (finding 51), two reserved words. The type is in the run-time range 16 to 23, not used by a loaded module. The routine's pc at placement `B` is `0xb80000 + (B - 0x20000000 + entry) / 2`.
 - **Image**: the linked bytes at the nominal base; every relocated field holds `S + A`. The sections are text, data, bss in that order,
   so a `.PKBSS` buffer (pluck's 256 KiB delay lines) follows the sent bytes in the reserved range.
 
 The runtime reserves `image_size + bss_size` rounded up to 64 bytes (`E_DSP_NOSPACE`, -33, when no range is free), copies and relocates
 the image in an arena block, sends it with `dl_send` (window 0 of the link) and, when the DSP acknowledges (the DSP has the bytes in L2
-and has invalidated its instruction caches), publishes the voice rows (window 1: **one word per transfer**, the pc first and the type
+and has invalidated its instruction caches), publishes the voice rows (window 1: **one word per transfer**, a row is 16 words: the eight ranges, the pc, the guard's disabled-type word cleared and the type
 last; a free row has type `0xffffffff`, which no machine equals, so the DSP's render scan never sees a half-written row). Only then
 it writes the machine and parameter rows, runs `init` and binds the slots. When the DSP part fails at boot the module is taken down the other way: machine row, voice row (type
 to `0xffffffff` first), then the range (the run-time unload that did this is archived). Refusal codes -30 to -39 (`dkrt-sdk`): `E_NO_DSP` -30 (no `core/dsp-link` and `core/dyndsp` in

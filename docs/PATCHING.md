@@ -765,6 +765,37 @@ uv run --with python-rtmidi python -m tools.device.dkscreen --port Digitakt --ev
 
 The PNG is 512x256 (4 times the OLED); `--scale N` changes it. It sends only a request the stock firmware answers.
 
+### Runtime 5: the DSP guard (Digitakt II 1.17)
+
+Runtime 5 (finding 51) clamps pluck's pitch (the LFO-on-TUNE failure: Inf/NaN in the string state silenced every track) and adds a guard to the voice wrapper
+`core/dsp-voice`: the machine's parameter words are clamped to the ranges its `[[param]]` declare, a block that is not finite or above 8.0 is zeroed, the voice ends,
+the fault is counted, and a machine type that faults 8 times in a second is switched off until the next start. The log gets `MACHINE_FAULT` and `MACHINE_DISABLED`; INFO says
+`runtime: 5`. **The device has not run it**; rehearsed in the emulator and on the SHARC rig (`debug-guard`, `test_dsp_guard.py`).
+
+One flash, and the `.dkm` files must be packed again (a DSP section of version 2 needs runtime 5; `dk run` packs and uploads the new file, because its sha256 differs).
+
+**1. Build and check the image** (the runtime-4 module list):
+
+```sh
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rt5-dt2-1.17.syx
+mise run preflight -- out/patch/rt5-dt2-1.17.syx     # PREFLIGHT OK and "ISA check: ok"; sections 3 and 7 differ from stock, nothing else
+shasum -a 256 out/patch/rt5-dt2-1.17.syx
+mise run pack -- test/dyn-pluck --device dt2          # the machine as a .dkm (DSP section version 2)
+```
+
+Image: RT5_BYTES bytes, sha256 `RT5_SHA` (a different hash means the sources changed since this text was written: use the printed value and the preflight result).
+`test/dyn-pluck` for dt2: `DKM_SHA` (the sha256 of the `.dkm`).
+
+**2. Flash it** as for runtime 4 (Transfer, SETTINGS > SYSTEM > OS UPGRADE, drop the `.syx` on DROP). Keep the volume low.
+
+**3. Check** `uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info` prints `runtime: 5`. A `.dkm` packed for runtime 4 (DSP section version 1) still loads
+(every range undeclared, so the guard clamps to 0 .. 0x7f00), but the pluck inside it has the old arithmetic: run `dk run test/dyn-pluck` again so that the new file is uploaded.
+
+**4. Run the pluck with an LFO on TUNE** (`dk run` as for runtime 4, then the LFO on the TUNE knob of the SRC page, depth over the whole range, a note held on track 1):
+the sound follows the pitch to the limits of the string and stays; no track goes silent. Read the log (`uv run --with python-rtmidi python -m tools.device.dklog --port Digitakt`):
+there should be **no** `MACHINE_FAULT` (the clamp in the routine prevents the cause). A `MACHINE_FAULT` names the type, the track, the kind (`nonfinite`, `overlevel`) and the knob words of the call; a
+`MACHINE_DISABLED` says the guard switched that machine off (it plays silence until the next restart). ABOUT and the `DSP_DIAG` events carry the guard's words 17 to 23 (`modules/core/dsp-link/README.md`).
+
 ### Status
 
 No patched image has been flashed to a device. Whether and when to flash is the maintainer's decision, every time.

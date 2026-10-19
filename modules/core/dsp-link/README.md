@@ -12,12 +12,12 @@ the device runs. Nothing changes for the player. Emulator only.
   instructions per block (about 0.04 % of a block's cycles: 24 for the link itself, 23 to pin and restore M5, M6, L2 and L3, 43 for
   the diagnostic words below and the record addresses; findings 45 and 48).
 - Diagnostics: `int dl_diag(u32 *out, u32 n)` (ColdFire C ABI, optional link) returns the DSP's diagnostic words of the last
-  block, 17 words, or a negative number when there are none (-1: no record address in the image; -2: the reply carries no diagnostic
+  block, 24 words (17 before runtime 5), or a negative number when there are none (-1: no record address in the image; -2: the reply carries no diagnostic
   block, `core/dsp-voice` is not in the image or the DSP has stopped writing it). Layout of the words:
 
   | word | content |
   | --- | --- |
-  | 0 | `0xD1A6` in the low half, the word count (17) in the high half |
+  | 0 | `0xD1A6` in the low half, the word count (24) in the high half |
   | 1 | blocks that ran the link's hook (a heartbeat of the block handler) |
   | 2 | blocks that reached `core/dsp-voice`'s hook (its heartbeat) |
   | 3-8 | M5, M6, M7, M13, M14, M15 |
@@ -25,6 +25,10 @@ the device runs. Nothing changes for the player. Emulator only.
   | 14 | the last breadcrumb: stage in bits 0-7, voice (0-31) in bits 8-15, machine type in bits 16-31 |
   | 15 | dispatches to registered machine types since the start |
   | 16 | routines that returned (15 minus 16 is 1 while a routine runs; a core stopped inside one leaves it at 1) |
+| 17 | the guard of `core/dsp-voice` (finding 51): faults counted so far (low 16 bits) \| kind of the last fault << 16 (1 Inf or NaN, 2 over the level bound) \| machine types disabled << 24 |
+| 18 | type \| voice << 16 of the last fault |
+| 19-22 | the eight machine parameter words of that call (clamped, as the routine saw them), knob 2k in the low half, knob 2k + 1 in the high half of word 19 + k |
+| 23 | the machine type the guard disabled last |
 
   Words 3-13 are the registers as the firmware left them at the first voice of the block, before the wrapper pins anything. A
   frozen heartbeat is a halted core. The breadcrumb names the step of a machine's path that `core/dsp-voice` reached last: 1 hook
@@ -34,7 +38,7 @@ the device runs. Nothing changes for the player. Emulator only.
   that it is there when the core stops inside a routine and never reaches the block's end: the DMA that sends the record does not need
   the core (finding 48). The words travel in the DSP's reply record, two per slot row (rows 1 to 9, bytes +0x44 and +0x48 of the row, the
   entries 11 and 12 that no DSP code writes); the exact offsets are in `src/dsp/dsp-link.inc`, and `tools/patchkit/pk_ctxprobe.py`
-  reads them in the emulator. On the Digitone II words 14 to 16 are 0 (the breadcrumbs are written by the Digitakt II wrapper only).
+  reads them in the emulator. On the Digitone II words 14 to 16 and 17 to 23 are 0 (the breadcrumbs and the guard belong to the Digitakt II wrapper; the Digitone II wrapper only scans rows of the new size).
 - Limits: the destination must lie in the module's area (`_dl_area`); the DSP code that runs from it must be linked for
   that address or relocated by the runtime (`docs/design/digikit-dkm.md`, "DSP section"). The emulator does not model the DSP caches, so the cache invalidate after the last chunk has not run on
   a device.

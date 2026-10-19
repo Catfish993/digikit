@@ -1,4 +1,4 @@
-"""The runtime guard of core/dsp-voice (docs/findings/53-pluck-tune-guard.md) on the concrete SHARC+ core.
+"""The runtime guard of core/dsp-voice (docs/findings/51-pluck-tune-guard.md) on the concrete SHARC+ core.
 
 The wrapper and a fixture routine are assembled from the module sources and run the way the engine calls them
 (tests/support/dsp_voice_rig.py). Fixtures (modules/test/dyn-guard-nan/src/dsp): `clean` (a ramp, inside the bound), `nan` (NaN while
@@ -7,7 +7,6 @@ puts the engine's words back, checks the block (finite, at most 8.0 in magnitude
 counts the fault in the row and the diagnostic words, and after 8 faults in 1500 blocks disables the type. Skips when Selache is not built."""
 
 import struct
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -15,6 +14,10 @@ from support.dsp_voice_rig import (
     DIAG,
     FRAME,
     GUARD,
+    REC,
+    RECORDS,
+    RETURN_SW,
+    ROOT,
     ROW,
     STATE,
     TABLE,
@@ -23,7 +26,6 @@ from support.dsp_voice_rig import (
     nw,
     stops_at,
 )
-from support.dsp_voice_rig import RETURN_SW, ROOT
 
 from tools.patchkit import pk_sharc, pk_toolchains
 
@@ -36,7 +38,12 @@ FIX = ROOT / "modules" / "test" / "dyn-guard-nan" / "src" / "dsp"
 BASE = 0xB93800
 CL_SEEN = STATE  # the clean fixture's copy of the knob words it saw
 RAMP = np.arange(32, dtype=np.float32) * np.float32(0.125)
-D_FAULTS, D_TYPEVOICE, D_PARAMS, D_DISABLED = 15, 16, 17, 21  # words of _dv_diag (dl_diag words 17, 18, 19 to 22, 23)
+D_FAULTS, D_TYPEVOICE, D_PARAMS, D_DISABLED = (
+    15,
+    16,
+    17,
+    21,
+)  # words of _dv_diag (dl_diag words 17, 18, 19 to 22, 23)
 
 
 def val(x: int) -> float:
@@ -90,7 +97,12 @@ class GuardRig(Rig):
             ctx="friendly",
         )
         assert stops_at(out, RETURN_SW), out["halt"]
-        for key, base in (("diag", DIAG), ("row", TABLE), ("g", GUARD), ("frame", FRAME)):
+        for key, base in (
+            ("diag", DIAG),
+            ("row", TABLE),
+            ("g", GUARD),
+            ("frame", FRAME),
+        ):
             for k, w in enumerate(out[key]):
                 self.dm[nw(base) + k] = w
         self.dm[nw(self.rec(v) + 0x1B8)] = out["flags"][0]
@@ -98,8 +110,6 @@ class GuardRig(Rig):
 
     @staticmethod
     def rec(v: int) -> int:
-        from support.dsp_voice_rig import RECORDS, REC
-
         return RECORDS + v * REC
 
 
@@ -119,7 +129,9 @@ def test_a_clean_routine_is_untouched(clean_cls):
     assert np.array_equal(y, RAMP)
     assert out["seen"] == words, "in range: the routine sees the engine's words"
     assert out["frame"] == frame0, "the frame copy is as the engine left it"
-    assert out["flags"][0] & 0xFFFF == 0x5A01, "ACTIVE and the mark are the routine's own"
+    assert out["flags"][0] & 0xFFFF == 0x5A01, (
+        "ACTIVE and the mark are the routine's own"
+    )
     assert out["diag"][D_FAULTS] == 0 and out["diag"][D_TYPEVOICE] == 0
     assert out["g"][6] == 0, "no word was changed"
 
@@ -135,7 +147,9 @@ def test_the_knob_words_are_clamped_to_the_declared_ranges_for_the_call_only(cle
     frame0 = [rig.dm.get(nw(FRAME) + k, 0) for k in range(256)]
     y, out = rig.step(3)
     assert out["seen"] == [0x7F00, 0x1000, 0x2001, 0, 0x7F00, 1, 0x7F00, 0x7F00]
-    assert out["frame"] == frame0, "the engine's words are put back, neighbours untouched"
+    assert out["frame"] == frame0, (
+        "the engine's words are put back, neighbours untouched"
+    )
     assert out["g"][6] == 0b01110011, "the knobs the clamp changed"
     assert np.array_equal(y, RAMP)
 
@@ -148,9 +162,13 @@ def test_a_nan_block_is_zeroed_the_voice_ends_and_the_fault_is_counted():
     rig.arm()
     y, out = rig.step()
     assert not np.any(y) and np.all(np.isfinite(y))
-    assert out["flags"][0] & 0xFFFF == 0, "ACTIVE and the mark are clear: the voice ended"
+    assert out["flags"][0] & 0xFFFF == 0, (
+        "ACTIVE and the mark are clear: the voice ended"
+    )
     d = out["diag"]
-    assert d[D_FAULTS] & 0xFFFF == 1 and (d[D_FAULTS] >> 16) & 0xFF == 1, "one fault, kind 1 (Inf or NaN)"
+    assert d[D_FAULTS] & 0xFFFF == 1 and (d[D_FAULTS] >> 16) & 0xFF == 1, (
+        "one fault, kind 1 (Inf or NaN)"
+    )
     assert d[D_TYPEVOICE] == TYPE | (0 << 16)
     got = []
     for m in range(4):
@@ -181,7 +199,7 @@ def test_the_8th_fault_within_a_second_disables_the_type_and_a_slow_trickle_does
     assert rig.dm[nw(TABLE) + 10] == 0 and (rig.dm[nw(DIAG) + D_FAULTS] >> 24) == 0
     assert rig.dm[nw(TABLE) + 13] == 10
     # eight in a row, one block apart
-    for k in range(8):
+    for _ in range(8):
         rig.arm()
         y, out = rig.step(blocks_before=1)
         assert not np.any(y)
@@ -189,7 +207,9 @@ def test_the_8th_fault_within_a_second_disables_the_type_and_a_slow_trickle_does
     assert out["row"][10] == TYPE, "the row names the disabled type"
     assert d[D_FAULTS] >> 24 == 1 and d[D_DISABLED] == TYPE
     faults = d[D_FAULTS] & 0xFFFF
-    assert faults == 17, "the last slow fault opened the window: the 8th in it is the 7th of the quick run"
+    assert faults == 17, (
+        "the last slow fault opened the window: the 8th in it is the 7th of the quick run"
+    )
     # the disabled type is not called any more: a silent block, ACTIVE as the engine set it, no new fault
     rig.arm()
     y, out = rig.step(blocks_before=1)
