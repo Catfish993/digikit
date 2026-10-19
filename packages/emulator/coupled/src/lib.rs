@@ -195,6 +195,10 @@ impl CoupledRuntime {
         self.input_base = self.emulator.icount();
         Ok(())
     }
+    /// After `restore_state`: start the write watch when the restored state is past its trigger.
+    pub fn resume_watch(&mut self) {
+        self.emulator.resume_watch();
+    }
     /// Restart the scenario clock here (a cold boot that reached ready).
     pub fn rebase_clock(&mut self) {
         self.input_base = self.emulator.icount();
