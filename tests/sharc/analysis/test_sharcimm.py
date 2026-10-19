@@ -190,7 +190,9 @@ class WidthPreferenceTest(unittest.TestCase):
         data = word0 + word1 + filler
 
         naive = next(sharc_disasm.disassemble(data, 0, count=1))
-        self.assertEqual((naive.type_name, naive.length_bytes), ("2c", 2))   # no VISA Type2b
+        self.assertEqual(
+            (naive.type_name, naive.length_bytes), ("2c", 2)
+        )  # no VISA Type2b
 
         table = sharcimm.decode_all(data)
         self.assertEqual(table[0].type_name, "2c")

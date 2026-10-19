@@ -251,6 +251,16 @@
       "pattern": "^(tests/fixtures/modules/|tools/patchkit/pk_sdkgen\\.py|packages/patchkit/src/modschema\\.rs)$",
       "file": "docs/design/module-sdk.md",
       "reason": "paths the SDK design proposes; they do not exist yet"
+    },
+    {
+      "pattern": "^docs/(mod-memory-regions|lfo4-state-memory)\\.md$",
+      "file": "docs/findings/01-container-and-patching.md",
+      "reason": "documents of the dn2_firmware repository (a collaborator's), cited by name"
+    },
+    {
+      "pattern": "^docs/(for-digikit-sharc-runner-dn2|waverider-dsp-compare)\\.md$",
+      "file": "docs/findings/05-sharc-isa-and-decoding.md",
+      "reason": "documents of the dn2_firmware repository (a collaborator's), cited by name"
     }
   ],
   "moved_local": {

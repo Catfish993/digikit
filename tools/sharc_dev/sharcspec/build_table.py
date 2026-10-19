@@ -322,7 +322,9 @@ def fixed_bits_for(width, fields, keys, prm=None, gap_bits=()):
 def make_form(name, width, fields, fixed, source, keys=()):
     mask = sum(1 << b for b in fixed)
     value = sum(v << b for b, v in fixed.items())
-    isa_only = (name.split("_")[0] in ISA_ONLY and name not in VISA_OVERRIDE) or name in NOT_VISA
+    isa_only = (
+        name.split("_")[0] in ISA_ONLY and name not in VISA_OVERRIDE
+    ) or name in NOT_VISA
     return {
         "name": name,
         "width": width,

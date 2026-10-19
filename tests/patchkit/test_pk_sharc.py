@@ -170,15 +170,14 @@ _t:
 """
 
 
-def test_a_16_bit_compute_is_accepted_by_the_assemblers_width_but_refused_when_the_emulator_would_read_it_wider():
+def test_a_16_bit_compute_is_accepted_at_the_assemblers_width():
     """`R0 = R0 + R1` is the 16-bit Type 2c word 0xc001, which shares its leading bits with a 32-bit Type 2b. The
-    verifier takes the assembler's extent (a free-running decode read the next word into a 2b), and refuses the object
-    when the emulator's lookahead would still read the wider form: the emulator would run another instruction than the
-    silicon (finding 45)."""
+    verifier used to refuse it, because the emulator's lookahead read the wider form (finding 45). Since the decoder
+    knows there is no VISA Type 2b (a 0xc000..0xc07f parcel is the 16-bit Type 2c; finding 05), the emulator reads
+    the same width as the silicon and the object links."""
     obj = pk_sharc.assemble(TIE)
     assert obj.rows[0] == (0, "c001"), obj.rows
-    with pytest.raises(pk_sharc.PkSharcError, match="emulator's width resolution"):
-        pk_sharc.link(obj, BASE, {})
+    assert pk_sharc.link(obj, BASE, {}).checked == len(obj.rows)
     # distinct registers: a 32-bit compute, no tie
     ok = pk_sharc.assemble(TIE.replace("R0 = R0 + R1", "R0 = R1 + R2"))
     assert len(ok.rows[0][1]) == 8
