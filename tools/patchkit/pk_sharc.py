@@ -532,6 +532,9 @@ def build(
 # ---------------------------------------------------------------- running on the concrete core
 
 
+_DECODE_CACHES: dict[bytes, dict] = {}
+
+
 def run_call(
     linked: Linked,
     entry: str,
@@ -569,6 +572,11 @@ def run_call(
         )
         data += obj.code_boot
     mem = LoadedMemory(data, blocks)
+    # The decode of a pc depends only on the loaded code bytes and their placement, so calls that load the same code
+    # (a rig calling a routine block after block) share one decode cache instead of decoding every instruction again.
+    cache_key = hashlib.sha256(
+        repr([(b["target_address"], b["byte_count"]) for b in blocks]).encode() + data
+    ).digest()
     runner = sharc_run.Runner(
         mem,
         start,
@@ -576,6 +584,7 @@ def run_call(
         breakpoints=[return_sw, *extra_breaks],
         approx_recips=approx_recips,
     )
+    runner._cache = _DECODE_CACHES.setdefault(cache_key, {})
     for addr, word in (dm_words or {}).items():
         if not st._dm_write(
             runner.state, addr, 4, st.Const(word & 0xFFFFFFFF), normal_word=True
