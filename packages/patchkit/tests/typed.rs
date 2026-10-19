@@ -34,10 +34,12 @@ const PINS: &[(&str, &str, &str)] = &[
     // The five pins with machines/pluck moved on 2026-10-19 (lane b, finding 51): the runtime guard of core/dsp-voice (voice rows of 16 words, the guard code, the
     // wider diagnostic block, both devices) and the three clamps of pluck.s / pluck_dn2.s. Section 7 only: sections 1 to 6 and 8 of the old (a80274dc) and new patched
     // images compared equal for each of the five (port_resolve.sections_of); the xslice-only pins did not move.
+    // The four Digitakt II pins with machines/pluck moved on 2026-10-19 (pluck.s clears its 4096-sample line at note-on): section 7 only (the other sections of the old and
+    // new patched images compared equal, port_resolve.sections_of); the Digitone II pin and the xslice-only pins did not move.
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck",
-        "1ebf4442c435842a9beee4030aa9ff3ede49a2bbb23052bf53238c0471e95252",
+        "a24fd3dd9af65fdcdc59380cf1beb4a88c4683a6f736a7c600d534013bd7d456",
     ),
     (
         "Digitakt_II_OS1.16.syx",
@@ -47,12 +49,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck,machines/xslice",
-        "b6d58d50a0140cc5f4b232f7c01baa1950b7ecb4919755ab6d711e78d2480635",
+        "8f6c168bdcaeaae7c63e152d6862e8d740200589d3e9a5410b80e9618ef98754",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
-        "1ddb32a3cc2d7eb2b3b0080817e478682ba54e4f117f04fb2a7b0b97c30f978e",
+        "53b7b8e1a5c8d163f8bf6a7766c981dcf52e240a7c9d7da52354d9c1773a0e83",
     ),
     (
         "Digitakt_II_OS1.17.syx",
@@ -62,7 +64,7 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck,machines/xslice",
-        "390555484a98c0ebd1e977bfc21457954b3b2b42760f2f118457a01afd3ffa6d",
+        "b5076fdb6175241690b60325543352c36bc2e1a88f04586774bdfe20340e273a",
     ),
     (
         "Digitone_II_OS1.12.syx",
