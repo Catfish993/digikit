@@ -8,6 +8,8 @@
     uv run python -m tools.devtools.verify --rerun-failed   # only the steps that failed in the last run
     uv run python -m tools.devtools.verify --jobs 1        # sequential (default: half the CPUs in parallel)
     uv run python -m tools.devtools.verify --explain        # show the routing and the plan, run nothing
+    uv run python -m tools.devtools.verify --base A --head B --explain   # the same for the commits A..B
+(`mise run verify:pre` is the quick lane check, tools/devtools/verify_pre.py; this is the merge gate.)
 
 Scenario renders go through the content-addressed render cache (tools/devtools/render_cache.py). Each
 cache hit is also re-rendered from scratch with probability DIGI_RENDER_CACHE_CHECK (verify
@@ -23,7 +25,10 @@ python-tests runs the PY_GATE files, the PY_SUITES whose trigger prefixes match 
 every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
 test files that import a changed tests/support module. With
 --full it runs PY_GATE plus every suite, not all of tests/ (`mise run test` runs all of tests/).
-rust-tests runs cargo test --workspace --release. --explain takes the same options as a run, then
+rust-tests runs cargo test --workspace --release, or only the crates rust_ws.affected_packages names
+for the changed files (a routed run; --full and --only keep the workspace). The finer rules for modules/,
+tools/device/, tests/digikit scenarios and mise.toml tasks are in tools/devtools/verify_route.py
+(docs/TESTING.md, "What verify runs for a change"). --explain takes the same options as a run, then
 prints each changed file with its matched prefix and steps, the node plan with dependencies and
 the python-tests files with their suite, without running anything or creating a run directory.
 
@@ -51,6 +56,8 @@ from tools import python_env  # noqa: E402
 from tools.devtools import (  # noqa: E402
     benchlock,  # noqa: E402
     fastcov,  # noqa: E402
+    rust_ws,  # noqa: E402
+    verify_route,  # noqa: E402
 )
 from tools.emulator import (  # noqa: E402
     coupled,  # noqa: E402
@@ -78,7 +85,6 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         "patchkit",
         (
             "packages/patchkit/",
-            "modules/",
             "devices/ports/",
             "tools/patchkit/pk_",
             "tools/patchkit/port_resolve.py",
@@ -89,6 +95,31 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         ("tests/patchkit",),
     ),
     (
+        "machine-conformance",
+        (
+            "tools/patchkit/pk_conform.py",
+            "tools/patchkit/pk_modcheck.py",
+            "tools/patchkit/pk_sharc.py",
+            "tests/support/machine_rig.py",
+            "tests/support/conform_worker.py",
+            "tests/support/dsp_voice_rig.py",
+            "tests/modules/",
+        ),
+        ("tests/modules",),
+    ),
+    (
+        "digikit-boot",
+        (
+            "packages/patchkit/src/dkm.rs",
+            "packages/patchkit/src/register.rs",
+            "packages/emulator/plusdrive/",
+            "tools/patchkit/pk_dkrt",
+            "tools/patchkit/pk_digikit_",
+            "tests/digikit/",
+        ),
+        ("tests/digikit",),
+    ),
+    (
         "control-client",
         ("tools/control/digi_client.py", "packages/emulator/control/"),
         ("tests/control",),
@@ -97,6 +128,8 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         "devtools",
         (
             "tools/devtools/verify.py",
+            "tools/devtools/verify_route.py",
+            "tools/devtools/verify_pre.py",
             "tools/devtools/rust_ws.py",
             "tools/patchkit/pk_proofs.py",
             "tools/devtools/benchlock.py",
@@ -148,9 +181,13 @@ STEPS = (
 TIER_QUICK_EVERY = 7
 EVERYTHING = tuple(s for s in STEPS if s not in ("tier-sweep", "dt2-tier-sweep"))
 FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
+# A change to the routing itself selects every step and the whole python plan: a routing bug
+# would otherwise drop coverage without anyone seeing it.
+SELF_BROAD = ("tools/devtools/verify.py", "tools/devtools/verify_route.py")
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
+    (SELF_BROAD, EVERYTHING),
     # GitHub settings files (templates, CODEOWNERS): only the path check reads them.
     ((".github/",), ("python-tests",)),
     (
@@ -208,10 +245,12 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "dt2-tone",
         ),
     ),
+    # the digikit scenario runners and the runtime packer: python tests only (no web bundle, no Rust reads them)
+    (("tools/patchkit/pk_digikit_", "tools/patchkit/pk_dkrt"), ("python-tests",)),
+    # modules/ is routed by verify_route.module_fine, not here
     (
         (
             "packages/patchkit/",
-            "modules/",
             "devices/ports/",
             "tools/patchkit/pk_",
             "tools/patchkit/port_resolve.py",
@@ -220,6 +259,8 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("rust-tests", "python-tests", "web"),
     ),
+    # the Rust crate behind the browser upload (cdylib for packages/dkupload and apps/web/tests/dkupload.test.mjs)
+    (("packages/dkupload/",), ("rust-tests", "web")),
     (
         ("packages/emulator/control/",),
         ("desktop", "rust-tests", "card", "python-tests"),
@@ -228,7 +269,9 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         (
             "packages/emulator/plusdrive/",
             "packages/emulator/card/",
+            "packages/emulator/boot/examples/plusdrive_check.rs",
             "tools/emulator/card_check.py",
+            "tools/firmware/plusdrive_check.py",
         ),
         ("desktop", "rust-tests", "card"),
     ),
@@ -271,18 +314,62 @@ def git_lines(*args: str) -> list[str]:
     return [line for line in out.stdout.splitlines() if line]
 
 
-def changed_files(base: str) -> list[str]:
-    """Files changed since the merge base with BASE, committed or not, plus untracked files."""
-    since = git_lines("merge-base", base, "HEAD")[0] if base != "HEAD" else "HEAD"
+def merge_base(base: str, head: str | None) -> str:
+    if head is None:
+        return git_lines("merge-base", base, "HEAD")[0] if base != "HEAD" else "HEAD"
+    return git_lines("merge-base", base, head)[0]
+
+
+def changed_files(base: str, head: str | None = None) -> list[str]:
+    """Files changed since the merge base with BASE, committed or not, plus untracked files.
+    With HEAD (a revision): the commits BASE..HEAD only, which explains a historical range
+    (the working tree still decides what the files mean)."""
+    since = merge_base(base, head)
+    if head is not None:
+        return sorted(git_lines("diff", "--name-only", since, head))
     files = set(git_lines("diff", "--name-only", since))
     files |= set(git_lines("ls-files", "--others", "--exclude-standard"))
     return sorted(files)
+
+
+def git_show(rev: str | None, path: str) -> str | None:
+    """PATH at REV (None: the working tree); None when it does not exist there."""
+    if rev is None:
+        file = ROOT / path
+        return file.read_text(encoding="utf-8") if file.is_file() else None
+    done = subprocess.run(
+        ["git", "show", f"{rev}:{path}"], cwd=ROOT, capture_output=True, text=True
+    )
+    return done.stdout if done.returncode == 0 else None
+
+
+def expand_mise(
+    files: list[str], base: str, head: str | None
+) -> tuple[list[str], dict[str, str]]:
+    """Replace a changed mise.toml by the paths of the tools its changed tasks run (a broad
+    change keeps mise.toml, which selects every step). Also returns path -> origin note."""
+    if "mise.toml" not in files:
+        return files, {}
+    since = merge_base(base, head)
+    change = verify_route.mise_paths(
+        git_show(since, "mise.toml"), git_show(head, "mise.toml")
+    )
+    if change is None:
+        return files, {
+            "mise.toml": "broad change (tools, env, verify/build/gen task, unknown run)"
+        }
+    paths, origin = change
+    rest = [f for f in files if f != "mise.toml"]
+    return sorted(set(rest) | set(paths)), origin
 
 
 def route(path: str) -> tuple[str, tuple[str, ...]]:
     """How one changed path is routed: (matched prefix or "docs"/"fallback", steps)."""
     if path.endswith(".md"):
         return "docs", ()  # documentation selects no steps
+    found = verify_route.fine(path)
+    if found is not None:
+        return found.label, found.steps
     for prefixes, steps in RULES:
         for prefix in prefixes:
             if path.startswith(prefix):
@@ -332,9 +419,13 @@ def python_test_plan(files: list[str], full: bool) -> list[tuple[str, str]]:
     suites a changed file triggers (all of them when FULL), changed test files, then
     the tests that import a changed tests/support/ module."""
     plan_: list[tuple[str, str]] = [(path, "gate") for path in PY_GATE]
+    full = full or any(f.startswith(SELF_BROAD) for f in files)
+    finer = {f: verify_route.fine(f) for f in files if not f.endswith(".md")}
+    coarse = [f for f in files if finer.get(f) is None]
     for name, triggers, tests in PY_SUITES:
-        if full or any(f.startswith(triggers) for f in files):
+        if full or any(f.startswith(triggers) for f in coarse):
             plan_ += [(path, name) for path in resolve_tests(tests)]
+    plan_ += [(t, f.label) for f in finer.values() if f for t in f.tests]
     plan_ += [(f, "changed") for f in files if is_changed_test(f)]
     plan_ += [(t, "support") for f in files for t in support_users(f)]
     seen: set[str] = set()
@@ -353,6 +444,7 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
         wanted.update(route(path)[1])
         if is_changed_test(path) or (
             not path.endswith(".md")
+            and verify_route.fine(path) is None
             and any(path.startswith(triggers) for _, triggers, _ in PY_SUITES)
         ):
             wanted.add("python-tests")
@@ -418,8 +510,14 @@ class Gate:
     """Collects each step's output lines in a per-thread buffer, so parallel steps
     print whole and in order when they finish."""
 
-    def __init__(self, out: Path, py_tests: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        out: Path,
+        py_tests: list[str] | None = None,
+        rust_packages: list[str] | None = None,
+    ) -> None:
         self.out = out
+        self.rust_packages = rust_packages
         self.py_tests = py_tests if py_tests is not None else list(PY_GATE)
         self.failed: list[str] = []
         self.local = threading.local()
@@ -709,10 +807,26 @@ def plan(steps: tuple[str, ...]) -> tuple[list[str], dict[str, tuple[str, ...]]]
     return nodes, deps
 
 
-def rust_tests_command() -> list[str]:
-    # cargo test --workspace --release (rust_ws.py); digiemu-desktop is excluded when
-    # apps/desktop/ui/dist is absent
-    return [*PY, "-m", "tools.devtools.rust_ws", "test"]
+def rust_tests_command(packages: list[str] | None = None) -> list[str]:
+    """cargo test --workspace --release (rust_ws.py); digiemu-desktop is excluded when
+    apps/desktop/ui/dist is absent. PACKAGES (from rust_scope) limit the run to those crates
+    when rust_ws accepts `--packages`; until it does, the whole workspace runs."""
+    cmd = [*PY, "-m", "tools.devtools.rust_ws", "test"]
+    if packages and "--packages" in (rust_ws.__doc__ or ""):
+        cmd += ["--packages", ",".join(packages)]
+    return cmd
+
+
+def rust_scope(files: list[str]) -> list[str] | None:
+    """The workspace packages whose tests the changed FILES can affect: None is the whole
+    workspace, [] no Rust test. A broad mise.toml change or a change to the routing keeps the
+    whole workspace."""
+    if any(
+        f == "mise.toml" or f.startswith(SELF_BROAD) or f == "tools/devtools/rust_ws.py"
+        for f in files
+    ):
+        return None
+    return rust_ws.affected_packages(files)
 
 
 def explain(
@@ -720,14 +834,20 @@ def explain(
     files: list[str],
     py_plan: list[tuple[str, str]],
     per_file: bool,
+    origin: dict[str, str] | None = None,
+    rust_packages: list[str] | None = None,
 ) -> None:
     """Print the routing, the node plan and the python-tests files; run nothing."""
     if per_file:
         print("changed files:")
         for path in files:
             label, wanted = route(path)
-            print(f"  {path} -> {label} -> {', '.join(wanted) or 'no steps'}")
+            note = f"  [{origin[path]}]" if origin and path in origin else ""
+            print(f"  {path} -> {label} -> {', '.join(wanted) or 'no steps'}{note}")
     print(f"steps: {', '.join(steps) or 'nothing to run'}")
+    if "rust-tests" in steps:
+        scope = ", ".join(rust_packages) if rust_packages else "whole workspace"
+        print(f"rust-tests packages: {scope}")
     nodes, deps = plan(steps)
     print("plan:")
     for node in nodes:
@@ -788,9 +908,13 @@ def run_step(gate: Gate, step: str) -> None:
             check=lambda _text: python_tests_passed(out),
         )
     elif step == "rust-tests":
-        gate.run("rust-tests", rust_tests_command())
+        gate.run("rust-tests", rust_tests_command(gate.rust_packages))
     elif step == "card":
         gate.run("card", [*PY, "-m", "tools.emulator.card_check"])
+        # The firmware's own view of a folder-built image (nested folders, plain files).
+        gate.run("card-fs", [*PY, "-m", "tools.firmware.plusdrive_check"])
+        # The module store through the firmware's block read, on the DN2 too.
+        gate.run("card-fs-dn2", [*PY, "-m", "tools.firmware.plusdrive_check", "--dn2"])
     elif step == "dt2-tone":
         gate.run("dt2-tone", [*PY, "-m", "tools.emulator.dt2_sample_check"])
     elif step == "dt2-check":
@@ -882,6 +1006,11 @@ def main(argv: list[str] | None = None) -> int:
         default="HEAD",
         help="compare with the merge base of this ref (default: HEAD)",
     )
+    ap.add_argument(
+        "--head",
+        help="with --explain: the commits BASE..HEAD instead of the working tree "
+        "(files are read from the current tree)",
+    )
     ap.add_argument("--full", action="store_true", help="every step, full tier sweep")
     ap.add_argument("--only", help=f"comma-separated steps from: {', '.join(STEPS)}")
     ap.add_argument(
@@ -913,8 +1042,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.rerun_failed and (args.only or args.full):
         ap.error("--rerun-failed cannot be combined with --only or --full")
+    if args.head and not args.explain:
+        ap.error("--head only explains a range: add --explain")
     files: list[str] = []
+    origin: dict[str, str] = {}
+    rust_packages: list[str] | None = None
     full, dt2 = args.full, args.dt2
+    if full:  # tests/digikit: every scenario on all four images (the gate runs the quick tier)
+        os.environ["DIGIKIT_TIER"] = "full"
     rerun_tests: list[str] | None = None
     if args.rerun_failed:
         last = load_last_result(Path(digi_env.RUNS_ROOT) / "verify", None)
@@ -946,8 +1081,14 @@ def main(argv: list[str] | None = None) -> int:
         steps = tuple(s for s in STEPS if s not in skip)
         why = "--full"
     else:
-        files = changed_files(args.base)
+        files, origin = expand_mise(
+            changed_files(args.base, args.head), args.base, args.head
+        )
         steps = steps_for(files)
+        if "rust-tests" in steps:
+            rust_packages = rust_scope(files)
+            if rust_packages == []:  # no changed file reaches a Rust test
+                steps = tuple(s for s in steps if s != "rust-tests")
         why = f"{len(files)} changed files since {args.base}"
     if rerun_tests is not None:
         py_plan = [(path, "rerun") for path in rerun_tests]
@@ -959,6 +1100,8 @@ def main(argv: list[str] | None = None) -> int:
             files,
             py_plan,
             per_file=not (args.only or args.full or args.rerun_failed),
+            origin=origin,
+            rust_packages=rust_packages,
         )
         return 0
     # Every step, and no_aot_env(), inherits os.environ: set the cache env once.
@@ -969,7 +1112,7 @@ def main(argv: list[str] | None = None) -> int:
         f"verify: {', '.join(steps) or 'nothing to run'} ({why}); logs in {out}",
         flush=True,
     )
-    gate = Gate(out, [path for path, _ in py_plan])
+    gate = Gate(out, [path for path, _ in py_plan], rust_packages)
     jobs = args.jobs if args.jobs else default_step_jobs()
     start = time.monotonic()
     times = run_steps(gate, steps, jobs)

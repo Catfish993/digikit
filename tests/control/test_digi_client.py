@@ -388,3 +388,29 @@ def test_hot_dsp_inject_halves_the_master_level_and_the_original_restores_it(
         assert halved["peak"] == pytest.approx(reference["peak"] / 2, rel=1e-3)
         restored = render(emu, patched_dsp_syx, SYX)
         assert restored["sha256"] == reference["sha256"]
+
+
+def test_midi_wrappers_send_hex_and_return_bytes(tmp_path):
+    seen = {}
+
+    def responder(request):
+        method = request["method"]
+        seen[method] = request.get("params")
+        if method == "hello":
+            result = {"schema_version": 1}
+        elif method in ("midi.out", "midi.usb.out"):
+            result = {"bytes": 3, "hex": "f07ef7"}
+        else:
+            result = {"bytes": 2, "queued": 2}
+        yield {"jsonrpc": "2.0", "id": request["id"], "result": result}
+
+    emu = Emu.connect(_serve(responder, tmp_path))
+    emu.midi_in(bytes([0x90, 0x3C]))
+    assert seen["midi.in"] == {"bytes": "903c"}
+    emu.midi_in(b"\xf8", period=0)
+    assert seen["midi.in"] == {"bytes": "f8", "period": 0}
+    emu.usb_in(bytes([0xF0, 0xF7]))
+    assert seen["midi.usb.in"] == {"bytes": "f0f7"}
+    assert emu.midi_out() == bytes([0xF0, 0x7E, 0xF7])
+    assert emu.usb_out() == bytes([0xF0, 0x7E, 0xF7])
+    emu.close()

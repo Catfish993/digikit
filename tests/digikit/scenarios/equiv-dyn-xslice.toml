@@ -1,0 +1,11 @@
+# A data-only machine with a parameter: its rows equal those of its static twin (test/twin-xslice).
+[scenario]
+name = "equiv-dyn-xslice"
+kind = "equiv"
+devices = ["dt2"]
+tier = "full"
+
+[equiv]
+modules = ["test/dyn-xslice"]
+twin = "test/twin-xslice"
+voices = 0

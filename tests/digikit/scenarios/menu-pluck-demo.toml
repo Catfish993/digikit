@@ -1,0 +1,20 @@
+# Through the menu on both devices: tick a machine with DSP code (test/dyn-pluck) and a code-only module (test/dyn-demo) in
+# SETTINGS > DIGIKIT > MODULES, APPLY & RESTART (two presses); the next boot has both, the machine plays like the patched-in machines/pluck.
+[scenario]
+name = "menu-pluck-demo"
+kind = "menu"
+devices = ["dt2", "dn2"]
+tier = "full"
+
+[menu]
+modules = ["test/dyn-demo", "test/dyn-pluck"]
+twin = "machines/pluck"
+static_type = 9
+hint = 7
+voices = 1
+
+[menu.dn2]
+hint = 4
+hint_run = 5
+trig_frame = 7000
+ref_plain = true

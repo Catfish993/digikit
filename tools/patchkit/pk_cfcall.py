@@ -17,6 +17,7 @@ The scratch stack and the return sentinel default to the top of the spike 0.3 ex
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -88,8 +89,12 @@ class CfMachine:
         state: str | Path | None = None,
         timeout: int = 600,
         base_sha256: str | None = None,
+        env: dict[str, str] | None = None,
     ):
-        """``base_sha256``: the stock firmware a patched ``syx`` was made from (patchkit's plan.json ``base``)."""
+        """``base_sha256``: the stock firmware a patched ``syx`` was made from (patchkit's plan.json ``base``).
+        ``env``: extra environment for the emulator process (DIGI_WRITE_WATCH, DIGI_FLUSH_CHECK, ...; they act on a boot,
+        so use a ``state`` that does not exist yet)."""
+        self.env = env
         self.base_sha256 = base_sha256
         self.syx = Path(syx)
         if not self.syx.is_absolute():
@@ -140,6 +145,7 @@ class CfMachine:
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
+                env={**os.environ, **self.env} if self.env else None,
             )
         if r.returncode:
             raise CfCallError(f"cf_call failed:\n{r.stderr[-2000:]}")

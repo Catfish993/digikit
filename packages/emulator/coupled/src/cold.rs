@@ -40,7 +40,33 @@ pub struct ColdInputs {
     /// The DSP's cold-start state at its first idle rest (`cold-idle.dsp`, the
     /// `dsp_cold` example's output; the same `DT2DSP01` layout as the sidecar).
     pub cold_idle: PathBuf,
+    /// A DSP patch applied to the cold DSP before the ColdFire runs its first instruction: the firmware's DSP code as the device
+    /// boots it, when the .syx carries a different DSP section than the base. `None`: the base's DSP (the patch, if any, goes in
+    /// after the ready state).
+    pub dsp_patch: Option<elektron_native_boot::dsp_patch::DspPatch>,
+    /// Ready at the main panel, without waiting for the filesystem check (a soft reset on a card an earlier boot used).
+    pub relax_fs_check: bool,
+    /// Where the boot leaves the card writes when the guest asks for a soft reset (RCM.RCR) before it is ready: the boot then ends
+    /// with the error [`SOFT_RESET`] and the caller boots again from those writes (a module whose `init` resets the machine
+    /// takes the boot through safe mode this way).
+    pub reset_out: Option<std::sync::Arc<std::sync::Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>>,
+    /// RAM a soft reset keeps (the digikit runtime's crash record; docs/findings/46-digikit-debug.md): the range, what the boot before left
+    /// in it (written before the first instruction) and where this boot leaves it if the guest resets before it is ready.
+    pub keep_ram: Option<KeepRam>,
 }
+
+/// See [`ColdInputs::keep_ram`].
+#[derive(Clone, Debug)]
+pub struct KeepRam {
+    pub base: u32,
+    pub bytes: u32,
+    /// The range's content from the boot before (empty: none; the range then starts as the machine's RAM does).
+    pub input: Vec<u8>,
+    pub out: std::sync::Arc<std::sync::Mutex<Option<Vec<u8>>>>,
+}
+
+/// The error of a cold boot that the guest cut short with a soft reset.
+pub const SOFT_RESET: &str = "soft reset";
 
 #[derive(Clone, Debug)]
 pub struct ColdProgress {
@@ -116,7 +142,16 @@ pub fn boot_emulator_to_ready(
     mut progress: impl FnMut(&ColdProgress),
 ) -> Result<ColdReport, String> {
     let started = Instant::now();
+    if inputs.relax_fs_check {
+        emulator.relax_fs_check();
+    }
+    if let Some(keep) = &inputs.keep_ram
+        && !keep.input.is_empty()
+    {
+        emulator.poke_ram(keep.base, &keep.input)?;
+    }
     let image = std::fs::read(&inputs.image).map_err(|e| format!("DSP image: {e}"))?;
+    let dsp_patch = inputs.dsp_patch.clone();
     let sidecar =
         std::fs::read(&inputs.cold_idle).map_err(|e| format!("DSP cold-idle state: {e}"))?;
     if sidecar.len() <= 24 || &sidecar[..8] != DSP_MAGIC {
@@ -143,7 +178,7 @@ pub fn boot_emulator_to_ready(
     let sample_link = dsp.sample_link == Some(device_profile::SampleLink::Lp0);
     emulator.enable_ssi_diagnostic(96_000)?;
     let (peer, handle, shared) = ThreadedPeer::spawn(
-        move || open_engine_patched(&image, &state, base, None, idle).map(NativeDsp),
+        move || open_engine_patched(&image, &state, base, dsp_patch.as_ref(), idle).map(NativeDsp),
         period_from_env(),
         idle.range,
     )?;
@@ -169,6 +204,15 @@ pub fn boot_emulator_to_ready(
         }
         let snapshot = emulator.step_chunk(CHUNK);
         let status = &snapshot.status;
+        if status.soft_reset {
+            if let Some(out) = &inputs.reset_out {
+                *out.lock().expect("reset overlay") = Some(emulator.card_overlay());
+            }
+            if let Some(keep) = &inputs.keep_ram {
+                *keep.out.lock().expect("kept ram") = Some(emulator.peek_ram(keep.base, keep.bytes));
+            }
+            return Err(SOFT_RESET.into());
+        }
         if let Some(error) = &status.error {
             return Err(format!("guest fault during boot: {error}"));
         }
@@ -224,7 +268,10 @@ pub fn boot_emulator_to_ready(
             });
         }
         if status.icount >= BOOT_LIMIT {
-            return Err(format!("not ready after {BOOT_LIMIT} instructions"));
+            return Err(format!(
+                "not ready after {BOOT_LIMIT} instructions: pc {:#x}, phase {}, main UI {}, ready {}, DSP-link quiet {quiet}, {} DSP frames",
+                status.pc, status.phase, status.main_ui_reached, status.ready, frames
+            ));
         }
     }
 }

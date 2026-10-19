@@ -157,3 +157,28 @@ def test_selcc_float_loop(selcc_module):
 def test_known_encode_hazard_is_refused():
     with pytest.raises(pk_sharc.PkSharcError, match="known Selache encode bug"):
         pk_sharc.assemble(".SECTION/PM seg_pmco;\nR0 = LSHIFT R1 BY -3;\n")
+
+
+TIE = """
+.SECTION/PM seg_pmco;
+.GLOBAL _t;
+_t:
+    R0 = R0 + R1;
+    NOP;
+    NOP;
+    RTS;
+"""
+
+
+def test_a_16_bit_compute_is_accepted_at_the_assemblers_width():
+    """`R0 = R0 + R1` is the 16-bit Type 2c word 0xc001, which shares its leading bits with a 32-bit Type 2b. The
+    verifier used to refuse it, because the emulator's lookahead read the wider form (finding 45). Since the decoder
+    knows there is no VISA Type 2b (a 0xc000..0xc07f parcel is the 16-bit Type 2c; finding 05), the emulator reads
+    the same width as the silicon and the object links."""
+    obj = pk_sharc.assemble(TIE)
+    assert obj.rows[0] == (0, "c001"), obj.rows
+    assert pk_sharc.link(obj, BASE, {}).checked == len(obj.rows)
+    # distinct registers: a 32-bit compute, no tie
+    ok = pk_sharc.assemble(TIE.replace("R0 = R0 + R1", "R0 = R1 + R2"))
+    assert len(ok.rows[0][1]) == 8
+    assert pk_sharc.link(ok, BASE, {}).checked == len(ok.rows)

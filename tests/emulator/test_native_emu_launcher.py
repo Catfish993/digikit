@@ -25,6 +25,12 @@ def fresh_gen(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_plus_drive_folder(monkeypatch, tmp_path_factory):
+    """The repository's plus_drive/ never reaches these tests."""
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(tmp_path_factory.mktemp("no-plus-drive")))
+
+
+@pytest.fixture(autouse=True)
 def _restore_sharc_gen_dir(monkeypatch):
     """native_emu sets SHARC_GEN_DIR with os.environ.setdefault; record it so
     monkeypatch restores it after each test."""
@@ -687,3 +693,188 @@ def test_dt2_explicit_gen_dir_wins(monkeypatch, tmp_path):
     monkeypatch.setenv("SHARC_GEN_DIR", str(chosen))
     launcher()["default_audio_args"]([str(syx)])
     assert os.environ["SHARC_GEN_DIR"] == str(chosen)
+
+
+# plus_drive/<device>/ is the +Drive input.
+
+
+def _folder(root, device, files):
+    for name, data in files.items():
+        path = root / device / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return root / device
+
+
+def _card_run(monkeypatch, tmp_path, device):
+    """main() with the card builder and the device lookup stubbed; returns the
+    card calls and the launcher arguments."""
+    scope, calls = _build_run_setup(monkeypatch)
+    syx = tmp_path / "known.syx"
+    syx.write_bytes(b"x")
+    glob = scope["main"].__globals__
+    monkeypatch.setattr(digi_env, "device_for_syx", lambda path: device)
+    monkeypatch.setattr(digi_env, "patch_base", lambda path: None)
+    built = []
+
+    def card(folder, firmware, env, dev="dt2"):
+        built.append((folder, firmware, dev))
+        return tmp_path / "card.img"
+
+    monkeypatch.setitem(glob, "plusdrive_card", card)
+    return scope, calls, built, syx
+
+
+def test_plus_drive_folder_is_the_default_card(monkeypatch, tmp_path):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    root = tmp_path / "pd"
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
+    folder = _folder(root, "dt2", {"digikit/modules/test.dkm": b"x"})
+    scope["main"]([str(syx), "--cf-only"])
+    assert built == [(folder, syx, "dt2")]
+    # The app is told the folder the card came from: it exports the firmware's changes there on exit.
+    assert calls[-1][1:] == [
+        str(syx),
+        "--card-image",
+        str(tmp_path / "card.img"),
+        "--card-folder",
+        str(folder.resolve()),
+    ]
+
+
+def test_patched_image_gets_the_card_of_its_stock_base(monkeypatch, tmp_path):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    stock = tmp_path / "stock.syx"
+    stock.write_bytes(b"stock")
+    monkeypatch.setattr(digi_env, "patch_base", lambda path: ("dt2", "ab" * 32))
+    monkeypatch.setattr(digi_env, "stock_for_sha", lambda digest: stock)
+    root = tmp_path / "pd"
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
+    folder = _folder(root, "dt2", {"digikit/modules/test.dkm": b"x"})
+    scope["main"]([str(syx), "--cf-only"])
+    # the builder gets the stock image; the app boots the patched one
+    assert built == [(folder, stock, "dt2")]
+    assert calls[-1][1] == str(syx)
+
+
+def test_no_sync_keeps_the_folder_but_turns_the_exit_export_off(monkeypatch, tmp_path):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    root = tmp_path / "pd"
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
+    folder = _folder(root, "dt2", {"a.wav": b"x"})
+    scope["main"]([str(syx), "--cf-only", "--no-sync"])
+    assert calls[-1][1:] == [
+        str(syx),
+        "--card-image",
+        str(tmp_path / "card.img"),
+        "--card-folder",
+        str(folder.resolve()),
+        "--no-card-sync",
+    ]
+
+
+def test_launcher_without_syx_argument_gets_the_firmware_and_card(
+    monkeypatch, tmp_path
+):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    root = tmp_path / "pd"
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
+    monkeypatch.setenv("DIGI_EMU_SYX", str(syx))
+    folder = _folder(root, "dt2", {"a.wav": b"x"})
+    scope["main"](["--cf-only"])
+    assert calls[-1][1:] == [
+        str(syx),
+        "--card-image",
+        str(tmp_path / "card.img"),
+        "--card-folder",
+        str(folder.resolve()),
+    ]
+
+
+def test_other_devices_folder_and_empty_folders_are_ignored(monkeypatch, tmp_path):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    root = tmp_path / "pd"
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
+    _folder(root, "dn2", {".mmcfs/projects/0000.bin": b"x"})
+    (root / "dt2").mkdir()
+    scope["main"]([str(syx), "--cf-only"])
+    assert built == []
+    assert calls[-1][1:] == [str(syx)]
+
+
+def test_dn2_takes_only_mmcfs_and_digikit(monkeypatch, tmp_path):
+    scope = launcher()
+    has = scope["plus_drive_has_content"]
+    folder = _folder(tmp_path, "dn2", {"samples/a.wav": b"x", ".DS_Store": b""})
+    assert has(folder, "dt2") is True
+    assert has(folder, "dn2") is False
+    _folder(tmp_path, "dn2", {".mmcfs/kits/0001.bin": b"x"})
+    assert has(folder, "dn2") is True
+    only_store = _folder(tmp_path / "s", "dn2", {"digikit/m.dkm": b"x"})
+    assert has(only_store, "dn2") is True
+
+
+def test_explicit_card_image_or_unknown_firmware_skips_the_folder(
+    monkeypatch, tmp_path
+):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    root = tmp_path / "pd"
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
+    _folder(root, "dt2", {"a.wav": b"x"})
+    scope["main"]([str(syx), "--cf-only", "--card-image", "mine.img"])
+    assert built == []
+    monkeypatch.setattr(digi_env, "device_for_syx", lambda path: None)
+    scope["main"]([str(syx), "--cf-only"])
+    assert built == []
+
+
+def test_plus_drive_and_samples_options(monkeypatch, tmp_path):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    here = tmp_path / "mine"
+    here.mkdir()
+    scope["main"]([str(syx), "--cf-only", "--plus-drive", str(here)])
+    scope["main"]([str(syx), "--cf-only", "--samples", str(here)])
+    assert [b[0] for b in built] == [here, here]
+    with pytest.raises(SystemExit):
+        scope["main"]([str(syx), "--plus-drive", str(here), "--samples", str(here)])
+    with pytest.raises(SystemExit):
+        scope["main"]([str(syx), "--samples", str(here), "--card-image", "c.img"])
+    with pytest.raises(SystemExit):
+        scope["main"]([str(syx), "--plus-drive"])
+
+
+def test_card_cache_key_follows_every_file(monkeypatch, tmp_path):
+    scope = launcher()
+    glob = scope["plusdrive_card"].__globals__
+    target = tmp_path / "target"
+    (target / "release").mkdir(parents=True)
+    (target / "release" / "plusdrive").write_bytes(b"binary")
+    monkeypatch.setitem(glob, "target_dir_for", lambda gen: str(target))
+    monkeypatch.setitem(glob, "ROOT", tmp_path / "repo")
+    syx = tmp_path / "fw.syx"
+    syx.write_bytes(b"fw")
+    folder = _folder(
+        tmp_path, "dt2", {"a/b.bin": b"1", "c.dkm": b"2", ".mmcfs/kits/0000.bin": b"3"}
+    )
+    built = []
+
+    def run(command, **_kwargs):
+        if command[0].endswith("plusdrive"):
+            built.append(command)
+            Path(command[command.index("-o") + 1]).write_bytes(b"img")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("subprocess.run", run)
+    card = scope["plusdrive_card"]
+    first = card(folder, syx, {}, "dt2")
+    assert card(folder, syx, {}, "dt2") == first and len(built) == 1
+    assert first.name == "dt2.img"
+    assert "--device" in built[0] and built[0][built[0].index("--device") + 1] == "dt2"
+    (folder / "a" / "b.bin").write_bytes(b"changed")
+    second = card(folder, syx, {}, "dt2")
+    assert second != first and len(built) == 2
+    (folder / "c.dkm").rename(folder / "d.dkm")
+    assert card(folder, syx, {}, "dt2") not in (first, second)
+    assert card(folder, syx, {}, "dn2").name == "dn2.img"
+    with pytest.raises(SystemExit):
+        card(tmp_path / "missing", syx, {}, "dt2")

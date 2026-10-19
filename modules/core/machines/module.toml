@@ -307,6 +307,9 @@ _mf_c4 = "cf.machines.clone.4"
 _mf_c4a = "cf.machines.clone.4.alt"
 _mf_c6 = "cf.machines.clone.6"
 _mf_c6a = "cf.machines.clone.6.alt"
+_mf_sp = "cf.machines.srcpage"
+_mf_spa = "cf.machines.srcpage.alt"
+_mf_spt = "cf.machines.srcpage.type"
 
 [[object]]
 path = "build/machines-dn2.dko.json"
@@ -703,6 +706,17 @@ anchor = "cf.machines.typearg.0"
 offset = 0
 to = "mf_typearg"
 displaced = "run"
+devices = ["dt2"]
+
+# SRC page (Digitakt II): an added type has one page (the page vector is cut to it, page 0), see mf_srcpage in src/cf/dt2/machines.s
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.srcpage"
+offset = 0
+to = "mf_srcpage"
+displaced = "drop"
 devices = ["dt2"]
 
 # DSP (Digitakt II): the selector table moves to mf_selector; the literal that loads its address follows
@@ -1416,6 +1430,38 @@ kind = "sharc_table"
 reloc_hash = "d2c02a587786f9ee328897985095c271ff1c5b65f289224e435968ea4b5d3f00"
 offset = 0x248
 len = 28
+mark = "D"
+
+# SourcePageView::vfunc_4: the first test, `tst.l 0x90(A2); beq.w T` (the site), its knob-page branch target T, and FUN_4005f6bc (the track's type)
+
+[[anchor_rule]]
+name = "cf.machines.srcpage"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "cbe8bf9e6b77989b0032eba45c39a8f2"
+offset = 0x10
+len = 8
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.srcpage.alt"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "cbe8bf9e6b77989b0032eba45c39a8f2"
+offset = 0x1fe
+len = 2
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.srcpage.type"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "abb082366c00e8016d04660320944930"
+offset = 0x0
+len = 6
 mark = "D"
 
 # the branch target of each clone test (the other destination of the routine; see mf_clone* in src/cf/dt2/machines.s)

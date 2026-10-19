@@ -263,6 +263,15 @@ fn index(items: &[(u32, usize)]) -> Result<Vec<u8>, FormatError> {
     }
     Ok(out)
 }
+/// Most entries (with "." and "..") whose index pages the firmware's binary
+/// search and readdir use: both fall back to other paths at 0xfff and above.
+pub const MAX_DIR_ENTRIES: usize = 0xffe;
+
+/// Build a directory's content pages and its three index pages. The content
+/// is a whole number of 32 KiB pages: entries never cross a page, and the
+/// last entry of each page has a slot that runs to the page end. Index
+/// pointers are `page * 0x8000 + offset` with `page` the directory's logical
+/// page.
 pub fn build_directory(
     dir_id: u32,
     parent_id: u32,
@@ -283,30 +292,33 @@ pub fn build_directory(
         kind: ATTR_DIR,
     });
     entries.extend_from_slice(children);
-    if entries.len() > u16::MAX as usize {
+    if entries.len() > MAX_DIR_ENTRIES {
         return Err(FormatError::TooManyEntries);
     }
     let mut contents = vec![0; PAGE];
     let mut pos = Vec::new();
     let mut at = 0;
-    for (n, e) in entries.iter().enumerate() {
+    let mut page = 0;
+    let mut last = 0;
+    for e in entries.iter() {
         let used = (e.name.len() + 11) & !3;
         if at + used > PAGE {
-            return Err(FormatError::DirectoryTooLarge);
+            put16(&mut contents, page * PAGE + last + 4, (PAGE - last) as u16);
+            contents.resize(contents.len() + PAGE, 0);
+            page += 1;
+            at = 0;
         }
-        let slot = if n + 1 == entries.len() {
-            PAGE - at
-        } else {
-            used
-        };
-        put32(&mut contents, at, e.id);
-        put16(&mut contents, at + 4, slot as u16);
-        contents[at + 6] = e.name.len() as u8;
-        contents[at + 7] = e.kind;
-        contents[at + 8..at + 8 + e.name.len()].copy_from_slice(&e.name);
-        pos.push(at);
+        let base = page * PAGE + at;
+        put32(&mut contents, base, e.id);
+        put16(&mut contents, base + 4, used as u16);
+        contents[base + 6] = e.name.len() as u8;
+        contents[base + 7] = e.kind;
+        contents[base + 8..base + 8 + e.name.len()].copy_from_slice(&e.name);
+        pos.push(base);
+        last = at;
         at += used;
     }
+    put16(&mut contents, page * PAGE + last + 4, (PAGE - last) as u16);
     let mut by_hash: Vec<_> = entries
         .iter()
         .zip(&pos)

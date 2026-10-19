@@ -3,6 +3,13 @@
 //! usage: regions_probe SYX [--card IMG] [--base-sha HEX] [--fill START:LEN]...
 //!        [--extra N] [--report-every N] [--event T:CODE:down|up]... [--turn T:ENC:DETENTS]...
 //!        [--zero-digest] [--pattern canary|zero] [--expect ADDR:FILE]...
+//!        [--midi T:HEX]... [--midi-file T:PATH]... [--midi-period N] [--midi-out PATH]
+//!        [--frame T:PATH]... [--overlay-out PATH] [--poke T:ADDR:VALUE]... [--peek-at T:ADDR[:OFF]]...
+//!
+//! --midi / --midi-file queue bytes on the MIDI DIN input T instructions past ready, one byte per
+//! --midi-period instructions (default 42240 = 320 us, the wire rate). --midi-out writes every byte the
+//! firmware sent on MIDI DIN. --frame writes the raw 1024-byte OLED frame at T. --overlay-out writes the
+//! card writes (`card.overlay` format: u64 le sector, 64-byte mask, 512 data bytes per touched sector).
 //!
 //! Boots SYX with the ColdFire emulator (no DSP, unless built with the `sharc`
 //! feature and given --dsp IMAGE --dsp-idle COLD_IDLE: then the DSP of
@@ -152,6 +159,23 @@ fn num(s: &str) -> u32 {
 enum Input {
     Button(u8, bool),
     Turn(u8, i32),
+    Midi(Vec<u8>),
+    Usb(Vec<u8>),
+    Frame(String),
+    Poke(u32, u32),
+    /// address, and an optional offset: the longword at (the longword at address) + offset
+    PeekAt(u32, Option<u32>),
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).expect("hex byte"))
+        .collect()
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 fn report(emu: &mut Emulator, regions: &[(u32, u32)], tag: &str) {
@@ -204,6 +228,12 @@ fn main() {
     let mut zero_digest = false;
     let mut inputs: Vec<(u64, Input)> = Vec::new();
     let mut expects: Vec<(u32, String)> = Vec::new();
+    let mut midi_period = elektron_native_boot::midi::WIRE_PERIOD;
+    let mut midi_out_path: Option<String> = None;
+    let mut usb_out_path: Option<String> = None;
+    let mut overlay_out: Option<String> = None;
+    let mut peeks: Vec<u32> = Vec::new();
+    let mut pcs: Vec<u32> = Vec::new();
     let (mut dsp_image, mut dsp_idle): (Option<String>, Option<String>) = (None, None);
     while let Some(arg) = args.next() {
         let mut value = || {
@@ -231,12 +261,58 @@ fn main() {
             "--dsp" => dsp_image = Some(value()),
             "--dsp-idle" => dsp_idle = Some(value()),
             "--pattern" => ZERO.store(value() == "zero", std::sync::atomic::Ordering::Relaxed),
+            "--midi" | "--midi-file" => {
+                let v = value();
+                let (t, data) = v.split_once(':').expect("--midi T:HEX");
+                let bytes = if arg == "--midi" {
+                    unhex(data)
+                } else {
+                    fs::read(data).unwrap()
+                };
+                inputs.push((u64::from(num(t)), Input::Midi(bytes)));
+            }
+            "--peek" => peeks.push(num(&value())),
+            "--pc" => pcs.push(num(&value())),
+            "--usb" | "--usb-file" => {
+                let v = value();
+                let (t, data) = v.split_once(':').expect("--usb T:HEX");
+                let bytes = if arg == "--usb" {
+                    unhex(data)
+                } else {
+                    fs::read(data).unwrap()
+                };
+                inputs.push((u64::from(num(t)), Input::Usb(bytes)));
+            }
+            "--usb-out" => usb_out_path = Some(value()),
+            "--midi-period" => midi_period = u64::from(num(&value())),
+            "--midi-out" => midi_out_path = Some(value()),
+            "--overlay-out" => overlay_out = Some(value()),
+            "--frame" => {
+                let v = value();
+                let (t, path) = v.split_once(':').expect("--frame T:PATH");
+                inputs.push((u64::from(num(t)), Input::Frame(path.to_string())));
+            }
             "--event" => {
                 let v = value();
                 let p: Vec<&str> = v.split(':').collect();
                 inputs.push((
                     u64::from(num(p[0])),
                     Input::Button(num(p[1]) as u8, p[2] == "down"),
+                ));
+            }
+            "--poke" => {
+                // T:ADDR:VALUE: a host write of one longword T instructions past ready (test scaffolding, not seen by the watch)
+                let v = value();
+                let p: Vec<&str> = v.split(':').collect();
+                inputs.push((u64::from(num(p[0])), Input::Poke(num(p[1]), num(p[2]))));
+            }
+            "--peek-at" => {
+                // T:ADDR: read one longword T instructions past ready and print it ({"peek_at":..}); a value that moves
+                let v = value();
+                let p: Vec<&str> = v.split(':').collect();
+                inputs.push((
+                    u64::from(num(p[0])),
+                    Input::PeekAt(num(p[1]), p.get(2).map(|o| num(o))),
                 ));
             }
             "--turn" => {
@@ -283,6 +359,7 @@ fn main() {
         eprintln!("reset clear did not return to {AFTER_CLEAR_PC:#x}");
         std::process::exit(3);
     }
+    emu.probe_pcs(&pcs);
     let t = std::time::Instant::now();
     for &(start, len) in &regions {
         for a in (start..start + len).step_by(4) {
@@ -317,9 +394,24 @@ fn main() {
         if let Some(at) = ready_at {
             let elapsed = s.icount - at;
             while next_input < inputs.len() && elapsed >= inputs[next_input].0 {
-                let result = match inputs[next_input].1 {
-                    Input::Button(code, down) => emu.button(code, down),
-                    Input::Turn(enc, d) => emu.turn(enc, d),
+                let result = match &inputs[next_input].1 {
+                    Input::Button(code, down) => emu.button(*code, *down),
+                    Input::Turn(enc, d) => emu.turn(*enc, *d),
+                    Input::Midi(bytes) => emu.midi_in(bytes, midi_period).map(|_| ()),
+                    Input::Usb(bytes) => emu.usb_midi_in(bytes).map(|_| ()),
+                    Input::Poke(addr, value) => emu.poke32(*addr, *value),
+                    Input::PeekAt(addr, via) => {
+                        let value = match via {
+                            None => emu.peek32(*addr),
+                            Some(off) => emu.peek32(*addr).and_then(|p| emu.peek32(p.wrapping_add(*off))),
+                        };
+                        println!("{{\"peek_at\":\"{addr:#x}\",\"t\":{elapsed},\"value\":{value:?}}}");
+                        Ok(())
+                    }
+                    Input::Frame(path) => emu
+                        .current_frame()
+                        .map(|(_, f)| fs::write(path, f).map_err(|e| e.to_string()))
+                        .unwrap_or_else(|| Err("no frame yet".into())),
                 };
                 if let Err(e) = result {
                     // A code this panel lacks (the scenarios are shared by devices).
@@ -333,7 +425,21 @@ fn main() {
             }
         }
         if s.error.is_some() || s.icount >= 6_000_000_000 {
-            println!("{{\"error\":{:?},\"icount\":{}}}", s.error, s.icount);
+            println!(
+                "{{\"error\":{},\"icount\":{},\"pc\":\"{:#x}\"}}",
+                s.error.as_ref().map_or("null".to_string(), |e| format!("{e:?}")),
+                s.icount,
+                s.pc
+            );
+            if s.error.is_some() {
+                let (d, a, pc, sr) = emu.cpu_regs();
+                let stack: Vec<String> = (0..12u32)
+                    .map(|k| format!("{:#x}", emu.peek32(a[7].wrapping_add(4 * k)).unwrap_or(0)))
+                    .collect();
+                println!(
+                    "{{\"fault_regs\":{{\"pc\":\"{pc:#x}\",\"sr\":\"{sr:#x}\",\"d\":{d:x?},\"a\":{a:x?},\"stack\":{stack:?}}}}}"
+                );
+            }
             break;
         }
         if ready_at.is_some_and(|r| s.icount - r >= extra) {
@@ -350,6 +456,52 @@ fn main() {
             dsp.frames_sent(),
             halted.map_or("null".to_string(), |h| format!("{h:?}"))
         );
+    }
+    for (pc, hits) in emu.probe_hits() {
+        println!("{{\"pc\":\"{pc:#x}\",\"hits\":{hits}}}");
+    }
+    for ((pc, ret, arg), (hits, last)) in emu.probe_rets() {
+        println!("{{\"pc_ret\":\"{pc:#x}\",\"ret\":\"{ret:#x}\",\"arg\":\"{arg:#x}\",\"hits\":{hits},\"last\":{last}}}");
+    }
+    for &a in &peeks {
+        println!("{{\"peek\":\"{a:#x}\",\"value\":{:?}}}", emu.peek32(a));
+    }
+    let midi_out = emu.take_midi_out();
+    println!(
+        "{{\"midi\":{{\"out_bytes\":{},\"out\":\"{}\",\"status\":{}}}}}",
+        midi_out.len(),
+        hex(&midi_out[..midi_out.len().min(4096)]),
+        serde_json::to_string(&emu.midi_status()).unwrap()
+    );
+    let usb_out = emu.take_usb_out();
+    println!(
+        "{{\"usb\":{{\"out_bytes\":{},\"out\":\"{}\"}}}}",
+        usb_out.len(),
+        hex(&usb_out[..usb_out.len().min(4096)])
+    );
+    if let Some(path) = &usb_out_path {
+        fs::write(path, &usb_out).unwrap();
+    }
+    if let Some(path) = &midi_out_path {
+        fs::write(path, &midi_out).unwrap();
+    }
+    {
+        let sectors = emu.card_overlay();
+        let first = sectors.first().map_or(0, |s| s.sector);
+        let last = sectors.last().map_or(0, |s| s.sector);
+        println!(
+            "{{\"overlay\":{{\"sectors\":{},\"first\":{first},\"last\":{last}}}}}",
+            sectors.len()
+        );
+        if let Some(path) = &overlay_out {
+            let mut out = Vec::new();
+            for s in &sectors {
+                out.extend_from_slice(&s.sector.to_le_bytes());
+                out.extend_from_slice(&s.written);
+                out.extend_from_slice(&s.data);
+            }
+            fs::write(path, out).unwrap();
+        }
     }
     for (addr, path) in &expects {
         let bytes = fs::read(path).unwrap();

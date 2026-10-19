@@ -1,0 +1,19 @@
+[package]
+name = "dkupload"
+license.workspace = true
+repository.workspace = true
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+description = "Host side of the digikit module upload protocol (docs/design/digikit-upload.md): framing, sessions, a mock device"
+
+[lib]
+name = "dkupload"
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+
+# std only, and sha2 (already in the workspace). Builds for wasm32 (src/wasm.rs is the C ABI the web app loads).
+[dependencies]
+sha2 = "0.10"
+serde_json = "1"

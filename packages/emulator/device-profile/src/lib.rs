@@ -15,14 +15,28 @@ use std::{
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const DT2_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../devices/digitakt-ii.toml"
-));
-const DN2_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../devices/digitone-ii.toml"
-));
+mod card;
+pub use card::{
+    CardLayout, PathFsLayout, Pool, PoolLayout, PoolSet, RegionLayout, RegionRole, StoreLayout,
+};
+
+/// The profiles embedded at compile time: file name under `devices/` and its text. A new device is one more line.
+const EMBEDDED: &[(&str, &str)] = &[
+    (
+        "digitakt-ii.toml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../devices/digitakt-ii.toml"
+        )),
+    ),
+    (
+        "digitone-ii.toml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../devices/digitone-ii.toml"
+        )),
+    ),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registry {
@@ -35,6 +49,11 @@ pub struct DeviceProfile {
     pub short: String,
     pub firmwares: Vec<FirmwareProfile>,
     pub panel: Option<PanelProfile>,
+    /// Where the card keeps slots, project records, the path filesystem and the module store.
+    pub card: Option<CardLayout>,
+    /// RAM the emulator keeps across a soft reset (`[digikit] keep_base`, `keep_bytes`): the digikit runtime's crash record. The real
+    /// device may or may not keep it **[O]** (docs/findings/46-digikit-debug.md); this is the model.
+    pub keep_ram: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,6 +185,14 @@ struct SourceDocument {
     #[serde(default)]
     firmware: Vec<SourceFirmware>,
     panel: Option<SourcePanel>,
+    card: Option<CardLayout>,
+    digikit: Option<SourceDigikit>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SourceDigikit {
+    keep_base: Option<u32>,
+    keep_bytes: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -265,22 +292,34 @@ impl Registry {
                 .panel
                 .map(|panel| validate_panel(source, panel))
                 .transpose()?;
+            if let Some(card) = &parsed.card {
+                card.validate().map_err(|detail| RegistryError::Invalid {
+                    source: source.into(),
+                    detail: format!("[card] {detail}"),
+                })?;
+            }
             devices.push(DeviceProfile {
                 name: parsed.device.name,
                 short: parsed.device.short,
                 firmwares,
                 panel,
+                card: parsed.card,
+                keep_ram: parsed
+                    .digikit
+                    .and_then(|k| Some((k.keep_base?, k.keep_bytes?))),
             });
         }
         Ok(Self { devices })
     }
 
-    /// Loads the two canonical repository documents embedded in this crate.
+    /// Loads the canonical repository documents embedded in this crate.
     pub fn embedded() -> Result<Self, RegistryError> {
-        Self::parse(&[
-            ("devices/digitakt-ii.toml", DT2_SOURCE),
-            ("devices/digitone-ii.toml", DN2_SOURCE),
-        ])
+        let sources: Vec<(String, &str)> = EMBEDDED
+            .iter()
+            .map(|&(file, text)| (format!("devices/{file}"), text))
+            .collect();
+        let borrowed: Vec<(&str, &str)> = sources.iter().map(|(n, t)| (n.as_str(), *t)).collect();
+        Self::parse(&borrowed)
     }
 
     /// The registry a runner should use: the documents in `$DIGI_DEVICES_DIR`
@@ -291,7 +330,7 @@ impl Registry {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load() -> Result<Self, RegistryError> {
         use std::path::PathBuf;
-        const FILES: [&str; 2] = ["digitakt-ii.toml", "digitone-ii.toml"];
+        let files: Vec<&str> = EMBEDDED.iter().map(|&(file, _)| file).collect();
         let mut dirs: Vec<PathBuf> = Vec::new();
         if let Some(dir) = std::env::var_os("DIGI_DEVICES_DIR") {
             dirs.push(dir.into());
@@ -304,12 +343,12 @@ impl Registry {
             }
         }
         for dir in dirs {
-            let texts: Vec<_> = FILES
+            let texts: Vec<_> = files
                 .iter()
                 .map(|f| std::fs::read_to_string(dir.join(f)))
                 .collect();
             if texts.iter().all(Result::is_ok) {
-                let names: Vec<String> = FILES
+                let names: Vec<String> = files
                     .iter()
                     .map(|f| dir.join(f).display().to_string())
                     .collect();
@@ -332,6 +371,22 @@ impl Registry {
 
     pub fn devices(&self) -> &[DeviceProfile] {
         &self.devices
+    }
+
+    /// The card layout of a device named by its short id.
+    pub fn card_layout(&self, device: &str) -> Option<&CardLayout> {
+        self.devices
+            .iter()
+            .find(|d| d.short == device)
+            .and_then(|d| d.card.as_ref())
+    }
+
+    /// The RAM range `(base, bytes)` a soft reset keeps in the emulator's model, for a device named by its short id.
+    pub fn keep_ram(&self, device: &str) -> Option<(u32, u32)> {
+        self.devices
+            .iter()
+            .find(|d| d.short == device)
+            .and_then(|d| d.keep_ram)
     }
 
     /// The DSP profile of a firmware named by device short id and version.
@@ -549,18 +604,23 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("digi-devices-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let extra = format!(
-            "{DT2_SOURCE}\n[[firmware]]\nversion = \"9.99\"\nsha256 = \"{}\"\n",
+            "{DT2}\n[[firmware]]\nversion = \"9.99\"\nsha256 = \"{}\"\n",
             "ab".repeat(32)
         );
         std::fs::write(dir.join("digitakt-ii.toml"), extra).unwrap();
-        std::fs::write(dir.join("digitone-ii.toml"), DN2_SOURCE).unwrap();
+        std::fs::write(dir.join("digitone-ii.toml"), DN2).unwrap();
         // SAFETY: no other test in this crate reads the variable.
         unsafe { std::env::set_var("DIGI_DEVICES_DIR", &dir) };
         let registry = Registry::load().unwrap();
         unsafe { std::env::remove_var("DIGI_DEVICES_DIR") };
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(registry.identify(&"ab".repeat(32)).is_ok());
-        assert!(Registry::embedded().unwrap().identify(&"ab".repeat(32)).is_err());
+        assert!(
+            Registry::embedded()
+                .unwrap()
+                .identify(&"ab".repeat(32))
+                .is_err()
+        );
     }
 
     #[test]
@@ -674,5 +734,77 @@ mod tests {
         );
         assert_eq!(dn2.sample_link, None);
         assert!(registry.dsp_for("dn2", "1.10E").is_none());
+    }
+
+    // The formulas the firmware uses, as the old per-device enum spelled them (finding 14).
+    #[test]
+    fn card_layouts_reproduce_the_firmware_slot_formulas() {
+        let registry = Registry::embedded().unwrap();
+        let dt2 = registry.card_layout("dt2").unwrap();
+        let dn2 = registry.card_layout("dn2").unwrap();
+        for slot in 0..128u32 {
+            let expect = ((u64::from(slot) + 0xb) & 0xff) << 15;
+            for layout in [dt2, dn2] {
+                assert_eq!(layout.slot_sector(Pool::Projects, slot), expect);
+            }
+        }
+        for slot in 0..2048u32 {
+            let s = u64::from(slot);
+            assert_eq!(dt2.slot_sector(Pool::Sounds, slot), (s + 0x2400) * 8);
+            assert_eq!(dn2.slot_sector(Pool::Sounds, slot), (s + 0x800) * 2);
+        }
+        for slot in 0..1024u32 {
+            let s = u64::from(slot);
+            assert_eq!(
+                dt2.slot_sector(Pool::Kits, slot),
+                (s * 0x10000 + 0x2c0_0000) >> 9
+            );
+            assert_eq!(dn2.slot_sector(Pool::Kits, slot), 0x2000 + s * 0x40);
+        }
+        assert_eq!(dt2.slot_sector(Pool::Projects, 127), 0x8a << 15);
+        for (layout, sounds, kits) in [(dt2, 8, 0x80), (dn2, 2, 0x40)] {
+            assert_eq!(layout.slot_count(Pool::Projects), 128);
+            assert_eq!(layout.slot_count(Pool::Sounds), 2048);
+            assert_eq!(layout.slot_count(Pool::Kits), 1024);
+            assert_eq!(layout.slot_bytes(Pool::Projects), 0x8000 * 512);
+            assert_eq!(layout.slot_bytes(Pool::Sounds), sounds * 512);
+            assert_eq!(layout.slot_bytes(Pool::Kits), kits * 512);
+            assert_eq!(layout.table_sector, 0x800);
+            let bitmaps: Vec<_> = Pool::ALL
+                .iter()
+                .map(|&p| (layout.pool(p).bitmap_offset, layout.pool(p).bitmap_bytes))
+                .collect();
+            assert_eq!(bitmaps, [(0, 16), (16, 256), (272, 128)]);
+            let boots: Vec<_> = layout
+                .regions_of(RegionRole::BootProject)
+                .map(|r| r.sector)
+                .collect();
+            assert_eq!(boots, [0x40000, 0x48000]);
+            assert_eq!(
+                layout
+                    .regions_of(RegionRole::WorkingProject)
+                    .next()
+                    .unwrap()
+                    .sector,
+                0x50000
+            );
+            assert!(layout.regions.iter().all(|r| r.sectors == 0x8000));
+            let store = layout.store.as_ref().unwrap();
+            assert_eq!((store.first_sector, store.end_sector), (0x38000, 0x3e000));
+        }
+        assert_eq!(dt2.path_fs.as_ref().unwrap().superblock_sector, 0x5d8000);
+        assert!(dn2.path_fs.is_none());
+    }
+
+    #[test]
+    fn a_card_layout_with_overlapping_parts_is_rejected() {
+        let bad = DT2.replace("first_sector = 0x38000", "first_sector = 0x35000");
+        let error = Registry::parse(&[("dt2", &bad)]).unwrap_err().to_string();
+        assert!(
+            error.contains("[card]") && error.contains("overlaps"),
+            "{error}"
+        );
+        let bad = DT2.replace("bitmap_bytes = 16", "bitmap_bytes = 8");
+        assert!(Registry::parse(&[("dt2", &bad)]).is_err());
     }
 }

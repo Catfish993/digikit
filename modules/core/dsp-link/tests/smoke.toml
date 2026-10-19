@@ -1,0 +1,15 @@
+# core/dsp-link idle: the hooks change nothing the player can see or hear (the channel itself is proven by
+# `uv run python -m tools.patchkit.pk_dsplink proof`). Frame goldens: `pk_harness run --update --cell ...`.
+[test]
+name = "audible"
+devices = ["dt2", "dn2"]
+quick = true
+
+[[step]]
+tap = "TRIG 1"
+[[step]]
+wait_ms = 400
+[[step]]
+expect_pcm_db = { min = -60, max = -3 }
+[[step]]
+expect_no_fault = true

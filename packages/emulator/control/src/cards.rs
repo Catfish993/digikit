@@ -1,6 +1,9 @@
-//! In-process +Drive cards for the DT2: a folder of WAV files becomes a card
-//! image (no Python, no subprocess), cached by a hash of the firmware and the
-//! samples.
+//! In-process +Drive cards for the DT2: a `plus_drive/dt2/`-style folder becomes a card image (no Python, no
+//! subprocess), cached by a hash of the firmware and the folder's files.
+//!
+//! The folder contract is the builder's (`plusdrive_format::folder`): nested folders and plain files in the path
+//! filesystem, WAVs as native samples, `.mmcfs/` slots and boot regions, `digikit/` in the module store. A folder of
+//! WAV files, as the desktop "Choose samples" stages it, is the simplest such folder.
 //!
 //! Layout under the run directory:
 //!
@@ -15,54 +18,28 @@
 
 use std::{
     fs,
-    io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
 use plusdrive_format::{
-    Dt2Seed, MAX_SAMPLES, NamedSample, WavLimits, build_sample_image_with_project, wav_to_native,
+    Dt2Seed, TreeOptions, build_tree_image, card_layout, folder_files, scan_folder,
+    write_image_file,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
 /// Bump when the card layout or the track mapping changes, so old caches are
 /// not reused: it is part of the key.
-pub const FORMAT_TAG: &str = "dt2-card-v2-track-n-file-n";
-const MAX_WAV_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_NATIVE_BYTES: usize = 256 * 1024 * 1024;
+pub const FORMAT_TAG: &str = "dt2-card-v3-plusdrive-folder";
 
-#[derive(Clone, Debug)]
-pub struct SampleFile {
-    pub name: String,
-    pub path: PathBuf,
-}
-
-/// The top-level `.wav` files of `dir`, sorted by name.
-pub fn list_wavs(dir: &Path) -> Result<Vec<SampleFile>, String> {
+/// The files of `dir` a build reads (relative `/` paths, sorted), or why there is nothing to build.
+pub fn list_files(dir: &Path) -> Result<Vec<String>, String> {
     if !dir.is_dir() {
         return Err(format!("{} is not a directory", dir.display()));
     }
-    let mut files = Vec::new();
-    for entry in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        let is_wav = path
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"));
-        if is_wav && entry.file_type().map_err(|e| e.to_string())?.is_file() {
-            let name = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| "a sample file name is not UTF-8".to_string())?;
-            files.push(SampleFile { name, path });
-        }
-    }
-    files.sort_by(|a, b| a.name.cmp(&b.name));
+    let files = folder_files(dir)?;
     if files.is_empty() {
-        return Err(format!("no .wav files directly in {}", dir.display()));
-    }
-    if files.len() > MAX_SAMPLES {
-        return Err(format!("{} samples, at most {MAX_SAMPLES}", files.len()));
+        return Err(format!("no files in {}", dir.display()));
     }
     Ok(files)
 }
@@ -98,17 +75,18 @@ impl CardPaths {
     }
 }
 
-/// The cache key: firmware, format tag, and every sample's name and bytes.
-pub fn card_key(syx: &[u8], files: &[SampleFile]) -> Result<String, String> {
+/// The cache key: firmware, format tag, and every file's relative path and bytes.
+pub fn card_key(syx: &[u8], dir: &Path, files: &[String]) -> Result<String, String> {
     let mut hash = Sha256::new();
     hash.update(b"firmware\0");
     hash.update(Sha256::digest(syx));
     hash.update(b"\0format\0");
     hash.update(FORMAT_TAG.as_bytes());
-    for file in files {
-        let bytes = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
-        hash.update(b"\0sample\0");
-        hash.update(file.name.as_bytes());
+    for rel in files {
+        let path = dir.join(rel);
+        let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        hash.update(b"\0file\0");
+        hash.update(rel.as_bytes());
         hash.update(b"\0");
         hash.update(Sha256::digest(&bytes));
     }
@@ -126,73 +104,31 @@ pub struct CardInfo {
     pub image_bytes_written: u64,
 }
 
-/// Convert `files` and write the seeded image to `image` (through a `.part`
-/// file, so a crash never leaves a half image under the final name).
-/// `progress(done, total)` is called after each file is converted.
+/// Build the seeded image of the folder `dir` and write it to `image` (through a `.part` file, so a crash never
+/// leaves a half image under the final name). `progress(done, total)` is called after each file is read.
 pub fn build_card(
     syx: &[u8],
-    files: &[SampleFile],
+    dir: &Path,
     image: &Path,
     mut progress: impl FnMut(usize, usize),
 ) -> Result<CardInfo, String> {
     let seed = Dt2Seed::from_syx(syx)?;
-    let mut samples = Vec::with_capacity(files.len());
-    let mut total = 0usize;
-    for (index, file) in files.iter().enumerate() {
-        let size = fs::metadata(&file.path)
-            .map_err(|e| format!("{}: {e}", file.path.display()))?
-            .len();
-        if size > MAX_WAV_BYTES {
-            return Err(format!("{} exceeds the 64 MiB WAV limit", file.name));
-        }
-        let wav = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
-        let sample = wav_to_native(&wav, WavLimits::default())
-            .map_err(|e| format!("{}: {e:?}", file.name))?;
-        total = total
-            .checked_add(sample.bytes.len())
-            .filter(|total| *total <= MAX_NATIVE_BYTES)
-            .ok_or("the converted samples exceed 256 MiB")?;
-        samples.push(NamedSample {
-            file_name: file.name.clone(),
-            sample,
-        });
-        progress(index + 1, files.len());
+    let layout = card_layout("dt2")?;
+    let scanned = scan_folder(dir, &layout, &mut progress)?;
+    for line in &scanned.skipped {
+        eprintln!("card: skipped {line}");
     }
-    let built = build_sample_image_with_project(samples, seed.seed())
-        .map_err(|e| format!("card image: {e:?}"))?;
-    if let Some(parent) = image.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
-    }
-    let mut partial = image.as_os_str().to_owned();
-    partial.push(".part");
-    let partial = PathBuf::from(partial);
-    let _ = fs::remove_file(&partial);
-    let written = (|| -> Result<u64, String> {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&partial)
-            .map_err(|e| format!("{}: {e}", partial.display()))?;
-        file.set_len(built.image.logical_len())
-            .map_err(|e| e.to_string())?;
-        let mut bytes = 0u64;
-        for (&at, data) in built.image.ranges() {
-            file.seek(SeekFrom::Start(at))
-                .and_then(|_| file.write_all(data))
-                .map_err(|e| e.to_string())?;
-            bytes += data.len() as u64;
-        }
-        file.flush().map_err(|e| e.to_string())?;
-        Ok(bytes)
-    })();
-    let written = match written {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            let _ = fs::remove_file(&partial);
-            return Err(error);
-        }
-    };
-    fs::rename(&partial, image).map_err(|e| format!("{}: {e}", image.display()))?;
+    let built = build_tree_image(
+        scanned.tree,
+        TreeOptions {
+            capacity_blocks: plusdrive_format::DEFAULT_CAPACITY_BLOCKS,
+            layout,
+            max_extent_pages: u32::MAX,
+        },
+        Some(seed.seed()),
+    )
+    .map_err(|e| format!("card image: {e:?}"))?;
+    let written = write_image_file(&built.image, image)?;
     Ok(CardInfo {
         samples: built
             .files
@@ -203,31 +139,39 @@ pub fn build_card(
     })
 }
 
-/// Build the card of `files` unless it is cached; the paths and whether the
-/// image was already there.
+/// Build the card of `dir` unless it is cached; the paths, whether the image was already there, and the number of
+/// samples on it.
 pub fn ensure_card(
     run_dir: &Path,
     syx: &[u8],
-    files: &[SampleFile],
+    dir: &Path,
+    files: &[String],
     progress: impl FnMut(usize, usize),
-) -> Result<(CardPaths, bool), String> {
-    let key = card_key(syx, files)?;
+) -> Result<(CardPaths, bool, usize), String> {
+    let key = card_key(syx, dir, files)?;
     let paths = CardPaths::new(run_dir, &key);
     if paths.image.is_file() {
-        return Ok((paths, true));
+        let samples = fs::read_to_string(paths.dir.join("SOURCE.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|v| v["samples"].as_array().map(Vec::len))
+            .unwrap_or(0);
+        return Ok((paths, true, samples));
     }
-    let info = build_card(syx, files, &paths.image, progress)?;
+    let info = build_card(syx, dir, &paths.image, progress)?;
     let source = json!({
         "key": paths.key,
         "format": FORMAT_TAG,
         "firmware_sha256": sha256_hex(syx),
         "samples": info.samples,
+        "files": files.len(),
     });
     let _ = fs::write(
         paths.dir.join("SOURCE.json"),
         serde_json::to_string_pretty(&source).unwrap_or_default(),
     );
-    Ok((paths, false))
+    let samples = info.samples.len();
+    Ok((paths, false, samples))
 }
 
 /// The card the app mounts on its own at the next DT2 start
@@ -316,22 +260,22 @@ mod tests {
     }
 
     #[test]
-    fn lists_only_top_level_wavs_sorted() {
+    fn lists_every_file_of_the_folder_sorted() {
         let dir = scratch("list");
         fs::write(dir.join("b.wav"), wav(440.0, 100)).unwrap();
         fs::write(dir.join("A.WAV"), wav(440.0, 100)).unwrap();
-        fs::write(dir.join("note.txt"), b"x").unwrap();
+        fs::write(dir.join(".DS_Store"), b"x").unwrap();
         fs::create_dir_all(dir.join("sub")).unwrap();
         fs::write(dir.join("sub/c.wav"), wav(440.0, 100)).unwrap();
-        let names: Vec<_> = list_wavs(&dir)
-            .unwrap()
-            .into_iter()
-            .map(|f| f.name)
-            .collect();
-        assert_eq!(names, ["A.WAV", "b.wav"]);
-        assert!(list_wavs(&dir.join("sub/none")).is_err());
+        fs::create_dir_all(dir.join(".mmcfs/projects")).unwrap();
+        fs::write(dir.join(".mmcfs/projects/0000.bin"), b"p").unwrap();
+        assert_eq!(
+            list_files(&dir).unwrap(),
+            [".mmcfs/projects/0000.bin", "A.WAV", "b.wav", "sub/c.wav"]
+        );
+        assert!(list_files(&dir.join("sub/none")).is_err());
         let empty = scratch("empty");
-        assert!(list_wavs(&empty).unwrap_err().contains("no .wav"));
+        assert!(list_files(&empty).unwrap_err().contains("no files"));
     }
 
     #[test]
@@ -339,12 +283,12 @@ mod tests {
         let dir = scratch("key");
         fs::write(dir.join("a.wav"), wav(220.0, 480)).unwrap();
         fs::write(dir.join("b.wav"), wav(880.0, 480)).unwrap();
-        let files = list_wavs(&dir).unwrap();
-        let key = card_key(b"fw1", &files).unwrap();
-        assert_eq!(key, card_key(b"fw1", &files).unwrap());
-        assert_ne!(key, card_key(b"fw2", &files).unwrap());
+        let files = list_files(&dir).unwrap();
+        let key = card_key(b"fw1", &dir, &files).unwrap();
+        assert_eq!(key, card_key(b"fw1", &dir, &files).unwrap());
+        assert_ne!(key, card_key(b"fw2", &dir, &files).unwrap());
         fs::write(dir.join("b.wav"), wav(881.0, 480)).unwrap();
-        assert_ne!(key, card_key(b"fw1", &files).unwrap());
+        assert_ne!(key, card_key(b"fw1", &dir, &files).unwrap());
         let paths = CardPaths::new(Path::new("run"), &key);
         assert!(
             paths
@@ -354,11 +298,11 @@ mod tests {
         assert!(!paths.ready_cached());
     }
 
-    /// With the DT2 1.16 .syx (`DT2_SYX`, or the one in `firmware/`): three
-    /// WAV files build a card whose track N sample is file N, and a second
-    /// call reuses the cache.
+    /// With the DT2 1.16 .syx (`DT2_SYX`, or the one in `firmware/`): a plus_drive-style folder (three WAVs, a
+    /// nested folder, a saved project slot, a boot copy and a module file) builds a card whose track N sample is
+    /// file N, and a second call reuses the cache.
     #[test]
-    fn builds_a_seeded_card_from_three_wavs_and_caches_it() {
+    fn builds_a_seeded_card_from_a_plus_drive_folder_and_caches_it() {
         let Some(syx) = std::env::var_os("DT2_SYX")
             .map(PathBuf::from)
             .or_else(|| {
@@ -378,39 +322,53 @@ mod tests {
             fs::write(samples.join(name), wav(frequency, 4800)).unwrap();
         }
         fs::write(samples.join("3-c3001.wav"), wav(3001.0, 4800)).unwrap();
-        let files = list_wavs(&samples).unwrap();
+        fs::create_dir_all(samples.join("kicks")).unwrap();
+        fs::write(samples.join("kicks/k.wav"), wav(60.0, 4800)).unwrap();
+        fs::create_dir_all(samples.join(".mmcfs/projects")).unwrap();
+        fs::write(samples.join(".mmcfs/projects/0002.bin"), b"project").unwrap();
+        fs::create_dir_all(samples.join("digikit")).unwrap();
+        fs::write(samples.join("digikit/m.dkm"), b"module").unwrap();
+        let files = list_files(&samples).unwrap();
         let mut seen = Vec::new();
-        let (paths, cached) = ensure_card(&dir.join("run"), &syx, &files, |done, total| {
-            seen.push((done, total))
-        })
-        .unwrap();
+        let (paths, cached, count) =
+            ensure_card(&dir.join("run"), &syx, &samples, &files, |done, total| {
+                seen.push((done, total))
+            })
+            .unwrap();
         assert!(!cached);
-        assert_eq!(seen, [(1, 3), (2, 3), (3, 3)]);
+        assert_eq!(count, 4);
+        assert_eq!(seen.last(), Some(&(4, 6)), "{seen:?}");
         assert_eq!(fs::metadata(&paths.image).unwrap().len() % 512, 0);
-        let listing = {
-            struct Image(fs::File, u64);
-            impl emmc_card::RandomAccessRead for Image {
-                fn len(&self) -> u64 {
-                    self.1
-                }
-                fn read_at(&self, offset: u64, out: &mut [u8]) -> usize {
-                    use std::os::unix::fs::FileExt;
-                    self.0.read_at(out, offset).unwrap_or(0)
-                }
+        struct Image(fs::File, u64);
+        impl emmc_card::RandomAccessRead for Image {
+            fn len(&self) -> u64 {
+                self.1
             }
-            let file = fs::File::open(&paths.image).unwrap();
-            let len = file.metadata().unwrap().len();
-            plusdrive_format::list_image(&Image(file, len)).unwrap()
-        };
+            fn read_at(&self, offset: u64, out: &mut [u8]) -> usize {
+                use std::os::unix::fs::FileExt;
+                self.0.read_at(out, offset).unwrap_or(0)
+            }
+        }
+        let file = fs::File::open(&paths.image).unwrap();
+        let len = file.metadata().unwrap().len();
+        let image = Image(file, len);
+        let listing = plusdrive_format::list_image(&image).unwrap();
         let names: Vec<_> = listing
             .iter()
             .map(|entry| String::from_utf8_lossy(&entry.name).into_owned())
             .collect();
-        for name in ["1-a220", "2-b880", "3-c3001"] {
+        for name in ["1-a220", "2-b880", "3-c3001", "kicks"] {
             assert!(names.iter().any(|n| n == name), "{names:?}");
         }
-        let (again, cached) = ensure_card(&dir.join("run"), &syx, &files, |_, _| {}).unwrap();
+        let store = plusdrive_format::read_store(&image, 0x38000, 0x6000, 0x3dffd).unwrap().unwrap();
+        assert_eq!(store.entries.len(), 1);
+        let mut slot = [0u8; 7];
+        emmc_card::RandomAccessRead::read_at(&image, (0x58000 + 2 * 0x8000) * 512, &mut slot);
+        assert_eq!(&slot, b"project");
+        let (again, cached, count) =
+            ensure_card(&dir.join("run"), &syx, &samples, &files, |_, _| {}).unwrap();
         assert!(cached);
+        assert_eq!(count, 4);
         assert_eq!(again.image, paths.image);
         let _ = fs::remove_dir_all(&dir);
     }

@@ -7,6 +7,7 @@ stack adjustment and R0-R2 / I4 changed; a registered type must run the routine 
 voice) and leave the callee-saved registers as found. The emulator proof is tools/patchkit/pk_proof_voice.py. Skips when
 Selache is not built."""
 
+import re
 import struct
 
 import numpy as np
@@ -15,25 +16,45 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
+import random  # noqa: E402
+
 from support.dsp_voice_rig import (  # noqa: E402
+    CONTEXT_REGS,
+    CORE,
+    DIAG,
+    M6_HOSTILE,
+    M13_HOSTILE,
     OUT,
     RECORDS,
     RETURN_SW,
+    RING_A,
+    RING_B,
     STACK,
     STATE,
     STOCK_BP,
     TYPE,
     Rig,
+    draw_context,
     nw,
     stops_at,
 )
 
-from tools.patchkit import pk_toolchains  # noqa: E402
+from tools.patchkit import pk_build, pk_sharc, pk_toolchains  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
     reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
+
+
+def u32(x: int) -> int:
+    return x & 0xFFFFFFFF
+
+
+def context_intact(out) -> None:
+    """Every context register leaves as it came in (M7 / M14 are the stock epilogue's and hold)."""
+    for name in CONTEXT_REGS:
+        assert u32(out["regs"][name]) == u32(out["in"][name]), (name, out["in"][name])
 
 
 def bits(x: float) -> int:
@@ -63,6 +84,8 @@ def test_an_unregistered_type_falls_through_to_the_stock_renderer(rig_cls):
     # only the displaced instruction's effect (I7 - 104 bytes) and R0-R2 / I4 differ; the callee-saved set is intact
     assert out["regs"]["I7"] == STACK - 104
     assert out["regs"]["I6"] == STACK
+    # the context registers are the stock code's own: L4 (zeroed for the scan) is put back, nothing else was touched
+    context_intact(out)
     for name in ("R3", "R5", "R15", "I0", "I5", "M1", "M3", "I8", "I9", "M8"):
         assert out["regs"][name] == out["in"][name], name
     assert out["regs"]["R4"] == out["in"]["R4"] and out["regs"]["R8"] == out["in"]["R8"]
@@ -102,11 +125,7 @@ def test_the_callee_saved_registers_survive_a_rendered_voice(rig_cls):
     assert stops_at(out, RETURN_SW)
     for name in ("R3", "R5", "R15", "I0", "I5", "M1", "M3", "I8", "I9", "M8"):
         assert out["regs"][name] == out["in"][name], name
-    assert (out["regs"]["M5"], out["regs"]["M6"], out["regs"]["M7"]) == (
-        0,
-        1,
-        0xFFFFFFFF,
-    )
+    context_intact(out)
 
 
 def test_the_odd_voice_copies_the_even_voices_block(rig_cls):
@@ -123,6 +142,513 @@ def test_the_odd_voice_copies_the_even_voices_block(rig_cls):
     odd = rig.call(1)
     assert stops_at(odd, RETURN_SW)
     assert odd["out"] == even["out"]
+
+
+def voice_call(rig, v: int, ctx):
+    """One registered voice with a note on; the odd voice sees the even voice's block in place."""
+    t = v // 2
+    rig.set_type(t, TYPE)
+    rig.set_note(t, 60)
+    rig.rec_word(v, 0x1B8, 1)
+    if v % 2:
+        for k in range(32):
+            rig.dm[nw(OUT) + 32 * v + k] = 0
+            rig.dm[nw(OUT) + 32 * (v - 1) + k] = 0x3F000000 + k
+    return rig.call(v, ctx=ctx)
+
+
+@pytest.mark.parametrize("v", [0, 1, 2, 3, 14, 15, 30, 31])
+@pytest.mark.parametrize("m6", M6_HOSTILE)
+@pytest.mark.parametrize("m13", M13_HOSTILE)
+def test_the_machine_path_does_not_depend_on_m6_or_m13(rig_cls, v, m6, m13):
+    """The hardware report's two causes: the odd-voice copy and the registry scan used M6, the machine call jumped by M13.
+    Any M6 in {0x1b8, 4, 0, -1} and M13 in {4, -2, 0x10}: the same block as with the old friendly constants, and every
+    context register intact afterwards."""
+    ref = voice_call(rig_cls(), v, "friendly")
+    assert stops_at(ref, RETURN_SW), ref["halt"]
+    assert any(w not in (0, None) for w in ref["out"])
+    out = voice_call(rig_cls(), v, {"M6": m6, "M13": m13})
+    assert stops_at(out, RETURN_SW), out["halt"]
+    assert out["out"] == ref["out"]
+    context_intact(out)
+    assert out["regs"]["I6"] == 0x20000FF0 and out["regs"]["I7"] == STACK
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_a_drawn_context_changes_nothing(rig_cls, seed):
+    """Random contexts (M5, M6, M13, M15, L0-L5, MODE1 drawn from hostile values): the same block, the registers intact,
+    the callee-saved set as found; the stock path too."""
+    rng = random.Random(seed)
+    for v in (2 * (seed % 16), 2 * (seed % 16) + 1):
+        ctx = draw_context(rng)
+        ref = voice_call(rig_cls(), v, "friendly")
+        out = voice_call(rig_cls(), v, ctx)
+        assert stops_at(out, RETURN_SW), (ctx, out["halt"])
+        assert out["out"] == ref["out"], ctx
+        context_intact(out)
+        for name in ("R3", "R5", "R15", "I0", "I5", "M1", "M3", "I8", "I9", "M8"):
+            assert out["regs"][name] == out["in"][name], name
+        # the unregistered neighbour falls through with the context untouched
+        stock = rig_cls()
+        stock.set_type(v // 2, 0)
+        so = stock.call(v, ctx=ctx)
+        assert stops_at(so, STOCK_BP), (ctx, so["halt"])
+        context_intact(so)
+
+
+PROBE = """
+.SECTION/PM seg_pmco;
+.GLOBAL _probe;
+_probe:
+    I0 = 0x2009B000;
+    R0 = M5;
+    DM(0, I0) = R0;
+    R0 = M6;
+    DM(1, I0) = R0;
+    R0 = M7;
+    DM(2, I0) = R0;
+    R0 = M13;
+    DM(3, I0) = R0;
+    R0 = M14;
+    DM(4, I0) = R0;
+    R0 = M15;
+    DM(5, I0) = R0;
+    R0 = L0;
+    DM(6, I0) = R0;
+    R0 = L1;
+    DM(7, I0) = R0;
+    R0 = L2;
+    DM(8, I0) = R0;
+    R0 = L3;
+    DM(9, I0) = R0;
+    R0 = L4;
+    DM(10, I0) = R0;
+    R0 = L5;
+    DM(11, I0) = R0;
+    R0 = MODE1;
+    DM(12, I0) = R0;
+    JUMP (M13, I13);
+"""
+PROBE_BASE = 0xB93800
+
+
+class ProbeRig(Rig):
+    """The wrapper around a routine that stores the context registers it is entered with."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sine_linked = pk_sharc.link(pk_sharc.assemble(PROBE), PROBE_BASE, {})
+        self.render_pc = self.sine_linked.symbols["_probe"]
+        self.reset()
+
+
+def test_the_context_is_pinned_for_the_routine():
+    """The routine runs with M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1, the L registers 0 and MODE1 with SIMD,
+    TRUNCATE and ALUSAT clear and RND32 set, whatever the context was (the ABI in the wrapper's header)."""
+    rng = random.Random(7)
+    for _ in range(8):
+        rig = ProbeRig()
+        rig.set_type(0, TYPE)
+        rig.set_note(0, 60)
+        rig.rec_word(0, 0x1B8, 1)
+        ctx = draw_context(rng)
+        out = rig.call(0, ctx=ctx, extra_reads={"seen": (nw(STATE), 13)})
+        assert stops_at(out, RETURN_SW), (ctx, out["halt"])
+        seen = out["seen"]
+        assert seen[:6] == [0, 1, 0xFFFFFFFF, 0, 1, 0xFFFFFFFF], (ctx, seen)
+        assert seen[6:12] == [0] * 6, (ctx, seen)
+        assert seen[12] & 0x20A000 == 0 and seen[12] & 0x10000, (ctx, hex(seen[12]))
+        context_intact(out)
+
+
+CRUMB_PROBE = """
+.SECTION/PM seg_pmco;
+.GLOBAL _crumb_probe;
+_crumb_probe:
+    I0 = 0x2009B000;
+    R0 = DM(0x2009D030);
+    DM(0, I0) = R0;
+    R0 = DM(0x200A0000 + 0x300);
+    DM(1, I0) = R0;
+    R0 = DM(0x200A2000 + 0x300);
+    DM(2, I0) = R0;
+    R0 = DM(0x2009D034);
+    DM(3, I0) = R0;
+    I0 = R8;
+    R0 = 0;
+    LCNTR = 32, DO _cp_z UNTIL LCE;
+_cp_z: DM(I0, M6) = R0;
+    JUMP (M13, I13);
+"""
+CRUMB_PROBE_BASE = 0xB93C00
+
+
+class CrumbRig(Rig):
+    def __init__(self, defines: frozenset[str] = frozenset()) -> None:
+        super().__init__(defines=defines)
+        self.sine_linked = pk_sharc.link(
+            pk_sharc.assemble(CRUMB_PROBE), CRUMB_PROBE_BASE, {}
+        )
+        self.render_pc = self.sine_linked.symbols["_crumb_probe"]
+        self.reset()
+
+
+DIAG_CRUMB, DIAG_NDISP = nw(DIAG) + 12, nw(DIAG) + 13
+
+
+def crumb(stage, v, t):
+    return stage | v << 8 | t << 16
+
+
+def test_breadcrumbs_name_each_step_and_reach_both_reply_records():
+    """The wrapper writes stage | voice << 8 | type << 16 before each step (finding 48): into its own diagnostic word 12 and, at once,
+    into both reply records with the header and the count of dispatches, so that a core that stops inside the routine leaves them."""
+    for v in (0, 4, 30):
+        rig = CrumbRig()
+        rig.set_rings()
+        t = v // 2
+        rig.set_type(t, TYPE)
+        rig.set_note(t, 60)
+        rig.rec_word(v, 0x1B8, 1)
+        ring_reads = {
+            "ra": (nw(RING_A), 0x400 // 4),
+            "rb": (nw(RING_B), 0x400 // 4),
+            "diag": (nw(DIAG), 16),
+        }
+        out = rig.call(v, extra_reads=ring_reads, ctx="friendly")
+        assert stops_at(out, RETURN_SW), out["halt"]
+        seen = [out["diag"][12], out["diag"][13], out["diag"][14]]
+        want = crumb(7, v, TYPE)  # the epilogue is the last step
+        assert seen == [want, 1, 1], [hex(x) for x in seen]  # one dispatch, one return
+        for ring in ("ra", "rb"):
+            r = out[ring]
+            assert r[192] == want and r[193] == 1 and r[213] == 1, (ring, v)
+            assert r[45] == 0x18D1A6, (ring, v)  # the header: 0xD1A6, 17 words
+            # nothing else in the record was written
+            assert sum(1 for x in r if x) == 4, (ring, v)
+
+
+def test_the_routine_sees_the_called_breadcrumb():
+    rig = CrumbRig()
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    rig.rec_word(2, 0x1B8, 1)
+    out = rig.call(2, extra_reads={"seen": (nw(STATE), 4)}, ctx="friendly")
+    assert stops_at(out, RETURN_SW), out["halt"]
+    want = crumb(4, 2, TYPE)  # ROUTINE_CALLED: voice 2, the type in play
+    assert out["seen"] == [want, want, want, 1], [hex(x) for x in out["seen"]]
+
+
+def test_the_odd_voice_counts_no_dispatch_and_ends_at_the_epilogue():
+    rig = CrumbRig()
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    out = rig.call(3, extra_reads={"diag": (nw(DIAG), 16)}, ctx="friendly")
+    assert stops_at(out, RETURN_SW), out["halt"]
+    assert out["diag"][12] == crumb(7, 3, TYPE) and out["diag"][13:15] == [0, 0]
+
+
+def test_the_stock_path_leaves_one_breadcrumb_and_an_unregistered_added_type_two():
+    rig = CrumbRig()
+    rig.set_rings()
+    rig.set_type(2, 0)
+    reads = {"diag": (nw(DIAG), 16), "ra": (nw(RING_A), 0x400 // 4)}
+    out = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert stops_at(out, STOCK_BP), out["halt"]
+    assert out["diag"][12] == crumb(1, 5, 0) and out["diag"][13] == 0
+    assert not any(out["ra"]), "a stock type writes nothing into the reply records"
+    # type 12: no module registered it (the table holds TYPE only); the stock path runs, with a breadcrumb that says so
+    rig.set_type(2, 12)
+    out = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert stops_at(out, STOCK_BP), out["halt"]
+    assert out["diag"][12] == crumb(3, 5, 12) and out["ra"][192] == crumb(3, 5, 12)
+    assert out["regs"]["R3"] == out["in"]["R3"] and out["regs"]["R5"] == out["in"]["R5"]
+    # a type below 7 that is not registered either: the engine's own, no stage 3
+    rig.set_type(2, 6)
+    out = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert out["diag"][12] == crumb(1, 5, 0)
+
+
+def test_the_bisect_build_takes_the_stock_path_for_added_types_with_no_call():
+    """DV_BISECT_C2 (finding 49, docs/PATCHING.md "Rung C2"): an added type, registered or not, runs the stock renderer with the stage 3
+    breadcrumb written inline, the same words as the stock build's for an unregistered type. A breakpoint on `_dv_crumb` proves that the
+    bisect build never enters it (so no CALL and no RTS run on this path), and a registered type is not dispatched (the dispatch counter counts the stage 3 passes in this build, the returns stay 0)."""
+    reads = {"diag": (nw(DIAG), 16), "ra": (nw(RING_A), 0x400 // 4)}
+    bisect = frozenset({"DV_BISECT_C2"})
+    for t in (12, TYPE):  # 12: no module registered it; TYPE: the table holds it
+        rig = CrumbRig(bisect)
+        rig.set_rings()
+        rig.set_type(2, t)
+        crumb_sw = rig.core_linked.symbols["_dv_crumb"]
+        out = rig.call(5, extra_reads=reads, ctx="friendly", breaks=(crumb_sw,))
+        assert stops_at(out, STOCK_BP), (t, out["halt"])
+        # the dispatch counter counts stage 3 passes in this build; the routine is never called, so no return
+        assert out["diag"][12] == crumb(3, 5, t) and out["diag"][13:15] == [1, 0]
+        assert out["ra"][192] == crumb(3, 5, t) and out["ra"][193] == 1
+        assert (
+            out["regs"]["R3"] == out["in"]["R3"]
+            and out["regs"]["R5"] == out["in"]["R5"]
+        )
+    # the stock build writes the same words for the unregistered type
+    rig = CrumbRig()
+    rig.set_rings()
+    rig.set_type(2, 12)
+    ref = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert ref["diag"][12] == crumb(3, 5, 12) and ref["ra"][192] == crumb(3, 5, 12)
+    # a type below 7 is the engine's own in both builds: no breadcrumb beyond stage 1
+    rig = CrumbRig(bisect)
+    rig.set_rings()
+    rig.set_type(2, 6)
+    out = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert out["diag"][12] == crumb(1, 5, 0)
+
+
+C3_COMMON = ("DV_C3_FINE",)
+C3_VARIANTS = {
+    "a-delayed": frozenset({*C3_COMMON, "DV_C3_DB"}),
+    "b-noirq": frozenset({*C3_COMMON, "DV_C3_NOIRQ"}),
+    "c-nosys": frozenset({*C3_COMMON, "DV_C3_NOSYS"}),
+    # rung C3d (finding 49 section 10): the deep breadcrumbs 11 to 22 (the DAG1 register stores through R2 are the default build now)
+    "d1-deep": frozenset({*C3_COMMON, "DV_C3_DEEP"}),
+}
+
+
+@pytest.mark.parametrize("name", sorted(C3_VARIANTS))
+def test_the_c3_variants_keep_the_registered_path_working(name):
+    """Rung C3 (finding 49 section 9, docs/PATCHING.md): each variant removes one suspect from the registered path and must still do what
+    the rung C build does: dispatch the routine on the even voice, copy on the odd voice, end at the epilogue breadcrumb, leave the
+    context as found. The fine breadcrumbs 8, 9 and 10 are written inline in that order before the CALL of stage 2."""
+    defines = C3_VARIANTS[name]
+    reads = {
+        "diag": (nw(DIAG), 16),
+        "ra": (nw(RING_A), 0x400 // 4),
+        "rb": (nw(RING_B), 0x400 // 4),
+    }
+    for v in (0, 2, 3, 30):
+        t = v // 2
+        rig = CrumbRig(defines)
+        rig.set_rings()
+        rig.set_type(t, TYPE)
+        rig.set_note(t, 60)
+        rig.rec_word(v, 0x1B8, 1)
+        out = rig.call(v, extra_reads=reads, ctx="friendly")
+        assert stops_at(out, RETURN_SW), (name, v, out["halt"])
+        want = crumb(7, v, TYPE)
+        even = v % 2 == 0
+        assert out["diag"][12:15] == [want, int(even), int(even)], (name, v)
+        for ring in ("ra", "rb"):
+            assert out[ring][192] == want and out[ring][45] == 0x18D1A6
+        context_intact(out)
+        assert (
+            out["regs"]["I7"] == out["in"]["I6"]
+        )  # RFRAME: I7 = I6, as the stock epilogue
+    # the fine breadcrumbs, in order, at the label after each one
+    rig = CrumbRig(defines)
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    rig.rec_word(2, 0x1B8, 1)
+    for label, stage in (("_dv_f1b", 8), ("_dv_f2b", 9), ("_dv_f3b", 10)):
+        out = rig.call(
+            2,
+            extra_reads=reads,
+            ctx="friendly",
+            breaks=(rig.core_linked.symbols[label],),
+        )
+        assert out["diag"][12] == crumb(stage, 2, TYPE), (
+            name,
+            label,
+            hex(out["diag"][12]),
+        )
+        assert out["ra"][192] == crumb(stage, 2, TYPE) and out["rb"][192] == crumb(
+            stage, 2, TYPE
+        )
+        # none of the fine breadcrumbs counts as a dispatch
+        assert out["diag"][13:15] == [0, 0]
+
+
+DEEP_STAGES = tuple(range(11, 23))
+
+
+@pytest.mark.parametrize("name", ["d1-deep"])
+def test_the_deep_breadcrumbs_come_in_order_inside_the_frame_save(name):
+    """Rung C3d: twelve more inline breadcrumbs (stages 11 to 22) between the MODIFY of I7 and the save of MODE1, each at the label after
+    it, none counted as a dispatch, none touching the registers the frame save has not stored yet (R0, R2, I4 only)."""
+    defines = C3_VARIANTS[name]
+    reads = {"diag": (nw(DIAG), 16), "ra": (nw(RING_A), 0x400 // 4)}
+    rig = CrumbRig(defines)
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    rig.rec_word(2, 0x1B8, 1)
+    for stage in DEEP_STAGES:
+        out = rig.call(
+            2,
+            extra_reads=reads,
+            ctx="friendly",
+            breaks=(rig.core_linked.symbols[f"_dv_d{stage}b"],),
+        )
+        assert out["diag"][12] == crumb(stage, 2, TYPE), (
+            name,
+            stage,
+            hex(out["diag"][12]),
+        )
+        assert out["ra"][192] == crumb(stage, 2, TYPE)
+        assert out["diag"][13:15] == [0, 0]
+    out = rig.call(2, extra_reads=reads, ctx="friendly")
+    assert stops_at(out, RETURN_SW), out["halt"]
+    context_intact(out)
+
+
+def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_register(
+    tmp_path,
+):
+    """Finding 49 section 10: a store through DM(Ia) cannot take a DAG1 register (UREGXDAG1, PRM 15-7); the stock image has none. The
+    frame save goes through R2 in every build, and a module build that has such a store fails (pk_build.sharc_object)."""
+    from tools.patchkit import pk_build
+
+    def stores(defines):
+        text = pk_build.apply_conditionals(CORE.read_text(), defines)
+        return [
+            ln.strip()
+            for ln in text.splitlines()
+            if re.fullmatch(r"\s*DM\(-?\d+, I6\) = [IMLB]([0-7])\b;.*", ln)
+            and not ln.strip().startswith("//")
+        ]
+
+    for defines in (frozenset(), *C3_VARIANTS.values()):
+        assert stores(defines) == []
+        pk_build.sharc_object(
+            [CORE], [], defines
+        )  # raises BuildError on an excluded store
+    # the DN2 copy too
+    dn2 = CORE.with_name("dsp-voice-dn2.s")
+    pk_build.sharc_object([dn2], [], frozenset())
+    # and a source with one fails, with the parcel address in the message
+    bad = tmp_path / "bad.s"
+    bad.write_text(".SECTION/PM seg_pmco;\n_x:\n    DM(-16, I6) = I0;\n    RTS;\n")
+    with pytest.raises(
+        pk_build.BuildError, match=r"parcel 0x0: DM store of I0 \(DAG1\)"
+    ):
+        pk_build.sharc_object([bad], [], frozenset())
+
+
+def test_the_ureg_class_rule_flags_index_register_stores_and_not_direct_stores():
+    from tools.patchkit import pk_sharc
+
+    p = pk_sharc.ureg_class_problems
+    for form in ("3a", "3b", "3d", "15a", "15b"):
+        assert p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", form), form  # DM store of I0
+        assert p({"d": 1, "g": 0, "ureg": 0x37}, "x", form), (
+            form
+        )  # DM store of L7 (a stem without the bit range)
+        assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x18}, "x", form)  # I8, DAG2
+        assert not p({"d": 0, "g": 0, "ureg[6:0]": 0x10}, "x", form)  # a load
+        assert p({"d": 1, "g": 1, "ureg[6:0]": 0x18}, "x", form)  # PM store of I8
+        assert not p({"d": 1, "g": 1, "ureg[6:0]": 0x10}, "x", form)  # PM store of I0
+        assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x05}, "x", form)  # R5
+    # Type 14a (direct address): exempt, the stock image has 304 such stores of DAG1 registers
+    assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", "14a")
+    assert not p({"d": 1, "g": 1, "ureg[6:0]": 0x18}, "x", "14a")
+    for other in ("5b_move", "17a", "12a_ureg", ""):
+        assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", other)
+
+
+def test_the_assembled_forms_are_checked_by_form(tmp_path):
+    """Through the whole assembler path: the index-register form (15a with a 32-bit modifier, 15b, 3 with a register modifier) is flagged,
+    the direct-address store is not."""
+    from tools.patchkit import pk_build
+
+    def check(src):
+        f = tmp_path / "t.s"
+        f.write_text(src)
+        pk_build.sharc_object([f], [], frozenset())
+
+    for ok in ("DM(0x20000000) = I0;", "PM(0x20000000) = I8;", "DM(15, I4) = R0;"):
+        check(f".SECTION/PM seg_pmco;\n    {ok}\n    RTS;\n")
+    for bad in (
+        "DM(15, I4) = I0;",
+        "DM(0x1000, I4) = I0;",
+        "DM(I4, M5) = M1;",
+        "PM(15, I12) = I8;",
+    ):
+        with pytest.raises(pk_build.BuildError, match="the ISA does not allow"):
+            check(f".SECTION/PM seg_pmco;\n    {bad}\n    RTS;\n")
+
+
+def test_the_c3_noirq_variant_masks_interrupts_inside_and_restores_mode1():
+    defines = C3_VARIANTS["b-noirq"]
+    rig = CrumbRig(defines)
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    rig.rec_word(2, 0x1B8, 1)
+    ctx = {
+        "MODE1": 0x1011800 | 0x8000
+    }  # IRPTEN set, TRUNCATE set: the pin clears it, the epilogue puts it back
+    inside = rig.call(2, ctx=ctx, breaks=(rig.core_linked.symbols["_dv_f3b"],))
+    assert inside["regs"]["MODE1"] & 0x1000 == 0, (
+        "IRPTEN is clear once the registered path is past its mask"
+    )
+    assert inside["regs"]["MODE1"] & 0x8000 == 0, "the pins still apply"
+    out = rig.call(2, ctx=ctx)
+    assert stops_at(out, RETURN_SW), out["halt"]
+    assert (
+        u32(out["regs"]["MODE1"]) == u32(out["in"]["MODE1"])
+        and out["regs"]["MODE1"] & 0x1000
+    )
+    # the stock path and the engine's own types never touch IRPTEN
+    rig.set_type(2, 6)
+    out = rig.call(5, ctx=ctx)
+    assert stops_at(out, STOCK_BP) and u32(out["regs"]["MODE1"]) == u32(
+        out["in"]["MODE1"]
+    )
+
+
+def test_the_c3_nosys_variant_writes_no_system_register_on_the_registered_path():
+    text = pk_build.apply_conditionals(CORE.read_text(), C3_VARIANTS["c-nosys"])
+    path = text.split("_dv_stock:")[0]
+    assert (
+        "MODE1 =" not in path
+        and "BIT SET MODE1" not in path
+        and "BIT CLR MODE1" not in path
+    )
+    assert "R3 = MODE1;" in path  # the read stays (harmless); only the writes are gone
+
+
+def test_every_build_restores_b3_before_i3():
+    """A load of a B register also loads its I register (PRM p.6-24, "Circular Buffer Programming Model"); the stock epilogue restores B3
+    first, in every build (the emulator does not model the I load)."""
+
+    def order(defines):
+        lines = [
+            x.strip()
+            for x in pk_build.apply_conditionals(CORE.read_text(), defines).splitlines()
+        ]
+
+        def at(prefix):
+            return next(k for k, x in enumerate(lines) if x.startswith(prefix))
+
+        return at("B3 = DM(-24, I6);"), at("I3 = DM(-19, I6);")
+
+    for defines in (C3_VARIANTS["a-delayed"], frozenset()):
+        b, i = order(defines)
+        assert b < i
+
+
+def test_without_reply_records_the_breadcrumb_stays_local():
+    rig = CrumbRig()  # core/dsp-link absent or before its first block: _dv_rec holds 0, nothing may be written through it
+    rig.set_type(0, TYPE)
+    rig.set_note(0, 60)
+    rig.rec_word(0, 0x1B8, 1)
+    out = rig.call(
+        0, extra_reads={"diag": (nw(DIAG), 16), "low": (0, 256)}, ctx="friendly"
+    )
+    assert stops_at(out, RETURN_SW), out["halt"]
+    assert out["diag"][12] == crumb(7, 0, TYPE) and out["diag"][13:15] == [1, 1]
+    assert not any(out["low"])
 
 
 def sine_blocks(rig, note, tune=64.0, blocks=60):

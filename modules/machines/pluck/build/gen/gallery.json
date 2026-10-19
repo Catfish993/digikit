@@ -1,0 +1,167 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "param": "pluck_decay",
+              "slot": 25
+            },
+            {
+              "param": "pluck_pick",
+              "slot": 26
+            },
+            {
+              "param": "pluck_bright",
+              "slot": 27
+            },
+            {
+              "param": "pluck_color",
+              "slot": 28
+            }
+          ],
+          "level": 10,
+          "name": "Pluck",
+          "own_dsp": true,
+          "page": {
+            "name": "PLUCK",
+            "title": "Pluck"
+          },
+          "position": 4,
+          "short": "PLK",
+          "type": 9
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "pluck_decay",
+              "slot": 1
+            },
+            {
+              "param": "pluck_pick",
+              "slot": 2
+            },
+            null,
+            {
+              "param": "pluck_bright",
+              "slot": 4
+            },
+            {
+              "param": "pluck_color",
+              "slot": 5
+            },
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Pluck",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "PLK",
+          "type": 9
+        }
+      },
+      "id": "pluck",
+      "name": "Pluck",
+      "short": "PLK"
+    }
+  ],
+  "module": "machines/pluck",
+  "params": {
+    "dn2": [
+      {
+        "default": 16384,
+        "id": "pluck_decay",
+        "max": 32512,
+        "min": 0,
+        "name": "Decay",
+        "short": "DECAY",
+        "slot": 25,
+        "template": 213
+      },
+      {
+        "default": 8192,
+        "id": "pluck_pick",
+        "max": 32512,
+        "min": 0,
+        "name": "Pick position",
+        "short": "PICK",
+        "slot": 26,
+        "template": 213
+      },
+      {
+        "default": 20480,
+        "id": "pluck_bright",
+        "max": 32512,
+        "min": 0,
+        "name": "Brightness",
+        "short": "BRIGHT",
+        "slot": 27,
+        "template": 213
+      },
+      {
+        "default": 10240,
+        "id": "pluck_color",
+        "max": 32512,
+        "min": 0,
+        "name": "Excitation colour",
+        "short": "COLOR",
+        "slot": 28,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 16384,
+        "id": "pluck_decay",
+        "max": 32512,
+        "min": 0,
+        "name": "Decay",
+        "short": "DECAY",
+        "slot": 1,
+        "template": 209
+      },
+      {
+        "default": 8192,
+        "id": "pluck_pick",
+        "max": 32512,
+        "min": 0,
+        "name": "Pick position",
+        "short": "PICK",
+        "slot": 2,
+        "template": 209
+      },
+      {
+        "default": 20480,
+        "id": "pluck_bright",
+        "max": 32512,
+        "min": 0,
+        "name": "Brightness",
+        "short": "BRIGHT",
+        "slot": 4,
+        "template": 209
+      },
+      {
+        "default": 10240,
+        "id": "pluck_color",
+        "max": 32512,
+        "min": 0,
+        "name": "Excitation colour",
+        "short": "COLOR",
+        "slot": 5,
+        "template": 209
+      }
+    ]
+  }
+}

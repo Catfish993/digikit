@@ -13,6 +13,8 @@
 [device]
 name = "Digitakt II"
 short = "dt2"
+# The device byte of the firmware SysEx framing (docs/findings/01).
+syx_id = 0x14
 
 # Identity is the hash. The filename is a hint for error messages only:
 # people rename firmware files, and tools/firmware/config.py resolving one BY NAME is
@@ -40,6 +42,8 @@ softfloat_abi = true
 # function hashes of 0xb88a49/0xb88aa6 match 0xb8636d/0xb863ca). sample_link:
 # how card samples reach the DSP (findings 15): ColdFire FlexBus writes to link
 # port 0, so the peer must be fed them.
+# Has a port lockfile (devices/ports/): tools/patchkit/port_resolve.py resolves every firmware with `port = true`.
+port = true
 dsp = { image = "dt2-1.16", idle_start = 0xb8636d, idle_end = 0xb863df, idle_head = 0xb863cf, sample_link = "lp0" }
 
 [[firmware]]
@@ -54,8 +58,65 @@ readiness_contract = "main-panel-fs-check-v1"
 # The softfloat ABI shortcuts (packages/emulator/boot softfloat) are verified on this MAIN OS.
 softfloat_abi = true
 # Section 7 (the SHARC+ blob) is byte-identical to 1.16, so the idle loop addresses carry over.
+# Has a port lockfile (devices/ports/): tools/patchkit/port_resolve.py resolves every firmware with `port = true`.
+port = true
 dsp = { image = "dt2-1.17", idle_start = 0xb8636d, idle_end = 0xb863df, idle_head = 0xb863cf, sample_link = "lp0" }
 
+
+# Board and CPU facts the digikit runtime and the core modules use (docs/design/device-data.md). `patchkit gen` writes them into the
+# constants and includes of the modules (`[[gen]]` in a module.toml). The runtime is one image for all devices: a fact it uses as a
+# constant must be the same in every device file, and `patchkit gen` refuses a difference. Register offsets inside a peripheral
+# are CPU facts (MCF5441x) and stay in the code, named as such.
+[board]
+# The console UART (UART8): the firmware drains it before its own soft reset (finding 36 section 3). The status register is at +4.
+console_uart_base = 0xEC070000
+# DDR: the cached window the firmware's objects live in, and the uncached alias of its first word (cleared before a reset so that a
+# stale magic does not start the next boot in console mode).
+ddr_cached_base = 0x40000000
+ddr_bytes = 0x08000000
+ddr_uncached_alias = 0x48000000
+# The eSDHC controller of the card (ESDHC0); the runtime reads its present-state register (+0x24) to see a transfer in flight.
+esdhc_base = 0xFC0CC000
+# The DSP core clock and the DSP blocks per second (one block is 32 samples at 48 kHz). The clock of the real device is not known
+# **[O]** (finding 41): 1 GHz is the emulator's model, and the DSP load percentages scale with it.
+dsp_clock_hz = 1000000000
+dsp_blocks_per_second = 1500
+
+# The digikit runtime's view of this device. `id` is what the runtime, the registry (core/dynreg), the DSP table (core/dyndsp) and a
+# .dkm file call the device; `name` is what the INFO reply of the upload protocol says (at most 3 characters).
+[digikit]
+id = 1
+name = "dt2"
+# The panel key held at power-on for safe mode: RECORD (a code of [[panel.group]] "transport", tools/patchkit/pk_harness.py BUTTONS).
+safe_key = 19
+# core/dsp-link: the reserved DSP area in L2 (window 0; a chunk's offset field is 17 bits, so at most 524288 bytes), and the geometry of
+# the frame tail the link sends through.
+dsp_area_bytes = 524288
+dsp_tail_off = 0x804
+dsp_tail_words = 174
+# RAM that neither the firmware nor the boot code touches (findings 01 "Expansion region": the first 4 KiB above cf.expansion), where the
+# runtime keeps its crash record and a probe word. Whether a soft reset leaves RAM alone on the real device is open **[O]**; the emulator
+# models that it does for this range (docs/findings/46-digikit-debug.md).
+keep_base = 0x47fe0000
+keep_bytes = 0x1000
+# RAM ranges [lo, hi) the PEEK command of the upload protocol may read (docs/design/digikit-upload.md): the firmware's data, then the
+# runtime's own region with the keep range. No peripheral registers; at most 4 ranges.
+peek = [[0x40000000, 0x47e30000], [0x47e8b000, 0x47fe1000]]
+
+# What patchkit needs of this device: the container and section limits of a port (written into devices/ports/*.toml by
+# tools/patchkit/port_resolve.py; docs/findings/01 "NOR flash map") and the DSP L2 range the free-region search runs in.
+[patch]
+container_max = 0x300000
+dsp_stored_max = 0x100000
+dsp_depacked_max = 0xfffff
+main_staged_max = 0x3ffc00
+# Where the MAIN OS image is loaded (the built-in anchor `cf.main`).
+main_dest = 0x40000400
+dsp_l2_lo = 0x20000000
+dsp_l2_hi = 0x20100000
+
+# Free L2 that two DT2 functions load as literals: kept out until a path that uses it is found (finding 06).
+dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.
@@ -156,3 +217,87 @@ name = "level"
 kind = "encoder"
 codes = [9]
 layout = "single"
+
+# Where the card keeps things (finding 14 "MmcFs slots", finding 23 S6). Read by packages/emulator/device-profile and
+# used by the +Drive builder, reader and exporter (packages/emulator/plusdrive); sectors are 512 bytes. Every pool is
+# linear: slot n is at base_sector + n * stride_sectors, so the firmware's clamped formulas are base + stride * n.
+[card]
+header_sector = 0x0        # MmcFs header, magic 0xbeef_bace
+table_sector = 0x800       # three WRITE-PROTECT bitmaps (bit set = padlock), 400 bytes (FUN_40130f9a clears them; setters FUN_40130234, FUN_4013011e, FUN_40132c6c; finding 35)
+
+# Projects, 16 MiB, 128 slots: FUN_4012eef2, block = ((slot + 0xb) & 0xff) << 15 (a slot > 0x7f is clamped to 0x7f).
+[card.pools.projects]
+base_sector = 0x58000
+stride_sectors = 0x8000
+slots = 128
+slot_bytes = 0x1000000
+bitmap_offset = 0
+bitmap_bytes = 16
+
+# Sound presets, 4 KiB, 2048 slots: FUN_4012f596, block = (slot + 0x2400) * 8.
+[card.pools.sounds]
+base_sector = 0x12000
+stride_sectors = 8
+slots = 2048
+slot_bytes = 0x1000
+bitmap_offset = 16
+bitmap_bytes = 256
+
+# Kits, 64 KiB, 1024 slots: FUN_401324cc, block = (slot * 0x10000 + 0x2c00000) >> 9.
+[card.pools.kits]
+base_sector = 0x16000
+stride_sectors = 0x80
+slots = 1024
+slot_bytes = 0x10000
+bitmap_offset = 272
+bitmap_bytes = 128
+
+# Project records outside the pools (16 MiB each): two boot copies, a COKi container the builder seeds and the firmware
+# reads at start, and the working project, rewritten from the boot copy at every start (FUN_4012eef2 special case; finding 24). They would be
+# project slots 0xfd, 0xfe and 0xff of the unclamped formula; no pool slot (at most 0x7f) reaches them.
+[[card.regions]]
+role = "boot-project"
+sector = 0x40000
+sectors = 0x8000
+
+[[card.regions]]
+role = "boot-project"
+sector = 0x48000
+sectors = 0x8000
+
+[[card.regions]]
+role = "working-project"
+sector = 0x50000
+sectors = 0x8000
+
+# The folder (path) filesystem: superblock magic 0x656b4653 (finding 14); it runs to the end of the card.
+[card.path_fs]
+superblock_sector = 0x5d8000
+
+# Module store (docs/design/digikit-store.md): above every kit pool, below the project records, outside every erase
+# range; the firmware never writes it (finding 23 S6: a choice with 0x2000 sectors of margin, not a measurement).
+[card.store]
+first_sector = 0x38000
+end_sector = 0x3e000
+selection_sectors = 2      # the last two sectors: the digikit selection record (docs/design/digikit-store.md)
+header_b_sector = 0x3dffd  # store header copy B (version 2): the sector before the selection record; the store's files end before it
+
+# How a module's machines map onto this device (packages/patchkit/src/typed.rs lowers the typed sections of a
+# module.toml with it; `patchkit gen` writes the constants a DSP routine needs). Finding 02; modules/machines/pluck/src/dsp.
+# The knobs of a machine are descriptor fields f0..f7 of its machine row (engine slots 0..7) and the level is f8.
+[modules.knobs]
+count = 8
+slot_base = 0
+to = "machine"
+knob_field = "f"
+level_field = "f8"
+level_default = 10          # 0x0a: the track level code
+
+# The DSP's copy of the frame holds knob j of track t at halfword 0x6d + 48 t + j + (j / 4) * 2 (byte 0xda + 0x60 t);
+# the parameter table gives knob j the mirror index 25 + j + (j / 4) * 2 (core/params builds the same index).
+[modules.frame]
+base = 0x6d
+stride = 48
+group = 4
+gap = 2
+mirror_base = 25

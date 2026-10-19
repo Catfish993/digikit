@@ -99,6 +99,10 @@ _pk_marked:
     F10 = F10 + F11;
     R1 = 0x39aaaaab;                      // 1 / (256 * 12)
     F10 = F10 * F1;                       // x
+    R1 = 0x41333333;                      // 11.2: P = P0 2^-x stays at 2.5 or more (the loop has no shorter period)
+    F10 = MIN(F10, F1);
+    R1 = 0;                               // 0: no word makes x negative
+    F10 = MAX(F10, F1);
     F0 = PASS F10;
     CALL _dv_exp2;
     R1 = 0x39329a62;                      // INC0 = 440 2^(-69/12) / 48000
@@ -137,6 +141,13 @@ _pk_marked:
     F0 = F0 * F1;
     F0 = F14 - F0;                        // tau_lp
     F9 = F12 - F0;                        // P - tau_lp
+    // keep P - tau_lp where N = 2 .. 4090 serves it with R in [0.5, 1.5): a period outside (a pitch or TUNE word beyond the
+    // string's range) plays the nearest period the line can hold. Unclamped, R leaves the range, the allpass coefficient
+    // passes 1 and the string state becomes Inf/NaN until the next note-on.
+    R1 = 0x40201062;                      // 2.501
+    F9 = MAX(F9, F1);
+    R1 = 0x457fb7d7;                      // 4091.49
+    F9 = MIN(F9, F1);
     R1 = 0x3f000000;
     F0 = F9 - F1;                         // P - tau_lp - 0.5
     R0 = TRUNC F0;
@@ -181,6 +192,10 @@ _pk_marked:
     F2 = F2 * F0;
     R3 = 0xb413dec9;                      // c0
     F2 = F2 + F3;
+    R1 = 0x3f666666;                      // |a| < 1 is the allpass's stability limit; the valid range is -0.2 .. 0.33
+    F2 = MIN(F2, F1);
+    R1 = 0xbf666666;
+    F2 = MAX(F2, F1);
     DM(14, I3) = R2;                      // a
 
     // g = exp2(-GK P invT60), invT60 = 20 exp2(-8.64 DECAY)
@@ -249,6 +264,12 @@ _pk_marked:
     R0 = LSHIFT R5 BY 14;
     R1 = _pk_buf;
     R3 = R1 + R0;
+    // the whole line starts silent: a later block may read further back than this note's N (TUNE or the pitch moved the period),
+    // and the part the excitation does not cover would otherwise hold whatever the memory held (stale notes, or garbage at power-up)
+    I2 = R3;
+    R0 = 0;
+    LCNTR = 4096, DO _pk_zline UNTIL LCE;
+_pk_zline: DM(I2, M6) = R0;
     R0 = DM(11, I3);
     R4 = LSHIFT R0 BY 2;                  // 4 N
     R6 = 0x4000;

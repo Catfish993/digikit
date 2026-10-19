@@ -9,8 +9,6 @@ use crate::module::*;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-pub const DEVICES: [&str; 2] = ["dt2", "dn2"];
-
 /// Active on this device? (an empty filter means all)
 pub fn on(devices: &[String], dev: &str) -> bool {
     devices.is_empty() || devices.iter().any(|d| d == dev)
@@ -18,8 +16,11 @@ pub fn on(devices: &[String], dev: &str) -> bool {
 
 fn check_devices(owner: &str, what: &str, d: &[String]) -> Result<()> {
     for x in d {
-        if !DEVICES.contains(&x.as_str()) {
-            return Err(err!("{owner}: {what}: device {x:?} is neither dt2 nor dn2"));
+        if crate::devdata::by_short(x).is_none() {
+            return Err(err!(
+                "{owner}: {what}: device {x:?} is not one of {}",
+                crate::devdata::short_list()
+            ));
         }
     }
     Ok(())
@@ -335,6 +336,18 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
     let mut act = Active::default();
     for id in order {
         let m = lib.get(id).unwrap();
+        if m.manifest.module.dynamic {
+            return Err(err!(
+                "{}: is a run-time module; pack it with `patchkit pack` and load it with the digikit runtime",
+                m.id()
+            ));
+        }
+        if crate::typed::has_typed(&m.manifest) && !m.manifest.lowered {
+            return Err(err!(
+                "{}: typed sections were not lowered (load the library with the device models)",
+                m.id()
+            ));
+        }
         for d in m.manifest.registry.iter().filter(|r| on(&r.devices, dev)) {
             if act.regs.iter().any(|r| r.def.name == d.name) {
                 return Err(err!("registry {} is declared twice", d.name));

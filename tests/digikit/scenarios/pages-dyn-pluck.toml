@@ -1,0 +1,15 @@
+# The parameter pages of a machine chosen on track 1 (SRC, SRC again, a few encoder turns): the run-time test/dyn-pluck draws the same frames
+# as machines/pluck patched in (finding 50). Frames go to out/runs/lanes/r1-pages/.
+[scenario]
+name = "pages-dyn-pluck"
+kind = "pages"
+devices = ["dt2"]
+images = ["dt2-1.16", "dt2-1.17"]
+tier = "quick"
+
+[pages]
+modules = ["test/dyn-pluck"]
+twin = "machines/pluck"
+static_type = 9
+hint = 7
+stock_downs = [0, 1, 2, 3, 4, 5, 6]

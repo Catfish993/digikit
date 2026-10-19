@@ -12,7 +12,9 @@ import {
   type RuntimeSnapshot,
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
-import { cardLine, startCard, topLevelWavs, type CardStatus } from '@web/runtime/cards';
+import ModulesPanel from '@web/components/ModulesPanel';
+import { emulatorModules } from './modules-backend';
+import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 
 type Source = { path: string; name: string; bytes: number; modified_ms: number };
 type Status = RuntimeSnapshot['status'];
@@ -41,6 +43,7 @@ const RESTART = 'M3 2.5V6H6.5M3 6A5.2 5.2 0 1 1 2.8 9.8';
 const CHART = 'M2 12.5L5.5 7.5L8.5 10L13.5 3.5M10.5 3.5H13.5V6.5';
 const SPEAKER = 'M2.5 6H5L8.5 3V13L5 10H2.5ZM11 5.5a3.5 3.5 0 0 1 0 5';
 const UP = 'M4 10L8 6L12 10';
+const MODULES = 'M2.5 5L8 2.5L13.5 5V11L8 13.5L2.5 11ZM2.5 5L8 7.5L13.5 5M8 7.5V13.5';
 const DOWN = 'M4 6L8 10L12 6';
 
 function Meter(props: { value: number; worst?: number; tone?: 'teal' | 'amber' }) {
@@ -68,6 +71,7 @@ export default function Console() {
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
   const [rate, setRate] = createSignal<number>();
   const [drawer, setDrawer] = createSignal(false);
+  const [modulesOpen, setModulesOpen] = createSignal(false);
   const [card, setCard] = createSignal<CardStatus>();
   const [cardBusy, setCardBusy] = createSignal(false);
   let live: LivePanelApi | undefined;
@@ -207,10 +211,10 @@ export default function Console() {
   const chooseSamples = async (list: FileList | null) => {
     const cards = runtime()?.cards;
     if (!cards || !list) return;
-    const files = topLevelWavs(Array.from(list));
+    const files = folderFiles(Array.from(list));
     if (folderInput) folderInput.value = '';
     if (files.length === 0) {
-      setCard({ state: 'error', message: 'No .wav files directly in that folder.' });
+      setCard({ state: 'error', message: 'No files in that folder.' });
       return;
     }
     setCardBusy(true);
@@ -314,6 +318,17 @@ export default function Console() {
         </button>
         <button
           type="button"
+          class="tb"
+          disabled={!status()}
+          aria-pressed={modulesOpen()}
+          title="List, upload and delete the modules in the module store"
+          onClick={() => setModulesOpen(!modulesOpen())}
+        >
+          <Icon d={MODULES} />
+          Modules
+        </button>
+        <button
+          type="button"
           class="tb icon"
           disabled={!status()}
           aria-label="Save diagnostics"
@@ -335,6 +350,15 @@ export default function Console() {
           <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
         </div>
       </main>
+
+      <Show when={modulesOpen()}>
+        <div class="modules-sheet">
+          <ModulesPanel
+            backend={emulatorModules}
+            hint="Uploads go to the store of the running emulator; they load after APPLY & RESTART."
+          />
+        </div>
+      </Show>
 
       <Show when={drawer()}>
         <section class="drawer" aria-label="Metrics">
@@ -404,7 +428,7 @@ export default function Console() {
                 type="button"
                 class="tb"
                 disabled={!status() || cardBusy()}
-                title="Pick a folder of .wav files: track N plays file N (sorted by name)"
+                title="Pick a plus_drive-style folder: WAVs become samples (track N plays file N, sorted by name), .mmcfs/ and digikit/ are used as they are"
                 onClick={() => folderInput?.click()}
               >
                 Sample folder…

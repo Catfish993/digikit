@@ -4,9 +4,12 @@
     uv run python -m tools.patchkit.patchkit bin                       print the path of the built binary
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx --modules a,b [-o OUT.syx]   apply; writes out/patch/
     uv run python -m tools.patchkit.patchkit explain --firmware X.syx --modules a,b              site-by-site account
-    uv run python -m tools.patchkit.patchkit list|inspect|check|verify ...                       passed through
+    uv run python -m tools.patchkit.patchkit list|inspect|check|verify|preflight|gen ...                   passed through
+    uv run python -m tools.patchkit.patchkit pack MODULE --device dt2|dn2 [-o OUT.dkm]  pack a run-time module (default out/patch/<name>-<device>.dkm)
     uv run python -m tools.patchkit.patchkit bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
     uv run python -m tools.patchkit.patchkit inject [OUT.syx] [--hot]  load a patched image into the running emulator
+
+`DIGI_PK_ROOT=DIR` runs the binary with another repository root (a module variant, tools/patchkit/pk_variant.py).
 
 `patch` defaults the output to out/patch/<firmware stem>+<modules>.syx and writes plan.json next to it. `explain`
 adds a SHARC+ listing of the DSP sites to the report of the Rust binary. Output files are firmware-derived: they stay
@@ -34,32 +37,49 @@ def target_dir() -> Path:
     return Path(native_target.target_dir(None)).parent / "nogen"
 
 
+_BUILT: Path | None = None
+
+
 def binary(build: bool = True) -> Path:
-    exe = target_dir() / "release" / "patchkit"
+    """The patchkit binary to run: an immutable copy (tools/devtools/stablebin.py), never cargo's own
+    `release/patchkit`, which every `cargo build` rewrites (a process that execs it meanwhile can hang)."""
+    global _BUILT
+    from tools.devtools import stablebin
+
+    target = target_dir()
+    exe = target / "release" / "patchkit"
+    if build and _BUILT is not None:
+        return _BUILT
+    if not build and not exe.is_file():
+        return exe
+    with stablebin.build_lock(target):
+        if build:
+            r = subprocess.run(
+                [
+                    "cargo",
+                    "build",
+                    "-p",
+                    "patchkit",
+                    "--release",
+                    "--offline",
+                    "--target-dir",
+                    str(target),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode:
+                raise SystemExit(f"cannot build patchkit:\n{r.stderr[-3000:]}")
+        stable = stablebin.stable_copy(exe, target)
     if build:
-        r = subprocess.run(
-            [
-                "cargo",
-                "build",
-                "-p",
-                "patchkit",
-                "--release",
-                "--offline",
-                "--target-dir",
-                str(target_dir()),
-            ],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-        )
-        if r.returncode:
-            raise SystemExit(f"cannot build patchkit:\n{r.stderr[-3000:]}")
-    return exe
+        _BUILT = stable
+    return stable
 
 
 def run(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [str(binary()), "--root", str(ROOT), *args],
+        [str(binary()), "--root", os.environ.get("DIGI_PK_ROOT") or str(ROOT), *args],
         cwd=ROOT,
         capture_output=capture,
         text=True,
@@ -72,6 +92,9 @@ def flag(args: list[str], name: str) -> str | None:
         if name in args and args.index(name) + 1 < len(args)
         else None
     )
+
+
+GALLERY = "build/gen/gallery.json"
 
 
 def bundle(extra: list[Path] | None = None) -> dict:
@@ -91,8 +114,19 @@ def bundle(extra: list[Path] | None = None) -> dict:
         for r in d.get("registry", []):  # the permanent-number tables of frameworks
             if r.get("index_table"):
                 files[r["index_table"]] = (m.parent / r["index_table"]).read_text()
+        gallery = (
+            m.parent / GALLERY
+        )  # `patchkit gen`: machines and parameters, for the page
+        if gallery.is_file():
+            files[GALLERY] = gallery.read_text()
         modules.append({"manifest": m.read_text(), "files": files})
-    return {"ports": ports, "modules": modules}
+    # the device files with a [modules] section: the knob models the typed module sections are lowered with
+    devices = []
+    for f in sorted((ROOT / "devices").glob("*.toml")):
+        text = f.read_text()
+        if "modules" in tomllib.loads(text):
+            devices.append(text)
+    return {"ports": ports, "modules": modules, "devices": devices}
 
 
 def sharc_listing(syx: Path, plan: dict) -> list[str]:
@@ -190,6 +224,38 @@ def cmd_patch(args: list[str]) -> int:
     return r.returncode
 
 
+def cmd_pack(args: list[str]) -> int:
+    """`pack MODULE [--device dt2|dn2] [-o OUT.dkm] [--name N] [--runtime-min V]`: a run-time module as a .dkm."""
+    module = next(
+        (
+            a
+            for i, a in enumerate(args)
+            if not a.startswith("-") and (i == 0 or args[i - 1] not in VALUE_FLAGS)
+        ),
+        None,
+    )
+    if module is None:
+        raise SystemExit(
+            "pack needs a module id, e.g. pack test/dyn-pluck --device dt2"
+        )
+    out = flag(args, "-o")
+    if out is None:
+        d = ROOT / "out" / "patch"
+        d.mkdir(parents=True, exist_ok=True)
+        device = flag(args, "--device")
+        out = str(
+            d / (module.rsplit("/", 1)[-1] + (f"-{device}" if device else "") + ".dkm")
+        )
+        args = [*args, "-o", out]
+    r = run(["pack", *args])
+    if r.returncode == 0:
+        print(f"dkm: {out}")
+    return r.returncode
+
+
+VALUE_FLAGS = ("-o", "--device", "--name", "--runtime-min")
+
+
 def cmd_inject(args: list[str]) -> int:
     from tools.control.digi_client import main as client_main
 
@@ -234,7 +300,26 @@ def main(argv: list[str]) -> int:
         return cmd_explain(args)
     if cmd == "inject":
         return cmd_inject(args)
-    if cmd in ("list", "inspect", "check", "verify", "apply", "rebuild"):
+    if cmd == "pack":
+        return cmd_pack(args)
+    if cmd == "preflight":
+        # the Rust checks, then the ISA scan of section 7 (tools/patchkit/pk_isacheck.py): the image fails when either fails
+        rc = run([cmd, *args]).returncode
+        files = [a for a in args if a.endswith(".syx") and Path(a).is_file()]
+        if files:
+            from tools.patchkit import pk_isacheck
+
+            rc = pk_isacheck.main(files[:1]) or rc
+        return rc
+    if cmd in (
+        "list",
+        "inspect",
+        "check",
+        "verify",
+        "apply",
+        "rebuild",
+        "gen",
+    ):
         return run([cmd, *args]).returncode
     print(__doc__)
     return 2

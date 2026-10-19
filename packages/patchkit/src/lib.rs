@@ -7,20 +7,28 @@
 #[macro_use]
 pub mod error;
 pub mod aplib;
+pub mod devdata;
+pub mod devgen;
 pub mod firmware;
 pub mod syx;
 
 pub use error::{Error, Result};
 pub mod apply;
 pub mod bootrom;
+pub mod dkm;
+pub mod dkmdsp;
 pub mod dko;
 pub mod dsp;
 pub mod explain;
 pub mod expr;
 pub mod link;
+pub mod modgen;
 pub mod module;
 pub mod port;
+pub mod preflight;
 pub mod prim;
 pub mod record;
+pub mod register;
+pub mod typed;
 pub mod verify;
 pub mod wasm;

@@ -35,6 +35,13 @@ FRAME_SLICE_SITE = 0x4002EC18
 # FUN_400da23e(param, type, ..) indexes a 7 x 10 table of machine parameters (SoundParameterSet::vfunc_20, the
 # parameter-change events): `move.l 8(sp),D0; movea.l 0xc(sp),A1` loads the type
 TYPEARG_SITES = (0x400DA248,)
+# SourcePageView::vfunc_4 (finding 50): the first test (tst.l 0x90(A2); beq.w T, function + 0x10), T, and FUN_4005f6bc (the
+# track's type, called by the hook); the same addresses on 1.16 and 1.17
+SRCPAGE_SITES = (
+    ("cf.machines.srcpage", 0x40016EBC, 8),
+    ("cf.machines.srcpage.alt", 0x400170AA, 2),
+    ("cf.machines.srcpage.type", 0x4005F6BC, 6),
+)
 
 
 def sites(profile: dict, read) -> list[tuple[str, int, int]]:
@@ -62,6 +69,7 @@ def sites(profile: dict, read) -> list[tuple[str, int, int]]:
     for i, addr in enumerate(TYPEARG_SITES):
         out.append((f"cf.machines.typearg.{i}", addr, 8))
     out.append(("cf.machines.persist", PERSIST_SITE, 2))
+    out.extend(SRCPAGE_SITES)
     return out
 
 

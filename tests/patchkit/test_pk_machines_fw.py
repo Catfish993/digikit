@@ -45,6 +45,8 @@ STUBS = [
     "_mf_c4a",
     ("_mf_c6", 12),
     "_mf_c6a",
+    ("_mf_sp", 8),
+    "_mf_spa",
 ]
 
 pytestmark = [
@@ -76,6 +78,7 @@ ENTRIES = [
 ]
 COUNT = len(ENTRIES)
 STR_AT = 0x47EC3000
+TYPE_FN = 0x47EC4000  # a stand-in for FUN_4005f6bc: `move.l #type,d0; rts`, the type is poked per case
 STOCK = [3, 0, 1, 2, 4, 5, 6]  # a stock display order
 
 
@@ -114,8 +117,10 @@ def unit():
             "_mf_entries": COUNT,
             "_mf_rows": ROWS,
             "_mf_list_stock": STOCK_LIST,
+            "_mf_spt": TYPE_FN,
         },
         [
+            "mf_srcpage",
             "mf_dispatch",
             "mf_list_entry",
             "mf_rank",
@@ -243,6 +248,7 @@ def gap_unit():
             "_mf_entries": 2,
             "_mf_rows": ROWS,
             "_mf_list_stock": STOCK_LIST,
+            "_mf_spt": TYPE_FN,
         },
         ["mf_list_entry", "mf_rank"],
     )
@@ -459,3 +465,59 @@ def test_row_size_of_the_manifest_matches_the_assembly():
     assert names.index("clone_of") * 4 == 44 and names.index("position") * 4 == 48
     assert names.index("own_dsp") * 4 == 52 and names.index("name") * 4 == 56
     assert names.index("short") * 4 == 60 and names.index("f0") * 4 == 8
+
+
+def type_fn(t):
+    return {TYPE_FN: b"\x20\x3c" + be32(t & 0xFFFFFFFF) + b"\x4e\x75"}
+
+
+VIEW = 0x47EC5000  # a stand-in SourcePageView: +0x7c begin, +0x80 end of the page vector, +0x90 the page index
+PAGES = VIEW + 0x200  # the vector's storage: two 4-byte entries
+
+
+def view_mem(end_entries, idx):
+    mem = bytearray(0x100)
+    mem[0x7C:0x80] = be32(PAGES)
+    mem[0x80:0x84] = be32(PAGES + 4 * end_entries)
+    mem[0x84:0x88] = be32(PAGES + 8)
+    mem[0x90:0x94] = be32(idx)
+    return {VIEW: bytes(mem)}
+
+
+def run_src_page(unit, typ, end_entries, idx):
+    r = unit.run_cases(
+        {**type_fn(typ), **view_mem(end_entries, idx)},
+        [
+            {
+                "routine": "mf_srcpage",
+                "a": {2: VIEW},
+                "stack": [0xAAAA, 0xBBBB],
+                "reads": [(VIEW + 0x7C, 0x18)],
+            }
+        ],
+    )[0]
+    blob = r.reads[0]
+    begin, end, cap = (int.from_bytes(blob[i : i + 4], "big") for i in (0, 4, 8))
+    idx_after = int.from_bytes(blob[0x14:0x18], "big")
+    assert begin == PAGES and cap == PAGES + 8  # begin and capacity are never touched
+    assert r.a[2] == VIEW  # the view register is kept
+    assert r.stack[0] == 0xAAAA  # nothing is left on the stack
+    return r.stub, (end - begin) // 4, idx_after
+
+
+def test_src_page_hook_gives_added_types_one_page_and_stock_types_two(unit):
+    """SourcePageView::vfunc_4, first test `tst.l 0x90(A2); beq.w T`: an added type (>= machines.first) gets page 0 and a one-entry
+    page vector (no page dots, the page key has nothing to flip to) and takes the knob page; every other type, including -1, gets the
+    two-entry vector back and the stock path (page 1 = the sample view stays)."""
+    for typ in (FIRST, 9, 18, 23):  # the first added type, the pluck, run-time rows
+        for end_entries, idx in ((2, 0), (2, 1), (1, 0)):
+            assert run_src_page(unit, typ, end_entries, idx) == ("_mf_spa", 1, 0), (
+                typ,
+                end_entries,
+                idx,
+            )
+    for typ in (0, 3, 6, -1):  # SAMPLE, STRETCH, MANUAL SLICE, no track
+        # page 0: the knob page; page 1: the sample view (stock continues at site + 8); a vector cut by an added type is restored
+        assert run_src_page(unit, typ, 2, 0) == ("_mf_spa", 2, 0), typ
+        assert run_src_page(unit, typ, 2, 1) == ("_mf_sp", 2, 1), typ
+        assert run_src_page(unit, typ, 1, 0) == ("_mf_spa", 2, 0), typ

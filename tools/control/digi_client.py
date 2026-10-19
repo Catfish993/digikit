@@ -430,6 +430,27 @@ class Emu:
     def frame_png(self) -> bytes:
         return oled_png(self.frame()[1])
 
+    def midi_in(self, data: bytes, period: int | None = None) -> dict[str, Any]:
+        """Queue bytes on the MIDI DIN input; PERIOD = instructions between bytes (default: the 31250 baud wire rate)."""
+        return self.call("midi.in", bytes=data.hex(), **_opt(period=period))
+
+    def midi_out(self) -> bytes:
+        """The bytes the firmware sent on MIDI DIN since the last call."""
+        return bytes.fromhex(self.call("midi.out")["hex"])
+
+    def usb_in(
+        self, data: bytes, chunk: int | None = None, period: int | None = None
+    ) -> dict[str, Any]:
+        """Hand bytes to the firmware's USB MIDI receive callback (MidiRpc requests arrive only this way), CHUNK bytes per call
+        (default 64) PERIOD instructions apart (default 132,000; a high-speed microframe is 384 and 16,500)."""
+        return self.call(
+            "midi.usb.in", bytes=data.hex(), **_opt(chunk=chunk, period=period)
+        )
+
+    def usb_out(self) -> bytes:
+        """The bytes the firmware handed to its USB MIDI transmit function since the last call."""
+        return bytes.fromhex(self.call("midi.usb.out")["hex"])
+
     def peek32(self, addr: int) -> int | None:
         """One guest longword (None when unmapped), read without side effects."""
         value = self.call("mem.cf.peek", addr=addr)["value"]
@@ -442,6 +463,11 @@ class Emu:
     def watchdog(self, stall_ms: int | None = None) -> dict[str, Any]:
         """The heartbeat; STALL_MS sets the stall threshold in emulated ms (0 disables)."""
         return self.call("watchdog.config", **_opt(stall_ms=stall_ms))
+
+    def cpu_exceptions(self, deliver: bool | None = None) -> dict[str, Any]:
+        """`cpu.exceptions`: True makes a CPU exception run the guest's handler (the digikit runtime's crash capture) instead of stopping the run
+        with an error (the default); kept for every runtime installed afterwards, a soft reset's cold boot included."""
+        return self.call("cpu.exceptions", **_opt(deliver=deliver))
 
     def quit(self) -> dict[str, Any]:
         return self.call("quit")

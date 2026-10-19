@@ -12,8 +12,8 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.emulator import native_target  # noqa: E402
 from tools.firmware import config  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_cfcall,  # noqa: E402
     pk_toolchains,  # noqa: E402
@@ -29,24 +29,11 @@ pytestmark = pytest.mark.skipif(
 
 
 def patchkit(*args):
-    target = native_target.target_dir(None).parent / "nogen"
-    subprocess.run(
-        [
-            "cargo",
-            "build",
-            "-p",
-            "patchkit",
-            "--release",
-            "--offline",
-            "--target-dir",
-            str(target),
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-    )
+    exe = (
+        front_end.binary()
+    )  # one build under a lock, then an immutable copy (tools/devtools/stablebin.py)
     r = subprocess.run(
-        [str(target / "release" / "patchkit"), "--root", str(ROOT), *map(str, args)],
+        [str(exe), "--root", str(ROOT), *map(str, args)],
         capture_output=True,
         text=True,
     )
@@ -115,3 +102,19 @@ def test_registry_demo_boots_and_the_hook_runs_the_displaced_instructions(tmp_pa
     assert copy == bytes.fromhex("202f00086708206f0004214000204e75")[:14]
     assert struct.unpack(">IBH", rows[:7]) == (0x1234, reg["first"], reg["first"])
     assert struct.unpack(">IBH", rows[7:]) == (77, reg["first"] + 1, reg["first"])
+
+
+def test_build_options_select_ifdef_alternatives():
+    """pk_build.apply_conditionals: `#ifdef`/`#ifndef`/`#else`/`#endif` lines; with no define the text is the source without the option's lines."""
+    from tools.patchkit import pk_build
+
+    src = "a\n#ifdef X\nb\n#else\nc\n#endif\n#ifndef X\nd\n#endif\ne"
+    assert pk_build.apply_conditionals(src) == "a\nc\nd\ne"
+    assert pk_build.apply_conditionals(src, frozenset({"X"})) == "a\nb\ne"
+    nested = "#ifdef X\n#ifdef Y\ny\n#else\nnoy\n#endif\n#endif\nz"
+    assert pk_build.apply_conditionals(nested, frozenset({"X"})) == "noy\nz"
+    assert pk_build.apply_conditionals(nested, frozenset({"Y"})) == "z"
+    with pytest.raises(pk_build.BuildError):
+        pk_build.apply_conditionals("#ifdef X\na")
+    with pytest.raises(pk_build.BuildError):
+        pk_build.apply_conditionals("#endif")

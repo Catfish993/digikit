@@ -93,6 +93,9 @@ class Linked:
     code_boot: bytes  # little-endian per parcel, the order of the boot stream and of tools/sharc_dev/sharc_isa.py
     symbols: dict[str, int]  # short-word addresses
     checked: int = 0  # instructions re-decoded
+    ureg_class: list[str] = field(
+        default_factory=list
+    )  # stores whose source register the instruction class excludes
 
 
 def _tool(name: str) -> Path:
@@ -188,10 +191,35 @@ def _native_rows(
     check against Selache is that every row it lists either starts where ours does with the same length, or
     is a shorter listing of ours whose missing parcels are zero, and that each relocation Selache emitted
     sits on the start of one of our instructions."""
-    cmp = sel.compare_external_bytes(section)
-    native = [
-        (i.external.parcel_address, i.external.raw.hex()) for i in cmp.instructions
-    ]
+    # Width ties: a 16-bit short compute (Type 2c) and a 32-bit Type 2b share their leading bits, so a free-running decode
+    # of the object reads `R0 = R0 + R1;` (0xc001) plus the next word as one 2b. The emulator breaks the tie with a lookahead
+    # over the successors (packages/emulator/sharc-rt/src/decode.rs, `decode_width_resolved`); here the assembler, which
+    # chose the form, decides: its shorter extent is taken when that extent itself decodes to a form (finding 45).
+    selache_len = {parcel: len(raw) // 2 for parcel, raw in selache_rows}
+    isa = sel.load_instruction_set()
+    boot = sel.swap_parcels(section)
+    rows = []
+    offset = 0
+    while offset < len(boot):
+        result = isa.decode_bytes(boot[offset : offset + 6])
+        extent = (
+            min(2, len(boot) - offset)
+            if result.instruction is None
+            else result.instruction.extent_bytes
+        )
+        short = selache_len.get(offset // 2)
+        if short and short < extent and short in (2, 4):
+            narrow = isa.decode_bytes(boot[offset : offset + short], 8 * short)
+            if (
+                narrow.instruction is not None
+                and narrow.instruction.extent_bytes == short
+            ):
+                extent = short
+        rows.append(
+            (offset // 2, sel.swap_parcels(boot[offset : offset + extent]).hex())
+        )
+        offset += extent
+    native = rows
     nat = dict(native)
     for parcel, raw in selache_rows:
         if parcel in nat:
@@ -266,16 +294,33 @@ def _sw_apply(obj: SharcObject, marks: list[tuple[str, bool]]) -> None:
 # assembly, `name` becomes an extern of the source and the object gets a data or bss section of that size with a
 # global data symbol `name` (the linker allocates it).
 _PKBSS = re.compile(
-    r"^[ \t]*\.PK(BSS|DATA)[ \t]+([A-Za-z_.$][\w.$]*)[ \t]*,[ \t]*(0x[0-9a-fA-F]+|\d+)[ \t]*;[^\n]*$",
+    r"^[ \t]*\.PK(BSS|DATA)[ \t]+([A-Za-z_.$][\w.$]*)[ \t]*,[ \t]*(0x[0-9a-fA-F]+|\d+|[A-Za-z_]\w*)[ \t]*;[^\n]*$",
+    re.M,
+)
+_DEFINE = re.compile(
+    r"^[ \t]*#define[ \t]+([A-Za-z_]\w*)[ \t]+(0x[0-9a-fA-F]+|\d+)[ \t]*(?://[^\n]*)?$",
     re.M,
 )
 
 
 def _bss_prepare(source: str) -> tuple[str, list[tuple[str, int, bool]]]:
     found: list[tuple[str, int, bool]] = []
+    # the size may be a macro defined as a plain number in the same source (the generated device includes of `patchkit gen`)
+    defines = {m.group(1): int(m.group(2), 0) for m in _DEFINE.finditer(source)}
 
     def sub(m: re.Match) -> str:
-        found.append((m.group(2), int(m.group(3), 0), m.group(1) == "BSS"))
+        size = m.group(3)
+        if size not in defines and not size[0].isdigit():
+            raise PkSharcError(
+                f".PK{m.group(1)} {m.group(2)}: size {size} is not a number or a #define of one"
+            )
+        found.append(
+            (
+                m.group(2),
+                defines[size] if size in defines else int(size, 0),
+                m.group(1) == "BSS",
+            )
+        )
         return f".EXTERN {m.group(2)};"
 
     return _PKBSS.sub(sub, source), found
@@ -387,6 +432,33 @@ def _field(fields: dict[str, int], stem: str) -> int | None:
     return sum(v << lo for lo, v in parts)
 
 
+# The forms that address memory through an index register (Ia/Ic, with an immediate or register modifier): the ISA encodes the source of
+# their stores as UREGXDAG1 / UREGXDAG2. Type 14a (`DM(<addr32>) = Ureg`) has no index register and takes the full UREG class.
+INDEXED_MEMORY_FORMS = frozenset({"3a", "3b", "3d", "15a", "15b"})
+
+
+def ureg_class_problems(fields: dict[str, int], where: str, form: str) -> list[str]:
+    """A store through DM with an index register cannot take a DAG1 register (I0-I7, M0-M7, L0-L7, B0-B7) and a store through PM cannot
+    take a DAG2 register: the ISA encodes the source of such a store as UREGXDAG1 / UREGXDAG2 (SHARC+ PRM 15-7, 15-10, 13-13: "the Ureg
+    may not be from the same DAG as Ia/Mb or Ic/Md"). `form` is the instruction form id (Types 3a, 3b, 3d, 15a, 15b are checked; Type 14a,
+    the direct-address store, is exempt, as is every other form). Loads take every register. The stock DSP image has not one store of the
+    excluded kind (finding 49 section 10). The assembler and the emulator accept them; the silicon does not run them as written."""
+    if form not in INDEXED_MEMORY_FORMS:
+        return []
+    d = _field(fields, "d")
+    u = _field(fields, "ureg")
+    if d != 1 or u is None or not 0x10 <= u <= 0x4F:
+        return []
+    g = _field(fields, "g")
+    if g is None:
+        return []  # a form with no DM/PM select (an instruction word with no memory-side choice)
+    dag = 1 if (u & 0xF) < 8 else 2
+    if (g == 0 and dag == 1) or (g == 1 and dag == 2):
+        name = "IMLB"[(u >> 4) - 1] + str(u & 0xF)
+        return [f"{where}: {'PM' if g else 'DM'} store of {name} (DAG{dag})"]
+    return []
+
+
 def verify(obj: SharcObject, linked: Linked, externs: dict[str, int]) -> None:
     """Every instruction decodes natively with the extent Selache chose; relocated fields read back."""
     rows = []
@@ -397,12 +469,37 @@ def verify(obj: SharcObject, linked: Linked, externs: dict[str, int]) -> None:
     cmp = sel.compare_rows(rows)
     problems = []
     by_parcel = {}
+    isa = sel.load_instruction_set()
     for item in cmp.instructions:
         by_parcel[item.external.parcel_address] = item
+        linked.ureg_class += ureg_class_problems(
+            dict(item.native_fields),
+            f"parcel {item.external.parcel_address:#x}",
+            item.native_form_id or "",
+        )
         if item.native_form_id is None or not item.extent_agrees:
+            # a width tie (Type 2c against Type 2b): the assembler's extent decides when a form of that width matches
+            n = item.external.extent_bytes
+            if n in (2, 4):
+                tie = isa.decode_bytes(item.boot_bytes, 8 * n)
+                if tie.instruction is not None and tie.instruction.extent_bytes == n:
+                    continue
             problems.append(
                 f"parcel {item.external.parcel_address:#x} {item.external.raw.hex()}: "
                 f"native {item.native_form_id or item.native_candidates} extent_agrees={item.extent_agrees}"
+            )
+    # The emulator breaks the 2b / 2c width tie with a lookahead over the successors; the silicon has no such choice. An
+    # instruction the emulator would read with another extent than the assembler's runs differently there (finding 45).
+    from tools.sharc_dev import sharc_disasm
+
+    for parcel, raw_hex in obj.rows:
+        mine = len(raw_hex) // 2
+        seen = sharc_disasm.decode_confident(linked.code_boot, parcel * 2)
+        if seen.length_bytes is not None and seen.length_bytes != mine:
+            problems.append(
+                f"parcel {parcel:#x} {raw_hex}: the emulator's width resolution reads {seen.type_name} of "
+                f"{seen.length_bytes} bytes, the assembler wrote {mine} (a 16-bit `Rn = Rn op Rx`: the emulator would run "
+                f"another instruction than the silicon; use distinct registers, e.g. `R0 = R1 + R2`; finding 45)"
             )
     for r in obj.relocs:
         item = by_parcel[r.parcel]
@@ -433,6 +530,9 @@ def build(
 
 
 # ---------------------------------------------------------------- running on the concrete core
+
+
+_DECODE_CACHES: dict[bytes, dict] = {}
 
 
 def run_call(
@@ -472,6 +572,11 @@ def run_call(
         )
         data += obj.code_boot
     mem = LoadedMemory(data, blocks)
+    # The decode of a pc depends only on the loaded code bytes and their placement, so calls that load the same code
+    # (a rig calling a routine block after block) share one decode cache instead of decoding every instruction again.
+    cache_key = hashlib.sha256(
+        repr([(b["target_address"], b["byte_count"]) for b in blocks]).encode() + data
+    ).digest()
     runner = sharc_run.Runner(
         mem,
         start,
@@ -479,6 +584,7 @@ def run_call(
         breakpoints=[return_sw, *extra_breaks],
         approx_recips=approx_recips,
     )
+    runner._cache = _DECODE_CACHES.setdefault(cache_key, {})
     for addr, word in (dm_words or {}).items():
         if not st._dm_write(
             runner.state, addr, 4, st.Const(word & 0xFFFFFFFF), normal_word=True
@@ -518,6 +624,139 @@ def run_call(
         )
     }
     return out
+
+
+class CallSession:
+    """A concrete core that keeps its memory between calls (``run_call`` builds a new core for every call).
+
+    ``call`` starts a routine at a symbol the way ``run_call`` does: the registers given, a return address that stops the
+    run, and all registers it does not name as the last call left them. DM written by a call stays (a delay line, a
+    routine's state); ``poke`` and ``peek`` read and write DM words in normal-word addresses. A rig that calls a routine
+    block after block uses this instead of copying its state in and out of every call."""
+
+    def __init__(
+        self,
+        linked: list[Linked],
+        return_sw: int,
+        breaks: tuple[int, ...] = (),
+        approx_recips: bool = False,
+    ) -> None:
+        from tools.sharc_dev import sharc_run
+        from tools.sharc_dev.sharcldr import LoadedMemory
+
+        self._st = sharc_run.st
+        self._run = sharc_run
+        self.return_sw = return_sw
+        blocks, data = [], b""
+        for i, obj in enumerate(linked):
+            blocks.append(
+                {
+                    "target_address": SW_ALIAS_BASE + 2 * obj.base_sw,
+                    "byte_count": len(obj.code_boot),
+                    "fill": False,
+                    "payload_offset": len(data),
+                    "payload_len": len(obj.code_boot),
+                    "index": i,
+                }
+            )
+            data += obj.code_boot
+        mem = LoadedMemory(data, blocks)
+        cache_key = hashlib.sha256(
+            repr([(b["target_address"], b["byte_count"]) for b in blocks]).encode()
+            + data
+        ).digest()
+        self.runner = sharc_run.Runner(
+            mem,
+            linked[0].base_sw,
+            regs={},
+            breakpoints=[return_sw, *breaks],
+            approx_recips=approx_recips,
+        )
+        self.runner._cache = _DECODE_CACHES.setdefault(cache_key, {})
+        self.symbols: dict[str, int] = {}
+        for obj in linked:
+            self.symbols.update(obj.symbols)
+
+    def poke(self, addr: int, word: int) -> None:
+        if not self._st._dm_write(
+            self.runner.state,
+            addr,
+            4,
+            self._st.Const(word & 0xFFFFFFFF),
+            normal_word=True,
+        ):
+            raise PkSharcError(f"cannot poke DM word {addr:#x}")
+
+    def peek(self, addr: int) -> int | None:
+        v = self._st._dm_read(self.runner.state, addr, 4, normal_word=True)
+        return None if v is None else v.value & 0xFFFFFFFF
+
+    def call(
+        self,
+        entry: str,
+        regs: dict[str, int],
+        max_steps: int = 100000,
+        read_regs: tuple[str, ...] = (),
+    ) -> dict[str, object]:
+        import dataclasses
+
+        st, runner = self._st, self.runner
+        old = runner.state
+        new_uregs = dict(old.uregs)
+        for key, value in regs.items():
+            new_uregs[st._seed_code(key)] = st._seed_value(value)
+        state = dataclasses.replace(
+            old,
+            pc_sw=self.symbols[entry],
+            uregs=new_uregs,
+            call_stack=[self.return_sw],
+            pc_stack=(
+                [0x01000000 | (self.return_sw & 0xFFFFFF)] if old.stack_model else []
+            ),
+            pc_stack_pending=-1,
+            pc_stack_requested=-1,
+            loops=[],
+            loop_depth=0,
+            loop_slots=list(old.loop_slots),
+            status_stack=[],
+            mmrs=dict(old.mmrs),
+            special=dict(old.special),
+            bank_alt=dict(old.bank_alt),
+            pending=None,
+            stopped=None,
+        )  # the overlay (DM written so far) is shared, not copied
+        if state.stack_model:
+            st._sync_pc_stack(state)
+            st._sync_status_stack(state)
+        runner.state = state
+        runner.instructions = 0
+        res = runner.run(max_steps)
+        names = (
+            "R0",
+            "R1",
+            "R2",
+            "R4",
+            "R5",
+            "R6",
+            "R7",
+            "R8",
+            "R9",
+            "R10",
+            "R11",
+            "R12",
+            "R13",
+            "I0",
+            *read_regs,
+        )
+        return {
+            "halt": res.halt.to_json(),
+            "instructions": res.instructions,
+            "final_pc_sw": res.final_pc_sw,
+            "regs": {
+                n: getattr(state.uregs.get(st.UREG_CODES[n]), "value", None)
+                for n in names
+            },
+        }
 
 
 def main() -> None:

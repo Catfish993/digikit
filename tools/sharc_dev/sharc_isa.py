@@ -438,8 +438,12 @@ class InstructionSet:
     def form(self, ident: str) -> InstructionForm:
         return self._by_id[ident]
 
-    def select_frame(self, frame: int) -> Selection:
-        hits = [form for form in self.forms if form.matches(frame)]
+    def select_frame(self, frame: int, max_bits: int = 48) -> Selection:
+        hits = [
+            form
+            for form in self.forms
+            if form.extent_bits <= max_bits and form.matches(frame)
+        ]
         if not hits:
             return Selection(None, ())
         leading = max(form.leading_fixed_bits for form in hits)
@@ -448,9 +452,11 @@ class InstructionSet:
         candidates = tuple(form for form in hits if form.fixed_bits == fixed)
         return Selection(candidates[0] if len(candidates) == 1 else None, candidates)
 
-    def decode_words(self, words: Sequence[int]) -> DecodeResult:
+    def decode_words(self, words: Sequence[int], max_bits: int = 48) -> DecodeResult:
+        """Decode the first instruction of WORDS. MAX_BITS limits the forms to those of at most that width: the extent a
+        caller already knows (an assembler's row), which decides a width tie such as Type 2c against Type 2b."""
         actual = tuple(words[:3])
-        selection = self.select_frame(frame_of(actual))
+        selection = self.select_frame(frame_of(actual), max_bits)
         if selection.form is None:
             return DecodeResult(None, selection.candidates)
         form = selection.form
@@ -469,12 +475,12 @@ class InstructionSet:
             selection.candidates,
         )
 
-    def decode_bytes(self, data: bytes) -> DecodeResult:
+    def decode_bytes(self, data: bytes, max_bits: int = 48) -> DecodeResult:
         words = tuple(
             struct.unpack_from("<H", data, offset)[0]
             for offset in range(0, min(len(data), 6) - 1, 2)
         )
-        return self.decode_words(words)
+        return self.decode_words(words, max_bits)
 
 
 def load_instruction_set(

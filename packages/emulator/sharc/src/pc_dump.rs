@@ -6,7 +6,9 @@
 //! Just before an interpreter single step executes an instruction whose PC is
 //! in the set (and whose icount is in the window) one row is appended:
 //! `icount,pc`, R0..R15 (hex), the same 16 values as f32 (`{:e}`), I0..I15,
-//! M0..M15, ASTATX, ASTATY, STKYX, MODE1, MODE2, S0..S15 (hex).
+//! M0..M15, ASTATX, ASTATY, STKYX, MODE1, MODE2, S0..S15 (hex), then the depth of the PC stack and of the
+//! loop stack. A last `#stack-max` line gives the deepest PC, loop, status and call stacks of any interpreter step and
+//! the pc of the first step that reached each (`SHARC_PCDUMP=0` records only that).
 //!
 //! The engine keeps each register as a 32-bit value, not the 40-bit hardware
 //! extended word, so the hex is all 32 bits held and the f32 view is those same
@@ -24,6 +26,9 @@ pub struct PcDump {
     mem: Option<(u32, u32)>,
     out: std::io::BufWriter<std::fs::File>,
     pcs: Vec<u64>,
+    /// Deepest PC, loop, status and call stacks seen at any interpreter step, and the pc where each was first reached
+    /// (written as a `#stack-max` line when the dump closes).
+    deepest: [(usize, u64); 4],
     lo: u64,
     hi: u64,
     left: u64,
@@ -33,6 +38,8 @@ impl PcDump {
     pub fn from_env() -> Option<Box<PcDump>> {
         let spec = std::env::var("SHARC_PCDUMP").ok()?;
         let path = crate::diag::out_path("SHARC_PCDUMP_OUT", "pcdump.csv")?;
+        // `{pid}` in the path becomes the process id (several emulators of one run)
+        let path = std::ffi::OsString::from(path.to_string_lossy().replace("{pid}", &std::process::id().to_string()));
         let mut pcs = Vec::new();
         for item in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
             if item == "all" {
@@ -86,6 +93,7 @@ impl PcDump {
         for i in 0..16 {
             h += &format!(",s{i}");
         }
+        h += ",pc_stack,loops";
         let _ = writeln!(out, "{h}");
         let mem = std::env::var("SHARC_PCDUMP_MEM").ok().and_then(|v| {
             let (a, n) = v.split_once(':')?;
@@ -95,6 +103,7 @@ impl PcDump {
             mem,
             out,
             pcs,
+            deepest: [(0, 0); 4],
             lo,
             hi,
             left,
@@ -104,6 +113,15 @@ impl PcDump {
     /// Dump a row for this step if PC and icount match. UREG codes: R 0, I 16,
     /// M 32, S 80, MODE2 116, ASTATX 118, ASTATY 119, STKYX 120, MODE1 114.
     pub fn hit(&mut self, s: &crate::rt::St, pc: u64, icount: u64) {
+        for (slot, n) in self
+            .deepest
+            .iter_mut()
+            .zip([s.pc_stack.n, s.loops.n, s.status_stack.n, s.call_stack.n])
+        {
+            if n > slot.0 {
+                *slot = (n, pc);
+            }
+        }
         if self.left == 0 || icount < self.lo || icount > self.hi || !(self.pcs[0] == u64::MAX || self.pcs.contains(&pc)) {
             return;
         }
@@ -119,6 +137,7 @@ impl PcDump {
         for c in (16..48).chain([118, 119, 120, 114, 116]).chain(80..96) {
             row += &format!(",{:#x}", b(c));
         }
+        row += &format!(",{},{}", s.pc_stack.n, s.loops.n);
         if let Some((a, n)) = self.mem {
             for k in 0..n {
                 row += &format!(",{:#x}", s.mem.read_le(a + 4 * k, 4));
@@ -130,6 +149,12 @@ impl PcDump {
 
 impl Drop for PcDump {
     fn drop(&mut self) {
+        let [p, l, st, c] = self.deepest;
+        let _ = writeln!(
+            self.out,
+            "#stack-max pc_stack={} at {:#x} loops={} at {:#x} status={} at {:#x} call={} at {:#x}",
+            p.0, p.1, l.0, l.1, st.0, st.1, c.0, c.1
+        );
         let _ = self.out.flush();
     }
 }

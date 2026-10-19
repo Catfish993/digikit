@@ -32,6 +32,7 @@ uv run --with pytest python -m pytest tests -q
 | `tools/patchkit/patchimg.py` | Apply byte-exact, preconditioned patches to an extracted section image. |
 | `tools/coldfire/ddr_geometry.py` | Derive DDR geometry from the bootstrap's initialization sequence. |
 | `tools/coldfire/regions.py` | RAM map of a MAIN OS image, flash caves and the expansion region per image; `confirm` canary-fills a region and runs the emulator; `loader-test` boots a patched image with a reset-path loader. |
+| `tools/firmware/plusdrive_check.py` | `mise run plusdrive:check`: build a `plus_drive/`-style fixture (nested folders, a plain file, a 702-entry directory, multi-extent files) with `plusdrive build`, boot the DT2 with it and compare the firmware's own mount, readdir, lookup and file reads with the folder (about 1 min). |
 | `tools/firmware/aplib_check.py` | Pack every section of the four firmwares with `tools/firmware/aplibpack.py` and check it with `tools/firmware/elz.py` and the bootstrap's own depacker on the native core. |
 
 Never patch the bootstrap or updater sections. See
@@ -139,7 +140,7 @@ each has a module docstring with its full command line.
 
 | Tool | Purpose |
 | --- | --- |
-| `tools/emulator/native_emu.py` | `mise run emu` (`-- --build-only` builds only), `emu:serve`: build the desktop emulator once and run it (`--samples DIR`, `--dsp-patch FILE`, `--cf-only`, `--daemon`). |
+| `tools/emulator/native_emu.py` | `mise run emu` (`-- --build-only` builds only), `emu:serve`: build the desktop emulator once and run it (`--plus-drive DIR` or `--samples DIR`; default `plus_drive/<device>/`, `--dsp-patch FILE`, `--cf-only`, `--daemon`). |
 | `tools/emulator/native_target.py` | Pick the cargo target dir for a generated core (`prod`, `nogen`, `generic`, `g-<hash>`). |
 | `tools/emulator/native_pgo.py` | Profile-guided optimisation of the desktop build (`mise run perf:pgo`; `bench-bins`). |
 | `tools/emulator/native_wasm.py` | `mise run web:wasm`: build the browser cores. |
@@ -179,6 +180,14 @@ Run output goes to `out/runs/<scenario-or-kind>/<stamp>/` ([INSTRUMENTATION.md](
 | --- | --- |
 | `tools/patchkit/machineprofile.py` | Identify a known MAIN OS by hash and report its machine-related anchors and preconditions. |
 | `tools/patchkit/machinepatch.py` / `tools/patchkit/machinebuild.py` | Plan and build the static MAIN OS patches for an eighth machine. |
+| `tools/coldfire/isacheck.py` | Refuse any instruction a ColdFire V4e (ISA_A/B/C + EMAC) does not have, in a `.dko.json`, an ELF object or an archive; `--committed` scans every committed module object (finding 35). Also runs inside `pk_link.check_isa`. |
+| `tools/patchkit/pk_cdemo.py` | `proof`: boot with `test/c-demo` (64-bit divide, remainder, multiply, shifts through the ColdFire libgcc helpers) selected in a card's selection record and compare its results with Python (finding 35). |
+| `tools/device/dkupload.py` | Module upload over USB SysEx (`info`, `ls`, `put FILE [PATH]`, `rm`, `clear`; two requests in flight; the emulator through `midi.usb.in/out`, or a real device with python-rtmidi, never run against hardware by the lane that wrote it); the framing of `docs/design/digikit-upload.md` (finding 43). |
+| `tools/patchkit/pk_ctxprobe.py` | The SHARC context registers at the voice hook in the coupled emulator (what `core/dsp-voice` records for `dl_diag`: M5, M6, M7, M13, M14, M15, I6, I7, B7, L7, MODE1 and two heartbeats), also as the ColdFire's record copy shows them; `--cost` prints the DSP cycles per block for a paired A/B of two module versions (finding 45). |
+| `tools/patchkit/pk_digikit_upload.py` | The `upload` kind of the digikit scenarios: ops, power cuts (the runtime's `DKRT_UPLOAD_CUT` knob), stock MidiRpc unchanged, an upload during playback, the +Drive round trip (finding 43). |
+| `tools/patchkit/pk_digikit_prof.py` | Per-phase wall-time profile of a digikit boot scenario (exclusive phases, named steps, the emulator's emulated seconds per wall second); `DIGIKIT_PROFILE=1` on `pk_digikit_scen run` prints the same table (finding 39). |
+| `tools/patchkit/pk_dkrt.py` | The digikit runtime in the emulator (`proof`): patch `core/runtime`, pack `test/dyn-demo` and two broken variants into a card store, boot with a selection record (three bad files, the good module, a duplicate), read the boot report, the counter, `E_BOOT_ONLY` after the boot, write-watch and flush check (finding 29, converted for boot-time loading). Also the shared helpers (`Tools`, `patch`, `pack`, `build_card`, `write_selection`, `run_script`). Runs `packages/emulator/boot/examples/cf_script.rs`. |
+| `tools/patchkit/pk_dynreg_rules.py` | The `[[anchor_rule]]` block of `core/dynreg` for the list getter copy (Digitone II), with `--check IMAGE` against other firmwares (finding 33; the view builder and unload-refusal rules are archived with hot reload). |
 | `tools/sharc_dev/framelink.py` | Describe the ColdFire-to-SHARC frame layout for known images. |
 | `tools/sharc_dev/dspmap.py` | Find ColdFire instructions that reference frame-link tables. |
 

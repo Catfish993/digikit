@@ -1,0 +1,23 @@
+[module]
+id = "test/dyn-demo"
+version = "0.1.0"
+name = "Run-time module demo"
+category = "test"
+status = "experimental"
+summary = "Test fixture: a module the digikit runtime loads from the card store; a counter in its slot 0"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
+
+# Rust, built like test/rust-demo. The module is not meant to be patched in: `patchkit pack test/dyn-demo -o dyn-demo.dkm`
+# turns the object into the file the runtime loads (tools/patchkit/pk_dkrt.py does it for the tests). The `place` below
+# only satisfies the manifest; selecting this module for a patch would link it statically and nothing would call it.
+[[object]]
+path = "build/dyn-demo.dko.json"
+sources = ["src/rs/Cargo.toml"]
+place = "cf.expansion"

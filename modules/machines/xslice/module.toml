@@ -5,6 +5,7 @@ name = "XSLICE"
 category = "machines"
 status = "experimental"
 summary = "A slice machine like MANUAL SLICE, with its own SRC page."
+ports = ["dt2-1.16", "dt2-1.17"]
 requires = ["core/machines"]
 conflicts = []
 
@@ -13,21 +14,13 @@ conflicts = []
 "dt2-1.17" = "experimental"
 
 # The machine's type number is permanent (modules/core/machines/types.toml, "machines/xslice:xslice"); it is exported as `machines.xslice.index`.
-# f0..f8 are the nine descriptor ID fields: MANUAL SLICE's, with field 2 (an empty box on the SRC page) set to
-# 0xfa, SLICE's orphaned CFADE parameter row (finding 02, "XSLICE").
-[[entry]]
-registry = "machines"
+# The knobs are the nine descriptor ID fields of MANUAL SLICE (f0..f7, f8 the level 0x0a), with the empty box on the
+# SRC page (knob 2) set to 0xfa, SLICE's orphaned CFADE parameter row (finding 02, "XSLICE").
+[[machine]]
 id = "xslice"
 name = "XSlice"
 short = "XSL"
 clone_of = 6
 position = 7
-f0 = 0xf8
-f1 = 0xf9
-f2 = 0xfa
-f3 = 0xfb
-f4 = 0xfc
-f5 = 0xfd
-f6 = 0
-f7 = 0xfe
-f8 = 0x0a
+knobs = [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0, 0xfe]
+devices = ["dt2"]

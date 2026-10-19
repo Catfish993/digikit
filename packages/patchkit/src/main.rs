@@ -16,9 +16,17 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   (any command that reads modules: [--modules-dir DIR], PATCHKIT_MODULES=dir:dir for extra module roots)
   explain --firmware X.syx (--modules a,b | --plan plan.json)   what a patch does, site by site
   verify  OUT.syx [--base X.syx]         re-decode and check an image
+  preflight OUT.syx                      before flashing: known stock base, sections 2/4/5/8 identical, checksum, HMAC, limits;
+                                         exit 1 on any failure (stock files are looked up in firmware/ by sha256)
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
+  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm
+                                         (a `dynamic = true` module: its machine and param records for --device)
+  dkm-info FILE.dkm                      check a .dkm and list what it holds
+  dkm-dsp-image FILE BASE [NAME=VALUE..]  the relocated DSP image of a .dkm at the L2 byte address BASE (hex)
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
   list                                   modules under modules/ and ports under devices/ports/
+  gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
+                                         a SHARC include per device, gallery JSON
 ";
 
 struct Args {
@@ -67,6 +75,7 @@ fn library(root: &Path, rest: &[String]) -> Result<Library> {
             lib.modules.extend(Library::scan(&d)?.modules);
         }
     }
+    lib.lower(&patchkit::typed::Models::from_dir(&root.join("devices"))?)?;
     Ok(lib)
 }
 
@@ -77,6 +86,21 @@ fn with_requires(lib: &Library, ids: Vec<String>) -> Result<Vec<String>> {
         println!("added by requires: {}", added.join(", "));
     }
     Ok(all)
+}
+
+fn preflight_known(root: &Path) -> Result<Vec<patchkit::preflight::Known>> {
+    let dir = root.join("devices");
+    let rd = std::fs::read_dir(&dir).map_err(|e| Error(format!("{}: {e}", dir.display())))?;
+    let mut paths: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    paths.sort();
+    let mut texts = vec![];
+    for p in paths
+        .iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "toml"))
+    {
+        texts.push(std::fs::read_to_string(p).map_err(|e| Error(format!("{}: {e}", p.display())))?);
+    }
+    patchkit::preflight::known_from_texts(texts.iter().map(|s| s.as_str()))
 }
 
 fn read(p: &str) -> Result<Vec<u8>> {
@@ -192,6 +216,49 @@ fn run(a: Args) -> Result<()> {
                 );
             }
         }
+        "gen" => {
+            let lib = library(&a.root, rest)?;
+            let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
+            let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
+            let only: Vec<String> = flag(rest, "--modules")
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+            let check = rest.iter().any(|a| a == "--check");
+            let mut stale = 0;
+            for m in &lib.modules {
+                if !only.is_empty() && !only.iter().any(|o| o == m.id()) {
+                    continue;
+                }
+                let mut files = patchkit::modgen::generate(&lib, &models, m.id())?;
+                files.extend(patchkit::devgen::generate(&lib, &facts, m.id())?);
+                for (rel, text) in files {
+                    let path = a.root.join("modules").join(m.id()).join(&rel);
+                    let have = std::fs::read_to_string(&path).ok();
+                    if have.as_deref() == Some(text.as_str()) {
+                        continue;
+                    }
+                    if check {
+                        println!("stale    {}", path.display());
+                        stale += 1;
+                    } else {
+                        if let Some(d) = path.parent() {
+                            std::fs::create_dir_all(d)
+                                .map_err(|e| Error(format!("{}: {e}", d.display())))?;
+                        }
+                        write(&path.to_string_lossy(), text.as_bytes())?;
+                        println!("wrote    {}", path.display());
+                    }
+                }
+            }
+            if stale > 0 {
+                return Err(Error(format!(
+                    "{stale} generated file(s) are stale: run `patchkit gen`"
+                )));
+            }
+        }
         "explain" => {
             let fwp = flag(rest, "--firmware").ok_or_else(|| Error(USAGE.into()))?;
             let raw = read(&fwp)?;
@@ -262,10 +329,260 @@ plan.json {}",
                 rep.device, rep.container_bytes
             );
         }
+        "preflight" => {
+            let path = need(rest)?;
+            let raw = read(path)?;
+            let reg = registry(&a.root)?;
+            let known = preflight_known(&a.root)?;
+            let fwdir = a.root.join("firmware");
+            let stock = |k: &patchkit::preflight::Known| -> Option<Vec<u8>> {
+                let mut files: Vec<PathBuf> = std::fs::read_dir(&fwdir)
+                    .ok()?
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.extension().is_some_and(|e| e == "syx"))
+                    .collect();
+                files.sort();
+                // the file name is a hint; the sha256 decides
+                files.sort_by_key(|p| {
+                    p.file_name()
+                        .is_none_or(|n| n.to_string_lossy() != k.filename)
+                });
+                files.into_iter().find_map(|p| {
+                    let b = std::fs::read(p).ok()?;
+                    (sha256_hex(&b) == k.sha256).then_some(b)
+                })
+            };
+            let out = patchkit::preflight::preflight(&raw, &reg, &known, &stock);
+            for l in &out.lines {
+                println!("{}  {}", if l.ok { "ok  " } else { "FAIL" }, l.text);
+            }
+            if !out.passed() {
+                println!("PREFLIGHT FAILED: do not flash {path}");
+                std::process::exit(1);
+            }
+            println!("PREFLIGHT OK: {path}");
+        }
         "rebuild" => {
             let fw = Firmware::parse(&read(need(rest)?)?)?;
             let o = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
             write(&o, &fw.build(None)?)?;
+        }
+        "pack" => {
+            let id = need(rest)?;
+            let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
+            let lib = library(&a.root, rest)?;
+            let m = lib
+                .get(id)
+                .ok_or_else(|| Error(format!("no module {id}")))?;
+            let cf: Vec<_> = m
+                .objects
+                .iter()
+                .zip(&m.manifest.object)
+                .filter(|(o, _)| o.arch == "cf")
+                .collect();
+            let dynamic = m.manifest.module.dynamic;
+            if cf.len() > 1 || (cf.is_empty() && !dynamic) {
+                return Err(Error(format!(
+                    "{id} has {} ColdFire objects; a .dkm packs exactly one",
+                    cf.len()
+                )));
+            }
+            let opts = patchkit::dkm::Options {
+                name: flag(rest, "--name").unwrap_or_else(|| id.clone()),
+                version: patchkit::dkm::parse_version(&m.manifest.module.version)?,
+                runtime_min: match flag(rest, "--runtime-min") {
+                    Some(v) => v
+                        .parse()
+                        .map_err(|_| Error("--runtime-min: a number".into()))?,
+                    None => patchkit::dkm::RUNTIME_VERSION,
+                },
+            };
+            // a run-time module: its typed sections, lowered for one device, are the `register` records
+            let mut dsp: Vec<u8> = vec![];
+            let reg = if dynamic {
+                let dev = flag(rest, "--device").ok_or_else(|| {
+                    Error(format!(
+                        "a run-time module needs --device {}",
+                        patchkit::devdata::short_list()
+                    ))
+                })?;
+                let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
+                let res = patchkit::typed::resolve(&m.manifest, &models)?;
+                let types: std::collections::BTreeMap<String, i64> = lib
+                    .get("core/machines")
+                    .and_then(|f| f.alloc.get("machines"))
+                    .and_then(|t| t.devices.get(&dev))
+                    .map(|d| {
+                        d.dynamic
+                            .iter()
+                            .filter_map(|(k, v)| {
+                                k.strip_prefix(&format!("{id}:"))
+                                    .map(|n| (n.to_string(), *v))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                // the DSP object of the device, if any: its voices are the `[[voice]]` entries (type from the machine) and the
+                // `[[dsp_voice]]` entries (explicit type)
+                let sharc: Vec<_> = m
+                    .objects
+                    .iter()
+                    .zip(&m.manifest.object)
+                    .filter(|(o, r)| {
+                        o.arch == "sharc"
+                            && (r.devices.is_empty() || r.devices.iter().any(|d| *d == dev))
+                    })
+                    .collect();
+                if sharc.len() > 1 {
+                    return Err(Error(format!(
+                        "{id} has {} DSP objects for {dev}; a .dkm packs one",
+                        sharc.len()
+                    )));
+                }
+                let resolved = res.iter().find(|r| r.dev == dev);
+                let mut voices = vec![];
+                for v in resolved.map(|r| r.voices.as_slice()).unwrap_or_default() {
+                    let t = types.get(&v.machine).ok_or_else(|| {
+                        Error(format!("voice {}: no run-time type number", v.machine))
+                    })?;
+                    let ranges = resolved
+                        .map(|r| patchkit::typed::voice_ranges(r, &v.machine))
+                        .unwrap_or([0; 8]);
+                    voices.push((*t as u32, v.entry.clone(), ranges));
+                }
+                for v in m
+                    .manifest
+                    .dsp_voice
+                    .iter()
+                    .filter(|v| v.devices.is_empty() || v.devices.iter().any(|d| *d == dev))
+                {
+                    voices.push((v.type_no as u32, v.entry.clone(), [0; 8]));
+                }
+                match sharc.first() {
+                    Some((o, _)) => {
+                        dsp = patchkit::dkmdsp::pack(
+                            o,
+                            patchkit::register::device_id(&dev)?,
+                            &voices,
+                        )?
+                    }
+                    None if !voices.is_empty() => {
+                        return Err(Error(format!("{id}: a voice needs a DSP object for {dev}")));
+                    }
+                    None => {}
+                }
+                match resolved {
+                    Some(r) => patchkit::register::Register::lower(r, &types)?.encode(),
+                    None if !dsp.is_empty() => vec![],
+                    None => return Err(Error(format!("{id}: nothing for device {dev}"))),
+                }
+            } else {
+                vec![]
+            };
+            let file = patchkit::dkm::pack_full(cf.first().map(|c| c.0), &reg, &dsp, &opts)?;
+            write(&out, &file)?;
+            let d = patchkit::dkm::Dkm::parse(&file)?;
+            println!(
+                "{out}: {} bytes, {} (image {} + bss {}, {} relocations, {} imports), sha256 {}",
+                file.len(),
+                d.name,
+                d.image.len(),
+                d.bss,
+                d.relocs.len(),
+                d.imports.len(),
+                d.sha256
+            );
+        }
+        "dkm-dsp-image" => {
+            // the DSP image of a .dkm placed at the L2 byte address BASE, imports as NAME=VALUE: the reference loader
+            let d = patchkit::dkm::Dkm::parse(&read(need(rest)?)?)?;
+            let base = rest
+                .get(1)
+                .and_then(|b| u32::from_str_radix(b.trim_start_matches("0x"), 16).ok())
+                .ok_or_else(|| Error("dkm-dsp-image FILE BASE(hex) [NAME=VALUE(hex)..]".into()))?;
+            let imports: std::collections::BTreeMap<String, u32> = rest[2..]
+                .iter()
+                .filter_map(|a| a.split_once('='))
+                .filter_map(|(k, v)| {
+                    Some((
+                        k.to_string(),
+                        u32::from_str_radix(v.trim_start_matches("0x"), 16).ok()?,
+                    ))
+                })
+                .collect();
+            let x = patchkit::dkmdsp::DspSection::parse(&d.dsp)?;
+            let img = x.relocated(base, &|n| imports.get(n).copied())?;
+            println!("{}", patchkit::error::hex(&img));
+        }
+        "dkm-info" => {
+            let d = patchkit::dkm::Dkm::parse(&read(need(rest)?)?)?;
+            println!("name      {}", d.name);
+            println!(
+                "version   {}.{}.{}",
+                d.version >> 16,
+                d.version >> 8 & 255,
+                d.version & 255
+            );
+            println!("runtime   >= {}", d.runtime_min);
+            println!("sha256    {}", d.sha256);
+            println!(
+                "image     {} bytes, bss {}, align {}",
+                d.image.len(),
+                d.bss,
+                d.align
+            );
+            println!("relocs    {}", d.relocs.len());
+            println!("imports   {}", d.imports.join(", "));
+            println!("init      {:?}  fini {:?}", d.init, d.fini);
+            println!("slots     {:?}", d.slots);
+            println!("register  {} bytes", d.register.len());
+            println!("dsp       {} bytes", d.dsp.len());
+            if !d.dsp.is_empty() {
+                let x = patchkit::dkmdsp::DspSection::parse(&d.dsp)?;
+                println!(
+                    "  device {} image {} bytes, bss {}, align {}, {} relocations, imports {}",
+                    x.device,
+                    x.image.len(),
+                    x.bss,
+                    x.align,
+                    x.relocs.len(),
+                    x.imports.join(", ")
+                );
+                for v in &x.voices {
+                    println!(
+                        "  voice type {} entry +{:#x} ranges {:x?}",
+                        v.type_no, v.entry, v.ranges
+                    );
+                }
+            }
+            if !d.register.is_empty() {
+                let r = patchkit::register::Register::parse(&d.register)?;
+                println!(
+                    "  device {} ({} params, {} machines, {} pages)",
+                    r.device,
+                    r.params.len(),
+                    r.machines.len(),
+                    r.pages.len()
+                );
+                for p in &r.params {
+                    println!(
+                        "  param {} {:?} {:?} template {:#x} slot {} range {}..{} default {}",
+                        p.index, p.name, p.short, p.template, p.slot, p.min, p.max, p.default
+                    );
+                }
+                for m in &r.machines {
+                    println!(
+                        "  machine type {} {:?} {:?} clone_of {} level {} own_dsp {} knobs {:x?}",
+                        m.type_no, m.name, m.short, m.clone_of, m.level, m.own_dsp, m.knobs
+                    );
+                }
+                for g in &r.pages {
+                    println!(
+                        "  page of type {} {:?} {:?} level {} knobs {:x?}",
+                        g.type_no, g.name, g.title, g.level, g.knobs
+                    );
+                }
+            }
         }
         "pack-section" => {
             let data = read(need(rest)?)?;

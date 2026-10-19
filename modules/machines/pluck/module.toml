@@ -5,7 +5,7 @@ name = "Pluck"
 category = "machines"
 status = "experimental"
 summary = "A plucked-string synth machine with decay, pick position, brightness and colour."
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
 requires = ["core/dsp-voice", "core/machines", "core/params"]
 conflicts = []
 
@@ -21,171 +21,91 @@ sources = ["src/dsp/pluck.s"]
 place = "dsp.l2"
 devices = ["dt2"]
 
-# The DSP routine renders the permanent type number of this machine (core/machines types.toml) (`machines.pluck.index`).
-[[entry]]
-registry = "voices"
-id = "pluck"
-type = "machines.pluck.index"
-pc = "_pk_render"
-devices = ["dt2"]
+# Typed sections (packages/patchkit/src/typed.rs; shape in modules/README.md "Typed sections"). They are lowered per
+# device with the knob model of devices/<device>.toml into the `voices`, `machines`, `params` and `pages` rows.
+
+# The DSP routine renders the permanent type number of this machine (core/machines types.toml).
+[[voice]]
+machine = "pluck"
+entry = "_pk_render"
 
 # The machine clones SAMPLE (type 0: its permission, per-type byte and DSP selector, so the track plays through the
-# sample renderer where the voice hook takes over). The SRC page: engine slots 0 TUNE and 7 LEV are SAMPLE's own
-# rows, 1 DECAY, 2 PICK, 4 BRIGHT, 5 COLOR are rows this module adds (core/params); slots 3 and 6 stay empty.
+# sample renderer where the voice hook takes over). Digitakt II: the SRC page is SAMPLE's, knobs 0 TUNE (stock code
+# 0xca) and 7 LEV (0xd1) are its own rows, 1 DECAY, 2 PICK, 4 BRIGHT, 5 COLOR are rows this module adds (core/params);
+# knobs 3 and 6 stay empty (0).
 # Values are 0 .. 0x7f00 (UI 0 .. 127); the defaults give a medium-length, slightly damped, lightly combed pluck.
-[[entry]]
-registry = "machines"
+[[machine]]
 id = "pluck"
 name = "Pluck"
 short = "PLK"
 clone_of = 0
-f0 = 0xca
-f1 = "params.pluck_decay.index"
-f2 = "params.pluck_pick.index"
-f3 = 0
-f4 = "params.pluck_bright.index"
-f5 = "params.pluck_color.index"
-f6 = 0
-f7 = 0xd1
-f8 = 0x0a
-devices = ["dt2"]
+knobs = [0xca, "pluck_decay", "pluck_pick", 0, "pluck_bright", "pluck_color", 0, 0xd1]
 
-[[entry]]
-registry = "params"
+# Digitone II: a machine of its own type (the FM engine renders nothing for it: `own_dsp`) with its own SYN page below:
+# DECAY, PICK, BRIGHT, COLOR on knobs A .. D (sound-array slots 25 .. 28), the engine's level on the last knob.
+[machine.dn2]
+position = 4
+own_dsp = true
+knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
+
+# `template` is the stock code whose row is copied: 0xd1 on the Digitakt II, 0xd5 (A Env Decay, a plain 0 .. 127 word)
+# on the Digitone II. The slot follows from the knob position.
+[[param]]
 id = "pluck_decay"
 name = "Decay"
 short = "DECAY"
 template = 0xd1
-slot = 1
 min = 0
 max = 0x7f00
 default = 0x4000
-devices = ["dt2"]
+[param.dn2]
+template = 0xd5
 
-[[entry]]
-registry = "params"
+[[param]]
 id = "pluck_pick"
 name = "Pick position"
 short = "PICK"
 template = 0xd1
-slot = 2
 min = 0
 max = 0x7f00
 default = 0x2000
-devices = ["dt2"]
+[param.dn2]
+template = 0xd5
 
-[[entry]]
-registry = "params"
+[[param]]
 id = "pluck_bright"
 name = "Brightness"
 short = "BRIGHT"
 template = 0xd1
-slot = 4
 min = 0
 max = 0x7f00
 default = 0x5000
-devices = ["dt2"]
+[param.dn2]
+template = 0xd5
 
-[[entry]]
-registry = "params"
+[[param]]
 id = "pluck_color"
 name = "Excitation colour"
 short = "COLOR"
 template = 0xd1
-slot = 5
 min = 0
 max = 0x7f00
 default = 0x2800
-devices = ["dt2"]
+[param.dn2]
+template = 0xd5
 
-# ---- Digitone II ------------------------------------------------------------------------------------------------
+[[page]]
+id = "pluck_syn"
+machine = "pluck"
+name = "PLUCK"
+title = "Pluck"
+devices = ["dn2"]
 
-# The DN2 routine on the voice hook's ABI (one buffer per voice slot, the note-on from the frame's trig mask); a machine
-# of its own type (the FM engine renders nothing for it: `own_dsp`) with its own SYN page: DECAY, PICK, BRIGHT, COLOR on
-# knobs A .. D (sound-array slots 25 .. 28), the engine's level on the last knob.
+# ---- Digitone II object ---------------------------------------------------------------------------------------------
+
+# The DN2 routine on the voice hook's ABI (one buffer per voice slot, the note-on from the frame's trig mask).
 [[object]]
 path = "build/pluck-dn2-dsp.dko.json"
 sources = ["src/dsp/pluck_dn2.s"]
 place = "dsp.l2"
-devices = ["dn2"]
-
-[[entry]]
-registry = "voices"
-id = "pluck"
-type = "machines.pluck.index"
-pc = "_pk_render"
-devices = ["dn2"]
-
-[[entry]]
-registry = "machines"
-id = "pluck"
-name = "Pluck"
-short = "PLK"
-clone_of = 0
-position = 4
-own_dsp = 1
-devices = ["dn2"]
-
-[[entry]]
-registry = "params"
-id = "pluck_decay"
-name = "Decay"
-short = "DECAY"
-template = 0xd5
-slot = 25
-min = 0
-max = 0x7f00
-default = 0x4000
-devices = ["dn2"]
-
-[[entry]]
-registry = "params"
-id = "pluck_pick"
-name = "Pick position"
-short = "PICK"
-template = 0xd5
-slot = 26
-min = 0
-max = 0x7f00
-default = 0x2000
-devices = ["dn2"]
-
-[[entry]]
-registry = "params"
-id = "pluck_bright"
-name = "Brightness"
-short = "BRIGHT"
-template = 0xd5
-slot = 27
-min = 0
-max = 0x7f00
-default = 0x5000
-devices = ["dn2"]
-
-[[entry]]
-registry = "params"
-id = "pluck_color"
-name = "Excitation colour"
-short = "COLOR"
-template = 0xd5
-slot = 28
-min = 0
-max = 0x7f00
-default = 0x2800
-devices = ["dn2"]
-
-[[entry]]
-registry = "pages"
-id = "pluck_syn"
-machine = "machines.pluck.index"
-name = "PLUCK"
-title = "Pluck"
-c0 = "params.pluck_decay.index"
-c1 = "params.pluck_pick.index"
-c2 = "params.pluck_bright.index"
-c3 = "params.pluck_color.index"
-s0 = 25
-s1 = 26
-s2 = 27
-s3 = 28
 devices = ["dn2"]

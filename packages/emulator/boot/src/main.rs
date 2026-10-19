@@ -7,6 +7,8 @@ mod common;
 mod diagnostics;
 #[allow(dead_code, reason = "shared with the library; the CLI never sets guards")]
 mod guard;
+#[allow(dead_code, reason = "shared with the library; the CLI never arms the watch")]
+mod watch;
 
 use common::*;
 use diagnostics::*;

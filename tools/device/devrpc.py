@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 r"""Talk to a live Digitakt II over its USB MIDI port using the device-0x10
-runtime RPC (the protocol Elektron Transfer uses; see docs/MIDI-SYSEX-RPC.md).
+runtime RPC (the protocol Elektron Transfer uses; see docs/MIDI-SYSEX-RPC.md
+section 11 and docs/findings/42-usb-transfer-routes.md section 2.5).
 
-Frame (device 0x10 path, verified: no checksum, no length, body is raw bytes):
+Frame (device 0x10 path: no checksum, no length; the body after `10 00` is
+8-in-7 packed, finding 42 [C]):
 
-    F0 00 20 3C 10 00 <cmd> <seq_hi> <seq_lo> 09 <ctr> <type> <payload...> F7
-    \___________/  |  |     \_______________/  \____/  |     |
-      literal    dev sep       MidiRpc seq16    field16 |   payload
-                                                        type (RPC family)
+    F0 00 20 3C 10 00 <packed body> F7
+    body, unpacked:  <seq16> 00 00 <type> <payload...>
 
-`cmd` is ignored by the receiver (all 0x00-0x7f route to one handler); `seq`
-is caller-chosen; the device assigns its own seq/ctr in the reply, so replies
-are matched on devid=0x10 and the type byte, not on any echo.
+Packing is the firmware's: one collector byte per up to seven data bytes, data
+byte j taking bit 7 from collector bit (6-j). The collector at wire byte 6 is
+what the older notes called `cmd`; it is 0 whenever the first seven body bytes
+are below 0x80. A payload byte at or above 0x80, or more than two payload bytes
+(the first group holds seq, 00 00, type and two payload bytes), needs the
+packing. Replies use the same framing; their type byte carries 0x80 and the
+sequence is echoed twice, so replies are matched on the type (low 7 bits), not
+on any echo.
 
     # send a read-only Ping and print the reply
     uv run --with python-rtmidi python -m tools.device.devrpc --ping
@@ -20,11 +25,16 @@ are matched on devid=0x10 and the type byte, not on any echo.
 
 This transmits to the device. Only the read-only queries (ping/version/uid/
 storage/query) are wired up; there is deliberately no write/upgrade command.
+`build_request` builds any request, including the write requests the emulator
+checks use (finding 25).
 """
 
 import argparse
 import sys
 import time
+
+from tools.device.midisniff import unpack_8in7
+from tools.firmware.build import encode_8in7
 
 HDR = bytes((0xF0, 0x00, 0x20, 0x3C, 0x10, 0x00))
 DEV = 0x10
@@ -40,27 +50,30 @@ TYPES = {
 }
 
 
-def build_request(type_byte, seq=1, cmd=0x00, payload=b""):
-    """A device-0x10 request frame, matching what Elektron Transfer sends:
-    header after the literal is cmd · seq_hi seq_lo (u16) · len_hi len_lo (u16
-    body length) · type · body. Requests use cmd 0x00 (the device stamps 0x24
-    on replies); the reply echoes seq at bytes 9-10."""
-    # bytes 9-10 after seq: Elektron Transfer always sends 0x00 0x00 here,
-    # whatever the payload; the device reads the body up to F7. A non-zero
-    # byte 9 (we once sent 0x09) is rejected, so keep it 0x00 0x00.
-    seq_hi, seq_lo = (seq >> 8) & 0x7F, seq & 0x7F
-    return bytes((*HDR, cmd, seq_hi, seq_lo, 0x00, 0x00, type_byte, *payload, 0xF7))
+def build_request(type_byte, seq=1, payload=b""):
+    """A device-0x10 request frame, as Elektron Transfer sends it: the body
+    `seq16 00 00 type payload` is 8-in-7 packed after `10 00` (so wire byte 6 is
+    the first collector, 0 for a Ping). Bytes 3-4 of the body must be `00 00`
+    (a non-zero byte there once made the device never reply). The reply carries
+    the sequence."""
+    body = bytes(((seq >> 8) & 0xFF, seq & 0xFF, 0x00, 0x00, type_byte)) + bytes(
+        payload
+    )
+    return bytes((*HDR, *encode_8in7(body), 0xF7))
 
 
 def parse_reply(msg):
-    """Decode a device-0x10 reply. Returns (type_byte, payload_bytes) or None."""
+    """Decode a device-0x10 reply. Returns (type_byte, payload_bytes) or None.
+    The body is unpacked first; the type is the low 7 bits of body byte 4 (the
+    device sets bit 7 on replies) and the payload follows it."""
     if len(msg) < 13 or msg[0] != 0xF0 or msg[1:4] != HDR[1:4] or msg[4] != DEV:
         return None
     if msg[-1] != 0xF7:
         return None
-    type_byte = msg[11]
-    payload = msg[12:-1]
-    return type_byte, bytes(payload)
+    body = unpack_8in7(msg[6:-1])
+    if len(body) < 5:
+        return None
+    return body[4] & 0x7F, body[5:]
 
 
 def _ascii(b):

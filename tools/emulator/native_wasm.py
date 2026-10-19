@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Build the portable native runtime for the browser without changing toolchains.
 
-Writes three files:
+Writes four files:
   apps/web/public/patchkit.wasm
       The patch tool of packages/patchkit (C ABI, no firmware inside: ports and modules are passed in at run time).
+  apps/web/public/dkupload.wasm
+      The module upload protocol of packages/dkupload (C ABI, no firmware inside).
   apps/web/public/emulator-core.wasm
       CF-only core (small), used for the normal boot.
   apps/web/.local/emulator-core-sharc.wasm
@@ -153,12 +155,17 @@ def build(
 
 def build_patchkit() -> None:
     """patchkit as a wasm32 cdylib (no generated core, no firmware); small, so it ships in public/."""
+    build_small("patchkit")
+
+
+def build_small(name: str) -> None:
+    """A small wasm32 cdylib of packages/<name> (no generated core, no firmware), copied to public/<name>.wasm."""
     target_dir = resolve_target_dir(None)
     command = [
         "cargo",
         "build",
         "--manifest-path",
-        "packages/patchkit/Cargo.toml",
+        f"packages/{name}/Cargo.toml",
         "--locked",
         "--offline",
         "--release",
@@ -172,9 +179,9 @@ def build_patchkit() -> None:
     try:
         subprocess.run(command, cwd=root, env=env, check=True)
     except subprocess.CalledProcessError:
-        raise SystemExit("patchkit WASM build failed") from None
-    built = target_dir / "wasm32-unknown-unknown/release/patchkit.wasm"
-    dest = public / "patchkit.wasm"
+        raise SystemExit(f"{name} WASM build failed") from None
+    built = target_dir / f"wasm32-unknown-unknown/release/{name}.wasm"
+    dest = public / f"{name}.wasm"
     if shutil.which("wasm-opt") is not None:
         subprocess.run(
             [
@@ -196,12 +203,13 @@ def build_patchkit() -> None:
         shutil.copyfile(built, dest)
     if dest.stat().st_size > 2 * 1024 * 1024:
         raise SystemExit(
-            f"{dest} is {dest.stat().st_size} bytes: patchkit.wasm must stay small and firmware-free"
+            f"{dest} is {dest.stat().st_size} bytes: {name}.wasm must stay small and firmware-free"
         )
-    print(f"patchkit.wasm: {dest.stat().st_size} bytes")
+    print(f"{name}.wasm: {dest.stat().st_size} bytes")
 
 
 build_patchkit()
+build_small("dkupload")
 if args.patchkit_only:
     raise SystemExit(0)
 

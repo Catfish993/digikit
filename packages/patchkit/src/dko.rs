@@ -56,7 +56,74 @@ pub struct DkoReloc {
     pub addend: i64,
 }
 
+/// The key of `Dko::toolchain` that records the ISA check (`tools/patchkit/pk_build.py` writes it after `check_isa` passed): the digest of the
+/// object's sections, symbols and relocations. `patchkit pack` takes a ColdFire object only when the record matches the bytes it holds.
+pub const ISA_CHECK_KEY: &str = "isa_check";
+
 impl Dko {
+    /// SHA-256 over the object's code and data and what ties it together, in a fixed framing (`pk_build.isa_digest` computes the same):
+    /// "dko-isa-v1", then sections (name, kind, align, size, bytes), symbols (name, section, defined flag, value, global) and relocations
+    /// (section, offset, type, symbol, addend). Strings and byte strings are a u32 length and the bytes; numbers are big endian.
+    pub fn isa_digest(&self) -> Result<String> {
+        use sha2::{Digest, Sha256};
+        fn s(h: &mut Sha256, x: &[u8]) {
+            h.update((x.len() as u32).to_be_bytes());
+            h.update(x);
+        }
+        let mut h = Sha256::new();
+        h.update(b"dko-isa-v1");
+        h.update((self.sections.len() as u32).to_be_bytes());
+        for x in &self.sections {
+            s(&mut h, x.name.as_bytes());
+            s(&mut h, x.kind.as_bytes());
+            h.update(x.align.to_be_bytes());
+            h.update(x.size.to_be_bytes());
+            s(&mut h, &unhex(&x.hex)?);
+        }
+        h.update((self.symbols.len() as u32).to_be_bytes());
+        for x in &self.symbols {
+            s(&mut h, x.name.as_bytes());
+            s(&mut h, x.section.as_deref().unwrap_or("").as_bytes());
+            h.update([x.section.is_some() as u8]);
+            h.update(x.value.to_be_bytes());
+            h.update([x.global as u8]);
+        }
+        h.update((self.relocs.len() as u32).to_be_bytes());
+        for x in &self.relocs {
+            s(&mut h, x.section.as_bytes());
+            h.update(x.offset.to_be_bytes());
+            s(&mut h, x.rtype.as_bytes());
+            s(&mut h, x.symbol.as_bytes());
+            h.update(x.addend.to_be_bytes());
+        }
+        Ok(hex(&h.finalize()))
+    }
+
+    /// Record the ISA check for the bytes the object holds now. The build calls its own checker first (`pk_link.check_isa`); this is for tests
+    /// that make an object by hand.
+    pub fn stamp_isa(&mut self) {
+        let d = self.isa_digest().expect("object hex");
+        self.toolchain.insert(ISA_CHECK_KEY.into(), d);
+    }
+
+    /// A ColdFire object is packed into a `.dkm` (code the runtime runs in supervisor mode) only when the build recorded a passing ISA
+    /// check over exactly these bytes: a 68020-only or FPU form in it would trap on the device (tools/coldfire/isacheck.py). An object made
+    /// by hand, edited after the build or built before the record existed is refused. This is a guard against accident, not a signature.
+    pub fn require_isa_checked(&self) -> Result<()> {
+        if self.arch != "cf" {
+            return Ok(());
+        }
+        match self.toolchain.get(ISA_CHECK_KEY) {
+            None => Err(err!(
+                "the ColdFire object has no ISA check record: build it with `mise run patch:build` (tools/patchkit/pk_build.py)"
+            )),
+            Some(r) if *r == self.isa_digest()? => Ok(()),
+            Some(_) => Err(err!(
+                "the ColdFire object's ISA check record does not match its bytes (edited after the build?): rebuild it with `mise run patch:build`"
+            )),
+        }
+    }
+
     pub fn parse(text: &str) -> Result<Dko> {
         let o: Dko = serde_json::from_str(text)?;
         if o.format != FORMAT {

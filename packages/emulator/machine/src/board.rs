@@ -35,6 +35,8 @@ const TX35_MAX_BYTES: usize = 4096;
 /// eDMA channel the DT2 firmware uses for DSPI1 RX (finding 04, transfer inventory).
 const DSPI1_RX_CHAN: usize = 14;
 type RamPage = Box<[u8]>;
+/// UART9 (MIDI DIN) data register: the firmware sends MIDI by byte stores here (finding 25).
+pub const MIDI_UDR: u32 = 0xec07_400c;
 
 // `owned_mmio`'s fast reject: no owned device slot starts below the end of
 // SDRAM.
@@ -115,6 +117,16 @@ pub struct GuestBusAccess {
     pub access: GuestAccess,
 }
 
+/// RCM.RCR, the reset control register: bit 7 is SOFTRST (docs/findings/36-boot-load-spike.md section 3).
+pub const RCM_RCR: u32 = 0xEC09_0000;
+
+impl Board {
+    /// Has the guest written SOFTRST to RCM.RCR? (The machine does not reset itself: the host that owns it restarts the boot.)
+    pub fn soft_reset_requested(&self) -> bool {
+        self.soft_reset
+    }
+}
+
 /// Caller-mapped 1 MiB RAM pages.  The tagged 4096-entry table is indexed by
 /// address bits 31:20, so ordinary 1/2/4-byte RAM accesses take one table
 /// lookup.  MMIO is always dispatched before this table.
@@ -126,10 +138,14 @@ pub struct Board {
     policy: CompletionPolicy,
     armed_dma59: bool,
     esdhc_dma_bytes: u64,
+    /// A store of 0x80 into RCM.RCR (0xEC090000) was seen: the firmware asked for a soft reset (see `soft_reset_requested`).
+    soft_reset: bool,
     scratch_guest: RamPage,
     scratch_card: RamPage,
     events: Vec<CompletionEvent>,
     dma_written: Vec<(u32, usize)>,
+    /// The engine of each `dma_written` entry (instruments only; drained with it).
+    dma_sources: Vec<&'static str>,
     last_error: Option<BoardWriteError>,
     /// Optional PIT/INTC facade in a stable allocation; ownership transfers by pointer.
     /// Its owned MMIO is never backed by sparse RAM.
@@ -160,6 +176,9 @@ pub struct Board {
     /// Bytes drained by the eDMA35 UART8-TX model. This is host observation
     /// only; UART RX and peripheral responses remain outside this Board seam.
     uart_tx: Vec<u8>,
+    /// Bytes the guest stored to the MIDI DIN UART (UART9) data register. Host observation
+    /// only: not part of a checkpoint.
+    midi_tx: Vec<u8>,
     /// DSPI1 RX completion (eDMA channel 14) waiting for the host to raise
     /// its interrupt. Not part of the snapshot: `snap_save` refuses while set.
     dspi1_irq: bool,
@@ -361,10 +380,12 @@ impl Board {
             policy,
             armed_dma59: false,
             esdhc_dma_bytes: 0,
+            soft_reset: false,
             scratch_guest: vec![0; PAGE_SIZE].into_boxed_slice(),
             scratch_card: vec![0; PAGE_SIZE].into_boxed_slice(),
             events: vec![],
             dma_written: vec![],
+            dma_sources: vec![],
             last_error: None,
             time: None,
             forced_mmio: BTreeMap::new(),
@@ -379,6 +400,7 @@ impl Board {
             oracle_fault_pages: 0,
             sd_gate: None,
             uart_tx: vec![],
+            midi_tx: vec![],
             dspi1_irq: false,
         }
     }
@@ -453,6 +475,7 @@ impl Board {
         }
         self.events.clear();
         self.dma_written.clear();
+        self.dma_sources.clear();
         self.dma.snap_load(r)?;
         r.tag("ESDH")?;
         self.esdhc.snap_load(r)?;
@@ -692,6 +715,32 @@ impl Board {
         Ok(())
     }
 
+    /// Copy `out.len()` bytes of mapped RAM at `addr` without MMIO dispatch or
+    /// guest-access records. `false` if any byte is unmapped.
+    pub fn ram_peek(&self, addr: u32, out: &mut [u8]) -> bool {
+        for (i, byte) in out.iter_mut().enumerate() {
+            let a = addr.wrapping_add(i as u32);
+            let Some(page) = self.page(a) else {
+                return false;
+            };
+            *byte = page[Self::page_offset(a)];
+        }
+        true
+    }
+
+    /// Host acceleration for a guest counting loop: add `delta` (wrapping) to the
+    /// aligned 32-bit word at `addr` in mapped SDRAM and return `(old, new)`.
+    /// Touches nothing else (no MMIO, no guest-access record); `None` when the
+    /// word is not entirely in one mapped SDRAM page.
+    pub fn sdram_add32(&mut self, addr: u32, delta: u32) -> Option<(u32, u32)> {
+        if addr & 3 != 0 || addr.wrapping_sub(SDRAM_BASE) >= SDRAM_SIZE {
+            return None;
+        }
+        let old = self.ram_read(addr, 4)?;
+        let new = old.wrapping_add(delta);
+        self.ram_write(addr, 4, new).then_some((old, new))
+    }
+
     /// Compare backing RAM without copying pages, dispatching MMIO, or recording
     /// guest accesses. Like `read_ram_page`, this is host-side observation only.
     pub fn ram_matches(&self, mut addr: u32, mut expected: &[u8]) -> bool {
@@ -799,6 +848,7 @@ impl Board {
             assert!(self.ram_write(dest.wrapping_add(offset), 1, 0));
         }
         self.dma_written.push((dest, total as usize));
+        self.dma_sources.push("dspi1-rx");
         self.dspi1_irq = true;
         Ok(())
     }
@@ -819,6 +869,15 @@ impl Board {
     /// instruction fetch; only successful card-to-guest transfers appear.
     pub fn take_dma_written_ranges(&mut self) -> Vec<(u32, usize)> {
         std::mem::take(&mut self.dma_written)
+    }
+    /// The engine of each range the last `take_dma_written_ranges` returned,
+    /// in order (take it second; for the write-watch).
+    pub fn take_dma_sources(&mut self) -> Vec<&'static str> {
+        std::mem::take(&mut self.dma_sources)
+    }
+    /// Return the bytes the guest wrote to the MIDI DIN UART9 data register since the prior call.
+    pub fn take_midi_tx(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.midi_tx)
     }
     /// Return UART8 TX bytes drained by eDMA channel 35 since the prior call.
     pub fn take_uart_tx(&mut self) -> Vec<u8> {
@@ -1120,6 +1179,7 @@ impl Board {
                 self.page_mut(address).unwrap()[Self::page_offset(address)] = value;
             }
             self.dma_written.push((base, effect.bytes));
+            self.dma_sources.push("esdhc-dma59");
         }
         Ok(effect.completion)
     }
@@ -1335,6 +1395,7 @@ impl Board {
         }
         if !data.is_empty() {
             self.dma_written.push((addr, data.len()));
+            self.dma_sources.push("dspi2");
         }
         Ok(())
     }
@@ -1452,6 +1513,9 @@ impl Board {
 
     #[inline(never)]
     fn write_inner_slow(&mut self, addr: u32, size: u8, value: u32) -> Result<(), BoardWriteError> {
+        if addr == MIDI_UDR && size == 1 {
+            self.midi_tx.push(value as u8);
+        }
         if Time::owns(addr) {
             self.bump_epoch(addr);
             if let Some(time) = self.time.as_mut()
@@ -1550,6 +1614,9 @@ impl Board {
                 .ram_write(addr, size, value)
                 .then_some(())
                 .ok_or(BoardWriteError::Bus(Self::bus_error(addr, true)));
+            if wrote.is_ok() && addr == RCM_RCR && size == 1 && value & 0x80 != 0 {
+                self.soft_reset = true;
+            }
             if wrote.is_ok()
                 && addr >= GPIO_BASE
                 && addr

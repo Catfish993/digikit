@@ -20,6 +20,8 @@ pub struct Linked {
     pub globals: Vec<String>,
     /// Byte ranges `[lo, hi)` of the executable sections, for disassembly.
     pub text_ranges: Vec<(u64, u64)>,
+    /// Natural-unit address of every section (bytes for ColdFire), by section name.
+    pub places: BTreeMap<String, u64>,
 }
 
 fn align_up(x: u64, a: u64) -> u64 {
@@ -221,6 +223,7 @@ fn link_impl(
         symbols,
         globals,
         text_ranges,
+        places: place.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
     })
 }
 

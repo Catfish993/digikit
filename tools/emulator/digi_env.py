@@ -159,9 +159,69 @@ def firmware(environ: Environ | None = None) -> pathlib.Path:
     )
 
 
+@functools.cache
+def _patch_base(path: str, mtime_ns: int, size: int) -> tuple[str, str] | None:
+    """(device short id, base sha256) of a patched image, read by the patchkit binary's
+    `inspect` (the one reader of the DKPR record); None when the file has no patch record."""
+    from tools.patchkit import patchkit
+
+    try:
+        with open(path, "rb") as handle:
+            if (
+                handle.read(1) != b"\xf0" or size < 100_000
+            ):  # not a firmware .syx: skip the patchkit build
+                return None
+        done = subprocess.run(
+            [str(patchkit.binary()), "--root", str(ROOT), "inspect", path],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, SystemExit):
+        return None
+    if done.returncode:
+        return None
+    device = base = None
+    for line in done.stdout.splitlines():
+        words = line.split()
+        if words[:1] == ["device"] and len(words) > 1:
+            device = words[1]
+        elif words[:3] == ["record", "patched", "from"] and len(words) > 3:
+            base = words[3]
+    return (device, base) if device and base else None
+
+
+def patch_base(path: pathlib.Path) -> tuple[str, str] | None:
+    """(device, base sha256) when `path` is a patched image (it carries a `DKPR` record), else None."""
+    try:
+        st = pathlib.Path(path).stat()
+    except OSError:
+        return None
+    return _patch_base(str(path), st.st_mtime_ns, st.st_size)
+
+
+def stock_for_sha(digest: str) -> pathlib.Path | None:
+    """The firmware/ file of a stock image by SHA-256 (devices/*.toml `filename`); None when it is not listed or not present."""
+    for toml_path in sorted((ROOT / "devices").glob("*.toml")):
+        doc = tomllib.loads(toml_path.read_text())
+        for f in doc.get("firmware", []):
+            if f.get("sha256") == digest:
+                path = config.stock(f["filename"])
+                return path if path.is_file() else None
+    return None
+
+
+def base_firmware(path: pathlib.Path) -> pathlib.Path:
+    """The stock image a patched image was made from (for the +Drive builder and anything else
+    that needs the stock bytes); `path` itself when it is stock or the base is not in firmware/."""
+    info = patch_base(path)
+    return (stock_for_sha(info[1]) if info else None) or pathlib.Path(path)
+
+
 def device_for_syx(path: pathlib.Path) -> str | None:
     """The device short id (`dn2`, `dt2`) of a firmware file, by SHA-256 against
-    devices/*.toml; None when no profile knows it."""
+    devices/*.toml; a patched image by the device of its patch record; None when
+    no profile knows it."""
     try:
         digest = hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
     except OSError:
@@ -170,7 +230,8 @@ def device_for_syx(path: pathlib.Path) -> str | None:
         doc = tomllib.loads(toml_path.read_text())
         if any(f.get("sha256") == digest for f in doc.get("firmware", [])):
             return doc["device"]["short"]
-    return None
+    info = patch_base(path)
+    return info[0] if info else None
 
 
 def firmware_for(device: str, environ: Environ | None = None) -> pathlib.Path:

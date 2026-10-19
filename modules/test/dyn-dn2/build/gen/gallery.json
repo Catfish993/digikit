@@ -1,0 +1,87 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "param": "dn_a",
+              "slot": 25
+            },
+            {
+              "param": "dn_b",
+              "slot": 26
+            },
+            {
+              "param": "dn_c",
+              "slot": 27
+            },
+            {
+              "param": "dn_d",
+              "slot": 28
+            }
+          ],
+          "level": 10,
+          "name": "DynSyn",
+          "own_dsp": true,
+          "page": {
+            "name": "DYN",
+            "title": "Dyn Synth"
+          },
+          "position": null,
+          "short": "DSY",
+          "type": 16
+        }
+      },
+      "id": "dyn_pluck",
+      "name": "DynSyn",
+      "short": "DSY"
+    }
+  ],
+  "module": "test/dyn-dn2",
+  "params": {
+    "dn2": [
+      {
+        "default": 8192,
+        "id": "dn_a",
+        "max": 32512,
+        "min": 0,
+        "name": "Dyn Alpha",
+        "short": "ALPH",
+        "slot": 25,
+        "template": 213
+      },
+      {
+        "default": 4096,
+        "id": "dn_b",
+        "max": 16128,
+        "min": 0,
+        "name": "Dyn Beta",
+        "short": "BETA",
+        "slot": 26,
+        "template": 213
+      },
+      {
+        "default": 28672,
+        "id": "dn_c",
+        "max": 32512,
+        "min": 256,
+        "name": "Dyn Gamma",
+        "short": "GAMA",
+        "slot": 27,
+        "template": 213
+      },
+      {
+        "default": 16384,
+        "id": "dn_d",
+        "max": 32512,
+        "min": 0,
+        "name": "Dyn Delta",
+        "short": "DELT",
+        "slot": 28,
+        "template": 213
+      }
+    ]
+  }
+}

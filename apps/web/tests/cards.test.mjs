@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cardLine, folderName, startCard, topLevelWavs } from '../src/runtime/cards.ts';
+import { cardLine, folderFiles, folderName, startCard } from '../src/runtime/cards.ts';
 
 const file = (name, path, bytes = [1, 2, 3]) => ({
   name,
@@ -8,20 +8,21 @@ const file = (name, path, bytes = [1, 2, 3]) => ({
   arrayBuffer: async () => new Uint8Array(bytes).buffer,
 });
 
-test('only .wav files directly in the chosen folder are used, sorted by name', () => {
+test('every file of the chosen folder is used with its path inside it, sorted', () => {
   const list = [
     file('b.wav', 'drums/b.wav'),
     file('A.WAV', 'drums/A.WAV'),
     file('note.txt', 'drums/note.txt'),
     file('deep.wav', 'drums/sub/deep.wav'),
-    file('.hidden.wav', 'drums/.hidden.wav'),
+    file('0000.bin', 'drums/.mmcfs/projects/0000.bin'),
+    file('.DS_Store', 'drums/.DS_Store'),
     file('loose.wav', ''),
   ];
   assert.deepEqual(
-    topLevelWavs(list).map((f) => f.name),
-    ['A.WAV', 'b.wav', 'loose.wav'],
+    folderFiles(list).map((f) => f.path),
+    ['.mmcfs/projects/0000.bin', 'A.WAV', 'b.wav', 'loose.wav', 'note.txt', 'sub/deep.wav'],
   );
-  assert.deepEqual(topLevelWavs([]), []);
+  assert.deepEqual(folderFiles([]), []);
 });
 
 test('the toolbar line follows the controller status', () => {
@@ -49,10 +50,13 @@ test('startCard resets, stages every file in order, then starts the job', async 
     status: async () => ({ state: 'idle' }),
   };
   const progress = [];
-  await startCard(bridge, [file('a.wav', 'x/a.wav', [1]), file('b.wav', 'x/b.wav', [1, 2])], (done, total) =>
-    progress.push([done, total]),
+  await startCard(
+    bridge,
+    folderFiles([file('a.wav', 'x/a.wav', [1]), file('b.wav', 'x/sub/b.wav', [1, 2])]),
+    (done, total) => progress.push([done, total]),
+    'x',
   );
-  assert.deepEqual(calls, ['reset', 'stage a.wav 1', 'stage b.wav 2', 'load x']);
+  assert.deepEqual(calls, ['reset', 'stage a.wav 1', 'stage sub/b.wav 2', 'load x']);
   assert.deepEqual(progress, [
     [1, 2],
     [2, 2],

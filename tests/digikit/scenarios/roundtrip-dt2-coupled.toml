@@ -1,0 +1,31 @@
+# The panel-driven project round trip on the coupled daemon (ColdFire and DSP together), as a device runs it: the same project, the same
+# sets and the same comparison as `roundtrip-dt2`, whose panel script runs on ColdFire-only daemons (about 4 times faster; the DSP plays no
+# part in what the firmware saves). This one is the realistic check and stays in the full tier.
+[scenario]
+name = "roundtrip-dt2-coupled"
+kind = "roundtrip"
+devices = ["dt2"]
+images = ["dt2-1.17"]
+tier = "full"
+
+[roundtrip]
+engine = "coupled"
+order = ["A", "B"]
+types = [18, 16]
+lock_turn = 11
+sound_lock_turn = 2
+
+[roundtrip.sets]
+A = ["test/dyn-pluck", "test/dyn-xslice"]
+B = ["test/dyn-xslice"]
+A2 = ["test/dyn-xslice", "test/dyn-pluck"]
+
+[[roundtrip.machines]]
+track = 1
+type = 18
+hint = 10
+
+[[roundtrip.machines]]
+track = 2
+type = 16
+hint = 7

@@ -172,14 +172,16 @@ resource = "dsp.master.hook"
     return "".join(parts)
 
 
-MACHINE_ENTRY = """
-[[entry]]
-registry = "machines"
+MACHINE_SECTION = """
+# Typed section (modules/README.md, "Typed sections"): lowered per device into the machine, param and page rows.
+# Give it knobs = [...] (stock codes and the ids of [[param]] sections), then [[param]], [[voice]] and, on a Digitone II,
+# a [[page]]; `patchkit gen` writes the constants a DSP routine includes.
+[[machine]]
 id = "{eid}"
 name = "{title}"
 short = "{short}"
-clone_of = 0            # the stock type this machine copies; give it parameters and a DSP routine from here
-devices = ["{dev}"]
+clone_of = 0            # the stock type this machine copies
+devices = [{devices}]
 """
 
 
@@ -196,10 +198,13 @@ def allocate(key: str, devices: list[str], path: Path = TYPES) -> dict[str, int]
         if key in alloc:
             out[dev] = alloc[key]
             continue
-        n = max([STOCK_TYPES[dev] - 1, *alloc.values()]) + 1
-        if n > d["last"]:
+        # numbers from `dynamic_first` up belong to run-time modules (core/dynreg reserves them)
+        top = d.get("dynamic_first", d["last"] + 1) - 1
+        n = max([STOCK_TYPES[dev] - 1, *(v for v in alloc.values() if v <= top)]) + 1
+        if n > top:
             raise SystemExit(
-                f"{path}: [{dev}] is full: the next number {n} is above last = {d['last']}"
+                f"{path}: [{dev}] is full: the next number {n} is above {top} "
+                f"(last = {d['last']}, run-time range from {d.get('dynamic_first', 'none')})"
             )
         lines = text.split("\n")
         start = lines.index(f"[{dev}.alloc]")
@@ -240,9 +245,11 @@ conflicts = []
 # The machine's type number is permanent: modules/core/machines/types.toml, key "{id_}:{eid}".
 """
     short = re.sub(r"[^A-Z0-9]", "", name.upper())[:4] or "NEW"
-    return head + "".join(
-        MACHINE_ENTRY.format(eid=eid, title=title[:23], short=short, dev=d)
-        for d in devices
+    return head + MACHINE_SECTION.format(
+        eid=eid,
+        title=title[:23],
+        short=short,
+        devices=", ".join(f'"{d}"' for d in devices),
     )
 
 

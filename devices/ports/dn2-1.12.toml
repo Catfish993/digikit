@@ -39,6 +39,16 @@ excludes = []
 mark = "D"
 
 [[anchor]]
+name = "cf.dynreg.list_copy"
+cpu = "cf"
+kind = "code"
+addr = 0x4004d994
+len = 6
+sha256 = "90c7fbe9c6489da25d7eb42917fc5c310af223606804215065065c066f090184"
+mark = "D"
+rule = "core/dynreg:cf_func"
+
+[[anchor]]
 name = "cf.machines.dispatch"
 cpu = "cf"
 kind = "code"
@@ -350,6 +360,182 @@ len = 3196288
 sha256 = "a098f620019b2ad38fd7e0397df39501fb1cf6bc26d0283915f34c49446fdf1a"
 mark = "V"
 rule = "builtin"
+
+[[anchor]]
+name = "cf.menu.fn.blk_read"
+cpu = "cf"
+kind = "code"
+addr = 0x4012c87a
+len = 4
+sha256 = "23201b350b902ad73d89ce6a89eee29dfa14dd42612057eede16e4b546dc6759"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.brain"
+cpu = "cf"
+kind = "data"
+addr = 0x4018cbbc
+src = 0x4009eb12
+len = 4
+sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
+name = "cf.menu.fn.invalidate"
+cpu = "cf"
+kind = "code"
+addr = 0x4011ca9a
+len = 4
+sha256 = "1f6b50a3616f922607a92f5ea30e249ecfae4035c48517445d22acbd059dd2ec"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.item_builder"
+cpu = "cf"
+kind = "code"
+addr = 0x40117504
+len = 4
+sha256 = "ad05516232f2d537c8351773c3e9c14894d385c6cfd4c9f7533f7018e5a1c773"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.make_sp"
+cpu = "cf"
+kind = "code"
+addr = 0x4011ba2e
+len = 4
+sha256 = "e26a6edd1fa03cb09e71e68d5c523db6fb0975d75aaf4aabb1a08024a42e5344"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.mgr_of"
+cpu = "cf"
+kind = "data"
+addr = 0x4002c47a
+src = 0x4009eb1a
+len = 4
+sha256 = "7f284fb65360c6f575800b1a7f6020278ea44dcfb08684ee639a5b361437086c"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
+name = "cf.menu.fn.new"
+cpu = "cf"
+kind = "code"
+addr = 0x401202c8
+len = 4
+sha256 = "3f2a7a23497cd06e30629c3e1ea8ba643f614ea616aba5feafae54b013ae9750"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.popup_make"
+cpu = "cf"
+kind = "data"
+addr = 0x401a80d8
+src = 0x4009eafe
+len = 4
+sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
+name = "cf.menu.fn.push"
+cpu = "cf"
+kind = "code"
+addr = 0x4011bf06
+len = 4
+sha256 = "78f42f83e9b362432042b115bfc0318067ac16a8703b3f21db6e85abcc090477"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.sp_move"
+cpu = "cf"
+kind = "data"
+addr = 0x4018c6cc
+src = 0x4009eb0c
+len = 4
+sha256 = "6bc847565586fd279c9429243adc9c910e24d03f5da732a58d9765e263d6931a"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
+name = "cf.menu.fn.sp_release"
+cpu = "cf"
+kind = "data"
+addr = 0x401883ac
+src = 0x4009eb24
+len = 4
+sha256 = "854132dec93aeb507c7a450696fa544cb2c2ac3ef072e88c0d5fa6334b9cc790"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
+name = "cf.menu.fn.str_ctor"
+cpu = "cf"
+kind = "code"
+addr = 0x401ceab8
+len = 4
+sha256 = "9a3378d4a613d4277ddeaa5a2074464c354f1ffafd3b4847680656230bb25125"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.str_dtor"
+cpu = "cf"
+kind = "code"
+addr = 0x401cd008
+len = 4
+sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.view_add"
+cpu = "cf"
+kind = "data"
+addr = 0x4011d9fe
+src = 0x4009eb2c
+len = 4
+sha256 = "f467eea18c7c737d4ccb9cf58c66adb26f524f460267d95fe322a0cf1b687ccc"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
+name = "cf.menu.fn.view_ctor"
+cpu = "cf"
+kind = "code"
+addr = 0x4011b8e0
+len = 4
+sha256 = "7694646addf9bf72b639ece8ba990d8e101955de2d4cecd4d9e1bd66b670ef41"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.icon_ref"
+cpu = "cf"
+kind = "code"
+addr = 0x4009ff62
+len = 6
+sha256 = "c479387eb24bd907e29f10e39b7e2736cd7901688e37f2b4b4d7660180d88da2"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.settings_tail"
+cpu = "cf"
+kind = "code"
+addr = 0x4009ff88
+len = 8
+sha256 = "49e7ab0d372e41be14161fa480629cdcfabc16a9f5e09a55e2efdc28f465e12a"
+mark = "D"
+rule = "core/digikit-menu:cf_func"
 
 [[anchor]]
 name = "cf.param.master_sidechain_filter"
@@ -1514,6 +1700,237 @@ mark = "D"
 rule = "core/expansion:cf_reset_init_calls"
 
 [[anchor]]
+name = "dkrt.fw.alloc"
+cpu = "cf"
+kind = "code"
+addr = 0x401202c8
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.block_counter_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40027b84
+len = 4
+sha256 = "7f31824d3bbbe225461a08f4e90386b0d9d463a19e4db1a44f98efac05cd4923"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.block_read"
+cpu = "cf"
+kind = "code"
+addr = 0x4012c87a
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.block_write"
+cpu = "cf"
+kind = "code"
+addr = 0x4012ca60
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.boot_record_write"
+cpu = "cf"
+kind = "code"
+addr = 0x400f1f8a
+len = 2
+sha256 = "8780ea8a436f0cddf90a0078faa7d2b88546db279383a92a020a3bbe51279cb7"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.exc_hook_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40001266
+len = 4
+sha256 = "c6d3a0eaf548e3e274518f5c15d38693ba12fa2cf1adc19d8884e26179765b8a"
+mark = "D"
+rule = "core/runtime:cf_words"
+
+[[anchor]]
+name = "dkrt.fw.free"
+cpu = "cf"
+kind = "code"
+addr = 0x401204ce
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.kit_of"
+cpu = "cf"
+kind = "code"
+addr = 0x4003e41a
+len = 4
+sha256 = "7f284fb65360c6f575800b1a7f6020278ea44dcfb08684ee639a5b361437086c"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.midi_send"
+cpu = "cf"
+kind = "code"
+addr = 0x40123484
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.project"
+cpu = "cf"
+kind = "code"
+addr = 0x4018ac5a
+len = 4
+sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.project_serialize"
+cpu = "cf"
+kind = "code"
+addr = 0x4002c694
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.queue_pop"
+cpu = "cf"
+kind = "code"
+addr = 0x40001928
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.track_type"
+cpu = "cf"
+kind = "code"
+addr = 0x4003134e
+len = 4
+sha256 = "1752574de8d0026d70bf9141496056979060c689d8d347371a73b627becc2134"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.tx_inflight_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40004776
+len = 4
+sha256 = "7c742bbbbc4a0c48e26343b889f6ce69547d3813a8d708608c8e08c0a616bba7"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.hook.boot"
+cpu = "cf"
+kind = "code"
+addr = 0x4002ed34
+len = 8
+sha256 = "f446b70c3829f8c05b4cb484c6f85e777d19f62557951248a5c622fe97d11223"
+mark = "D"
+rule = "core/runtime:cf_words"
+
+[[anchor]]
+name = "dkrt.hook.midi_rx"
+cpu = "cf"
+kind = "code"
+addr = 0x40120b56
+len = 6
+sha256 = "61eabb938b4737dfcad74a04c0bfb0ea272366b8742a3b6428b773cd9007fb06"
+mark = "D"
+rule = "core/runtime:cf_words"
+
+[[anchor]]
+name = "dkrt.hook.ui_loop"
+cpu = "cf"
+kind = "code"
+addr = 0x4002f17e
+len = 6
+sha256 = "1940b0a63c6ecde995281cba985d224c36ffbda5cb4d818577538dd180809638"
+mark = "D"
+rule = "core/runtime:cf_words"
+
+[[anchor]]
+name = "dkrt.ui.queue_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4002f17a
+len = 4
+sha256 = "3b04022941ddee74c7303790bc15dd859be87d4f9f90d02aff821456ac44fbae"
+mark = "D"
+rule = "core/runtime:cf_words"
+
+[[anchor]]
+name = "dl.cf.frame_call"
+cpu = "cf"
+kind = "code"
+addr = 0x40025e9e
+len = 6
+sha256 = "e4dfe588496260e653f2e6b413b8363ff945a390aa64a48d1e6f5181e497da54"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.cf.frame_fn"
+cpu = "cf"
+kind = "code"
+addr = 0x400cf922
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.cf.rec_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40025e8c
+len = 4
+sha256 = "1887f40ff8ebb1f347d0a7be65f35254be630fa046c08055b30acced870d97a4"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.cf.tx_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x400cf9b4
+len = 4
+sha256 = "26046ae785e42fcb7c48f3b1700906e89bd2fcdd4c10eb93de1e11a634b5ed19"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.dsp.block_tail"
+cpu = "sharc"
+kind = "code"
+addr = 0x28393cbe
+pm = 0x1c9e5f
+len = 6
+sha256 = "9489f54d1cb1ed596c0cee43d27a53ed20b01e92623d4147dec3e3c12f31c24b"
+mark = "D"
+rule = "core/dsp-link:sharc_func"
+
+[[anchor]]
 name = "dsp.fx.sidechain_filter_word"
 cpu = "sharc"
 kind = "value"
@@ -1589,3 +2006,84 @@ len = 6
 sha256 = "a235dd3cac08067a7da384b9ef7fe0e1962e04aa94852054af6ca2e940401d4c"
 mark = "D"
 rule = "core/dsp-voice:sharc_func"
+
+[[anchor]]
+name = "health.fw.create_main"
+cpu = "cf"
+kind = "data"
+addr = 0x4002e8d0
+src = 0x400cf250
+len = 4
+sha256 = "d08b2e7dd81775a91efdb6dc8c02e9f20b180574dcbc2a91c3ae79fa058f81ed"
+mark = "D"
+rule = "core/health:cf_ptr"
+
+[[anchor]]
+name = "health.heap.desc_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x401202e6
+len = 4
+sha256 = "1934415adc4b6ce57c973b1a8ca0dfddb3fba015f3b7d1d66f7ff8e6d585cf1e"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.lock_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x401202dc
+len = 4
+sha256 = "e3937162b612371f3190cba14677855845819e40672445fcdbe09bbfcd8cbef5"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.mutex_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x401202d6
+len = 4
+sha256 = "112c4c71266f899f43b22d6a369b7e3d0d1d49d08ce113a3ccb20cefad481955"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.unlock_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4012035a
+len = 4
+sha256 = "6d5958effffe50c2bdc4e3be904523603e6792b900aac4bd51064bb03e0a4d23"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.hook.block"
+cpu = "cf"
+kind = "code"
+addr = 0x40025e36
+len = 8
+sha256 = "f25eae2dbba66d66151f131dda109005c52a8a235510eb550512dedd8243c249"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.hook.idle"
+cpu = "cf"
+kind = "code"
+addr = 0x400cf24e
+len = 6
+sha256 = "611a4975c7d24f2e327d7f5a31b6c66a002a125db5f5fe162569226ab5e7b998"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.rec_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40025e8c
+len = 4
+sha256 = "1887f40ff8ebb1f347d0a7be65f35254be630fa046c08055b30acced870d97a4"
+mark = "D"
+rule = "core/health:cf_func"

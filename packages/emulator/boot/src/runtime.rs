@@ -69,6 +69,8 @@ pub struct Status {
     pub oracle_ticks: u64,
     pub execution_policy: ExecutionPolicy,
     pub clock_description: String,
+    /// The guest wrote SOFTRST to RCM.RCR: a restart of the boot is due (the controller does it for a patched build).
+    pub soft_reset: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -174,6 +176,11 @@ pub struct Emulator {
     uart_handler: u32,
     current_tcb_addr: u32,
     idle_spins: BTreeSet<u32>,
+    /// Counting idle loops found in the running guest: `addq.l #1,(counter).l`
+    /// then `bra.s` back to it (`52 b9 <counter> 60 f8`), keyed by the `addq`
+    /// address, with the counter address. Learned from the PC at chunk starts
+    /// (the code may be placed at run time), never from a fixed address.
+    count_spins: BTreeMap<u32, u32>,
     /// Over-approximate bitset (one bit per halfword of the main image) of
     /// every PC the per-instruction observers compare against; a miss lets
     /// `step_once` skip all of those exact comparisons.
@@ -223,6 +230,7 @@ pub struct Emulator {
     uart_rx_isr: u32,
     input_ready: bool,
     input_attempted_in_chunk: bool,
+    midi: crate::midi::MidiPort,
     policy: ExecutionPolicy,
     softfloat: SoftfloatAbi,
     ram_clear: Option<RamClear>,
@@ -240,6 +248,9 @@ pub struct Emulator {
     probe_hits: BTreeMap<u32, u64>,
     /// The DSPI1 peer's IRQ1 (EPORT, INTC0 source 1) after a transfer; not saved.
     irq1_pending: bool,
+    /// A CPU exception runs the guest's handler instead of stopping the run with an error (the digikit runtime's crash capture,
+    /// docs/findings/46-digikit-debug.md). Off by default: an exception in the firmware is a bug the harness must see.
+    deliver_exceptions: bool,
     /// (probed pc, word at the stack top = return address for a `jsr`) -> (hits, last icount)
     probe_rets: BTreeMap<(u32, u32, u32), (u64, u64)>,
     /// PCs whose registers a host asked to record (`record_regs_at`), and the
@@ -344,6 +355,12 @@ impl Emulator {
     /// panel) applies; neither the whole-file digest nor the MAIN digest is
     /// checked, so any MAIN bytes boot if every signature lookup still
     /// resolves (each one fails loudly otherwise).
+    /// Ready when the main panel is up, without the filesystem check the firmware runs on a fresh card (a card that an earlier
+    /// boot already used can skip it, as after a soft reset).
+    pub fn relax_fs_check(&mut self) {
+        self.contract = device_profile::ReadinessContract::MainPanelV1;
+    }
+
     pub fn new_patched(
         syx: &[u8],
         card: Option<Card>,
@@ -531,6 +548,7 @@ impl Emulator {
             uart_handler,
             current_tcb_addr,
             idle_spins,
+            count_spins: BTreeMap::new(),
             watch: Vec::new(),
             idle_passes: 0,
             task_create_hits: 0,
@@ -575,6 +593,7 @@ impl Emulator {
             uart_rx_isr,
             input_ready: false,
             input_attempted_in_chunk: false,
+            midi: Default::default(),
             policy,
             softfloat,
             ram_clear,
@@ -584,6 +603,7 @@ impl Emulator {
             observed_outside_main: false,
             probe_hits: BTreeMap::new(),
             irq1_pending: false,
+            deliver_exceptions: false,
             probe_rets: BTreeMap::new(),
             reg_watch: Vec::new(),
             reg_log: Vec::new(),
@@ -602,6 +622,11 @@ impl Emulator {
             prof: Default::default(),
         };
         emulator.rebuild_watch();
+        // DIGI_WRITE_WATCH / DIGI_FLUSH_CHECK: off unless set (see watch.rs).
+        match crate::watch::WatchConfig::from_env() {
+            Ok(cfg) => emulator.bus.guards.set_watch(cfg),
+            Err(e) => eprintln!("write-watch: {e}; not armed"),
+        }
         emulator.mark(Mark::Entry, "before_instruction");
         Ok(emulator)
     }
@@ -609,6 +634,7 @@ impl Emulator {
     pub fn step_chunk(&mut self, budget: u32) -> Snapshot {
         let budget = budget.min(CHUNK_MAX);
         self.input_attempted_in_chunk = false;
+        self.learn_count_spin();
         let mut iterations = 0;
         while iterations < budget && self.error.is_none() {
             if ACCELERATE_RAM_CLEAR
@@ -982,6 +1008,11 @@ impl Emulator {
         self.bus.board.card_overlay_sectors()
     }
 
+    /// (d0-d7, a0-a7, pc, sr): for headless diagnosis (a fault report).
+    pub fn cpu_regs(&self) -> ([u32; 8], [u32; 8], u32, u16) {
+        (self.cpu.d, self.cpu.a, self.cpu.pc, self.cpu.sr)
+    }
+
     /// Read a guest longword without side effects (None when unmapped or
     /// device-owned). For headless diagnosis only.
     pub fn peek32(&mut self, addr: u32) -> Option<u32> {
@@ -998,6 +1029,38 @@ impl Emulator {
         self.bus.guards.set(protect, allow_pc);
     }
 
+    /// Arm (or, with `None`, disarm) the write-watch and flush check; the same
+    /// as the `DIGI_WRITE_WATCH*` and `DIGI_FLUSH_CHECK` variables read at
+    /// construction. The CACR the instruments assume is the CPU's current one.
+    pub fn set_write_watch(&mut self, cfg: Option<crate::watch::WatchConfig>) {
+        self.bus.guards.set_watch(cfg);
+        let cacr = self.cpu.ctrl.cacr;
+        if let Some(w) = self.bus.guards.watch_mut() {
+            w.set_cacr(cacr);
+        }
+    }
+
+    /// Lines fetched while their last write was unflushed (flush check).
+    pub fn flush_hits(&self) -> Vec<crate::watch::FlushHit> {
+        self.bus.guards.flush_hits()
+    }
+
+    /// Reported write-watch events so far and, most frequent first, the PCs that made them.
+    pub fn write_watch_totals(&mut self) -> (u64, Vec<(u32, u64)>) {
+        self.bus
+            .guards
+            .watch_mut()
+            .map_or((0, Vec::new()), |w| (w.totals().0, w.per_pc()))
+    }
+
+    /// Flush the write-watch log and write its summary (also done when the
+    /// emulator is dropped).
+    pub fn finish_write_watch(&mut self) {
+        if let Some(w) = self.bus.guards.watch_mut() {
+            w.finish();
+        }
+    }
+
     /// The first `GUARD_HIT_LIMIT` guard hits and the total count.
     pub fn guard_report(&self) -> GuardReport {
         self.bus.guards.report()
@@ -1011,6 +1074,28 @@ impl Emulator {
     /// Hits that were the first for their protected range since the last call.
     pub fn take_guard_first_hits(&mut self) -> Vec<GuardHit> {
         self.bus.guards.take_first_hits()
+    }
+
+    /// Let a CPU exception run the guest's handler (true) or stop the run with an error (false, the default).
+    pub fn set_deliver_exceptions(&mut self, deliver: bool) {
+        self.deliver_exceptions = deliver;
+    }
+
+    /// `len` bytes of guest RAM from `addr` (a multiple of 4), read without side effects; unmapped words read 0.
+    pub fn peek_ram(&mut self, addr: u32, len: u32) -> Vec<u8> {
+        let mut out = Vec::with_capacity(len as usize);
+        for a in (addr..addr + len).step_by(4) {
+            out.extend_from_slice(&self.peek32(a).unwrap_or(0).to_be_bytes());
+        }
+        out
+    }
+
+    /// Write `bytes` (a multiple of 4 long) of guest RAM at `addr` without bus side effects.
+    pub fn poke_ram(&mut self, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        for (i, w) in bytes.chunks_exact(4).enumerate() {
+            self.poke32(addr + 4 * i as u32, u32::from_be_bytes([w[0], w[1], w[2], w[3]]))?;
+        }
+        Ok(())
     }
 
     /// Write a guest longword without bus side effects (headless diagnosis:
@@ -1182,6 +1267,7 @@ impl Emulator {
             oracle_ticks: self.oracle_ticks().unwrap_or(u64::MAX),
             execution_policy: self.policy,
             clock_description: "oracle_ticks = legacy cpu.icount + accepted softfloat ABI calls; atomic calls consume one scheduling tick, not a CPU instruction".into(),
+            soft_reset: self.bus.board.soft_reset_requested(),
         }
     }
 
@@ -1217,6 +1303,7 @@ impl Emulator {
             || self.bus.board.dspi1_irq()
             || self.irq1_pending
             || self.input_attempted_in_chunk
+            || self.midi.busy()
             || !self.bus.board.ram_matches(clear.entry, &clear.code)
         {
             return 0;
@@ -1290,15 +1377,43 @@ impl Emulator {
         instructions
     }
 
-    /// Evaluate repeated, verified BRA-to-self passes analytically, stopping
-    /// BEFORE either a timer deadline or the software rescheduling pass.
-    /// The first pass has already run normally, including every observation
-    /// and board drain. No guest or host event changes inside this interval.
+    /// Learn a counting idle loop (`addq.l #1,(counter).l; bra.s` back, bytes
+    /// `52 b9 <counter> 60 f8`) the guest is in at a chunk start. Detected by
+    /// the instruction pattern at the PC, in RAM wherever the code was placed.
+    fn learn_count_spin(&mut self) {
+        let pc = self.cpu.pc;
+        for head in [pc, pc.wrapping_sub(6)] {
+            if self.count_spins.contains_key(&head) {
+                continue;
+            }
+            let mut b = [0u8; 8];
+            if self.bus.board.ram_peek(head, &mut b)
+                && b[..2] == [0x52, 0xb9]
+                && b[6..] == [0x60, 0xf8]
+            {
+                let counter = u32::from_be_bytes([b[2], b[3], b[4], b[5]]);
+                self.count_spins.insert(head, counter);
+                self.rebuild_watch();
+            }
+        }
+    }
+
+    /// Evaluate repeated, verified idle passes analytically, stopping BEFORE
+    /// either a timer deadline or the software rescheduling pass. Two shapes:
+    /// `bra.b self` (one instruction per pass), and the counting loop
+    /// `addq.l #1,(counter).l; bra.s` (two per pass; the counter in memory and
+    /// the flags of the last `addq` get the skipped passes). The first pass
+    /// has already run normally, including every observation and board drain.
+    /// No guest or host event changes inside this interval.
     fn advance_idle(&mut self, previous_pc: u32, remaining: u32) -> u32 {
+        // The counting loop: the `addq` just ran, the PC is on its `bra.s`.
+        let counter = if self.cpu.pc == previous_pc.wrapping_add(6) {
+            self.count_spins.get(&previous_pc).copied()
+        } else {
+            None
+        };
         if remaining == 0
             || self.error.is_some()
-            || self.cpu.pc != previous_pc
-            || !self.idle_spins.contains(&previous_pc)
             || self.cpu.state != coldfire::RunState::Running
             || self.cpu.sr & 0xc000 != 0
             || self.cpu.last_exception.is_some()
@@ -1308,6 +1423,18 @@ impl Emulator {
             || self.bus.board.dspi1_irq()
             || self.irq1_pending
             || self.input_attempted_in_chunk
+            || self.midi.busy()
+        {
+            return 0;
+        }
+        if let Some(counter) = counter {
+            let mut code = [0x52, 0xb9, 0, 0, 0, 0, 0x60, 0xf8];
+            code[2..6].copy_from_slice(&counter.to_be_bytes());
+            if !self.bus.board.ram_matches(previous_pc, &code) {
+                return 0;
+            }
+        } else if self.cpu.pc != previous_pc
+            || !self.idle_spins.contains(&previous_pc)
             || !self.bus.board.ram_matches(previous_pc, &[0x60, 0xfe])
         {
             return 0;
@@ -1327,7 +1454,15 @@ impl Emulator {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
-        let count = idle_advance_limit(remaining, self.idle_passes, now, deadline);
+        // Instructions to skip. The counting loop has no yield pass (it never
+        // had one while interpreted) and skips whole passes of two.
+        let count = if counter.is_some() {
+            let before_timer =
+                deadline.map_or(u64::MAX, |due| due.saturating_sub(now).saturating_sub(1));
+            (u64::from(remaining).min(before_timer) as u32) & !1
+        } else {
+            idle_advance_limit(remaining, self.idle_passes, now, deadline)
+        };
         if count == 0 {
             return 0;
         }
@@ -1335,13 +1470,20 @@ impl Emulator {
         // Reserve every counter before mutation; no fabricated interpreted work.
         let (Some(cpu_count), Some(passes), Some(skipped), Some(done)) = (
             self.cpu.icount.checked_add(n),
-            self.idle_passes.checked_add(n),
+            self.idle_passes.checked_add(if counter.is_some() { 0 } else { n }),
             self.idle_fast_forwarded_instructions.checked_add(n),
             now.checked_add(n),
         ) else {
             self.set_error("idle advance counter overflow");
             return 0;
         };
+        if let Some(counter) = counter {
+            // The skipped passes' memory effect and the flags of the last addq.
+            let Some((_, new)) = self.bus.board.sdram_add32(counter, count / 2) else {
+                return 0;
+            };
+            self.cpu.set_add_flags_l(1, new.wrapping_sub(1), new);
+        }
         self.cpu.icount = cpu_count;
         self.idle_passes = passes;
         self.idle_fast_forwarded_instructions = skipped;
@@ -1362,7 +1504,12 @@ impl Emulator {
             Err(error) => self.set_error(error),
         }
         #[cfg(feature = "cf-mix")]
-        self.mix_add(previous_pc, 2, n, None, n);
+        if counter.is_some() {
+            self.mix_add(previous_pc, 2, n / 2, None, n / 2);
+            self.mix_add(previous_pc.wrapping_add(6), 2, n / 2, None, n / 2);
+        } else {
+            self.mix_add(previous_pc, 2, n, None, n);
+        }
         count
     }
 
@@ -1372,6 +1519,7 @@ impl Emulator {
     fn rebuild_watch(&mut self) {
         let mut watch = vec![0u64; (self.main.len() / 2 + 1).div_ceil(64)];
         let mut pcs: Vec<u32> = self.idle_spins.iter().copied().collect();
+        pcs.extend(self.count_spins.keys().copied());
         pcs.extend([
             self.task_create,
             self.mainloop,
@@ -1385,6 +1533,9 @@ impl Emulator {
         ]);
         pcs.extend(self.softfloat.entries());
         pcs.extend(self.probe_hits.keys().copied());
+        if self.midi.usb.enabled {
+            pcs.extend([self.midi.usb.tx_fn, self.midi.usb.ret_pc].into_iter().filter(|&pc| pc != 0));
+        }
         pcs.extend(self.reg_watch.iter().copied());
         pcs.extend(self.capture_at.iter().map(|c| c.0));
         pcs.extend(self.calls.front().map(|c| c.at));
@@ -1459,6 +1610,7 @@ impl Emulator {
             || self.rx_pending
             || self.irq1_pending
             || !self.input_packets.is_empty()
+            || self.midi.busy()
             || self.fs_clear_pending.is_some()
             || self.cpu.state != coldfire::RunState::Running
             || self.bus.board.has_host_events()
@@ -1785,6 +1937,21 @@ impl Emulator {
                 }
             }
         }
+        if self.midi.busy() {
+            let delivered = match self.service_midi() {
+                Ok(true) => Ok(true),
+                Ok(false) => self.service_usb(),
+                Err(error) => Err(error),
+            };
+            match delivered {
+                Ok(true) => return,
+                Ok(false) => {}
+                Err(error) => {
+                    self.set_error(error);
+                    return;
+                }
+            }
+        }
         if watched && self.idle_spins.contains(&pc) {
             self.idle_passes += 1;
             if self.idle_passes.is_multiple_of(20_000)
@@ -1885,7 +2052,7 @@ impl Emulator {
         } else if self
             .cpu
             .last_exception
-            .is_some_and(|vector| vector != 32 && !timer_delivered)
+            .is_some_and(|vector| vector != 32 && !timer_delivered && !self.deliver_exceptions)
         {
             self.set_error(format!(
                 "exception vector {}",
@@ -1895,6 +2062,9 @@ impl Emulator {
     }
 
     fn observe_marks(&mut self, pc: u32) {
+        if self.midi.usb.enabled {
+            self.observe_usb(pc);
+        }
         if let Some(hits) = self.probe_hits.get_mut(&pc) {
             *hits += 1;
             let ret = self.bus.board.read32(self.cpu.a[7]).unwrap_or(0);
@@ -1983,6 +2153,14 @@ impl Emulator {
             }
         }
         let ranges = self.bus.board.take_dma_written_ranges();
+        let sources = self.bus.board.take_dma_sources();
+        if !self.bus.guards.is_empty() {
+            for (&(address, bytes), src) in ranges.iter().zip(sources) {
+                self.bus
+                    .guards
+                    .note_dma(src, address, bytes, self.bus.current_icount);
+            }
+        }
         // DMA into a page with decoded instructions (code run from RAM).
         for &(address, bytes) in &ranges {
             self.cpu.invalidate_external_write(address, bytes);
@@ -2146,6 +2324,272 @@ impl Emulator {
             }
             Ok(false) => Err("DSPI1 handler rejected".into()),
             Err(error) => Err(format!("DSPI1 delivery poisoned({error:?})")),
+        }
+    }
+
+    /// Queue MIDI DIN bytes for the guest. `period` is the instruction count between two bytes
+    /// (`midi::WIRE_PERIOD` is the real wire rate; 0 delivers as fast as the guest takes its interrupt).
+    pub fn midi_in(&mut self, bytes: &[u8], period: u64) -> Result<usize, String> {
+        if self.midi.queue.len() + bytes.len() > crate::midi::QUEUE_MAX {
+            return Err("midi input queue full".into());
+        }
+        if !self.midi.busy() {
+            self.midi.next_ic = self.cpu.icount;
+        }
+        self.midi.period = period;
+        self.midi.queue.extend(bytes.iter().copied());
+        Ok(self.midi.queue.len())
+    }
+
+    /// Queue bytes for the firmware's USB MIDI receive callback (cable 0). USB itself is not modelled: the bytes are
+    /// handed to the callback in an interrupt taken at the next instruction boundary the guest allows, in chunks
+    /// of at most 64 bytes one USB frame apart. Errors when this image has no resolvable USB MIDI callback.
+    pub fn usb_midi_in(&mut self, bytes: &[u8]) -> Result<usize, String> {
+        self.usb_midi_in_paced(bytes, None, None)
+    }
+
+    /// `usb_midi_in` with the delivery model chosen: `chunk` bytes per callback call (at most 384, the most one 512-byte packet of
+    /// 4-byte events carries; default `USB_CHUNK`) and `period` instructions between two calls (default `USB_PERIOD`, one full-speed
+    /// frame; a high-speed microframe is 16,500). The period stays for the later calls until another is given.
+    pub fn usb_midi_in_paced(
+        &mut self,
+        bytes: &[u8],
+        chunk: Option<usize>,
+        period: Option<u64>,
+    ) -> Result<usize, String> {
+        use crate::midi::{resolve_usb, USB_CHUNK, USB_PERIOD};
+        let chunk = chunk.unwrap_or(USB_CHUNK);
+        if chunk == 0 || chunk > 384 {
+            return Err("usb chunk is 1 to 384 bytes".into());
+        }
+        if !self.midi.usb.enabled {
+            let (rx, tx) = resolve_usb(&self.main, MAIN_LOAD)
+                .ok_or("this image has no USB MIDI callback this emulator knows")?;
+            self.midi.usb.rx_cb = rx;
+            self.midi.usb.tx_fn = tx;
+            self.midi.usb.period = USB_PERIOD;
+            self.midi.usb.enabled = true;
+            self.rebuild_watch();
+        }
+        if let Some(p) = period {
+            self.midi.usb.period = p;
+        }
+        if !self.midi.busy() {
+            self.midi.usb.next_ic = self.cpu.icount;
+        }
+        for piece in bytes.chunks(chunk) {
+            self.midi.usb.queue.push_back(piece.to_vec());
+        }
+        Ok(self.midi.usb.queue.len())
+    }
+
+    /// Start recording what the firmware sends to the USB MIDI transmit function without queueing input.
+    pub fn usb_midi_watch(&mut self) -> Result<(), String> {
+        self.usb_midi_in(&[]).map(|_| ())
+    }
+
+    /// The MIDI bytes the firmware handed to the USB transmit function since the last call.
+    pub fn take_usb_out(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.midi.usb.out)
+    }
+
+    /// Hand the next chunk to the USB receive callback: an interrupt frame is pushed as for a hardware interrupt,
+    /// the chunk and the callback's arguments are built below it, and the PC goes to the callback. The callback returns
+    /// to an `rte` of the firmware; `observe_usb` sees it, pops the arguments and restores d0, d1, a0, a1.
+    fn service_usb(&mut self) -> Result<bool, String> {
+        const LEVEL: u8 = 5;
+        if !self.midi.usb.enabled
+            || self.midi.usb.active.is_some()
+            || self.midi.usb.queue.is_empty()
+            || self.cpu.icount < self.midi.usb.next_ic
+            || ((self.cpu.sr >> 8) & 7) >= u16::from(LEVEL)
+            || self.cpu.state != coldfire::RunState::Running
+        {
+            return Ok(false);
+        }
+        if self.midi.usb.ret_pc == 0 {
+            // An `rte` at the end of the MIDI receive ISR: only this ISR returns here with these arguments.
+            let handler = self
+                .bus
+                .board
+                .read32(self.cpu.ctrl.vbr.wrapping_add(4 * u32::from(crate::midi::RX_VECTOR)))
+                .map_err(|_| "usb: vector")?;
+            let at = handler.checked_sub(MAIN_LOAD).ok_or("usb: handler")? as usize;
+            let scan = self.main.get(at..at + 0x100).ok_or("usb: handler range")?;
+            let rte = (0..scan.len() - 1)
+                .step_by(2)
+                .find(|&k| scan[k..k + 2] == [0x4e, 0x73])
+                .ok_or("usb: no rte after the MIDI receive ISR")?;
+            self.midi.usb.ret_pc = handler + rte as u32;
+            self.rebuild_watch();
+        }
+        let chunk = self.midi.usb.queue.front().cloned().expect("queue checked");
+        let stack = if self.cpu.sr & 0x2000 == 0 && self.cpu.ctrl.cacr & 0x20 != 0 {
+            self.cpu.other_a7
+        } else {
+            self.cpu.a[7]
+        };
+        if !self.bus.board.can_write_ram_range((stack & !3).wrapping_sub(512 + chunk.len() as u32), 512 + chunk.len()) {
+            return Ok(false);
+        }
+        let saved = [self.cpu.d[0], self.cpu.d[1], self.cpu.a[0], self.cpu.a[1]];
+        match self.cpu.take_interrupt(
+            &mut self.bus.board,
+            crate::midi::RX_VECTOR,
+            Some(LEVEL),
+            InterruptPolicy::Oracle,
+        ) {
+            Ok(true) => {}
+            Ok(false) => return Ok(false),
+            Err(error) => return Err(format!("USB MIDI delivery poisoned({error:?})")),
+        }
+        let frame_sp = self.cpu.a[7];
+        let data = frame_sp.wrapping_sub(chunk.len() as u32) & !3;
+        self.poke_bytes(data, &chunk)?;
+        let mut sp = data;
+        for word in [chunk.len() as u32, data, self.midi.usb.ret_pc] {
+            sp -= 4;
+            self.bus.board.write32(sp, word).map_err(|_| "usb: stack write")?;
+        }
+        self.cpu.a[7] = sp;
+        self.cpu.pc = self.midi.usb.rx_cb;
+        self.midi.usb.queue.pop_front();
+        self.midi.usb.in_bytes += chunk.len() as u64;
+        self.midi.usb.calls += 1;
+        self.midi.usb.next_ic = self.cpu.icount + self.midi.usb.period;
+        self.midi.usb.active = Some(crate::midi::UsbCall {
+            sp_after_rts: sp + 4,
+            frame_sp,
+            saved,
+        });
+        Ok(true)
+    }
+
+    /// At the transmit function: record its (length, buffer) arguments. At the callback's return: unwind.
+    fn observe_usb(&mut self, pc: u32) {
+        if pc == self.midi.usb.tx_fn {
+            let sp = self.cpu.a[7];
+            let len = self.bus.board.read32(sp.wrapping_add(4)).unwrap_or(0);
+            let buf = self.bus.board.read32(sp.wrapping_add(8)).unwrap_or(0);
+            if (1..=0x10000).contains(&len)
+                && let Ok(bytes) = self.peek_bytes(buf, len as usize)
+            {
+                self.midi.usb.out.extend_from_slice(&bytes);
+            }
+        }
+        if pc == self.midi.usb.ret_pc
+            && let Some(call) = &self.midi.usb.active
+            && self.cpu.a[7] == call.sp_after_rts
+        {
+            self.cpu.a[7] = call.frame_sp;
+            [self.cpu.d[0], self.cpu.d[1], self.cpu.a[0], self.cpu.a[1]] = call.saved;
+            self.midi.usb.active = None;
+        }
+    }
+
+    /// The bytes the guest sent on the MIDI DIN output since the last call.
+    pub fn take_midi_out(&mut self) -> Vec<u8> {
+        let bytes = self.bus.board.take_midi_tx();
+        self.midi.tx_bytes += bytes.len() as u64;
+        bytes
+    }
+
+    pub fn midi_status(&self) -> crate::midi::MidiStatus {
+        crate::midi::MidiStatus {
+            queued: self.midi.queue.len(),
+            rx_bytes: self.midi.rx_bytes,
+            rx_irqs: self.midi.rx_irqs,
+            tx_bytes: self.midi.tx_bytes,
+            usb_queued: self.midi.usb.queue.iter().map(Vec::len).sum(),
+            usb_in_bytes: self.midi.usb.in_bytes,
+            usb_calls: self.midi.usb.calls,
+            usb_out_bytes: self.midi.usb.out.len(),
+        }
+    }
+
+    /// One MIDI byte at a time: store it where the receive DMA channel would (ring, DADDR), then offer the
+    /// channel's interrupt when the guest's mask, priority level and stack allow it.
+    fn service_midi(&mut self) -> Result<bool, String> {
+        use crate::midi::{RX_SOURCE, RX_VECTOR as MIDI_VECTOR, TCD36_BASE, TCD36_DADDR};
+        if !self.midi.pending {
+            if self.cpu.icount < self.midi.next_ic || self.midi.queue.is_empty() {
+                return Ok(false);
+            }
+            let board = &mut self.bus.board;
+            let (Ok(saddr), Ok(attr), Ok(nbytes), Ok(daddr)) = (
+                board.read32(TCD36_BASE),
+                board.read16(TCD36_BASE + 4),
+                board.read32(TCD36_BASE + 8),
+                board.read32(TCD36_DADDR),
+            ) else {
+                return Ok(false);
+            };
+            // Set up by the driver: UART9 data register, one byte per minor loop, 8-bit, destination modulo 2^15.
+            if saddr != machine::MIDI_UDR || attr != 0x0078 || nbytes != 1 {
+                return Ok(false);
+            }
+            let base = daddr & !0x7fff;
+            if !board.can_write_ram_range(base, 0x8000) {
+                return Ok(false);
+            }
+            let byte = self.midi.queue.pop_front().expect("queue checked");
+            board
+                .write_guest(daddr, 1, u32::from(byte))
+                .map_err(|_| "midi ring write")?;
+            board
+                .write32(TCD36_DADDR, base + ((daddr - base + 1) & 0x7fff))
+                .map_err(|_| "midi DADDR write")?;
+            self.midi.pending = true;
+            self.midi.rx_bytes += 1;
+            self.midi.next_ic = self.cpu.icount + self.midi.period;
+        }
+        let level = self
+            .bus
+            .board
+            .read8(INTC1_BASE + 0x40 + RX_SOURCE)
+            .map_err(|_| "midi ICR")?
+            & 7;
+        let imrl = self
+            .bus
+            .board
+            .read32(INTC1_BASE + 0x0c)
+            .map_err(|_| "midi IMRL")?;
+        if level == 0
+            || (imrl >> RX_SOURCE) & 1 != 0
+            || ((self.cpu.sr >> 8) & 7) >= u16::from(level)
+        {
+            return Ok(false);
+        }
+        let handler = self
+            .bus
+            .board
+            .read32(self.cpu.ctrl.vbr.wrapping_add(4 * u32::from(MIDI_VECTOR)))
+            .map_err(|_| "midi vector")?;
+        if !(MAIN_LOAD..MAIN_LOAD + self.main.len() as u32).contains(&handler) {
+            return Ok(false);
+        }
+        let stack = if self.cpu.sr & 0x2000 == 0 && self.cpu.ctrl.cacr & 0x20 != 0 {
+            self.cpu.other_a7
+        } else {
+            self.cpu.a[7]
+        };
+        let frame = (stack & !3).wrapping_sub(8);
+        if !self.bus.board.can_write_ram_range(frame, 8) {
+            return Ok(false);
+        }
+        match self.cpu.take_interrupt(
+            &mut self.bus.board,
+            MIDI_VECTOR,
+            Some(level),
+            InterruptPolicy::Oracle,
+        ) {
+            Ok(true) => {
+                self.midi.rx_irqs += 1;
+                self.midi.pending = false;
+                Ok(true)
+            }
+            Ok(false) => Err("MIDI RX handler rejected".into()),
+            Err(error) => Err(format!("MIDI RX delivery poisoned({error:?})")),
         }
     }
 
@@ -2845,6 +3289,10 @@ impl Emulator {
         self.bus.current_pc = r.u32()?;
         self.bus.current_icount = r.u64()?;
         self.bus.access_dropped = r.u64()?;
+        let cacr = self.cpu.ctrl.cacr;
+        if let Some(w) = self.bus.guards.watch_mut() {
+            w.set_cacr(cacr);
+        }
         self.bus.cmdarg_writes = r.u64()?;
         self.bus.xfertyp_writes = r.u64()?;
         self.bus.gpio_reads = r.u64()?;
@@ -3395,6 +3843,59 @@ mod tests {
         assert_eq!(fast.interpreted_instructions, 1);
         assert_eq!(fast.idle_fast_forwarded_instructions, 399);
         assert_eq!(fast.bus.current_icount, slow.bus.current_icount);
+    }
+
+    /// The counting idle loop (`addq.l #1,(counter).l; bra.s`) placed in DDR at
+    /// run time is learned from the PC and fast-forwarded to the machine the
+    /// one-instruction loop reaches: CPU (flags included), counter, guest clock.
+    #[test]
+    fn counting_idle_loop_matches_reference() {
+        let Ok(syx) = std::fs::read("../../../firmware/Digitakt_II_OS1.16.syx") else {
+            return;
+        };
+        let base = 0x47e8_b000u32;
+        let counter = base + 0x100;
+        let mut code = vec![0x52, 0xb9];
+        code.extend_from_slice(&counter.to_be_bytes());
+        code.extend_from_slice(&[0x60, 0xf8]);
+        for start in [base, base + 6] {
+            for init in [0u32, 0xffff_fff0, 0x7fff_ffe0] {
+                let mut emus = Vec::new();
+                for fast in [false, true] {
+                    let mut emu = Emulator::new(&syx, None).unwrap();
+                    emu.bus.board.map_zeroed_ram_page(base & !0xf_ffff).unwrap();
+                    for (i, b) in code.iter().enumerate() {
+                        emu.bus.board.write_guest(base + i as u32, 1, u32::from(*b)).unwrap();
+                    }
+                    emu.bus.board.write_guest(counter, 4, init).unwrap();
+                    emu.cpu.pc = start;
+                    emu.cpu.sr = 0x2700;
+                    emu.cpu.a[7] = base + 0x800;
+                    emu.rebuild_watch();
+                    if fast {
+                        emu.step_chunk(401);
+                    } else {
+                        for _ in 0..401 {
+                            emu.step_once();
+                        }
+                    }
+                    assert_eq!(emu.error, None);
+                    emus.push(emu);
+                }
+                let (slow_part, fast_part) = emus.split_at_mut(1);
+                let (slow, fast) = (&mut slow_part[0], &mut fast_part[0]);
+                assert!(fast.idle_fast_forwarded_instructions >= 390);
+                assert_eq!(fast.cpu, slow.cpu);
+                let (mut a, mut b) = ([0u8; 4], [0u8; 4]);
+                assert!(fast.bus.board.ram_peek(counter, &mut a));
+                assert!(slow.bus.board.ram_peek(counter, &mut b));
+                assert_eq!(a, b);
+                assert_ne!(u32::from_be_bytes(a), init);
+                assert_eq!(fast.oracle_ticks(), slow.oracle_ticks());
+                assert_eq!(fast.bus.current_icount, slow.bus.current_icount);
+                assert_eq!(fast.idle_passes, slow.idle_passes);
+            }
+        }
     }
 
     /// `step_chunk` (batched `run_fast`) must leave exactly the machine the

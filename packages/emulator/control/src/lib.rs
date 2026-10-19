@@ -25,7 +25,7 @@ pub mod proto;
 pub mod server;
 
 pub use controller::{
-    Command, Config, Handle, JsonReply, Mode, Reply, ScenarioSetup, load_scenario, spawn,
+    CardSource, Command, Config, Handle, JsonReply, Mode, Reply, ScenarioSetup, load_scenario, spawn,
 };
 pub use events::Events;
 pub use proto::{RpcError, RpcResult, SCHEMA_VERSION};

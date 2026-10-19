@@ -1,5 +1,11 @@
 {
-  "retired_roots": ["native", "emu", "dt2", "scenarios", "experiments"],
+  "retired_roots": [
+    "native",
+    "emu",
+    "dt2",
+    "scenarios",
+    "experiments"
+  ],
   "exclude": [
     ".gitignore",
     "tools/devtools/pathcheck.json",
@@ -20,6 +26,21 @@
     "apps/web/public/modules/"
   ],
   "allow": [
+    {
+      "token": "tools/patchkit/pk_digikit_",
+      "file": "tools/devtools/verify.py",
+      "reason": "verify trigger prefix, not a path"
+    },
+    {
+      "token": "modules/dir/b.dkm",
+      "file": "packages/emulator/plusdrive/src/selection.rs",
+      "reason": "a card-store path in a unit test"
+    },
+    {
+      "token": "modules/Dyn",
+      "file": "apps/web/tests/dkupload.test.mjs",
+      "reason": "a card-store path in a unit test"
+    },
     {
       "pattern": "docs/findings/\\d\\d",
       "reason": "NN shorthand for the findings files numbered NN-*"
@@ -211,6 +232,35 @@
       "file": "tools/sharc_dev/sharc_transpile/driver.py",
       "token": "tools/sharc_transpile_run.check_build_info",
       "reason": "CORE_FINGERPRINT input: editing it forces a core regeneration; fix at the next one"
+    },
+    {
+      "pattern": "^modules/[A-Za-z0-9_.-]+\\.dkm$",
+      "reason": "a digikit card-store path, relative to plus_drive/<device>/digikit/ (docs/design/digikit-store.md), not the repository's modules/"
+    },
+    {
+      "pattern": "^(devices/cycle-factors|tests/scenarios/dn2|native/live)$",
+      "file": "tools/devtools/rust_ws.py",
+      "reason": "regex rows and prose in the READS/NO_RUST tables, not paths"
+    },
+    {
+      "pattern": "^(docs/x\\.md|tests/devtools/test_x\\.py)$",
+      "file": "tests/devtools/test_rust_ws_select.py",
+      "reason": "made-up changed-file names in selection tests"
+    },
+    {
+      "pattern": "^(tests/fixtures/modules/|tools/patchkit/pk_sdkgen\\.py|packages/patchkit/src/modschema\\.rs)$",
+      "file": "docs/design/module-sdk.md",
+      "reason": "paths the SDK design proposes; they do not exist yet"
+    },
+    {
+      "pattern": "^docs/(mod-memory-regions|lfo4-state-memory)\\.md$",
+      "file": "docs/findings/01-container-and-patching.md",
+      "reason": "documents of the dn2_firmware repository (a collaborator's), cited by name"
+    },
+    {
+      "pattern": "^docs/(for-digikit-sharc-runner-dn2|waverider-dsp-compare)\\.md$",
+      "file": "docs/findings/05-sharc-isa-and-decoding.md",
+      "reason": "documents of the dn2_firmware repository (a collaborator's), cited by name"
     }
   ],
   "moved_local": {

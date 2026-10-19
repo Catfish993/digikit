@@ -23,7 +23,7 @@ lists what is implemented. The design, including parts that are not built, is in
 
 Coupled DSP audio in the daemon needs `--auto-coupled` and the ready inputs; see [PATCHING.md](PATCHING.md).
 Startup flags are shared by both servers (`packages/emulator/control/src/cli.rs`): `--control`, `--no-control`, `--paused`,
-`--run-dir DIR`, `--card-image FILE`, `--scenario NAME_OR_FILE`, `--report PATH`, `--no-audio` and the coupled-audio
+`--run-dir DIR`, `--card-image FILE` (with `--card-folder DIR`: the +Drive folder the image was built from; the firmware's changes are exported to it on exit; `--no-card-sync` turns the export off), `--scenario NAME_OR_FILE`, `--report PATH`, `--no-audio` and the coupled-audio
 flags. `--scenario` needs a coupled-audio build.
 
 ## Command line
@@ -67,8 +67,11 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `framebuffer.get` | `frame`, `frame_png`, `frame_hash` | `frame` |
 | `leds.get` | `leds` | `call` |
 | `mem.cf.peek`, `mem.cf.poke` | `peek32`, `poke32` | `call` |
-| `card.overlay`, `card.load`, `card.status`, `card.cancel` | | `call` |
+| `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel` | | `call` |
+| `midi.in`, `midi.out` | `midi_in`, `midi_out` | `call` |
+| `midi.usb.in`, `midi.usb.out` | `usb_in`, `usb_out` | `call` |
 | `watchdog.config` | `watchdog` | `call` |
+| `cpu.exceptions` | `cpu_exceptions` | `call` |
 | `diagnostics` | | `call` |
 | `audio.report` | `audio` | `call` |
 | `state.digest` | `state_digest` | `call` |
@@ -82,6 +85,11 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 
 `framebuffer.get {hash?, data?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
 (the bytes `data_b64` carries; the hash the patchkit smoke goldens use); `data: false` omits `data_b64`.
+
+`cpu.exceptions {deliver?}` (a test aid): `deliver: true` makes a CPU exception run the guest's own handler; the default is a fault of the run
+(`step` fails with `exception vector N`), because an exception in the firmware is a bug the harness must see. The setting is kept for every runtime
+installed later, so it holds across a soft reset. A soft reset also carries the RAM range `[digikit] keep_base .. + keep_bytes` of the device file into the new
+cold boot (a model of a device whose RAM survives a reset; `docs/findings/46-digikit-debug.md`).
 
 `leds.get` returns `{led_revision, leds, rgb}`: `leds` is 128 hex digits (64 LED values), `rgb` 384 hex digits
 (64 x r, g, b) or null until any is set. It reads the emulator's current state and does not consume it from the UI.
@@ -100,6 +108,22 @@ protected range while the PC is outside every `allow_pc` range is a hit. `guard.
 reset-clear shortcuts. Not checked: eDMA and other peripheral writes, and host writes (`mem.cf.poke`, card load,
 `dsp.patch`). `coupled-run --guard FILE.json` takes the same object and adds `guard: {total, hits}` and the gate
 `guard_ok` to the scenario report.
+
+`midi.in {bytes | file, period?}` queues bytes on the MIDI DIN input (UART9, the port the firmware's MIDI driver reads: eDMA channel 36
+into a 32 KiB ring, one interrupt per byte, vector 156; finding 25). `bytes` is a hex string (spaces allowed) or an
+array of numbers, `file` a binary file. The bytes go in one per `period` instructions (default 42,240 = 320 us at
+132 M instructions per second: the 31250 baud wire rate; 0 = as fast as the firmware takes its interrupts); the
+queue holds 1 Mi bytes. `midi.out {file?}` returns `{bytes, hex, status}` for what the firmware sent on DIN since the last call
+(it stores bytes straight into the UART9 data register) and clears it; `status` counts queued bytes, receive interrupts and
+sent bytes. Not part of a snapshot. MidiRpc (`F0 00 20 3C 10 00 ...`) is **not** accepted from DIN: the device 0x10 handler
+takes only the USB sources. USB MIDI is not modelled, so `midi.usb.in {bytes | file}` hands the bytes to the firmware's USB
+receive callback (DT2 1.16 `FUN_4011d76c`, found from the call that registers it; DN2 1.11 `FUN_4011f0e0`) in an interrupt
+taken at the next instruction boundary the guest allows, in chunks of at most 64 bytes one USB frame (132,000
+instructions) apart (the optional params `chunk`, 1 to 384, and `period` change that: 384 and 16,500 model a high-speed microframe;
+the callback is the SysEx assembler, so the firmware's USB packet split is not in the path); `midi.usb.out` returns what the firmware passed to its USB transmit function (`FUN_40004734`, the
+MidiRpc replies as plain MIDI bytes). The first `midi.usb.in` or `midi.usb.out` starts the capture. A `.syx` MidiRpc request
+from `tools/device/devrpc.py build_request` goes in as it is. Errors: bad params when the image's USB callback cannot be
+resolved (known: DT2 1.16 and 1.17, DN2 1.11 and 1.12).
 
 `pcm.tap` needs the coupled-audio build and a DSP session. `capture` and `capture_stop` have no wrapper.
 
@@ -138,6 +162,14 @@ same numbers). Each closed window is blended 50/50 into the shown value; a resto
 | 1 | no firmware | 8 | I/O |
 | 2 | stale session | 9 | timeout |
 | 3 | busy | | |
+
+`card.load {dir, sync?, export_out?}` builds a card from `dir` (a `plus_drive/dt2/`-style folder: docs/SAMPLES.md) and also records `dir` as the card's +Drive folder. The same holds for a card given at start with `--card-image` and `--card-folder` (`mise run emu` passes both; `sync` is on unless `--no-card-sync`). `card.export` and the quit export use the running device's `[card]` layout (found by the base firmware's hash). `card.export {dir?, out?, prune?}` brings
+that folder (or `dir`) up to date with what the firmware wrote to the card: files of the path filesystem by name in the
+native format, `.mmcfs/{projects,sounds,kits}/NNNN.bin` slots and `.mmcfs/boot/SSSSSS.bin` regions (finding 24). The tree goes
+to `<out>/export/<stamp>/` first, each replaced file to `<out>/backup/<stamp>/` (`out` default `$DIGI_PLUSDRIVE_OUT` or
+`out/plusdrive`); files the firmware deleted are listed and kept unless `prune`. With `sync: true` a `quit` (or the controller
+stopping) saves `overlay.bin` next to the card image and runs the same export, and logs `card: exported N changed files to <dir> (...)`. The module store (`digikit/`) is not exported. From the shell:
+`plusdrive export IMAGE [--overlay overlay.bin] -o FOLDER [--out DIR] [--prune]`.
 
 ## Examples
 

@@ -1,0 +1,68 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 25,
+              "stock": 202
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            {
+              "slot": 32,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Hang",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "HNG",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Hang",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "HNG",
+          "type": 19
+        }
+      },
+      "id": "hang",
+      "name": "Hang",
+      "short": "HNG"
+    }
+  ],
+  "module": "test/dyn-dsp-hang",
+  "params": {
+    "dn2": [],
+    "dt2": []
+  }
+}

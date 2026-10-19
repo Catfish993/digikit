@@ -13,7 +13,7 @@
     "packages/emulator/boot/src/capture.rs": 1,
     "packages/emulator/boot/src/card_file.rs": 1,
     "packages/emulator/boot/src/dsp_patch.rs": 1,
-    "packages/emulator/boot/src/runtime.rs": 11,
+    "packages/emulator/boot/src/runtime.rs": 12,
     "packages/emulator/boot/src/sharc_peer.rs": 3,
     "packages/emulator/boot/src/wav.rs": 1,
     "packages/emulator/coupled/src/bin/coupled_run.rs": 4,
@@ -25,8 +25,16 @@
     "packages/emulator/live/src/source.rs": 1,
     "packages/emulator/loader/src/lib.rs": 1,
     "packages/emulator/periph/src/trace.rs": 1,
+    "packages/emulator/plusdrive/src/export.rs": 27,
+    "packages/emulator/plusdrive/src/folder.rs": 11,
     "packages/emulator/plusdrive/src/project.rs": 2,
     "packages/emulator/sharc/src/cycmix.rs": 1,
-    "packages/emulator/sharc/src/fast/mod.rs": 3
+    "packages/emulator/sharc/src/fast/mod.rs": 3,
+    "packages/patchkit/src/devdata.rs": 2,
+    "packages/patchkit/src/devgen.rs": 2,
+    "packages/patchkit/src/modgen.rs": 2,
+    "packages/patchkit/src/module.rs": 3,
+    "packages/patchkit/src/port.rs": 2,
+    "packages/patchkit/src/typed.rs": 2
   }
 }

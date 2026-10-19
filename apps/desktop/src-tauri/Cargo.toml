@@ -21,6 +21,7 @@ elektron-native-boot = { path = "../../../packages/emulator/boot" }
 emmc-card = { path = "../../../packages/emulator/card" }
 digi-coupled = { path = "../../../packages/emulator/coupled" }
 digi-control = { path = "../../../packages/emulator/control" }
+dkupload = { path = "../../../packages/dkupload" }
 
 [dev-dependencies]
 sha2 = "0.10"

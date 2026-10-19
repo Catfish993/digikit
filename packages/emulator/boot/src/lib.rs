@@ -11,6 +11,7 @@ pub mod cfmix;
 mod common;
 mod cputime;
 mod guard;
+pub mod midi;
 pub mod dsp_patch;
 pub mod dsp_stream;
 pub mod panel_leds;
@@ -23,6 +24,7 @@ pub mod sharc_peer;
 mod softfloat;
 pub mod spikelog;
 mod telemetry;
+mod watch;
 pub mod wav;
 
 pub use capture::Dspi2Capture;
@@ -30,6 +32,7 @@ pub use periph::clock;
 pub use cputime::thread_cpu_ns;
 pub use guard::{GUARD_HIT_LIMIT, GuardHit, GuardRange, GuardReport, parse_guard_spec};
 pub use telemetry::DiagnosticReport;
+pub use watch::{After, FlushHit, WatchConfig, Writer, parse_ranges};
 
 pub use runtime::{
     CAPTURE_MAX, CallResult, CallSpec, Capture, Emulator, GuestCall, REG_LOG_MAX, RegHit, Snapshot,

@@ -9,6 +9,7 @@ use crate::apply;
 use crate::error::{Error, Result, sha256_hex};
 use crate::module::{Library, Module};
 use crate::port::Registry;
+use crate::typed::Models;
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -17,6 +18,9 @@ use std::collections::BTreeMap;
 struct Bundle {
     ports: Vec<String>,
     modules: Vec<BundleModule>,
+    /// Device files (`devices/*.toml`): the knob models the typed module sections are lowered with.
+    #[serde(default)]
+    devices: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -49,7 +53,9 @@ fn load(bundle: &[u8]) -> Result<(Registry, Library)> {
         };
         modules.push(Module::from_parts(&m.manifest, &read)?);
     }
-    Ok((reg, Library { modules }))
+    let mut lib = Library { modules };
+    lib.lower(&Models::from_texts(b.devices.iter().map(|s| s.as_str()))?)?;
+    Ok((reg, lib))
 }
 
 /// Apply the modules and return the patched image and the plan (for tests and the C ABI).

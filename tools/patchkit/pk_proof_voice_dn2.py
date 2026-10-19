@@ -7,7 +7,10 @@ Emulator only (finding 06, "Per-voice hook on DN2"). SINE is the machine type 7 
 machine menu; the track's frame words are forced with DSP_FRAME_POKE where a case needs another note):
 
   a  stock   with core/dsp-voice and test/dn2-sine patched in, FM TONE selected: the PCM is bit-identical to the stock
-             firmware's (the hook with no registered type changes nothing)
+             firmware's (the hook with no registered type changes nothing), up to the phase of the key release: a patched
+             image boots to a different sub-block phase of the scripted key (which image bytes decide, not the code that
+             runs), so the release can land one envelope step away. Then the audio before the release is bit-identical and
+             the tail is the stock tail times one constant (finding 45, "Phase sensitivity")
   b  pitch   SINE: note 60 gives 261.63 Hz, note 72 (pitch word 0x4800) 523.25 Hz
   c  stages  the level knob (LEVEL encoder), the filter frequency, the overdrive and the reverb send change the sine:
              the engine's per-track processing, FX and mix see the registered voice
@@ -34,6 +37,43 @@ from tools.patchkit import hook_ab  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
 from tools.patchkit.pk_proof_drive import aligned_equal, analyse  # noqa: E402
+
+
+def release_phase_equal(
+    ref: np.ndarray, test: np.ndarray, max_shift: int = 256
+) -> tuple[bool, str]:
+    """TEST equals REF before the key release and REF's tail times one constant after it.
+
+    The release lands one envelope step (a fraction of a DSP block) earlier or later when the patched image boots to another
+    phase of the scripted key; a decaying tail then differs by a constant factor exp(-step / tau) and nothing else. Mono
+    signals; the capture phase (whole frames) is searched like aligned_equal."""
+    for k in sorted(range(-max_shift, max_shift + 1), key=abs):
+        x, y = (ref[k:], test) if k >= 0 else (ref, test[-k:])
+        n = min(len(x), len(y))
+        x, y = x[:n], y[:n]
+        act = np.flatnonzero(np.abs(x) > 1e-6)
+        if len(act) <= 1000:
+            continue
+        a, b = act[0], act[-1]
+        bad = np.flatnonzero(x[a:b] != y[a:b])
+        if len(bad) == 0:
+            return True, f"identical, shift {k}"
+        first = a + int(bad[0])
+        if first < a + (b - a) // 2:
+            continue  # differs in the first half: not a release-phase effect
+        seg = np.flatnonzero(np.abs(x[first:b]) > 1e-3 * np.abs(x).max())
+        if len(seg) < 1000:
+            continue
+        r = y[first:b][seg] / x[first:b][seg]
+        late = r[len(r) // 2 :]  # past the release ramp itself
+        med = float(np.median(late))
+        if 0.9 < med < 1.1 and float(np.max(np.abs(late - med))) < 1e-4:
+            return (
+                True,
+                f"identical up to sample {first - a} of {b - a}, then x{med:.5f}, shift {k}",
+            )
+    return False, "no alignment"
+
 
 MODS = ["core/machines", "core/dsp-voice", "test/dn2-sine"]
 SINE_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, SINE (before MIDI)
@@ -120,10 +160,13 @@ class Proof(K.Proof):
         other[1::2] = got
         del full
         ok, shift = aligned_equal(inter, other)
+        detail = f"shift {shift}"
+        if not ok:
+            ok, detail = release_phase_equal(ref, got)
         self.check(
             "FM TONE with the hook patched in equals stock",
             ok and not analyse(inter).get("silent", True),
-            f"{analyse(inter).get('active_samples')} active samples, shift {shift}",
+            f"{analyse(inter).get('active_samples')} active samples, {detail}",
         )
 
     def part_b(self, notes: tuple[int, ...] = (60, 72)) -> None:

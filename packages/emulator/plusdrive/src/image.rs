@@ -1,23 +1,16 @@
-//! Sparse, sample-only +Drive image construction.
+//! The sparse image and the flat (root-only, samples-only) builders; the general builder is in `tree.rs`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use emmc_card::RandomAccessRead;
 
 use crate::{
-    ATTR_DIR, ATTR_FILE, BOOT_CONFIG_SECTOR, BOOT_CONFIG_SECTOR_2, CONTENT_AREA_SECTOR,
-    DEFAULT_CAPACITY_BLOCKS, DEFAULT_OFFSET01, FACTORY_TABLE_SECTOR, HASH_TABLE_SECTOR,
-    HEADER_SECTOR, ID_BITMAP_SECTOR, NativeInfo, NativeSample, PAGE, PAGE_BITMAP_SECTOR,
-    POOL_TABLE_SECTOR, RECORD_AREA_SECTOR, RECORD_SIZE, RESERVED_PAGES, ROOT_ID, ROOT_PARENT,
-    SECTOR, SUPERBLOCK_SECTOR, build_boot_config_record, build_directory,
-    build_factory_table_record, build_superblock, content_hash,
+    CONTENT_AREA_SECTOR, DEFAULT_CAPACITY_BLOCKS, NativeInfo, NativeSample, PAGE,
+    RECORD_AREA_SECTOR, RECORD_SIZE, SECTOR,
 };
 
 pub const MAX_SAMPLES: usize = 2048;
 pub const MAX_NATIVE_BYTES: usize = 256 * 1024 * 1024;
-const HEADER_MAGIC: u32 = 0xbeef_bace;
-const LOGICAL_HASH_PAGE: u32 = 0x10000;
-const FIRST_FILE_PAGE: u32 = RESERVED_PAGES;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SparseImageError {
@@ -163,19 +156,63 @@ pub struct BuiltImage {
     pub image: SparseImage,
     pub files: Vec<FileReport>,
     pub project: Option<crate::ProjectReport>,
+    /// Every directory, native sample and plain file, in id order.
+    pub entries: Vec<crate::EntryReport>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ImageError {
     ProjectRequiresSample,
-    TooManySamples { maximum: usize },
-    TooManyNativeBytes { maximum: usize },
-    InvalidName { file_name: String },
-    DuplicateName { name: Vec<u8> },
-    InvalidNativeSample { file_name: String },
+    TooManySamples {
+        maximum: usize,
+    },
+    TooManyNativeBytes {
+        maximum: usize,
+    },
+    InvalidName {
+        file_name: String,
+    },
+    DuplicateName {
+        name: Vec<u8>,
+    },
+    InvalidNativeSample {
+        file_name: String,
+    },
     CapacityOverflow,
-    FixedRegionsDoNotFit { capacity_blocks: u32 },
-    ContentDoesNotFit { capacity_blocks: u32 },
+    FixedRegionsDoNotFit {
+        capacity_blocks: u32,
+    },
+    ContentDoesNotFit {
+        capacity_blocks: u32,
+    },
+    SlotOutOfRange {
+        pool: &'static str,
+        slot: u32,
+    },
+    SlotSize {
+        pool: &'static str,
+        slot: u32,
+        bytes: usize,
+        limit: usize,
+    },
+    /// A layout the builder cannot write (its path filesystem constants are fixed to one superblock sector).
+    UnsupportedLayout(&'static str),
+    /// Files were given for a device without a path filesystem.
+    NoPathFilesystem,
+    /// A region sector that is not a boot or working project region of the layout.
+    UnknownRegion {
+        sector: u64,
+    },
+    RegionSize {
+        sector: u64,
+        bytes: usize,
+        limit: usize,
+    },
+    /// `digikit/` files for a device with no module store range.
+    NoStore,
+    Store(crate::StoreError),
+    /// `digikit/selection.txt` cannot be turned into a record.
+    Selection(String),
     Sparse(SparseImageError),
     Format(crate::FormatError),
     Project(crate::ProjectError),
@@ -197,15 +234,15 @@ impl From<crate::ProjectError> for ImageError {
     }
 }
 
-fn bytes_at_sector(sector: u64) -> Result<u64, ImageError> {
+pub(crate) fn bytes_at_sector(sector: u64) -> Result<u64, ImageError> {
     sector
         .checked_mul(SECTOR as u64)
         .ok_or(ImageError::CapacityOverflow)
 }
-fn page_offset(page: u32) -> Result<u64, ImageError> {
+pub(crate) fn page_offset(page: u32) -> Result<u64, ImageError> {
     bytes_at_sector(CONTENT_AREA_SECTOR + u64::from(page) * (PAGE / SECTOR) as u64)
 }
-fn record_offset(id: u32) -> Result<u64, ImageError> {
+pub(crate) fn record_offset(id: u32) -> Result<u64, ImageError> {
     let group = u64::from(id) / 256;
     let slot = u64::from(id) % 256;
     bytes_at_sector(RECORD_AREA_SECTOR + group * (PAGE / SECTOR) as u64).and_then(|base| {
@@ -213,41 +250,14 @@ fn record_offset(id: u32) -> Result<u64, ImageError> {
             .ok_or(ImageError::CapacityOverflow)
     })
 }
-fn put32(out: &mut [u8], offset: usize, value: u32) {
+pub(crate) fn put32(out: &mut [u8], offset: usize, value: u32) {
     out[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
 }
-fn put16(out: &mut [u8], offset: usize, value: u16) {
+pub(crate) fn put16(out: &mut [u8], offset: usize, value: u16) {
     out[offset..offset + 2].copy_from_slice(&value.to_be_bytes());
 }
 
-fn normalize_name(file_name: &str) -> Result<Vec<u8>, ImageError> {
-    let stem = if file_name.len() >= 4
-        && file_name.as_bytes()[file_name.len() - 4..].eq_ignore_ascii_case(b".wav")
-    {
-        &file_name[..file_name.len() - 4]
-    } else {
-        file_name
-    };
-    let mut result = Vec::with_capacity(stem.len().min(255));
-    for character in stem.chars() {
-        result.push(if character.is_ascii() {
-            character as u8
-        } else {
-            b'?'
-        });
-        if result.len() == 255 {
-            break;
-        }
-    }
-    if result.is_empty() || result == b"." || result == b".." {
-        return Err(ImageError::InvalidName {
-            file_name: file_name.to_owned(),
-        });
-    }
-    Ok(result)
-}
-
-fn validate_native(sample: &NativeSample) -> bool {
+pub(crate) fn validate_native(sample: &NativeSample) -> bool {
     let bytes = &sample.bytes;
     if bytes.len() < 0x50 || bytes[0] != 0 || !matches!(bytes[1], 0 | 1) || bytes[0x14] != 0x7f {
         return false;
@@ -263,37 +273,7 @@ fn validate_native(sample: &NativeSample) -> bool {
         && sample.info.frames == declared / (channels * 2)
 }
 
-fn record(
-    attr: u8,
-    size: u32,
-    parent: u32,
-    hash: u32,
-    seq: u32,
-    links: u16,
-    extents: &[(u32, u32, u32)],
-) -> Result<[u8; RECORD_SIZE], ImageError> {
-    if extents.len() > 8 {
-        return Err(ImageError::CapacityOverflow);
-    }
-    let mut out = [0; RECORD_SIZE];
-    out[0] = attr;
-    out[1] = DEFAULT_OFFSET01;
-    put16(&mut out, 2, links);
-    put32(&mut out, 4, size);
-    put32(&mut out, 8, parent);
-    put32(&mut out, 12, hash);
-    put32(&mut out, 16, seq);
-    put16(&mut out, 0x1e, extents.len() as u16);
-    for (index, &(logical, pages, physical)) in extents.iter().enumerate() {
-        let offset = 0x20 + index * 12;
-        put32(&mut out, offset, logical);
-        put32(&mut out, offset + 4, pages);
-        put32(&mut out, offset + 8, physical);
-    }
-    Ok(out)
-}
-
-fn bitmap(bits: impl IntoIterator<Item = u32>) -> Vec<u8> {
+pub(crate) fn bitmap(bits: impl IntoIterator<Item = u32>) -> Vec<u8> {
     let bits = bits.into_iter().collect::<Vec<_>>();
     let top = bits.iter().copied().max().unwrap_or(0) as usize;
     let mut output = vec![0; PAGE.max(((top >> 5) + 1) * 4)];
@@ -324,7 +304,7 @@ pub fn build_sample_image_with_project(
 }
 
 pub fn build_sample_image_with_options(
-    mut samples: Vec<NamedSample>,
+    samples: Vec<NamedSample>,
     capacity_blocks: u32,
     project_seed: Option<crate::ProjectSeed<'_>>,
 ) -> Result<BuiltImage, ImageError> {
@@ -336,209 +316,30 @@ pub fn build_sample_image_with_options(
             maximum: MAX_SAMPLES,
         });
     }
-    samples.sort_by(|left, right| left.file_name.cmp(&right.file_name));
-    let capacity = u64::from(capacity_blocks)
-        .checked_mul(SECTOR as u64)
-        .ok_or(ImageError::CapacityOverflow)?;
-    let factory_end = bytes_at_sector(FACTORY_TABLE_SECTOR)?
-        .checked_add(PAGE as u64)
-        .ok_or(ImageError::CapacityOverflow)?;
-    if capacity < factory_end {
-        return Err(ImageError::FixedRegionsDoNotFit { capacity_blocks });
-    }
-
-    let mut total = 0usize;
-    let mut normalized = BTreeSet::new();
-    for entry in &samples {
-        let name = normalize_name(&entry.file_name)?;
-        if !normalized.insert(name.clone()) {
-            return Err(ImageError::DuplicateName { name });
-        }
-        if !validate_native(&entry.sample) {
-            return Err(ImageError::InvalidNativeSample {
-                file_name: entry.file_name.clone(),
-            });
-        }
-        total =
-            total
-                .checked_add(entry.sample.bytes.len())
-                .ok_or(ImageError::TooManyNativeBytes {
-                    maximum: MAX_NATIVE_BYTES,
-                })?;
-        if total > MAX_NATIVE_BYTES {
-            return Err(ImageError::TooManyNativeBytes {
-                maximum: MAX_NATIVE_BYTES,
-            });
-        }
-    }
-    let mut final_page = FIRST_FILE_PAGE + 4;
-    for entry in &samples {
-        let pages = u32::try_from(entry.sample.bytes.len().div_ceil(PAGE).max(1))
-            .map_err(|_| ImageError::CapacityOverflow)?;
-        final_page = final_page
-            .checked_add(pages)
-            .ok_or(ImageError::CapacityOverflow)?;
-    }
-    if page_offset(final_page)? > capacity {
-        return Err(ImageError::ContentDoesNotFit { capacity_blocks });
-    }
-    if project_seed.is_some()
-        && [BOOT_CONFIG_SECTOR, BOOT_CONFIG_SECTOR_2]
+    let tree = crate::Tree {
+        files: samples
             .into_iter()
-            .any(|sector| {
-                bytes_at_sector(sector)
-                    .and_then(|offset| {
-                        offset
-                            .checked_add(crate::PROJECT_RECORD_SIZE as u64)
-                            .ok_or(ImageError::CapacityOverflow)
-                    })
-                    .map_or(true, |end| end > capacity)
+            .map(|entry| crate::TreeFile {
+                path: entry.file_name,
+                content: crate::Content::Native(entry.sample),
             })
-    {
-        return Err(ImageError::ContentDoesNotFit { capacity_blocks });
-    }
-
-    let mut image = SparseImage::new(capacity);
-    let mut header = [0; SECTOR];
-    put32(&mut header, 0, HEADER_MAGIC);
-    put32(&mut header, 4, 1);
-    header[8] = 1;
-    header[9] = 1;
-    image.write_at(bytes_at_sector(HEADER_SECTOR)?, &header)?;
-    image.write_at(bytes_at_sector(POOL_TABLE_SECTOR)?, &[0; SECTOR])?;
-    image.write_at(
-        bytes_at_sector(u64::from(SUPERBLOCK_SECTOR))?,
-        &build_superblock(),
-    )?;
-    image.write_at(
-        bytes_at_sector(FACTORY_TABLE_SECTOR)?,
-        &build_factory_table_record(),
-    )?;
-    let boot = build_boot_config_record();
-    image.write_at(bytes_at_sector(BOOT_CONFIG_SECTOR)?, &boot)?;
-    image.write_at(bytes_at_sector(BOOT_CONFIG_SECTOR_2)?, &boot)?;
-
-    let root_content_page = FIRST_FILE_PAGE;
-    let root_index_pages = root_content_page + 1;
-    let mut next_page = root_index_pages + 3;
-    let mut files = Vec::with_capacity(samples.len());
-    let mut children = Vec::with_capacity(samples.len());
-    for (offset, entry) in samples.into_iter().enumerate() {
-        let id = ROOT_ID
-            .checked_add(1 + offset as u32)
-            .ok_or(ImageError::CapacityOverflow)?;
-        let stored_name = normalize_name(&entry.file_name)?;
-        let byte_len = entry.sample.bytes.len();
-        let page_count = u32::try_from(byte_len.div_ceil(PAGE).max(1))
-            .map_err(|_| ImageError::CapacityOverflow)?;
-        let first_page = next_page;
-        next_page = next_page
-            .checked_add(page_count)
-            .ok_or(ImageError::CapacityOverflow)?;
-        for page in 0..page_count {
-            let start = page as usize * PAGE;
-            let end = byte_len.min(start + PAGE);
-            image.write_at(
-                page_offset(first_page + page)?,
-                &entry.sample.bytes[start..end],
-            )?;
-        }
-        let hash = content_hash(&entry.sample.bytes) | 1;
-        let size = u32::try_from(byte_len).map_err(|_| ImageError::CapacityOverflow)?;
-        image.write_at(
-            record_offset(id)?,
-            &record(
-                ATTR_FILE,
-                size,
-                ROOT_ID,
-                hash,
-                id,
-                1,
-                &[(0, page_count, first_page)],
-            )?,
-        )?;
-        let hash_offset =
-            bytes_at_sector(HASH_TABLE_SECTOR + (u64::from(id) >> 13) * (PAGE / SECTOR) as u64)?
-                .checked_add((u64::from(id) & 0x1fff) * 4)
-                .ok_or(ImageError::CapacityOverflow)?;
-        image.write_at(hash_offset, &hash.to_be_bytes())?;
-        let mut reference = [0; 16];
-        put32(&mut reference, 0, id);
-        put32(&mut reference, 4, hash);
-        put32(&mut reference, 8, size);
-        put32(&mut reference, 12, id);
-        children.push(crate::DirEntry {
-            id,
-            name: stored_name.clone(),
-            kind: ATTR_FILE,
-        });
-        files.push(FileReport {
-            file_name: entry.file_name,
-            stored_name,
-            id,
-            seq: id,
-            hash,
-            reference,
-            first_page,
-            page_count,
-            info: entry.sample.info,
-        });
-    }
-    let pages = build_directory(ROOT_ID, ROOT_ID, &children)?;
-    image.write_at(page_offset(root_content_page)?, &pages.contents)?;
-    image.write_at(page_offset(root_index_pages)?, &pages.by_hash)?;
-    image.write_at(page_offset(root_index_pages + 1)?, &pages.listing)?;
-    image.write_at(page_offset(root_index_pages + 2)?, &pages.by_id)?;
-    image.write_at(
-        record_offset(ROOT_ID)?,
-        &record(
-            ATTR_DIR,
-            PAGE as u32,
-            ROOT_PARENT,
-            0,
-            ROOT_ID,
-            2,
-            &[
-                (0, 1, root_content_page),
-                (LOGICAL_HASH_PAGE, 3, root_index_pages),
-            ],
-        )?,
-    )?;
-    image.write_at(
-        bytes_at_sector(ID_BITMAP_SECTOR)?,
-        &bitmap(
-            [0, 1, ROOT_ID]
-                .into_iter()
-                .chain(files.iter().map(|file| file.id)),
-        ),
-    )?;
-    image.write_at(bytes_at_sector(PAGE_BITMAP_SECTOR)?, &bitmap(0..next_page))?;
-    let project = if let Some(seed) = project_seed {
-        let sequence = ROOT_ID
-            .checked_add(1 + files.len() as u32)
-            .ok_or(ImageError::CapacityOverflow)?;
-        let (record, report) = crate::build_project_record(
-            seed,
-            &files.iter().map(|file| file.reference).collect::<Vec<_>>(),
-            sequence,
-        )?;
-        image.replace_at(bytes_at_sector(BOOT_CONFIG_SECTOR)?, &record)?;
-        image.replace_at(bytes_at_sector(BOOT_CONFIG_SECTOR_2)?, &record)?;
-        Some(report)
-    } else {
-        None
+            .collect(),
+        ..Default::default()
     };
-    Ok(BuiltImage {
-        image,
-        files,
-        project,
-    })
+    crate::build_tree_image(
+        tree,
+        crate::TreeOptions {
+            capacity_blocks,
+            ..Default::default()
+        },
+        project_seed,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::build_native_sample;
+    use crate::{ATTR_DIR, ROOT_ID, build_native_sample};
 
     fn sample(file_name: &str, pcm: &[i16]) -> NamedSample {
         let mut raw = Vec::with_capacity(pcm.len() * 2);
@@ -584,8 +385,11 @@ mod tests {
         let mut end = [7; 4];
         assert_eq!(image.read_at(u64::from(u32::MAX) + 30, &mut end), 2);
         assert_eq!(&end[..2], &[0, 0]);
-        assert_eq!(normalize_name("aéé"), Ok(b"a??".to_vec()));
-        assert_eq!(normalize_name("aéé.wav"), Ok(b"a??".to_vec()));
+        assert_eq!(crate::tree::stored_name_native("aéé"), Ok(b"a??".to_vec()));
+        assert_eq!(
+            crate::tree::stored_name_native("aéé.wav"),
+            Ok(b"a??".to_vec())
+        );
     }
 
     #[test]
@@ -604,7 +408,7 @@ mod tests {
         assert_eq!(result.files[0].first_page, 0x7c);
         let mut header = [0; 10];
         result.image.read_at(0, &mut header);
-        assert_eq!(&header[..4], &HEADER_MAGIC.to_be_bytes());
+        assert_eq!(&header[..4], &crate::tree::HEADER_MAGIC.to_be_bytes());
         assert_eq!(&header[8..], &[1, 1]);
         let mut root = [0; RECORD_SIZE];
         result

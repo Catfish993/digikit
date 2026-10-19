@@ -275,3 +275,15 @@ body {
   padding-top: 12px;
   border-top: 1px solid #23262b;
 }
+
+.modules-sheet {
+  position: absolute;
+  top: 56px;
+  right: 12px;
+  width: min(460px, calc(100% - 24px));
+  max-height: calc(100% - 110px);
+  overflow-y: auto;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  z-index: 6;
+}

@@ -1,0 +1,11 @@
+# The Rust host Session (packages/dkupload, the code of the desktop Modules panel and the web page) against the device side in the emulator:
+# INFO, LIST, put of a built module and of a three-chunk file, replace, DELETE, E_HASH, a lost DATA, END and INFO reply, CLEAR. Each step is
+# compared with the Python tool's LIST and the card read back by plusdrive.
+[scenario]
+name = "upload-rust"
+kind = "upload"
+devices = ["dt2", "dn2"]
+tier = "full"
+
+[upload]
+part = "rust"

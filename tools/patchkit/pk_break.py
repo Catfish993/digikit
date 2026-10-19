@@ -39,8 +39,8 @@ BREAKS = {
     ),
     "rows": (
         "machines/pluck/module.toml",
-        'f1 = "params.pluck_decay.index"\nf2 = "params.pluck_pick.index"',
-        'f1 = "params.pluck_pick.index"\nf2 = "params.pluck_decay.index"',
+        'knobs = [0xca, "pluck_decay", "pluck_pick", 0,',
+        'knobs = [0xca, "pluck_pick", "pluck_decay", 0,',
     ),
 }
 FIRMWARE = {

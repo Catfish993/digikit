@@ -31,12 +31,13 @@ impl Dt2Seed {
         let (device, profile, _) = registry
             .boot_for_main(&digest, &main)
             .map_err(|e| e.to_string())?;
-        if device.short != "dt2" {
-            return Err("project seeding is DT2-only".into());
-        }
-        let contract = profile
-            .plusdrive_project_contract
-            .ok_or("firmware has no +Drive project contract")?;
+        // Seeding needs a project contract in the device file (`plusdrive_project_contract` of the firmware); only the DT2 has one.
+        let contract = profile.plusdrive_project_contract.ok_or_else(|| {
+            format!(
+                "project seeding is not available for {} {}: its device file has no plusdrive_project_contract",
+                device.short, profile.version
+            )
+        })?;
         Ok(Self { main, contract })
     }
 

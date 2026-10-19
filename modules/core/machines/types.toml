@@ -13,16 +13,38 @@
 # - A new machine takes the next free number of its device (`mise run patch:new` does that); a removed machine's number
 #   stays retired, so an old project never loads as another machine.
 
+# - Run-time machines (modules with `dynamic = true`, loaded by the digikit runtime from the card) take their permanent number
+#   from `[<dev>.dynamic]`, in the range `dynamic_first ..= last`. `core/dynreg` reserves one row per number of that range
+#   (keys "core/dynreg:dyn<N>" in `alloc`); a built-in machine never takes a number in it.
+
 [dt2]
 last = 23
+dynamic_first = 16
 
 [dt2.alloc]
 "machines/xslice:xslice" = 7
 "test/machine-clone:xclone" = 8
 "machines/pluck:pluck" = 9
+"test/twin-xslice:xslice_d" = 10
+"core/dynreg:dyn16" = 16
+"core/dynreg:dyn17" = 17
+"core/dynreg:dyn18" = 18
+"core/dynreg:dyn19" = 19
+"core/dynreg:dyn20" = 20
+"core/dynreg:dyn21" = 21
+"core/dynreg:dyn22" = 22
+"core/dynreg:dyn23" = 23
+
+[dt2.dynamic]
+"test/dyn-xslice:xslice_d" = 16
+"test/dyn-params:dynp" = 17
+"test/dyn-pluck:pluck" = 18
+"test/dyn-dsp-hang:hang" = 19
+"test/dyn-guard-nan:guardnan" = 20
 
 [dn2]
 last = 23
+dynamic_first = 16
 
 [dn2.alloc]
 "test/dn2-clone:fmclone" = 5
@@ -30,3 +52,16 @@ last = 23
 "test/dn2-sine:dn2sine" = 7
 "test/dn2-edge:dn2edge" = 8
 "machines/pluck:pluck" = 9
+"test/twin-dn2:dyn_pluck" = 10
+"core/dynreg:dyn16" = 16
+"core/dynreg:dyn17" = 17
+"core/dynreg:dyn18" = 18
+"core/dynreg:dyn19" = 19
+"core/dynreg:dyn20" = 20
+"core/dynreg:dyn21" = 21
+"core/dynreg:dyn22" = 22
+"core/dynreg:dyn23" = 23
+
+[dn2.dynamic]
+"test/dyn-dn2:dyn_pluck" = 16
+"test/dyn-pluck:pluck" = 17

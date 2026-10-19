@@ -1,0 +1,600 @@
+//! `.dkm`: a module file the digikit runtime loads from the card store at run time (docs/design/digikit-dkm.md).
+//!
+//! `pack` turns a ColdFire `.dko` object into the file; `Dkm::parse` reads and checks one; `Dkm::image` is the reference
+//! loader (copy, relocate) that the runtime's own Rust loader (modules/core/runtime) must agree with. All integers are big
+//! endian. The file holds no firmware address: absolute references are `base + offset` (kind 0) or a named import (kind 1).
+
+use crate::dko::Dko;
+use crate::error::*;
+use crate::link;
+use std::collections::{BTreeMap, BTreeSet};
+
+pub const MAGIC: u32 = 0x444b_4d46; // "DKMF"
+pub const FORMAT: u32 = 1;
+pub const HEADER: usize = 0xa0;
+pub const NONE: u32 = 0xffff_ffff;
+pub const SLOTS: u32 = 8;
+pub const NAME_LEN: usize = 32;
+pub const IMPORT_LEN: usize = 32;
+/// Largest module file the v0 runtime stages (its staging buffer).
+pub const MAX_FILE: usize = 64 * 1024;
+/// The runtime version this packer targets (`dkrt_sdk::RUNTIME_VERSION`).
+pub const RUNTIME_VERSION: u32 = 1;
+
+// header field offsets
+pub const H_SIZE: usize = 0x08;
+pub const H_HDRSIZE: usize = 0x0c;
+pub const H_SHA: usize = 0x10;
+pub const H_RUNTIME: usize = 0x30;
+pub const H_VERSION: usize = 0x34;
+pub const H_FLAGS: usize = 0x38;
+pub const H_NAME: usize = 0x40;
+pub const H_IMAGE_OFF: usize = 0x60;
+pub const H_IMAGE_SIZE: usize = 0x64;
+pub const H_BSS: usize = 0x68;
+pub const H_ALIGN: usize = 0x6c;
+pub const H_RELOC_OFF: usize = 0x70;
+pub const H_RELOC_N: usize = 0x74;
+pub const H_IMPORT_OFF: usize = 0x78;
+pub const H_IMPORT_N: usize = 0x7c;
+pub const H_INIT: usize = 0x80;
+pub const H_FINI: usize = 0x84;
+pub const H_SLOT_OFF: usize = 0x88;
+pub const H_SLOT_N: usize = 0x8c;
+pub const H_REG_OFF: usize = 0x90;
+pub const H_REG_SIZE: usize = 0x94;
+pub const H_DSP_OFF: usize = 0x98;
+pub const H_DSP_SIZE: usize = 0x9c;
+/// The runtime version that loads a DSP section (`dkrt_sdk::RUNTIME_VERSION` is at least this).
+pub const RUNTIME_DSP: u32 = 5; // DSP sections of version 2 (voices with knob ranges, finding 51); a runtime 2 to 4 loads version 1 only
+
+pub struct Options {
+    pub name: String,
+    /// major << 16 | minor << 8 | patch
+    pub version: u32,
+    pub runtime_min: u32,
+}
+
+/// "1.2.3" -> 0x010203
+pub fn parse_version(s: &str) -> Result<u32> {
+    let p: Vec<&str> = s.split('.').collect();
+    if p.len() != 3 {
+        return Err(err!("version {s:?}: expected major.minor.patch"));
+    }
+    let mut v = 0u32;
+    for x in p {
+        let n: u32 = x.parse().map_err(|_| err!("version {s:?}: bad number"))?;
+        if n > 255 {
+            return Err(err!("version {s:?}: a part is over 255"));
+        }
+        v = v << 8 | n;
+    }
+    Ok(v)
+}
+
+fn put(b: &mut [u8], off: usize, v: u32) {
+    b[off..off + 4].copy_from_slice(&v.to_be_bytes());
+}
+fn get(b: &[u8], off: usize) -> u32 {
+    u32::from_be_bytes(b[off..off + 4].try_into().unwrap())
+}
+fn align_up(x: usize, a: usize) -> usize {
+    x.div_ceil(a) * a
+}
+
+fn file_sha(file: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(&file[..H_SHA]);
+    h.update([0u8; 32]);
+    h.update(&file[H_SHA + 32..]);
+    h.finalize().into()
+}
+
+fn valid_name(n: &str) -> bool {
+    !n.is_empty()
+        && n.len() < NAME_LEN
+        && n.bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.' | b'/'))
+}
+
+/// Pack a ColdFire object. Exports by name: `dkm_init`, `dkm_fini`, `dkm_slot_<n>` (n < 8). Every other undefined symbol is
+/// an import resolved by the runtime's table at load time; only 32-bit absolute relocations may name one.
+pub fn pack(obj: &Dko, o: &Options) -> Result<Vec<u8>> {
+    pack_with(Some(obj), &[], o)
+}
+
+/// The image of a data-only module: `dkm_init` is `moveq #0,d0; rts`. The `register` records do the work.
+const STUB_IMAGE: [u8; 4] = [0x70, 0x00, 0x4e, 0x75];
+
+/// Pack an object (or none: a data-only module) with `register` records (see [`register`]).
+pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> {
+    pack_full(obj, reg, &[], o)
+}
+
+/// Pack an object (or none), `register` records and a DSP section (see [`crate::dkmdsp`]; empty: none). A file with a DSP section
+/// needs a runtime of version [`RUNTIME_DSP`] or later.
+pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Result<Vec<u8>> {
+    if let Some(obj) = obj {
+        obj.require_isa_checked()?;
+    }
+    let stub = Dko {
+        format: crate::dko::FORMAT,
+        arch: "cf".into(),
+        source_sha256: "0".repeat(64),
+        toolchain: Default::default(),
+        sections: vec![crate::dko::DkoSection {
+            name: ".text".into(),
+            kind: "text".into(),
+            align: 4,
+            size: STUB_IMAGE.len() as u32,
+            hex: hex(&STUB_IMAGE),
+        }],
+        symbols: vec![crate::dko::DkoSymbol {
+            name: "dkm_init".into(),
+            section: Some(".text".into()),
+            value: 0,
+            global: true,
+        }],
+        relocs: vec![],
+    };
+    let obj = obj.unwrap_or(&stub);
+    if obj.arch != "cf" {
+        return Err(err!(
+            "a .dkm holds ColdFire code; the object is {}",
+            obj.arch
+        ));
+    }
+    if !valid_name(&o.name) {
+        return Err(err!(
+            "module name {:?}: 1 to 31 characters of A-Z a-z 0-9 - _ . /",
+            o.name
+        ));
+    }
+    let defined: BTreeSet<&str> = obj
+        .symbols
+        .iter()
+        .filter(|s| s.section.is_some())
+        .map(|s| s.name.as_str())
+        .collect();
+    let mut imports: BTreeSet<&str> = BTreeSet::new();
+    for r in &obj.relocs {
+        if !defined.contains(r.symbol.as_str()) {
+            if r.rtype != "cf.32" {
+                return Err(err!(
+                    "relocation {} against the import {} in {}: only cf.32 can name an import (a PC-relative reference \
+                     to the firmware would depend on where the module is loaded)",
+                    r.rtype,
+                    r.symbol,
+                    r.section
+                ));
+            }
+            imports.insert(r.symbol.as_str());
+        }
+    }
+    let imports: Vec<&str> = imports.into_iter().collect();
+    for n in &imports {
+        if n.len() >= IMPORT_LEN {
+            return Err(err!("import name {n} is longer than {}", IMPORT_LEN - 1));
+        }
+    }
+    // Link at base 0 with every import at 0: the linker leaves S + A in each word, which is exactly what the loader adds
+    // the base (or the import's address) to. PC-relative references inside the module are final.
+    let externs: BTreeMap<String, u64> = imports.iter().map(|n| (n.to_string(), 0)).collect();
+    let linked = link::link(obj, 0, &externs)?;
+    let image = linked.image.clone();
+    let kind_of: BTreeMap<&str, &str> = obj
+        .sections
+        .iter()
+        .map(|s| (s.name.as_str(), s.kind.as_str()))
+        .collect();
+    let mut relocs: Vec<(u32, u32)> = vec![];
+    for r in &obj.relocs {
+        let sec = kind_of
+            .get(r.section.as_str())
+            .ok_or_else(|| err!("reloc in unknown section {}", r.section))?;
+        if *sec == "bss" {
+            return Err(err!("relocation in bss section {}", r.section));
+        }
+        let off = linked.places[&r.section] + r.offset;
+        if off + 4 > image.len() as u64 && r.rtype == "cf.32" {
+            return Err(err!("relocation at {off:#x} is past the image"));
+        }
+        if let Some(i) = imports.iter().position(|n| *n == r.symbol) {
+            relocs.push((off as u32, 1 << 24 | i as u32));
+        } else if r.rtype == "cf.32" {
+            relocs.push((off as u32, 0));
+        }
+    }
+    relocs.sort();
+    let sym = |n: &str| -> Result<Option<u32>> {
+        match linked.symbols.get(n) {
+            None => Ok(None),
+            Some(v) if *v < image.len() as u64 => Ok(Some(*v as u32)),
+            Some(v) => Err(err!("{n} = {v:#x} is outside the loaded image")),
+        }
+    };
+    let init = sym("dkm_init")?;
+    let fini = sym("dkm_fini")?;
+    let mut slots: Vec<(u32, u32)> = vec![];
+    for n in 0..SLOTS {
+        if let Some(v) = sym(&format!("dkm_slot_{n}"))? {
+            slots.push((n, v));
+        }
+    }
+    for s in &obj.symbols {
+        if let Some(n) = s.name.strip_prefix("dkm_slot_")
+            && s.section.is_some()
+            && n.parse::<u32>().map(|n| n >= SLOTS).unwrap_or(true)
+        {
+            return Err(err!("{}: slot numbers are 0 to {}", s.name, SLOTS - 1));
+        }
+    }
+    if init.is_none() && fini.is_none() && slots.is_empty() {
+        return Err(err!(
+            "the object exports none of dkm_init, dkm_fini, dkm_slot_<n>"
+        ));
+    }
+    let align = obj
+        .sections
+        .iter()
+        .filter(|s| s.kind != "bss" || s.size > 0)
+        .map(|s| s.align)
+        .max()
+        .unwrap_or(4)
+        .clamp(4, 16);
+    if obj.sections.iter().any(|s| s.align > 16) {
+        return Err(err!("a section needs alignment over 16 (the arena's)"));
+    }
+
+    let import_off = HEADER;
+    let reloc_off = import_off + imports.len() * IMPORT_LEN;
+    let slot_off = reloc_off + relocs.len() * 8;
+    let reg_off = slot_off + slots.len() * 8;
+    let reg_size = reg.len();
+    let dsp_off = align_up(reg_off + reg_size, 16);
+    let image_off = align_up(dsp_off + dsp.len(), 16);
+    let total = image_off + image.len();
+    if total > MAX_FILE {
+        return Err(err!(
+            "the module file is {total} bytes; the v0 runtime stages {MAX_FILE}"
+        ));
+    }
+    let mut f = vec![0u8; total];
+    put(&mut f, 0, MAGIC);
+    put(&mut f, 4, FORMAT);
+    put(&mut f, H_SIZE, total as u32);
+    put(&mut f, H_HDRSIZE, HEADER as u32);
+    put(
+        &mut f,
+        H_RUNTIME,
+        if dsp.is_empty() {
+            o.runtime_min
+        } else {
+            o.runtime_min.max(RUNTIME_DSP)
+        },
+    );
+    put(&mut f, H_VERSION, o.version);
+    f[H_NAME..H_NAME + o.name.len()].copy_from_slice(o.name.as_bytes());
+    put(&mut f, H_IMAGE_OFF, image_off as u32);
+    put(&mut f, H_IMAGE_SIZE, image.len() as u32);
+    put(&mut f, H_BSS, linked.bss_size as u32);
+    put(&mut f, H_ALIGN, align);
+    put(&mut f, H_RELOC_OFF, reloc_off as u32);
+    put(&mut f, H_RELOC_N, relocs.len() as u32);
+    put(&mut f, H_IMPORT_OFF, import_off as u32);
+    put(&mut f, H_IMPORT_N, imports.len() as u32);
+    put(&mut f, H_INIT, init.unwrap_or(NONE));
+    put(&mut f, H_FINI, fini.unwrap_or(NONE));
+    put(&mut f, H_SLOT_OFF, slot_off as u32);
+    put(&mut f, H_SLOT_N, slots.len() as u32);
+    put(&mut f, H_REG_OFF, reg_off as u32);
+    put(&mut f, H_REG_SIZE, reg_size as u32);
+    for (i, n) in imports.iter().enumerate() {
+        let at = import_off + i * IMPORT_LEN;
+        f[at..at + n.len()].copy_from_slice(n.as_bytes());
+    }
+    for (i, (off, k)) in relocs.iter().enumerate() {
+        put(&mut f, reloc_off + i * 8, *off);
+        put(&mut f, reloc_off + i * 8 + 4, *k);
+    }
+    for (i, (n, v)) in slots.iter().enumerate() {
+        put(&mut f, slot_off + i * 8, *n);
+        put(&mut f, slot_off + i * 8 + 4, *v);
+    }
+    f[reg_off..reg_off + reg_size].copy_from_slice(reg);
+    if !dsp.is_empty() {
+        put(&mut f, H_DSP_OFF, dsp_off as u32);
+        put(&mut f, H_DSP_SIZE, dsp.len() as u32);
+        f[dsp_off..dsp_off + dsp.len()].copy_from_slice(dsp);
+    }
+    f[image_off..].copy_from_slice(&image);
+    let sha = file_sha(&f);
+    f[H_SHA..H_SHA + 32].copy_from_slice(&sha);
+    Ok(f)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dkm {
+    pub name: String,
+    pub version: u32,
+    pub runtime_min: u32,
+    pub sha256: String,
+    pub image: Vec<u8>,
+    pub bss: u32,
+    pub align: u32,
+    /// (offset in the loaded memory, 0 = base-relative or 1 + import index)
+    pub relocs: Vec<(u32, Option<usize>)>,
+    pub imports: Vec<String>,
+    pub init: Option<u32>,
+    pub fini: Option<u32>,
+    pub slots: Vec<(u32, u32)>,
+    pub register: Vec<u8>,
+    /// The DSP section, as bytes (empty: none); parse it with [`crate::dkmdsp::DspSection::parse`].
+    pub dsp: Vec<u8>,
+}
+
+impl Dkm {
+    /// Parse and check a file the way the runtime does: magic, sizes, bounds, sha256.
+    pub fn parse(f: &[u8]) -> Result<Dkm> {
+        if f.len() < HEADER || get(f, 0) != MAGIC {
+            return Err(err!("not a .dkm file (magic)"));
+        }
+        if get(f, 4) != FORMAT {
+            return Err(err!("format {} is not supported", get(f, 4)));
+        }
+        if get(f, H_SIZE) as usize != f.len() || get(f, H_HDRSIZE) as usize != HEADER {
+            return Err(err!("size fields do not match the file"));
+        }
+        if file_sha(f) != f[H_SHA..H_SHA + 32] {
+            return Err(err!("sha256 mismatch"));
+        }
+        let rng = |off: usize, n: usize| -> Result<&[u8]> {
+            f.get(off..off.checked_add(n).ok_or_else(|| err!("overflow"))?)
+                .ok_or_else(|| err!("table at {off:#x}+{n:#x} is outside the file"))
+        };
+        let name_raw = &f[H_NAME..H_NAME + NAME_LEN];
+        let nl = name_raw.iter().position(|b| *b == 0).unwrap_or(NAME_LEN);
+        let name =
+            String::from_utf8(name_raw[..nl].to_vec()).map_err(|_| err!("name is not UTF-8"))?;
+        if !valid_name(&name) {
+            return Err(err!("bad module name {name:?}"));
+        }
+        let image_size = get(f, H_IMAGE_SIZE) as usize;
+        let image = rng(get(f, H_IMAGE_OFF) as usize, image_size)?.to_vec();
+        let imp_n = get(f, H_IMPORT_N) as usize;
+        let imp = rng(get(f, H_IMPORT_OFF) as usize, imp_n * IMPORT_LEN)?;
+        let imports = (0..imp_n)
+            .map(|i| {
+                let e = &imp[i * IMPORT_LEN..(i + 1) * IMPORT_LEN];
+                let l = e.iter().position(|b| *b == 0).unwrap_or(IMPORT_LEN);
+                String::from_utf8_lossy(&e[..l]).into_owned()
+            })
+            .collect::<Vec<_>>();
+        let rel_n = get(f, H_RELOC_N) as usize;
+        let rel = rng(get(f, H_RELOC_OFF) as usize, rel_n * 8)?;
+        let mut relocs = vec![];
+        for i in 0..rel_n {
+            let off = get(rel, i * 8);
+            let k = get(rel, i * 8 + 4);
+            if off as usize + 4 > image_size {
+                return Err(err!("relocation at {off:#x} is outside the image"));
+            }
+            relocs.push((
+                off,
+                match k >> 24 {
+                    0 => None,
+                    1 if ((k & 0xff_ffff) as usize) < imports.len() => {
+                        Some((k & 0xff_ffff) as usize)
+                    }
+                    _ => return Err(err!("bad relocation kind {k:#x}")),
+                },
+            ));
+        }
+        let slot_n = get(f, H_SLOT_N) as usize;
+        let sl = rng(get(f, H_SLOT_OFF) as usize, slot_n * 8)?;
+        let slots = (0..slot_n)
+            .map(|i| (get(sl, i * 8), get(sl, i * 8 + 4)))
+            .collect::<Vec<_>>();
+        let opt = |v: u32| (v != NONE).then_some(v);
+        Ok(Dkm {
+            name,
+            version: get(f, H_VERSION),
+            runtime_min: get(f, H_RUNTIME),
+            sha256: hex(&f[H_SHA..H_SHA + 32]),
+            image,
+            bss: get(f, H_BSS),
+            align: get(f, H_ALIGN),
+            relocs,
+            imports,
+            init: opt(get(f, H_INIT)),
+            fini: opt(get(f, H_FINI)),
+            slots,
+            register: rng(get(f, H_REG_OFF) as usize, get(f, H_REG_SIZE) as usize)?.to_vec(),
+            dsp: rng(get(f, H_DSP_OFF) as usize, get(f, H_DSP_SIZE) as usize)?.to_vec(),
+        })
+    }
+
+    /// The reference loader: the module's memory at `base` (image, then zeroed bss), imports resolved by `resolve`.
+    pub fn memory(&self, base: u32, resolve: &dyn Fn(&str) -> Option<u32>) -> Result<Vec<u8>> {
+        let mut m = self.image.clone();
+        m.resize(self.image.len() + self.bss as usize, 0);
+        for (off, k) in &self.relocs {
+            let add = match k {
+                None => base,
+                Some(i) => resolve(&self.imports[*i])
+                    .ok_or_else(|| err!("import {} is not provided", self.imports[*i]))?,
+            };
+            let at = *off as usize;
+            let v = u32::from_be_bytes(m[at..at + 4].try_into().unwrap()).wrapping_add(add);
+            m[at..at + 4].copy_from_slice(&v.to_be_bytes());
+        }
+        Ok(m)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dko::*;
+
+    fn sec(name: &str, kind: &str, align: u32, bytes: &[u8]) -> DkoSection {
+        DkoSection {
+            name: name.into(),
+            kind: kind.into(),
+            align,
+            size: bytes.len() as u32,
+            hex: hex(bytes),
+        }
+    }
+    fn sym(name: &str, section: Option<&str>, value: u64) -> DkoSymbol {
+        DkoSymbol {
+            name: name.into(),
+            section: section.map(String::from),
+            value,
+            global: true,
+        }
+    }
+    fn rel(section: &str, offset: u64, t: &str, symbol: &str, addend: i64) -> DkoReloc {
+        DkoReloc {
+            section: section.into(),
+            offset,
+            rtype: t.into(),
+            symbol: symbol.into(),
+            addend,
+        }
+    }
+    /// text: `jsr imp.l; jsr f.l; rts` plus a data pointer to bss and to an import with an addend. Carries the build's ISA check record.
+    fn object() -> Dko {
+        let mut o = unstamped();
+        o.stamp_isa();
+        o
+    }
+    fn unstamped() -> Dko {
+        let text = [0x4e, 0xb9, 0, 0, 0, 0, 0x4e, 0xb9, 0, 0, 0, 0, 0x4e, 0x75];
+        Dko {
+            format: FORMAT_DKO,
+            arch: "cf".into(),
+            source_sha256: "0".repeat(64),
+            toolchain: Default::default(),
+            sections: vec![
+                sec(".text", "text", 2, &text),
+                sec(".data", "data", 4, &[0; 8]),
+                DkoSection {
+                    name: ".bss".into(),
+                    kind: "bss".into(),
+                    align: 4,
+                    size: 12,
+                    hex: String::new(),
+                },
+            ],
+            symbols: vec![
+                sym("dkm_init", Some(".text"), 12),
+                sym("dkm_slot_0", Some(".text"), 6),
+                sym("counter", Some(".bss"), 4),
+                sym("fw_thing", None, 0),
+            ],
+            relocs: vec![
+                rel(".text", 2, "cf.32", "fw_thing", 0),
+                rel(".text", 8, "cf.32", "dkm_slot_0", 0),
+                rel(".data", 0, "cf.32", "counter", 0),
+                rel(".data", 4, "cf.32", "fw_thing", 0x10),
+            ],
+        }
+    }
+    const FORMAT_DKO: u32 = crate::dko::FORMAT;
+
+    fn opts() -> Options {
+        Options {
+            name: "test/x".into(),
+            version: 0x010203,
+            runtime_min: 1,
+        }
+    }
+
+    #[test]
+    fn pack_parse_and_relocate_equal_the_linker() {
+        let o = object();
+        let f = pack(&o, &opts()).unwrap();
+        let d = Dkm::parse(&f).unwrap();
+        assert_eq!(d.name, "test/x");
+        assert_eq!(d.imports, vec!["fw_thing"]);
+        assert_eq!(d.init, Some(12));
+        assert_eq!(d.slots, vec![(0, 6)]);
+        assert_eq!(d.bss, 12);
+        // the loader at any base equals the patch-time linker at that base with the import at its address
+        for base in [0x47e0_0000u32, 0x47e1_2340] {
+            let mem = d
+                .memory(base, &|n| (n == "fw_thing").then_some(0x4012_deda))
+                .unwrap();
+            let ext = BTreeMap::from([("fw_thing".to_string(), 0x4012_dedau64)]);
+            let l = link::link(&o, base as u64, &ext).unwrap();
+            assert_eq!(&mem[..l.image.len()], &l.image[..]);
+            assert!(mem[l.image.len()..].iter().all(|b| *b == 0));
+            assert_eq!(mem.len() as u64, l.image.len() as u64 + l.bss_size);
+        }
+    }
+
+    #[test]
+    fn corruption_and_bad_inputs_are_refused() {
+        let f = pack(&object(), &opts()).unwrap();
+        let mut bad = f.clone();
+        let n = bad.len();
+        bad[n - 1] ^= 1;
+        assert!(Dkm::parse(&bad).unwrap_err().0.contains("sha256"));
+        let mut bad = f.clone();
+        bad[0] ^= 1;
+        assert!(Dkm::parse(&bad).unwrap_err().0.contains("magic"));
+        let mut o = object();
+        o.relocs.push(rel(".text", 2, "cf.pc32", "fw_thing", 0));
+        o.stamp_isa();
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("PC-relative"));
+        let mut o = object();
+        o.symbols.push(sym("dkm_slot_9", Some(".text"), 6));
+        o.stamp_isa();
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("slot numbers"));
+        let mut o = Options {
+            name: "bad name".into(),
+            ..opts()
+        };
+        assert!(pack(&object(), &o).is_err());
+        o.name = "x".repeat(32);
+        assert!(pack(&object(), &o).is_err());
+    }
+
+    #[test]
+    fn packing_is_deterministic() {
+        assert_eq!(
+            pack(&object(), &opts()).unwrap(),
+            pack(&object(), &opts()).unwrap()
+        );
+    }
+
+    #[test]
+    fn an_object_that_has_not_passed_the_isa_check_is_refused() {
+        // no record: made by hand, or built before the record existed
+        let e = pack(&unstamped(), &opts()).unwrap_err().0;
+        assert!(e.contains("no ISA check record"), "{e}");
+        // tampered: a byte of the code, a relocation, a symbol, a section's alignment changed after the build
+        let mut o = object();
+        let mut b = unhex(&o.sections[0].hex).unwrap();
+        b[13] ^= 0x04; // `rts` becomes another word
+        o.sections[0].hex = hex(&b);
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("does not match"));
+        let mut o = object();
+        o.relocs[0].addend = 4;
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("does not match"));
+        let mut o = object();
+        o.symbols[1].value = 12;
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("does not match"));
+        let mut o = object();
+        o.sections[1].align = 8;
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("does not match"));
+        // a record copied from another object does not help
+        let mut o = object();
+        o.toolchain.insert(ISA_CHECK_KEY.into(), "0".repeat(64));
+        assert!(pack(&o, &opts()).is_err());
+        // the untouched object packs
+        assert!(pack(&object(), &opts()).is_ok());
+    }
+}

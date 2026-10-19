@@ -1039,6 +1039,55 @@ pub fn _canonical_dm_address(s: &St, address: Int, width: Int, for_write: bool) 
     Ok(Some(address))
 }
 
+/// `SHARC_UNINIT=<hex seed>` (opt-in, default off): a read of bytes that nothing
+/// loaded or wrote returns a non-zero pattern, a function of the address and the
+/// seed, instead of zero (real SRAM holds whatever it powered up with; the model
+/// holds zeros). Little-endian, per byte, so any width and alignment agrees.
+fn uninit_seed() -> u32 {
+    static SEED: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *SEED.get_or_init(|| {
+        std::env::var("SHARC_UNINIT")
+            .ok()
+            .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok())
+            .unwrap_or(0)
+    })
+}
+
+/// `SHARC_UNINIT_LOG=<file>`: append one line per logged pattern read (diagnostic output only).
+#[cold]
+fn uninit_log(line: &str) {
+    use std::io::Write;
+    if let Some(path) = std::env::var_os("SHARC_UNINIT_LOG")
+        && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+    {
+        let _ = writeln!(f, "pid {} {line}", std::process::id());
+    }
+}
+
+#[cold]
+fn uninit_value(address: Int, width: Int) -> Int {
+    let seed = uninit_seed();
+    if seed == 0 {
+        return 0;
+    }
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if n < 24 || n.is_power_of_two() {
+        uninit_log(&format!("read #{n} of {width} byte(s) at {:#x}", address as u32));
+    }
+    let mut v: Int = 0;
+    for k in 0..width {
+        let a = (address as u32).wrapping_add(k as u32);
+        let mut x = (a ^ seed).wrapping_mul(0x9E37_79B1);
+        x ^= x >> 15;
+        x = x.wrapping_mul(0x85EB_CA6B);
+        x ^= x >> 13;
+        let b = (x & 0xff) as u8 | 0x01;
+        v |= (b as Int) << (8 * k);
+    }
+    v
+}
+
 #[inline(always)]
 fn fixed_width_mmr(s: &St, c: Int) -> bool {
     s.in_mmr_windows(c) && (s.core_mmr_reset.contains(&(c as u32)) || s.is_named_mmr(c))
@@ -1309,13 +1358,13 @@ pub fn _dm_read_full(
     }
     let canonical = _canonical_dm_address(s, concrete, width, false)?;
     let Some(canonical) = canonical else {
-        if s.cfg.explicit_memory_model
-            && matches!(width, 1 | 2 | 4)
+        let plain = matches!(width, 1 | 2 | 4)
             && !(fixed_width_mmr(s, concrete)
                 || in_core_mmr_range(concrete)
-                || in_system_mmr_range(concrete))
-        {
-            return Ok(Some(V::c(0)));
+                || in_system_mmr_range(concrete));
+        if plain && (s.cfg.explicit_memory_model || uninit_seed() != 0) {
+            // bytes nothing loaded or wrote: zero, or (SHARC_UNINIT) the power-up pattern
+            return Ok(Some(V::c(uninit_value(concrete, width))));
         }
         return Ok(None);
     };

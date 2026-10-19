@@ -14,7 +14,51 @@ const icons = import.meta.glob('../../../../modules/*/*/gallery/icon.svg', {
   eager: true,
 }) as Record<string, string>;
 
+// `patchkit gen` writes build/gen/gallery.json for a module with typed sections ([[machine]], [[param]]): the
+// machines it adds and their parameters, per device. Committed; apps/web/tests/gallery.test.mjs checks the shape.
+const galleries = import.meta.glob('../../../../modules/*/*/build/gen/gallery.json', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
 export type Category = 'fx' | 'machines' | 'core' | 'test' | 'ui' | 'tools';
+
+/** A machine a module adds, with the parameters on its knobs. */
+export interface GalleryMachine {
+  id: string;
+  name: string;
+  short: string;
+  /** Devices it is built for. */
+  devices: DeviceId[];
+  /** The module's own parameters on the machine's knobs, in knob order (stock parameters are not listed). */
+  params: { id: string; name: string; short: string; min: number; max: number; default: number }[];
+}
+
+type GalleryFile = {
+  machines: {
+    id: string;
+    name: string;
+    short: string;
+    devices: Record<string, { knobs: ({ param?: string } | null)[] }>;
+  }[];
+  params: Record<string, { id: string; name: string; short: string; min: number; max: number; default: number }[]>;
+};
+
+export function galleryMachines(text: string | undefined): GalleryMachine[] {
+  if (!text) return [];
+  const g = JSON.parse(text) as GalleryFile;
+  return g.machines.map((m) => {
+    const devices = order.filter((d) => d in m.devices);
+    const params: GalleryMachine['params'] = [];
+    for (const d of devices)
+      for (const k of m.devices[d].knobs) {
+        const p = k?.param ? g.params[d]?.find((x) => x.id === k.param) : undefined;
+        if (p && !params.some((x) => x.id === p.id)) params.push(p);
+      }
+    return { id: m.id, name: m.name, short: m.short, devices, params };
+  });
+}
 
 export interface ModuleInfo {
   id: string;
@@ -31,6 +75,8 @@ export interface ModuleInfo {
   devices: DeviceId[];
   /** Inline SVG markup, from the repository. */
   icon: string;
+  /** Machines the module adds (empty for the others). */
+  machines: GalleryMachine[];
 }
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -82,6 +128,7 @@ export const modules: ModuleInfo[] = Object.entries(manifests)
       claims: claim.map((c) => c.resource),
       devices: order.filter((d) => named.has(d)),
       icon: icons[path.replace(/module\.toml$/, 'gallery/icon.svg')] ?? FRAMEWORK_ICON,
+      machines: galleryMachines(galleries[path.replace(/module\.toml$/, 'build/gen/gallery.json')]),
     };
   })
   .sort((a, b) => a.id.localeCompare(b.id));

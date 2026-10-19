@@ -40,9 +40,9 @@ def rust_bin() -> Path:
     t = os.environ.get("PATCHKIT_BIN")
     if t:
         return Path(t)
-    from tools.emulator import native_target
+    from tools.patchkit import patchkit
 
-    return Path(native_target.target_dir(None)) / "release" / "patchkit"
+    return patchkit.binary(build=False)
 
 
 def python_pack(raw: bytes) -> bytes:

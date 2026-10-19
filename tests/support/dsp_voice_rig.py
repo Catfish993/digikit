@@ -1,10 +1,11 @@
 """The core/dsp-voice test rig: stand-in addresses, `Rig` and `stops_at`."""
 
+import random
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from tools.patchkit import pk_sharc  # noqa: E402
+from tools.patchkit import pk_build, pk_sharc  # noqa: E402
 
 CORE = ROOT / "modules" / "core" / "dsp-voice" / "src" / "dsp" / "dsp-voice.s"
 SINE = ROOT / "modules" / "test" / "sine-voice" / "src" / "dsp" / "sine_voice.s"
@@ -12,7 +13,7 @@ CORE_BASE, SINE_BASE = 0xB90000, 0xB92000
 STOCK_BP = 0xB9F000  # stands in for the stock renderer's second instruction
 RETURN_SW = 0xB9F100  # the caller's return point
 # byte addresses of the stand-ins (L2), one 4 KiB page each
-TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK = (
+TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK, DIAG = (
     0x20091000,
     0x20092000,
     0x20093000,
@@ -20,7 +21,16 @@ TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK = (
     0x2009A000,
     0x2009B000,
     0x2009C000,
+    0x2009D000,
 )
+SV_L4 = DIAG + 0x100  # the wrapper's data symbols (the build places them in free L2)
+SV3, SV5, BCW, REC_PTRS = DIAG + 0x104, DIAG + 0x108, DIAG + 0x10C, DIAG + 0x110
+GUARD = DIAG + 0x200  # the guard's scalars and arrays (_dv_g, 128 bytes)
+ROW = 16  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields
+RING_A, RING_B = (
+    0x200A0000,
+    0x200A2000,
+)  # stand-ins for the two reply records (the breadcrumbs are written into both)
 REC = 0x1D8
 TYPE = 8
 
@@ -29,17 +39,96 @@ def nw(byte: int) -> int:
     return byte // 4
 
 
+def core_externs() -> dict[str, int]:
+    return {
+        "_fw_type_cache": TYPE_CACHE,
+        "_fw_render_next": STOCK_BP,
+        "_fw_frame": FRAME,
+        "_dv_table": TABLE,
+        "_dv_diag": DIAG,
+        "_dv_sv_l4": SV_L4,
+        "_dv_sv3": SV3,
+        "_dv_sv5": SV5,
+        "_dv_bcw": BCW,
+        "_dv_rec": REC_PTRS,
+        "_dv_g": GUARD,
+    }
+
+
+# The context registers. The firmware restores M5, M6, M13, M15, the L registers and MODE1 per DSP context (finding 45), so
+# the values at the hook are the context's, not constants: the rig draws them (never the "friendly" 0 / 1 / 0 / -1) and the
+# wrapper must not depend on them. M7 = -1 and M14 = 1 stay: the stock epilogue itself (the pop of the return address and
+# `JUMP (M14, I12)`) and every stack operation of the caller use them, so they hold in any context where the stock renderer
+# works.
+FRIENDLY = {
+    "M5": 0,
+    "M6": 1,
+    "M7": -1,
+    "M13": 0,
+    "M14": 1,
+    "M15": -1,
+    "L0": 0,
+    "L1": 0,
+    "L2": 0,
+    "L3": 0,
+    "L4": 0,
+    "L5": 0,
+    "MODE1": 0x1011800,
+}
+M6_HOSTILE = (0x1B8, 4, 0, -1)
+M13_HOSTILE = (4, -2, 0x10)
+ROUND_BITS = 0x1011800  # the startup MODE1: IRPTEN, NESTM, RND32, CBUFEN
+MODE1_CHOICES = (
+    ROUND_BITS,
+    ROUND_BITS | 0x8000,  # TRUNCATE
+    ROUND_BITS | 0x2000,  # ALUSAT
+    ROUND_BITS & ~0x10000,  # RND32 clear
+    ROUND_BITS | 0x8000 | 0x2000,
+)
+CONTEXT_REGS = (
+    "M5",
+    "M6",
+    "M7",
+    "M13",
+    "M14",
+    "M15",
+    "L0",
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5",
+    "MODE1",
+)
+
+
+def draw_context(rng: random.Random) -> dict[str, int]:
+    """One context as the firmware could leave it: every pinned register hostile with some probability."""
+    pick = rng.choice
+    ctx = dict(FRIENDLY)
+    ctx["M5"] = pick((0, 4, 0x1B8, -2, 0x10, 7))
+    ctx["M6"] = pick((1, *M6_HOSTILE, -2, 7))
+    ctx["M13"] = pick((0, *M13_HOSTILE, 0x1B8))
+    ctx["M15"] = pick((-1, 0, 4, 3))
+    for n in range(6):
+        ctx[f"L{n}"] = pick((0, 0, 5, 33, 0x1FD))
+    ctx["MODE1"] = pick(MODE1_CHOICES)
+    return ctx
+
+
 class Rig:
-    def __init__(self) -> None:
-        self.core = pk_sharc.assemble(CORE.read_text())
+    def __init__(
+        self, seed: int = 0xD1617, defines: frozenset[str] = frozenset()
+    ) -> None:
+        self.ctx_rng = random.Random(seed)
+        self.last_ctx: dict[str, int] = {}
+        # `defines`: the build options of the wrapper (`#ifdef`, tools/patchkit/pk_build.py), e.g. DV_BISECT_C2
+        self.core = pk_sharc.assemble(
+            pk_build.apply_conditionals(CORE.read_text(), defines)
+        )
         self.sine = pk_sharc.assemble(SINE.read_text())
         self.sine_linked = None
-        ext_core = {
-            "_fw_type_cache": TYPE_CACHE,
-            "_fw_render_next": STOCK_BP,
-            "_fw_frame": FRAME,
-            "_dv_table": TABLE,
-        }
+        ext_core = core_externs()
         # the sine links against the core's symbols; the core against the table address
         core_syms = pk_sharc.link(self.core, CORE_BASE, ext_core).symbols
         self.core_linked = pk_sharc.link(self.core, CORE_BASE, ext_core)
@@ -56,7 +145,7 @@ class Rig:
 
     def reset(self) -> None:
         self.dm = {}
-        for k in range(34):
+        for k in range(17 * ROW):
             self.dm[nw(TABLE) + k] = 0
         for k in range(32):
             self.dm[nw(STATE) + k] = 0
@@ -64,10 +153,27 @@ class Rig:
             self.dm[nw(TYPE_CACHE) + k] = 0
         for k in range(256):
             self.dm[nw(FRAME) + k] = 0
+        for k in range(32 * 32):
+            self.dm[nw(OUT) + k] = (
+                0  # the voice buffers hold the last block (a routine that writes none leaves them)
+            )
         for k in range(32 * REC // 4):
             self.dm[nw(RECORDS) + k] = 0
         self.dm[nw(TABLE)] = TYPE
         self.dm[nw(TABLE) + 1] = self.render_pc
+        for k in range(2):
+            self.dm[nw(REC_PTRS) + k] = (
+                0  # no reply records yet (core/dsp-link has not run): the breadcrumbs stay in _dv_diag
+            )
+        for k in range(32):
+            self.dm[nw(DIAG) + k] = 0
+        for k in range(32):
+            self.dm[nw(GUARD) + k] = 0
+
+    def set_rings(self) -> None:
+        """The two reply records core/dsp-link's block tail would have registered."""
+        self.dm[nw(REC_PTRS)] = RING_A
+        self.dm[nw(REC_PTRS) + 1] = RING_B
 
     def hw(self, k: int, v: int) -> None:
         word = nw(FRAME) + k // 2
@@ -97,7 +203,18 @@ class Rig:
         regs: dict | None = None,
         extra_reads: dict | None = None,
         max_steps: int = 20000,
+        ctx: dict | str | None = None,
+        breaks: tuple[int, ...] = (),
     ) -> dict:
+        """One call the way the engine makes it. `ctx` is the context registers: None draws a new hostile context from the
+        rig's seed, "friendly" the constants the old rig assumed, a dict is taken as given (missing names friendly)."""
+        if ctx is None:
+            ctx = draw_context(self.ctx_rng)
+        elif ctx == "friendly":
+            ctx = dict(FRIENDLY)
+        else:
+            ctx = {**FRIENDLY, **ctx}
+        self.last_ctx = dict(ctx)
         r4 = RECORDS + v * REC
         r8 = OUT + v * 0x80
         saved = {f"R{n}": 0x7000 + n for n in (3, 5, 6, 7, 9, 10, 11, 13, 15)}
@@ -118,12 +235,7 @@ class Rig:
             "R8": r8,
             "R12": 32,
             "R14": 32 - v,
-            "M5": 0,
-            "M6": 1,
-            "M7": -1,
-            "M13": 0,
-            "M14": 1,
-            "M15": -1,
+            **ctx,
             "I6": STACK,
             "I7": STACK,
             **saved,
@@ -147,9 +259,7 @@ class Rig:
                 "I6",
                 "I7",
                 "I4",
-                "M5",
-                "M6",
-                "M7",
+                *CONTEXT_REGS,
                 "I8",
                 "I9",
                 "M8",
@@ -162,7 +272,7 @@ class Rig:
                 "M3",
             ),
             max_steps=max_steps,
-            extra_breaks=(STOCK_BP,),
+            extra_breaks=(STOCK_BP, *breaks),
         )
         out["in"] = r
         return out

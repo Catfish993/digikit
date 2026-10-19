@@ -1,0 +1,56 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dt2": {
+          "clone_of": 6,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 248
+            },
+            {
+              "slot": 1,
+              "stock": 249
+            },
+            {
+              "slot": 2,
+              "stock": 250
+            },
+            {
+              "slot": 3,
+              "stock": 251
+            },
+            {
+              "slot": 4,
+              "stock": 252
+            },
+            {
+              "slot": 5,
+              "stock": 253
+            },
+            null,
+            {
+              "slot": 7,
+              "stock": 254
+            }
+          ],
+          "level": 10,
+          "name": "XSlice",
+          "own_dsp": false,
+          "page": null,
+          "position": 7,
+          "short": "XSL",
+          "type": 7
+        }
+      },
+      "id": "xslice",
+      "name": "XSlice",
+      "short": "XSL"
+    }
+  ],
+  "module": "machines/xslice",
+  "params": {
+    "dt2": []
+  }
+}

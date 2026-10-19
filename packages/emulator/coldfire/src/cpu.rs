@@ -36,6 +36,17 @@ pub trait Bus {
         let _ = (addr, len);
         false
     }
+    /// MOVEC to CACR completed with `cacr` (the written value). A hook for
+    /// instruments; the default does nothing and costs nothing.
+    fn cacr_written(&mut self, cacr: u32) {
+        let _ = cacr;
+    }
+    /// CPUSHL executed: `cache` is the instruction's field (1 data, 2
+    /// instruction, 3 both), `ax` the address register's value, `cacr` the
+    /// current CACR. A hook for instruments; the default does nothing.
+    fn cpushl(&mut self, cache: u8, ax: u32, cacr: u32) {
+        let _ = (cache, ax, cacr);
+    }
 }
 
 /// Status register bits (CFPRM p.25 Table 1-7).
@@ -913,6 +924,12 @@ impl Cpu {
             self.sr &= !(sr::C | sr::X);
         }
         self.pending_nzv = PendingNzv::Add { src, dst, r, size };
+    }
+
+    /// Leave the flags a longword ADD/ADDQ `dst + src = r` leaves. For a host
+    /// that replaces many executions of such an instruction by their result.
+    pub fn set_add_flags_l(&mut self, src: u32, dst: u32, r: u32) {
+        self.flags_add(src, dst, r, Size::L);
     }
 
     /// Flags of dst - src = r. `cmp` leaves X unchanged (CMP, CMPA); C is
@@ -2496,13 +2513,20 @@ impl Cpu {
                 self.write(bus, &ea!(i, 0), Size::B, v).map_err(Ok)?;
             }
             Form::Tpf => {}
-            Form::Cpushl => {}
+            Form::Cpushl => {
+                if let (Operand::Cache(cache), Operand::Ea(Ea::Ind(r))) = (ops[0], ops[1]) {
+                    bus.cpushl(cache, self.a[r as usize], self.ctrl.cacr);
+                }
+            }
             Form::Movec => {
                 let v = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
                 let Operand::Ctrl(rc) = ops[1] else {
                     unreachable!()
                 };
                 self.write_ctrl(rc, v);
+                if rc == 0x002 {
+                    bus.cacr_written(v);
+                }
             }
             Form::Rte => {
                 let fv = self.pop32(bus).map_err(Ok)?;

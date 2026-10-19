@@ -2,6 +2,7 @@
 //! into memory a patch claims. A guard set is a list of protected ranges plus
 //! the PC ranges of the patch's own code, which may write its own regions.
 
+use crate::watch::{FlushHit, Watch, WatchConfig};
 use serde::{Deserialize, Serialize};
 
 /// Hits kept in full; later ones are only counted.
@@ -86,6 +87,9 @@ pub fn parse_guard_spec(
 /// Guard state held by the bus. Empty `protect` means disabled.
 #[derive(Debug, Default)]
 pub(crate) struct WriteGuards {
+    /// Any guard, write-watch or flush check armed: the one flag the store path tests.
+    armed: bool,
+    watch: Option<Box<Watch>>,
     protect: Vec<GuardRange>,
     allow_pc: Vec<(u32, u32)>,
     report: GuardReport,
@@ -96,16 +100,69 @@ pub(crate) struct WriteGuards {
 }
 
 impl WriteGuards {
+    /// Nothing armed (the default): the store path does nothing more.
     #[inline(always)]
     pub(crate) fn is_empty(&self) -> bool {
-        self.protect.is_empty()
+        !self.armed
     }
 
     pub(crate) fn set(&mut self, protect: Vec<GuardRange>, allow_pc: Vec<(u32, u32)>) {
         self.seen = vec![false; protect.len()];
         self.protect = protect;
         self.allow_pc = allow_pc;
+        self.armed = !self.protect.is_empty() || self.watch.is_some();
         self.clear();
+    }
+
+    /// Arm the write-watch and flush check (`None` disarms them).
+    pub(crate) fn set_watch(&mut self, cfg: Option<WatchConfig>) {
+        self.watch = cfg.map(|c| Box::new(Watch::new(c)));
+        self.armed = !self.protect.is_empty() || self.watch.is_some();
+    }
+
+    /// A CPU store of `size` bytes at `addr` with `value`, made from `pc`. Only called
+    /// when armed; out of line so the store path stays as small as without it.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn note_store(&mut self, pc: u32, addr: u32, size: u8, value: u32, icount: u64) {
+        if !self.protect.is_empty() {
+            self.note(pc, addr, size, icount);
+        }
+        if let Some(w) = self.watch.as_mut() {
+            w.store(pc, addr, size, value, icount);
+        }
+    }
+
+    pub(crate) fn note_dma(&mut self, src: &'static str, addr: u32, len: usize, icount: u64) {
+        if let Some(w) = self.watch.as_mut() {
+            w.dma(src, addr, len, icount);
+        }
+    }
+
+    pub(crate) fn note_fetch(&mut self, pc: u32, icount: u64) {
+        if let Some(w) = self.watch.as_mut() {
+            w.fetch(pc, icount);
+        }
+    }
+
+    pub(crate) fn note_cacr(&mut self, cacr: u32, icount: u64) {
+        if let Some(w) = self.watch.as_mut() {
+            w.cacr_written(cacr, icount);
+        }
+    }
+
+    pub(crate) fn note_cpushl(&mut self, cache: u8, ax: u32) {
+        if let Some(w) = self.watch.as_mut() {
+            w.cpushl(cache, ax);
+        }
+    }
+
+    pub(crate) fn watch_mut(&mut self) -> Option<&mut Watch> {
+        self.watch.as_deref_mut()
+    }
+
+    pub(crate) fn flush_hits(&self) -> Vec<FlushHit> {
+        self.watch.as_ref().map_or_else(Vec::new, |w| w.flush_hits())
     }
 
     /// Forget recorded hits (including which ranges were already hit).

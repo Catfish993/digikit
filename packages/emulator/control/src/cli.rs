@@ -4,12 +4,17 @@ use std::path::PathBuf;
 
 use digi_coupled::{AudioMode, AudioOptions};
 
-pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE] [--control|--no-control] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
+pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--control|--no-control] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
 
 #[derive(Clone, Debug, Default)]
 pub struct StartupArgs {
     pub syx: Option<PathBuf>,
     pub card_image: Option<PathBuf>,
+    /// The +Drive folder `--card-image` was built from (`--card-folder`): the firmware's changes are exported
+    /// to it on quit unless `--no-card-sync`.
+    pub card_folder: Option<PathBuf>,
+    /// False with `--no-card-sync`.
+    pub card_sync: bool,
     pub audio: Option<AudioOptions>,
     pub scenario: Option<String>,
     pub report: Option<PathBuf>,
@@ -41,6 +46,8 @@ pub fn parse_values(
     let mut control = None;
     let mut paused = false;
     let mut run_dir = None;
+    let mut card_folder = None;
+    let mut card_sync = true;
     while let Some(value) = values.next() {
         let mut path = |label: &str| -> Result<PathBuf, String> {
             values
@@ -50,6 +57,10 @@ pub fn parse_values(
         };
         if value == "--card-image" {
             card_image = Some(path("--card-image")?);
+        } else if value == "--card-folder" {
+            card_folder = Some(path("--card-folder")?);
+        } else if value == "--no-card-sync" {
+            card_sync = false;
         } else if value == "--control" {
             control = Some(true);
         } else if value == "--no-control" {
@@ -114,6 +125,9 @@ pub fn parse_values(
             return Err(USAGE.into());
         }
     }
+    if card_folder.is_some() && card_image.is_none() {
+        return Err("--card-folder needs --card-image".into());
+    }
     if !coupled_build && (scenario.is_some() || report.is_some()) {
         return Err("--scenario needs a coupled-audio build".into());
     }
@@ -171,6 +185,8 @@ pub fn parse_values(
     Ok(StartupArgs {
         syx,
         card_image,
+        card_folder,
+        card_sync,
         audio,
         scenario,
         report,
@@ -196,6 +212,17 @@ mod tests {
         assert_eq!(a.run_dir, Some("d".into()));
         assert_eq!(parse(&["--no-control"]).unwrap().control, Some(false));
         assert_eq!(parse(&[]).unwrap().control, None);
+    }
+
+    #[test]
+    fn card_folder_syncs_unless_switched_off() {
+        let a = parse(&["x.syx", "--card-image", "c.img", "--card-folder", "pd"]).unwrap();
+        assert_eq!(a.card_folder, Some("pd".into()));
+        assert!(a.card_sync);
+        let a = parse(&["--card-image", "c", "--card-folder", "pd", "--no-card-sync"]).unwrap();
+        assert!(!a.card_sync);
+        assert!(parse(&["--card-folder", "pd"]).is_err());
+        assert_eq!(parse(&[]).unwrap().card_folder, None);
     }
 
     #[test]

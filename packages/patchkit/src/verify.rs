@@ -203,7 +203,7 @@ pub fn verify(syx_bytes: &[u8], reg: Option<&Registry>, base: Option<&[u8]>) -> 
             l.dsp_depacked_max as usize,
             l.main_staged_max as usize,
         ),
-        None => (syx::FLASH_CONTAINER_MAX, 0x10_0000, 0xf_ffff, 0x3f_fc00),
+        None => fw.device.limits(),
     };
     if total > container_max {
         return Err(err!(

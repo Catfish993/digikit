@@ -87,15 +87,56 @@ fn card(path: PathBuf) -> Result<(Card, ReadError), String> {
     }
     let error = Arc::new(Mutex::new(None));
     let backing = FileBacking {
-        file: Mutex::new(File::open(path).map_err(|e| format!("card image: {e}"))?),
+        file: Mutex::new(File::open(&path).map_err(|e| format!("card image: {e}"))?),
         len: metadata.len(),
         error: error.clone(),
     };
-    Ok((
-        Card::with_backing(identity, Some(Box::new(backing)))
-            .map_err(|e| format!("card: {e:?}"))?,
-        error,
-    ))
+    let mut card = Card::with_backing(identity, Some(Box::new(backing)))
+        .map_err(|e| format!("card: {e:?}"))?;
+    apply_saved_overlay(&mut card, &path);
+    Ok((card, error))
+}
+
+/// Where a card image keeps the firmware's writes between sessions.
+pub fn overlay_path(image: &Path) -> PathBuf {
+    image.with_file_name("overlay.bin")
+}
+
+/// Put the writes a synced session saved next to `image` (`overlay.bin`) back on a fresh card. A damaged or
+/// foreign file is ignored with a message. A ready snapshot restored afterwards brings its own overlay.
+fn apply_saved_overlay(card: &mut Card, image: &Path) {
+    let path = overlay_path(image);
+    let Ok(bytes) = std::fs::read(&path) else { return };
+    let result = plusdrive_format::parse_overlay(&bytes)
+        .map_err(|e| e.to_string())
+        .and_then(|sectors| apply_overlay_sectors(card, &sectors));
+    if let Err(error) = result {
+        eprintln!("card: ignoring {}: {error}", path.display());
+    }
+}
+
+/// Lay sectors the guest wrote over a fresh card.
+fn apply_overlay_sectors(card: &mut Card, sectors: &[emmc_card::CardOverlaySector]) -> Result<(), String> {
+    let state = emmc_card::CardCheckpoint {
+        blocks: card.blocks(),
+        rca: card.rca(),
+        selected: card.selected(),
+        overlay: Default::default(),
+    };
+    card.restore_checkpoint_sectors(&state, sectors).map_err(|e| format!("{e:?}"))
+}
+
+/// A digest of an overlay, for the key of a cached cold boot that started from it.
+#[cfg(feature = "coupled-audio")]
+fn overlay_digest(sectors: &[emmc_card::CardOverlaySector]) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    for s in sectors {
+        hash.update(s.sector.to_le_bytes());
+        hash.update(&s.written);
+        hash.update(&s.data);
+    }
+    hash.finalize().to_vec()
 }
 
 fn card_for(image: Option<PathBuf>) -> Result<(Option<Card>, Option<ReadError>), String> {
@@ -243,6 +284,19 @@ pub struct Config {
     /// again when a DT2 firmware is loaded without a card (the desktop app;
     /// off for scenarios and tests, which must not depend on earlier runs).
     pub remember_card: bool,
+    /// The +Drive folder the startup card (`firmware.load`'s `card`) was built from: `card.export` writes
+    /// there, and with `sync` a quit does so too.
+    pub card_folder: Option<CardSource>,
+}
+
+/// A +Drive folder and what to do with the firmware's changes to its card.
+#[derive(Clone, Debug)]
+pub struct CardSource {
+    pub dir: PathBuf,
+    /// Export the changes to `dir` when the session ends.
+    pub sync: bool,
+    /// Where exports and backups go (default `$DIGI_PLUSDRIVE_OUT` or `out/plusdrive`).
+    pub out: Option<PathBuf>,
 }
 
 impl Config {
@@ -255,6 +309,7 @@ impl Config {
             events: Events::default(),
             on_quit: None,
             remember_card: false,
+            card_folder: None,
         }
     }
 }
@@ -411,17 +466,32 @@ struct Actor {
     patch_job: Option<PatchJob>,
     /// The last card job's outcome, for `card.status`.
     card_last: Value,
+    /// The +Drive folder the loaded card was built from, with the card image it belongs to:
+    /// `card.export` without a `dir` writes there, and a quit does so when `sync` was set.
+    card_folder: Option<CardFolder>,
     /// Press NO once the runtime is ready (closes DT2's FILE SYSTEM OK modal).
     auto_no: bool,
     /// `firmware.load {auto_no}`: press NO once the runtime it installs is ready.
     want_auto_no: bool,
     remember_card: bool,
+    /// Taken by the first load that mounts a card image.
+    startup_card_folder: Option<CardSource>,
     quit: bool,
     /// Fault, DSP halt and main-loop stall detection (events `fault`, `halt`, `stall`).
     health: Health,
     /// Live CPU meters (`status.load`).
     load_meter: load::Meter,
     health_tick: u32,
+    /// The guest wrote SOFTRST to RCM.RCR (`Status::soft_reset`): the boot is restarted when the running job has finished.
+    reset_pending: bool,
+    /// The card writes of the run that asked for the reset, for the cold boot that follows (the card keeps its contents).
+    reset_overlay: Option<Vec<emmc_card::CardOverlaySector>>,
+    /// Soft resets in a row before the boot got ready (a bound for boot loops).
+    boot_resets: u32,
+    /// CPU exceptions run the guest's handler (RPC `cpu.exceptions`), for every runtime installed from now on.
+    deliver_exceptions: bool,
+    /// The RAM range the model keeps across a soft reset (`keep_ram` of the device profile), as the guest left it, for the cold boot that follows.
+    reset_ram: Option<Vec<u8>>,
 }
 
 fn no_firmware<T>() -> Result<T, RpcError> {
@@ -482,9 +552,11 @@ impl Actor {
             card_job: None,
             patch_job: None,
             card_last: json!({"state": "idle"}),
+            card_folder: None,
             auto_no: false,
             want_auto_no: false,
             remember_card: config.remember_card,
+            startup_card_folder: config.card_folder,
             quit: false,
             health: Health::new(
                 std::env::var("DIGI_STALL_MS")
@@ -494,6 +566,46 @@ impl Actor {
             ),
             load_meter: load::Meter::default(),
             health_tick: 0,
+            reset_pending: false,
+            reset_overlay: None,
+            boot_resets: 0,
+            deliver_exceptions: false,
+            reset_ram: None,
+        }
+    }
+
+    /// The RAM range the device model keeps across a soft reset: `(base, bytes)` from the device file (`[digikit] keep_base`, `keep_bytes`).
+    fn keep_ram_range(&mut self) -> Option<(u32, u32)> {
+        let diag = self.runtime.as_mut()?.diagnostics();
+        let device = diag["device"].as_str()?;
+        plusdrive_format::device_profile::Registry::load().ok()?.keep_ram(device)
+    }
+
+    /// The guest asked for a soft reset (RCM.RCR): boot the same patched firmware again from the reset entry, on the card as the
+    /// guest left it (its writes laid over the image), the DSP as a device boots it. Only a patched build with coupled audio can be
+    /// restarted here; for anything else an event says so and the guest carries on (it spins after the write).
+    fn soft_reset(&mut self) {
+        let Some(loaded) = self.loaded.as_ref() else { return };
+        let (bytes, card, base_sha, base_bytes) = (
+            loaded.current.clone(),
+            loaded.card.clone(),
+            loaded.base_sha.clone(),
+            loaded.base.clone(),
+        );
+        let Some(new) = loaded.current_analysis.clone() else { return };
+        self.reset_overlay = self.runtime.as_ref().map(|r| r.card_overlay());
+        self.reset_ram = self.keep_ram_range().and_then(|(base, bytes)| {
+            self.runtime.as_mut().map(|r| r.peek_ram(base, bytes))
+        });
+        let (tx, _rx) = mpsc::channel();
+        let mut report = json!({});
+        match self.load_patched_coupled(&bytes, &card, &new, &base_sha, &base_bytes, &mut report, "cold", &tx) {
+            Ok(CoupledLoad::Started) => self.emit("cpu.reset", json!({"restart": "cold boot started"})),
+            Ok(_) | Err(_) => {
+                self.reset_overlay = None;
+                self.reset_ram = None;
+                self.emit("cpu.reset", json!({"restart": "unsupported"}));
+            }
         }
     }
 
@@ -501,6 +613,10 @@ impl Actor {
         while !self.quit {
             self.poll_card();
             self.poll_patch();
+            if self.reset_pending && self.job.is_none() && self.patch_job.is_none() {
+                self.reset_pending = false;
+                self.soft_reset();
+            }
             // While a card or a patched MAIN boots on its worker thread the
             // running guest waits.
             let carding = self.card_job.is_some() || self.patch_job.is_some();
@@ -539,6 +655,8 @@ impl Actor {
                 None => self.advance(),
             }
         }
+        // The handle went away without a `quit` (the desktop window closed): the card is still live.
+        self.finish_card();
         if let Some(job) = self.job.take() {
             let _ = job
                 .reply
@@ -582,6 +700,9 @@ impl Actor {
             dsp_halted,
             sink_underruns,
         };
+        if status.soft_reset && !self.reset_pending && self.patch_job.is_none() {
+            self.reset_pending = true;
+        }
         for alert in self.health.observe(self.epoch, &obs) {
             match alert {
                 Alert::Fault(error) => self.emit(
@@ -673,7 +794,8 @@ impl Actor {
             .and_then(|error| error.lock().ok().and_then(|mut slot| slot.take()))
     }
 
-    fn install(&mut self, runtime: Runtime, error: Option<ReadError>) {
+    fn install(&mut self, mut runtime: Runtime, error: Option<ReadError>) {
+        runtime.set_deliver_exceptions(self.deliver_exceptions);
         self.runtime = Some(runtime);
         self.read_error = error;
         if std::mem::take(&mut self.want_auto_no) {
@@ -868,12 +990,33 @@ impl Actor {
                 (runtime, error, image)
             }
         };
+        self.adopt_card_folder(image.as_ref());
         self.loaded = Some(Loaded::stock(bytes, image));
         self.install(runtime, error);
         let snapshot = self.runtime.as_mut().expect("new runtime").snapshot();
         self.startup_snapshot = Some(snapshot.clone());
         self.emit("session.changed", json!({"reason": "load"}));
         Ok(snapshot)
+    }
+
+    /// The first load that mounts a card image takes the startup `--card-folder`: that card's +Drive folder.
+    fn adopt_card_folder(&mut self, card: Option<&PathBuf>) {
+        let (Some(card), Some(source)) = (card, self.startup_card_folder.take()) else { return };
+        eprintln!(
+            "card: {} is the +Drive folder of this card; {}",
+            display_path(&source.dir),
+            if source.sync {
+                "the firmware's changes are exported to it on exit"
+            } else {
+                "exit does not export (card.export does)"
+            }
+        );
+        self.card_folder = Some(CardFolder {
+            image: card.clone(),
+            dir: source.dir,
+            sync: source.sync,
+            out: source.out,
+        });
     }
 
     /// The card `last.json` names, when it is this DT2 firmware's and its
@@ -1234,7 +1377,11 @@ impl Actor {
                 })
                 .map(Some),
             "card.overlay" => self.rpc_card_overlay(&p).map(Some),
+            "midi.in" | "midi.usb.in" => self.rpc_midi_in(method, &p).map(Some),
+            "midi.out" | "midi.usb.out" => self.rpc_midi_out(method, &p).map(Some),
+            "card.export" => self.rpc_card_export(&p).map(Some),
             "watchdog.config" => self.rpc_watchdog(&p).map(Some),
+            "cpu.exceptions" => self.rpc_cpu_exceptions(&p).map(Some),
             "diagnostics" => self.with_runtime(|r| Ok(r.diagnostics())).map(Some),
             "audio.report" => self
                 .with_runtime(|r| Ok(r.audio_status().unwrap_or(Value::Null)))
@@ -1272,6 +1419,7 @@ impl Actor {
             "card.cancel" => Ok(Some(json!({"cancelled": self.cancel_card()}))),
             "quit" => {
                 self.quit = true;
+                self.finish_card();
                 self.runtime = None;
                 Ok(Some(json!({"quitting": true})))
             }
@@ -1383,6 +1531,19 @@ impl Actor {
         )
     }
 
+    /// `cpu.exceptions {deliver}`: a CPU exception runs the guest's handler (`true`) or stops the run with an error (`false`, the default). Kept
+    /// for every runtime installed later (a soft reset boots a new one). The digikit runtime's crash capture needs it
+    /// (docs/findings/46-digikit-debug.md).
+    fn rpc_cpu_exceptions(&mut self, p: &Params) -> RpcResult {
+        if let Some(deliver) = p.opt_bool("deliver")? {
+            self.deliver_exceptions = deliver;
+            if let Some(r) = self.runtime.as_mut() {
+                r.set_deliver_exceptions(deliver);
+            }
+        }
+        Ok(json!({"deliver": self.deliver_exceptions}))
+    }
+
     /// `mem.cf.peek {addr}`: one guest longword, read without side effects.
     fn rpc_mem_peek(&mut self, p: &Params) -> RpcResult {
         let addr = u32::try_from(p.u64("addr")?)
@@ -1393,6 +1554,108 @@ impl Actor {
 
     /// `mem.cf.poke {addr, value}`: write one longword of SDRAM (a test aid: break the guest on
     /// purpose to exercise `fault`/`stall`). Not part of the replay record.
+    /// `card.export {dir?, out?, prune?, working_project?}`: bring a +Drive folder up to date with what the firmware wrote to the
+    /// card (finding 24). `dir` defaults to the folder the card was loaded from.
+    /// The whole tree goes to `<out>/export/<stamp>/` first (`out` defaults to `$DIGI_PLUSDRIVE_OUT` or
+    /// `out/plusdrive`), then only new or changed files are copied, each replaced file moved to
+    /// `<out>/backup/<stamp>/`. Files the firmware deleted are listed; `prune` moves them to the backup. The working
+    /// project (`.mmcfs/boot/050000.bin`, rewritten by the firmware at every start) is left out unless `working_project`.
+    fn rpc_card_export(&mut self, p: &Params) -> RpcResult {
+        let explicit = p.opt_str("dir")?.map(PathBuf::from);
+        let out = p.opt_str("out")?.map(PathBuf::from);
+        let prune = p.opt_bool("prune")?.unwrap_or(false);
+        let working = p.opt_bool("working_project")?.unwrap_or(false);
+        let report = self
+            .export_card(explicit, out, prune, working)
+            .map_err(RpcError::io)?;
+        Ok(json!({
+            "added": report.added, "replaced": report.replaced, "unchanged": report.unchanged.len(),
+            "deleted_by_firmware": report.deleted_by_firmware, "pruned": report.pruned, "kept": report.kept,
+            "issues": report.issues,
+            "export_dir": report.export_dir.display().to_string(),
+            "backup_dir": report.backup_dir.display().to_string(),
+        }))
+    }
+
+    fn export_card(
+        &mut self,
+        explicit: Option<PathBuf>,
+        out: Option<PathBuf>,
+        prune: bool,
+        working_project: bool,
+    ) -> Result<plusdrive_format::export::Report, String> {
+        let image = self
+            .loaded
+            .as_ref()
+            .and_then(|l| l.card.clone())
+            .ok_or("no card is loaded")?;
+        let folder = match (&explicit, &self.card_folder) {
+            (Some(dir), _) => dir.clone(),
+            (None, Some(f)) if f.image == image => f.dir.clone(),
+            _ => return Err("no +Drive folder is known for this card; pass dir".into()),
+        };
+        let overlay = self
+            .runtime
+            .as_ref()
+            .map(|r| r.card_overlay())
+            .ok_or("no runtime")?;
+        let base = plusdrive_format::export::FileImage::open(&image)?;
+        let mut options = plusdrive_format::export::Options::new(out.unwrap_or_else(|| {
+            std::env::var_os("DIGI_PLUSDRIVE_OUT").map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from)
+        }));
+        options.prune = prune;
+        options.include_working_project = working_project;
+        let layout = self.card_layout()?;
+        plusdrive_format::export::export(&base, &overlay, &folder, &layout, &options)
+    }
+
+    /// The card layout of the running device (its profile's `[card]` section), found by the base firmware's hash.
+    fn card_layout(&self) -> Result<plusdrive_format::CardLayout, String> {
+        let loaded = self.loaded.as_ref().ok_or("no firmware is loaded")?;
+        let registry = plusdrive_format::device_profile::Registry::load().map_err(|e| e.to_string())?;
+        let (device, _) = registry.identify(&loaded.base_sha).map_err(|e| e.to_string())?;
+        device
+            .card
+            .clone()
+            .ok_or_else(|| format!("device {} has no [card] layout", device.short))
+    }
+
+    /// At quit: save the firmware's card writes next to the image (`overlay.bin`, merged over an older one, so a
+    /// session that did not start from it loses nothing), then, for a synced card, export them to its folder.
+    /// Failures are printed: the quit goes on.
+    fn finish_card(&mut self) {
+        let Some(folder) = self.card_folder.as_ref().filter(|f| f.sync) else { return };
+        let (image, dir, out) = (folder.image.clone(), folder.dir.clone(), folder.out.clone());
+        if self.loaded.as_ref().and_then(|l| l.card.as_ref()) != Some(&image) {
+            return;
+        }
+        let Some(overlay) = self.runtime.as_ref().map(|r| r.card_overlay()) else { return };
+        let path = overlay_path(&image);
+        if !overlay.is_empty() {
+            let merged = merge_overlay(std::fs::read(&path).ok(), overlay);
+            let partial = path.with_extension("bin.part");
+            let saved = std::fs::write(&partial, plusdrive_format::encode_overlay(&merged))
+                .and_then(|()| std::fs::rename(&partial, &path));
+            if let Err(error) = saved {
+                eprintln!("card: could not save {}: {error}", path.display());
+            }
+        }
+        let dir_shown = dir.clone();
+        match self.export_card(Some(dir), out, false, false) {
+            Ok(report) => eprintln!(
+                "card: exported {} changed files to {} ({} added, {} replaced; {} deleted by the firmware, kept; {} issues); backup {}",
+                report.added.len() + report.replaced.len(),
+                display_path(&dir_shown),
+                report.added.len(),
+                report.replaced.len(),
+                report.deleted_by_firmware.len(),
+                report.issues.len(),
+                report.backup_dir.display()
+            ),
+            Err(error) => eprintln!("card: export failed: {error}"),
+        }
+    }
+
     /// `card.overlay {path}`: write the guest's writes to the card as a sparse file: per touched sector
     /// `u64 le sector, [u8; 64] mask (bit i of byte i/8 names data byte i), [u8; 512] data`. Applied over the card's
     /// base image it gives the card the guest sees (`tools/emulator/card_overlay.py`).
@@ -1407,6 +1670,69 @@ impl Actor {
         }
         std::fs::write(&path, &out).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
         Ok(json!({"path": path, "sectors": sectors.len()}))
+    }
+
+    /// `midi.in {bytes | file, period?}` queues bytes on the MIDI DIN input (UART9), one per `period` instructions
+    /// (default 42,240: the 31250 baud wire rate; 0 = as fast as the firmware takes its interrupts).
+    /// `midi.usb.in {bytes | file, chunk?, period?}` hands the bytes to the firmware's USB MIDI receive callback (USB itself is not
+    /// modelled; docs/CONTROL.md) in calls of `chunk` bytes (1 to 384, default 64) `period` instructions apart (default 132,000, a
+    /// full-speed frame; 16,500 is a high-speed microframe). `bytes` is a hex string (spaces allowed) or an array of numbers.
+    fn rpc_midi_in(&mut self, method: &str, p: &Params) -> RpcResult {
+        let data = match (p.get("bytes"), p.opt_str("file")?) {
+            (Some(Value::String(hex)), None) => {
+                let digits: Vec<u8> = hex.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+                if digits.len() % 2 != 0 || !digits.iter().all(u8::is_ascii_hexdigit) {
+                    return Err(RpcError::bad_params("bytes is an even number of hex digits"));
+                }
+                digits
+                    .chunks(2)
+                    .map(|c| u8::from_str_radix(std::str::from_utf8(c).unwrap_or("0"), 16).unwrap_or(0))
+                    .collect::<Vec<u8>>()
+            }
+            (Some(Value::Array(items)), None) => items
+                .iter()
+                .map(|v| v.as_u64().and_then(|n| u8::try_from(n).ok()))
+                .collect::<Option<Vec<u8>>>()
+                .ok_or_else(|| RpcError::bad_params("bytes holds numbers 0..255"))?,
+            (None, Some(path)) => {
+                std::fs::read(path).map_err(|e| RpcError::io(format!("{path}: {e}")))?
+            }
+            _ => return Err(RpcError::bad_params("give bytes (hex string or array) or file")),
+        };
+        let period = p
+            .opt_u64("period")?
+            .unwrap_or(elektron_native_boot::midi::WIRE_PERIOD);
+        let usb = method == "midi.usb.in";
+        let usb_chunk = p.opt_u64("chunk")?.map(|n| n as usize);
+        let usb_period = p.opt_u64("period")?;
+        let queued = self.with_runtime(|r| {
+            if usb {
+                r.usb_midi_in_paced(&data, usb_chunk, usb_period)
+            } else {
+                r.midi_in(&data, period)
+            }
+            .map_err(RpcError::bad_params)
+        })?;
+        Ok(json!({"bytes": data.len(), "queued": queued}))
+    }
+
+    /// `midi.out {file?}` returns (and clears) the bytes the firmware sent on MIDI DIN since the last call as a
+    /// hex string; `midi.usb.out` the bytes it handed to the USB MIDI transmit function. The first
+    /// `midi.usb.out` or `midi.usb.in` starts the USB capture. `file` also writes them raw.
+    fn rpc_midi_out(&mut self, method: &str, p: &Params) -> RpcResult {
+        let usb = method == "midi.usb.out";
+        let (bytes, status) = self.with_runtime(|r| {
+            if usb {
+                r.usb_midi_watch().map_err(RpcError::bad_params)?;
+            }
+            let bytes = if usb { r.take_usb_out() } else { r.take_midi_out() };
+            Ok((bytes, r.midi_status()))
+        })?;
+        if let Some(path) = p.opt_str("file")? {
+            std::fs::write(path, &bytes).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
+        }
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        Ok(json!({"bytes": bytes.len(), "hex": hex, "status": status}))
     }
 
     /// `guard.set {protect: [{lo, hi, label?}], allow_pc: [{lo, hi}]}`: arm write-range guards
@@ -1901,6 +2227,7 @@ impl Actor {
             "cold"
         }
         .into();
+        self.adopt_card_folder(card.as_ref());
         let mut loaded = Loaded::stock(bytes, card);
         loaded.base_analysis = Some(new.clone());
         loaded.current_analysis = Some(new);
@@ -1940,6 +2267,7 @@ impl Actor {
         }
         .into();
         let base_sha = firmware::sha256_hex(&base_bytes);
+        self.adopt_card_folder(card.as_ref());
         self.loaded = Some(Loaded {
             base: Some(base_bytes),
             base_sha,
@@ -2157,6 +2485,8 @@ struct PatchInstall {
     /// The launch options with the snapshot and DSP state of this MAIN.
     audio: AudioOptions,
     report: Value,
+    /// The cold boot ran with the DSP patch already applied: the saved DSP state has it.
+    dsp_in_boot: bool,
 }
 
 /// What a finished coupled cold boot reports.
@@ -2173,6 +2503,10 @@ struct PatchJob {
     reply: RpcReply,
     started: Instant,
     install: PatchInstall,
+    /// The card writes of a boot that ended in a soft reset (see `digi_coupled::cold::SOFT_RESET`).
+    reset_out: Arc<Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>,
+    /// The kept RAM range of a boot that ended in a soft reset (see `digi_coupled::cold::KeepRam`).
+    keep_out: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
 /// The file name stem of the ready pair of a (MAIN, DSP inputs, card): the
@@ -2184,10 +2518,13 @@ fn patched_pair_key(
     image: &Path,
     cold_idle: &Path,
     card: Option<&Path>,
+    extra: &[u8],
 ) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     hash.update(main_sha.as_bytes());
+    // what else the cold boot started from: the DSP section it ran with, the card writes of a soft reset
+    hash.update(extra);
     for path in [image, cold_idle] {
         let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         hash.update(Sha256::digest(&data));
@@ -2261,8 +2598,63 @@ impl Actor {
         let main_sha = new
             .main_sha256()
             .ok_or_else(|| rejected("the firmware has no MAIN section".into()))?;
-        let stem =
-            patched_pair_key(main_sha, &image, &cold_idle, card.as_deref()).map_err(&rejected)?;
+        // The cold boot runs the .syx's own DSP code from the first instruction, as a device does. (Until 2026-10-17 it booted
+        // the base's DSP and patched it after the ready state, so `mise run emu -- PATCHED.syx` ran stock DSP code during the
+        // boot; a boot-time DSP load of the runtime, and any DSP code that initialises itself at boot, needs the real order.)
+        let mut boot_patch = None;
+        if let (Some(base), Some(new_dsp)) = (
+            base_bytes
+                .as_ref()
+                .and_then(|b| Analysis::of(b).ok())
+                .and_then(|a| a.dsp),
+            new.dsp.as_ref(),
+        ) && base != *new_dsp
+        {
+            boot_patch = Some(firmware::dsp_diff(&base, new_dsp).map_err(&rejected)?.patch);
+        }
+        let reset_out = Arc::new(Mutex::new(None));
+        let mut extra_key = Vec::new();
+        // DIGI_COLD_RELAX_FS=1: a cold boot on a card an earlier run used (a saved project) never runs the DT2 filesystem check
+        // the readiness contract waits for: ready at the main panel, as after a soft reset
+        let relax_fs = std::env::var_os("DIGI_COLD_RELAX_FS").is_some();
+        if relax_fs {
+            extra_key.extend_from_slice(b"relax-fs:");
+        }
+        if let (Some(_), Some(dsp)) = (&boot_patch, new.dsp.as_deref()) {
+            use sha2::{Digest, Sha256};
+            extra_key.extend_from_slice(b"dsp-at-boot:");
+            extra_key.extend_from_slice(&Sha256::digest(dsp));
+        }
+        let reset_overlay = self.reset_overlay.take();
+        if let Some(o) = &reset_overlay {
+            extra_key.extend_from_slice(b"soft-reset:");
+            extra_key.extend_from_slice(&overlay_digest(o));
+        }
+        // the RAM the model keeps across a soft reset (the guest's crash record): written before the first instruction, so the boot and its
+        // cached ready pair depend on it
+        let reset_ram = self.reset_ram.take().filter(|r| r.iter().any(|b| *b != 0));
+        let keep_out = Arc::new(Mutex::new(None));
+        let keep_range = plusdrive_format::device_profile::Registry::load()
+            .ok()
+            .and_then(|reg| reg.identify(base_sha).ok().and_then(|(device, _)| device.keep_ram));
+        let keep_ram = match (keep_range, &reset_ram) {
+            (Some((base, size)), r) => {
+                if let Some(r) = r {
+                    use sha2::{Digest, Sha256};
+                    extra_key.extend_from_slice(b"keep-ram:");
+                    extra_key.extend_from_slice(&Sha256::digest(r));
+                }
+                Some(digi_coupled::cold::KeepRam {
+                    base,
+                    bytes: size,
+                    input: r.clone().unwrap_or_default(),
+                    out: keep_out.clone(),
+                })
+            }
+            _ => None,
+        };
+        let stem = patched_pair_key(main_sha, &image, &cold_idle, card.as_deref(), &extra_key)
+            .map_err(&rejected)?;
         let pair = self.run_dir.join("patched").join(stem);
         let (snapshot, dsp_state) = (
             pair.join("digi-audio-m5.snap"),
@@ -2282,6 +2674,7 @@ impl Actor {
             base_bytes: base_bytes.clone(),
             audio,
             report: report.clone(),
+            dsp_in_boot: boot_patch.is_some(),
         };
         let cache_hit = start != "cold" && snapshot.is_file();
         if cache_hit {
@@ -2323,11 +2716,21 @@ impl Actor {
             card.clone(),
             base_sha.to_string(),
         );
-        let inputs = digi_coupled::cold::ColdInputs { image, cold_idle };
+        let inputs = digi_coupled::cold::ColdInputs {
+            image,
+            cold_idle,
+            dsp_patch: boot_patch,
+            relax_fs_check: reset_overlay.is_some() || relax_fs,
+            reset_out: Some(reset_out.clone()),
+            keep_ram,
+        };
         thread::Builder::new()
             .name("digi-patched-boot".into())
             .spawn(move || {
-                let result = card_for(worker_card).and_then(|(card_obj, _)| {
+                let result = card_for(worker_card).and_then(|(mut card_obj, _)| {
+                    if let (Some(card), Some(sectors)) = (card_obj.as_mut(), &reset_overlay) {
+                        apply_overlay_sectors(card, sectors)?;
+                    }
                     digi_coupled::cold::boot_patched_to_ready(
                         &worker_bytes,
                         card_obj,
@@ -2352,6 +2755,8 @@ impl Actor {
             reply: reply.clone(),
             started: Instant::now(),
             install,
+            reset_out,
+            keep_out,
         });
         Ok(CoupledLoad::Started)
     }
@@ -2386,6 +2791,7 @@ impl Actor {
             base_bytes,
             audio,
             mut report,
+            dsp_in_boot,
         } = install;
         let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
         let runtime =
@@ -2407,6 +2813,9 @@ impl Actor {
         self.session = self.session.max(1);
         self.emit("session.changed", json!({"reason": "firmware.load"}));
         report["dsp"] = match (base_analysis.and_then(|b| b.dsp), new.dsp) {
+            (Some(base), Some(new_dsp)) if base != new_dsp && dsp_in_boot => {
+                json!({"applied": true, "at": "cold boot", "reason": "the boot ran with the DSP patch"})
+            }
             (Some(base), Some(new_dsp)) if base != new_dsp => {
                 let diff = firmware::dsp_diff(&base, &new_dsp).map_err(&rejected)?;
                 self.inject_diff(diff)?
@@ -2433,10 +2842,32 @@ impl Actor {
             Err(mpsc::TryRecvError::Disconnected) => Err("boot worker stopped".into()),
         };
         let job = self.patch_job.take().expect("patch job");
+        // The guest reset the machine before it was ready (a module that resets in `init`, the firmware's exception path): boot
+        // again on the card as the guest left it. A boot loop is bounded.
+        if matches!(&outcome, Err(e) if e == "soft reset") {
+            let overlay = job.reset_out.lock().expect("reset overlay").take();
+            self.reset_ram = job.keep_out.lock().expect("kept ram").take();
+            self.boot_resets += 1;
+            if let (Some(overlay), true) = (overlay, self.boot_resets <= 8) {
+                self.emit("cpu.reset", json!({"during_boot": true, "count": self.boot_resets}));
+                let PatchInstall { bytes, card, new, base_sha, base_bytes, report, .. } = job.install;
+                self.reset_overlay = Some(overlay);
+                let mut report = report;
+                let reply = job.reply.clone();
+                match self.load_patched_coupled(&bytes, &card, &new, &base_sha, &base_bytes, &mut report, "cold", &reply) {
+                    Ok(CoupledLoad::Started) => return,
+                    _ => {
+                        let _ = reply.send(Err(RpcError::new(code::GUEST_FAULT, "boot loop: the restart failed")));
+                        return;
+                    }
+                }
+            }
+        }
         let seconds = job.started.elapsed().as_secs_f64();
         let result = match outcome {
             Err(e) => Err(RpcError::new(code::GUEST_FAULT, e)),
             Ok(booted) => {
+                self.boot_resets = 0;
                 let mut install = job.install;
                 install.report["boot"] = json!({
                     "icount": booted.icount, "frames": booted.frames,
@@ -2448,7 +2879,8 @@ impl Actor {
         };
         self.emit(
             "firmware.loaded",
-            json!({"ok": result.is_ok(), "seconds": seconds}),
+            json!({"ok": result.is_ok(), "seconds": seconds,
+                   "error": result.as_ref().err().map(|e| e.message.clone())}),
         );
         let _ = job.reply.send(result.map(|mut report| {
             report["seconds"] = seconds.into();
@@ -2471,6 +2903,15 @@ struct CardReady {
     boot_seconds: f64,
 }
 
+/// Where the loaded card came from and whether a quit writes the firmware's changes back to it.
+struct CardFolder {
+    image: PathBuf,
+    dir: PathBuf,
+    sync: bool,
+    /// Where exports and backups go (`card.load {export_out}`); default `$DIGI_PLUSDRIVE_OUT` or `out/plusdrive`.
+    out: Option<PathBuf>,
+}
+
 struct CardJob {
     status: Arc<Mutex<Value>>,
     done: mpsc::Receiver<Result<CardReady, String>>,
@@ -2480,6 +2921,18 @@ struct CardJob {
     syx: Vec<u8>,
     /// What the UI calls the card (the chosen folder's name).
     name: String,
+    /// The folder the card is built from, and `sync`: write the firmware's changes back to it on quit.
+    dir: PathBuf,
+    sync: bool,
+    export_out: Option<PathBuf>,
+}
+
+/// A path as shown in a log line: relative to the working directory when it is below it.
+fn display_path(path: &Path) -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| path.strip_prefix(cwd).ok().map(|p| p.display().to_string()))
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 fn set_status(status: &Mutex<Value>, value: Value) {
@@ -2500,16 +2953,15 @@ fn run_card_job(
     let started = Instant::now();
     set_status(
         status,
-        json!({"state": "working", "phase": "scanning", "message": "Reading the sample folder", "fraction": 0.0}),
+        json!({"state": "working", "phase": "scanning", "message": "Reading the +Drive folder", "fraction": 0.0}),
     );
-    let files = cards::list_wavs(&dir)?;
-    let total = files.len();
-    let (paths, card_cached) = cards::ensure_card(&run_dir, &syx, &files, |done, total| {
+    let files = cards::list_files(&dir)?;
+    let (paths, card_cached, total) = cards::ensure_card(&run_dir, &syx, &dir, &files, |done, total| {
         set_status(
             status,
             json!({
                 "state": "working", "phase": "building",
-                "message": format!("Building the card ({done}/{total} samples)"),
+                "message": format!("Building the card ({done}/{total} files)"),
                 "fraction": 0.1 * done as f64 / total.max(1) as f64,
                 "done": done, "total": total,
             }),
@@ -2546,7 +2998,14 @@ fn run_card_job(
                 digi_coupled::cold::boot_to_ready(
                     &syx,
                     card,
-                    &digi_coupled::cold::ColdInputs { image, cold_idle },
+                    &digi_coupled::cold::ColdInputs {
+                        image,
+                        cold_idle,
+                        dsp_patch: None,
+                        relax_fs_check: false,
+                        reset_out: None,
+                        keep_ram: None,
+                    },
                     &paths.ready,
                     cancel,
                     |progress| {
@@ -2622,6 +3081,8 @@ impl Actor {
             });
         let wait = p.opt_bool("wait")?.unwrap_or(true);
         let auto_no = p.opt_bool("auto_no")?.unwrap_or(true);
+        let sync = p.opt_bool("sync")?.unwrap_or(false);
+        let export_out = p.opt_str("export_out")?.map(PathBuf::from);
         if self.job.is_some() || self.card_job.is_some() || self.patch_job.is_some() {
             return Err(RpcError::new(code::BUSY, "another job is running"));
         }
@@ -2643,6 +3104,7 @@ impl Actor {
         let (done_tx, done) = mpsc::channel();
         let (worker_status, worker_cancel) = (status.clone(), cancel.clone());
         let (worker_syx, run_dir, audio) = (syx.clone(), self.run_dir.clone(), self.audio.clone());
+        let source_dir = dir.clone();
         thread::Builder::new()
             .name("digi-card".into())
             .spawn(move || {
@@ -2666,6 +3128,9 @@ impl Actor {
             started: Instant::now(),
             syx,
             name,
+            dir: source_dir,
+            sync,
+            export_out,
         });
         self.emit("card.started", json!({}));
         if wait {
@@ -2691,6 +3156,12 @@ impl Actor {
             outcome.and_then(|ready| self.install_card(&job.syx, &job.name, ready, seconds));
         match &result {
             Ok(report) => {
+                self.card_folder = report["card"].as_str().map(|image| CardFolder {
+                    image: PathBuf::from(image),
+                    dir: job.dir.clone(),
+                    sync: job.sync,
+                    out: job.export_out.clone(),
+                });
                 self.card_last = report.clone();
                 self.emit("card.ready", report.clone());
             }
@@ -2755,6 +3226,35 @@ impl Actor {
             "seconds": seconds,
         }))
     }
+}
+
+/// `newer` laid over the writes of an older `overlay.bin` (byte by byte, by mask).
+fn merge_overlay(
+    older: Option<Vec<u8>>,
+    newer: Vec<emmc_card::CardOverlaySector>,
+) -> Vec<emmc_card::CardOverlaySector> {
+    let mut sectors: std::collections::BTreeMap<u64, emmc_card::CardOverlaySector> = older
+        .and_then(|bytes| plusdrive_format::parse_overlay(&bytes).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| (s.sector, s))
+        .collect();
+    for new in newer {
+        match sectors.get_mut(&new.sector) {
+            Some(old) => {
+                for i in 0..512 {
+                    if new.written[i / 8] & (1 << (i % 8)) != 0 {
+                        old.written[i / 8] |= 1 << (i % 8);
+                        old.data[i] = new.data[i];
+                    }
+                }
+            }
+            None => {
+                sectors.insert(new.sector, new);
+            }
+        }
+    }
+    sectors.into_values().collect()
 }
 
 /// Save a ready runtime's ColdFire snapshot; the path on success.

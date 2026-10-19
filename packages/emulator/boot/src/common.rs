@@ -649,10 +649,10 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
     /// Record a CPU store that overlaps a protected range from outside the
     /// allowed-writer PC ranges (see `WriteGuards`).
     #[inline(always)]
-    fn note_guard_write(&mut self, addr: u32, size: u8) {
+    fn note_guard_write(&mut self, addr: u32, size: u8, value: u32) {
         if !self.guards.is_empty() {
             self.guards
-                .note(self.current_pc, addr, size, self.current_icount);
+                .note_store(self.current_pc, addr, size, value, self.current_icount);
         }
     }
     #[inline]
@@ -698,6 +698,21 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
     }
 }
 impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
+    /// Instruction fetch: the flush check sees the first word of an instruction
+    /// (decode-cache hits never reach the bus; every store evicts its page, so a
+    /// fetch of a written line always does).
+    #[inline]
+    fn cacr_written(&mut self, cacr: u32) {
+        if !self.guards.is_empty() {
+            self.guards.note_cacr(cacr, self.current_icount);
+        }
+    }
+    #[inline]
+    fn cpushl(&mut self, cache: u8, ax: u32, _cacr: u32) {
+        if !self.guards.is_empty() {
+            self.guards.note_cpushl(cache, ax);
+        }
+    }
     /// A traced bus records every access per instruction: never plain.
     #[inline]
     fn plain_ram(&self, addr: u32, len: u32) -> bool {
@@ -739,6 +754,10 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline]
     fn fetch16(&mut self, addr: u32) -> Result<u16, BusError> {
+        // Decode-cache misses only (a cold path): the flush check.
+        if !self.guards.is_empty() && addr == self.current_pc {
+            self.guards.note_fetch(addr, self.current_icount);
+        }
         let r = self.board.fetch16(addr);
         self.log("fetch", addr, 2, &r);
         r
@@ -755,7 +774,7 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
             self.log_write("ppmcr-contract-write", addr, 1, u32::from(value), &r);
             return r;
         }
-        self.note_guard_write(addr, 1);
+        self.note_guard_write(addr, 1, u32::from(value));
         self.note_timer_write(addr, 1, u32::from(value));
         self.note_uart8_write(addr, 1, u32::from(value));
         self.note_dspi2_dma_write(addr, 1, u32::from(value));
@@ -770,7 +789,7 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
         #[cfg(feature = "cf-mix")]
         crate::cfmix::data_ref(addr, true);
-        self.note_guard_write(addr, 2);
+        self.note_guard_write(addr, 2, u32::from(value));
         self.note_timer_write(addr, 2, u32::from(value));
         self.note_uart8_write(addr, 2, u32::from(value));
         self.note_dspi2_dma_write(addr, 2, u32::from(value));
@@ -785,7 +804,7 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
         #[cfg(feature = "cf-mix")]
         crate::cfmix::data_ref(addr, true);
-        self.note_guard_write(addr, 4);
+        self.note_guard_write(addr, 4, value);
         self.note_timer_write(addr, 4, value);
         self.note_uart8_write(addr, 4, value);
         self.note_dspi2_dma_write(addr, 4, value);

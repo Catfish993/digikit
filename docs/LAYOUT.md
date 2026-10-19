@@ -8,6 +8,7 @@ This file says who owns which part of the repository and which moves are planned
 | --- | --- | --- |
 | emulator | Native runtime, ColdFire and SHARC execution, coupled runner, launcher | `packages/emulator/{coldfire,machine,periph,card,live,boot,coupled,bootstrap,device-profile,sharc-rt,sharc-gen,sharc,sharc-fast-cl,sharc-fast-wasm}`; `tools/emulator/native_*.py`, `coupled*.py`, `digi_env.py`, `ready.py`, `card_*.py`, `live_audio.py`; trace and snapshot readers (`snapread`, `dspi_log`, `dsp_frames`, `dspdiff`, `wireevents`, `wiretrace`); scenario generators and checkers (`gen_*fx.py`, `fxcheck.py`, `audiocheck.py`, `scenario_dsl.py`); `tests/scenarios/`; `devices/*.toml` |
 | sharc-dev | SHARC+ semantics, tracing, analysis, generation | `tools/sharc_dev/sharc_core/` (the single source of instruction semantics), `tools/sharc_dev/sharcspec/` (encodings from the public manuals), `tools/sharc_dev/sharc*.py`, `tools/sharc_dev/aot_*.py`, `selasm.py`, `dspmap.py`, `framelink.py`; `tools/sharc_dev/sharc_capture.py`, `tools/sharc_dev/sharc_peer.py` |
+| dkupload | Host side of the module upload protocol (`docs/design/digikit-upload.md`): codec, upload state machine, mock device; used by the desktop Modules panel (`apps/desktop/src-tauri/src/modules.rs`) and, as wasm, by the site's upload page (`apps/web/src/modules/`) | `packages/dkupload`; `apps/web/src/modules/`, `apps/web/src/components/ModulesPanel.tsx` |
 | patchkit | Patch planning, building, validation, module builds | `packages/patchkit`; `tools/patchkit/patchkit.py`, `tools/patchkit/pk_*.py`, `port_resolve.py`, `machine*.py`, `patched_*.py`, `pluck_ref.py`, `dsp_patch.py`, `tools/patchkit/dsp_patches/`; `modules/`; `devices/ports/` |
 | control client | Control-socket protocol | `packages/emulator/control` (crate `digi-control`: the `digi-emud` server and the `digi_control` library); `tools/control/digi_client.py` |
 | device | Tools for a real device over USB MIDI | `tools/device/` (`devrpc.py` runtime RPC, `midisniff.py` SysEx capture, `mmon.py` MIDI Monitor files) |
@@ -27,7 +28,7 @@ Python tools live in `tools/<owner>/`, one package per owner above. The reposito
 | App | Builds |
 | --- | --- |
 | Desktop | `digiemu-desktop` depends on `elektron-native-boot`, `emmc-card`, `digi-coupled` and `digi-control`. Through them it pulls in most emulator crates, the loader, plusdrive and patchkit. |
-| Web | `tools/emulator/native_wasm.py` builds `packages/emulator/boot` (wasm32) and `packages/patchkit` (C ABI). Output goes to `apps/web/.local` (not committed). |
+| Web | `tools/emulator/native_wasm.py` builds `packages/emulator/boot` (wasm32), `packages/patchkit` and `packages/dkupload` (C ABI). Output goes to `apps/web/.local` (not committed). |
 
 ## Planned moves
 

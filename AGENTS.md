@@ -1,8 +1,10 @@
 # digikit: agent instructions
 
-Reverse engineering and emulation of the Elektron Digitakt II (OS 1.16) and Digitone II (OS 1.11): a ColdFire
+Reverse engineering and emulation of the Elektron Digitakt II (OS 1.17) and Digitone II (OS 1.12): a ColdFire
 MCF5441x main CPU and a SHARC+ DSP, run natively (desktop app) and in the browser (wasm). The device on the desk is
-a Digitakt II on 1.16. Setup: README.md. Results: docs/findings/ (one file per topic, indexed from
+a Digitakt II on 1.17: analyse, patch and quote addresses for 1.17 (and 1.12 for the Digitone II). 1.16/1.11 are older
+references with more hand names; an address taken from them must be resolved on 1.17/1.12 (patchkit anchors resolve by hash per
+version, `devices/ports/<device>-<os>.toml`) before it is used or reported. Setup: README.md. Results: docs/findings/ (one file per topic, indexed from
 docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDOVER-*.md.
 
 ## Rules
@@ -39,10 +41,12 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   in after about an hour.
 - Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
   with a bound (`sleep N; tail -n 5 FILE`) or use a monitor.
-- Lane agents iterate and finish on the quick proof tier (`--quick`, budget about 60 s per tool). The coordinator
-  integrates with `mise run verify` plus the smoke matrix (`uv run python -m tools.patchkit.pk_harness run --jobs N`), not by re-running
-  every proof tool. Full-tier proofs run only before a merge to `main`. Do not re-run old full proofs to measure a
-  baseline that is already recorded.
+- Lane agents iterate and finish on the quick proof tier (`--quick`, budget about 60 s per tool) and run
+  `mise run verify:pre` (1 to 2 min: lint, types, pathcheck, `pk_build --check`, the changed tests, Rust tests of the
+  affected crates; it is not the merge gate). The coordinator runs `mise run verify` once per merge, plus the smoke matrix
+  (`uv run python -m tools.patchkit.pk_harness run --jobs N`), not by re-running every proof tool. Check what a change
+  selects with `mise run verify -- --explain` (`--base A --head B` for a range) instead of running the gate. Full-tier proofs run only
+  before a merge to `main`. Do not re-run old full proofs to measure a baseline that is already recorded.
 - Stop only processes you started (by PID or run directory). Never `pkill`/`killall` emulator processes: other lanes
   and Em run them on the same machine.
 - Each lane runs its own dev server (own port; `tools/devtools/browser_bench.mjs --url`). Do not change Python dependencies
@@ -51,7 +55,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 ## Verify
 
 - Test layout, commands and the current baseline: docs/TESTING.md.
-- `mise run verify` runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
+- `mise run verify:pre` is the lane check (no emulator; not the merge gate). `mise run verify` is the merge gate and runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
   changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running; `--rerun-failed` re-runs only the steps that failed in the last run). `mise run verify:full` runs every
   step with the full 134-scenario tier sweep (about 7 minutes with a warm render cache, about 20 minutes when DSP/native code changed): only after changes to the
   generated core. Otherwise `mise run verify` (routed by the changed files) is the gate, also for a merge to `main`.
@@ -103,15 +107,15 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 ## Static analysis
 
 - SHARC: `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin` writes
-  `out/sharcdb/<image>.sqlite`; use it through tools/sharc_dev/sharc.py (`img = sharc.load("dt2-1.16")`, then `func`,
+  `out/sharcdb/<image>.sqlite`; use it through tools/sharc_dev/sharc.py (`img = sharc.load("dt2-1.17")`, then `func`,
   `callers`, `callees`, `reach`, `xref_table`, `trace`, `img.sql(...)`) before writing a script. New kinds of fact
   go into tools/sharc_dev/sharcdb/. SHARC+ encodings: tools/sharc_dev/sharcspec/ (from the public ADI manuals).
 - SHARC+ instruction semantics live once, in tools/sharc_dev/sharc_core/; tools/sharc_dev/sharc_trace.py (symbolic) and
   tools/sharc_dev/sharc_run.py (concrete) are drivers only.
 - ColdFire (MAIN OS): a `uv run python -m tools.coldfire.ghidradump` dump (out/ghidra/<image>-emac/), then
-  `uv run python -m tools.coldfire.cfdb build out/ghidra/dt2-1.16-emac` and tools/coldfire/cf.py (`cf.load("dt2-1.16-emac")`);
-  hand-curated 1.16 names in tools/coldfire/cf_names.py. tools/emulator/snapread.py reads `.snap` files without a machine.
-- Ghidra: one JVM per project. Live 1.16 analysis: `~/ghidra-projects/elektron-emac`; `dt2-emac` holds 1.15C. Use
+  `uv run python -m tools.coldfire.cfdb build out/ghidra/dt2-1.17-emac` and tools/coldfire/cf.py (`cf.load("dt2-1.17-emac")`);
+  hand-curated names in tools/coldfire/cf_names.py are literal 1.16 addresses (match by function hash to use them on 1.17). tools/emulator/snapread.py reads `.snap` files without a machine.
+- Ghidra: one JVM per project. Live 1.16 analysis: `~/ghidra-projects/elektron-emac` (no live 1.17 project yet; use the 1.17 dump); `dt2-emac` holds 1.15C. Use
   the language `68000:BE:32:ColdfireEMAC` (the stock ColdFire language stops at `movclr`). Read the dump first;
   live queries with tools/coldfire/ghidraq.py (`--then` chains queries in one JVM). Ghidra's reference tables miss code
   outside functions: confirm "no caller" with tools/coldfire/refscan.py. A pyghidra tool runs as a module like every tool; by
