@@ -95,6 +95,19 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         ("tests/patchkit",),
     ),
     (
+        "machine-conformance",
+        (
+            "tools/patchkit/pk_conform.py",
+            "tools/patchkit/pk_modcheck.py",
+            "tools/patchkit/pk_sharc.py",
+            "tests/support/machine_rig.py",
+            "tests/support/conform_worker.py",
+            "tests/support/dsp_voice_rig.py",
+            "tests/modules/",
+        ),
+        ("tests/modules",),
+    ),
+    (
         "digikit-boot",
         (
             "packages/patchkit/src/dkm.rs",

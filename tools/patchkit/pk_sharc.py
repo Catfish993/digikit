@@ -626,6 +626,139 @@ def run_call(
     return out
 
 
+class CallSession:
+    """A concrete core that keeps its memory between calls (``run_call`` builds a new core for every call).
+
+    ``call`` starts a routine at a symbol the way ``run_call`` does: the registers given, a return address that stops the
+    run, and all registers it does not name as the last call left them. DM written by a call stays (a delay line, a
+    routine's state); ``poke`` and ``peek`` read and write DM words in normal-word addresses. A rig that calls a routine
+    block after block uses this instead of copying its state in and out of every call."""
+
+    def __init__(
+        self,
+        linked: list[Linked],
+        return_sw: int,
+        breaks: tuple[int, ...] = (),
+        approx_recips: bool = False,
+    ) -> None:
+        from tools.sharc_dev import sharc_run
+        from tools.sharc_dev.sharcldr import LoadedMemory
+
+        self._st = sharc_run.st
+        self._run = sharc_run
+        self.return_sw = return_sw
+        blocks, data = [], b""
+        for i, obj in enumerate(linked):
+            blocks.append(
+                {
+                    "target_address": SW_ALIAS_BASE + 2 * obj.base_sw,
+                    "byte_count": len(obj.code_boot),
+                    "fill": False,
+                    "payload_offset": len(data),
+                    "payload_len": len(obj.code_boot),
+                    "index": i,
+                }
+            )
+            data += obj.code_boot
+        mem = LoadedMemory(data, blocks)
+        cache_key = hashlib.sha256(
+            repr([(b["target_address"], b["byte_count"]) for b in blocks]).encode()
+            + data
+        ).digest()
+        self.runner = sharc_run.Runner(
+            mem,
+            linked[0].base_sw,
+            regs={},
+            breakpoints=[return_sw, *breaks],
+            approx_recips=approx_recips,
+        )
+        self.runner._cache = _DECODE_CACHES.setdefault(cache_key, {})
+        self.symbols: dict[str, int] = {}
+        for obj in linked:
+            self.symbols.update(obj.symbols)
+
+    def poke(self, addr: int, word: int) -> None:
+        if not self._st._dm_write(
+            self.runner.state,
+            addr,
+            4,
+            self._st.Const(word & 0xFFFFFFFF),
+            normal_word=True,
+        ):
+            raise PkSharcError(f"cannot poke DM word {addr:#x}")
+
+    def peek(self, addr: int) -> int | None:
+        v = self._st._dm_read(self.runner.state, addr, 4, normal_word=True)
+        return None if v is None else v.value & 0xFFFFFFFF
+
+    def call(
+        self,
+        entry: str,
+        regs: dict[str, int],
+        max_steps: int = 100000,
+        read_regs: tuple[str, ...] = (),
+    ) -> dict[str, object]:
+        import dataclasses
+
+        st, runner = self._st, self.runner
+        old = runner.state
+        new_uregs = dict(old.uregs)
+        for key, value in regs.items():
+            new_uregs[st._seed_code(key)] = st._seed_value(value)
+        state = dataclasses.replace(
+            old,
+            pc_sw=self.symbols[entry],
+            uregs=new_uregs,
+            call_stack=[self.return_sw],
+            pc_stack=(
+                [0x01000000 | (self.return_sw & 0xFFFFFF)] if old.stack_model else []
+            ),
+            pc_stack_pending=-1,
+            pc_stack_requested=-1,
+            loops=[],
+            loop_depth=0,
+            loop_slots=list(old.loop_slots),
+            status_stack=[],
+            mmrs=dict(old.mmrs),
+            special=dict(old.special),
+            bank_alt=dict(old.bank_alt),
+            pending=None,
+            stopped=None,
+        )  # the overlay (DM written so far) is shared, not copied
+        if state.stack_model:
+            st._sync_pc_stack(state)
+            st._sync_status_stack(state)
+        runner.state = state
+        runner.instructions = 0
+        res = runner.run(max_steps)
+        names = (
+            "R0",
+            "R1",
+            "R2",
+            "R4",
+            "R5",
+            "R6",
+            "R7",
+            "R8",
+            "R9",
+            "R10",
+            "R11",
+            "R12",
+            "R13",
+            "I0",
+            *read_regs,
+        )
+        return {
+            "halt": res.halt.to_json(),
+            "instructions": res.instructions,
+            "final_pc_sw": res.final_pc_sw,
+            "regs": {
+                n: getattr(state.uregs.get(st.UREG_CODES[n]), "value", None)
+                for n in names
+            },
+        }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("source")

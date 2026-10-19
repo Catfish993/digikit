@@ -13,6 +13,7 @@ tests live with their code.
 | `tests/sharc/analysis` | Loader, disassembler, sharcdb and the other analysis tools | `tools/sharc_dev/sharcldr.py`, `tools/sharc_dev/sharc_disasm.py`, `tools/sharc_dev/sharcdb/`, `tools/sharc_dev/sharc*.py` |
 | `tests/sharc/integration` | Firmware-backed harness, replay, golden hashes, capture and peer | `tools/sharc_dev/sharc_harness/`, `tools/sharc_dev/sharc_replay.py`, `tools/sharc_dev/sharc_capture.py`, `tools/sharc_dev/sharc_peer.py` |
 | `tests/patchkit` | Patchkit, module primitives, DSP voice rig, PLUCK, master drive, proofs runner. `smoke/` is the emulator smoke tour (`matrix.toml`, `tours/`, `goldens.json`). `pk_src/` holds small patch sources. | `tools/patchkit/patchkit.py`, `tools/patchkit/pk_*.py`, `tools/patchkit/pk_harness.py` |
+| `tests/modules` | The machine conformance suite (`test_machine_conformance.py`, section "Machine conformance"): every machine module, from its manifest, on the concrete SHARC+ core | `tools/patchkit/pk_conform.py`, `tests/support/machine_rig.py` |
 | `tests/coldfire` | ColdFire analysis: cf/cfdb, Ghidra tools, symbols, RTTI, vtables, the ISA oracle | `tools/coldfire/cf.py`, `tools/coldfire/cfdb.py`, Ghidra tools |
 | `tests/emulator` | Launcher, PGO, target directories, coupled runner helpers, live audio, wire traces, bootstrap | `tools/emulator/native_emu.py`, `tools/emulator/native_pgo.py`, `tools/emulator/coupled.py` |
 | `tests/control` | The control-socket client: fake-socket contract tests and daemon tests (`DIGI_EMUD`) | `tools/control/digi_client.py` |
@@ -135,6 +136,63 @@ DSP part of the modules. Independent boots of a scenario run in threads; the cas
 The `equiv` keys `trig_frame` (the frame the note starts at; the rigs must be before it) set it close to the end of the setup. Timing: `DIGIKIT_PROFILE=1` prints the phase table of a run,
 `DIGIKIT_RUN_SALT=x` forces cold boots, `DIGIKIT_SETTLE_MS` changes the 300 ms the rigs run after their boot. Measured on a quiet machine: the quick tier (three scenarios at once) 38 s with warm boot caches and 44 s cold;
 the full tier (five test files at once) 250 s.
+
+## Machine conformance (`tests/modules`)
+
+One contract for every machine module, tested the way a plugin validator tests any plugin: the suite reads the module's manifest and runs
+its DSP routine on the concrete SHARC+ core, through the wrapper `core/dsp-voice`, block by block as the engine calls it. A module's own
+tests (what its sound should be) stay with the module; this suite only asks what any machine must satisfy.
+
+```
+mise run module:check NAME [--device dt2|dn2]        # NAME: machines/pluck or pluck
+DIGI_CONFORM_MODULES=machines/pluck uv run python -m pytest tests/modules/test_machine_conformance.py -rf     # the suite alone
+```
+
+`module:check` runs the suite for the module's devices, then the module's own tests: `modules/<group>/<name>/tests/test_*.py` and, until
+the tests move there, the files under `tests/` named after the module (`tests/patchkit/test_pluck*.py`). A module is a machine when it
+has a DSP object for the device and a `[[voice]]` or a voices `[[entry]]` (`tools/patchkit/pk_conform.py`); `core/*` never is.
+
+What a machine must satisfy, in every block of every case:
+
+| Check | Rule |
+| --- | --- |
+| returns | the call comes back to the caller within the rig's step limit (400,000 instructions) |
+| context | M5, M6, M7, M13, M14, M15, L0 to L5 and MODE1 are as they went in (the rig draws a hostile context per call) |
+| finite | all 32 output samples are finite; the output block is NaN before the call, so a sample the routine did not write fails too |
+| bound | `abs(sample)` is at most 8.0 (18 dB over full scale: a runaway state, not a loud sound) |
+| budget | at most `headroom / 16` instructions in a block, and at most `headroom` in the block of a note-on (DN2: the edge block and the one after it) |
+
+The budget rule (`pk_conform.budget`): the block is `dsp_clock_hz / dsp_blocks_per_second` cycles (`devices/*.toml`, `[board]`); the stock
+firmware with one held note busy instructions per block (Digitakt II 208,640, Digitone II 334,529) project to cycles with the "high" factor of
+`devices/cycle-factors.json`; the module may bring the load to the DSP budget gate's 85 % (`pk_dsp_budget.DEFAULT_BUDGET_PCT`). The instructions
+left are the headroom (Digitakt II 194,244; Digitone II 92,796); 16 voices share it, so one steady voice-block gets 12,140 (Digitakt II) or 5,799
+(Digitone II), and a note-on may take the whole headroom once. A manifest can declare `[conformance] voice_block = N`, `note_on_block = M` to replace
+either number (the module schema does not know the table yet). The measured worst case of each machine is printed by
+`test_worst_case_instructions_are_reported` (`-rA`) and written to `out/runs/conformance/<module>@<device>.json` with every case's timing.
+
+Cases (`pk_conform.cases`, generated from the parameters in the manifest: `[[param]]` min, max, default and the stock TUNE row 0xca of a
+Digitakt II knob list). Parameter kinds do not exist yet, so every parameter is treated as possibly pitch-like.
+
+| Group | Cases |
+| --- | --- |
+| `limits` | each parameter at min, max and mid with the others at default, and all at default; notes 0, 24, 48, 60, 72, 96, 127; a note-on block and 3 more |
+| `corners` | all parameters together at every combination of min and max (2^n); notes 0, 60, 127 |
+| `modulation` | 500 blocks, every parameter moved each block: a seeded random walk over its full range (notes 24, 100) and a square wave between its limits (note 60) |
+| `long` | one note of 2000 blocks at the defaults |
+| `retrigger` | a trigger every 7 blocks for 280 blocks, at velocity 1 and at velocity 127 |
+
+A failure message names module, device, case, block, the parameter words, note and velocity, and the first bad sample, for example
+`machines/pluck@dt2 case limits/tune=min/note24 block 0: note 24 velocity 100 words [tune=0x0 pluck_decay=0x4000 ...]: output sample 0 of 32 is inf`.
+A case stops at its first failure. Modules built from the same sources and parameters (`test/dyn-pluck` and `machines/pluck`) run once.
+`test/dyn-dsp-hang` (a routine that never returns) is a negative fixture: `test_the_suite_rejects_a_machine_that_hangs` expects it to fail.
+
+How it runs: the rig is `tests/support/machine_rig.py` (`MachineRig(module, device)`: builds the wrapper and the module's DSP sources, places the
+`.PKDATA`, `.PKBSS` and `.VAR` symbols in free L2, sets parameter words by manifest id, `set_note`, `trigger`, `block()`; the core keeps its memory between
+blocks, `pk_sharc.CallSession`). One worker process per machine and device (`tests/support/conform_worker.py`) runs all cases, under PyPy 3.11 when
+`uv` can start it (3 to 4 times faster than CPython on the concrete core), else under the test's Python; workers of different machines run at once
+(`DIGI_CONFORM_JOBS`, default cpus / 4). Measured on a loaded machine: all 8 machine/device cells in 24 s wall, 50 s CPU; one cell takes 3 to 20 s of CPU.
+The verify route: a change in a machine module, a module it depends on or builds from, `core/dsp-voice`, or in the rig and `pk_conform.py` selects the suite
+(`tools/devtools/verify_route.py`, suite `machine-conformance` in `verify.py`).
 
 ## DSP budget gate (patchkit smoke)
 
