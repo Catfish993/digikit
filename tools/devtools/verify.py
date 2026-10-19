@@ -8,7 +8,6 @@
     uv run python -m tools.devtools.verify --rerun-failed   # only the steps that failed in the last run
     uv run python -m tools.devtools.verify --jobs 8        # a CPU budget of 8 cores for the whole gate (default: physical cores - 2); 1 = sequential
     uv run python -m tools.devtools.verify --foreground    # normal priority (default: nice 10)
-    uv run python -m tools.devtools.verify --full --old-images   # digikit scenarios on DT2 1.16 and DN2 1.11 too
     uv run python -m tools.devtools.verify --full --all-no-aot   # AOT = no-AOT equality on every FX scenario, not the fixed subset
     uv run python -m tools.devtools.verify --explain        # show the routing and the plan, run nothing
     uv run python -m tools.devtools.verify --base A --head B --explain   # the same for the commits A..B
@@ -1165,7 +1164,6 @@ def explain(
     rust_packages: list[str] | None = None,
     budget: int = 1,
     all_no_aot: bool = False,
-    images: str = "",
     budget_label: str | None = None,
 ) -> None:
     """Print the routing, the node plan, the worker plan and the python-tests files; run nothing."""
@@ -1188,8 +1186,6 @@ def explain(
         print(
             f"no-AOT comparison: {'all scenarios (--all-no-aot)' if all_no_aot else 'the fixed subset (NO_AOT_SUBSET)'}"
         )
-    if images:
-        print(f"digikit images: {images}")
     if "python-tests" in steps:
         source_of = dict(py_plan)
         rows = python_files([p for p, _ in py_plan])
@@ -1453,44 +1449,6 @@ def rerun_plan(result: dict) -> tuple[tuple[str, ...], list[str]]:
     return steps, list(result.get("py_tests", []))
 
 
-def old_image_paths() -> tuple[str, ...]:
-    """The files whose change asks for the digikit scenarios on the older images: the port file of every
-    image that is not the newest of its device, and the port resolution."""
-    from tools.patchkit import pk_device
-
-    paths = ["tools/patchkit/port_resolve.py"]
-    for device in pk_device.digikit_devices():
-        paths += [
-            f"devices/ports/{image}.toml"
-            for image in pk_device.port_images(device)[:-1]
-        ]
-    return tuple(paths)
-
-
-def digikit_images(full: bool, flag: bool, files: list[str]) -> tuple[str | None, str]:
-    """(DIGIKIT_IMAGES value to set or None to leave unset, why). The scenarios of tests/digikit run on the
-    newest image of each device (DT2 1.17, DN2 1.12: what the device runs); the older ones (DT2 1.16, DN2 1.11)
-    in `--full` only when their port files or the port resolution changed, and on request (--old-images)."""
-    from tools.patchkit import pk_device
-
-    by_device = {d: pk_device.port_images(d) for d in pk_device.digikit_devices()}
-    newest = ", ".join(sorted(imgs[-1] for imgs in by_device.values()))
-    older = ", ".join(sorted(i for imgs in by_device.values() for i in imgs[:-1]))
-    if os.environ.get("DIGIKIT_IMAGES"):
-        return None, f"DIGIKIT_IMAGES={os.environ['DIGIKIT_IMAGES']} (set by you)"
-    if flag:
-        return "all", f"all, with the older {older} (--old-images)"
-    touched = [f for f in files if f in old_image_paths()]
-    if full and touched:
-        return "all", f"all, with the older {older} ({', '.join(touched)} changed)"
-    if full:
-        return (
-            "newest",
-            f"newest only: {newest} (older: --old-images, or a change to their port files)",
-        )
-    return None, f"newest only: {newest} (quick tier; older: --old-images)"
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Run the exactness gate for what changed, one line per step."
@@ -1525,13 +1483,6 @@ def main(argv: list[str] | None = None) -> int:
         help="run at normal priority (default: nice 10, the whole gate and its children)",
     )
     ap.add_argument(
-        "--old-images",
-        action="store_true",
-        help="run the digikit scenarios (tests/digikit) on the older images too: DT2 1.16, DN2 1.11 "
-        "(default: the newest image of each device; --full adds the older ones when their port "
-        "files or the port resolution changed)",
-    )
-    ap.add_argument(
         "--all-no-aot",
         action="store_true",
         help="AOT = no-AOT equality on every FX scenario (default: the fixed NO_AOT_SUBSET; "
@@ -1561,7 +1512,7 @@ def main(argv: list[str] | None = None) -> int:
     origin: dict[str, str] = {}
     rust_packages: list[str] | None = None
     full, dt2 = args.full, args.dt2
-    if full:  # tests/digikit: every scenario (the gate runs the quick tier); the images follow digikit_images
+    if full:  # tests/digikit: every scenario (the gate runs the quick tier)
         os.environ["DIGIKIT_TIER"] = "full"
     rerun_tests: list[str] | None = None
     if args.rerun_failed:
@@ -1610,8 +1561,6 @@ def main(argv: list[str] | None = None) -> int:
         py_plan = python_test_plan(files, args.full)
     budget = verify_budget.resolve_budget(args.jobs)
     budget_label = verify_budget.budget_text(args.jobs)
-    image_files = files if files else (changed_files(args.base) if full else [])
-    image_env, image_why = digikit_images(full, args.old_images, image_files)
     if args.explain:
         explain(
             steps,
@@ -1622,12 +1571,9 @@ def main(argv: list[str] | None = None) -> int:
             rust_packages=rust_packages,
             budget=budget,
             all_no_aot=args.all_no_aot,
-            images=image_why,
             budget_label=budget_label,
         )
         return 0
-    if image_env:
-        os.environ["DIGIKIT_IMAGES"] = image_env
     niced = verify_budget.lower_priority(args.foreground)
     # Every step, and no_aot_env(), inherits os.environ: set the cache env once.
     os.environ.update(cache_env(None, args.no_cache))
@@ -1647,7 +1593,7 @@ def main(argv: list[str] | None = None) -> int:
     nodes, deps = plan(steps, gate.py_tests)
     print(
         f"verify: {budget_label}; nice {niced if niced is not None else 'unchanged (--foreground or not allowed)'}; "
-        f"digikit images: {image_why}; no-AOT comparison: "
+        "no-AOT comparison: "
         f"{'all scenarios' if args.all_no_aot else 'the fixed subset'}",
         flush=True,
     )

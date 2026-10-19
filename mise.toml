@@ -106,11 +106,11 @@ description = "Quick lane checks, NOT the merge gate (tools/devtools/verify_pre.
 
 [tasks.verify]
 run = "uv run python -m tools.devtools.verify"
-description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --old-images, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes run verify:pre"
+description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes run verify:pre"
 
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"
-description = "Exactness gate, every step; the AOT = no-AOT sweep runs the fixed subset (`-- --all-no-aot`: all 134 FX scenarios; `-- --old-images`: digikit scenarios on DT2 1.16 and DN2 1.11 too); only after generated-core changes"
+description = "Exactness gate, every step; the AOT = no-AOT sweep runs the fixed subset (`-- --all-no-aot`: all 134 FX scenarios); only after generated-core changes"
 
 [tasks.scenario]
 run = "uv run python -m tools.emulator.coupled scenario"
@@ -291,7 +291,7 @@ description = "Smoke tour and module tests over the matrix (tests/patchkit/smoke
 
 [tasks."dkrt:proof"]
 run = "uv run python -m tools.patchkit.pk_dkrt proof"
-description = "digikit runtime in the emulator: patch core/runtime, boot with a selection of three bad files and test/dyn-demo, boot report, counter, E_BOOT_ONLY after the boot, write-watch and flush check: mise run dkrt:proof [-- --image dn2-1.11 --keep DIR]"
+description = "digikit runtime in the emulator: patch core/runtime, boot with a selection of three bad files and test/dyn-demo, boot report, counter, E_BOOT_ONLY after the boot, write-watch and flush check: mise run dkrt:proof [-- --image dn2-1.12 --keep DIR]"
 
 [tasks."patch:proofs"]
 run = "uv run python -m tools.patchkit.pk_proofs"

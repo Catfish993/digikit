@@ -841,6 +841,16 @@ boot in the FX block, and the 1 kHz test sample plays at 999.94 Hz with
 harmonics below -89 dB. Fx idx 0..24 still differ from a card-less boot:
 the v3 kit does not carry them. **[V]**
 
+**On DT2 1.17 and DN2 1.12 the chain is the same.** The setters of `kit_t`, the Fx array and the
+Sound pointers (DT2 `FUN_4002d3e0`, `FUN_4002da7a`, `FUN_4002d9c4`; DN2 `FUN_40025baa`, `FUN_40025444`,
+`FUN_40025af4`) sit at the same addresses with the same bytes in both versions of each device, so the globals,
+offsets and sizes above are unchanged, and so are the BR / Delay Send mirrors (DT2 64 / 55, DN2 95 / 86). The
+descriptor table moved by +0x410 (DT2 0x4020f18c -> 0x4020f59c, DN2 0x401f7f94 -> 0x401f83a4; counts 0x113 /
+0x141); `paramtable.find_table` finds it by signature on all four images. The section 7 DSP blobs are
+byte-identical between 1.16 and 1.17 and between 1.11 and 1.12. With the ready snapshots rebuilt on 1.17 /
+1.12 (2026-10-20), every PCM pin and every oracle test (61 DN2, 135 DT2) gives the same result as on 1.16 /
+1.11. **[D]**
+
 `tools/coldfire/cf_names.py` labels `0x8000470C` as `track_sync_cache`. At ready it
 holds the 16 Sound pointers. **[O]**
 

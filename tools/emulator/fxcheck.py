@@ -13,7 +13,7 @@ given run directories. Parameter values come from the report's ``peek``
 Track FX sweeps (tests/scenarios/dn2-trackfx.json, ``tf-*``): the reference is
 tf-dry-hold or tf-dry-tap by hold time, every run decodes the whole peeked
 Sound and Fx arrays by parameter name (descriptor table of --image, default the
-DN2 1.11 MAIN OS) and lists the ones that differ from the reference, and the
+DN2 1.12 MAIN OS) and lists the ones that differ from the reference, and the
 per-control measures are printed in a second table. ``--ref`` overrides the
 reference.
 
@@ -190,7 +190,7 @@ def diff_vs_dry(
 
 SCENARIO_FILES: tuple[str, ...] = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.11" / "section_3_MAIN_OS.bin"
+DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
 
 
 def scenario_events() -> dict[str, list[dict]]:
@@ -261,21 +261,21 @@ BR_IDX, DSEND_IDX = 95, 86  # Sound array indices of Bit Reduction and Delay Sen
 
 
 def configure(device: str) -> None:
-    """Switch the module to a device: DN2 (the default) or DT2 1.16, whose track-1
+    """Switch the module to a device: DN2 (the default) or DT2 1.17, whose track-1
     Sound array is at *0x8000470c+0x14 and Fx array at *0x80004708 (finding 02),
     with the 1 kHz card sample instead of the 261.6 Hz audition sine."""
     global F0, SCENARIO_FILES, DEFAULT_IMAGE, SND_PEEK, FX_PEEK, BR_IDX, DSEND_IDX
     if device == "dt2":
         F0 = 1000.0
         SCENARIO_FILES = ("dt2-trackfx.json", "dt2-sendfx.json")
-        DEFAULT_IMAGE = ROOT / "out" / "sections" / "dt2-1.16" / "section_3_MAIN_OS.bin"
+        DEFAULT_IMAGE = ROOT / "out" / "sections" / "dt2-1.17" / "section_3_MAIN_OS.bin"
         SND_PEEK = "snd=*0x8000470c+0x14:142"
         FX_PEEK = "fx=*0x80004708+0:142"
         BR_IDX, DSEND_IDX = 64, 55
     elif device == "dn2":
         F0 = 261.6
         SCENARIO_FILES = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
-        DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.11" / "section_3_MAIN_OS.bin"
+        DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
         SND_PEEK = "snd=*0x800052a0+0x48:202"
         FX_PEEK = "fx=*0x800052a4+0:202"
         BR_IDX, DSEND_IDX = 95, 86

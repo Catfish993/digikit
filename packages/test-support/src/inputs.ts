@@ -9,8 +9,6 @@ export type Device = 'dt2' | 'dn2';
 const FIRMWARE: Record<string, { syx: string; ready: string }> = {
   'dt2 1.17': { syx: 'Digitakt_II_OS1.17.syx', ready: 'out/ready-pk-dt2-117' },
   'dn2 1.12': { syx: 'Digitone_II_OS1.12.syx', ready: 'out/ready-fix-dn2-112' },
-  'dt2 1.16': { syx: 'Digitakt_II_OS1.16.syx', ready: 'out/ready-pk-dt2-116' },
-  'dn2 1.11': { syx: 'Digitone_II_OS1.11.syx', ready: 'out/ready-pk-dn2-111' },
 };
 
 export interface ReadyInputs {

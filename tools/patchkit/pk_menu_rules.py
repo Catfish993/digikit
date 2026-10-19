@@ -93,7 +93,7 @@ def render(rules: list[dict]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--ref", default="dt2-1.16")
+    ap.add_argument("--ref", default="dt2-1.17")
     ap.add_argument("--check", nargs="*", default=[])
     a = ap.parse_args()
     rules = build_rules(a.ref)

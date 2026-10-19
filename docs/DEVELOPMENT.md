@@ -108,7 +108,7 @@ The browser DSP is slow; the browser host is parked on the branch `wip/browser-h
 mise run emu:serve                      # headless, paused; serves the control socket
 mise run emu:ctl status                 # status, step N, tap CODE, frame out.png, events
 uv run python -m tools.control.digi_client inject PATCHED.syx   # hot DSP injection
-uv run python -m tools.patchkit.dsp_patch syx firmware/BASE.syx tools/patchkit/dsp_patches/dn2-1.11-master-half.patch OUT.syx
+uv run python -m tools.patchkit.dsp_patch syx firmware/BASE.syx tools/patchkit/dsp_patches/dn2-1.12-master-half.patch OUT.syx
 ```
 
 `tools/patchkit/dsp_patch.py` edits DSP code or data by SHARC+ address and writes a patched

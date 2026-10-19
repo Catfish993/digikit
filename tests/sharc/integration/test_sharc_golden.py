@@ -1,4 +1,4 @@
-"""Golden outputs of the SHARC core on the DT2 1.16 image.
+"""Golden outputs of the SHARC core on the DT2 1.17 image.
 
 Six outputs are hashed and compared with tests/golden/sharc_golden.json:
 coverage for the render path and all roots, the concrete runner from the
@@ -26,20 +26,20 @@ from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-BLOB = "out/sections/dt2-1.16/section_7_BLOB.bin"
+BLOB = "out/sections/dt2-1.17/section_7_BLOB.bin"
 GOLDEN = os.path.join(ROOT, "tests", "golden", "sharc_golden.json")
 
 TRACE = [BLOB, "--blob", "--max-states", "64", "--summary"]
 CASES = {
-    "cov_render": ("sharc_coverage", ["dt2-1.16", "--root", "0x1c2b24", "--json"]),
-    "cov_all": ("sharc_coverage", ["dt2-1.16", "--all-roots", "--json"]),
+    "cov_render": ("sharc_coverage", ["dt2-1.17", "--root", "0x1c2b24", "--json"]),
+    "cov_all": ("sharc_coverage", ["dt2-1.17", "--all-roots", "--json"]),
     "run_voice": (
         "sharc_run",
-        ["dt2-1.16", "--start", "0x1c4ecf", "--max-steps", "200000", "--json"],
+        ["dt2-1.17", "--start", "0x1c4ecf", "--max-steps", "200000", "--json"],
     ),
     "run_frame": (
         "sharc_run",
-        ["dt2-1.16", "--start", "0x1c2b24", "--max-steps", "200000", "--json"],
+        ["dt2-1.17", "--start", "0x1c2b24", "--max-steps", "200000", "--json"],
     ),
     "trace_voice": (
         "sharc_trace",

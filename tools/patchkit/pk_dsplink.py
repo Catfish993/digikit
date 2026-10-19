@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Proof of core/dsp-link in the coupled emulator (docs/findings/31-dsp-link.md).
 
-    uv run python -m tools.patchkit.pk_dsplink proof [--device dt2|dn2] [--fw 1.16] [--sizes 4096,65536] [--quick]
-    uv run python -m tools.patchkit.pk_dsplink frame [--device dt2|dn2] [--fw 1.16]
+    uv run python -m tools.patchkit.pk_dsplink proof [--device dt2|dn2] [--fw 1.17] [--sizes 4096,65536] [--quick]
+    uv run python -m tools.patchkit.pk_dsplink frame [--device dt2|dn2] [--fw 1.17]
 
 `proof` patches core/dsp-link into the stock firmware, boots it coupled (DSP and ColdFire), and, with a note playing:
 
@@ -40,7 +40,7 @@ from tools import python_env  # noqa: E402
 from tools.patchkit import hook_ab, pk_device  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 
-FW = {"dt2": "1.16", "dn2": "1.11"}
+FW = {"dt2": "1.17", "dn2": "1.12"}
 # DlLink field offsets (modules/core/dsp-link/src/cf/dsp-link.c, struct DlLink)
 L_STATE, L_ERR, L_BUF, L_DST, L_NWORDS, L_XID, L_CAP, L_NCHUNKS = (
     0,

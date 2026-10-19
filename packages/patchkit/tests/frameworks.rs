@@ -16,7 +16,6 @@ fn image(name: &str) -> Option<Vec<u8>> {
 }
 
 const DT2_117: &str = "Digitakt_II_OS1.17.syx";
-const DT2_116: &str = "Digitakt_II_OS1.16.syx";
 const DN2_112: &str = "Digitone_II_OS1.12.syx";
 
 fn registry() -> Registry {
@@ -140,7 +139,7 @@ const XS: [&str; 3] = ["core/machines", "machines/xslice", "test/machine-clone"]
 
 #[test]
 fn dt2_machines_get_types_7_and_8_and_the_tables_grow() {
-    for file in [DT2_117, DT2_116] {
+    for file in [DT2_117] {
         let lib = library(vec![]);
         let Some(r) = run(file, &lib, &XS) else {
             continue;
@@ -218,7 +217,6 @@ fn every_instruction_the_framework_places_decodes() {
     let lib = library(vec![]);
     for (file, ids) in [
         (DT2_117, &XS[..]),
-        (DT2_116, &XS[..]),
         (DN2_112, &["core/machines", "test/dn2-clone"][..]),
     ] {
         let Some(r) = run(file, &lib, ids) else {
@@ -249,7 +247,7 @@ fn every_instruction_the_framework_places_decodes() {
 #[test]
 fn digitone_ii_clone_gets_type_5() {
     let lib = library(vec![]);
-    for file in [DN2_112, "Digitone_II_OS1.11.syx"] {
+    for file in [DN2_112] {
         let Some(r) = run(file, &lib, &["core/machines", "test/dn2-clone"]) else {
             continue;
         };
@@ -308,7 +306,7 @@ fn a_digitakt_machine_is_refused_on_the_digitone() {
 #[test]
 fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
     let lib = library(vec![]);
-    for file in [DT2_117, DT2_116] {
+    for file in [DT2_117] {
         let Some(r) = run(
             file,
             &lib,

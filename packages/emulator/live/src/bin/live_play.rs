@@ -8,7 +8,7 @@
 //! SHARC options:
 //!   --lp0 LOG          FlexBus log fed over LP0 before the first frame
 //!                      (default: the one flexbus*.raw next to CAPTURE)
-//!   --image NAME       firmware image (default dt2-1.16)
+//!   --image NAME       firmware image (default dt2-1.17)
 //!   --start-frame N    first capture frame (default 74, as the listen)
 //!   --lib PATH         native core library (default $SHARC_NATIVE_LIB, else
 //!                      out/native/opt/target-final/release/libsharc_native.dylib)
@@ -165,7 +165,7 @@ fn resolve_pack(a: &Args, capture: &str) -> PathBuf {
     cmd.args(["-m", "tools.sharc_dev.sharc_transpile_run"])
         .env("PYTHONPATH", pythonpath_with(&root))
         .arg("live-pack")
-        .arg(a.image.as_deref().unwrap_or("dt2-1.16"))
+        .arg(a.image.as_deref().unwrap_or("dt2-1.17"))
         .arg(capture)
         .arg("--start-frame")
         .arg(a.start_frame.unwrap_or(74).to_string());

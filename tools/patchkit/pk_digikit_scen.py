@@ -81,20 +81,9 @@ from tools.patchkit import pk_harness as H  # noqa: E402
 
 SCENARIOS = ROOT / "tests" / "digikit" / "scenarios"
 CACHE = ROOT / "out" / "cache" / "digikit"
-# every device with a module store and the images of it that have a port (`port = true` in the device file); the quick tier runs the last
-ALL_IMAGES = {d: pk_device.port_images(d) for d in pk_device.digikit_devices()}
-QUICK_IMAGES = {d: imgs[-1] for d, imgs in ALL_IMAGES.items()}
+# every device with a module store and its newest image that has a port (`port = true` in the device file)
+QUICK_IMAGES = {d: pk_device.port_images(d)[-1] for d in pk_device.digikit_devices()}
 RT = B.RT
-
-
-def every_image(tier: str) -> bool:
-    """Whether a run covers every image with a port (the older ones too), not only the newest per device.
-    DIGIKIT_IMAGES=all|newest decides; unset, the full tier takes all and the quick tier the newest. The verify gate
-    sets it (tools/devtools/verify.py): the device runs the newest image, the older ones are checked only when
-    their port files or the port resolution change, or on request (`verify --old-images`)."""
-    return (
-        os.environ.get("DIGIKIT_IMAGES", "all" if tier == "full" else "newest") == "all"
-    )
 
 
 # emulated ms a rig runs after its boot before the scenario looks: the first UI-loop passes (a module's DSP part is waited for by
@@ -122,16 +111,11 @@ class Scenario:
     path: Path
 
     def images(self, tier: str) -> list[str]:
-        """The images a run at TIER covers: the newest image of each device, or all of them (see
-        `every_image`)."""
-        every = every_image(tier)
+        """The images a run covers: the newest image of each device the scenario targets."""
         explicit = self.data["scenario"].get("images")
         if explicit:
-            return list(explicit) if every else explicit[-1:]
-        out: list[str] = []
-        for dev in self.devices:
-            out += list(ALL_IMAGES[dev]) if every else [QUICK_IMAGES[dev]]
-        return out
+            return [i for i in explicit if i in QUICK_IMAGES.values()]
+        return [QUICK_IMAGES[dev] for dev in self.devices]
 
 
 def load_scenarios(root: Path = SCENARIOS) -> list[Scenario]:
@@ -224,7 +208,7 @@ class Ctx:
         """The scenario's data table of this kind, with the device's own sub-table laid over it."""
         d = dict(self.scen.data[self.scen.kind])
         d.update(d.pop(self.device, {}))
-        for other in ALL_IMAGES:
+        for other in QUICK_IMAGES:
             d.pop(other, None)
         return d
 

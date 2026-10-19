@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the digikit runtime (core/runtime) in the emulator: patch, pack modules, build a card, boot, observe.
 
-    uv run python -m tools.patchkit.pk_dkrt proof [--image dt2-1.16] [--keep DIR] [--control]
+    uv run python -m tools.patchkit.pk_dkrt proof [--image dt2-1.17] [--keep DIR] [--control]
 
 `proof` is the loader gate on one image (docs/findings/29-runtime-v0.md, converted to boot-time loading in finding 37 when hot reload
 was archived): it patches core/runtime into the stock firmware, packs test/dyn-demo (and two broken variants) into `.dkm` files,
@@ -306,7 +306,7 @@ def cmd_ops(
 
 
 def proof(
-    image: str = "dt2-1.16", keep: Path | None = None, control: bool = False
+    image: str = "dt2-1.17", keep: Path | None = None, control: bool = False
 ) -> dict:
     """The full proof; returns the report with a list of checks (`ok` is their conjunction)."""
     if image not in DEVICE_SYX:
@@ -501,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("proof")
-    p.add_argument("--image", default="dt2-1.16")
+    p.add_argument("--image", default="dt2-1.17")
     p.add_argument("--keep", type=Path)
     p.add_argument("--control", action="store_true")
     a = ap.parse_args(argv)

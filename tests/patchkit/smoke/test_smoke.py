@@ -67,9 +67,9 @@ _PATTERN_STEPS = [
 ]
 
 
-@pytest.mark.parametrize("stock_session", ["dt2", "dt2:1.16"], indirect=True)
+@pytest.mark.parametrize("stock_session", ["dt2"], indirect=True)
 def test_play_in_patterns_3_and_4_runs_clean(stock_session):
-    """DT2 1.17 and 1.16 stock: PLAY in pattern 3 or 4 used to halt the generated SHARC core on a conditional Type 7a
+    """DT2 1.17 stock: PLAY in pattern 3 or 4 used to halt the generated SHARC core on a conditional Type 7a
     (`IF EQ modify(I4, M4)` at 0x1cbc93, finding 17); the core models it now (finding 05)."""
     for trig in ("TRIG 3", "TRIG 4"):
         steps = [{"tap": ["PTN", trig]}, {"tap": "PLAY"}, {"wait_ms": 1500}]

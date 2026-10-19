@@ -158,7 +158,7 @@ pub fn parse_values(
                 Some(audio_profile_syx.unwrap_or_else(|| {
                     std::env::var_os("DIGI_EMU_SYX")
                         .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("firmware/Digitone_II_OS1.11.syx"))
+                        .unwrap_or_else(|| PathBuf::from("firmware/Digitone_II_OS1.12.syx"))
                 }))
             } else {
                 None

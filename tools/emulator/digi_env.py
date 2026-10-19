@@ -40,7 +40,7 @@ READY_DIRS = {
     },
 }
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
-DEFAULT_SYX = config.stock("Digitone_II_OS1.11.syx")
+DEFAULT_SYX = config.stock("Digitone_II_OS1.12.syx")
 FAST_TABLE = ROOT / "tools" / "emulator" / "fast_regions.json"
 TOOLCHAIN: str = tomllib.loads((ROOT / "mise.toml").read_text())["tools"]["rust"]
 TRIPLE = "aarch64-apple-darwin"
@@ -240,7 +240,7 @@ def firmware_for(device: str, environ: Environ | None = None) -> pathlib.Path:
     environ = os.environ if environ is None else environ
     if device == "dn2":
         return firmware(environ)
-    default = {"dt2": "Digitakt_II_OS1.16.syx"}[device]
+    default = {"dt2": "Digitakt_II_OS1.17.syx"}[device]
     return pathlib.Path(
         environ.get(f"DIGI_EMU_SYX_{device.upper()}") or config.stock(default)
     )

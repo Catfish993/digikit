@@ -44,13 +44,13 @@ EXTRA_AFTER_READY = "1000000"
 
 DEVICES = {
     "dn2": {
-        "image": "dn2-1.11",
-        "out": "out/snapshots/dn2-audio-ready-cold-2026-10-07",
+        "image": "dn2-1.12",
+        "out": "out/snapshots/dn2-audio-ready-cold-2026-10-20",
         "env": {},
     },
     "dt2": {
-        "image": "dt2-1.16",
-        "out": "out/snapshots/dt2-audio-ready-cold-2026-10-07",
+        "image": "dt2-1.17",
+        "out": "out/snapshots/dt2-audio-ready-cold-2026-10-20",
         "env": {
             "DSP_DEVICE": "dt2",
             "DSP_SAMPLE_LINK": "lp0",

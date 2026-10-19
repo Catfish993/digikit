@@ -46,7 +46,7 @@ def test_rules_are_declared_for_the_three_anchors():
     assert all(r["devices"] in (["dt2"], ["dn2"]) for r in m["anchor_rule"])
 
 
-@pytest.mark.parametrize("version", ["1.16", "1.17"])
+@pytest.mark.parametrize("version", ["1.17"])
 def test_the_scan_reproduces_the_recorded_port(version):
     syx = os.path.join(ROOT, f"Digitakt_II_OS{version}.syx")
     port = os.path.join(ROOT, "devices", "ports", f"dt2-{version}.toml")

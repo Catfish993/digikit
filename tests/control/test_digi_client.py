@@ -5,7 +5,7 @@ docs/design/emulator-control.md against a real daemon.
     DIGI_EMUD=out/native/target/nogen/release/digi-emud uv run python -m pytest tests/control/test_digi_client.py
 
 The daemon tests boot a CF-only emulator (no private DSP inputs); they skip
-without DIGI_EMUD or the .syx (DIGI_EMU_SYX, else firmware/Digitone_II_OS1.11.syx).
+without DIGI_EMUD or the .syx (DIGI_EMU_SYX, else firmware/Digitone_II_OS1.12.syx).
 """
 
 from __future__ import annotations
@@ -183,7 +183,7 @@ def test_describe_load_summarises_a_hot_inject():
 
 EMUD = os.environ.get("DIGI_EMUD", "")
 SYX = pathlib.Path(
-    os.environ.get("DIGI_EMU_SYX") or config.stock("Digitone_II_OS1.11.syx")
+    os.environ.get("DIGI_EMU_SYX") or config.stock("Digitone_II_OS1.12.syx")
 )
 needs_daemon = pytest.mark.skipif(
     not (EMUD and pathlib.Path(EMUD).is_file() and SYX.is_file()),
@@ -271,7 +271,7 @@ def test_quit_ends_the_daemon_and_removes_its_socket():
 
 # ----- firmware injection ------------------------------------------------------
 
-PATCH = ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.11-master-half.patch"
+PATCH = ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.12-master-half.patch"
 
 
 @pytest.fixture(scope="module")

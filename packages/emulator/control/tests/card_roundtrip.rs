@@ -1,7 +1,7 @@
 //! The +Drive development loop end to end (docs/plans/digikit-runtime.md, Phase 1 gate): boot the DT2 on a card
 //! built from a `plus_drive/dt2/`-style folder, save a project from the panel, quit (the synced folder is exported
 //! on exit), build a new card from the folder, boot again and find the saved project on it, sector for sector.
-//! ColdFire only. Skipped without the DT2 1.16 firmware. Prints the numbers it measures.
+//! ColdFire only. Skipped without the DT2 1.17 firmware. Prints the numbers it measures.
 
 use std::{
     fs,
@@ -46,7 +46,7 @@ fn dt2_syx() -> Option<PathBuf> {
     std::env::var_os("DT2_SYX").map(PathBuf::from).or_else(|| {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
-            .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.16.syx"))
+            .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.17.syx"))
             .find(|path| path.exists())
     })
 }

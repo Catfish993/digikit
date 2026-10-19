@@ -13,20 +13,20 @@ from tools.coldfire import paramtable  # noqa: E402
 from tools.emulator import fxcheck, gen_trackfx  # noqa: E402
 from tools.emulator import scenario_dsl as d  # noqa: E402
 
-DN2 = ROOT / "out" / "sections" / "dn2-1.11" / "section_3_MAIN_OS.bin"
-DT2 = ROOT / "out" / "sections" / "dt2-1.16" / "section_3_MAIN_OS.bin"
+DN2 = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
+DT2 = ROOT / "out" / "sections" / "dt2-1.17" / "section_3_MAIN_OS.bin"
 
 
 def test_find_table_synthetic() -> None:
     sig = bytes.fromhex(
-        "202f00040c800000014155c141f9401f7f947301c0812200e589ed889081203008044e75"
+        "202f00040c800000014155c141f9401f83a47301c0812200e589ed889081203008044e75"
     )
-    assert paramtable.find_table(b"\0" * 7 + sig + b"\0" * 9) == (0x401F7F94, 0x141)
+    assert paramtable.find_table(b"\0" * 7 + sig + b"\0" * 9) == (0x401F83A4, 0x141)
     with pytest.raises(SystemExit):
         paramtable.find_table(sig + sig)
 
 
-@pytest.mark.skipif(not DN2.exists(), reason="DN2 1.11 image absent")
+@pytest.mark.skipif(not DN2.exists(), reason="DN2 1.12 image absent")
 def test_descriptors_dn2() -> None:
     desc = paramtable.descriptors(DN2)
     assert len(desc) == 0x141
@@ -44,7 +44,7 @@ def test_descriptors_dn2() -> None:
     assert fx[32] == "Delay Delay Time" and fx[68] == "Master Master Overdrive"
 
 
-@pytest.mark.skipif(not DT2.exists(), reason="DT2 1.16 image absent")
+@pytest.mark.skipif(not DT2.exists(), reason="DT2 1.17 image absent")
 def test_descriptors_dt2() -> None:
     desc = paramtable.descriptors(DT2)
     assert len(desc) == paramtable.COUNT

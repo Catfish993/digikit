@@ -298,7 +298,7 @@ mod tests {
         assert!(!paths.ready_cached());
     }
 
-    /// With the DT2 1.16 .syx (`DT2_SYX`, or the one in `firmware/`): a plus_drive-style folder (three WAVs, a
+    /// With the DT2 1.17 .syx (`DT2_SYX`, or the one in `firmware/`): a plus_drive-style folder (three WAVs, a
     /// nested folder, a saved project slot, a boot copy and a module file) builds a card whose track N sample is
     /// file N, and a second call reuses the cache.
     #[test]
@@ -308,7 +308,7 @@ mod tests {
             .or_else(|| {
                 Path::new(env!("CARGO_MANIFEST_DIR"))
                     .ancestors()
-                    .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.16.syx"))
+                    .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.17.syx"))
                     .find(|path| path.exists())
             })
             .and_then(|path| fs::read(path).ok())

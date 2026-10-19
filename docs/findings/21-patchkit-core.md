@@ -68,7 +68,7 @@ The Rust linker's block equals what `tools/patchkit/pk_sharc.py` links for the s
 - DN2 master half as one `write` (`out/modules/oracle/dn2-master-half`, made by `tools/patchkit/pk_oracle_dn2_half.py`): every decoded section of the output equals
   `tools/patchkit/dsp_patch.py syx` on `dn2-1.11-master-half.patch` (compared with `--no-record`: the oracle must not
   carry the record block).
-- XSLICE as raw writes (`out/modules/oracle/xslice-dt2-1-16`, made by `tools/patchkit/pk_oracle_xslice.py` from the
+- XSLICE as raw writes (`out/modules/oracle/xslice-dt2-1-16`, made by `07e58305:tools/patchkit/pk_oracle_xslice.py`, removed with the 1.16 tests from the
   machinebuild plan): the plan's 51 writes overlap each other, so they are merged into 41 spans; patched section 3
   is `cdbd772639d22c8a06231958e00a600fd7fd29df3b057e33ff4d76f837ecb86a` and equals the machinebuild output.
   The module is refused on every other firmware. Both oracle modules hold firmware words (instruction and
