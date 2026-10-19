@@ -442,10 +442,10 @@ which reaches the send FX and stays there. In-range knob values reach it. Em, 20
 tests test only the module, framework fixtures are not modules, the manifest holds metadata, a contract per module type is enforced
 twice (a conformance suite before shipping, the runtime on the device), a template per type and one authoring guide.
 
-1. [ ] Pluck's pitch clamped; the runtime guard in the voice wrapper: parameter words clamped to the declared ranges, output checked
+1. [x] (lane b, finding 51; DT2 only, DN2 wrapper unguarded) Pluck's pitch clamped; the runtime guard in the voice wrapper: parameter words clamped to the declared ranges, output checked
    (non-finite or above a level bound: the block zeroed, the voice reset, counted; the module disabled after 8 faults in a second),
    `MACHINE_FAULT` in the log with the parameters. Emulator first, then one flash.
-2. [ ] Machine conformance suite from the manifest on the routine rig (every parameter at its limits, notes x pitch parameters, per-block
+2. [x] (lane srcpage; the guard's fault count is an invariant, which found pluck's unwritten line) Machine conformance suite from the manifest on the routine rig (every parameter at its limits, notes x pitch parameters, per-block
    modulation, long notes, retriggers; finite, bounded, returns, within budget), `mise run module:check NAME`, routed by verify.
 3. [ ] Layout: one module per machine (patched in or loaded at run time is a build choice; `test/dyn-pluck`, `test/dyn-xslice`, `twin-*`
    removed), framework fixtures from `modules/test/` to a fixtures folder under `tests/` (new), framework scenarios on fixtures, a module's own tests
