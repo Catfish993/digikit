@@ -19,7 +19,7 @@ cores (--jobs N, DIGI_VERIFY_BUDGET, else the physical cores - 2); a step starts
 the shares of the running steps never add up to more; the share sets the step's inner pools (cargo jobs, libtest
 threads, tier and scenario workers, python-tests files and daemons per file, node tests). Verify and its children run at nice 10
 (--foreground: normal priority). The builds run once, one after the other, before the steps that use their
-binaries (build, build-dt2, build-daemons: tools/devtools/verify_build.py).
+binaries (build, build-daemons, build-dt2: tools/devtools/verify_build.py).
 
 Scenario renders go through the content-addressed render cache (tools/devtools/render_cache.py). Each
 cache hit is also re-rendered from scratch with probability DIGI_RENDER_CACHE_CHECK (verify
@@ -27,8 +27,8 @@ default 0.03; 0 = off) and compared by PCM sha256 and peeks; a mismatch fails th
 stale cache. verify.py sets the variable for all steps once, in main(). --no-cache sets
 DIGI_RENDER_CACHE=0 so everything is rendered (the release/publication gate).
 
-python-tests runs one pytest process per file, in parallel (the step's share of the budget; DIGI_PY_JOBS replaces it;
-DIGI_PY_TIMEOUT per file in seconds, default 3600), through tools/devtools/test_outcomes.py; a run that passed no test fails. The
+python-tests runs one pytest process per file; each file is a job of 2 cores in the budget queue, longest first by the
+times of earlier runs (tools/devtools/verify_times.py; DIGI_PY_TIMEOUT per file in seconds, default 3600), through tools/devtools/test_outcomes.py; a run that passed no test fails. The
 tier steps run NO_AOT_SUBSET (a fixed subset of the FX scenarios, documented there; --all-no-aot: every seventh
 for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups into small chunks of scenarios and run
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
@@ -69,8 +69,10 @@ from tools.devtools import (  # noqa: E402
     benchlock,  # noqa: E402
     fastcov,  # noqa: E402
     rust_ws,  # noqa: E402
+    test_outcomes,  # noqa: E402
     verify_budget,  # noqa: E402
     verify_route,  # noqa: E402
+    verify_times,  # noqa: E402
 )
 from tools.emulator import (  # noqa: E402
     coupled,  # noqa: E402
@@ -604,6 +606,12 @@ class Gate:
         self.shared_env: dict[str, str] = {}
         self.py_tests = py_tests if py_tests is not None else list(PY_GATE)
         self.failed: list[str] = []
+        # python-tests: the record of every file job (test_outcomes.run_one) and when the first started
+        self.py_records: dict[str, dict[str, object]] = {}
+        self.py_files: list[
+            str
+        ] = []  # the files of py_tests (directories expanded), set by run_steps
+        self.py_started: float | None = None
         self.local = threading.local()
         self.lock = threading.Lock()
 
@@ -617,7 +625,7 @@ class Gate:
         node = getattr(self.local, "node", "")
         base = dict(os.environ if env is None else env)
         if (
-            node in DAEMON_NODES
+            node in DAEMON_NODES or verify_budget.is_file_job(node)
         ):  # only these run the pinned daemons (others render: no stray DIGI_ variables)
             base.update(self.shared_env)
         return verify_budget.bounded_env(node, self.share(), base)
@@ -907,10 +915,10 @@ DAEMON_TESTS = (
     "tests/patchkit/test_patchkit_dkrt_boot.py",
 )
 # Builds into the generated-core target dirs (tools/emulator/native_target.py), one after the other and
-# never beside each other: `build` (coupled-run, prod core: out/native/target/prod), `build-dt2`
-# (coupled-run, the DT2 core: target/g-<hash>), `build-daemons` (digi-emud of both, plain in those two
-# dirs and PGO in their pgo-emud-<device> variants; tools/devtools/verify_build.py). The launcher's
-# `pgo-use` is never built here.
+# never beside each other: `build` (coupled-run, prod core: out/native/target/prod), `build-daemons`
+# (digi-emud of both devices, plain in those two dirs and PGO in their pgo-emud-<device> variants;
+# tools/devtools/verify_build.py), `build-dt2` (coupled-run, the DT2 core: target/g-<hash>).
+# The launcher's `pgo-use` is never built here.
 NO_AOT_STEPS = (
     "check-no-aot",
     "tier-quick",
@@ -918,12 +926,16 @@ NO_AOT_STEPS = (
     "dt2-tier-quick",
     "dt2-tier-sweep",
 )
-BUILD_CHAIN = ("build", "build-dt2", "build-daemons")
+# build first: rust-tests (the longest step) waits for it, and it is not the python-tests files that wait for
+# build-dt2, which only the DT2 steps need. A model of the 2026-10-19 full run (durations of that run, this
+# scheduler) ends at 1770 s with this order, 2030 s with build-daemons first (rust-tests would start 430 s later).
+BUILD_CHAIN = ("build", "build-daemons", "build-dt2")
 # Longest first, so the pool is not left waiting on one long step at the end.
 PRIORITY = (
     "build",
     "build-dt2",
     "build-daemons",
+    "rust-tests",
     "tier-sweep",
     "dt2-tier-sweep",
     "dt2-tier-quick",
@@ -986,6 +998,101 @@ def plan(
     return nodes, deps
 
 
+LONG_FILE_SECONDS = (
+    200  # a python-tests file this long starts before the steps (the tail of the gate)
+)
+
+
+def python_file_seconds(
+    files: list[str], current: Path | None = None
+) -> dict[str, float]:
+    """Seconds of FILES in the newest earlier verify runs (verify_times), CURRENT (this run) left out."""
+    return verify_times.file_seconds(
+        Path(digi_env.RUNS_ROOT) / "verify", files, current
+    )
+
+
+def python_files(py_tests: list[str]) -> list[tuple[str, str]]:
+    """(file, the plan entry it came from) for every test file of PY_TESTS (a directory is expanded as
+    test_outcomes does), in plan order and without duplicates."""
+    seen: set[str] = set()
+    rows: list[tuple[str, str]] = []
+    for entry in py_tests:
+        for rel in test_outcomes.expand_paths(ROOT, [entry]):
+            if rel not in seen:
+                seen.add(rel)
+                rows.append((rel, entry))
+    return rows
+
+
+def needs_daemon(test: str) -> bool:
+    """Whether the python-tests file TEST drives a digi-emud daemon (DAEMON_TESTS)."""
+    return any(test.startswith(d) for d in DAEMON_TESTS)
+
+
+def expand_python(
+    nodes: list[str],
+    deps: dict[str, tuple[str, ...]],
+    py_tests: list[str],
+    seconds: dict[str, float],
+) -> tuple[list[str], dict[str, tuple[str, ...]]]:
+    """Replace the python-tests node by one job per file (FILE_PREFIX + path) plus the node itself, which
+    only judges the files once they all ended (finish_python) and holds no cores.
+
+    A file that drives a daemon waits for build-daemons only; any other file waits for every build of
+    the plan (it may build for itself: the cargo steps of tests/emulator). The jobs are in the order of
+    verify_times.longest_first; those of LONG_FILE_SECONDS or more come before the other steps, so the
+    longest file starts as soon as its daemon is built; the rest fill the cores the steps leave."""
+    if "python-tests" not in nodes:
+        return nodes, deps
+    py_tests = [rel for rel, _ in python_files(py_tests)]
+    builds = tuple(n for n in BUILD_CHAIN if n in nodes)
+    ordered = verify_times.longest_first(py_tests, seconds)
+    new_deps = dict(deps)
+    names: dict[str, str] = {}
+    for rel, _, _ in ordered:
+        job = verify_budget.FILE_PREFIX + rel
+        names[rel] = job
+        if "build-daemons" not in nodes:
+            new_deps[job] = ()
+        elif needs_daemon(rel):
+            new_deps[job] = ("build-daemons",)
+        else:
+            new_deps[job] = builds
+    new_deps["python-tests"] = tuple(names.values())
+    rest = [n for n in nodes if n != "python-tests"]
+    built = [n for n in rest if n in BUILD_CHAIN]
+    steps = [n for n in rest if n not in BUILD_CHAIN]
+    long_jobs = [names[r] for r, sec, _ in ordered if sec >= LONG_FILE_SECONDS]
+    short_jobs = [names[r] for r, sec, _ in ordered if sec < LONG_FILE_SECONDS]
+    return [*built, *long_jobs, *steps, *short_jobs, "python-tests"], new_deps
+
+
+def next_starts(
+    pending: list[str],
+    deps: dict[str, tuple[str, ...]],
+    done: set[str],
+    budget: verify_budget.Budget,
+) -> list[tuple[str, int]]:
+    """The nodes of PENDING (in order) whose dependencies are DONE and that the budget admits now, with
+    their shares (held in BUDGET). A ready step that was refused for cores keeps the file jobs after
+    it waiting: they take the cores that are left, not the cores a step is waiting for."""
+    started: list[tuple[str, int]] = []
+    starved = False
+    for node in pending:
+        if not all(d in done for d in deps[node]):
+            continue
+        job = verify_budget.is_file_job(node)
+        if job and starved:
+            continue
+        share = budget.admit(node)
+        if share is None:
+            starved = starved or not job
+            continue
+        started.append((node, share))
+    return started
+
+
 def rust_tests_command(packages: list[str] | None = None) -> list[str]:
     """cargo test --workspace --release (rust_ws.py); digiemu-desktop is excluded when
     apps/desktop/ui/dist is absent. PACKAGES (from rust_scope) limit the run to those crates
@@ -1019,6 +1126,13 @@ def worker_plan_lines(
         f"worker plan: {label or f'budget {budget} cores'}, one emulator process = {verify_budget.EMULATOR_CORES} cores "
         "(waves are an estimate: a run starts a node as soon as the cores are free)"
     ]
+    if "python-tests" in nodes:  # one job per file, in the same queue (expand_python)
+        lines.append(
+            f"  python-tests: one job per file, {min(verify_budget.EMULATOR_CORES, budget)} cores each, "
+            f"longest first (files of {LONG_FILE_SECONDS} s or more before the steps), "
+            f"{budget // min(verify_budget.EMULATOR_CORES, budget)} at once at most"
+        )
+        nodes = [n for n in nodes if n != "python-tests"]
     for number, wave in enumerate(verify_budget.wave_plan(nodes, deps, budget), 1):
         used = sum(share for _, share in wave)
         lines.append(f"  wave {number} ({used} of {budget} cores):")
@@ -1064,9 +1178,67 @@ def explain(
     if images:
         print(f"digikit images: {images}")
     if "python-tests" in steps:
-        print("python-tests files:")
-        for path, source in py_plan:
-            print(f"  {path} ({source})")
+        source_of = dict(py_plan)
+        rows = python_files([p for p, _ in py_plan])
+        known = python_file_seconds([rel for rel, _ in rows])
+        print(
+            f"python-tests: {len(rows)} files, one job each, longest first (seconds of the newest earlier run):"
+        )
+        for path, sec, seen in verify_times.longest_first(
+            [rel for rel, _ in rows], known
+        ):
+            when = f"{sec:.0f} s" if seen else "no time recorded"
+            print(f"  {path} ({source_of[dict(rows)[path]]}, {when})")
+
+
+def run_python_file(gate: Gate, rel: str) -> None:
+    """One python-tests file: its own pytest process on the job's share (test_outcomes.run_one). The
+    record is kept for finish_python, which judges the step; a crash is a record too."""
+    out = gate.out / "python-tests"
+    started = time.monotonic()
+    with gate.lock:
+        if gate.py_started is None:
+            gate.py_started = started
+    try:
+        with benchlock.hold("shared", f"verify {rel}"):
+            rec = test_outcomes.run_one(
+                ROOT, out, rel, [], python_timeout(), python_env(gate.step_env())
+            )
+    except BaseException as exc:  # a crashed job is a failed file, not a lost one
+        rec = {
+            "file": rel,
+            "status": "CRASH",
+            "rc": -1,
+            "seconds": time.monotonic() - started,
+            "counts": None,
+            "xml": out / "xml" / f"{test_outcomes.slug_of(rel)}.xml",
+        }
+        gate.say(f"crash {rel}: {type(exc).__name__}: {exc}")
+    with gate.lock:
+        gate.py_records[rel] = rec
+    gate.say(test_outcomes.record_line(rec))
+
+
+def finish_python(gate: Gate) -> None:
+    """The python-tests step once every file job ended: summary.tsv and all.xml, then the verdict (a
+    failed or lost file, or a run that passed no test, fails the step)."""
+    out = gate.out / "python-tests"
+    out.mkdir(parents=True, exist_ok=True)
+    records = [gate.py_records[f] for f in gate.py_files if f in gate.py_records]
+    lost = [f for f in gate.py_files if f not in gate.py_records]
+    bad = test_outcomes.write_reports(out, records, python_timeout()) if records else []
+    text = "\n".join(test_outcomes.record_line(r) for r in records)
+    (gate.out / "python-tests.log").write_text(text + "\n")
+    problem: str | None = None
+    if bad or lost:
+        shown = ", ".join([*bad, *lost][:10])
+        problem = f"{len(bad) + len(lost)} files failed: {shown}"
+    elif records:
+        problem = python_tests_passed(out)
+    else:
+        problem = "no test file ran"
+    began = gate.py_started if gate.py_started is not None else time.monotonic()
+    gate.report("python-tests", problem, time.monotonic() - began, text)
 
 
 def run_step(gate: Gate, step: str) -> None:
@@ -1136,13 +1308,6 @@ def run_step(gate: Gate, step: str) -> None:
         tier(gate, "tier-quick", TIER_QUICK_EVERY)
     elif step == "tier-sweep":
         tier(gate, "tier-sweep", 1)
-    elif step == "python-tests":
-        out = gate.out / "python-tests"
-        gate.run(
-            "python-tests",
-            python_tests_command(out, gate.py_tests, python_jobs(gate.share())),
-            check=lambda _text: python_tests_passed(out),
-        )
     elif step == "rust-tests":
         gate.run("rust-tests", rust_tests_command(gate.rust_packages))
     elif step == "card":
@@ -1166,9 +1331,14 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
 
     A node starts when its dependencies passed and the budget admits it (verify_budget.Budget): it
     gets a share of the cores, which sets its inner pools, and the shares of the running nodes never
-    add up to more than the budget. Each step's output is buffered and printed whole when it
-    finishes. A step whose build failed is skipped. Returns (node, seconds) in completion order."""
+    add up to more than the budget. python-tests is one job per file (expand_python) in the same
+    queue, longest first. Each step's output is buffered and printed whole when it finishes. A step
+    whose build failed is skipped. Returns (node, seconds) in completion order."""
     nodes, deps = plan(steps, gate.py_tests)
+    gate.py_files = [rel for rel, _ in python_files(gate.py_tests)]
+    nodes, deps = expand_python(
+        nodes, deps, gate.py_tests, python_file_seconds(gate.py_files, gate.out)
+    )
     budget = verify_budget.Budget(max(1, gate.budget))
     done: set[str] = set()
     failed_nodes: set[str] = set()
@@ -1181,34 +1351,56 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
         gate.local.node = node
         gate.local.share = share
         try:
-            run_step(gate, node)
+            if verify_budget.is_file_job(node):
+                run_python_file(gate, node.removeprefix(verify_budget.FILE_PREFIX))
+            else:
+                run_step(gate, node)
         except BaseException as exc:  # a crashed step is a failed step
             with gate.lock:
                 gate.failed.append(node)
             gate.say(f"FAIL {node}: {type(exc).__name__}: {exc}")
         return gate.local.lines
 
-    with ThreadPoolExecutor(max_workers=verify_budget.MAX_STEPS) as pool:
+    with ThreadPoolExecutor(
+        max_workers=verify_budget.MAX_STEPS + max(1, gate.budget)
+    ) as pool:
         while pending or running:
+            queued = len(pending)
             for node in list(pending):
                 if any(d in failed_nodes for d in deps[node]):
                     pending.remove(node)
                     failed_nodes.add(node)
-                    print(f"SKIP {node}: its build failed", flush=True)
+                    if not verify_budget.is_file_job(node):
+                        print(f"SKIP {node}: its build failed", flush=True)
                     with gate.lock:
                         gate.failed.append(node)
-                elif all(d in done for d in deps[node]):
-                    share = budget.admit(node)
-                    if share is None:
-                        continue
-                    pending.remove(node)
+                elif node == "python-tests" and all(d in done for d in deps[node]):
+                    pending.remove(node)  # judges the files: no cores
+                    finish_python(gate)
+                    (failed_nodes if "python-tests" in gate.failed else done).add(node)
+                    began = gate.py_started
+                    times.append(
+                        (node, time.monotonic() - began if began is not None else 0.0)
+                    )
+            started = next_starts(
+                [n for n in pending if n != "python-tests"], deps, done, budget
+            )
+            for node, share in started:
+                pending.remove(node)
+                if not verify_budget.is_file_job(node):
                     print(
                         f"START {node}: {share} of {budget.total} cores "
                         f"({verify_budget.describe(node, share)})",
                         flush=True,
                     )
-                    running[pool.submit(work, node, share)] = (node, time.monotonic())
+                running[pool.submit(work, node, share)] = (node, time.monotonic())
             if not running:
+                if pending and not started and len(pending) == queued:
+                    for node in pending:  # a dependency is neither done nor running
+                        print(f"SKIP {node}: it can never start", flush=True)
+                        with gate.lock:
+                            gate.failed.append(node)
+                    break
                 continue
             finished, _ = wait(list(running), return_when=FIRST_COMPLETED)
             for fut in finished:
@@ -1216,7 +1408,8 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                 budget.release(node)
                 lines = fut.result()
                 print("\n".join(lines), flush=True)
-                times.append((node, time.monotonic() - began))
+                if not verify_budget.is_file_job(node):
+                    times.append((node, time.monotonic() - began))
                 if any(line.startswith("FAIL") for line in lines):
                     failed_nodes.add(node)
                 else:
