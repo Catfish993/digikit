@@ -1,5 +1,11 @@
 {
-  "retired_roots": ["native", "emu", "dt2", "scenarios", "experiments"],
+  "retired_roots": [
+    "native",
+    "emu",
+    "dt2",
+    "scenarios",
+    "experiments"
+  ],
   "exclude": [
     ".gitignore",
     "tools/devtools/pathcheck.json",
@@ -20,16 +26,6 @@
     "apps/web/public/modules/"
   ],
   "allow": [
-    {
-      "token": "modules/test/dyn-",
-      "file": "tools/devtools/verify.py",
-      "reason": "verify trigger prefix, not a path"
-    },
-    {
-      "token": "modules/test/twin-",
-      "file": "tools/devtools/verify.py",
-      "reason": "verify trigger prefix, not a path"
-    },
     {
       "token": "tools/patchkit/pk_digikit_",
       "file": "tools/devtools/verify.py",
@@ -240,6 +236,16 @@
     {
       "pattern": "^modules/[A-Za-z0-9_.-]+\\.dkm$",
       "reason": "a digikit card-store path, relative to plus_drive/<device>/digikit/ (docs/design/digikit-store.md), not the repository's modules/"
+    },
+    {
+      "pattern": "^(devices/cycle-factors|tests/scenarios/dn2|native/live)$",
+      "file": "tools/devtools/rust_ws.py",
+      "reason": "regex rows and prose in the READS/NO_RUST tables, not paths"
+    },
+    {
+      "pattern": "^(docs/x\\.md|tests/devtools/test_x\\.py)$",
+      "file": "tests/devtools/test_rust_ws_select.py",
+      "reason": "made-up changed-file names in selection tests"
     }
   ],
   "moved_local": {

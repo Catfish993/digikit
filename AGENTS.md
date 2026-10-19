@@ -41,10 +41,12 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   in after about an hour.
 - Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
   with a bound (`sleep N; tail -n 5 FILE`) or use a monitor.
-- Lane agents iterate and finish on the quick proof tier (`--quick`, budget about 60 s per tool). The coordinator
-  integrates with `mise run verify` plus the smoke matrix (`uv run python -m tools.patchkit.pk_harness run --jobs N`), not by re-running
-  every proof tool. Full-tier proofs run only before a merge to `main`. Do not re-run old full proofs to measure a
-  baseline that is already recorded.
+- Lane agents iterate and finish on the quick proof tier (`--quick`, budget about 60 s per tool) and run
+  `mise run verify:pre` (1 to 2 min: lint, types, pathcheck, `pk_build --check`, the changed tests, Rust tests of the
+  affected crates; it is not the merge gate). The coordinator runs `mise run verify` once per merge, plus the smoke matrix
+  (`uv run python -m tools.patchkit.pk_harness run --jobs N`), not by re-running every proof tool. Check what a change
+  selects with `mise run verify -- --explain` (`--base A --head B` for a range) instead of running the gate. Full-tier proofs run only
+  before a merge to `main`. Do not re-run old full proofs to measure a baseline that is already recorded.
 - Stop only processes you started (by PID or run directory). Never `pkill`/`killall` emulator processes: other lanes
   and Em run them on the same machine.
 - Each lane runs its own dev server (own port; `tools/devtools/browser_bench.mjs --url`). Do not change Python dependencies
@@ -53,7 +55,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 ## Verify
 
 - Test layout, commands and the current baseline: docs/TESTING.md.
-- `mise run verify` runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
+- `mise run verify:pre` is the lane check (no emulator; not the merge gate). `mise run verify` is the merge gate and runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
   changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running; `--rerun-failed` re-runs only the steps that failed in the last run). `mise run verify:full` runs every
   step with the full 134-scenario tier sweep (about 7 minutes with a warm render cache, about 20 minutes when DSP/native code changed): only after changes to the
   generated core. Otherwise `mise run verify` (routed by the changed files) is the gate, also for a merge to `main`.

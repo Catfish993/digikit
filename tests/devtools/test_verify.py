@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,7 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.devtools import verify  # noqa: E402
+from tools.devtools import verify, verify_pre, verify_route  # noqa: E402
 
 
 def test_rust_tests_command_has_no_package_flags() -> None:
@@ -230,3 +231,363 @@ def test_explain_runs_nothing(
     monkeypatch.setattr(verify.digi_env, "run_dir", fail)
     assert verify.main(["--explain", "--only", "pins"]) == 0
     assert "pins" in capsys.readouterr().out
+
+
+# ---- finer routing (tools/devtools/verify_route.py) ----------------------------------------------
+
+PCM_STEPS = {
+    "build",
+    "desktop",
+    "pins",
+    "check",
+    "check-no-aot",
+    "tier-quick",
+    "tier-sweep",
+    "dt2-tone",
+    "dt2-check",
+    "dt2-tier-quick",
+    "dt2-tier-sweep",
+    "card",
+}
+
+
+def selected(*files: str) -> set[str]:
+    """The python-tests paths beyond the always-on gate files."""
+    return set(verify.python_tests(list(files), False)) - set(verify.PY_GATE)
+
+
+def test_mise_new_task_routes_like_its_tool() -> None:
+    old = '[tasks.a]\nrun = "echo"\n'
+    task = '[tasks."dk:run"]\nrun = "uv run python -m tools.device.dkrun"\ndescription = "x"\n'
+    got = verify_route.mise_paths(old, old + task)
+    assert got == (
+        ["tools/device/dkrun.py"],
+        {"tools/device/dkrun.py": "mise.toml task dk:run"},
+    )
+    assert verify.steps_for(got[0]) == ("python-tests",)
+    # only the description or the alias changed: the same tool
+    again = task.replace('description = "x"', 'description = "y"')
+    assert verify_route.mise_paths(old + task, old + again) == got
+    # an unchanged task selects nothing; a removed one only the path check
+    assert verify_route.mise_paths(old + task, old + task) == ([], {})
+    assert verify_route.mise_paths(old + task, old) == ([], {})
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ('[tools]\nrust = "1"\n', '[tools]\nrust = "2"\n'),
+        ('[env]\nA = "1"\n', '[env]\nA = "2"\n'),
+        ('[tasks.verify]\nrun = "x"\n', '[tasks.verify]\nrun = "y"\n'),
+        ('[tasks."verify:pre"]\nrun = "x"\n', '[tasks."verify:pre"]\nrun = "y"\n'),
+        ('[tasks."gen:core"]\nrun = "x"\n', '[tasks."gen:core"]\nrun = "y"\n'),
+        ('[tasks.build]\nrun = "x"\n', '[tasks.build]\nrun = "y"\n'),
+        ("", '[tasks.t]\nrun = "cargo build"\n'),  # a run that names no file
+        (
+            "",
+            '[tasks.t]\nrun = "uv run python -m tools.device.dkrun"\nenv = {A = "1"}\n',
+        ),
+        ("", "[tasks.t"),  # unreadable
+    ],
+)
+def test_mise_broad_changes_stay_broad(old: str, new: str) -> None:
+    assert verify_route.mise_paths(old, new) is None
+
+
+def test_mise_missing_side_is_broad() -> None:
+    assert verify_route.mise_paths(None, "") is None
+    assert verify_route.mise_paths("", None) is None
+
+
+def test_mise_tasks_of_the_repo_resolve() -> None:
+    """Every task of the real mise.toml names a repo file or is listed here as broad: a new task
+    that routes nowhere would make every edit of it run all steps, so it is listed on purpose."""
+    import tomllib
+
+    tasks = tomllib.loads((ROOT / "mise.toml").read_text())["tasks"]
+    broad = set()
+    for name, task in tasks.items():
+        group = name.split(":", 1)[0]
+        if group in verify_route.BROAD_TASK_GROUPS or "run" not in task:
+            continue
+        if verify_route.paths_of_run(verify_route.run_lines(task)) is None:
+            broad.add(name)
+    assert broad == {"dev:plusdrive"}  # cargo run: no file to route by
+
+
+def test_expand_mise_replaces_a_task_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    old = '[tasks.a]\nrun = "echo"\n'
+    new = old + '[tasks."dk:run"]\nrun = "uv run python -m tools.device.dkrun"\n'
+    monkeypatch.setattr(verify, "merge_base", lambda base, head: "BASE")
+    monkeypatch.setattr(
+        verify, "git_show", lambda rev, path: old if rev == "BASE" else new
+    )
+    files, origin = verify.expand_mise(["mise.toml", "docs/x.md"], "b", None)
+    assert files == ["docs/x.md", "tools/device/dkrun.py"]
+    assert origin == {"tools/device/dkrun.py": "mise.toml task dk:run"}
+    # a broad change keeps mise.toml, which selects every step
+    monkeypatch.setattr(
+        verify,
+        "git_show",
+        lambda rev, path: old if rev == "BASE" else old + "[env]\nA = 1\n",
+    )
+    files, _ = verify.expand_mise(["mise.toml"], "b", None)
+    assert files == ["mise.toml"]
+    assert verify.steps_for(files) == verify.EVERYTHING
+    # the other files are untouched
+    assert verify.expand_mise(["tools/x.py"], "b", None) == (["tools/x.py"], {})
+
+
+def test_device_tools_select_their_tests_only() -> None:
+    assert verify.steps_for(["tools/device/dkscreen.py"]) == ("python-tests",)
+    assert selected("tools/device/dkscreen.py") == {
+        "tests/digikit/test_dkscreen.py",
+        "tests/digikit/test_scenarios.py",
+        "tests/digikit/test_upload_dn2.py",
+        "tests/digikit/test_upload_dt2.py",
+    }
+    assert selected("tools/device/dkrun.py") == {
+        "tests/digikit/test_dkrun.py",
+        "tests/digikit/test_scenarios.py",
+        "tests/digikit/test_menu_dn2.py",
+        "tests/digikit/test_menu_dt2.py",
+    }
+    assert selected("tools/device/mmon.py") == set()
+    assert "tests/patchkit" not in selected("tools/device/dkupload.py")
+    assert "tests/digikit" not in selected("tools/device/dkupload.py")
+
+
+def test_device_tools_nothing_dropped() -> None:
+    """A change in a tools/device module runs every unit test that imports it, directly or through
+    another tools/device module, and the scenario kinds whose runners call it."""
+    for path in sorted((ROOT / "tools/device").glob("*.py")):
+        stem = path.stem
+        assert stem in verify_route.DEVICE_KINDS, f"classify tools/device/{stem}.py"
+        got = selected(f"tools/device/{stem}.py")
+        for test in sorted((ROOT / "tests").rglob("test_*.py")):
+            if "node_modules" in test.parts:
+                continue
+            text = test.read_text()
+            imports = rf"^\s*(from tools\.device import [^\n]*\b{stem}\b|from tools\.device\.{stem} import|import tools\.device\.{stem}\b)"
+            if re.search(imports, text, re.M):
+                assert test.relative_to(ROOT).as_posix() in got, (stem, test.name)
+        for kind in verify_route.DEVICE_KINDS[stem]:
+            assert set(verify_route.kind_files()[kind]) <= got, (stem, kind)
+    kinds = set(verify_route.kind_files())
+    for stem, wanted in verify_route.DEVICE_KINDS.items():
+        assert set(wanted) <= kinds, stem
+
+
+def test_digikit_test_files_and_scenarios() -> None:
+    assert selected("tests/digikit/test_dkrun.py") == {"tests/digikit/test_dkrun.py"}
+    assert selected("tests/patchkit/test_pk_cf.py") == {"tests/patchkit/test_pk_cf.py"}
+    assert selected("tests/digikit/scenarios/menu-dkrun-pluck.toml") == {
+        "tests/digikit/test_scenarios.py",
+        "tests/digikit/test_menu_dn2.py",
+        "tests/digikit/test_menu_dt2.py",
+    }
+    assert verify.steps_for(["tests/digikit/scenarios/menu-dkrun-pluck.toml"]) == (
+        "python-tests",
+    )
+    # a helper of the suite is not a test file: the whole suite
+    assert "tests/digikit" in selected("tests/digikit/scen_cases.py")
+    # every scenario kind that a test file runs maps to a test file of tests/digikit
+    for scen, (kind, _) in verify_route.scenario_refs().items():
+        got = selected(scen)
+        assert set(verify_route.kind_files().get(kind, ())) <= got, scen
+
+
+def test_module_leaf_selects_the_tests_that_name_it() -> None:
+    src = "modules/fx/master-gain/src/cf/gain.s"
+    assert verify.steps_for([src]) == ("python-tests", "rust-tests")
+    # test_patchkit.py (a gate file) and the tests that use a tool that builds master-gain
+    assert "tests/patchkit/test_patchkit.py" in verify.python_tests([src], False)
+    assert "tests/patchkit/test_pk_mem.py" in selected(src)
+    assert "tests/patchkit/test_pk_cf.py" not in selected(src)
+    assert not [t for t in selected(src) if t.startswith("tests/digikit/test_e")]
+    assert "tests/patchkit" not in selected(src)
+    # the object and the manifest are read by the web gallery
+    assert "web" in verify.steps_for(["modules/fx/master-gain/module.toml"])
+    assert "web" in verify.steps_for(
+        ["modules/fx/master-gain/build/master-gain.dko.json"]
+    )
+    assert "web" not in verify.steps_for(["modules/core/runtime/sdk/src/lib.rs"])
+    assert verify.steps_for(["modules/core/runtime/README.md"]) == ()
+
+
+def test_module_scenario_modules_select_their_scenarios() -> None:
+    got = selected("modules/test/dyn-pluck/module.toml")
+    for name in (
+        "test_equiv_dn2",
+        "test_equiv_dt2",
+        "test_menu_dn2",
+        "test_menu_dt2",
+        "test_roundtrip",
+        "test_safe_cut_dn2",
+        "test_safe_cut_dt2",
+        "test_upload_dn2",
+        "test_upload_dt2",
+    ):
+        assert f"tests/digikit/{name}.py" in got, name
+    assert "tests/patchkit/test_patchkit_dkrt_machine.py" in got
+    # machines/pluck is what test/dyn-pluck builds its DSP from: its scenarios follow
+    assert "tests/digikit/test_menu_dt2.py" in selected(
+        "modules/machines/pluck/src/dsp/pluck.s"
+    )
+    assert "tests/patchkit/test_pluck.py" in selected(
+        "modules/machines/pluck/src/dsp/pluck.s"
+    )
+
+
+@pytest.mark.parametrize("module", sorted(verify_route.FRAMEWORK))
+def test_framework_module_selects_both_suites(module: str) -> None:
+    path = f"modules/{module}/module.toml"
+    assert {"tests/patchkit", "tests/digikit"} <= selected(path)
+    assert {"python-tests", "rust-tests"} <= set(verify.steps_for([path]))
+    assert not set(verify.steps_for([path])) & PCM_STEPS
+
+
+def test_module_changes_select_no_pcm_step() -> None:
+    for module in verify_route.manifests():
+        steps = verify.steps_for([f"modules/{module}/module.toml"])
+        assert not set(steps) & PCM_STEPS, module
+
+
+def test_module_change_drops_no_test_that_names_a_dependent() -> None:
+    """For every module, the selection holds each test file that names it or a module that
+    depends on it, and the test files of each scenario that does. The text scan here is
+    independent of verify_route's (it reads comments too, so it can only find more)."""
+    mods = verify_route.manifests()
+    scenarios = sorted((ROOT / "tests/digikit/scenarios").glob("*.toml"))
+    for mid in mods:
+        got = selected(f"modules/{mid}/module.toml") | set(verify.PY_GATE)
+        if "tests/patchkit" in got:
+            continue
+        hit = verify_route.dependents({mid})
+        for test in sorted((ROOT / "tests").rglob("test_*.py")):
+            if "node_modules" in test.parts or "devtools" in test.parts:
+                continue
+            if any(m in test.read_text() for m in hit):
+                assert test.relative_to(ROOT).as_posix() in got, (mid, test.name)
+        for scen in scenarios:
+            if any(m in scen.read_text() for m in hit):
+                rel = scen.relative_to(ROOT).as_posix()
+                assert set(selected(rel)) <= got, (mid, scen.name)
+
+
+def test_dependents_follow_requires_and_shared_sources() -> None:
+    assert "machines/pluck" in verify_route.dependents({"core/machines"})
+    assert "test/dyn-pluck" in verify_route.dependents({"machines/pluck"})
+    assert verify_route.dependents({"fx/master-gain"}) == {"fx/master-gain"}
+
+
+def test_unknown_module_path_stays_broad() -> None:
+    steps = verify.steps_for(["modules/no/such/module.toml"])
+    assert {"python-tests", "rust-tests", "web"} <= set(steps)
+    assert {"tests/patchkit", "tests/digikit"} <= selected(
+        "modules/no/such/module.toml"
+    )
+
+
+def test_web_only_for_what_it_reads() -> None:
+    assert "web" in verify.steps_for(["apps/web/src/x.ts"])
+    assert "web" in verify.steps_for(["packages/dkupload/src/lib.rs"])
+    assert "rust-tests" in verify.steps_for(["packages/dkupload/src/lib.rs"])
+    for path in (
+        "tools/device/dkrun.py",
+        "tests/digikit/scenarios/upload-quick.toml",
+        "tools/patchkit/pk_digikit_scen.py",
+        "modules/test/dyn-demo/src/x.s",
+    ):
+        assert "web" not in verify.steps_for([path]), path
+
+
+def test_routing_changes_select_everything() -> None:
+    for path in ("tools/devtools/verify.py", "tools/devtools/verify_route.py"):
+        assert verify.steps_for([path]) == verify.EVERYTHING
+        got = verify.python_tests([path], False)
+        assert set(verify.python_tests([], True)) <= set(got)
+    # the lane helper is checked by the routing tests only
+    assert verify.steps_for(["tools/devtools/verify_pre.py"]) == ("python-tests",)
+    assert "tests/devtools/test_verify.py" in verify.python_tests(
+        ["tools/devtools/verify_pre.py"], False
+    )
+
+
+def test_gate_files_always_run() -> None:
+    for path in (
+        "modules/fx/master-gain/src/cf/gain.s",
+        "tools/device/mmon.py",
+        "tests/digikit/scenarios/upload-quick.toml",
+    ):
+        assert set(verify.PY_GATE) <= set(verify.python_tests([path], False)), path
+
+
+def test_runtime4_merge_runs_no_pcm_step() -> None:
+    """The range 457f515b..29086ff7 (one mise.toml task, device tools, runtime objects) ran all 13
+    steps; its files now select the web bundle, Rust and Python tests and nothing that renders."""
+    files = [
+        "modules/core/digikit-menu/build/digikit-menu-rs.dko.json",
+        "modules/core/runtime/build/runtime.dko.json",
+        "modules/core/runtime/src/rs/src/upload.rs",
+        "modules/test/dyn-demo/build/dyn-demo.dko.json",
+        "tests/digikit/scenarios/menu-dkrun-pluck.toml",
+        "tests/digikit/test_dkrun.py",
+        "tools/device/dkrun.py",  # the mise.toml dk:run task
+        "tools/patchkit/pk_digikit_scen.py",
+        "tools/patchkit/pk_digikit_upload.py",
+    ]
+    assert verify.steps_for(files) == ("web", "python-tests", "rust-tests")
+
+
+def test_rust_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[list[str]] = []
+
+    def fake(changed: list[str]) -> list[str] | None:
+        seen.append(changed)
+        return ["patchkit"]
+
+    monkeypatch.setattr(verify.rust_ws, "affected_packages", fake, raising=False)
+    assert verify.rust_scope(["modules/fx/master-gain/module.toml"]) == ["patchkit"]
+    assert seen == [["modules/fx/master-gain/module.toml"]]
+    # a broad mise.toml change and a routing change keep the whole workspace
+    assert verify.rust_scope(["mise.toml"]) is None
+    assert verify.rust_scope(["tools/devtools/verify.py"]) is None
+    assert len(seen) == 1
+
+
+def test_rust_tests_command_limits_packages_when_rust_ws_can(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(verify.rust_ws, "__doc__", "no such option")
+    assert "--packages" not in verify.rust_tests_command(["patchkit"])
+    monkeypatch.setattr(verify.rust_ws, "__doc__", "test --packages A,B")
+    cmd = verify.rust_tests_command(["a", "b"])
+    assert cmd[-2:] == ["--packages", "a,b"]
+    assert "--packages" not in verify.rust_tests_command(None)
+
+
+def test_head_only_with_explain() -> None:
+    with pytest.raises(SystemExit) as info:
+        verify.main(["--head", "HEAD"])
+    assert info.value.code == 2
+
+
+def test_verify_pre_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(verify, "rust_scope", lambda files: [])
+    got = {n: c for n, c, _ in verify_pre.plan(["tools/device/dkrun.py"], Path("OUT"))}
+    assert got["rust-tests"] is None and got["pk-build-check"] is None
+    assert got["ruff-check"][-1] == "tools/device/dkrun.py"
+    assert got["pathcheck"]
+    got = {
+        n: c
+        for n, c, _ in verify_pre.plan(
+            ["modules/fx/master-gain/module.toml"], Path("OUT")
+        )
+    }
+    assert got["pk-build-check"] and got["ruff-check"] is None
+    got = {
+        n: c
+        for n, c, _ in verify_pre.plan(["tools/devtools/benchlock.py"], Path("OUT"))
+    }
+    assert got["mypy"][-1] == "tools/devtools/benchlock.py"

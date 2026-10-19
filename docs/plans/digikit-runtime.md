@@ -413,7 +413,7 @@ New tools approved (Em, 2026-10-19): `sccache`, `cargo-nextest`, a test-impact t
    `tools/device/devrpc.py`, written as PNG; no flash. Check it on 1.17.
 3. [ ] Verify speed (the agreed list; history and evidence in ~/src/digi/VERIFY-PERFORMANCE-PLAN-2026-10-14.md). Three lanes in parallel (2026-10-19):
    - [ ] v-route: finer routing in tools/devtools/verify.py (`mise.toml` only to the tasks it changes; `tools/device/*` to its tests;
-     `modules/X` to `cargo test -p patchkit` and the scenarios that include X), routing tests proving nothing is dropped; mise split into
+     a module's files to `cargo test -p patchkit` and the scenarios that include X), routing tests proving nothing is dropped; mise split into
      `verify:pre` (lanes, 1-2 min), `verify` (routed; the merge gate), `verify:full` (generated-core changes); AGENTS.md and docs/TESTING.md.
      Example: the runtime-4 merge (one `mise.toml` line) ran all 13 steps, about 25 min, for about 4 min of relevant tests.
    - [ ] v-rust: Rust tests for affected crates only (reverse dependencies from `cargo metadata`, tools/devtools/rust_ws.py), `cargo-nextest`;

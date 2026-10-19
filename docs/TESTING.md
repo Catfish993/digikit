@@ -71,8 +71,9 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run lint` | `lint:py` (ruff check and format check on the `CLEAN` list), `lint:web` (oxlint on the JS/TS workspaces), `fmt:web` (Prettier check; `mise run fmt` formats in place), `lint:rust` (cargo fmt check) | Before a commit |
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run check` | `lint` and `test:quick` | Quick local check. Not the merge gate. |
-| `mise run verify` | The gate steps the changed files need (`tools/devtools/verify.py`). The `python-tests` step runs `PY_GATE`, the `PY_SUITES` whose trigger prefixes match, changed `tests/**/test_*.py` files, and users of a changed `tests/support` module. `--explain` shows the plan without running. `--rerun-failed` re-runs only the steps that failed last time (reads the run's result.json). | Before a commit and before a merge to `main`; a lane passes `--base BRANCH` |
-| `mise run verify:full` | Every step, with the full 134-scenario tier sweep (about 7 min with a warm render cache, about 20 min when DSP/native code changed) | After changes to the generated core (`mise run verify` is the merge gate otherwise) |
+| `mise run verify:pre` | Quick lane checks (`tools/devtools/verify_pre.py`, 1 to 2 min): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the changed test files, the Rust tests of the affected crates (`rust_ws.affected_packages`). No emulator, pin or scenario; it prints that it is not the merge gate. | In a lane, while iterating and before handing the branch over |
+| `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch); a lane checks the routing with `--explain` |
+| `mise run verify:full` | Every step, with the full 134-scenario tier sweep (about 7 min with a warm render cache, about 20 min when DSP/native code changed) | Only after changes to the generated core |
 | `mise run scenarios` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
 | `mise run scenarios:check` | `pytest tests/scenarios --slow`: DN2 FX oracles, fast subset (about 3 min) | After DSP or scenario changes |
 | `mise run plusdrive:check` | The firmware's own view (mount, readdir, lookup, read) of an image built from a folder: nested folders, plain files, a multi-page directory, multi-extent files (about 1 min; `verify` runs it in the `card-fs` step when `packages/emulator/plusdrive/` changes) | After +Drive builder changes |
@@ -101,9 +102,29 @@ boots the patched firmware in the coupled emulator through `pk_dkrt_boot` (`Env`
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes over every emulator it ran), the flush check (0 hits), and the card
 sectors the guest wrote (in the store range only the two selection sectors).
 
+### What verify runs for a change
+
+Routing is in `tools/devtools/verify.py` (path prefixes, `PY_SUITES`) and `tools/devtools/verify_route.py` (finer rules). Check it with
+`mise run verify -- --explain` instead of running the gate.
+
+| Changed | Steps | Python test files |
+| --- | --- | --- |
+| `mise.toml` | A changed task routes like the tool its `run` names (`-m tools.x.y`, a script, a pytest path, `pnpm`). Broad (every step): a change outside `[tasks]`, a `verify`, `build`, `gen` or `setup` task, a task key other than run/depends/description/alias, a `run` that names no repo file (`dev:plusdrive`). | those of the tool |
+| a module of `tools/device` | `python-tests` | the tests that import it (directly or through another `tools/device` module) and the digikit tests of the scenario kinds whose runners call it (`DEVICE_KINDS`) |
+| a file of a module under `modules/` | `python-tests`, `rust-tests` (affected crates), `web` only for what the gallery bundle reads (not `src/`, `sdk/`, `tests/`, `*.md`). Never a PCM step. | Framework modules (`FRAMEWORK`: runtime, dsp-voice, dsp-link, machines, params, dynreg, dyndsp, digikit-menu, health, expansion): all of `tests/patchkit` and `tests/digikit`. Other modules: the test files that name the module or a module that requires it or builds from its sources, and the digikit test files of the scenarios that name it (TOML or runner code) |
+| a scenario file of `tests/digikit/scenarios` | `python-tests` | the test files that run its kind, and `test_scenarios.py` |
+| `tests/digikit/test_*.py`, `tests/patchkit/test_*.py` | `python-tests` | the file itself |
+| `packages/dkupload/` | `rust-tests`, `web` | |
+| `tools/devtools/verify.py`, `verify_route.py` | every step | every suite |
+| generated-core inputs, emulator crates, `sharc_dev` | as before (broad) | as before |
+
+`PY_GATE` runs in every case (it includes `pk_build build-all --check`). Not run by any pytest file: the scenario kinds `rungc` and `pages`, and the module smoke
+cells (`uv run python -m tools.patchkit.pk_harness run`, run by the coordinator). A new `tools/device` module must be listed in `DEVICE_KINDS`
+(a test fails until it is).
+
 Tiers: `DIGIKIT_TIER=quick` (default; the scenarios marked `tier = "quick"`, the newest image of each device) is what `mise run verify` runs when
-a file of the runtime, `core/dynreg`, `core/dsp-link`, `core/dyndsp`, `core/digikit-menu`, the `.dkm` packer, `plusdrive`, the boot tools or `tests/digikit` changed (the
-suite `digikit-boot` in `tools/devtools/verify.py`; one pytest file per group, so they run in parallel); `verify --full` sets `DIGIKIT_TIER=full`: every
+a framework module (see the routing table), a scenario, a module a scenario names, the `.dkm` packer, `plusdrive`, the boot tools or `tests/digikit` changed (the
+suite `digikit-boot` in `tools/devtools/verify.py` and `verify_route.py`; one pytest file per group, so they run in parallel); `verify --full` sets `DIGIKIT_TIER=full`: every
 scenario on all four images. The quick tier is the pluck equivalence (both devices), the DN2 set and the DT2 round trip (under a minute in parallel);
 safe mode and the power cut run in the full tier. Cards are cached by content in `out/cache/digikit/cards/` (read-only for the guest; its writes live in an overlay),
 so a repeated scenario reuses the daemon's boot cache; most of the time of a scenario is emulated panel time (a project save and load take about 10 s each), not the boots.

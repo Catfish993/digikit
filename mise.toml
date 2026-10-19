@@ -95,13 +95,17 @@ description = "Oracle tests for the DT2 FX scenarios on the one-sample card (abo
 run = "uv run python -m pytest tests/scenarios --slow --sweep -q"
 description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"
 
+[tasks."verify:pre"]
+run = "uv run python -m tools.devtools.verify_pre"
+description = "Quick lane checks, NOT the merge gate (tools/devtools/verify_pre.py; -- --base BRANCH): ruff and mypy on the changed files, pathcheck, pk_build build-all --check, the changed test files, Rust tests of the affected crates; no emulator run"
+
 [tasks.verify]
 run = "uv run python -m tools.devtools.verify"
-description = "Exactness gate for what changed (tools/devtools/verify.py; --base BRANCH in a lane, --only STEPS, --explain shows the routing and the plan without running); one PASS/FAIL line per step, logs in out/runs/verify/"
+description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing and the plan without running); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes run verify:pre"
 
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"
-description = "Exactness gate, every step with the full 134-scenario tier sweep (about 20 min with warm builds): before merging to main"
+description = "Exactness gate, every step with the full 134-scenario tier sweep (about 20 min with warm builds): only after generated-core changes"
 
 [tasks.scenario]
 run = "uv run python -m tools.emulator.coupled scenario"
@@ -169,7 +173,7 @@ description = "All linters"
 
 [tasks.check]
 depends = ["lint", "test:quick"]
-description = "Quick local check (lint + test:quick), not the merge gate: use `mise run verify` for what changed and `mise run verify:full` before merging to main"
+description = "Quick local check (lint + test:quick), not the merge gate: lanes run `mise run verify:pre`, the coordinator runs `mise run verify` once per merge, `mise run verify:full` only after generated-core changes"
 
 # --- performance ---
 
