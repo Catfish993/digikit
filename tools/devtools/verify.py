@@ -875,14 +875,15 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
 
 
 def desktop_check(gate: Gate) -> None:
-    """The desktop console builds and type-checks, and the app crate compiles with it."""
+    """The desktop console builds and type-checks, and the app crate compiles with it and passes its tests
+    (rust-tests leaves the crate out: its own test binary links the generated core)."""
     gate.run("desktop-ui", ["pnpm", "--filter", "@digi/desktop", "run", "build:ui"])
     gate.run(
         "desktop-ui-types", ["pnpm", "--filter", "@digi/desktop", "run", "check:ui"]
     )
     env = digi_env.rust_env()
     env["SHARC_GEN_DIR"] = str(digi_env.generated_dir())
-    cmd = ["cargo", "check", "--manifest-path", "apps/desktop/src-tauri/Cargo.toml"]
+    cmd = ["cargo", "test", "--manifest-path", "apps/desktop/src-tauri/Cargo.toml"]
     cmd += ["--target-dir", str(ROOT / "out" / "native" / "target" / "check-desktop")]
     gate.run("desktop", cmd, env=env)
 
@@ -998,9 +999,9 @@ def plan(
     return nodes, deps
 
 
-LONG_FILE_SECONDS = (
-    200  # a python-tests file this long starts before the steps (the tail of the gate)
-)
+# a python-tests job this long starts before the steps (the tail of the gate); a model of the 2026-10-19 run:
+# 1930 s at 200, 1830 s at 100, 1810 s at 60
+LONG_FILE_SECONDS = 100
 
 
 def python_file_seconds(
@@ -1094,13 +1095,25 @@ def next_starts(
 
 
 def rust_tests_command(packages: list[str] | None = None) -> list[str]:
-    """cargo test --workspace --release (rust_ws.py); digiemu-desktop is excluded when
-    apps/desktop/ui/dist is absent. PACKAGES (from rust_scope) limit the run to those crates
+    """cargo test --workspace --release (rust_ws.py); digiemu-desktop is always excluded (the desktop
+    step tests it). PACKAGES (from rust_scope) limit the run to those crates
     when rust_ws accepts `--packages`; until it does, the whole workspace runs."""
     cmd = [*PY, "-m", "tools.devtools.rust_ws", "test"]
     if packages and "--packages" in (rust_ws.__doc__ or ""):
         cmd += ["--packages", ",".join(packages)]
     return cmd
+
+
+def with_desktop(
+    steps: tuple[str, ...], rust_packages: list[str] | None
+) -> tuple[str, ...]:
+    """STEPS plus `desktop` when rust-tests runs and its crates include the desktop app (None: the whole
+    workspace): rust-tests leaves digiemu-desktop out, the desktop step builds and tests it."""
+    if "rust-tests" not in steps or "desktop" in steps:
+        return steps
+    if rust_packages is not None and rust_ws.DESKTOP not in rust_packages:
+        return steps
+    return tuple(s for s in STEPS if s in {*steps, "desktop"})
 
 
 def rust_scope(files: list[str]) -> list[str] | None:
@@ -1589,6 +1602,7 @@ def main(argv: list[str] | None = None) -> int:
             rust_packages = rust_scope(files)
             if rust_packages == []:  # no changed file reaches a Rust test
                 steps = tuple(s for s in steps if s != "rust-tests")
+            steps = with_desktop(steps, rust_packages)
         why = f"{len(files)} changed files since {args.base}"
     if rerun_tests is not None:
         py_plan = [(path, "rerun") for path in rerun_tests]

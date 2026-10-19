@@ -629,3 +629,24 @@ def test_verify_pre_plan(monkeypatch: pytest.MonkeyPatch) -> None:
         for n, c, _ in verify_pre.plan(["tools/devtools/benchlock.py"], Path("OUT"))
     }
     assert got["mypy"][-1] == "tools/devtools/benchlock.py"
+
+
+def test_rust_tests_leaves_the_desktop_crate_to_the_desktop_step() -> None:
+    from tools.devtools import rust_ws
+
+    assert "digiemu-desktop" in rust_ws.affected_packages(
+        ["packages/emulator/control/src/lib.rs"]
+    )
+    assert "--exclude" in rust_ws.workspace_args("test")
+    assert "digiemu-desktop" in rust_ws.workspace_args("test")
+    # a routed run whose crates include the app (or the whole workspace) gets the desktop step
+    assert verify.with_desktop(
+        ("rust-tests",), ["digi-control", "digiemu-desktop"]
+    ) == ("desktop", "rust-tests")
+    assert verify.with_desktop(("rust-tests",), None) == ("desktop", "rust-tests")
+    assert verify.with_desktop(("rust-tests",), ["periph"]) == ("rust-tests",)
+    assert verify.with_desktop(("python-tests",), None) == ("python-tests",)
+    assert verify.with_desktop(("desktop", "rust-tests"), None) == (
+        "desktop",
+        "rust-tests",
+    )

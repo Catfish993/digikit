@@ -8,13 +8,14 @@ test file, in parallel with the other files and the other steps. verify now runs
 steps that use a daemon (`build-daemons` in tools/devtools/verify.py), after the coupled-run builds, never in
 parallel with them.
 
-For each device that has its ready inputs it builds, in order, the plain daemon (the target dir of the
-device's generated core, shared with the coupled-run build) and, when a PGO profile exists, the profile-guided
-one (`pgo-emud-<device>` variant; the launcher's `pgo-use` is never touched). A PGO daemon is also copied
-to an immutable file (tools/devtools/stablebin.py) and `DIGI_EMUD_<DEV>=<copy>` is written to --env-out
-(JSON), so the test processes run that copy and ask cargo for nothing. The plain daemon is not pinned the same
-way: the harness builds it for the stock image it is given, and an image with another generated core
-has another binary.
+For each device that has its ready inputs it builds the profile-guided daemon when a PGO profile exists
+(`pgo-emud-<device>` variant; the launcher's `pgo-use` is never touched), else the plain daemon (the target dir
+of the device's generated core, shared with the coupled-run build). A PGO daemon is copied to an immutable
+file (tools/devtools/stablebin.py) and `DIGI_EMUD_<DEV>=<copy>` is written to --env-out (JSON), so the test
+processes run that copy and ask cargo for nothing; `pk_harness.daemon_binary` takes that variable before
+anything else, so a device with a pinned PGO daemon never uses the plain one and it is not built (it used to
+be, first, for every device). The plain daemon is not pinned the same way: the harness builds it for the stock
+image it is given, and an image with another generated core has another binary.
 """
 
 from __future__ import annotations
@@ -40,9 +41,9 @@ def build_daemons(devices: list[str]) -> dict[str, str]:
         except pk_harness.HarnessError as exc:
             print(f"SKIP {device}: {exc}", flush=True)
             continue
-        plain = pk_harness.daemon_binary(device, syx, pgo=False)
-        print(f"{device} plain: {plain}", flush=True)
         if pk_emud_pgo.native_pgo.current_profile(device) is None:
+            plain = pk_harness.daemon_binary(device, syx, pgo=False)
+            print(f"{device} plain: {plain}", flush=True)
             print(f"{device} pgo: no profile; the harness uses the plain daemon")
             continue
         pgo_path = pk_emud_pgo.build(device)

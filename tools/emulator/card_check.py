@@ -27,12 +27,10 @@ import os
 import pathlib
 import random
 import struct
-import subprocess
 import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools import python_env  # noqa: E402
 from tools.control.digi_client import Emu  # noqa: E402
 from tools.emulator import digi_env  # noqa: E402
 
@@ -123,14 +121,11 @@ def judge(track: int, result: dict) -> tuple[bool, str]:
 
 
 def build_daemon(syx: pathlib.Path) -> pathlib.Path:
-    done = subprocess.run(
-        [sys.executable, "-m", "tools.emulator.native_emu", "--daemon",
-         "--build-only", str(syx)],
-        cwd=ROOT, env=python_env(), capture_output=True, text=True,
-    )  # fmt: skip
-    if done.returncode:
-        raise SystemExit(f"building digi-emud failed:\n{done.stderr[-2000:]}")
-    return pathlib.Path(done.stdout.strip().splitlines()[-1])
+    """The `digi-emud` for the DT2 core: DIGI_EMUD_DT2 (the PGO copy that verify's build-daemons pinned), else
+    what the patchkit harness uses (the profile-guided build when there is one, else the plain build, made here)."""
+    from tools.patchkit import pk_harness
+
+    return pathlib.Path(pk_harness.daemon_binary("dt2", syx))
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -9,8 +9,10 @@
 
 ``test`` and ``check`` use the generated core of ``tools/emulator/digi_env.py`` and its
 target dir (``tools/emulator/native_target.py``), so they reuse the compiled
-``sharc-gen``. The desktop crate embeds ``apps/desktop/ui/dist``; it is left out
-when the desktop console has not been built. ``fmt`` covers only ``CLEAN_CRATES``:
+``sharc-gen``. The desktop crate (digiemu-desktop) is left out of ``test``: it embeds
+``apps/desktop/ui/dist`` and links the generated core into its own test binary, and verify's
+``desktop`` step builds and tests it (its own target dir). ``check`` still covers it when the
+console has been built. ``fmt`` covers only ``CLEAN_CRATES``:
 add a crate once ``cargo fmt -p CRATE --check`` passes; the list should only
 grow.
 """
@@ -166,10 +168,15 @@ def affected_packages(changed: list[str]) -> list[str] | None:
     return sorted(closure | readers)
 
 
-def workspace_args() -> list[str]:
+DESKTOP = "digiemu-desktop"
+
+
+def workspace_args(mode: str = "check") -> list[str]:
+    """`--workspace` and what it leaves out: the desktop crate in `test` (verify's desktop step tests it), and
+    in `check` when its console (apps/desktop/ui/dist) has not been built."""
     args = ["--workspace"]
-    if not (ROOT / "apps/desktop/ui/dist").is_dir():
-        args += ["--exclude", "digiemu-desktop"]
+    if mode == "test" or not (ROOT / "apps/desktop/ui/dist").is_dir():
+        args += ["--exclude", DESKTOP]
     return args
 
 
@@ -220,11 +227,15 @@ def main(argv: list[str]) -> int:
     if mode == "check":
         sub = ["check", *workspace_args(), "--all-targets", *target]
     elif packages:
-        if not (ROOT / "apps/desktop/ui/dist").is_dir():
-            packages = [p for p in packages if p != "digiemu-desktop"]
+        packages = [p for p in packages if p != DESKTOP]
+        if not packages:  # only the desktop crate was affected: its tests run in verify's desktop step
+            print(
+                f"rust_ws: only {DESKTOP} is affected; it is tested by the desktop step"
+            )
+            return 0
         sub = ["test", *(x for p in packages for x in ("-p", p)), "--release", *target]
     else:
-        sub = ["test", *workspace_args(), "--release", *target]
+        sub = ["test", *workspace_args("test"), "--release", *target]
     return cargo([*sub, *extra], env)
 
 
