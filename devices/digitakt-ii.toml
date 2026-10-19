@@ -308,3 +308,20 @@ stride = 48
 group = 4
 gap = 2
 mirror_base = 25
+
+# The machine adapter's device facts (docs/design/module-sdk.md 5.2); generated into core/dsp-voice build/gen/adapter-{dev}.inc.
+# The knob position of parameter i is 0x6d + 48 t + slot + 2 (slot >> 2): base, stride, group and gap come from [modules.frame] above,
+# the block length from [board] (dsp_clock_hz / dsp_blocks_per_second, rounded).
+[adapter.machine]
+voices          = 16                      # tracks; each track is rendered on its even voice (2t)
+voice_unit      = "track"                 # "track": voice record, voices in pairs; "slot": trig edge
+pitch_hw        = 1                       # frame halfword 1 + t: note << 8
+velocity_hw     = 0x1a                    # frame halfword 0x1a + t: velocity << 8
+type_source     = "cache"                 # the DSP's per-track type cache (anchor dsp.voice.type_cache); DN2: "frame"
+record_active   = 0x1b8                   # byte +0x1b8 of the voice record: ACTIVE
+record_mark     = 0x1b9                   # byte +0x1b9: the note-on mark
+note_on         = "record"                # ACTIVE != 0 and mark == 0; DN2: "trig-edge"
+pair            = "copy-even"             # the odd voice copies the even block; DN2: "none"
+tune_slot       = 0                       # the stock tune is knob 0 of the track (a frame halfword; pluck.s "0 TUNE"), folded into `pitch`
+param_slots     = [1, 2, 4, 5]            # knob positions for module parameters, in order (a saved project stores values by slot)
+reserved_slots  = [3]                     # knob 3 is the sample slot of a SAMPLE clone (module-sdk.md D1)

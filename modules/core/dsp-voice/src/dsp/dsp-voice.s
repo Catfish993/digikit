@@ -103,7 +103,7 @@ _dv_nodiag:
 _dv_scan:
     R0 = DM(0, I4);                       // row type; 0 ends the table (the last row is always empty)
     R2 = DM(1, I4);                       // row pc
-    MODIFY(I4, 16) (NW);                  // a row is 16 words (see the header, "The registry row")
+    MODIFY(I4, 24) (NW);                  // a row is 24 words (see the header, "The registry row")
     R0 = PASS R0;
     IF EQ JUMP _dv_stock;
     COMP(R0, R1);
@@ -754,7 +754,7 @@ _dv_f3b:
     DM(_dv_g + 24) = R5;
     R3 = DM(_dv_g + 0);
     I4 = R3;
-    R3 = DM(-6, I4);                      // the row's disabled type
+    R3 = DM(-14, I4);                     // the row's disabled type
     COMP(R3, R0);
     IF EQ JUMP _dv_gdis;
     R3 = LSHIFT R2 BY 5;
@@ -764,8 +764,8 @@ _dv_f3b:
     R3 = R3 + R6;                         // halfword index of knob 0: 0x6d + 48 t
     DM(_dv_g + 28) = R3;
     R3 = DM(_dv_g + 0);
-    R6 = 56;
-    R3 = R3 - R6;                         // the row's word 2: the range of knob 0
+    R6 = 88;
+    R3 = R3 - R6;                        // the row's word 2: the range of knob 0
     I3 = R3;
     R6 = 0;                               // knob j
 _dv_gl:
@@ -985,29 +985,29 @@ _dv_gz: DM(I0, M6) = R3;
     R3 = DM(_dv_g + 0);
     I4 = R3;
     R5 = DM(_dv_diag);                    // blocks so far
-    R6 = DM(-5, I4);                      // the row's window start
+    R6 = DM(-13, I4);                     // the row's window start
     R7 = R5 - R6;
     R3 = 1500;
     COMP(R7, R3);
     IF LT JUMP _dv_gwin;
-    DM(-5, I4) = R5;
+    DM(-13, I4) = R5;
     R7 = 0;
-    DM(-4, I4) = R7;
+    DM(-12, I4) = R7;
 _dv_gwin:
-    R7 = DM(-4, I4);
+    R7 = DM(-12, I4);
     R7 = R7 + 1;
-    DM(-4, I4) = R7;                      // faults in this window
-    R9 = DM(-3, I4);
+    DM(-12, I4) = R7;                     // faults in this window
+    R9 = DM(-11, I4);
     R9 = R9 + 1;
-    DM(-3, I4) = R9;                      // faults of the type since the start
+    DM(-11, I4) = R9;                     // faults of the type since the start
     R3 = 8;
     COMP(R7, R3);
     IF LT JUMP _dv_gnd;
     R0 = DM(_dv_g + 4);
-    R3 = DM(-6, I4);
+    R3 = DM(-14, I4);
     COMP(R3, R0);
     IF EQ JUMP _dv_gnd;                   // already disabled
-    DM(-6, I4) = R0;
+    DM(-14, I4) = R0;
     DM(_dv_diag + 84) = R0;               // the last disabled type
     R3 = DM(_dv_g + 40);
     R3 = R3 + 1;

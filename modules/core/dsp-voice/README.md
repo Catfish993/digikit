@@ -22,7 +22,7 @@ example). On its own it changes nothing: a patched image with no registered mach
 Around a registered routine the wrapper checks what it cannot trust (docs/findings/51-pluck-tune-guard.md):
 
 - Before the call the eight machine knob words of the track are clamped in the frame copy to the ranges the machine's `[[param]]` declare (`min`/`max`; a stock knob
-  or an undeclared one: 0 .. 0x7f00) and are put back after the call. The ranges are in the voice row (16 words, see the `[[registry.field]]` comment in `module.toml`).
+  or an undeclared one: 0 .. 0x7f00) and are put back after the call. The ranges are in the voice row (24 words, see the `[[registry.field]]` comment in `module.toml`).
 - After the call the block must hold finite samples of at most 8.0 in magnitude. Otherwise it is zeroed, the voice ends (ACTIVE and the mark of the record clear), the fault is counted
   and reported in `dl_diag` words 17 to 23 and the log (`MACHINE_FAULT`). A type that faults 8 times within 1500 blocks is disabled: its voices render silence and the routine is not
   called until the next start (`MACHINE_DISABLED`).

@@ -147,8 +147,10 @@ _dl_win1:
     R3 = 1;
     COMP(R0, R3);
     IF NE JUMP _dl_range;                 // windows 2 and 3 do not exist
-    R3 = _dl_vcount;                      // window 1: the voice rows (16 words each, the terminator row excluded)
-    R3 = LSHIFT R3 BY 4;
+    R3 = _dl_vcount;                      // window 1: the voice rows (24 words each, the terminator row excluded)
+    R4 = LSHIFT R3 BY 4;
+    R3 = LSHIFT R3 BY 3;
+    R3 = R3 + R4;                         // count * 24
     R4 = _dl_vrows;
 _dl_wdone:
     DM(_dl_wbase) = R4;

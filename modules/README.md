@@ -408,7 +408,7 @@ stale (`packages/patchkit/tests/typed.rs` runs it). The files hold no firmware b
 | `gallery.json` | the gallery: machines with their knobs, per device (type, position, page), and the parameters with ranges; it is part of the web bundle (`files["build/gen/gallery.json"]`) and shown on the module card |
 
 A module can also ask for constants from the device files (`devices/*.toml`: `[board]`, `[digikit]`, `[card.store]`) and
-`core/machines` `types.toml` with `[[gen]]` entries in its `module.toml` (`kind` = `rust`, `gas-shared`, `gas` or `sharc`, and a
+`core/machines` `types.toml` with `[[gen]]` entries in its `module.toml` (`kind` = `rust`, `gas-shared`, `gas`, `sharc` or `sharc-adapter` (only the `ADM_*` defines of `[adapter.machine]`), and a
 `path`; `{dev}` in the path makes one file per device). They are written by the same `patchkit gen` and checked by `gen --check`;
 what each kind holds, which fact lives where and what a new device needs are in `docs/design/device-data.md`.
 

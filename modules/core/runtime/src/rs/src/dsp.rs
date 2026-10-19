@@ -6,11 +6,13 @@
 //! advances (`step`); `dkrt_load` returns `LOADING` and the machine is listed only when the DSP code is acknowledged
 //! and the voice rows are in.
 //!
-//! Voice rows (the voices registry of `core/dsp-voice`, scanned by the DSP for every voice it renders) are 16 words
+//! Voice rows (the voices registry of `core/dsp-voice`, scanned by the DSP for every voice it renders) are 24 words
 //! (`ROW_WORDS`) and written one word per transfer through window 1 of `core/dsp-link`: the eight knob ranges (words 2 to 9: the
-//! runtime guard clamps the machine's parameter words to them), the pc, the guard's disabled-type word cleared, and the type
+//! runtime guard clamps the machine's parameter words to them), the pc, the note_on pc (16), the state base (17), the state stride
+//! (18) and the clear bytes (19), the guard's disabled-type word cleared, and the type
 //! last (the row is still free until then: its type is `0xffffffff`, which no machine type equals), so the render scan never sees a
-//! half-written row. A row is freed the other way round (type to `0xffffffff` first).
+//! half-written row. A row is freed the other way round (type to `0xffffffff` first). The generation (20) and log level (21) words
+//! are not written yet (0).
 //!
 //! Nothing here runs unless the file has a DSP section; the link to `core/dsp-link` and `core/dyndsp` is optional.
 use crate::{arena, cstr_eq, cstr_len, rd32};
@@ -25,13 +27,18 @@ const MAX_VOICES: usize = MAX_ROWS;
 const MAX_RELOCS: u32 = 4096;
 const MAX_IMPORTS: u32 = 32;
 const GRANULE: u32 = 64;
-/// Words of a voice row of `core/dsp-voice`: 0 type, 1 pc, 2 to 9 the range of knob 0 to 7 (min | max << 16), 10 the type the guard disabled, then its counters.
-const ROW_WORDS: u32 = 16;
-/// Bytes of a voice entry in a DSP section: version 1 16 (type, entry), version 2 48 (type, entry, 8 ranges, 2 reserved).
+/// Words of a voice row of `core/dsp-voice`: 0 type, 1 pc, 2 to 9 the range of knob 0 to 7 (min | max << 16), 10 the type the guard disabled, then its counters,
+/// 16 note_on pc, 17 state base, 18 state stride, 19 clear bytes, 20 generation, 21 log level, 22 and 23 spare.
+const ROW_WORDS: u32 = 24;
+/// Bytes of a voice entry in a DSP section: version 1 16 (type, entry), version 2 48 (type, entry, 8 ranges, 2 reserved),
+/// version 3 64 (type, render, note_on, state_bytes, clear_bytes, 8 ranges, voices, 2 reserved).
 const VOICE_V1: u32 = 16;
 const VOICE_V2: u32 = 48;
-/// Steps to publish a row: 8 ranges, the pc, the cleared disabled word, the type.
-const ROW_STEPS: u32 = 11;
+const VOICE_V3: u32 = 64;
+/// Most voice states a module may reserve.
+const MAX_STATE_VOICES: u32 = 64;
+/// Steps to publish a row: 8 ranges, the pc, note_on, state base, stride, clear, the cleared disabled word, the type.
+const ROW_STEPS: u32 = 15;
 const L2_BYTE_BASE: u32 = 0x2000_0000;
 const L2_SW_BASE: u32 = 0x00B8_0000;
 /// The run-time machine types (`dynamic_first ..= last` of modules/core/machines/types.toml, through `patchkit gen`).
@@ -141,6 +148,11 @@ pub struct DspState {
     pub pending: Pending,
     pub waiting: [Pending; crate::MAX_MODULES],
     pub nwait: u32,
+    /// Per voice row: the note_on pc (0: none), the byte address of voice 0's state, the bytes between states, the bytes cleared at note-on.
+    pub row_note_on: [u32; MAX_ROWS],
+    pub row_state_base: [u32; MAX_ROWS],
+    pub row_stride: [u32; MAX_ROWS],
+    pub row_clear: [u32; MAX_ROWS],
 }
 
 #[no_mangle]
@@ -300,7 +312,7 @@ pub struct Job {
     pub nimport: u32,
     pub voices: *const u8,
     pub nvoice: u32,
-    /// Bytes of a voice entry (`VOICE_V1` or `VOICE_V2`).
+    /// Bytes of a voice entry (`VOICE_V1`, `VOICE_V2` or `VOICE_V3`).
     pub vstride: u32,
     import_vals: [u32; MAX_IMPORTS as usize],
 }
@@ -328,6 +340,21 @@ unsafe fn in_sec(off: u32, len: u32, size: u32) -> bool {
     off <= size && len <= size - off
 }
 
+/// Bytes of the range a module needs, before the granule: image, bss, then (version 3) the state blocks of its voices, every block
+/// of `voices * state_bytes` rounded to 8 bytes. The caller has checked the counts, so nothing overflows.
+unsafe fn extent(image_size: u32, bss: u32, voices: *const u8, nvoice: u32, vstride: u32) -> u32 {
+    let mut total = (image_size + bss + 7) & !7;
+    if vstride == VOICE_V3 {
+        let mut i = 0;
+        while i < nvoice {
+            let e = voices.add((vstride * i) as usize);
+            total += rd32(e.add(52)) * ((rd32(e.add(12)) + 7) & !7);
+            i += 1;
+        }
+    }
+    total
+}
+
 /// An exported DSP symbol of `dyndsp_info`; 0 when there is none of that name.
 unsafe fn dsp_symbol(name: *const u8) -> u32 {
     let n = iw(I_NIMPORT);
@@ -350,7 +377,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     }
     let s = f.add(off as usize);
     let version = rd32(s.add(4));
-    if rd32(s) != STATE_MAGIC || (version != 1 && version != 2) {
+    if rd32(s) != STATE_MAGIC || (version != 1 && version != 2 && version != 3) {
         return E_DSP_FORMAT;
     }
     if !have_link() {
@@ -365,7 +392,11 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     let (image_off, reloc_off, nreloc) = (rd32(s.add(0x18)), rd32(s.add(0x1c)), rd32(s.add(0x20)));
     let (import_off, nimport) = (rd32(s.add(0x24)), rd32(s.add(0x28)));
     let (voice_off, nvoice) = (rd32(s.add(0x2c)), rd32(s.add(0x30)));
-    let vstride = if version == 1 { VOICE_V1 } else { VOICE_V2 };
+    let vstride = match version {
+        1 => VOICE_V1,
+        2 => VOICE_V2,
+        _ => VOICE_V3,
+    };
     if image_size == 0
         || image_size & 3 != 0
         || bss & 3 != 0
@@ -381,8 +412,21 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     {
         return E_DSP_FORMAT;
     }
+    // version 3 voices: the state counts must be sane before the range is computed from them
+    if vstride == VOICE_V3 {
+        let mut i = 0;
+        while i < nvoice {
+            let e = s.add((voice_off + vstride * i) as usize);
+            let (note_on, state, clear, count) = (rd32(e.add(8)), rd32(e.add(12)), rd32(e.add(16)), rd32(e.add(52)));
+            if note_on >= image_size || note_on & 1 != 0 || clear > state || state > iw(I_AREA_BYTES) || count > MAX_STATE_VOICES {
+                return E_DSP_FORMAT;
+            }
+            i += 1;
+        }
+    }
     // the range must fit the area at all (a later load may still find it taken: reserve())
-    if (image_size + bss + GRANULE - 1) & !(GRANULE - 1) > iw(I_AREA_BYTES) {
+    let need = extent(image_size, bss, s.add(voice_off as usize), nvoice, vstride);
+    if need > iw(I_AREA_BYTES) || (need + GRANULE - 1) & !(GRANULE - 1) > iw(I_AREA_BYTES) {
         return E_DSP_NOSPACE;
     }
     let mut i = 0;
@@ -475,7 +519,7 @@ unsafe fn put_le16(p: *mut u8, v: u32) {
 /// Nothing is sent yet. On an error nothing is left reserved.
 pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
     let d = ds();
-    let len = (job.image_size + job.bss + GRANULE - 1) & !(GRANULE - 1);
+    let len = (extent(job.image_size, job.bss, job.voices, job.nvoice, job.vstride) + GRANULE - 1) & !(GRANULE - 1);
     let off = match alloc_range(len, job.align) {
         Some(o) => o,
         None => return E_DSP_NOSPACE,
@@ -524,6 +568,8 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
     let mut claimed = 0u32;
     let mut v = 0;
     let mut row = 0;
+    // version 3: the state blocks follow image and bss (8-aligned), one block of `voices * stride` per voice record, in record order
+    let mut state_at = (job.image_size + job.bss + 7) & !7;
     while v < job.nvoice as usize {
         while row < MAX_ROWS && (d.row_owner[row] != 0 || (row as u32) >= iw(I_VFREE)) {
             row += 1;
@@ -533,8 +579,27 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
         d.row_pc[row] = L2_SW_BASE + (base + rd32(e.add(4)) - L2_BYTE_BASE) / 2;
         let mut k = 0;
         while k < 8 {
-            d.row_rng[row][k] = if job.vstride == VOICE_V2 { rd32(e.add(8 + 4 * k)) } else { 0 };
+            d.row_rng[row][k] = match job.vstride {
+                VOICE_V2 => rd32(e.add(8 + 4 * k)),
+                VOICE_V3 => rd32(e.add(20 + 4 * k)),
+                _ => 0,
+            };
             k += 1;
+        }
+        if job.vstride == VOICE_V3 {
+            let note_on = rd32(e.add(8));
+            let stride = (rd32(e.add(12)) + 7) & !7;
+            d.row_note_on[row] = if note_on == 0 { 0 } else { L2_SW_BASE + (base + note_on - L2_BYTE_BASE) / 2 };
+            // the byte address of a data symbol at image offset `state_at`: nominal L2_BYTE_BASE + state_at, plus the byte shift
+            d.row_state_base[row] = L2_BYTE_BASE + state_at + byte_shift;
+            d.row_stride[row] = stride;
+            d.row_clear[row] = rd32(e.add(16));
+            state_at += rd32(e.add(52)) * stride;
+        } else {
+            d.row_note_on[row] = 0;
+            d.row_state_base[row] = 0;
+            d.row_stride[row] = 0;
+            d.row_clear[row] = 0;
         }
         d.row_owner[row] = rec as u8 + 1;
         d.row_pub[row] = 0;
@@ -562,6 +627,10 @@ unsafe fn unreserve(rec: usize) {
             d.row_pub[k] = 0;
             d.row_pc[k] = 0;
             d.row_rng[k] = [0; 8];
+            d.row_note_on[k] = 0;
+            d.row_state_base[k] = 0;
+            d.row_stride[k] = 0;
+            d.row_clear[k] = 0;
         }
         k += 1;
     }
@@ -759,7 +828,8 @@ pub unsafe fn step() {
                 }
             }
             PH_ROWS => {
-                // rows of the module in claim order; `ROW_STEPS` steps each: the 8 ranges, the pc, the disabled word cleared, the type
+                // rows of the module in claim order; `ROW_STEPS` steps each: the 8 ranges, the pc, note_on, state base, stride, clear
+                // bytes, the disabled word cleared, the type
                 let rec = d.pending.rec as usize;
                 let first = iw(I_VFIRST);
                 let mut want = d.step;
@@ -789,6 +859,14 @@ pub unsafe fn step() {
                     } else if want == 8 {
                         (at + 1, d.row_pc[row])
                     } else if want == 9 {
+                        (at + 16, d.row_note_on[row])
+                    } else if want == 10 {
+                        (at + 17, d.row_state_base[row])
+                    } else if want == 11 {
+                        (at + 18, d.row_stride[row])
+                    } else if want == 12 {
+                        (at + 19, d.row_clear[row])
+                    } else if want == 13 {
                         (at + 10, 0)
                     } else {
                         (at, d.row_type[row])

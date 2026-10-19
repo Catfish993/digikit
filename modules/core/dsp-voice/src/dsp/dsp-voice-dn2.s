@@ -151,7 +151,7 @@ _dv_nodiag:
 _dv_scan:
     R0 = DM(0, I4);                       // row type; 0 ends the table (the last row is always empty)
     R2 = DM(1, I4);                       // row pc
-    MODIFY(I4, 16) (NW);                  // a row is 16 words (core/dsp-voice's module.toml)
+    MODIFY(I4, 24) (NW);                  // a row is 24 words (core/dsp-voice's module.toml)
     R0 = PASS R0;
     IF EQ JUMP _dv_done;
     COMP(R0, R1);

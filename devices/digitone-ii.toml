@@ -298,3 +298,19 @@ own_dsp = true
 base = 0x6d
 stride = 0x49
 mirror_base = 25
+
+# The machine adapter's device facts (docs/design/module-sdk.md 5.2); generated into core/dsp-voice build/gen/adapter-{dev}.inc.
+# The knob position of parameter i is 0x6d + 0x49 v + slot: base and stride come from [modules.frame] above, the block length
+# from [board] (dsp_clock_hz / dsp_blocks_per_second, rounded).
+[adapter.machine]
+voices          = 16                      # slots
+voice_unit      = "slot"                  # "track": voice record, voices in pairs; "slot": trig edge
+pitch_hw        = 1                       # frame halfword 1 + v: note << 8
+velocity_hw     = 26                      # frame halfword 26 + v: velocity << 8
+type_source     = "frame"                 # frame halfword 74 + v; DT2: "cache"
+type_hw         = 74
+note_on         = "trig-edge"             # rising edge of bit v of frame halfword trig_hw; DT2: "record"
+trig_hw         = 0x11
+pair            = "none"                  # one voice per slot; DT2: "copy-even"
+param_slots     = [0, 1, 2, 3]            # knob positions for module parameters, in order (pluck_dn2.s: DECAY, PICK, BRIGHT, COLOR)
+reserved_slots  = []

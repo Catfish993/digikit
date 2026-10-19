@@ -62,4 +62,6 @@ Committed generated files:
 | `packages/emulator/sharc/src/fast/lower/gen_forms.rs` | `tools/sharc_dev/sharc_lowergen.py` from `tools/sharc_dev/sharc_core` | `mise run gen:regen` |
 | `modules/core/runtime/sdk/src/gen_sdk.rs` | `patchkit gen` (`packages/patchkit/src/sdkgen.rs`) from `sdk/sdk.toml` | `patchkit gen` (`--check` reports stale files) |
 | `tools/device/dklog_kinds.py` | `patchkit gen` (`packages/patchkit/src/sdkgen.rs`) from `sdk/sdk.toml` | `patchkit gen` (`--check` reports stale files) |
+| `sdk/dk_machine.inc` | `patchkit gen` (`packages/patchkit/src/sdkgen.rs`) from `sdk/sdk.toml` `[machine]` (the C view `sdk/dk_machine.h` is hand-written; `packages/patchkit/tests/sdkgen.rs` keeps the two equal) | `patchkit gen` (`--check` reports stale files) |
+| `modules/core/dsp-voice/build/gen/adapter-{dev}.inc` | `patchkit gen` (`packages/patchkit/src/devgen.rs`) from `[adapter.machine]` of `devices/<dev>.toml` | `patchkit gen` (`--check` reports stale files) |
 | `modules/*/*/build/*.dko.json` | Module builds (built module objects; no firmware bytes) | `mise run module:build [-- modules/fx/NAME] [--check]` |

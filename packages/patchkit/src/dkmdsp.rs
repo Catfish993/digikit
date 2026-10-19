@@ -4,7 +4,7 @@
 //! All integers are big endian. Layout (offsets from the start of the section):
 //!
 //! ```text
-//! 0x00 u32 magic "DKDS"   0x04 u32 version = 2 (1: voices of 16 bytes without ranges)   0x08 u32 device (1 dt2, 2 dn2)
+//! 0x00 u32 magic "DKDS"   0x04 u32 version = 3 (2: voices of 48 bytes; 1: of 16 bytes without ranges)   0x08 u32 device (1 dt2, 2 dn2)
 //! 0x0c u32 image_size   bytes of text and data that are sent (a multiple of 4)
 //! 0x10 u32 bss_size     bytes reserved behind the image, not sent
 //! 0x14 u32 align        placement alignment in bytes (8 or more, a power of two)
@@ -19,6 +19,10 @@
 //!                  2: the value is the addend of the import (add the import's value, a pc or a byte address as exported)
 //! voices : 48 bytes each: u32 machine type, u32 image byte offset of the entry routine, 8 x u32 range of machine knob 0 .. 7 for the runtime
 //!            guard of core/dsp-voice (min | max << 16; 0: undeclared), 2 x u32 reserved. Version 1 had 16 bytes (type, entry, 2 reserved)
+//!          version 3: 64 bytes each: 0 u32 type, 4 u32 render entry (image byte offset), 8 u32 note_on entry (image byte offset; 0: none),
+//!            12 u32 state_bytes (per voice), 16 u32 clear_bytes (zeroed at note-on), 20..51 8 x u32 ranges as above, 52 u32 voices (number of
+//!            voice states to reserve behind the image and bss), 56..63 reserved 0. The packer writes version 3 only when a voice has a
+//!            note_on entry or a state; otherwise version 2 (the runtime parses all three; v1 and v2 voices have note_on 0 and no state)
 //! image  : the linked bytes at the nominal base `L2_BYTE_BASE`; every relocated field holds `S + A` at that base
 //! ```
 //!
@@ -33,11 +37,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAGIC: u32 = 0x444b_4453; // "DKDS"
 pub const VERSION: u32 = 2;
+/// The version with `note_on` entries and per-voice state (voices of `VOICE_LEN_V3` bytes).
+pub const VERSION_3: u32 = 3;
 /// The version without voice ranges (voices of `VOICE_LEN_V1` bytes); the runtime still loads it, with every range undeclared.
 pub const VERSION_1: u32 = 1;
 pub const HEADER: usize = 0x40;
 pub const RELOC_LEN: usize = 8;
 pub const VOICE_LEN: usize = 48;
+pub const VOICE_LEN_V3: usize = 64;
+/// `dk_machine_desc` (SDK contract): magic "DKMA" and the contract number the packer accepts, and its size in u32 words.
+pub const DESC_MAGIC: u32 = 0x444b_4d41;
+pub const DESC_CONTRACT: u32 = 1;
+pub const DESC_WORDS: usize = 10;
 pub const VOICE_LEN_V1: usize = 16;
 pub const IMPORT_LEN: usize = 32;
 pub const MAX_RELOCS: usize = 4096;
@@ -67,8 +78,45 @@ pub struct Voice {
     pub type_no: u32,
     /// byte offset of the entry routine in the image
     pub entry: u32,
+    /// byte offset of the note_on routine in the image (0: none)
+    pub note_on: u32,
+    /// bytes of state per voice, bytes of it zeroed at note-on, number of voice states
+    pub state_bytes: u32,
+    pub clear_bytes: u32,
+    pub voices: u32,
     /// range of machine knob 0 .. 7 (min | max << 16; 0 undeclared)
     pub ranges: [u32; 8],
+}
+
+impl Voice {
+    /// The record needs version 3.
+    fn contract(&self) -> bool {
+        self.note_on != 0 || self.state_bytes != 0 || self.clear_bytes != 0 || self.voices != 0
+    }
+}
+
+/// A voice as the manifest names it. `render` (and `note_on`) are global text symbols of the DSP object; `desc` is a data symbol
+/// holding a `dk_machine_desc` (10 u32 words, little endian in the image) that gives voices, state and clear bytes.
+#[derive(Clone, Debug)]
+pub struct VoiceSpec {
+    pub type_no: u32,
+    pub render: String,
+    pub note_on: Option<String>,
+    pub desc: Option<String>,
+    pub ranges: [u32; 8],
+}
+
+impl VoiceSpec {
+    /// A voice with only a render entry (no note_on, no state).
+    pub fn old(type_no: u32, render: String, ranges: [u32; 8]) -> VoiceSpec {
+        VoiceSpec {
+            type_no,
+            render,
+            note_on: None,
+            desc: None,
+            ranges,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,7 +140,7 @@ pub struct DspSection {
 
 /// Link `obj` (a SHARC+ object) at the nominal base and encode the section. `voices` names the entry routine of each machine type
 /// (a global text symbol of the object).
-pub fn pack(obj: &Dko, device: u32, voices: &[(u32, String, [u32; 8])]) -> Result<Vec<u8>> {
+pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec]) -> Result<Vec<u8>> {
     if obj.arch != "sharc" {
         return Err(err!(
             "a DSP section holds a SHARC+ object; the object is {}",
@@ -197,7 +245,7 @@ pub fn pack(obj: &Dko, device: u32, voices: &[(u32, String, [u32; 8])]) -> Resul
         return Err(err!("{} voices; at most {MAX_VOICES}", voices.len()));
     }
     let mut vs = vec![];
-    for (t, name, ranges) in voices {
+    let entry_of = |name: &String| -> Result<u32> {
         match defined.get(name.as_str()) {
             Some(("text", true)) => {}
             Some(_) => {
@@ -212,11 +260,67 @@ pub fn pack(obj: &Dko, device: u32, voices: &[(u32, String, [u32; 8])]) -> Resul
             }
         }
         let pc = linked.symbols[name.as_str()];
-        let entry = (pc - L2_SW_BASE as u64) * 2;
+        Ok(((pc - L2_SW_BASE as u64) * 2) as u32)
+    };
+    for v in voices {
+        let entry = entry_of(&v.render)?;
+        let note_on = match &v.note_on {
+            Some(n) => {
+                let e = entry_of(n)?;
+                if e == 0 {
+                    return Err(err!(
+                        "voice entry {n}: at image offset 0, which the section reads as no note_on"
+                    ));
+                }
+                e
+            }
+            None => 0,
+        };
+        let (mut voices_n, mut state_bytes, mut clear_bytes) = (0, 0, 0);
+        if let Some(d) = &v.desc {
+            match defined.get(d.as_str()) {
+                Some(("data", _)) => {}
+                Some(_) => {
+                    return Err(err!("voice desc {d}: not a data symbol of the DSP object"));
+                }
+                None => {
+                    return Err(err!("voice desc {d}: the DSP object does not define it"));
+                }
+            }
+            let at = (linked.symbols[d.as_str()] - L2_BYTE_BASE as u64) as usize;
+            let bytes = image
+                .get(at..at + DESC_WORDS * 4)
+                .ok_or_else(|| err!("voice desc {d}: shorter than {} bytes", DESC_WORDS * 4))?;
+            let w = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+            if w(0) != DESC_MAGIC {
+                return Err(err!(
+                    "voice desc {d}: magic {:#x}, not DKMA ({DESC_MAGIC:#x})",
+                    w(0)
+                ));
+            }
+            if w(1) != DESC_CONTRACT {
+                return Err(err!(
+                    "voice desc {d}: contract {}, this packer takes {DESC_CONTRACT}",
+                    w(1)
+                ));
+            }
+            voices_n = w(3);
+            state_bytes = w(4);
+            clear_bytes = w(5);
+            if clear_bytes > state_bytes {
+                return Err(err!(
+                    "voice desc {d}: state_clear_bytes {clear_bytes} is more than state_bytes {state_bytes}"
+                ));
+            }
+        }
         vs.push(Voice {
-            type_no: *t,
-            entry: entry as u32,
-            ranges: *ranges,
+            type_no: v.type_no,
+            entry,
+            note_on,
+            state_bytes,
+            clear_bytes,
+            voices: voices_n,
+            ranges: v.ranges,
         });
     }
     let s = DspSection {
@@ -236,10 +340,12 @@ impl DspSection {
         let import_off = HEADER;
         let reloc_off = import_off + self.imports.len() * IMPORT_LEN;
         let voice_off = reloc_off + self.relocs.len() * RELOC_LEN;
-        let image_off = align_up(voice_off + self.voices.len() * VOICE_LEN, 16);
+        let v3 = self.voices.iter().any(|v| v.contract());
+        let vlen = if v3 { VOICE_LEN_V3 } else { VOICE_LEN };
+        let image_off = align_up(voice_off + self.voices.len() * vlen, 16);
         let mut f = vec![0u8; image_off + self.image.len()];
         put(&mut f, 0, MAGIC);
-        put(&mut f, 4, VERSION);
+        put(&mut f, 4, if v3 { VERSION_3 } else { VERSION });
         put(&mut f, 8, self.device);
         put(&mut f, 0x0c, self.image.len() as u32);
         put(&mut f, 0x10, self.bss);
@@ -261,11 +367,21 @@ impl DspSection {
             put(&mut f, at + 4, r.kind << 28 | r.class << 24 | r.import);
         }
         for (i, v) in self.voices.iter().enumerate() {
-            let at = voice_off + i * VOICE_LEN;
+            let at = voice_off + i * vlen;
             put(&mut f, at, v.type_no);
             put(&mut f, at + 4, v.entry);
-            for (k, w) in v.ranges.iter().enumerate() {
-                put(&mut f, at + 8 + 4 * k, *w);
+            if v3 {
+                put(&mut f, at + 8, v.note_on);
+                put(&mut f, at + 12, v.state_bytes);
+                put(&mut f, at + 16, v.clear_bytes);
+                for (k, w) in v.ranges.iter().enumerate() {
+                    put(&mut f, at + 20 + 4 * k, *w);
+                }
+                put(&mut f, at + 52, v.voices);
+            } else {
+                for (k, w) in v.ranges.iter().enumerate() {
+                    put(&mut f, at + 8 + 4 * k, *w);
+                }
             }
         }
         f[image_off..].copy_from_slice(&self.image);
@@ -278,13 +394,13 @@ impl DspSection {
             return Err(err!("not a DSP section (magic)"));
         }
         let version = get(f, 4);
-        if version != VERSION && version != VERSION_1 {
+        if version != VERSION && version != VERSION_1 && version != VERSION_3 {
             return Err(err!("DSP section version {version}"));
         }
-        let vlen = if version == VERSION_1 {
-            VOICE_LEN_V1
-        } else {
-            VOICE_LEN
+        let vlen = match version {
+            VERSION_1 => VOICE_LEN_V1,
+            VERSION_3 => VOICE_LEN_V3,
+            _ => VOICE_LEN,
         };
         let rng = |off: u32, n: usize| -> Result<&[u8]> {
             let off = off as usize;
@@ -339,20 +455,31 @@ impl DspSection {
         }
         let vo = rng(get(f, 0x2c), nvoice * vlen)?;
         let voices = (0..nvoice)
-            .map(|i| Voice {
-                type_no: get(vo, i * vlen),
-                entry: get(vo, i * vlen + 4),
-                ranges: if version == VERSION_1 {
-                    [0; 8]
-                } else {
-                    std::array::from_fn(|k| get(vo, i * vlen + 8 + 4 * k))
-                },
+            .map(|i| {
+                let at = i * vlen;
+                let v3 = version == VERSION_3;
+                Voice {
+                    type_no: get(vo, at),
+                    entry: get(vo, at + 4),
+                    note_on: if v3 { get(vo, at + 8) } else { 0 },
+                    state_bytes: if v3 { get(vo, at + 12) } else { 0 },
+                    clear_bytes: if v3 { get(vo, at + 16) } else { 0 },
+                    voices: if v3 { get(vo, at + 52) } else { 0 },
+                    ranges: match version {
+                        VERSION_1 => [0; 8],
+                        VERSION_3 => std::array::from_fn(|k| get(vo, at + 20 + 4 * k)),
+                        _ => std::array::from_fn(|k| get(vo, at + 8 + 4 * k)),
+                    },
+                }
             })
             .collect::<Vec<_>>();
-        if voices
-            .iter()
-            .any(|v| v.entry as usize >= image_size || v.entry % 2 != 0)
-        {
+        if voices.iter().any(|v| {
+            v.entry as usize >= image_size
+                || v.entry % 2 != 0
+                || v.note_on as usize >= image_size
+                || v.note_on % 2 != 0
+                || v.clear_bytes > v.state_bytes
+        }) {
             return Err(err!("DSP voice entry outside the image"));
         }
         Ok(DspSection {
@@ -484,7 +611,11 @@ mod tests {
         let bytes = pack(
             &o,
             1,
-            &[(16, "entry".into(), [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0])],
+            &[VoiceSpec::old(
+                16,
+                "entry".into(),
+                [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0],
+            )],
         )
         .unwrap();
         let d = DspSection::parse(&bytes).unwrap();
@@ -495,6 +626,10 @@ mod tests {
             vec![Voice {
                 type_no: 16,
                 entry: 0,
+                note_on: 0,
+                state_bytes: 0,
+                clear_bytes: 0,
+                voices: 0,
                 ranges: [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0]
             }]
         );
@@ -515,13 +650,13 @@ mod tests {
     fn bad_objects_and_sections_are_refused() {
         let o = object();
         assert!(
-            pack(&o, 1, &[(16, "nope".into(), [0; 8])])
+            pack(&o, 1, &[VoiceSpec::old(16, "nope".into(), [0; 8])])
                 .unwrap_err()
                 .0
                 .contains("does not define")
         );
         assert!(
-            pack(&o, 1, &[(16, "again".into(), [0; 8])])
+            pack(&o, 1, &[VoiceSpec::old(16, "again".into(), [0; 8])])
                 .unwrap_err()
                 .0
                 .contains("global text")

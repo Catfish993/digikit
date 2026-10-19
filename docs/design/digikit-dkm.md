@@ -90,7 +90,7 @@ All integers are big endian. Offsets are from the start of the section.
 | Offset | Size | Field |
 | --- | --- | --- |
 | 0x00 | 4 | magic `DKDS` (0x444b4453) |
-| 0x04 | 4 | version = 2 (version 1, voices of 16 bytes without ranges, is still loaded: every range undeclared) |
+| 0x04 | 4 | version = 3 (voices of 64 bytes; the packer writes it only when a voice has a note_on entry or state, else version 2; versions 1 and 2 are still loaded: note_on 0, no state; version 1, voices of 16 bytes without ranges: every range undeclared) |
 | 0x08 | 4 | device (1 DT2, 2 DN2): must equal the runtime's |
 | 0x0c | 4 | `image_size`: bytes of text and data that are sent (a multiple of 4) |
 | 0x10 | 4 | `bss_size`: bytes reserved behind the image (`.PKBSS`; not sent, not zeroed) |
@@ -113,12 +113,16 @@ All integers are big endian. Offsets are from the start of the section.
 - **Voices**: 48 bytes (version 2): `u32` machine type, `u32` byte offset of the entry routine in the image, eight `u32` ranges of machine
   knob 0 to 7 (`min | max << 16`, from the `[[param]]` the knob names; 0: a stock code, an empty knob or no range declared) for the runtime guard of
   `core/dsp-voice` (finding 51), two reserved words. The type is in the run-time range 16 to 23, not used by a loaded module. The routine's pc at placement `B` is `0xb80000 + (B - 0x20000000 + entry) / 2`.
+  Version 3 voices are 64 bytes: 0 `type`, 4 render entry, 8 note_on entry (image byte offsets; note_on 0: none), 12 `state_bytes` (per voice),
+  16 `clear_bytes` (zeroed at note-on), 20 to 51 the eight ranges, 52 `voices` (number of voice states to reserve), 56 to 63 reserved 0. The packer
+  takes them from `[[voice]] render, note_on, desc` (`desc`: a `dk_machine_desc` data symbol; `entry` still means render). The runtime reserves
+  `align8(image + bss)` plus, per voice record, `voices * align8(state_bytes)` for state, in record order, in the module's range.
 - **Image**: the linked bytes at the nominal base; every relocated field holds `S + A`. The sections are text, data, bss in that order,
   so a `.PKBSS` buffer (pluck's 256 KiB delay lines) follows the sent bytes in the reserved range.
 
 The runtime reserves `image_size + bss_size` rounded up to 64 bytes (`E_DSP_NOSPACE`, -33, when no range is free), copies and relocates
 the image in an arena block, sends it with `dl_send` (window 0 of the link) and, when the DSP acknowledges (the DSP has the bytes in L2
-and has invalidated its instruction caches), publishes the voice rows (window 1: **one word per transfer**, a row is 16 words: the eight ranges, the pc, the guard's disabled-type word cleared and the type
+and has invalidated its instruction caches), publishes the voice rows (window 1: **one word per transfer**, a row is 24 words: 0 type, 1 pc, 2 to 9 the eight ranges, 10 to 15 the guard's words, 16 note_on pc, 17 state_base, 18 stride, 19 clear, 20 gen, 21 level, 22 and 23 spare; written: the ranges, the pc, words 16 to 19, the guard's disabled-type word cleared and the type
 last; a free row has type `0xffffffff`, which no machine equals, so the DSP's render scan never sees a half-written row). Only then
 it writes the machine and parameter rows, runs `init` and binds the slots. When the DSP part fails at boot the module is taken down the other way: machine row, voice row (type
 to `0xffffffff` first), then the range (the run-time unload that did this is archived). Refusal codes -30 to -39 (`dkrt-sdk`): `E_NO_DSP` -30 (no `core/dsp-link` and `core/dyndsp` in

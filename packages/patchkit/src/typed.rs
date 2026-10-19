@@ -6,7 +6,7 @@
 //! [[param]]    id, name, short, template, min, max, default      (one per parameter; [param.dn2] overrides)
 //! [[machine]]  id, name, short, clone_of, knobs = [...], level   (up to the device's knob count; [machine.dn2] overrides)
 //! [[page]]     id, machine, name, title                           (only on devices whose knobs live in a page)
-//! [[voice]]    machine, entry                                     (machine id -> DSP entry symbol)
+//! [[voice]]    machine, entry | render [, note_on, desc]          (machine id -> DSP entry symbols; desc: `dk_machine_desc`)
 //! ```
 //!
 //! `lower` turns them, per device, into the `[[entry]]` rows the frameworks (`core/machines`, `core/params`,
@@ -231,8 +231,18 @@ pub struct PageDef {
 #[serde(deny_unknown_fields)]
 pub struct VoiceDef {
     pub machine: String,
-    /// The routine's symbol in the module's DSP object.
+    /// The render routine's symbol in the module's DSP object (old form; `render` is the same).
+    #[serde(default)]
     pub entry: String,
+    /// The render routine's symbol (replaces `entry`).
+    #[serde(default)]
+    pub render: Option<String>,
+    /// The note_on routine's symbol (contract voices).
+    #[serde(default)]
+    pub note_on: Option<String>,
+    /// The `dk_machine_desc` data symbol (contract voices): voices, state and clear bytes come from it.
+    #[serde(default)]
+    pub desc: Option<String>,
     #[serde(default)]
     pub devices: Vec<String>,
 }
@@ -284,7 +294,10 @@ pub struct RPage {
 #[derive(Clone, Debug)]
 pub struct RVoice {
     pub machine: String,
+    /// The render routine's symbol.
     pub entry: String,
+    pub note_on: Option<String>,
+    pub desc: Option<String>,
 }
 
 /// The typed sections of one module as one device sees them.
@@ -501,9 +514,21 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 }
                 continue;
             }
+            let entry = match (&v.render, v.entry.is_empty()) {
+                (Some(r), true) => r.clone(),
+                (None, false) => v.entry.clone(),
+                _ => {
+                    return Err(err!(
+                        "{who}: voice {}: give exactly one of render and entry",
+                        v.machine
+                    ));
+                }
+            };
             voices.push(RVoice {
                 machine: v.machine.clone(),
-                entry: v.entry.clone(),
+                entry,
+                note_on: v.note_on.clone(),
+                desc: v.desc.clone(),
             });
         }
         if machines.is_empty() && params.is_empty() && pages.is_empty() && voices.is_empty() {
