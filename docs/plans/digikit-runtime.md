@@ -433,6 +433,28 @@ key input, CPU tracepoints, the GDB bridge (docs/design/device-bridge.md holds t
 Parameter, Page types) on top of the typed schema (finding 27) and `dkrt-sdk`. A second SRC page for a Digitakt II machine with more than eight
 parameters needs engine slots, a descriptor per page and a typearg mapping (finding 50); today it is a build error.
 
+### Phase 11: a module contract, a conformance suite and self-contained modules (2026-10-19; agreed by Em)
+
+Why: on the device an LFO on pluck's TUNE silenced every track (log `out/runs/device-logs/lfo-crash.log`: the DSP kept running,
+dispatches = returns). A sweep on the routine rig: pluck's loop period P = fs / f0 from note + TUNE is not clamped; outside the range
+N can serve (about P < 2.3 or P > 4091.5) the allpass coefficient goes unstable and the string state holds Inf/NaN until the next note,
+which reaches the send FX and stays there. In-range knob values reach it. Em, 2026-10-19: modules must be self-contained, the module's
+tests test only the module, framework fixtures are not modules, the manifest holds metadata, a contract per module type is enforced
+twice (a conformance suite before shipping, the runtime on the device), a template per type and one authoring guide.
+
+1. [ ] Pluck's pitch clamped; the runtime guard in the voice wrapper: parameter words clamped to the declared ranges, output checked
+   (non-finite or above a level bound: the block zeroed, the voice reset, counted; the module disabled after 8 faults in a second),
+   `MACHINE_FAULT` in the log with the parameters. Emulator first, then one flash.
+2. [ ] Machine conformance suite from the manifest on the routine rig (every parameter at its limits, notes x pitch parameters, per-block
+   modulation, long notes, retriggers; finite, bounded, returns, within budget), `mise run module:check NAME`, routed by verify.
+3. [ ] Layout: one module per machine (patched in or loaded at run time is a build choice; `test/dyn-pluck`, `test/dyn-xslice`, `twin-*`
+   removed), framework fixtures from `modules/test/` to `tests/fixtures/modules/`, framework scenarios on fixtures, a module's own tests
+   in its `tests/`. Oracle: images and `.dkm` byte-identical except the module ids.
+4. [ ] Manifest with author concepts only: firmware codes (templates, knob codes, placement, entry) into the device profiles, parameter kinds.
+5. [ ] `mise run module:new machine NAME` and docs/MODULE-AUTHORING.md rewritten around new, build, `module:check`, emulator, device.
+6. [ ] `Target` (emulator and device backends over MIDI, our SysEx, the firmware screenshot, audio capture) and system scenarios
+   (`module:emu`, `module:device`); FX sends, LFO on every parameter, machine and track changes.
+
 ### Later
 
 - Hot loading and unloading: docs/plans/digikit-hot-reload.md (archived state and what is left).
