@@ -462,13 +462,16 @@ the runtime tracks what is loaded and where, prevents clobbering and enforces li
 for humans and LLMs; hot reload kept possible (not built); logging with levels from emulator and device alike. Pluck first, other
 modules untouched until pluck is migrated and tested on the device; then FX and the other types.
 
-1. [ ] Answer the design's open questions (section 11.2 and 13.7) with Em.
+1. [x] The design's open questions answered (module-sdk.md section 11.4).
 2. [ ] Migration steps of section 10.1, pluck first, each with its oracle (section 10.2: rig samples and scenario PCM equal to today's,
    conformance and guard tests pass, stock pins unchanged); Phase 11 items 3-5 are part of this.
 3. [ ] Pluck on the device through the SDK (one flash for the new runtime, then `dk run`).
 4. [ ] The FX contract with the first FX module; then the other types.
 
 ### Later
+
+- Projects and modules: whatever a project persists that names a module (machine types, FX, ...; to check) is matched against the
+  loaded modules on project load: report a missing or different module, later offer to load it (Em, 2026-10-19).
 
 - Hot loading and unloading: docs/plans/digikit-hot-reload.md (archived state and what is left).
 - Samples over a vendor bulk interface (finding 42 route B), after a device measurement of the card write rate; mass storage only if that fails.

@@ -603,6 +603,22 @@ Total about 50-80 agent hours; 3 to 6 days of wall time with two or three lanes.
 devices, a guard on the Digitone II, a table that proves memory is not shared, and an SDK a model can use from one header and one guide. Confidence that the contract carries pluck: high (the kernel is shared).
 Confidence that it carries a machine that needs the engine's own stages (filters, `xslice`): low, and out of scope for v1.
 
+### 11.4 Answers (Em, 2026-10-19)
+
+1. No saved project uses the patched-in pluck (type 9): retire it with no alias. **Later:** whatever a project persists that names a
+   module (machine types, FX, others; to be checked) must be matched against the loaded modules on project load: report a missing or
+   different module, later offer to load it.
+2. Knobs 3 and 6 of the Digitakt II pluck: find out during migration whether they can hold machine parameters.
+3. Assembly only for v1; the header stays C-style so a C routine can implement it later (a measured pilot first).
+4. Digitone II DSP memory: decided when the Digitone II is migrated (shorter lines, fewer voices, or state per playing voice).
+5. XSLICE is a demonstration of the clone mechanism, not a user module: it becomes a framework fixture; no clone kind in the SDK for now.
+6. Budgets are declared and measured (conformance); the runtime logs when the DSP's block time goes over; no automatic disabling yet.
+7. The SDK and the `.dkm` format are unstable for now: a runtime refuses a module built for another runtime version (dk run rebuilds);
+   no compatibility layer.
+8. Hot reload's swap policy (click or wait for stop) is framework only; at most an optional `release` entry in the contract later.
+9. Logging is over USB only. Log levels are set from the Mac per session and not stored on the card (no card write for them).
+10. The voice row grows to 24 words in the first SDK version (state placement and the generation counter in one format change).
+
 ## 12. Hot reload as a later goal
 
 Not in SDK v1. The aim is that v1 does not make it harder.
