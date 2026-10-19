@@ -67,12 +67,73 @@ max = 16
 region = "dsp.l2"
 terminator = true
 
+# A row is 16 words (core/dsp-link's window 1 and the DSP scan count in rows of this size):
+#   0 type, 1 pc, 2 to 9 the declared range of machine knob 0 to 7 (min | max << 16, from the machine's [[param]]; 0: undeclared, the
+#   guard clamps to 0 .. 0x7f00), 10 the type this row's faults disabled, 11 the block of the fault window's start, 12 faults in the
+#   window, 13 faults since the start, 14 and 15 spare. The ranges come from the typed `[[voice]]` of the machine module (patchkit
+#   fills them), or from the voice record of a `.dkm`'s DSP section; the guard words are the DSP's.
 [[registry.field]]
 name = "type"
 kind = "u32"
 [[registry.field]]
 name = "pc"
 kind = "u32"
+[[registry.field]]
+name = "rng0"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "rng1"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "rng2"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "rng3"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "rng4"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "rng5"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "rng6"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "rng7"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "dis"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "wstart"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "wcount"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "nfault"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "spare0"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "spare1"
+kind = "u32"
+default = 0
 
 [[claim]]
 resource = "dsp.voice.hook"

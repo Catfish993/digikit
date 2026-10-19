@@ -63,7 +63,7 @@ CRUMB_STAGES = {
     21: "D_AFTER_L4_L5_STORES",
     22: "D_AFTER_MODE1_READ",
 }
-# The 17 words of dl_diag (modules/core/dsp-link/README.md), in order.
+# The 24 words of dl_diag (modules/core/dsp-link/README.md), in order.
 DIAG_NAMES = (
     "magic_count",
     "link_beat",
@@ -82,6 +82,13 @@ DIAG_NAMES = (
     "crumb",
     "dispatches",
     "returns",
+    "guard_faults",
+    "guard_last",
+    "guard_p01",
+    "guard_p23",
+    "guard_p45",
+    "guard_p67",
+    "guard_disabled_type",
 )
 
 
@@ -134,7 +141,10 @@ KINDS: dict[int, tuple[str, tuple[str, ...]]] = {
     24: ("CRASH_STACK", ("first", "w0", "w1", "w2", "w3")),
     25: ("CRASH_TAIL", ("a", "b", "c", "d", "e")),
     26: ("MACHINE_CHANGE", ("track", "old_type", "new_type", "-", "-")),
+    27: ("MACHINE_FAULT", ("type_voice", "kind_faults", "p01", "p23", "p45")),
+    28: ("MACHINE_DISABLED", ("type", "disabled", "faults", "-", "-")),
 }
+GUARD_KINDS = {1: "nonfinite", 2: "overlevel"}
 K = {name: kid for kid, (name, _) in KINDS.items()}
 CARD_STATES = {0: "unknown", 1: "ours", 2: "blank", 3: "foreign", 4: "unreadable"}
 SAFE_REASONS = {1: "counter", 2: "key", 3: "flag"}
@@ -232,7 +242,7 @@ def fields_of(kind: int, a: tuple[int, ...]) -> dict[str, Any]:
                 break
             if DIAG_NAMES[j] == "crumb":
                 f["crumb"] = crumb_text(w)
-            elif DIAG_NAMES[j] in ("link_beat", "voice_beat", "dispatches", "returns"):
+            elif DIAG_NAMES[j] in ("link_beat", "voice_beat", "dispatches", "returns", "guard_disabled_type"):
                 f[DIAG_NAMES[j]] = w
             else:
                 f[DIAG_NAMES[j]] = f"{w:08x}"
@@ -250,6 +260,17 @@ def fields_of(kind: int, a: tuple[int, ...]) -> dict[str, Any]:
             "old_type": None if a[1] == 0xFFFFFFFF else a[1],
             "new_type": None if a[2] == 0xFFFFFFFF else a[2],
         }
+    elif name == "MACHINE_FAULT":
+        f = {
+            "type": a[0] & 0xFFFF,
+            "voice": a[0] >> 16,
+            "track": (a[0] >> 16) // 2 + 1,
+            "kind": GUARD_KINDS.get(a[1] & 0xFF, str(a[1] & 0xFF)),
+            "faults": a[1] >> 8,
+            "params": [f"{(w >> s) & 0xFFFF:04x}" for w in a[2:] for s in (0, 16)],
+        }
+    elif name == "MACHINE_DISABLED":
+        f = {"type": a[0], "disabled": a[1], "faults": a[2]}
     elif name == "CRASH_REG":
         f = {REGS[a[0] + i]: f"{w:08x}" for i, w in enumerate(a[1:]) if a[0] + i < 16}
     elif name == "CRASH_STACK":

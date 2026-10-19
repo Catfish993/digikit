@@ -116,9 +116,11 @@ extern "C" {
 
 /// Words asked of `dl_diag`, and the word of its output that the DSP counts up while it runs (the heartbeat). The layout is `core/dsp-link`'s
 /// (its README): word 0 is `0xD1A6` with the count in the high half, word 1 the link hook's block beat, word 2 the voice hook's, words 3 to 13 the
-/// context registers, word 14 the last breadcrumb (stage | voice << 8 | machine type << 16), word 15 the dispatches to registered machine types, word 16 the routines that returned.
+/// context registers, word 14 the last breadcrumb (stage | voice << 8 | machine type << 16), word 15 the dispatches to registered machine types, word 16 the routines that returned,
+/// words 17 to 23 the guard of `core/dsp-voice` (finding 53): 17 faults (16 bits) | kind << 16 | machine types disabled << 24, 18 type | voice << 16 of the last fault, 19 to 22 the
+/// eight parameter words of that call in pairs, 23 the type disabled last.
 /// If it moves the heartbeat, change `DIAG_HEARTBEAT` here and nothing else.
-pub const DIAG_WORDS: usize = 17;
+pub const DIAG_WORDS: usize = 24;
 pub const DIAG_HEARTBEAT: usize = 1;
 /// Words that count up while the DSP runs and so say nothing when they move: the two beats and the dispatch and return counts. The poll logs the diagnostics
 /// again only when another word changes.
@@ -165,6 +167,9 @@ struct Watch {
     first_at: u32,
     last: [u32; DIAG_WORDS],
     n: u32,
+    /// The guard's fault count (word 17, 16 bits) and the number of disabled types already logged.
+    faults_seen: u32,
+    disabled_seen: u32,
     /// A full set has been logged (the first poll logs one).
     logged: bool,
     /// The last set logged, for the change test.
@@ -193,6 +198,8 @@ static mut W: Watch = Watch {
     first_at: 0,
     last: [0; DIAG_WORDS],
     n: 0,
+    faults_seen: 0,
+    disabled_seen: 0,
     logged: false,
     logged_words: [0; DIAG_WORDS],
     sampling: 0,
@@ -363,6 +370,9 @@ unsafe fn poll_diag(w: &mut Watch, now: u32) {
     }
     w.n = n as u32;
     w.last = buf;
+    if n >= DIAG_WORDS {
+        log_guard(w, &buf);
+    }
     // the words, raw: the first time, when a word other than a counter changed, and every ten seconds
     if !w.logged || differs(&buf, &w.logged_words, n) || due(now, w.next_log) {
         w.logged = true;
@@ -395,6 +405,26 @@ unsafe fn poll_diag(w: &mut Watch, now: u32) {
             }
             stall_check(w, now, &buf);
         }
+    }
+}
+
+/// The guard's words (17 to 23): a new fault is a `MACHINE_FAULT`, a newly disabled type a `MACHINE_DISABLED`. The poll is a second apart, so a burst is one event
+/// whose fault count says how many (the last fault is the one named); the full words also go to the raw `DSP_DIAG` set when they change.
+unsafe fn log_guard(w: &mut Watch, buf: &[u32; DIAG_WORDS]) {
+    let faults = buf[17] & 0xffff;
+    let kind = (buf[17] >> 16) & 0xff;
+    let disabled = buf[17] >> 24;
+    if faults != w.faults_seen {
+        w.faults_seen = faults;
+        ev(
+            logk::MACHINE_FAULT,
+            logk::F_ERROR,
+            [buf[18], kind | (faults << 8), buf[19], buf[20], buf[21]],
+        );
+    }
+    if disabled != w.disabled_seen {
+        w.disabled_seen = disabled;
+        ev(logk::MACHINE_DISABLED, logk::F_ERROR, [buf[23], disabled, faults, 0, 0]);
     }
 }
 

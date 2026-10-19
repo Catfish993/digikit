@@ -25,6 +25,8 @@ TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK, DIAG = (
 )
 SV_L4 = DIAG + 0x100  # the wrapper's data symbols (the build places them in free L2)
 SV3, SV5, BCW, REC_PTRS = DIAG + 0x104, DIAG + 0x108, DIAG + 0x10C, DIAG + 0x110
+GUARD = DIAG + 0x200  # the guard's scalars and arrays (_dv_g, 128 bytes)
+ROW = 16  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields
 RING_A, RING_B = (
     0x200A0000,
     0x200A2000,
@@ -49,6 +51,7 @@ def core_externs() -> dict[str, int]:
         "_dv_sv5": SV5,
         "_dv_bcw": BCW,
         "_dv_rec": REC_PTRS,
+        "_dv_g": GUARD,
     }
 
 
@@ -142,7 +145,7 @@ class Rig:
 
     def reset(self) -> None:
         self.dm = {}
-        for k in range(34):
+        for k in range(17 * ROW):
             self.dm[nw(TABLE) + k] = 0
         for k in range(32):
             self.dm[nw(STATE) + k] = 0
@@ -150,6 +153,8 @@ class Rig:
             self.dm[nw(TYPE_CACHE) + k] = 0
         for k in range(256):
             self.dm[nw(FRAME) + k] = 0
+        for k in range(32 * 32):
+            self.dm[nw(OUT) + k] = 0  # the voice buffers hold the last block (a routine that writes none leaves them)
         for k in range(32 * REC // 4):
             self.dm[nw(RECORDS) + k] = 0
         self.dm[nw(TABLE)] = TYPE
@@ -158,8 +163,10 @@ class Rig:
             self.dm[nw(REC_PTRS) + k] = (
                 0  # no reply records yet (core/dsp-link has not run): the breadcrumbs stay in _dv_diag
             )
-        for k in range(16):
+        for k in range(32):
             self.dm[nw(DIAG) + k] = 0
+        for k in range(32):
+            self.dm[nw(GUARD) + k] = 0
 
     def set_rings(self) -> None:
         """The two reply records core/dsp-link's block tail would have registered."""

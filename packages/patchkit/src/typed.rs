@@ -558,6 +558,29 @@ fn knob_value(k: Option<&Knob>) -> toml::Value {
     }
 }
 
+/// The declared ranges of a machine's eight knobs for the voice row (core/dsp-voice's runtime guard): knob j of the machine is a `Param` whose
+/// `min`/`max` become `min | max << 16`; a stock code, an empty knob or a range outside 0 ..= 0xffff stays 0 (undeclared: the guard
+/// clamps to 0 .. 0x7f00). Only devices whose knobs are the machine's own (`to = "machine"`, the Digitakt II) have a frame position the guard knows.
+pub fn voice_ranges(r: &DevResolved, machine: &str) -> [u32; 8] {
+    let mut out = [0u32; 8];
+    if r.model.knobs.to != "machine" {
+        return out;
+    }
+    let Some(m) = r.machines.iter().find(|m| m.id == machine) else {
+        return out;
+    };
+    for (j, k) in m.knobs.iter().take(8).enumerate() {
+        if let Knob::Param(id) = k {
+            if let Some(p) = r.params.iter().find(|p| &p.id == id) {
+                if (0..=0xffff).contains(&p.min) && (0..=0xffff).contains(&p.max) && p.min <= p.max {
+                    out[j] = (p.min as u32) | (p.max as u32) << 16;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The `[[entry]]` rows of the typed sections of one module, in the order the hand-written form had them:
 /// voices, machines, params, pages, per device.
 pub fn entries(resolved: &[DevResolved]) -> Vec<EntryDef> {
@@ -566,15 +589,16 @@ pub fn entries(resolved: &[DevResolved]) -> Vec<EntryDef> {
         let kn = &r.model.knobs;
         let dev = r.dev.as_str();
         for v in &r.voices {
-            out.push(ent(
-                &v.machine,
-                "voices",
-                dev,
-                vec![
-                    kv("type", s(&format!("machines.{}.index", v.machine))),
-                    kv("pc", s(&v.entry)),
-                ],
-            ));
+            let mut f = vec![
+                kv("type", s(&format!("machines.{}.index", v.machine))),
+                kv("pc", s(&v.entry)),
+            ];
+            for (j, w) in voice_ranges(r, &v.machine).iter().enumerate() {
+                if *w != 0 {
+                    f.push(kv(&format!("rng{j}"), int(*w as i64)));
+                }
+            }
+            out.push(ent(&v.machine, "voices", dev, f));
         }
         for m in &r.machines {
             let mut f = vec![
@@ -791,6 +815,16 @@ entry = "_t_render"
         let v = on("dt2", "voices");
         assert_eq!(field(v[0], "type"), Some(&s("machines.t.index")));
         assert_eq!(field(v[0], "pc"), Some(&s("_t_render")));
+        // the runtime guard's ranges: knob 1 and knob 4 are params (0 .. 100 = 100 << 16), a stock code and an empty knob stay undeclared
+        assert_eq!(field(v[0], "rng1"), Some(&int(100 << 16)));
+        assert_eq!(field(v[0], "rng4"), Some(&int(100 << 16)));
+        assert!(["rng0", "rng2", "rng3", "rng5", "rng6", "rng7"].iter().all(|k| field(v[0], k).is_none()));
+        // the Digitone II's knobs live in a page: no ranges
+        let v2 = m.entry.iter().find(|e| e.devices == ["dn2"] && e.registry == "voices").unwrap();
+        assert!((0..8).all(|j| field(v2, &format!("rng{j}")).is_none()));
+        let r = resolve(&manifest(MOD), &models()).unwrap();
+        let dt2 = r.iter().find(|x| x.dev == "dt2").unwrap();
+        assert_eq!(voice_ranges(dt2, "t"), [0, 100 << 16, 0, 0, 100 << 16, 0, 0, 0]);
     }
 
     #[test]

@@ -151,7 +151,7 @@ _dv_nodiag:
 _dv_scan:
     R0 = DM(0, I4);                       // row type; 0 ends the table (the last row is always empty)
     R2 = DM(1, I4);                       // row pc
-    MODIFY(I4, 2) (NW);
+    MODIFY(I4, 16) (NW);                  // a row is 16 words (core/dsp-voice's module.toml)
     R0 = PASS R0;
     IF EQ JUMP _dv_done;
     COMP(R0, R1);
@@ -329,7 +329,7 @@ _dv_frame_sw:
 // The diagnostic block (finding 45): word 0 counts the blocks that reached the hook, words 1-11 are M5, M6, M7, M13, M14, M15,
 // I6, I7, B7, L7, MODE1 as the firmware left them at slot 0. core/dsp-link copies the block into the record it sends to the
 // ColdFire each block (dl_diag).
-.PKDATA _dv_diag, 64;
+.PKDATA _dv_diag, 128;
 // Words 12 and 13 (the breadcrumb and the dispatch count of the Digitakt II wrapper, finding 48) stay 0 here; _dv_rec is written by core/dsp-link.
 .PKDATA _dv_rec, 8;
 .PKDATA _dv_t, 4;

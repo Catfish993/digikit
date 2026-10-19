@@ -37,8 +37,8 @@
 // status: 0 running, 1 done (every chunk taken, last one flagged, caches invalidated), 3 destination out of range.
 // It is written in every block while a transfer is active (xid != 0): the engine clears the record each block.
 //
-// Diagnostics (dl_diag, findings 45 and 48). In every block, when core/dsp-voice is in the image, 17 words go into the record, two in
-// each of the slot rows 1 to 9 (the last row holds one) (slot row r starts at record byte 0x1c + 0x54 r; the words are at +0x44 and +0x48, inside the
+// Diagnostics (dl_diag, findings 45 and 48). In every block, when core/dsp-voice is in the image, 24 words go into the record, two in
+// each of the slot rows 1 to 12 (slot row r starts at record byte 0x1c + 0x54 r; the words are at +0x44 and +0x48, inside the
 // entries 11 and 12 that no DSP code writes and the ColdFire reads only for parameters 36 to 39, the place of the acknowledgement in
 // row 0). Word j (0 to 13) is at row 1 + j / 2, +0x44 for even j, +0x48 for odd j:
 //   0 DL_DG_MAGIC (low half 0xD1A6) and the word count 17 (high half)     1 blocks that ran this hook (the heartbeat)
@@ -48,6 +48,9 @@
 //      header and words 15 and 16, straight into both reply records, so that it is there when the core stops inside a routine)
 //   15 dispatches to registered machine types since the start (counted before the routine is called)
 //   16 routines that returned (15 - 16 is 1 while a routine runs; a core stopped inside one leaves it at 1)
+//   17 the guard's fault count (low 16 bits) | kind of the last fault << 16 (1 Inf or NaN, 2 over the level bound) | types it disabled << 24
+//   18 type | voice << 16 of the last fault   19 to 22 the 8 parameter words of that call, in pairs (knob 2k | knob 2k + 1 << 16)
+//   23 the machine type the guard disabled last (docs/findings/53)
 // The block tail also stores this block's record address into core/dsp-voice's _dv_rec ([0] this block's, [1] the one before).
 // The ColdFire side is dl_diag(out, n) in dsp-link.c.
 
@@ -144,8 +147,8 @@ _dl_win1:
     R3 = 1;
     COMP(R0, R3);
     IF NE JUMP _dl_range;                 // windows 2 and 3 do not exist
-    R3 = _dl_vcount;                      // window 1: the voice rows (two words each, the terminator row excluded)
-    R3 = LSHIFT R3 BY 1;
+    R3 = _dl_vcount;                      // window 1: the voice rows (16 words each, the terminator row excluded)
+    R3 = LSHIFT R3 BY 4;
     R4 = _dl_vrows;
 _dl_wdone:
     DM(_dl_wbase) = R4;
@@ -244,7 +247,7 @@ _dl_out:
     R0 = R0 + 1;
     DM(_dl_beat) = R0;
     DM(46, I2) = R0;                      // word 1
-    R0 = 0x11D1A6;                        // DL_DG_MAGIC | 17 << 16
+    R0 = 0x18D1A6;                        // DL_DG_MAGIC | 24 << 16
     DM(45, I2) = R0;                      // word 0
     R0 = DM(0, I3);
     DM(66, I2) = R0;                      // word 2
@@ -276,6 +279,20 @@ _dl_out:
     DM(193, I2) = R0;                      // word 15: dispatches to registered types
     R0 = DM(14, I3);
     DM(213, I2) = R0;                      // word 16: routines that returned
+    R0 = DM(15, I3);
+    DM(214, I2) = R0;                      // word 17: guard faults (16 bits) | last kind << 16 | disabled types << 24
+    R0 = DM(16, I3);
+    DM(234, I2) = R0;                      // word 18: type | voice << 16 of the last fault
+    R0 = DM(17, I3);
+    DM(235, I2) = R0;                      // word 19: the 8 parameter words of the faulting call, pairs: knob 0 | knob 1 << 16
+    R0 = DM(18, I3);
+    DM(255, I2) = R0;                      // word 20
+    R0 = DM(19, I3);
+    DM(256, I2) = R0;                      // word 21
+    R0 = DM(20, I3);
+    DM(276, I2) = R0;                      // word 22
+    R0 = DM(21, I3);
+    DM(277, I2) = R0;                      // word 23: the type the guard disabled last
     I3 = _dv_rec;                         // the two reply records, for core/dsp-voice's breadcrumbs: [0] this block's, [1] the one before
     R0 = DM(0, I3);
     DM(1, I3) = R0;

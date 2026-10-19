@@ -91,6 +91,8 @@ class Params:
         one, half = f32(1.0), f32(0.5)
         inv = f32(1 / 32512.0)
         x = f32(f32(f32(pitch) + f32(f32(tune) - f32(16384.0))) * f32(1 / (256 * 12)))
+        # x in 0 .. 11.2: P = P0 2^-x stays at 2.5 or more (the routine's clamp; a word beyond the string's range)
+        x = f32(max(min(x, f32(11.2)), f32(0.0)))
         self.inc = f32(exp2(x) * INC0)
         self.P = f32(exp2(f32(-x)) * P0)
         self.w2 = f32(f32(self.inc * self.inc) * f32(4 * math.pi**2))
@@ -101,6 +103,8 @@ class Params:
         t = f32(f32(f32(t * self.w2) * f32(1 / 6)))
         self.tau = f32(self.b - t)
         T = f32(self.P - self.tau)
+        # the period the line can hold: N = 2 .. 4090 with R in [0.5, 1.5)
+        T = f32(min(max(T, f32(2.501)), f32(4091.49)))
         n = int(f32(T - half))
         self.N = min(max(n, 2), 4090)
         r = f32(T - f32(self.N))
@@ -110,7 +114,7 @@ class Params:
         acc = A_C[7]
         for c in reversed(A_C[:7]):
             acc = f32(f32(acc * y) + c)
-        self.a = acc
+        self.a = f32(min(max(acc, f32(-0.9)), f32(0.9)))
         ud = f32(min(f32(f32(decay) * inv), one))
         inv_t60 = f32(exp2(f32(ud * f32(-8.64))) * f32(20.0))
         e = f32(f32(f32(inv_t60 * self.P) * f32(3 * math.log2(10) / 48000)))

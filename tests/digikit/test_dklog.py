@@ -29,9 +29,27 @@ def word(s):
 
 
 def test_every_kind_has_a_name_and_five_arguments():
-    assert sorted(L.KINDS) == list(range(1, 27))
+    assert sorted(L.KINDS) == list(range(1, 29))
     assert all(len(v[1]) == 5 for v in L.KINDS.values())
     assert len(set(v[0] for v in L.KINDS.values())) == len(L.KINDS)
+
+
+def test_the_guard_events_decode():
+    # type 18, voice 2 (track 2), kind 1 (nonfinite), 9 faults, knobs 0 .. 5 as the DSP packed them
+    d = L.event_dict(
+        ev(1, "MACHINE_FAULT", (18 | 2 << 16, 1 | 9 << 8, 0x1000_4000, 0x0000_2000, 0x0100_7F00), flags=1)
+    )
+    f = d["fields"]
+    assert d["error"] and d["kind"] == "MACHINE_FAULT"
+    assert (f["type"], f["voice"], f["track"], f["kind"], f["faults"]) == (18, 2, 2, "nonfinite", 9)
+    assert f["params"] == ["4000", "1000", "2000", "0000", "7f00", "0100"]
+    assert L.event_dict(ev(2, "MACHINE_FAULT", (18, 2 | 3 << 8, 0, 0, 0)))["fields"]["kind"] == "overlevel"
+    f = L.event_dict(ev(3, "MACHINE_DISABLED", (18, 1, 17, 0, 0), flags=1))["fields"]
+    assert (f["type"], f["disabled"], f["faults"]) == (18, 1, 17)
+    # the diagnostic words 17 to 23 are named
+    assert L.DIAG_NAMES[17:] == (
+        "guard_faults", "guard_last", "guard_p01", "guard_p23", "guard_p45", "guard_p67", "guard_disabled_type"
+    )
 
 
 def test_events_decode_to_readable_fields():

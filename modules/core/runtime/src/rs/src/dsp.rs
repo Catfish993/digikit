@@ -6,10 +6,11 @@
 //! advances (`step`); `dkrt_load` returns `LOADING` and the machine is listed only when the DSP code is acknowledged
 //! and the voice rows are in.
 //!
-//! Voice rows (the voices registry of `core/dsp-voice`, scanned by the DSP for every voice it renders) are written one word
-//! per transfer through window 1 of `core/dsp-link`: the pc first (the row is still free: its type is `0xffffffff`, which no
-//! machine type equals), then the type, so the render scan never sees a half-written row. A row is freed the other way
-//! round (type to `0xffffffff` first).
+//! Voice rows (the voices registry of `core/dsp-voice`, scanned by the DSP for every voice it renders) are 16 words
+//! (`ROW_WORDS`) and written one word per transfer through window 1 of `core/dsp-link`: the eight knob ranges (words 2 to 9: the
+//! runtime guard clamps the machine's parameter words to them), the pc, the guard's disabled-type word cleared, and the type
+//! last (the row is still free until then: its type is `0xffffffff`, which no machine type equals), so the render scan never sees a
+//! half-written row. A row is freed the other way round (type to `0xffffffff` first).
 //!
 //! Nothing here runs unless the file has a DSP section; the link to `core/dsp-link` and `core/dyndsp` is optional.
 use crate::{arena, cstr_eq, cstr_len, rd32};
@@ -24,6 +25,13 @@ const MAX_VOICES: usize = MAX_ROWS;
 const MAX_RELOCS: u32 = 4096;
 const MAX_IMPORTS: u32 = 32;
 const GRANULE: u32 = 64;
+/// Words of a voice row of `core/dsp-voice`: 0 type, 1 pc, 2 to 9 the range of knob 0 to 7 (min | max << 16), 10 the type the guard disabled, then its counters.
+const ROW_WORDS: u32 = 16;
+/// Bytes of a voice entry in a DSP section: version 1 16 (type, entry), version 2 48 (type, entry, 8 ranges, 2 reserved).
+const VOICE_V1: u32 = 16;
+const VOICE_V2: u32 = 48;
+/// Steps to publish a row: 8 ranges, the pc, the cleared disabled word, the type.
+const ROW_STEPS: u32 = 11;
 const L2_BYTE_BASE: u32 = 0x2000_0000;
 const L2_SW_BASE: u32 = 0x00B8_0000;
 /// The run-time machine types (`dynamic_first ..= last` of modules/core/machines/types.toml, through `patchkit gen`).
@@ -123,6 +131,8 @@ pub struct DspState {
     /// written to the DSP (so it needs clearing), and the pc to publish.
     pub row_type: [u32; MAX_ROWS],
     pub row_pc: [u32; MAX_ROWS],
+    /// Per voice row: the declared ranges of knobs 0 to 7 (min | max << 16, 0: undeclared).
+    pub row_rng: [[u32; 8]; MAX_ROWS],
     pub row_owner: [u8; MAX_ROWS],
     pub row_pub: [u8; MAX_ROWS],
     /// The load being sent, and the loads behind it (the boot hook publishes the CF side of every module at once).
@@ -288,6 +298,8 @@ pub struct Job {
     pub nimport: u32,
     pub voices: *const u8,
     pub nvoice: u32,
+    /// Bytes of a voice entry (`VOICE_V1` or `VOICE_V2`).
+    pub vstride: u32,
     import_vals: [u32; MAX_IMPORTS as usize],
 }
 
@@ -304,6 +316,7 @@ impl Job {
             nimport: 0,
             voices: core::ptr::null(),
             nvoice: 0,
+            vstride: VOICE_V2,
             import_vals: [0; MAX_IMPORTS as usize],
         }
     }
@@ -334,7 +347,8 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         return E_DSP_FORMAT;
     }
     let s = f.add(off as usize);
-    if rd32(s) != STATE_MAGIC || rd32(s.add(4)) != 1 {
+    let version = rd32(s.add(4));
+    if rd32(s) != STATE_MAGIC || (version != 1 && version != 2) {
         return E_DSP_FORMAT;
     }
     if !have_link() {
@@ -349,6 +363,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     let (image_off, reloc_off, nreloc) = (rd32(s.add(0x18)), rd32(s.add(0x1c)), rd32(s.add(0x20)));
     let (import_off, nimport) = (rd32(s.add(0x24)), rd32(s.add(0x28)));
     let (voice_off, nvoice) = (rd32(s.add(0x2c)), rd32(s.add(0x30)));
+    let vstride = if version == 1 { VOICE_V1 } else { VOICE_V2 };
     if image_size == 0
         || image_size & 3 != 0
         || bss & 3 != 0
@@ -360,7 +375,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         || !in_sec(image_off, image_size, size)
         || !in_sec(reloc_off, nreloc * 8, size)
         || !in_sec(import_off, nimport * 32, size)
-        || !in_sec(voice_off, nvoice * 16, size)
+        || !in_sec(voice_off, nvoice * vstride, size)
     {
         return E_DSP_FORMAT;
     }
@@ -407,7 +422,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     }
     i = 0;
     while i < nvoice {
-        let e = s.add(voice_off as usize + 16 * i as usize);
+        let e = s.add(voice_off as usize + vstride as usize * i as usize);
         let t = rd32(e);
         let entry = rd32(e.add(4));
         if !(TYPE_FIRST..=TYPE_LAST).contains(&t) || entry >= image_size || entry & 1 != 0 {
@@ -422,7 +437,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         }
         let mut j = 0;
         while j < i {
-            if rd32(s.add(voice_off as usize + 16 * j as usize)) == t {
+            if rd32(s.add(voice_off as usize + vstride as usize * j as usize)) == t {
                 return E_DSP_TYPE; // twice in this file
             }
             j += 1;
@@ -439,6 +454,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     job.nimport = nimport;
     job.voices = s.add(voice_off as usize);
     job.nvoice = nvoice;
+    job.vstride = vstride;
     OK
 }
 
@@ -510,9 +526,14 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
         while row < MAX_ROWS && (d.row_owner[row] != 0 || (row as u32) >= iw(I_VFREE)) {
             row += 1;
         }
-        let e = job.voices.add(16 * v);
+        let e = job.voices.add(job.vstride as usize * v);
         d.row_type[row] = rd32(e);
         d.row_pc[row] = L2_SW_BASE + (base + rd32(e.add(4)) - L2_BYTE_BASE) / 2;
+        let mut k = 0;
+        while k < 8 {
+            d.row_rng[row][k] = if job.vstride == VOICE_V2 { rd32(e.add(8 + 4 * k)) } else { 0 };
+            k += 1;
+        }
         d.row_owner[row] = rec as u8 + 1;
         d.row_pub[row] = 0;
         claimed |= 1 << row;
@@ -538,6 +559,7 @@ unsafe fn unreserve(rec: usize) {
             d.row_type[k] = FREE_TYPE;
             d.row_pub[k] = 0;
             d.row_pc[k] = 0;
+            d.row_rng[k] = [0; 8];
         }
         k += 1;
     }
@@ -613,7 +635,7 @@ unsafe fn clear_rows(rec: usize) {
     let mut k = 0;
     while k < MAX_ROWS {
         if d.row_owner[k] == rec as u8 + 1 && d.row_pub[k] != 0 {
-            write_word_blocking(2 * (first + k as u32), FREE_TYPE);
+            write_word_blocking(ROW_WORDS * (first + k as u32), FREE_TYPE);
             d.row_pub[k] = 0;
         }
         k += 1;
@@ -735,7 +757,7 @@ pub unsafe fn step() {
                 }
             }
             PH_ROWS => {
-                // rows of the module in claim order; two steps each: the pc, then the type
+                // rows of the module in claim order; `ROW_STEPS` steps each: the 8 ranges, the pc, the disabled word cleared, the type
                 let rec = d.pending.rec as usize;
                 let first = iw(I_VFIRST);
                 let mut want = d.step;
@@ -743,11 +765,11 @@ pub unsafe fn step() {
                 let mut k = 0;
                 while k < MAX_ROWS {
                     if d.row_owner[k] == rec as u8 + 1 {
-                        if want < 2 {
+                        if want < ROW_STEPS {
                             row = k;
                             break;
                         }
-                        want -= 2;
+                        want -= ROW_STEPS;
                     }
                     k += 1;
                 }
@@ -759,15 +781,20 @@ pub unsafe fn step() {
                     return;
                 }
                 if d.started == 0 {
-                    let (word, value) = if want == 0 {
-                        (2 * (first + row as u32) + 1, d.row_pc[row])
+                    let at = ROW_WORDS * (first + row as u32);
+                    let (word, value) = if want < 8 {
+                        (at + 2 + want, d.row_rng[row][want as usize])
+                    } else if want == 8 {
+                        (at + 1, d.row_pc[row])
+                    } else if want == 9 {
+                        (at + 10, 0)
                     } else {
-                        (2 * (first + row as u32), d.row_type[row])
+                        (at, d.row_type[row])
                     };
                     if start_word(word, value) {
                         d.started = 1;
                         d.row_writes += 1;
-                        if want == 1 {
+                        if want == ROW_STEPS - 1 {
                             d.row_pub[row] = 1; // from here the type word may be in the DSP: clear it on failure
                         }
                     }

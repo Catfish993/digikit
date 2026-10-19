@@ -103,11 +103,13 @@ _dv_nodiag:
 _dv_scan:
     R0 = DM(0, I4);                       // row type; 0 ends the table (the last row is always empty)
     R2 = DM(1, I4);                       // row pc
-    MODIFY(I4, 2) (NW);
+    MODIFY(I4, 16) (NW);                  // a row is 16 words (see the header, "The registry row")
     R0 = PASS R0;
     IF EQ JUMP _dv_stock;
     COMP(R0, R1);
     IF NE JUMP _dv_scan;
+    R0 = I4;
+    DM(_dv_g + 0) = R0;                   // the matching row's end (the guard reads its fields with negative offsets)
 #ifdef DV_BISECT_C2
     JUMP _dv_stock;                       // bisect build: no registered path; the type takes the stock path (stage 3 for 7 or more)
 #endif
@@ -132,7 +134,7 @@ _dv_scan:
     IF EQ JUMP _dv_f1a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -145,7 +147,7 @@ _dv_f1a:
     IF EQ JUMP _dv_f1b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -173,7 +175,7 @@ _dv_f1b:
     IF EQ JUMP _dv_d11a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -186,7 +188,7 @@ _dv_d11a:
     IF EQ JUMP _dv_d11b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -217,7 +219,7 @@ _dv_d11b:
     IF EQ JUMP _dv_d12a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -230,7 +232,7 @@ _dv_d12a:
     IF EQ JUMP _dv_d12b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -253,7 +255,7 @@ _dv_d12b:
     IF EQ JUMP _dv_d13a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -266,7 +268,7 @@ _dv_d13a:
     IF EQ JUMP _dv_d13b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -295,7 +297,7 @@ _dv_d13b:
     IF EQ JUMP _dv_d14a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -308,7 +310,7 @@ _dv_d14a:
     IF EQ JUMP _dv_d14b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -335,7 +337,7 @@ _dv_d14b:
     IF EQ JUMP _dv_d15a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -348,7 +350,7 @@ _dv_d15a:
     IF EQ JUMP _dv_d15b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -373,7 +375,7 @@ _dv_d15b:
     IF EQ JUMP _dv_d16a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -386,7 +388,7 @@ _dv_d16a:
     IF EQ JUMP _dv_d16b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -413,7 +415,7 @@ _dv_d16b:
     IF EQ JUMP _dv_d17a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -426,7 +428,7 @@ _dv_d17a:
     IF EQ JUMP _dv_d17b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -450,7 +452,7 @@ _dv_d17b:
     IF EQ JUMP _dv_d18a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -463,7 +465,7 @@ _dv_d18a:
     IF EQ JUMP _dv_d18b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -492,7 +494,7 @@ _dv_d18b:
     IF EQ JUMP _dv_d19a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -505,7 +507,7 @@ _dv_d19a:
     IF EQ JUMP _dv_d19b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -527,7 +529,7 @@ _dv_d19b:
     IF EQ JUMP _dv_d20a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -540,7 +542,7 @@ _dv_d20a:
     IF EQ JUMP _dv_d20b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -564,7 +566,7 @@ _dv_d20b:
     IF EQ JUMP _dv_d21a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -577,7 +579,7 @@ _dv_d21a:
     IF EQ JUMP _dv_d21b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -602,7 +604,7 @@ _dv_d21b:
     IF EQ JUMP _dv_d22a;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -615,7 +617,7 @@ _dv_d22a:
     IF EQ JUMP _dv_d22b;
     I4 = R0;
     DM(192, I4) = R2;
-    R0 = 0x11D1A6;
+    R0 = 0x18D1A6;
     DM(45, I4) = R0;
     R0 = DM(_dv_diag + 52);
     DM(193, I4) = R0;
@@ -638,7 +640,7 @@ _dv_d22b:
     IF EQ JUMP _dv_f2a;
     I4 = R5;
     DM(192, I4) = R3;
-    R5 = 0x11D1A6;
+    R5 = 0x18D1A6;
     DM(45, I4) = R5;
     R5 = DM(_dv_diag + 52);
     DM(193, I4) = R5;
@@ -651,7 +653,7 @@ _dv_f2a:
     IF EQ JUMP _dv_f2b;
     I4 = R5;
     DM(192, I4) = R3;
-    R5 = 0x11D1A6;
+    R5 = 0x18D1A6;
     DM(45, I4) = R5;
     R5 = DM(_dv_diag + 52);
     DM(193, I4) = R5;
@@ -688,7 +690,7 @@ _dv_f2b:
     IF EQ JUMP _dv_f3a;
     I4 = R5;
     DM(192, I4) = R3;
-    R5 = 0x11D1A6;
+    R5 = 0x18D1A6;
     DM(45, I4) = R5;
     R5 = DM(_dv_diag + 52);
     DM(193, I4) = R5;
@@ -701,7 +703,7 @@ _dv_f3a:
     IF EQ JUMP _dv_f3b;
     I4 = R5;
     DM(192, I4) = R3;
-    R5 = 0x11D1A6;
+    R5 = 0x18D1A6;
     DM(45, I4) = R5;
     R5 = DM(_dv_diag + 52);
     DM(193, I4) = R5;
@@ -741,6 +743,75 @@ _dv_f3b:
 #else
     CALL _dv_crumb;                       // stage 4: the routine is about to be called (R3, R5, I4 are free here)
 #endif
+    // ---- the guard, before the routine (docs/findings/53): the machine parameter words are clamped to the row's declared ranges
+    // in place in the frame copy and put back when the routine has returned; a type disabled by its faults is not called. ----
+    DM(_dv_g + 4) = R0;                   // type
+    DM(_dv_g + 8) = R1;                   // voice
+    DM(_dv_g + 12) = R2;                  // track
+    DM(_dv_g + 16) = R4;                  // voice record
+    DM(_dv_g + 20) = R8;                  // output block
+    R5 = 0;                               // mask of the words the clamp changed
+    DM(_dv_g + 24) = R5;
+    R3 = DM(_dv_g + 0);
+    I4 = R3;
+    R3 = DM(-6, I4);                      // the row's disabled type
+    COMP(R3, R0);
+    IF EQ JUMP _dv_gdis;
+    R3 = LSHIFT R2 BY 5;
+    R6 = LSHIFT R2 BY 4;
+    R3 = R3 + R6;
+    R6 = 0x6d;
+    R3 = R3 + R6;                         // halfword index of knob 0: 0x6d + 48 t
+    DM(_dv_g + 28) = R3;
+    R3 = DM(_dv_g + 0);
+    R6 = 56;
+    R3 = R3 - R6;                         // the row's word 2: the range of knob 0
+    I3 = R3;
+    R6 = 0;                               // knob j
+_dv_gl:
+    CALL _dv_gloc;                        // I2 = the word, R10 = bit 0 or 16 of the knob's half
+    R9 = DM(I2, M5);
+    R11 = 0x400;
+    R11 = R11 OR R10;
+    R12 = FEXT R9 BY R11;                 // the knob's word
+    R13 = DM(I3, M6);                     // min | max << 16; 0: undeclared
+    R14 = 0x7f000000;                     // 0 .. 0x7f00
+    R13 = PASS R13;
+    IF EQ R13 = PASS R14;
+    R14 = FEXT R13 BY 16:16;
+    R13 = FEXT R13 BY 0:16;
+    R15 = MIN(R12, R14);
+    R15 = MAX(R15, R13);
+    COMP(R15, R12);
+    IF EQ JUMP _dv_gn;
+    R3 = LSHIFT R6 BY 2;
+    R14 = _dv_g;                          // (a symbol + constant in an immediate drops the constant: add it)
+    R14 = R14 + R3;
+    R3 = 44;                              // the originals
+    R14 = R14 + R3;
+    I1 = R14;
+    DM(I1, M5) = R12;
+    R3 = 1;
+    R3 = LSHIFT R3 BY R6;
+    R5 = R5 OR R3;
+    R3 = 0xffff;
+    R3 = LSHIFT R3 BY R10;
+    R3 = NOT R3;
+    R9 = R9 AND R3;
+    R3 = LSHIFT R15 BY R10;
+    R9 = R9 OR R3;
+    DM(I2, M5) = R9;
+_dv_gn:
+    R6 = R6 + 1;
+    R3 = 8;
+    COMP(R6, R3);
+    IF LT JUMP _dv_gl;
+    DM(_dv_g + 24) = R5;
+    R0 = DM(_dv_g + 4);
+    R1 = DM(_dv_g + 8);
+    R2 = DM(_dv_g + 12);
+    R4 = DM(_dv_g + 16);
+    R8 = DM(_dv_g + 20);
     R12 = 32;
     I13 = _dv_back;
     JUMP (M13, I12);                      // the routine returns with JUMP (M13, I13)
@@ -756,7 +827,7 @@ _dv_back:
 #else
     CALL _dv_crumb;                       // stage 5: the routine returned
 #endif
-    JUMP _dv_done;
+    JUMP _dv_gcheck;
 _dv_odd:
     I1 = R8;
     MODIFY(I1, -128);
@@ -822,6 +893,207 @@ _dv_done:
     R3 = DM(-6, I6);
     RFRAME;
 
+// ---- the guard, after the routine (docs/findings/53) ----
+// The block must hold finite samples of at most 8.0 in magnitude (+18 dB over the full scale of a voice; the stock voices stay below 2). One
+// integer test covers both: the magnitude bits (sign cleared) of 8.0 are 0x41000000, and Inf and NaN lie above 0x7f800000. A block that fails
+// is zeroed, the voice ends (ACTIVE and the mark clear: the routine takes its note-on path at the next trig) and the fault is counted in the
+// type's row; the 8th fault of a type within 1500 blocks (one second) disables the type until the next start (its row names it: the voices are
+// silent and the routine is not called). The parameter words the routine saw, the type, the voice and the counts go into the diagnostic words
+// 15 to 21 (dl_diag words 17 to 23). Registers: everything is free here (the epilogue reloads them), I13 and the context are restored below.
+_dv_gcheck:
+    R8 = DM(_dv_g + 20);
+    I0 = R8;
+    R13 = 0;
+    R9 = 0x7fffffff;
+    LCNTR = 32, DO _dv_gchk UNTIL LCE;
+        R0 = DM(I0, M6);
+        R0 = R0 AND R9;
+_dv_gchk: R13 = MAX(R13, R0);
+    R0 = 0x41000000;                      // 8.0
+    COMP(R13, R0);
+    IF GT JUMP _dv_gfault;
+    R5 = DM(_dv_g + 24);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_done;
+    CALL _dv_grestore;
+    JUMP _dv_done;
+
+_dv_gfault:
+    R12 = 1;                              // 1 = Inf or NaN, 2 = over the level bound
+    R0 = 0x7f800000;
+    COMP(R13, R0);
+    R3 = 2;
+    IF LT R12 = PASS R3;
+    DM(_dv_g + 32) = R12;
+    R6 = 0;                               // the words the routine saw (clamped), packed in pairs
+_dv_gcl:
+    CALL _dv_gloc;
+    R9 = DM(I2, M5);
+    R11 = 0x400;
+    R11 = R11 OR R10;
+    R12 = FEXT R9 BY R11;
+    R3 = LSHIFT R6 BY 2;
+    R14 = _dv_g;
+    R14 = R14 + R3;
+    R3 = 76;                              // the words the routine saw
+    R14 = R14 + R3;
+    I1 = R14;
+    DM(I1, M5) = R12;
+    R6 = R6 + 1;
+    R3 = 8;
+    COMP(R6, R3);
+    IF LT JUMP _dv_gcl;
+    I1 = _dv_g;
+    MODIFY(I1, 76);
+    R3 = DM(I1, M6);
+    R9 = DM(I1, M6);
+    R9 = LSHIFT R9 BY 16;
+    R3 = R3 OR R9;
+    DM(_dv_diag + 68) = R3;
+    R3 = DM(I1, M6);
+    R9 = DM(I1, M6);
+    R9 = LSHIFT R9 BY 16;
+    R3 = R3 OR R9;
+    DM(_dv_diag + 72) = R3;
+    R3 = DM(I1, M6);
+    R9 = DM(I1, M6);
+    R9 = LSHIFT R9 BY 16;
+    R3 = R3 OR R9;
+    DM(_dv_diag + 76) = R3;
+    R3 = DM(I1, M6);
+    R9 = DM(I1, M6);
+    R9 = LSHIFT R9 BY 16;
+    R3 = R3 OR R9;
+    DM(_dv_diag + 80) = R3;
+    R5 = DM(_dv_g + 24);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_gnr;
+    CALL _dv_grestore;
+_dv_gnr:
+    R8 = DM(_dv_g + 20);
+    I0 = R8;
+    R3 = 0;
+    LCNTR = 32, DO _dv_gz UNTIL LCE;
+_dv_gz: DM(I0, M6) = R3;
+    R4 = DM(_dv_g + 16);
+    I1 = R4;
+    MODIFY(I1, 440);                      // record byte +0x1b8: ACTIVE, +0x1b9 the mark
+    R9 = DM(I1, M5);
+    R3 = 0xffff0000;
+    R9 = R9 AND R3;
+    DM(I1, M5) = R9;
+    R3 = DM(_dv_g + 0);
+    I4 = R3;
+    R5 = DM(_dv_diag);                    // blocks so far
+    R6 = DM(-5, I4);                      // the row's window start
+    R7 = R5 - R6;
+    R3 = 1500;
+    COMP(R7, R3);
+    IF LT JUMP _dv_gwin;
+    DM(-5, I4) = R5;
+    R7 = 0;
+    DM(-4, I4) = R7;
+_dv_gwin:
+    R7 = DM(-4, I4);
+    R7 = R7 + 1;
+    DM(-4, I4) = R7;                      // faults in this window
+    R9 = DM(-3, I4);
+    R9 = R9 + 1;
+    DM(-3, I4) = R9;                      // faults of the type since the start
+    R3 = 8;
+    COMP(R7, R3);
+    IF LT JUMP _dv_gnd;
+    R0 = DM(_dv_g + 4);
+    R3 = DM(-6, I4);
+    COMP(R3, R0);
+    IF EQ JUMP _dv_gnd;                   // already disabled
+    DM(-6, I4) = R0;
+    DM(_dv_diag + 84) = R0;               // the last disabled type
+    R3 = DM(_dv_g + 40);
+    R3 = R3 + 1;
+    DM(_dv_g + 40) = R3;
+_dv_gnd:
+    R3 = DM(_dv_g + 36);
+    R3 = R3 + 1;
+    DM(_dv_g + 36) = R3;
+    R0 = 0xffff;
+    R3 = R3 AND R0;
+    R0 = DM(_dv_g + 32);
+    R0 = LSHIFT R0 BY 16;
+    R3 = R3 OR R0;
+    R0 = DM(_dv_g + 40);
+    R0 = LSHIFT R0 BY 24;
+    R3 = R3 OR R0;
+    DM(_dv_diag + 60) = R3;               // faults (16 bits) | kind << 16 | disabled types << 24
+    R0 = DM(_dv_g + 4);
+    R3 = DM(_dv_g + 8);
+    R3 = LSHIFT R3 BY 16;
+    R0 = R0 OR R3;
+    DM(_dv_diag + 64) = R0;               // type | voice << 16
+    JUMP _dv_done;
+
+// A disabled type: a silent block.
+_dv_gdis:
+    I0 = R8;
+    R3 = 0;
+    LCNTR = 32, DO _dv_gdz UNTIL LCE;
+_dv_gdz: DM(I0, M6) = R3;
+    R0 = DM(_dv_g + 4);
+    R1 = DM(_dv_g + 8);
+    R2 = DM(_dv_g + 12);
+    R4 = DM(_dv_g + 16);
+    R12 = 32;
+    JUMP _dv_back;
+
+// In: R6 = knob j (0 .. 7). Out: I2 = the byte address of the frame copy's 32-bit word that holds the knob's halfword, R10 = the bit position (0 or 16)
+// of the half. Knob j of track t is halfword 0x6d + 48 t + j + 2 (j >> 2). Clobbers R9, R10, R11.
+_dv_gloc:
+    R9 = FEXT R6 BY 2:1;
+    R9 = R9 + R9;
+    R9 = R9 + R6;
+    R10 = DM(_dv_g + 28);
+    R9 = R9 + R10;
+    R10 = FEXT R9 BY 0:1;
+    R10 = LSHIFT R10 BY 4;
+    R11 = 0x1fe;
+    R9 = R9 AND R11;
+    R9 = LSHIFT R9 BY 1;
+    R11 = _fw_frame;
+    R9 = R9 + R11;
+    I2 = R9;
+    RTS;
+
+// In: R5 = the mask of the words the clamp changed. Puts the originals back. Clobbers R3, R6, R9 to R14, I1, I2.
+_dv_grestore:
+    R6 = 0;
+_dv_grl:
+    R3 = 1;
+    R3 = LSHIFT R3 BY R6;
+    R3 = R3 AND R5;
+    IF EQ JUMP _dv_grn;
+    CALL _dv_gloc;
+    R9 = DM(I2, M5);
+    R3 = LSHIFT R6 BY 2;
+    R14 = _dv_g;
+    R14 = R14 + R3;
+    R3 = 44;
+    R14 = R14 + R3;
+    I1 = R14;
+    R12 = DM(I1, M5);
+    R3 = 0xffff;
+    R3 = LSHIFT R3 BY R10;
+    R3 = NOT R3;
+    R9 = R9 AND R3;
+    R3 = LSHIFT R12 BY R10;
+    R9 = R9 OR R3;
+    DM(I2, M5) = R9;
+_dv_grn:
+    R6 = R6 + 1;
+    R3 = 8;
+    COMP(R6, R3);
+    IF LT JUMP _dv_grl;
+    RTS;
+
 _dv_stock:
     R0 = 7;
     COMP(R1, R0);
@@ -850,7 +1122,7 @@ _dv_stock:
     IF EQ JUMP _dv_i1;
     I4 = R5;
     DM(192, I4) = R3;
-    R5 = 0x11D1A6;
+    R5 = 0x18D1A6;
     DM(45, I4) = R5;
     R5 = DM(_dv_diag + 52);
     DM(193, I4) = R5;
@@ -863,7 +1135,7 @@ _dv_i1:
     IF EQ JUMP _dv_i2;
     I4 = R5;
     DM(192, I4) = R3;
-    R5 = 0x11D1A6;
+    R5 = 0x18D1A6;
     DM(45, I4) = R5;
     R5 = DM(_dv_diag + 52);
     DM(193, I4) = R5;
@@ -905,7 +1177,7 @@ _dv_crumb:
     IF EQ JUMP _dv_cb;
     I4 = R5;
     DM(192, I4) = R3;
-    R5 = 0x11D1A6;
+    R5 = 0x18D1A6;
     DM(45, I4) = R5;
     R5 = DM(_dv_diag + 52);
     DM(193, I4) = R5;
@@ -918,7 +1190,7 @@ _dv_cb:
     IF EQ JUMP _dv_cc;
     I4 = R5;
     DM(192, I4) = R3;
-    R5 = 0x11D1A6;
+    R5 = 0x18D1A6;
     DM(45, I4) = R5;
     R5 = DM(_dv_diag + 52);
     DM(193, I4) = R5;
@@ -1024,10 +1296,13 @@ _dv_frame_sw:
 .PKDATA _dv_sv3, 4;
 .PKDATA _dv_sv5, 4;
 .PKDATA _dv_bcw, 4;
+// The guard's scalars and arrays (words): 0 row end, 1 type, 2 voice, 3 track, 4 voice record, 5 output block, 6 mask of clamped knobs, 7 halfword of knob 0,
+// 8 fault kind, 9 faults, 10 disabled types, 11 to 18 the originals of the clamped words, 19 to 26 the words the routine saw.
+.PKDATA _dv_g, 128;
 // The diagnostic block (finding 45): word 0 counts the blocks that reached the hook, words 1-11 are M5, M6, M7, M13, M14, M15,
 // I6, I7, B7, L7, MODE1 as the firmware left them at the first voice's entry; word 12 is the last breadcrumb, word 13 counts the
 // dispatches to registered types, word 14 the routines that returned (finding 48). core/dsp-link copies the block into the record it sends to the ColdFire each block
 // (dl_diag): its words 2 to 15.
-.PKDATA _dv_diag, 64;
+.PKDATA _dv_diag, 128;
 // The addresses of the two reply records (rings): [0] the one the last block built, [1] the one before it. Written by core/dsp-link.
 .PKDATA _dv_rec, 8;

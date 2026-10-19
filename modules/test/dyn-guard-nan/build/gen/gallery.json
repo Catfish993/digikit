@@ -1,0 +1,68 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 25,
+              "stock": 202
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            {
+              "slot": 32,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "NaN fixture",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "NAN",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "NaN fixture",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "NAN",
+          "type": 20
+        }
+      },
+      "id": "guardnan",
+      "name": "NaN fixture",
+      "short": "NAN"
+    }
+  ],
+  "module": "test/dyn-guard-nan",
+  "params": {
+    "dn2": [],
+    "dt2": []
+  }
+}

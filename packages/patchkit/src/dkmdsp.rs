@@ -4,7 +4,7 @@
 //! All integers are big endian. Layout (offsets from the start of the section):
 //!
 //! ```text
-//! 0x00 u32 magic "DKDS"   0x04 u32 version = 1   0x08 u32 device (1 dt2, 2 dn2)
+//! 0x00 u32 magic "DKDS"   0x04 u32 version = 2 (1: voices of 16 bytes without ranges)   0x08 u32 device (1 dt2, 2 dn2)
 //! 0x0c u32 image_size   bytes of text and data that are sent (a multiple of 4)
 //! 0x10 u32 bss_size     bytes reserved behind the image, not sent
 //! 0x14 u32 align        placement alignment in bytes (8 or more, a power of two)
@@ -17,7 +17,8 @@
 //!            class 0: the value is a short-word pc of this object (add the pc shift of the placement)
 //!                  1: the value is a byte address of this object (add the byte shift)
 //!                  2: the value is the addend of the import (add the import's value, a pc or a byte address as exported)
-//! voices : 16 bytes each: u32 machine type, u32 image byte offset of the entry routine, u32 reserved, u32 reserved
+//! voices : 48 bytes each: u32 machine type, u32 image byte offset of the entry routine, 8 x u32 range of machine knob 0 .. 7 for the runtime
+//!            guard of core/dsp-voice (min | max << 16; 0: undeclared), 2 x u32 reserved. Version 1 had 16 bytes (type, entry, 2 reserved)
 //! image  : the linked bytes at the nominal base `L2_BYTE_BASE`; every relocated field holds `S + A` at that base
 //! ```
 //!
@@ -31,10 +32,13 @@ use crate::link;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAGIC: u32 = 0x444b_4453; // "DKDS"
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
+/// The version without voice ranges (voices of `VOICE_LEN_V1` bytes); the runtime still loads it, with every range undeclared.
+pub const VERSION_1: u32 = 1;
 pub const HEADER: usize = 0x40;
 pub const RELOC_LEN: usize = 8;
-pub const VOICE_LEN: usize = 16;
+pub const VOICE_LEN: usize = 48;
+pub const VOICE_LEN_V1: usize = 16;
 pub const IMPORT_LEN: usize = 32;
 pub const MAX_RELOCS: usize = 4096;
 pub const MAX_IMPORTS: usize = 32;
@@ -63,6 +67,8 @@ pub struct Voice {
     pub type_no: u32,
     /// byte offset of the entry routine in the image
     pub entry: u32,
+    /// range of machine knob 0 .. 7 (min | max << 16; 0 undeclared)
+    pub ranges: [u32; 8],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -86,7 +92,7 @@ pub struct DspSection {
 
 /// Link `obj` (a SHARC+ object) at the nominal base and encode the section. `voices` names the entry routine of each machine type
 /// (a global text symbol of the object).
-pub fn pack(obj: &Dko, device: u32, voices: &[(u32, String)]) -> Result<Vec<u8>> {
+pub fn pack(obj: &Dko, device: u32, voices: &[(u32, String, [u32; 8])]) -> Result<Vec<u8>> {
     if obj.arch != "sharc" {
         return Err(err!(
             "a DSP section holds a SHARC+ object; the object is {}",
@@ -191,7 +197,7 @@ pub fn pack(obj: &Dko, device: u32, voices: &[(u32, String)]) -> Result<Vec<u8>>
         return Err(err!("{} voices; at most {MAX_VOICES}", voices.len()));
     }
     let mut vs = vec![];
-    for (t, name) in voices {
+    for (t, name, ranges) in voices {
         match defined.get(name.as_str()) {
             Some(("text", true)) => {}
             Some(_) => {
@@ -210,6 +216,7 @@ pub fn pack(obj: &Dko, device: u32, voices: &[(u32, String)]) -> Result<Vec<u8>>
         vs.push(Voice {
             type_no: *t,
             entry: entry as u32,
+            ranges: *ranges,
         });
     }
     let s = DspSection {
@@ -257,6 +264,9 @@ impl DspSection {
             let at = voice_off + i * VOICE_LEN;
             put(&mut f, at, v.type_no);
             put(&mut f, at + 4, v.entry);
+            for (k, w) in v.ranges.iter().enumerate() {
+                put(&mut f, at + 8 + 4 * k, *w);
+            }
         }
         f[image_off..].copy_from_slice(&self.image);
         f
@@ -267,9 +277,11 @@ impl DspSection {
         if f.len() < HEADER || get(f, 0) != MAGIC {
             return Err(err!("not a DSP section (magic)"));
         }
-        if get(f, 4) != VERSION {
-            return Err(err!("DSP section version {}", get(f, 4)));
+        let version = get(f, 4);
+        if version != VERSION && version != VERSION_1 {
+            return Err(err!("DSP section version {version}"));
         }
+        let vlen = if version == VERSION_1 { VOICE_LEN_V1 } else { VOICE_LEN };
         let rng = |off: u32, n: usize| -> Result<&[u8]> {
             let off = off as usize;
             f.get(off..off.checked_add(n).ok_or_else(|| err!("overflow"))?)
@@ -321,11 +333,16 @@ impl DspSection {
             }
             relocs.push(r);
         }
-        let vo = rng(get(f, 0x2c), nvoice * VOICE_LEN)?;
+        let vo = rng(get(f, 0x2c), nvoice * vlen)?;
         let voices = (0..nvoice)
             .map(|i| Voice {
-                type_no: get(vo, i * VOICE_LEN),
-                entry: get(vo, i * VOICE_LEN + 4),
+                type_no: get(vo, i * vlen),
+                entry: get(vo, i * vlen + 4),
+                ranges: if version == VERSION_1 {
+                    [0; 8]
+                } else {
+                    std::array::from_fn(|k| get(vo, i * vlen + 8 + 4 * k))
+                },
             })
             .collect::<Vec<_>>();
         if voices
@@ -460,7 +477,7 @@ mod tests {
     #[test]
     fn relocation_at_any_base_equals_the_linker() {
         let o = object();
-        let bytes = pack(&o, 1, &[(16, "entry".into())]).unwrap();
+        let bytes = pack(&o, 1, &[(16, "entry".into(), [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0])]).unwrap();
         let d = DspSection::parse(&bytes).unwrap();
         assert_eq!(d.imports, vec!["helper"]);
         assert_eq!(d.bss, 64);
@@ -468,7 +485,8 @@ mod tests {
             d.voices,
             vec![Voice {
                 type_no: 16,
-                entry: 0
+                entry: 0,
+                ranges: [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0]
             }]
         );
         for base in [0x2000_0000u32, 0x2001_ab40, 0x2003_f000] {
@@ -488,13 +506,13 @@ mod tests {
     fn bad_objects_and_sections_are_refused() {
         let o = object();
         assert!(
-            pack(&o, 1, &[(16, "nope".into())])
+            pack(&o, 1, &[(16, "nope".into(), [0; 8])])
                 .unwrap_err()
                 .0
                 .contains("does not define")
         );
         assert!(
-            pack(&o, 1, &[(16, "again".into())])
+            pack(&o, 1, &[(16, "again".into(), [0; 8])])
                 .unwrap_err()
                 .0
                 .contains("global text")
