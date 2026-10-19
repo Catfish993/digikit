@@ -24,7 +24,6 @@ from __future__ import annotations
 import random
 import struct
 from dataclasses import dataclass, field
-from functools import cache
 from pathlib import Path
 
 import support.dsp_voice_rig as dv
@@ -91,7 +90,6 @@ def _externs_fixed(device: str, spec: pk_conform.MachineSpec) -> dict[str, int]:
     }
 
 
-@cache
 def build(module: str, device: str) -> _Built:
     """Assemble, place and link the wrapper and the module's DSP sources (cached per module and device)."""
     sp = pk_conform.spec(module, device)
@@ -99,6 +97,22 @@ def build(module: str, device: str) -> _Built:
         raise pk_conform.ConformError(
             f"{module} has no machine DSP object for {device}"
         )
+    return build_spec(sp)
+
+
+_BUILT: dict[tuple[object, ...], _Built] = {}
+
+
+def build_spec(sp: pk_conform.MachineSpec) -> _Built:
+    """`build` for a spec the caller made (a fixture source of a module: `dataclasses.replace(spec, sources=..., entry=..., note_on=..., desc=...)`)."""
+    key = (sp.module, sp.device, sp.sources, sp.entry, sp.note_on, sp.desc, sp.params)
+    if key not in _BUILT:
+        _BUILT[key] = _build(sp)
+    return _BUILT[key]
+
+
+def _build(sp: pk_conform.MachineSpec) -> _Built:
+    module, device = sp.module, sp.device
     objs = [_assemble(WRAPPER[device], WRAPPER[device].parents[2])]
     objs += [_assemble(Path(s), sp.moddir) for s in sp.sources]
     # data symbols: one 4-byte aligned run per section, in L2 above the stand-ins
@@ -159,8 +173,9 @@ class MachineRig:
         seed: int = 0xD1617,
         track: int = 0,
         step_limit: int = 400_000,
+        spec: pk_conform.MachineSpec | None = None,
     ) -> None:
-        self.spec = pk_conform.spec(module, device)
+        self.spec = spec or pk_conform.spec(module, device)
         if self.spec is None:
             raise pk_conform.ConformError(
                 f"{module} has no machine DSP object for {device}"
@@ -168,7 +183,7 @@ class MachineRig:
         self.device = device
         self.track = track
         self.step_limit = step_limit
-        self.built = build(module, device)
+        self.built = build_spec(self.spec) if spec else build(module, device)
         self.ctx_rng = random.Random(seed)
         self.last_ctx: dict[str, int] = {}
         self.by_id = {p.id: p for p in self.spec.params}

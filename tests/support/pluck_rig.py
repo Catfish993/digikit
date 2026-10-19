@@ -68,8 +68,8 @@ class PluckRig(MachineRig):
         b = MachineRig.block(self)
         assert b.returned, b.halt
         b.out["flags"] = [self.read_rec_word(2 * track, 0x1B8)]
-        # the routine's state row of this track (`_pk_state`: 16 rows of 32 words)
-        row = nw(self.built.data["_pk_state"]) + 32 * track
+        # the routine's state row of this track (the first 32 words of its state block: the adapter's `state_base` + track * stride)
+        row = nw(self.built.state + track * self.built.stride)
         b.out["state"] = [self.sess.peek(row + k) or 0 for k in range(32)]
         return np.array(b.samples, dtype=np.float32), b.out | {
             "instructions": b.instructions

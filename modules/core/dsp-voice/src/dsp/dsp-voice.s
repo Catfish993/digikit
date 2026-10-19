@@ -1154,12 +1154,21 @@ _dv_contract:
     R0 = 0xff;
     R0 = R9 AND R0;
     IF EQ JUMP _dv_cidle;
+    R12 = 1;
     R11 = 0;
     R0 = 0xff00;
     R0 = R9 AND R0;
-    IF NE JUMP _dv_cmarked;
-    R11 = 1;                              // the mark is clear: a note-on in this block; the adapter writes the mark
-    R0 = 0x5a00;
+    IF EQ R11 = PASS R12;                 // the mark is clear: a note-on in this block
+    R3 = LSHIFT R2 BY 2;                  // or the track's block counter is 0: the voice never ran since the start, whatever the mark says
+    R6 = _dv_blk;
+    R6 = R6 + R3;
+    I3 = R6;
+    R3 = DM(0, I3);
+    R3 = PASS R3;
+    IF EQ R11 = PASS R12;
+    R11 = PASS R11;
+    IF EQ JUMP _dv_cmarked;
+    R0 = 0x5a00;                          // the adapter writes the mark
     R9 = R9 OR R0;
     DM(I1, M5) = R9;
 _dv_cmarked:
@@ -1238,6 +1247,7 @@ _dv_cpe:
     R5 = DM(-5, I4);                      // clear bytes
     R6 = -2;
     R5 = LSHIFT R5 BY R6;                 // clear bytes -> words
+    R5 = PASS R5;                         // (a shift sets SZ, the condition tests AZ)
     IF EQ JUMP _dv_cnoclr;
     I2 = R4;
     R0 = 0;

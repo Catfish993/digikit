@@ -165,7 +165,7 @@ class Dn2Proof(K.Proof):
 
     # -- DSP memory of the module (the plan's symbols)
     def dsp_sym(self, s: H.Session, name: str) -> int:
-        """The address of a module symbol (for example `_pk_buf`) from the plan of the patched image."""
+        """The address of a module symbol (for example `_dkstate_pluck`) from the plan of the patched image."""
         assert s.image is not None
         plan = json.loads(Path(str(s.image)[: -len(".syx")] + ".plan.json").read_text())
         for k, v in plan["symbols"].items():

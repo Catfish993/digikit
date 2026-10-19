@@ -81,9 +81,9 @@ class PluckProof(C.Dn2Proof):
         noise state before the note: the pick comb, the colour filter, the amplitude, the mean removal and N."""
         s.run_ms(500)  # the knob's words settle (a smoother follows the sound array)
         rng = int(self.dsp_words(s, self.dsp_sym(s, "_pk_rng"), 1)[0])
-        buf = self.dsp_sym(s, "_pk_buf")
+        buf = self.dsp_sym(s, "_dkstate_pluck")  # the voices' state blocks of the patched-in contract machine: a row of 32 words, then the line
         v = self.hold(s, "TRIG 1")  # runs 80 ms
-        line = self.dsp_words(s, buf + 0x4000 * v, 4096).view("<f4")
+        line = self.dsp_words(s, buf + 0x4080 * v + 128, 4096).view("<f4")
         d = [self.word(s, v, k) for k in (DECAY, PICK, BRIGHT, COLOR)]
         vel = s._u16(C.TX + 0x34 + 2 * v)
         pitch = self.pitch_word(s, v)

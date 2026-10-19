@@ -1,7 +1,7 @@
 """The runtime guard of core/dsp-voice (docs/findings/51-pluck-tune-guard.md) on the concrete SHARC+ core.
 
 The wrapper and a fixture routine are assembled from the module sources and run the way the engine calls them
-(tests/support/dsp_voice_rig.py). Fixtures (modules/test/dyn-guard-nan/src/dsp): `clean` (a ramp, inside the bound), `nan` (NaN while
+(tests/support/dsp_voice_rig.py). Fixtures (modules/test/dyn-guard-nan/src/dsp): `clean` (a ramp, inside the bound), `nan_legacy` (NaN while
 the voice is active), `loud` (100.0 while active). The guard clamps the machine knob words to the row's declared ranges for the call,
 puts the engine's words back, checks the block (finite, at most 8.0 in magnitude), and on a fault zeroes the block, ends the voice,
 counts the fault in the row and the diagnostic words, and after 8 faults in 1500 blocks disables the type. Skips when Selache is not built."""
@@ -155,7 +155,7 @@ def test_the_knob_words_are_clamped_to_the_declared_ranges_for_the_call_only(cle
 
 
 def test_a_nan_block_is_zeroed_the_voice_ends_and_the_fault_is_counted():
-    rig = GuardRig("nan", "_gn_render")
+    rig = GuardRig("nan_legacy", "_gn_render")
     rig.set_type(0, TYPE)
     words = [0x4000, 0x1000, 0x2000, 0, 0x7000, 0x0100, 0, 0x7F00]
     rig.knobs(0, words)
@@ -190,7 +190,7 @@ def test_an_overlevel_block_is_a_fault_of_kind_2():
 
 
 def test_the_8th_fault_within_a_second_disables_the_type_and_a_slow_trickle_does_not():
-    rig = GuardRig("nan", "_gn_render")
+    rig = GuardRig("nan_legacy", "_gn_render")
     rig.set_type(0, TYPE)
     # a fault every 1600 blocks (> 1500): the window restarts each time, the type stays on
     for _ in range(10):

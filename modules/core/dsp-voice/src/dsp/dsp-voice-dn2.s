@@ -393,6 +393,7 @@ _dv_cpe:
     R5 = DM(-5, I4);                      // clear bytes
     R6 = -2;
     R5 = LSHIFT R5 BY R6;                 // clear bytes -> words
+    R5 = PASS R5;                         // (a shift sets SZ, the condition tests AZ)
     IF EQ JUMP _dv_cnoclr;
     I2 = R4;
     R0 = 0;

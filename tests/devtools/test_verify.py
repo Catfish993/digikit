@@ -446,7 +446,7 @@ CONFORMANCE = "tests/modules/test_machine_conformance.py"
     "path",
     [
         "modules/machines/pluck/module.toml",
-        "modules/machines/pluck/src/dsp/pluck_dn2.s",
+        "modules/machines/pluck/src/dsp/pluck.s",
         "modules/test/sine-voice/src/dsp/sine_voice.s",
         "modules/test/dn2-sine/module.toml",
         "modules/core/dsp-voice/src/dsp/dsp-voice-dn2.s",
