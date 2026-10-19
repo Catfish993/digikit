@@ -27,6 +27,11 @@ Run everything from the repo root. Work in a lane only for long or parallel runs
   [V] verified by a second agent, [D] measured once, [O] open.
 - Flashing hardware is Em's decision, every time. Nothing patched has run on a device.
 - Run the emulator only when a static answer is not enough, and bound runs.
+- **Contracts, not runtime numbers.** The runtime version is semantic (0.1.0, `sdk/sdk.toml`). A `.dkm` is refused only on a contract
+  mismatch (`E_CONTRACT` -48): for each contract it declares, module major = runtime major and module minor <= runtime minor. Then rebuild it.
+  Header byte 0x30 is informational.
+- **Logging.** `Api.log(msg, value)` is info; `Api.log_lv(level, msg, value)` takes 0 error .. 4 trace. Levels are set with `dk:log level` (needs runtime 0.1.0) and reset at boot.
+- **Knob slots on a DT2 SAMPLE clone:** slot 6 is usable; slot 3 passes only `value & 0x3ff`: no parameter there (finding 02, last section).
 
 ## The loop
 
@@ -40,6 +45,9 @@ Run everything from the repo root. Work in a lane only for long or parallel runs
 | Inject | `mise run patch:inject -- out/patch/x.syx` (into a running daemon; DSP-only change hot, MAIN change by cached coupled cold boot) |
 | Edit loop | `mise run module:dev -- --modules fx/my-drive [--device dt2\|dn2]`: watches `src/` and `module.toml`; per edit builds, patches, injects, runs the quick tests, prints one line with `edit->running` and `edit->tested` |
 | Test | `mise run patch:test` (matrix in `tests/patchkit/smoke/matrix.toml`; `-- --cell "dt2-1.17:fx/my-drive,test/cf-demo"` with the exact module set of a cell, joined by commas; a new set needs `-- --update` once to record frame goldens) |
+| Check | `mise run module:check -- NAME [--device dt2\|dn2]`: conformance and the module's tests; prints the packed `size` line by section (or why it is not packed) |
+| Generated files | `mise run gen:modules [-- --check]`: writes the runtime's `device.rs`, `gen_sdk.rs`, `tools/device/dklog_kinds.py` and `build/gen/*` from `devices/*.toml` and `sdk/sdk.toml` (stale files fail the patchkit tests) |
+| Run-time module | `mise run dk:run -- test/NAME --emu` or `--port Digitakt`; `mise run dk:log -- --port Digitakt level [debug \| --module NAME=trace]`, `follow --level L --module NAME` |
 | Port | `mise run patch:port [-- firmware/X.syx]` rewrites `devices/ports/*.toml` from the `[[anchor_rule]]`s (deterministic) |
 | pytest | `uv run python -m pytest tests/patchkit/smoke --slow` |
 

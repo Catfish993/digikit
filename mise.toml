@@ -203,6 +203,10 @@ description = "Generate a firmware block library (AOT core) and register it by D
 
 # --- generated SHARC core ---
 
+[tasks."gen:modules"]
+run = "uv run python -m tools.patchkit.patchkit gen"
+description = "Write the generated module sources from devices/*.toml and sdk/sdk.toml (runtime device.rs and .inc files, gen_sdk.rs, tools/device/dklog_kinds.py): mise run gen:modules [-- --check]"
+
 [tasks."gen:core"]
 run = "uv run python -m tools.sharc_dev.sharc_transpile --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
 description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
@@ -242,7 +246,7 @@ description = "Compile module sources to build/*.dko.json: mise run module:build
 
 [tasks."module:check"]
 run = "uv run python -m tools.patchkit.pk_modcheck"
-description = "Check one module: `module:check NAME [--device dt2|dn2]`. A machine module runs the conformance suite (tests/modules/test_machine_conformance.py: every parameter at its limits, notes, modulation, long notes, retriggers; finite, bounded, returns, within the instruction budget), then the module's own tests (modules/<group>/<name>/tests, tests/**/test_*<name>*.py)"
+description = "Check one module: `module:check NAME [--device dt2|dn2]`. A machine module runs the conformance suite (tests/modules/test_machine_conformance.py: every parameter at its limits, notes, modulation, long notes, retriggers; finite, bounded, returns, within the instruction budget), then the module's own tests (modules/<group>/<name>/tests, tests/**/test_*<name>*.py). Prints the packed size by section per device (or why it is not packed)"
 
 [tasks."module:pack"]
 run = "uv run python -m tools.patchkit.patchkit pack"
@@ -279,7 +283,7 @@ description = "Site-by-site account of a patch (disassembly before and after, al
 
 [tasks."patch:mem"]
 run = "uv run python -m tools.patchkit.pk_mem"
-description = "Patch memory per region (size, used by each module, free), refused when the modules do not fit: mise run patch:mem -- fx/master-gain machines/pluck [--device dt2|dn2] [--firmware VER] [--json]"
+description = "Patch memory per region (size, used by each module, free; also the runtime's own bytes), refused when the modules do not fit: mise run patch:mem -- fx/master-gain machines/pluck [--device dt2|dn2] [--firmware VER] [--json]"
 
 [tasks."patch:test"]
 run = "uv run python -m tools.patchkit.pk_harness run"
@@ -301,11 +305,11 @@ description = "Resolve the anchors and regions of a firmware into devices/ports/
 
 [tasks."dk:run"]
 run = "uv run --with python-rtmidi python -m tools.device.dkrun"
-description = "Build, pack, upload, select, restart and follow the log of a run-time module on a runtime-4 device or the emulator: mise run dk:run -- test/dyn-pluck --port Digitakt [--seconds 30] (the target is --emu or --port NAME)"
+description = "Build, pack, upload, select, restart and follow the log of a run-time module on a device with runtime 0.0.4 or newer or the emulator: mise run dk:run -- test/dyn-pluck --port Digitakt [--seconds 30] (the target is --emu or --port NAME)"
 
 [tasks."dk:log"]
 run = "uv run --with python-rtmidi python -m tools.device.dklog"
-description = "The digikit runtime's debug log over USB: mise run dk:log -- --port Digitakt follow (or --emu follow; the target is --emu or --port NAME; also crash, peek ADDR LEN, info)"
+description = "The digikit runtime's debug log over USB: mise run dk:log -- --port Digitakt follow (or --emu follow; the target is --emu or --port NAME; also crash, peek ADDR LEN, info; `level` prints the log levels, `level debug` sets the default, `level --module NAME=trace` one module; `follow --level L --module NAME` filters)"
 
 [tasks."dk:screen"]
 run = "uv run --with python-rtmidi python -m tools.device.dkscreen"
