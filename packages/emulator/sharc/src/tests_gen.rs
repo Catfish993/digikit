@@ -4,18 +4,14 @@
 //! time, and the machine state must agree. The hand-written lowering is run
 //! on the same vectors to count how many each accepts.
 //!
-//! `cargo test --lib gen_lowering -- --nocapture` prints the per-form table.
+//! `cargo test --lib gen_lowering_table -- --ignored --nocapture` prints the per-form table.
 
-use crate::fast::lower::GEN_FORCE;
+use crate::fast::lower::set_gen_force;
 use crate::mem::Mem;
 use crate::rt::*;
 use crate::tests_gen_programs::PROGRAMS;
 use crate::tests_gen_vectors::VECTORS;
 use std::collections::BTreeMap;
-use std::sync::atomic::Ordering;
-
-/// `GEN_FORCE` is process-wide: the tests that switch it run one at a time.
-static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const SPIN_ALIAS: u32 = 0x2800_0000;
 const DATA: u32 = 0x25_f000;
@@ -160,9 +156,17 @@ fn same(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
 
 /// (vectors, ran in the fast tier) per form for the current lowering.
 fn run_all(label: &str) -> BTreeMap<&'static str, (u32, u32)> {
+    run_shard(label, 0, 1)
+}
+
+/// The vectors whose index is `shard` modulo `shards`: the fuzz runs in shards so the test threads share the work.
+fn run_shard(label: &str, shard: usize, shards: usize) -> BTreeMap<&'static str, (u32, u32)> {
     let mut table: BTreeMap<&'static str, (u32, u32)> = BTreeMap::new();
     let only = std::env::var("GEN_FORMS").ok();
     for (vi, (form, parcels, words)) in VECTORS.iter().enumerate() {
+        if vi % shards != shard {
+            continue;
+        }
         if only.as_ref().is_some_and(|o| !o.split(',').any(|f| f == *form)) {
             continue;
         }
@@ -209,20 +213,42 @@ fn run_all(label: &str) -> BTreeMap<&'static str, (u32, u32)> {
     table
 }
 
+/// The per-form table (`cargo test --lib gen_lowering_table -- --ignored --nocapture`), the hand-written lowering
+/// next to the generated one. The sharded tests below run the same vectors and compare the same states.
 #[test]
-fn gen_lowering_matches_the_interpreter() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    GEN_FORCE.store(1, Ordering::Relaxed);
+#[ignore]
+fn gen_lowering_table() {
+    set_gen_force(1);
     let hand = run_all("hand");
-    GEN_FORCE.store(2, Ordering::Relaxed);
+    set_gen_force(2);
     let gen_ = run_all("gen");
-    GEN_FORCE.store(0, Ordering::Relaxed);
+    set_gen_force(0);
     eprintln!("{:8} {:>6} {:>6} {:>6}", "form", "n", "hand", "gen");
     for (form, (n, g)) in &gen_ {
         let h = hand[form].1;
         eprintln!("{form:8} {n:6} {h:6} {g:6}");
     }
 }
+
+/// One shard of the lowering fuzz: the lowering `force` (1 hand-written, 2 generated) over every fourth vector.
+macro_rules! lowering_shard {
+    ($name:ident, $force:expr, $label:expr, $shard:expr) => {
+        #[test]
+        fn $name() {
+            set_gen_force($force);
+            run_shard($label, $shard, 4);
+            set_gen_force(0);
+        }
+    };
+}
+lowering_shard!(gen_lowering_hand_0, 1, "hand", 0);
+lowering_shard!(gen_lowering_hand_1, 1, "hand", 1);
+lowering_shard!(gen_lowering_hand_2, 1, "hand", 2);
+lowering_shard!(gen_lowering_hand_3, 1, "hand", 3);
+lowering_shard!(gen_lowering_gen_0, 2, "gen", 0);
+lowering_shard!(gen_lowering_gen_1, 2, "gen", 1);
+lowering_shard!(gen_lowering_gen_2, 2, "gen", 2);
+lowering_shard!(gen_lowering_gen_3, 2, "gen", 3);
 
 // -- whole programs -------------------------------------------------------------
 
@@ -278,8 +304,7 @@ fn program_engine(
 
 #[test]
 fn gen_programs_match_the_interpreter() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    GEN_FORCE.store(2, Ordering::Relaxed);
+    set_gen_force(2);
     for (name, parcels) in PROGRAMS {
         for (floats, cfg) in [(true, 0), (false, 0), (true, 1), (false, 1)] {
             let seed = 0x1234_5678u64;
@@ -307,7 +332,7 @@ fn gen_programs_match_the_interpreter() {
             assert!(best > 0, "{name}: the fast tier never ran");
         }
     }
-    GEN_FORCE.store(0, Ordering::Relaxed);
+    set_gen_force(0);
 }
 
 // -- control flow (lane F3) ----------------------------------------------------
@@ -326,9 +351,8 @@ fn same_stacks(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
 /// every chunk of steps, whatever the chunk size cuts (delay slots included).
 #[test]
 fn gen_control_programs_match_the_interpreter() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     for force in [1u8, 2] {
-        GEN_FORCE.store(force, Ordering::Relaxed);
+        set_gen_force(force);
         for (name, parcels, entries, cfgs) in CONTROL {
             if std::env::var("GEN_CTL").is_ok_and(|o| !name.contains(&o)) {
                 continue;
@@ -370,7 +394,7 @@ fn gen_control_programs_match_the_interpreter() {
             }
         }
     }
-    GEN_FORCE.store(0, Ordering::Relaxed);
+    set_gen_force(0);
 }
 
 // -- helper bodies ------------------------------------------------------------

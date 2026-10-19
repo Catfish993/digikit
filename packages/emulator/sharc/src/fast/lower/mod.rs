@@ -287,10 +287,19 @@ pub struct Env {
 
 /// `SHARC_FAST_GEN`: `0` lowers with the hand-written forms only, a comma list
 /// of forms picks which use the generated emitters (`gen_forms`); the default is all.
-pub static GEN_FORCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+///
+/// `GEN_FORCE` overrides it for the lowering that runs on the current thread (`1` hand-written, `2`
+/// generated, `0` the setting above); the fuzz tests switch it per test thread, so they run in parallel.
+pub fn set_gen_force(v: u8) {
+    GEN_FORCE.with(|c| c.set(v));
+}
+
+thread_local! {
+    static GEN_FORCE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
 
 fn gen_enabled(form: &str) -> bool {
-    match GEN_FORCE.load(std::sync::atomic::Ordering::Relaxed) {
+    match GEN_FORCE.with(|c| c.get()) {
         1 => return false,
         2 => return true,
         _ => {}

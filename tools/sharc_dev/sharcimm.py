@@ -41,6 +41,7 @@ for the DMA channel assignment).
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import struct
 import sys
@@ -258,6 +259,7 @@ def _blocks():
 BLOCKS = sorted(_blocks())
 
 
+@functools.lru_cache(maxsize=1 << 16)
 def name_address(value: int) -> str | None:
     """Peripheral register name for a value, or None outside every known block."""
     if value in CORE_MMR_REGS:
