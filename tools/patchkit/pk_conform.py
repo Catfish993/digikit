@@ -1,0 +1,376 @@
+"""Conformance of a machine module: what its manifest declares, and the cases every machine must pass.
+
+A machine module (a `[[voice]]` or an `[[entry]] registry = "voices"` with a DSP object for a device) is run on the concrete SHARC+
+core through the wrapper (core/dsp-voice) by tests/support/machine_rig.py. This file holds the side that needs no core:
+
+  * `spec(module_id, device)`: the module's DSP sources, entry symbol, machine type, parameters (knob slots, min, max, default)
+    and the frame layout of the device, all read from the manifests;
+  * `budget(device, spec)`: the instruction budget of one voice-block (rule below);
+  * `cases(spec)`: the cases (`Case`) of tests/modules/test_machine_conformance.py, generated from the parameters.
+
+Parameter kinds do not exist in the manifest yet, so every parameter is treated as possibly pitch-like.
+
+The budget rule. A machine shares the DSP block with the stock firmware. The block is `dsp_clock_hz / dsp_blocks_per_second`
+cycles (devices/*.toml `[board]`). The stock firmware with one held note uses STOCK_BUSY instructions per block
+(tools/patchkit/pk_dsp_budget.py, held-note scenarios); tools/patchkit/pk_dsp_budget.py projects instructions to cycles with the
+"high" factor of devices/cycle-factors.json, and a patched image stays under DEFAULT_BUDGET_PCT of the block. The headroom
+(instructions) is what is left between the stock load and that limit. VOICES machine voices share it:
+
+    voice-block budget  = headroom / VOICES        (every block that is not a note-on)
+    note-on budget      = headroom                 (the block of a trigger may take the whole headroom once)
+
+The manifest may declare `[conformance] voice_block = N` and `note_on_block = M` (instructions) to replace either number; no
+manifest does yet (the schema of module.toml does not know the table).
+"""
+
+from __future__ import annotations
+
+import random
+import tomllib
+from dataclasses import dataclass, field
+from functools import cache
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+from tools.patchkit import pk_device, pk_dsp_budget  # noqa: E402
+
+DEVICES = ("dt2", "dn2")
+# Stock rows of the knob list that a DSP routine reads (a code in `knobs`, not a `[[param]]` id): name, min, max, default.
+# 0xca is TUNE of SAMPLE (a pitch offset in semitones, 64.0 at rest; the routines read it as 64 * 256 at rest).
+STOCK_KNOBS = {0xCA: ("tune", 0, 0x7F00, 0x4000)}
+# Stock DSP busy instructions per block, held note (the numbers of tests/patchkit/test_pk_dsp_budget.py).
+STOCK_BUSY = {"dt2": 208_640, "dn2": 334_529}
+VOICES = 16  # voices a machine runs at once: 16 tracks (Digitakt II), 16 voice slots (Digitone II)
+# Level bound of a block: full scale is +-1.0; a bound 18 dB above it flags a runaway (a state that grows by orders of magnitude),
+# not a loud but valid sound. The engine's amp stage and the master limit after the machine.
+LEVEL_BOUND = 8.0
+NOTES_LIMITS = (0, 24, 48, 60, 72, 96, 127)
+NOTES_CORNERS = (0, 60, 127)
+SETTLE = 3  # blocks run after the note-on block in the short cases
+WALK_BLOCKS = 500
+LONG_BLOCKS = 2000
+RETRIG_EVERY = 7
+RETRIG_BLOCKS = 280
+
+
+# Fixtures that must FAIL the suite: the suite's own test runs them and expects the named failure.
+NEGATIVE = {"test/dyn-dsp-hang": "did not return"}
+
+
+class ConformError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class Param:
+    id: str
+    knob: int  # position in the machine's knob list
+    lo: int
+    hi: int
+    default: int
+
+    @property
+    def mid(self) -> int:
+        return (
+            (self.lo + self.hi) // 2
+        ) & ~0xFF  # a value on the UI grid (words are UI * 256)
+
+
+@dataclass(frozen=True)
+class Frame:
+    """Halfword of the DSP's frame copy that holds knob j of voice v: base + stride * v + j + (j // group) * gap."""
+
+    base: int
+    stride: int
+    group: int = 0
+    gap: int = 0
+
+    def hw(self, v: int, j: int) -> int:
+        return (
+            self.base
+            + self.stride * v
+            + j
+            + ((j // self.group) * self.gap if self.group else 0)
+        )
+
+
+@dataclass(frozen=True)
+class MachineSpec:
+    module: str
+    device: str
+    moddir: Path
+    sources: tuple[Path, ...]  # the DSP sources of the module for the device
+    entry: str
+    machine_type: int
+    params: tuple[Param, ...]
+    frame: Frame
+    declared: dict = field(default_factory=dict)  # the manifest's [conformance] table
+
+    @property
+    def label(self) -> str:
+        return f"{self.module}@{self.device}"
+
+    @property
+    def key(self) -> tuple:
+        """What decides the behaviour of the routine: two modules built from the same sources and parameters run once."""
+        return (self.device, self.sources, self.params)
+
+
+@cache
+def _manifest(moddir: Path) -> dict:
+    return tomllib.loads((moddir / "module.toml").read_text(encoding="utf-8"))
+
+
+def module_dirs() -> list[Path]:
+    return [p.parent for p in sorted((ROOT / "modules").glob("*/*/module.toml"))]
+
+
+def module_id(moddir: Path) -> str:
+    return moddir.relative_to(ROOT / "modules").as_posix()
+
+
+def moddir_of(mid: str) -> Path:
+    return ROOT / "modules" / mid
+
+
+def _entry_row(man: dict) -> tuple[str, str | None] | None:
+    """(entry symbol, literal type or None) of the module's voice."""
+    for v in man.get("voice", []):
+        return v["entry"], None
+    for e in man.get("entry", []):
+        if e.get("registry") == "voices" and isinstance(
+            e.get("pc"), str
+        ):  # core/dyndsp reserves rows with pc = 0
+            return e["pc"], e.get("type")
+    return None
+
+
+def _dsp_sources(man: dict, moddir: Path, device: str) -> tuple[Path, ...]:
+    out: list[Path] = []
+    for o in man.get("object", []):
+        if device not in o.get("devices", DEVICES):
+            continue
+        for s in o.get("sources", []):
+            if s.endswith(".s") and "dsp" in Path(s).parts:
+                out.append((moddir / s).resolve())
+    return tuple(out)
+
+
+def _type_number(mid: str, man: dict, device: str, literal: str | None) -> int:
+    if (
+        literal is not None
+        and str(literal).lstrip("-").isalnum()
+        and str(literal)[0].isdigit()
+    ):
+        return int(literal, 0)
+    types = tomllib.loads((ROOT / "modules/core/machines/types.toml").read_text())[
+        device
+    ]
+    mach = (man.get("machine") or [{}])[0].get("id") or (man.get("voice") or [{}])[
+        0
+    ].get("machine")
+    if literal is not None:  # "machines.<name>.index": the type allocated to <name>
+        mach = str(literal).split(".")[1]
+    key = f"{mid}:{mach}"
+    for table in ("alloc", "dynamic"):
+        if key in types.get(table, {}):
+            return int(types[table][key])
+    raise ConformError(
+        f"{mid}: no machine type for {key} in core/machines types.toml [{device}]"
+    )
+
+
+def _params(man: dict, device: str) -> tuple[Param, ...]:
+    machines = man.get("machine") or []
+    if not machines:
+        return ()
+    m = machines[0]
+    knobs = (
+        m.get(device, {}).get("knobs", m.get("knobs", []))
+        if device != "dt2"
+        else m.get("knobs", [])
+    )
+    decl = {p["id"]: p for p in man.get("param", [])}
+    out = []
+    for j, k in enumerate(knobs):
+        if isinstance(k, str) and k in decl:
+            p = decl[k]
+            out.append(Param(k, j, int(p["min"]), int(p["max"]), int(p["default"])))
+        elif isinstance(k, int) and k in STOCK_KNOBS:
+            name, lo, hi, dflt = STOCK_KNOBS[k]
+            out.append(Param(name, j, lo, hi, dflt))
+    return tuple(out)
+
+
+def spec(mid: str, device: str) -> MachineSpec | None:
+    """The spec of module MID on DEVICE, or None when the module is no machine with a DSP object for that device."""
+    if mid.split("/")[0] == "core":  # the framework renders no machine of its own
+        return None
+    moddir = moddir_of(mid)
+    man = _manifest(moddir)
+    row = _entry_row(man)
+    if row is None:
+        return None
+    sources = _dsp_sources(man, moddir, device)
+    if not sources:
+        return None
+    f = pk_device.load(device)["modules"]["frame"]
+    frame = Frame(f["base"], f["stride"], f.get("group", 0), f.get("gap", 0))
+    return MachineSpec(
+        mid,
+        device,
+        moddir,
+        sources,
+        row[0],
+        _type_number(mid, man, device, row[1]),
+        _params(man, device),
+        frame,
+        dict(man.get("conformance", {})),
+    )
+
+
+def machine_specs(negative: bool = False) -> list[MachineSpec]:
+    """Every (machine module, device) the suite runs (NEGATIVE fixtures only with `negative`)."""
+    out = []
+    for d in module_dirs():
+        if (module_id(d) in NEGATIVE) != negative:
+            continue
+        for dev in DEVICES:
+            s = spec(module_id(d), dev)
+            if s is not None:
+                out.append(s)
+    return out
+
+
+def is_machine_module(mid: str) -> bool:
+    return any(spec(mid, d) is not None for d in DEVICES)
+
+
+@dataclass(frozen=True)
+class Budget:
+    voice_block: int
+    note_on_block: int
+    headroom: int
+
+
+def budget(device: str, sp: MachineSpec | None = None) -> Budget:
+    block_cycles = (
+        pk_device.load(device)["board"]["dsp_clock_hz"]
+        // pk_device.load(device)["board"]["dsp_blocks_per_second"]
+    )
+    high = pk_dsp_budget.FACTORS[device]["high"]
+    stock_pct = 100.0 * STOCK_BUSY[device] * high / block_cycles
+    headroom = int(
+        (pk_dsp_budget.DEFAULT_BUDGET_PCT - stock_pct) / 100.0 * block_cycles / high
+    )
+    declared = sp.declared if sp else {}
+    return Budget(
+        int(declared.get("voice_block", headroom // VOICES)),
+        int(declared.get("note_on_block", headroom)),
+        headroom,
+    )
+
+
+# ---- cases ----------------------------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Case:
+    """A run on a fresh rig: `blocks` blocks, block k with the parameter words `words(k)`; a trigger at the blocks of `trig`."""
+
+    group: str
+    name: str
+    note: int
+    vel: int
+    words: tuple[
+        tuple[tuple[str, int], ...], ...
+    ]  # per block: (param id, word) pairs set before the block
+    blocks: int
+    trig: tuple[int, ...] = (0,)
+
+
+def _defaults(sp: MachineSpec) -> dict[str, int]:
+    return {p.id: p.default for p in sp.params}
+
+
+def cases(sp: MachineSpec) -> list[Case]:
+    out: list[Case] = []
+    dflt = _defaults(sp)
+
+    def static(
+        group: str, name: str, note: int, vals: dict[str, int], blocks: int = 1 + SETTLE
+    ) -> Case:
+        return Case(group, name, note, 100, (tuple(vals.items()),), blocks)
+
+    # 1. limits: every parameter at min, max, default and mid, the others at default, per note
+    for note in NOTES_LIMITS:
+        out.append(static("limits", f"all-default/note{note}", note, dflt))
+        for p in sp.params:
+            for tag, w in (("min", p.lo), ("max", p.hi), ("mid", p.mid)):
+                if w == p.default:
+                    continue
+                out.append(
+                    static(
+                        "limits", f"{p.id}={tag}/note{note}", note, {**dflt, p.id: w}
+                    )
+                )
+    # 2. corners: all parameters together at {min, max}, notes {0, 60, 127}
+    n = len(sp.params)
+    for note in NOTES_CORNERS:
+        for bits in range(1 << n):
+            vals = {
+                p.id: (p.hi if bits >> i & 1 else p.lo) for i, p in enumerate(sp.params)
+            }
+            tag = "".join("H" if bits >> i & 1 else "L" for i in range(n)) or "-"
+            out.append(static("corners", f"corner-{tag}/note{note}", note, vals))
+    # 3. per-block modulation: every parameter moved each block, a seeded random walk over its full range, and a square
+    #    wave between its limits (an LFO at the highest speed and depth)
+    for note in (24, 100):
+        rng = random.Random(0xC0FFEE + note)
+        pos = {p.id: float(p.default) for p in sp.params}
+        walk = []
+        for _ in range(WALK_BLOCKS):
+            row = []
+            for p in sp.params:
+                pos[p.id] += rng.uniform(-0.6, 0.6) * (p.hi - p.lo)
+                if pos[p.id] < p.lo:
+                    pos[p.id] = 2 * p.lo - pos[p.id]
+                if pos[p.id] > p.hi:
+                    pos[p.id] = 2 * p.hi - pos[p.id]
+                pos[p.id] = min(max(pos[p.id], p.lo), p.hi)
+                row.append((p.id, int(pos[p.id])))
+            walk.append(tuple(row))
+        out.append(
+            Case(
+                "modulation",
+                f"random-walk/note{note}",
+                note,
+                100,
+                tuple(walk),
+                WALK_BLOCKS,
+            )
+        )
+    square = tuple(
+        tuple((p.id, p.hi if (k + i) % 2 else p.lo) for i, p in enumerate(sp.params))
+        for k in range(WALK_BLOCKS)
+    )
+    out.append(
+        Case("modulation", "square-every-block/note60", 60, 100, square, WALK_BLOCKS)
+    )
+    # 4. long note, retriggers, velocity limits
+    dw = (tuple(dflt.items()),)
+    out.append(Case("long", "long-note/note60", 60, 100, dw, LONG_BLOCKS))
+    for vel in (1, 127):
+        out.append(
+            Case(
+                "retrigger",
+                f"retrigger-every-{RETRIG_EVERY}/vel{vel}",
+                60,
+                vel,
+                dw,
+                RETRIG_BLOCKS,
+                tuple(range(0, RETRIG_BLOCKS, RETRIG_EVERY)),
+            )
+        )
+    return out

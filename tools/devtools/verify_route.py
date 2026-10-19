@@ -12,6 +12,9 @@ Rules (docs/TESTING.md "What verify runs"):
   Framework modules (FRAMEWORK: every patched image includes them) select all of tests/patchkit
   and tests/digikit. Any other module selects the test files that name it or a module that
   requires it (transitively) and the digikit test files of the scenarios that name it. No PCM step.
+- a machine module (a DSP routine behind a `[[voice]]` or a voices `[[entry]]`, tools/patchkit/pk_conform.py), a module that one
+  depends on or builds from, and core/dsp-voice (the wrapper every routine runs through) also select the machine conformance
+  suite, CONFORMANCE (docs/TESTING.md "Machine conformance"). Its cases for every machine run in one file.
 - a module of tools/device: the unit tests that import it (and the importers of those) plus the
   digikit test files of the scenario kinds whose runners call it (DEVICE_KINDS).
 - a scenario file of tests/digikit/scenarios: the test files that run the scenario's kind.
@@ -30,6 +33,8 @@ from functools import cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+from tools.patchkit import pk_conform  # noqa: E402
 
 # Modules that every patched image or every runtime build includes: a change selects the whole
 # patchkit and digikit suites.
@@ -61,6 +66,8 @@ DEVICE_KINDS: dict[str, tuple[str, ...]] = {
 }
 BROAD_TASK_GROUPS = ("verify", "build", "gen", "setup")
 ALL_SUITES = ("tests/patchkit", "tests/digikit")
+CONFORMANCE = "tests/modules/test_machine_conformance.py"
+CONFORMANCE_WRAPPERS = frozenset({"core/dsp-voice"})
 # a path built from parts: ROOT / "modules" / "machines" / "pluck"
 SPLIT_ID_RE = re.compile(
     r"""["'](core|fx|machines|test)["']\s*[/,]\s*["']([a-z0-9][a-z0-9-]*)["']"""
@@ -245,8 +252,10 @@ def module_tests(mid: str) -> list[str]:
     """Pytest paths for a change in module MID (see the module docstring)."""
     hit = dependents({mid})
     if hit & FRAMEWORK:
-        return list(ALL_SUITES)
+        return [*ALL_SUITES, *([CONFORMANCE] if mid in CONFORMANCE_WRAPPERS else [])]
     tests = [t for t, ids in test_refs().items() if ids & hit]
+    if any(pk_conform.is_machine_module(m) for m in hit) and CONFORMANCE not in tests:
+        tests.append(CONFORMANCE)
     kinds = {
         kind for kind, ids in scenario_refs().values() if ids & hit
     } | runner_kinds(hit)

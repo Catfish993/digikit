@@ -95,6 +95,10 @@ description = "Oracle tests for the DT2 FX scenarios on the one-sample card (abo
 run = "uv run python -m pytest tests/scenarios --slow --sweep -q"
 description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"
 
+[tasks."module:check"]
+run = "uv run python -m tools.patchkit.pk_modcheck"
+description = "Check one module: `module:check NAME [--device dt2|dn2]`. A machine module runs the conformance suite (tests/modules/test_machine_conformance.py: every parameter at its limits, notes, modulation, long notes, retriggers; finite, bounded, returns, within the instruction budget), then the module's own tests (modules/<group>/<name>/tests, tests/**/test_*<name>*.py)"
+
 [tasks."verify:pre"]
 run = "uv run python -m tools.devtools.verify_pre"
 description = "Quick lane checks, NOT the merge gate (tools/devtools/verify_pre.py; -- --base BRANCH): ruff and mypy on the changed files, pathcheck, pk_build build-all --check, the changed test files, Rust tests of the affected crates; no emulator run"

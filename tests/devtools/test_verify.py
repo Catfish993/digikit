@@ -439,6 +439,44 @@ def test_module_scenario_modules_select_their_scenarios() -> None:
     )
 
 
+CONFORMANCE = "tests/modules/test_machine_conformance.py"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "modules/machines/pluck/module.toml",
+        "modules/machines/pluck/src/dsp/pluck_dn2.s",
+        "modules/test/sine-voice/src/dsp/sine_voice.s",
+        "modules/test/dn2-sine/module.toml",
+        "modules/core/dsp-voice/src/dsp/dsp-voice-dn2.s",
+    ],
+)
+def test_a_machine_change_selects_the_conformance_suite(path: str) -> None:
+    assert CONFORMANCE in selected(path)
+    assert "python-tests" in verify.steps_for([path])
+
+
+@pytest.mark.parametrize(
+    "path", ["modules/fx/master-gain/module.toml", "modules/core/params/module.toml"]
+)
+def test_other_modules_do_not_select_the_conformance_suite(path: str) -> None:
+    assert CONFORMANCE not in selected(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tools/patchkit/pk_conform.py",
+        "tools/patchkit/pk_sharc.py",
+        "tests/support/machine_rig.py",
+        "tests/support/conform_worker.py",
+    ],
+)
+def test_the_conformance_machinery_selects_the_conformance_suite(path: str) -> None:
+    assert "tests/modules" in selected(path)
+
+
 @pytest.mark.parametrize("module", sorted(verify_route.FRAMEWORK))
 def test_framework_module_selects_both_suites(module: str) -> None:
     path = f"modules/{module}/module.toml"
