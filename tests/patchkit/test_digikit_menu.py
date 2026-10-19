@@ -48,7 +48,7 @@ def test_module_toml_rules_are_the_generated_ones():
     """The [[anchor_rule]] blocks of module.toml are the output of pk_menu_rules (one place for the sites)."""
     text = (MODULE / "module.toml").read_text()
     assert text.strip().endswith(
-        pk_menu_rules.render(pk_menu_rules.build_rules("dt2-1.17")).strip()
+        pk_menu_rules.render(pk_menu_rules.build_rules("dt2-1.16")).strip()
     )
 
 
