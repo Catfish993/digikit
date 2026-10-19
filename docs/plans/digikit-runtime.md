@@ -411,9 +411,18 @@ New tools approved (Em, 2026-10-19): `sccache`, `cargo-nextest`, a test-impact t
    record) and RESTART (the soft reset the menu's APPLY & RESTART does) to the SysEx protocol; one flash, then no menu per change.
 2. [x] Screenshot (2026-10-19, lane dkrun: `tools/device/dkscreen.py`; the emulator answers the stock Screenshot and the 1024 bytes equal its frame capture, scenario `upload-screenshot`; not yet run on the device): the firmware's own MidiRpc `Screenshot` (0x04, 1024 bytes of the OLED shadow buffer; docs/MIDI-SYSEX-RPC.md) through
    `tools/device/devrpc.py`, written as PNG; no flash. Check it on 1.17.
-3. [ ] Verify speed: Rust tests for the crates whose dependencies changed, `cargo-nextest`, `sccache` across lanes, finer Python routing with the
-   slowest files chunked and unchanged files skipped, a 1-2 minute `verify:pre` for lanes. Measured before and after (baseline 2026-10-18: wall
-   881 s; python-tests 881 s, rust-tests 598 s, check-no-aot 492 s, tier-quick 421 s).
+3. [ ] Verify speed (the agreed list; history and evidence in ~/src/digi/VERIFY-PERFORMANCE-PLAN-2026-10-14.md). Three lanes in parallel (2026-10-19):
+   - [ ] v-route: finer routing in tools/devtools/verify.py (`mise.toml` only to the tasks it changes; `tools/device/*` to its tests;
+     `modules/X` to `cargo test -p patchkit` and the scenarios that include X), routing tests proving nothing is dropped; mise split into
+     `verify:pre` (lanes, 1-2 min), `verify` (routed; the merge gate), `verify:full` (generated-core changes); AGENTS.md and docs/TESTING.md.
+     Example: the runtime-4 merge (one `mise.toml` line) ran all 13 steps, about 25 min, for about 4 min of relevant tests.
+   - [ ] v-rust: Rust tests for affected crates only (reverse dependencies from `cargo metadata`, tools/devtools/rust_ws.py), `cargo-nextest`;
+     `verify:full` keeps the whole workspace. rust-tests today 260-600 s.
+   - [ ] v-slow: `tests/patchkit/test_pluck.py` sharded or cheapened (about 370 s alone; lever 2b, ceiling about 200 s); the SHARC `tests_gen`
+     differential tests only when their crate changed (lever 2a, about 100 s).
+   - [ ] Then, measured: `sccache` across lanes (only if it hits at the lanes' paths); why an emulator edit rebuilds so much (crate split).
+   Baseline 2026-10-18: wall 881 s; python-tests 881 s, rust-tests 598 s, check-no-aot 492 s, tier-quick 421 s. Approved tools: `sccache`,
+   `cargo-nextest`, a test-impact tool.
 4. [ ] DSP debugging: DSP peek over the DSP link (read-only), a SHARC exception handler writing the faulting PC and status into the reply record,
    a PC sampler on a DSP timer (where a hang loops; a profile of the real chip for SHARC performance and the cycle model). Modules where possible.
 5. [ ] Log levels (error, warn, info, debug, trace) per subsystem, set from the Mac at run time, besides DEBUG on/off; on-device timing of module routines.
