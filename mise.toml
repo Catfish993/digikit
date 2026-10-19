@@ -304,8 +304,20 @@ description = "Resolve the anchors and regions of a firmware into devices/ports/
 run = "uv run python -m tools.patchkit.patchkit pack"
 description = "Pack a run-time module as a .dkm: mise run pack -- test/dyn-pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"
 
+[tasks."dk:log"]
+run = "uv run --with python-rtmidi python -m tools.device.dklog"
+description = "The digikit runtime's debug log over USB: mise run dk:log -- --port Digitakt follow (or --emu follow; also crash, peek ADDR LEN, info)"
+
+[tasks."dk:screen"]
+run = "uv run --with python-rtmidi python -m tools.device.dkscreen"
+description = "Screenshot of the device or emulator display as PNG: mise run dk:screen -- --port Digitakt out/runs/shots/screen.png [--every S --count N]"
+
+[tasks."dk:store"]
+run = "uv run --with python-rtmidi python -m tools.device.dkupload"
+description = "The module store on the card: mise run dk:store -- --port Digitakt info | ls | put FILE.dkm modules/NAME.dkm | rm PATH | clear"
+
 [tasks."dk:run"]
-run = "uv run python -m tools.device.dkrun"
+run = "uv run --with python-rtmidi python -m tools.device.dkrun"
 description = "Build, pack, upload, select, restart and follow the log of a run-time module on a runtime-4 device or the emulator: mise run dk:run -- test/dyn-pluck --port Digitakt [--seconds 30] | --emu"
 
 [tasks."inject"]
