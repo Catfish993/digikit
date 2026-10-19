@@ -1,6 +1,6 @@
 //! `state.save` and `state.load`: a snapshot taken after some steps, restored into a freshly loaded
 //! runtime, gives the same state digest, and both go on the same way. Needs a stock firmware
-//! (`DT2_SYX`, else `firmware/Digitakt_II_OS1.17.syx` or 1.16); without one the test returns.
+//! (`DT2_SYX`, else the DT2 1.17 or 1.16 image in `firmware/`); without one the test returns.
 
 use std::{fs, path::PathBuf};
 
