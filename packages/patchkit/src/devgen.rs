@@ -29,6 +29,14 @@ struct Doc {
     board: Option<Board>,
     digikit: Option<Digikit>,
     card: Option<Card>,
+    limits: Option<Limits>,
+}
+#[derive(Deserialize)]
+struct Limits {
+    modules: u64,
+    machine_rows: u64,
+    arena_bytes: u64,
+    stage_bytes: u64,
 }
 #[derive(Deserialize)]
 struct Dev {
@@ -79,6 +87,14 @@ struct Entry {
     board: BoardF,
     digikit: DigikitF,
     store: StoreF,
+    limits: LimitsF,
+}
+#[derive(Debug)]
+struct LimitsF {
+    modules: u64,
+    machine_rows: u64,
+    arena_bytes: u64,
+    stage_bytes: u64,
 }
 #[derive(Debug)]
 struct BoardF {
@@ -119,7 +135,8 @@ impl Facts {
                 continue;
             };
             let short = d.device.short.clone();
-            let (Some(b), Some(k), Some(s)) = (d.board, d.digikit, d.card.and_then(|c| c.store))
+            let (Some(b), Some(k), Some(s), Some(l)) =
+                (d.board, d.digikit, d.card.and_then(|c| c.store), d.limits)
             else {
                 continue;
             };
@@ -175,6 +192,12 @@ impl Facts {
                             end: s.end_sector,
                             selection_sectors: s.selection_sectors,
                             header_b: s.header_b_sector,
+                        },
+                        limits: LimitsF {
+                            modules: l.modules,
+                            machine_rows: l.machine_rows,
+                            arena_bytes: l.arena_bytes,
+                            stage_bytes: l.stage_bytes,
                         },
                     },
                 )
@@ -381,6 +404,30 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "[digikit] keep_base (RAM a soft reset is assumed to keep: the crash record)",
         ),
         c("KEEP_BYTES", k.keep_bytes, Shared, "[digikit] keep_bytes"),
+        c(
+            "LIMIT_MODULES",
+            e.limits.modules,
+            Shared,
+            "[limits] modules (module records)",
+        ),
+        c(
+            "LIMIT_MACHINE_ROWS",
+            e.limits.machine_rows,
+            Shared,
+            "[limits] machine_rows (run-time machine and voice rows)",
+        ),
+        c(
+            "LIMIT_ARENA_BYTES",
+            e.limits.arena_bytes,
+            Shared,
+            "[limits] arena_bytes (the module arena)",
+        ),
+        c(
+            "LIMIT_STAGE_BYTES",
+            e.limits.stage_bytes,
+            Shared,
+            "[limits] stage_bytes (the staging buffer of a .dkm file)",
+        ),
         c(
             "PEEK_N",
             k.peek.len() as u64,

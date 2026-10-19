@@ -271,6 +271,7 @@ pub const E_BOOT_ONLY: i32 = -45; // `dkrt_load` after the boot hook: the module
 pub const E_RANGE: i32 = -46; // a card write outside the store range (refused by the one card-write function)
 pub const E_CARD_RO: i32 = -47; // the card's store area is not ours and not blank: the runtime never writes it (finding 46)
 pub const E_CONTRACT: i32 = -48; // the module was built for another SDK contract (major differs, or its minor is above the runtime's): rebuild it
+pub const E_TABLE: i32 = -49; // the runtime's tables failed their consistency check (`table::check`): no further load this boot
 
 /// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
 /// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.

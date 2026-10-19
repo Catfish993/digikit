@@ -16,6 +16,11 @@ fn the_contract_files_are_current() {
     for (rel, text) in files {
         let path = root().join(&rel);
         let have = std::fs::read_to_string(&path).unwrap_or_default();
-        assert_eq!(have, text, "{} is stale: run `patchkit gen`", path.display());
+        assert_eq!(
+            have,
+            text,
+            "{} is stale: run `patchkit gen`",
+            path.display()
+        );
     }
 }

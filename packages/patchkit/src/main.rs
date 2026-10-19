@@ -506,6 +506,7 @@ plan.json {}",
                 d.imports.len(),
                 d.sha256
             );
+            println!("size     {out}: {}", d.size_summary(file.len()));
         }
         "dkm-dsp-image" => {
             // the DSP image of a .dkm placed at the L2 byte address BASE, imports as NAME=VALUE: the reference loader
@@ -529,7 +530,9 @@ plan.json {}",
             println!("{}", patchkit::error::hex(&img));
         }
         "dkm-info" => {
-            let d = patchkit::dkm::Dkm::parse(&read(need(rest)?)?)?;
+            let raw = read(need(rest)?)?;
+            let file_len = raw.len();
+            let d = patchkit::dkm::Dkm::parse(&raw)?;
             println!("name      {}", d.name);
             println!(
                 "version   {}.{}.{}",
@@ -539,6 +542,7 @@ plan.json {}",
             );
             println!("runtime   >= {}", patchkit::dkm::fmt_runtime(d.runtime_min));
             println!("sha256    {}", d.sha256);
+            println!("size      {}", d.size_summary(file_len));
             println!(
                 "image     {} bytes, bss {}, align {}",
                 d.image.len(),

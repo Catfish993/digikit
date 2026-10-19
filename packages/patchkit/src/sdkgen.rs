@@ -65,13 +65,15 @@ fn runtime_parts(sdk: &Sdk) -> Result<(u8, u8, u8)> {
     let s = &sdk.runtime.version;
     let p: Vec<&str> = s.split('.').collect();
     if p.len() != 3 {
-        return Err(err!("{SOURCE}: runtime version {s:?}: expected major.minor.patch"));
+        return Err(err!(
+            "{SOURCE}: runtime version {s:?}: expected major.minor.patch"
+        ));
     }
     let mut v = [0u8; 3];
     for (i, x) in p.iter().enumerate() {
-        v[i] = x
-            .parse()
-            .map_err(|_| err!("{SOURCE}: runtime version {s:?}: each part is a number from 0 to 255"))?;
+        v[i] = x.parse().map_err(|_| {
+            err!("{SOURCE}: runtime version {s:?}: each part is a number from 0 to 255")
+        })?;
     }
     Ok((v[0], v[1], v[2]))
 }
@@ -125,7 +127,11 @@ fn parse(text: &str) -> Result<Sdk> {
     let mut last = 0;
     for k in &sdk.log.kind {
         if k.id <= last {
-            return Err(err!("{SOURCE}: kind {} ({}) is not in ascending order", k.id, k.name));
+            return Err(err!(
+                "{SOURCE}: kind {} ({}) is not in ascending order",
+                k.id,
+                k.name
+            ));
         }
         last = k.id;
         if k.args.len() != 5 {
@@ -157,7 +163,11 @@ fn rust(sdk: &Sdk) -> String {
     let mut s = format!("// {HEADER}\n\n");
     let rv = runtime_parts(sdk).expect("parse checked the runtime version");
     let _ = writeln!(s, "// {}.{}.{}", rv.0, rv.1, rv.2);
-    let _ = writeln!(s, "pub const RUNTIME_VERSION: u32 = {:#08x};\n", pack_runtime(rv));
+    let _ = writeln!(
+        s,
+        "pub const RUNTIME_VERSION: u32 = {:#08x};\n",
+        pack_runtime(rv)
+    );
     let c = &sdk.contract;
     s.push_str("pub mod contract {\n");
     for (n, v) in [
@@ -208,7 +218,11 @@ fn python(sdk: &Sdk) -> Result<String> {
             s.push_str(&one);
             s.push('\n');
         } else {
-            let _ = writeln!(s, "    {}: (\n        {:?},\n        ({args}),\n    ),", k.id, k.name);
+            let _ = writeln!(
+                s,
+                "    {}: (\n        {:?},\n        ({args}),\n    ),",
+                k.id, k.name
+            );
         }
     }
     s.push_str("}\n");

@@ -1,5 +1,7 @@
 """pk_mem: the readout arithmetic on a synthetic region table and plan (no firmware, no placement run)."""
 
+import json
+
 from tools.patchkit import pk_mem as m
 
 PORT = {
@@ -50,6 +52,33 @@ def test_no_plan_shows_the_free_regions():
     u = m.usage(m.regions_of(PORT), None)
     assert [r["free"] for r in u["regions"]] == [0x1000, 0xC000]
     assert u["modules"] == []
+
+
+def test_runtime_bytes_sums_built_sections_per_device(tmp_path):
+    base = tmp_path / "modules" / "core" / "runtime"
+    (base / "build").mkdir(parents=True)
+
+    def dko(arch, *sizes):
+        return json.dumps(
+            {
+                "arch": arch,
+                "sections": [{"kind": k, "size": n} for k, n in sizes],
+            }
+        )
+
+    (base / "build" / "a.dko.json").write_text(dko("cf", ("text", 100), ("bss", 999)))
+    (base / "build" / "b.dko.json").write_text(dko("cf", ("data", 8)))
+    (base / "build" / "c.dko.json").write_text(dko("sharc", ("text", 40)))
+    (base / "module.toml").write_text(
+        '[[object]]\npath = "build/a.dko.json"\n'
+        '[[object]]\npath = "build/b.dko.json"\ndevices = ["dn2"]\n'
+        '[[object]]\npath = "build/c.dko.json"\ndevices = ["dt2"]\n'
+    )
+    assert m.runtime_bytes("dt2", tmp_path) == {"cf": 100, "dsp": 40}
+    assert m.runtime_bytes("dn2", tmp_path) == {"cf": 108, "dsp": 0}
+    assert "100 bytes ColdFire" in m.runtime_line({"cf": 100, "dsp": 40})
+    (base / "build" / "c.dko.json").unlink()
+    assert m.runtime_bytes("dt2", tmp_path) is None
 
 
 def test_real_port_files_parse():

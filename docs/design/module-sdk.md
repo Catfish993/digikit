@@ -680,7 +680,7 @@ Scope: what the SDK contract and the adapter must provide. The tools and the tra
 | Item | Fact |
 | --- | --- |
 | log | 512 events of 32 bytes in RAM: `seq`, block-counter `time`, `kind`, `flags` (bit 0 error), five words; DEBUG off keeps errors only (`dlog.rs:13-60`; `46-digikit-debug.md:56-58`) |
-| switch | DEBUG on/off, remembered in the selection record (`FLAG_DEBUG_OFF`, `sdk/src/lib.rs:337`); no levels, no categories |
+| switch | DEBUG on/off, remembered in the selection record (`FLAG_DEBUG_OFF`, `modules/core/runtime/sdk/src/lib.rs:337`); no levels, no categories |
 | transport | SysEx LOG 0x20, PEEK 0x21, INFO (`upload.rs:36-45`); the emulator answers the same (`dklog.py --emu`); one decoder, `tools/device/dklog.py` (`KINDS`, :111), a hand copy of `dkrt_sdk::logk` (`lib.rs:866`) |
 | module logging | ColdFire only: `Api.log(msg, value)`, 24 characters, kind MOD_LOG (14), no module id (`digikit-runtime.md:82`, `46-digikit-debug.md`, table row 14) |
 | DSP | no API. The wrapper writes fixed words: heartbeat, context registers, breadcrumb, dispatch and return counters, guard words, 24 words in the reply record (`dlog.rs:123-134`; `48-dsp-breadcrumbs.md:8-40`; `51:59-62`) |

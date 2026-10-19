@@ -39,6 +39,7 @@ pub mod logk {
     pub const MACHINE_CHANGE: u16 = 26;
     pub const MACHINE_FAULT: u16 = 27;
     pub const MACHINE_DISABLED: u16 = 28;
+    pub const TABLE_BAD: u16 = 29;
     pub const MENU_SELECT: u32 = 1;
     pub const MENU_RESTART: u32 = 2;
     pub const MENU_DEBUG: u32 = 3;

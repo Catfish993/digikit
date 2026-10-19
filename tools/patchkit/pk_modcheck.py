@@ -15,6 +15,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,6 +62,32 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
     return paths, env
 
 
+def size_lines(mid: str, devices: list[str]) -> list[str]:
+    """The `size` line of `patchkit pack` for module MID, once per device (design rule D5). A module that does not pack
+    (no ColdFire object, or several, e.g. a patched-in module) gets a "not packed" line with the reason."""
+    from tools.patchkit import patchkit
+
+    lines: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="pk-modcheck-") as tmp:
+        for dev in devices:
+            out = Path(tmp) / f"{mid.rsplit('/', 1)[-1]}-{dev}.dkm"
+            r = patchkit.run(
+                ["pack", mid, "--device", dev, "-o", str(out)], capture=True
+            )
+            if r.returncode:
+                why = (r.stderr or r.stdout).strip().splitlines()
+                lines.append(
+                    f"{dev}: size     not packed ({why[-1] if why else 'pack failed'})"
+                )
+                continue
+            lines += [
+                f"{dev}: size     {ln.split(': ', 1)[-1]}"
+                for ln in r.stdout.splitlines()
+                if ln.startswith("size ")
+            ]
+    return lines
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("name")
@@ -86,7 +113,13 @@ def main() -> int:
         "-rf",
         *paths,
     ]
-    return subprocess.run(cmd, cwd=ROOT, env={**os.environ, **env}).returncode
+    rc = subprocess.run(cmd, cwd=ROOT, env={**os.environ, **env}).returncode
+    if rc == 0:
+        for line in size_lines(
+            mid, [a.device] if a.device else list(pk_conform.DEVICES)
+        ):
+            print(line, flush=True)
+    return rc
 
 
 if __name__ == "__main__":

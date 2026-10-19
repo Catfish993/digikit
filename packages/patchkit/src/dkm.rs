@@ -358,6 +358,23 @@ pub struct Dkm {
 }
 
 impl Dkm {
+    /// The size breakdown of a file of `total` bytes: `<total> bytes (image <n>, bss <n>, reloc <n>, import <n>, registry <n>, dsp <n>)`.
+    /// The file is the 0xa0-byte header, the import, reloc and slot tables, the registry, the DSP section and the image, in
+    /// that order, with padding to 16 before the DSP section and the image. So `total` = header + slots (8 bytes each,
+    /// not listed) + padding (under 32) + image + reloc (8 bytes each) + import (32 bytes each) + registry + dsp; `bss` is
+    /// memory the loader adds, not file bytes.
+    pub fn size_summary(&self, total: usize) -> String {
+        format!(
+            "{total} bytes (image {}, bss {}, reloc {}, import {}, registry {}, dsp {})",
+            self.image.len(),
+            self.bss,
+            self.relocs.len() * 8,
+            self.imports.len() * IMPORT_LEN,
+            self.register.len(),
+            self.dsp.len()
+        )
+    }
+
     /// Parse and check a file the way the runtime does: magic, sizes, bounds, sha256.
     pub fn parse(f: &[u8]) -> Result<Dkm> {
         if f.len() < HEADER || get(f, 0) != MAGIC {

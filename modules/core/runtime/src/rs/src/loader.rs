@@ -44,8 +44,18 @@ unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
     off <= size && len <= size - off
 }
 
-/// Validate and load the `.dkm` at `path`. See `dkrt_load`.
+/// Validate and load the `.dkm` at `path`. See `dkrt_load`. The tables are checked after every attempt, and none starts once a check has
+/// failed (`table::check`).
 pub unsafe fn load(path: *const u8) -> i32 {
+    if crate::table::bad() {
+        return E_TABLE;
+    }
+    let r = load_inner(path);
+    crate::table::check();
+    r
+}
+
+unsafe fn load_inner(path: *const u8) -> i32 {
     dsp::init_once();
     // the module set is fixed per session: only the boot hook loads (hot reload is archived, docs/plans/digikit-hot-reload.md)
     if !EARLY {
@@ -395,8 +405,14 @@ pub static mut BOOT_IDX: u32 = u32::MAX;
 
 /// Take module record `rec` down: slots, wait for tasks inside, `fini`, machine rows, DSP voice rows and range, memory. Used only
 /// by the DSP loader when the DSP part of a module published at boot fails (`undo_early`). The run-time `unload` that also called
-/// it (with the in-use scan) is archived with hot reload.
+/// it (with the in-use scan) is archived with hot reload. The tables are checked after it (`table::check`).
 pub unsafe fn unload_rec(rec: usize) -> i32 {
+    let r = unload_rec_inner(rec);
+    crate::table::check();
+    r
+}
+
+unsafe fn unload_rec_inner(rec: usize) -> i32 {
     let s = st();
     let m: &mut Module = &mut s.modules[rec];
     // 1. clear the slots (one aligned store each) so no new call starts

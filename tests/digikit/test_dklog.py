@@ -29,7 +29,7 @@ def word(s):
 
 
 def test_every_kind_has_a_name_and_five_arguments():
-    assert sorted(L.KINDS) == list(range(1, 29))
+    assert sorted(L.KINDS) == list(range(1, len(L.KINDS) + 1))
     assert all(len(v[1]) == 5 for v in L.KINDS.values())
     assert len(set(v[0] for v in L.KINDS.values())) == len(L.KINDS)
 

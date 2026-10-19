@@ -171,3 +171,8 @@ args = ["type_voice", "kind_faults", "p01", "p23", "p45"]
 id = 28
 name = "MACHINE_DISABLED"
 args = ["type", "disabled", "faults", "-", "-"]
+
+[[log.kind]]
+id = 29
+name = "TABLE_BAD"
+args = ["invariant", "module", "a", "b", "-"]

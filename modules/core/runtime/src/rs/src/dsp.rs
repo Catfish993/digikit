@@ -38,6 +38,8 @@ const L2_SW_BASE: u32 = 0x00B8_0000;
 const TYPE_FIRST: u32 = device::DYN_TYPE_FIRST;
 const TYPE_LAST: u32 = device::DYN_TYPE_LAST;
 const DYN_TYPES: u32 = device::DYN_TYPES;
+// the row count of the runtime's tables (`[limits] machine_rows`) is the count of run-time machine types that the firmware tables reserve
+const _: () = assert!(device::LIMIT_MACHINE_ROWS == device::DYN_TYPES);
 /// A free voice row's type: no machine type equals it.
 const FREE_TYPE: u32 = 0xffff_ffff;
 /// UI-loop passes a phase may last before the load is given up.

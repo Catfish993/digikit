@@ -2,10 +2,7 @@
 
 use patchkit::firmware::Firmware;
 
-const FILES: [&str; 2] = [
-    "Digitakt_II_OS1.17.syx",
-    "Digitone_II_OS1.12.syx",
-];
+const FILES: [&str; 2] = ["Digitakt_II_OS1.17.syx", "Digitone_II_OS1.12.syx"];
 
 fn read(name: &str) -> Option<Vec<u8>> {
     std::fs::read(format!(

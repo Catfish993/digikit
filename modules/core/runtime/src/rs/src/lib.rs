@@ -24,6 +24,7 @@ mod loader;
 pub mod registry;
 mod sha256;
 mod store;
+mod table;
 pub mod upload;
 
 #[panic_handler]
@@ -33,10 +34,10 @@ fn panic(_: &PanicInfo) -> ! {
 
 /// Arena bytes. A sub-region of `cf.expansion` that is part of this object's bss: patchkit places it with the object, so no
 /// static object of any module can overlap it, and the reset-path loader zeroes it.
-pub const ARENA_BYTES: usize = 512 * 1024;
+pub const ARENA_BYTES: usize = dkrt_sdk::device::LIMIT_ARENA_BYTES as usize;
 /// Staging buffer for a `.dkm` file (and the store directory): files are at most this size in v0.
-pub const STAGE_BYTES: usize = 64 * 1024;
-pub const MAX_MODULES: usize = 8;
+pub const STAGE_BYTES: usize = dkrt_sdk::device::LIMIT_STAGE_BYTES as usize;
+pub const MAX_MODULES: usize = dkrt_sdk::device::LIMIT_MODULES as usize;
 pub const LOG_ENTRIES: usize = 16;
 pub const STATE_MAGIC: u32 = 0x444b_5254; // "DKRT"
 

@@ -14,7 +14,7 @@ the duplicate refused), the module's counter rising while the UI task runs, and 
 old unload) is refused as unknown. The write-watch on `cf.expansion` (the runtime's code and the arena allowed as writers) and
 the flush check run through all of it. Prints one JSON report; exit status 0 when every check holds.
 
-The state layout peeked here is `State` and `Mailbox` in modules/core/runtime/src/rs/src/lib.rs and sdk/src/lib.rs.
+The state layout peeked here is `State` and `Mailbox` in modules/core/runtime/src/rs/src/lib.rs and modules/core/runtime/sdk/src/lib.rs.
 """
 
 from __future__ import annotations
@@ -412,6 +412,7 @@ def proof(
             "tag": "late_direct",
         },
         peek("state1", st, STATE_BYTES),
+        peek("table_bad", sym["DKRT_TABLE_BAD"], 4),
         run(RUN, "r3"),
         peek("c4", counter_ptr, 16, ptr=True),
     ]
@@ -475,6 +476,9 @@ def proof(
           and by["late_direct"]["d0"] == (E_BOOT_ONLY & 0xFFFFFFFF), str(by["late_direct"]))  # fmt: skip
     check("the late requests changed nothing (one module, one load)",
           be32(s1, ST_LOADS) == 1 and be32(s1, m0) == 1, f"loads {be32(s1, ST_LOADS)}")  # fmt: skip
+    # the table check (table.rs) ran after every boot-time load attempt; it logs TABLE_BAD and sets this byte when an invariant failed
+    check("table check: no TABLE_BAD (the runtime's tables stayed consistent through the boot loads)",
+          raw("table_bad")[0] == 0, f"DKRT_TABLE_BAD {raw('table_bad')[0]}")  # fmt: skip
     summary = json.loads((work / "ww.summary.json").read_text())
     if control:
         check(
