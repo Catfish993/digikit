@@ -412,11 +412,11 @@ New tools approved (Em, 2026-10-19): `sccache`, `cargo-nextest`, a test-impact t
 2. [x] Screenshot (2026-10-19, lane dkrun: `tools/device/dkscreen.py`; the emulator answers the stock Screenshot and the 1024 bytes equal its frame capture, scenario `upload-screenshot`; not yet run on the device): the firmware's own MidiRpc `Screenshot` (0x04, 1024 bytes of the OLED shadow buffer; docs/MIDI-SYSEX-RPC.md) through
    `tools/device/devrpc.py`, written as PNG; no flash. Check it on 1.17.
 3. [ ] Verify speed (the agreed list; history and evidence in ~/src/digi/VERIFY-PERFORMANCE-PLAN-2026-10-14.md). Three lanes in parallel (2026-10-19):
-   - [ ] v-route: finer routing in tools/devtools/verify.py (`mise.toml` only to the tasks it changes; `tools/device/*` to its tests;
+   - [x] v-route (commit 632dc41b): finer routing in tools/devtools/verify.py (`mise.toml` only to the tasks it changes; `tools/device/*` to its tests;
      a module's files to `cargo test -p patchkit` and the scenarios that include X), routing tests proving nothing is dropped; mise split into
      `verify:pre` (lanes, 1-2 min), `verify` (routed; the merge gate), `verify:full` (generated-core changes); AGENTS.md and docs/TESTING.md.
      Example: the runtime-4 merge (one `mise.toml` line) ran all 13 steps, about 25 min, for about 4 min of relevant tests.
-   - [ ] v-rust: Rust tests for affected crates only (reverse dependencies from `cargo metadata`, tools/devtools/rust_ws.py), `cargo-nextest`;
+   - [x] v-rust (commit 632dc41b; nextest not installed, not used): Rust tests for affected crates only (reverse dependencies from `cargo metadata`, tools/devtools/rust_ws.py), `cargo-nextest`;
      `verify:full` keeps the whole workspace. rust-tests today 260-600 s.
    - [ ] v-slow: `tests/patchkit/test_pluck.py` sharded or cheapened (about 370 s alone; lever 2b, ceiling about 200 s); the SHARC `tests_gen`
      differential tests only when their crate changed (lever 2a, about 100 s).
