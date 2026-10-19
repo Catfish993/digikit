@@ -3,7 +3,7 @@
 //!
 //! usage: sharc_live SYX DSP_STATE DSP_IMAGE OUT.wav [EXTRA_AFTER_READY=250000000]
 //!   DSP_STATE  canonical SHRD state blob (a DN2 continuation; private)
-//!   DSP_IMAGE  packed loader image: `uv run python -m tools.sharc_dev.sharc_pack_image dn2-1.11 OUT`
+//!   DSP_IMAGE  packed loader image: `uv run python -m tools.sharc_dev.sharc_pack_image dn2-1.12 OUT`
 //!   OUT.wav    48 kHz stereo 32-bit float; OUT.q31 raw words; OUT.csv per frame
 //! env: NOTE_EVENTS=trig|play (see common/mod.rs), DSP_PERIOD (instructions
 //!   per frame, default 666667), DSP_CLOCK_BASE (default 573627620),

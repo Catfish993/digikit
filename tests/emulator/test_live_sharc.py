@@ -4,8 +4,8 @@ the Python replay.
 Needs firmware-derived files under out/ that these tests never build
 themselves (each is minutes of Python):
 
-    uv run python -m tools.sharc_dev.sharc_transpile_run live-pack dt2-1.16 CAPTURE --lp0 LOG
-    uv run python -m tools.sharc_dev.sharc_transpile_run live-ref dt2-1.16 CAPTURE --lp0 LOG --frames 24
+    uv run python -m tools.sharc_dev.sharc_transpile_run live-pack dt2-1.17 CAPTURE --lp0 LOG
+    uv run python -m tools.sharc_dev.sharc_transpile_run live-ref dt2-1.17 CAPTURE --lp0 LOG --frames 24
 
 plus the native core library (out/native/opt/target-final, or
 $SHARC_NATIVE_LIB) and ``cd packages/emulator/live && cargo build --release``. The
@@ -31,7 +31,7 @@ from tools.emulator.live_audio import (  # noqa: E402
 )
 from tools.sharc_dev import sharc_transpile_run as tr  # noqa: E402
 
-IMAGE = "dt2-1.16"
+IMAGE = "dt2-1.17"
 CAPTURE = ROOT / "out/captures/drive3/dt2-1.16-drive3-trig1-emac.dt2cap"
 LP0 = ROOT / "out/captures/drive3/flexbus-drive3.raw"
 START = 74

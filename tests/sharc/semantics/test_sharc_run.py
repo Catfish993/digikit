@@ -30,7 +30,7 @@ L = import_module("tools.sharc_dev.sharcldr")
 h = import_module("tools.sharc_dev.sharc_harness")
 
 ROOT = str(REPO_ROOT)
-DT2_116_BLOB = pathlib.Path(ROOT) / "out/sections/dt2-1.16/section_7_BLOB.bin"
+DT2_116_BLOB = pathlib.Path(ROOT) / "out/sections/dt2-1.17/section_7_BLOB.bin"
 
 
 class ResetUregsTest(unittest.TestCase):
@@ -835,7 +835,7 @@ class InitSnapshotFirmwareTest(unittest.TestCase):
     )
 
     def test_snapshot_round_trip_matches_a_full_init_run(self):
-        memory = sr._load_image_memory("dt2-1.16")
+        memory = sr._load_image_memory("dt2-1.17")
         runner = sr.Runner(
             memory,
             self.INIT_SW,
@@ -872,7 +872,7 @@ class WatchpointFirmwareTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
 
     def test_write_watchpoint_on_raw_record_address_fires_through_the_alias(self):
         # Bug 1: a Watchpoint given in the same raw, unaliased terms
@@ -891,11 +891,11 @@ class WatchpointFirmwareTest(unittest.TestCase):
         # setup_voice()'s own ACTIVE=1 poke runs *before* the watchpoint is
         # attached below, so it can never be what this test's watchpoint
         # fires on.
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         state = runner.state
         h._write_samples(state, 0x310000, [0.5] * 40, "int16")
         record = h.setup_voice(
-            state, "dt2-1.16", 0, sample_len=40, sample_base=0x310000
+            state, "dt2-1.17", 0, sample_len=40, sample_base=0x310000
         )
         # A real, still-unmapped low DM address -- the exact case that never
         # fired before this fix.
@@ -911,7 +911,7 @@ class WatchpointFirmwareTest(unittest.TestCase):
                 )
             ]
         )
-        result, _floats = h.call_render(runner, "dt2-1.16", record)
+        result, _floats = h.call_render(runner, "dt2-1.17", record)
 
         self.assertEqual(result.halt.reason, "watchpoint")
         writes = [e for e in runner.watch_log if e.access == "write"]
@@ -936,15 +936,15 @@ class WatchpointFirmwareTest(unittest.TestCase):
         # the watched range below (0:4) is deliberately far from anything
         # the render touches, to isolate "any read watchpoint exists" from
         # "the watchpoint's own range matters" as the trigger.
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         state = runner.state
         h._write_samples(state, 0x310000, [0.5] * 256, "int16")
         record = h.setup_voice(
-            state, "dt2-1.16", 0, sample_len=256, sample_base=0x310000
+            state, "dt2-1.17", 0, sample_len=256, sample_base=0x310000
         )
         runner.attach_watchpoints([sr.Watchpoint(0, 4, on_write=False, stop=False)])
 
-        result, floats = h.call_render(runner, "dt2-1.16", record)  # must not raise
+        result, floats = h.call_render(runner, "dt2-1.17", record)  # must not raise
 
         self.assertEqual(result.halt.reason, "return without followed call")
         self.assertEqual(len(floats), 64)

@@ -3,9 +3,9 @@ import { describe, expect, test } from 'vitest';
 import { golden } from '@digi/test-support';
 import { armFreeRegionGuard, expectNoGuardHits, withSession } from '../support.ts';
 
-const GOLDENS = path.join(import.meta.dirname, '..', 'goldens', 'dt2-1.16.json');
+const GOLDENS = path.join(import.meta.dirname, '..', 'goldens', 'dt2-1.17.json');
 
-const h = withSession({ device: 'dt2', firmware: '1.16', dsp: 'zero' });
+const h = withSession({ device: 'dt2', firmware: '1.17', dsp: 'zero' });
 
 describe('dt2 transport', () => {
   test('PLAY, 1 s, STOP', async () => {

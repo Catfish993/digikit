@@ -26,7 +26,8 @@ T = importlib.import_module("tools.sharc_dev.sharc_visa_tables")
 sharcldr = importlib.import_module("tools.sharc_dev.sharcldr")
 
 
-BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
+# discovery manifest recorded on 1.16 (same DSP blob as 1.17)
 MANIFEST = pathlib.Path("tools/sharc_dev/sharc-discovery/dt2-1.16.json")
 
 

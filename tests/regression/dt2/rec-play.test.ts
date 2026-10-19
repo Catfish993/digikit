@@ -5,11 +5,11 @@ import { armFreeRegionGuard, expectNoGuardHits, withSession } from '../support.t
 
 // Replays tests/scenarios/dt2.json "dt2-rec-play" (exact_events: events land at their at_instr). The reference is
 // `coupled-run --dsp zero --trace` on the same scenario (out/c4/proof-B.json trace).
-const GOLDENS = path.join(import.meta.dirname, '..', 'goldens', 'dt2-1.16.json');
+const GOLDENS = path.join(import.meta.dirname, '..', 'goldens', 'dt2-1.17.json');
 const TOTAL = 792_000_000; // 6 s
 const MAX_STEP = 200_000_000;
 
-const h = withSession({ device: 'dt2', firmware: '1.16', dsp: 'zero', restart: false });
+const h = withSession({ device: 'dt2', firmware: '1.17', dsp: 'zero', restart: false });
 
 describe('dt2 rec-play', () => {
   test('replay to 6 s', async () => {

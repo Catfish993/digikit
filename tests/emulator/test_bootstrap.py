@@ -12,9 +12,9 @@ from support.paths import REPO_ROOT
 from tools.firmware import config
 
 ROOT = REPO_ROOT
-SYX = config.stock("Digitakt_II_OS1.16.syx")
+SYX = config.stock("Digitakt_II_OS1.17.syx")
 pytestmark = pytest.mark.skipif(
-    not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in firmware/"
+    not SYX.exists(), reason="needs Digitakt_II_OS1.17.syx in firmware/"
 )
 
 

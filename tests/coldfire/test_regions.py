@@ -16,8 +16,8 @@ def _need(image):
 @pytest.mark.parametrize(
     "image, clear, copies_end, cave",
     [
-        ("dt2-1.16", (0x40312000, 0x47E28470), 0x4031FF60, (0x403117C4, 2108)),
-        ("dn2-1.11", (0x402FC000, 0x466B74D0), 0x4030B980, (0x402FB7A8, 2136)),
+        ("dt2-1.17", (0x40312000, 0x47E28470), 0x4031FF60, (0x403117C4, 2108)),
+        ("dn2-1.12", (0x402FD000, 0x466B84D0), 0x4030C980, (0x402FC7A8, 2136)),
     ],
 )
 def test_reset_facts_and_flash_cave(image, clear, copies_end, cave):

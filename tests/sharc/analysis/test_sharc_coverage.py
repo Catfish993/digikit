@@ -16,7 +16,7 @@ from tools.sharc_dev import (
     sharcldr,  # noqa: E402
 )
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 
 
 class RawLeBytesTest(unittest.TestCase):
@@ -28,7 +28,7 @@ class RawLeBytesTest(unittest.TestCase):
         self.assertEqual(sharc_coverage._raw_le_bytes(0xC000, 2), b"\x00\xc0")
 
     def test_three_words(self):
-        # w0=0x0a3e, w1=0x0400, w2=0x0000 -- a real dt2-1.16 example (sw
+        # w0=0x0a3e, w1=0x0400, w2=0x0000 -- a real dt2-1.17 example (sw
         # 0x1c0701's insn.raw) that first exposed the naive
         # bytes.fromhex(raw_hex) comparison bug this function replaces.
         raw = 0x0A3E04000000
@@ -79,7 +79,7 @@ class CompareDecodeAtTest(unittest.TestCase):
         # memory at all: decode_at can't agree or disagree with bytes it
         # cannot read, so this is not a decode mismatch (see
         # tools/sharc_dev/sharc_coverage.compare_decode_at's docstring -- this is the
-        # dt2-1.16 block-1 case, reproduced minimally).
+        # dt2-1.17 block-1 case, reproduced minimally).
         mem = sharcldr.LoadedMemory.from_stream(b"")
         rows = [(0x2000, 2, "c000", "2c", "{}")]
         img = _FakeImage("fake", mem, rows)
@@ -131,13 +131,13 @@ class CompareDecodeAtTest(unittest.TestCase):
 class RealImageAgreementTest(unittest.TestCase):
     """The acceptance fact behind the "One decode path" fix: decode_at()
     agrees with the database's own successor-confidence decode at every
-    aligned instruction of the real dt2-1.16 image (a few thousand rows are
+    aligned instruction of the real dt2-1.17 image (a few thousand rows are
     skipped as stale_bytes -- see compare_decode_at()'s docstring and
     docs/findings/05-sharc-isa-and-decoding.md; that is a loader-block
     lifecycle artifact, not a decode disagreement)."""
 
     def test_decode_at_matches_database_for_every_aligned_instruction(self):
-        img = sharc.load("dt2-1.16")
+        img = sharc.load("dt2-1.17")
         result = sharc_coverage.compare_decode_at(img)
         self.assertEqual(
             result["mismatches"],

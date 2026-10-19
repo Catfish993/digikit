@@ -3,7 +3,7 @@
 Two groups, the same convention tests/sharc/integration/test_sharc_replay.py uses: pure
 helpers (the CLI's own key=value parsers, MmrWrite's own to_json/__str__)
 need no firmware and always run; trace_mmr_writes() itself needs the real
-DT2 1.16 SHARC+ image bytes (out/sections/dt2-1.16/section_7_BLOB.bin --
+DT2 1.17 SHARC+ image bytes (out/sections/dt2-1.17/section_7_BLOB.bin --
 Elektron's copyright, never committed here) and is skipped without them.
 """
 
@@ -16,7 +16,7 @@ from tools.sharc_dev import sharc_dmamap as dm  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 
 
 class ParseRegsTest(unittest.TestCase):
@@ -95,8 +95,8 @@ class TraceMmrWritesTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        memory = h.load_image_memory("dt2-1.16")
-        init = h.run_init(memory, "dt2-1.16")
+        memory = h.load_image_memory("dt2-1.17")
+        init = h.run_init(memory, "dt2-1.17")
         assert init.ran, "run_init() must succeed for this test to mean anything"
         cls.init = init
 

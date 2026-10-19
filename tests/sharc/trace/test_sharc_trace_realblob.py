@@ -1,4 +1,4 @@
-"""Symbolic tracer on the real DT2 1.16 blob."""
+"""Symbolic tracer on the real DT2 1.17 blob."""
 
 import hashlib
 import os
@@ -30,7 +30,7 @@ class RealBlobStage6NormalWordAddressingTest(unittest.TestCase):
         str(REPO_ROOT),
         "out",
         "sections",
-        "dt2-1.16",
+        "dt2-1.17",
         "section_7_BLOB.bin",
     )
     # CLAUDE.md / the handover's own record of this exact loader-final blob.
@@ -78,7 +78,7 @@ class RealBlobStage6NormalWordAddressingTest(unittest.TestCase):
 
     @unittest.skipUnless(
         os.path.exists(BLOB),
-        "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+        "out/sections/dt2-1.17/section_7_BLOB.bin is not available",
     )
     def test_type4a_store_and_type15a_load_agree_on_the_persisted_local(self):
         with open(self.BLOB, "rb") as fh:
@@ -168,7 +168,7 @@ class TypeCacheCompareRealBlobTest(unittest.TestCase):
         str(REPO_ROOT),
         "out",
         "sections",
-        "dt2-1.16",
+        "dt2-1.17",
         "section_7_BLOB.bin",
     )
 
@@ -231,14 +231,14 @@ class TypeCacheCompareRealBlobTest(unittest.TestCase):
 
     @unittest.skipUnless(
         os.path.exists(BLOB),
-        "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+        "out/sections/dt2-1.17/section_7_BLOB.bin is not available",
     )
     def test_matching_cached_and_live_type_does_not_write(self):
         self.assertIsNone(self.run_type_cache_compare(cached=6, live=6, m14=0xAAAA))
 
     @unittest.skipUnless(
         os.path.exists(BLOB),
-        "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+        "out/sections/dt2-1.17/section_7_BLOB.bin is not available",
     )
     def test_mismatched_type_writes_the_second_store_register(self):
         result = self.run_type_cache_compare(cached=6, live=7, m14=0xAAAA)

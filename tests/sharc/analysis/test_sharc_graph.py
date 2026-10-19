@@ -1,6 +1,6 @@
 """Checks for tools/sharc_dev/sharc.py's networkx graph layer (cfg/callgraph/defuse/
-slice) against the real dt2-1.16 program database (out/sharcdb/
-dt2-1.16.sqlite -- see the worktree's `out`/`sections` symlinks). Skipped,
+slice) against the real dt2-1.17 program database (out/sharcdb/
+dt2-1.17.sqlite -- see the worktree's `out`/`sections` symlinks). Skipped,
 not marked slow: it only opens the already-built database, the same thing
 tools/sharc_dev/sharc.py itself does by default (see tests/sharc/analysis/test_sharc_contract.py).
 
@@ -17,7 +17,7 @@ import unittest
 
 from tools.sharc_dev import sharc  # noqa: E402
 
-DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
+DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.17.sqlite")
 
 FUN_1C4F81 = 0x1C4F81  # entry of the wavetable-oscillator function
 CLEAR_SITE_1 = 0x1C5008
@@ -27,7 +27,7 @@ LOAD_SW = 0x1C5004  # `R2 = DM(I4, M4) u=0`, defines the R2 leftz consumes
 LIT_SW = 0x1C5002  # `M4 = 0x1bc`, defines the M4 the load above uses
 
 # A real Type18a system bit-test/xor-test (bop 4/5) and the BTF-reading
-# branch right after it, in dt2-1.16's own image: FUN_0xb88200's
+# branch right after it, in dt2-1.17's own image: FUN_0xb88200's
 # `bit-test(MODE1STK, mask=0x10000) -> BTF` at BTF_WRITE_SW, consumed by
 # `JUMP IF TF non-delayed` at BTF_BRANCH_SW. Before this file's own
 # per-group ASTAT modelling, defuse()'s whole-register "ASTAT" rule had no
@@ -51,18 +51,18 @@ MULT_BRANCH_SW = 0xB88DF0
 
 
 @unittest.skipUnless(
-    DT2_116_DB.exists(), "out/sharcdb/dt2-1.16.sqlite is not available"
+    DT2_116_DB.exists(), "out/sharcdb/dt2-1.17.sqlite is not available"
 )
 class CfgTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.img = sharc.load("dt2-1.16")
+        cls.img = sharc.load("dt2-1.17")
 
     def test_cfg_node_count_matches_bblocks(self):
         g = self.img.cfg(FUN_1C4F81)
         (n,) = self.img.db.execute(
             "SELECT COUNT(*) FROM bblocks WHERE image=? AND function_sw=?",
-            ("dt2-1.16", FUN_1C4F81),
+            ("dt2-1.17", FUN_1C4F81),
         ).fetchone()
         self.assertEqual(g.number_of_nodes(), n)
         self.assertGreater(g.number_of_edges(), 0)
@@ -93,7 +93,7 @@ class CfgTest(unittest.TestCase):
         # into it) must come back with is_loop_header=True.
         rows = self.img.db.execute(
             "SELECT header_block FROM loops WHERE image=? AND function_sw=0x1c4ecf",
-            ("dt2-1.16",),
+            ("dt2-1.17",),
         ).fetchall()
         self.assertTrue(rows, "expected at least one loop header in FUN_1c4ecf")
         g = self.img.cfg(0x1C4ECF)
@@ -105,22 +105,22 @@ class CfgTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    DT2_116_DB.exists(), "out/sharcdb/dt2-1.16.sqlite is not available"
+    DT2_116_DB.exists(), "out/sharcdb/dt2-1.17.sqlite is not available"
 )
 class CallgraphTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.img = sharc.load("dt2-1.16")
+        cls.img = sharc.load("dt2-1.17")
 
     def test_callgraph_matches_functions_and_call_edges(self):
         g = self.img.callgraph()
         (n_funcs,) = self.img.db.execute(
-            "SELECT COUNT(*) FROM functions WHERE image=?", ("dt2-1.16",)
+            "SELECT COUNT(*) FROM functions WHERE image=?", ("dt2-1.17",)
         ).fetchone()
         (n_edges,) = self.img.db.execute(
             "SELECT COUNT(*) FROM (SELECT DISTINCT from_function, to_function FROM edges "
             "WHERE image=? AND kind='call' AND from_function IS NOT NULL AND to_function IS NOT NULL)",
-            ("dt2-1.16",),
+            ("dt2-1.17",),
         ).fetchone()
         self.assertEqual(g.number_of_nodes(), n_funcs)
         self.assertEqual(g.number_of_edges(), n_edges)
@@ -144,12 +144,12 @@ class CallgraphTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    DT2_116_DB.exists(), "out/sharcdb/dt2-1.16.sqlite is not available"
+    DT2_116_DB.exists(), "out/sharcdb/dt2-1.17.sqlite is not available"
 )
 class DefuseAndSliceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.img = sharc.load("dt2-1.16")
+        cls.img = sharc.load("dt2-1.17")
 
     def _preds(self, g, sw, reg):
         return {u for u, _v, d in g.in_edges(sw, data=True) if reg in d.get("regs", ())}
@@ -158,7 +158,7 @@ class DefuseAndSliceTest(unittest.TestCase):
         g = self.img.defuse(FUN_1C4F81)
         (n,) = self.img.db.execute(
             "SELECT COUNT(*) FROM insn WHERE image=? AND function_sw=? AND aligned=1",
-            ("dt2-1.16", FUN_1C4F81),
+            ("dt2-1.17", FUN_1C4F81),
         ).fetchone()
         self.assertEqual(g.number_of_nodes(), n)
 
@@ -261,18 +261,18 @@ class DefuseAndSliceTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    DT2_116_DB.exists(), "out/sharcdb/dt2-1.16.sqlite is not available"
+    DT2_116_DB.exists(), "out/sharcdb/dt2-1.17.sqlite is not available"
 )
 class AstatGroupsBtfAndMultTest(unittest.TestCase):
     """The exact bug the frame-render survey found (a slice for a
     BTF-reading branch pointed at an unrelated ALU/MULT/SHIFT compute, since
     the old whole-ASTAT rule had no def at all for a Type18a bit-test) --
-    against real, fixed addresses in dt2-1.16's own image, not synthetic
+    against real, fixed addresses in dt2-1.17's own image, not synthetic
     ones."""
 
     @classmethod
     def setUpClass(cls):
-        cls.img = sharc.load("dt2-1.16")
+        cls.img = sharc.load("dt2-1.17")
 
     def test_btf_branch_reaches_the_real_bit_test_not_an_unrelated_compute(
         self,

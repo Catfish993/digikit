@@ -29,7 +29,7 @@ ROOT = str(REPO_ROOT)
 from tools.sharc_dev import sharc_diff as sd  # noqa: E402
 from tools.sharc_dev import sharc_trace as st  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
 
 
@@ -213,12 +213,12 @@ class SelfTestTest(unittest.TestCase):
     and a deliberately mutated engine must be caught."""
 
     def test_two_fresh_engines_from_the_same_seed_agree(self):
-        result = sd.self_test_agree("dt2-1.16", steps=300)
+        result = sd.self_test_agree("dt2-1.17", steps=300)
         self.assertFalse(result.diverged, result.diff)
         self.assertGreater(result.steps_agreed, 0)
 
     def test_a_mutated_astatx_bit_is_caught(self):
-        result = sd.self_test_mutation("dt2-1.16", steps=300, mutate_after=20)
+        result = sd.self_test_mutation("dt2-1.17", steps=300, mutate_after=20)
         self.assertTrue(result.diverged)
         self.assertTrue(any("ASTATX" in line for line in result.diff), result.diff)
         self.assertEqual(result.steps_agreed, 21)
@@ -239,7 +239,7 @@ class FrameLockstepTest(unittest.TestCase):
         from tools.sharc_dev import sharc_capture
         from tools.sharc_dev import sharc_harness as h
 
-        image = "dt2-1.16"
+        image = "dt2-1.17"
         memory = h.load_image_memory(image)
         init = h.run_init(memory, image)
         if not init.ran:

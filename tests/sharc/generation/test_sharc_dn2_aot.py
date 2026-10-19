@@ -84,7 +84,7 @@ def test_merged_entries_transitions_and_exits() -> None:
 def test_rsgen_command_names_every_profile(tmp_path: Path) -> None:
     a = aot.parse_args(["--out", str(tmp_path), *BASE, "--region-insns", "64"])
     cmd = aot.rsgen_command(
-        "dn2-1.11", tmp_path / "gen", tmp_path / "w", tmp_path / "p", a
+        "dn2-1.12", tmp_path / "gen", tmp_path / "w", tmp_path / "p", a
     )
     text = " ".join(cmd)
     for part in (

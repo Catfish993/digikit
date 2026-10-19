@@ -18,8 +18,8 @@ import pytest
 fm = import_module("tools.sharc_dev.sharc_framemap")
 L = import_module("tools.sharc_dev.sharcldr")
 
-DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.17.sqlite")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
 
 
@@ -149,7 +149,7 @@ class RunEndToEndTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         capture = str(IDLE_CAPTURE) if IDLE_CAPTURE.exists() else None
-        cls.result = fm.run("dt2-1.16", capture=capture, fingerprint=True)
+        cls.result = fm.run("dt2-1.17", capture=capture, fingerprint=True)
 
     def test_no_error(self):
         self.assertNotIn("error", self.result)

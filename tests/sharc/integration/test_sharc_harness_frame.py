@@ -10,7 +10,7 @@ import pytest
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 
-DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 DEFAULT_CAPTURE = pathlib.Path(h.DEFAULT_CAPTURE_PATH)
 
 
@@ -23,14 +23,14 @@ class FrameRenderTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
 
     def test_setup_frame_pokes_command_dispatch_and_returns_block_handler(self):
         from tools.sharc_dev import sharc_symbols as ss
 
-        runner = h.new_runner(self.memory, "dt2-1.16")
-        entry = h.setup_frame(runner.state, "dt2-1.16", command=3, ring_flag=1)
-        p = ss.resolve(h.sharcmod.load("dt2-1.16"), device="dt2")
+        runner = h.new_runner(self.memory, "dt2-1.17")
+        entry = h.setup_frame(runner.state, "dt2-1.17", command=3, ring_flag=1)
+        p = ss.resolve(h.sharcmod.load("dt2-1.17"), device="dt2")
         self.assertEqual(entry, p.block_handler)
 
         def read32(addr):
@@ -41,20 +41,20 @@ class FrameRenderTest(unittest.TestCase):
         self.assertEqual(read32(p.ring_flag), 1)
 
     def test_read_master_mix_reads_back_poked_floats(self):
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         for i in range(64):
             h._poke(
                 runner.state,
                 0x25F180 + i * 4,
                 struct.unpack("<I", struct.pack("<f", float(i)))[0],
             )
-        mix = h.read_master_mix(self.memory, "dt2-1.16", runner)
+        mix = h.read_master_mix(self.memory, "dt2-1.17", runner)
         self.assertEqual(len(mix), 64)
         self.assertEqual(mix, [float(i) for i in range(64)])
 
     def test_read_master_mix_defaults_to_zero_when_unwritten(self):
-        runner = h.new_runner(self.memory, "dt2-1.16")
-        self.assertEqual(h.read_master_mix(self.memory, "dt2-1.16", runner), [0.0] * 64)
+        runner = h.new_runner(self.memory, "dt2-1.17")
+        self.assertEqual(h.read_master_mix(self.memory, "dt2-1.17", runner), [0.0] * 64)
 
 
 @pytest.mark.slow
@@ -70,11 +70,11 @@ class FrameRenderFromInitTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
 
     def test_render_frames_without_patches_returns(self):
         runner, results = h.render_frames(
-            self.memory, "dt2-1.16", n_frames=1, patch_table=None
+            self.memory, "dt2-1.17", n_frames=1, patch_table=None
         )
         self.assertEqual(len(results), 1)
         halt = results[0].halt
@@ -92,7 +92,7 @@ class FrameRenderFromInitTest(unittest.TestCase):
         self.assertEqual(results[0].instructions, h.FRAME_MILESTONE["instructions"])
 
     def test_render_frames_with_frame_patch_table_returns(self):
-        runner, results = h.render_frames(self.memory, "dt2-1.16", n_frames=1)
+        runner, results = h.render_frames(self.memory, "dt2-1.17", n_frames=1)
         self.assertEqual(len(results), 1)
         halt = results[0].halt
         # FRAME_PATCH_TABLE's two hypotheses get past the first two known
@@ -121,7 +121,7 @@ class FrameRenderFromInitTest(unittest.TestCase):
         # (I12/M14's idiom included) never touches it, so this was always
         # a software convention, not a literal hardware return -- and nothing
         # rules out a different free DAG2 index register per callee. A
-        # tools/sharc_dev/sharcdb census of dt2-1.16's Type9a_abs/9b_abs population
+        # tools/sharc_dev/sharcdb census of dt2-1.17's Type9a_abs/9b_abs population
         # confirms this reading: 1051 of 1052 cond=0x1F/b=0/j=1/pmm=6
         # (M14) instructions use pmi=4 (I12); exactly one (0x1c0cb5) uses
         # pmi=5 (I13). sequencer._check_return_target now takes pmi and
@@ -199,11 +199,11 @@ class RingAMilestoneTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
 
     def test_four_frame_ring_a_milestone(self):
         result = h.render_frames_to_ring_a(
-            self.memory, "dt2-1.16", n_frames=4, freq=1000.0
+            self.memory, "dt2-1.17", n_frames=4, freq=1000.0
         )
         self.assertFalse(result["any_new_stop"])
         for frame in result["per_frame"]:
@@ -322,11 +322,11 @@ class WriteCaptureFrameTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
         cls.cap = h.load_capture()
 
     def test_written_bytes_read_back(self):
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         frame = h.capture_frame_bytes(self.cap, h.DEFAULT_CAPTURE_FRAME_INDEX)
         h.write_capture_frame(runner.state, frame)
         # Sample every 251st byte (coprime with typical alignment, so this
@@ -336,7 +336,7 @@ class WriteCaptureFrameTest(unittest.TestCase):
             self.assertEqual(raw.value & 0xFF, frame[i])
 
     def test_wrong_length_raises(self):
-        runner = h.new_runner(self.memory, "dt2-1.16")
+        runner = h.new_runner(self.memory, "dt2-1.17")
         with self.assertRaises(ValueError):
             h.write_capture_frame(runner.state, b"\x00" * 10)
 
@@ -391,13 +391,13 @@ class RealFrameRingAMilestoneTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.memory = h.load_image_memory("dt2-1.16")
+        cls.memory = h.load_image_memory("dt2-1.17")
         cls.cap = h.load_capture()
 
     def test_eight_frame_real_frame_ring_a_milestone(self):
         result = h.render_frames_to_ring_a(
             self.memory,
-            "dt2-1.16",
+            "dt2-1.17",
             n_frames=8,
             voice=0,
             freq=1000.0,

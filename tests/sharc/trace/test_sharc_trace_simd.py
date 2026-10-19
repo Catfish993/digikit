@@ -1405,7 +1405,7 @@ class SimdBranchPredicateTest(TraceHelpers):
 
 
 class RealBlobSimdRegionTest(unittest.TestCase):
-    """dt2-1.16's render path enables SIMD around 0xb80105 (called from
+    """dt2-1.17's render path enables SIMD around 0xb80105 (called from
     FUN_1c642a at 0x1c65b3/0x1c6c72): MODE1.PEYEN is set at 0xb8012f and
     cleared at 0xb80150. Skips cleanly when the firmware isn't present
     (CLAUDE.md: never commit out/ or firmware/; matches this repo's
@@ -1416,7 +1416,7 @@ class RealBlobSimdRegionTest(unittest.TestCase):
         str(REPO_ROOT),
         "out",
         "sections",
-        "dt2-1.16",
+        "dt2-1.17",
         "section_7_BLOB.bin",
     )
     BLOB_SHA256 = "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2"
@@ -1426,7 +1426,7 @@ class RealBlobSimdRegionTest(unittest.TestCase):
 
     @unittest.skipUnless(
         os.path.exists(BLOB),
-        "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+        "out/sections/dt2-1.17/section_7_BLOB.bin is not available",
     )
     def test_simd_window_touches_only_uncomplementary_uregs(self):
         with open(self.BLOB, "rb") as fh:

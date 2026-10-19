@@ -8,7 +8,7 @@ from tools.sharc_dev import (
     sharc_interface_probe as P,  # pyright: ignore[reportMissingImports]
 )
 
-BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
+BLOB = pathlib.Path("out/sections/dt2-1.17/section_7_BLOB.bin")
 
 
 class SharcInterfaceProbeTest(unittest.TestCase):

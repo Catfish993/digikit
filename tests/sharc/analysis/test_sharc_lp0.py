@@ -14,7 +14,7 @@ ROOT = REPO_ROOT
 
 from tools.sharc_dev import sharc_lp0 as lp  # noqa: E402
 
-DT2_116_BLOB = ROOT / "out/sections/dt2-1.16/section_7_BLOB.bin"
+DT2_116_BLOB = ROOT / "out/sections/dt2-1.17/section_7_BLOB.bin"
 
 
 def native_stereo(frames):
@@ -112,11 +112,11 @@ class FeedTest(unittest.TestCase):
         frames = 3000
         native = native_stereo(frames)
         writes = log_for(lp.native_sample_transfers(native, slot=3))
-        memory = h.load_image_memory("dt2-1.16")
-        init = h.run_init(memory, "dt2-1.16")
+        memory = h.load_image_memory("dt2-1.17")
+        init = h.run_init(memory, "dt2-1.17")
         self.assertTrue(init.ran, init.error)
-        runner = h.new_runner(memory, "dt2-1.16", init=init)
-        runner, report = lp.feed(runner, "dt2-1.16", ((a, v, False) for a, v in writes))
+        runner = h.new_runner(memory, "dt2-1.17", init=init)
+        runner, report = lp.feed(runner, "dt2-1.17", ((a, v, False) for a, v in writes))
         self.assertEqual(report["leftover_words"], 0)
         self.assertEqual(report["ignored_tags"], [])
         alloc = (len(native) + 0x200F) & ~0x1FFF
@@ -130,7 +130,7 @@ class FeedTest(unittest.TestCase):
                 "stereo": 1,
             },
         )
-        base = lp.profile("dt2-1.16").sample_base
+        base = lp.profile("dt2-1.17").sample_base
         self.assertEqual(
             report["slot_reader"][3],
             {

@@ -276,7 +276,7 @@ pub struct ModuleInfo {
     pub requires: Vec<String>,
     #[serde(default)]
     pub conflicts: Vec<String>,
-    /// Restrict to these ports (`dt2-1.16`); empty = any firmware whose anchors resolve.
+    /// Restrict to these ports (`dt2-1.17`); empty = any firmware whose anchors resolve.
     #[serde(default)]
     pub ports: Vec<String>,
     /// A module that is loaded at run time (`patchkit pack`, a `.dkm`), never patched into an image. Its typed sections

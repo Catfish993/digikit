@@ -1,5 +1,5 @@
-"""Sanity checks for tools/sharc_dev/sharc_contract.py against the real dt2-1.16
-program database (out/sharcdb/dt2-1.16.sqlite, built from out/sections --
+"""Sanity checks for tools/sharc_dev/sharc_contract.py against the real dt2-1.17
+program database (out/sharcdb/dt2-1.17.sqlite, built from out/sections --
 see the worktree's `out`/`sections` symlinks). Skipped, not marked slow: it
 only opens the already-built database (sharc.load() rebuilds only when the
 blob's sha256 or DB_VERSION has moved on), the same thing tools/sharc_dev/sharc.py
@@ -18,16 +18,16 @@ import unittest
 from tools.sharc_dev import sharc  # noqa: E402
 from tools.sharc_dev import sharc_contract as C  # noqa: E402
 
-DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
+DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.17.sqlite")
 
 
 @unittest.skipUnless(
-    DT2_116_DB.exists(), "out/sharcdb/dt2-1.16.sqlite is not available"
+    DT2_116_DB.exists(), "out/sharcdb/dt2-1.17.sqlite is not available"
 )
 class ContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.img = sharc.load("dt2-1.16")
+        cls.img = sharc.load("dt2-1.17")
 
     # --- reach --------------------------------------------------------------
 

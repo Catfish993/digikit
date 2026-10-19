@@ -738,14 +738,14 @@ _DT2_116_BLOB = os.path.join(
     str(REPO_ROOT),
     "out",
     "sections",
-    "dt2-1.16",
+    "dt2-1.17",
     "section_7_BLOB.bin",
 )
 
 
 @unittest.skipUnless(
     os.path.exists(_DT2_116_BLOB),
-    "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+    "out/sections/dt2-1.17/section_7_BLOB.bin is not available",
 )
 class RealBlobType19AndType6aRenderingTest(unittest.TestCase):
     """Listing fixes checked against the real DT2 1.16 SHARC blob. Skips when
@@ -781,7 +781,7 @@ class RealBlobType19AndType6aRenderingTest(unittest.TestCase):
 
 @unittest.skipUnless(
     os.path.exists(_DT2_116_BLOB),
-    "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+    "out/sections/dt2-1.17/section_7_BLOB.bin is not available",
 )
 class RealBlobType3cRenderingTest(unittest.TestCase):
     """DT2 1.16 sw 0x1c653b (dmi=4, dmm=5, d=0, dreg=6): a Type3c load that
@@ -806,7 +806,7 @@ class RealBlobType3cRenderingTest(unittest.TestCase):
 
 @unittest.skipUnless(
     os.path.exists(_DT2_116_BLOB),
-    "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+    "out/sections/dt2-1.17/section_7_BLOB.bin is not available",
 )
 class RealBlobType14dRenderingTest(unittest.TestCase):
     """DT2 1.16 sw 0x1c257d (d=0, l=1, w=0, ex=0, x=0, dreg=11): a Type14d
