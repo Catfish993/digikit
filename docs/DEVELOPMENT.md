@@ -178,9 +178,13 @@ mise run web                            # the gallery at /patch: patch in the br
 ## Module loop
 
 1. Create the module: `mise run module:new -- fx/NAME` (`--cf` for ColdFire code only, `--dsp` for a SHARC+ stub only).
-2. Check it without an emulator: `mise run module:check -- NAME [--device dt2|dn2]` (NAME is `fx/NAME` or `NAME`; machine modules run the conformance suite, then the module's own tests).
+2. Check it without an emulator: `mise run module:check -- NAME [--device dt2|dn2]` (NAME is `fx/NAME` or `NAME`; machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
 3. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
-4. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 4 or newer): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
+4. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
+
+Log levels: `mise run dk:log -- --port Digitakt level` prints them, `level debug` sets the default, `level --module NAME=trace` sets one module (`NAME=default` clears it), `follow --level L --module NAME` filters the display. Levels are not stored on the card.
+
+After a change to `devices/*.toml` or `sdk/sdk.toml`, run `mise run gen:modules` (`-- --check` lists stale generated files).
 
 Each task takes `-- --help`.
 

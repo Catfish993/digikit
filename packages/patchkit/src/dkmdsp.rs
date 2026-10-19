@@ -281,7 +281,11 @@ impl DspSection {
         if version != VERSION && version != VERSION_1 {
             return Err(err!("DSP section version {version}"));
         }
-        let vlen = if version == VERSION_1 { VOICE_LEN_V1 } else { VOICE_LEN };
+        let vlen = if version == VERSION_1 {
+            VOICE_LEN_V1
+        } else {
+            VOICE_LEN
+        };
         let rng = |off: u32, n: usize| -> Result<&[u8]> {
             let off = off as usize;
             f.get(off..off.checked_add(n).ok_or_else(|| err!("overflow"))?)
@@ -477,7 +481,12 @@ mod tests {
     #[test]
     fn relocation_at_any_base_equals_the_linker() {
         let o = object();
-        let bytes = pack(&o, 1, &[(16, "entry".into(), [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0])]).unwrap();
+        let bytes = pack(
+            &o,
+            1,
+            &[(16, "entry".into(), [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0])],
+        )
+        .unwrap();
         let d = DspSection::parse(&bytes).unwrap();
         assert_eq!(d.imports, vec!["helper"]);
         assert_eq!(d.bss, 64);

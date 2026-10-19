@@ -206,6 +206,38 @@ Limits to know: type numbers 7..23 for added machines on the Digitakt II (17) an
 chosen bound); one master-bus module at a time until a master-effects framework exists; patched DSP code runs slower than real
 time in the emulator (correct, but not playable live yet); nothing has been flashed to a device yet.
 
+## Run-time modules (.dkm)
+
+A module can also be packed as a `.dkm` and loaded by the digikit runtime at boot, without patching a new image. The loop is
+`module:new` -> `module:check` -> `dk:run --emu` -> `dk:run --port`, described in
+[DEVELOPMENT.md, "Module loop"](DEVELOPMENT.md#module-loop).
+
+- `mise run module:check -- NAME` prints the packed size by section per device, or "not packed" with the reason (for example a
+  module that is patched in). `patchkit pack` and `patchkit dkm-info` print the same `size` line; `mise run patch:mem` prints the
+  runtime's own bytes.
+- Knob slots on a Digitakt II SAMPLE clone: slot 6 is usable. Slot 3 passes only the sample bits (`value & 0x3ff`): do not put a
+  parameter there (docs/findings/02-machines-and-parameters.md, last section).
+
+### Versions and compatibility
+
+- The runtime has a semantic version, now 0.1.0, packed as `major<<16|minor<<8|patch`. Runtimes 1 to 5 read as 0.0.1 to 0.0.5.
+  `sdk/sdk.toml` is the one source; `mise run gen:modules` writes the generated files from it (`-- --check` lists stale ones).
+- The contract versions are also in `sdk/sdk.toml`: api (1,1), machine (1,0), fx (0,0), service (1,0). `pack` writes the contracts a
+  module uses into the `.dkm` header: api always, machine when the module has a DSP section, service when it has ColdFire slot
+  functions or init/fini.
+- Rebuild the module when a contract it declares (major not 0) changes its major version, or when the runtime's minor is below the
+  module's. Then the loader and the menu refuse it with `E_CONTRACT` (-48, "built for another SDK contract: rebuild the module").
+  The runtime version the module was built for (header byte 0x30) is informational and is not checked.
+
+### Logging
+
+- `Api.log(msg, value)` logs at level info. `Api.log_lv(level, msg, value)` takes a level: 0 error, 1 warn, 2 info, 3 debug, 4 trace.
+- Each event carries its level and its source (the runtime, or the module). The default level is info; with DEBUG off in the menu only
+  errors are kept.
+- `mise run dk:log -- --port Digitakt level` prints the levels. `level debug` sets the default. `level --module NAME=trace` sets one
+  module (NAME or record index; `NAME=default` clears it). `follow --level L --module NAME` filters the display. The levels are not
+  stored on the card and reset at boot. Setting them needs runtime 0.1.0.
+
 ## Where to look next
 
 - [modules/README.md](../modules/README.md): every manifest key, the test format, `fx/master-gain` and `machines/pluck`

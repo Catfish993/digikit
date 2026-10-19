@@ -29,6 +29,7 @@ pub mod preflight;
 pub mod prim;
 pub mod record;
 pub mod register;
+pub mod sdkgen;
 pub mod typed;
 pub mod verify;
 pub mod wasm;

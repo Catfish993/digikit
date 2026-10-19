@@ -572,7 +572,8 @@ pub fn voice_ranges(r: &DevResolved, machine: &str) -> [u32; 8] {
     for (j, k) in m.knobs.iter().take(8).enumerate() {
         if let Knob::Param(id) = k {
             if let Some(p) = r.params.iter().find(|p| &p.id == id) {
-                if (0..=0xffff).contains(&p.min) && (0..=0xffff).contains(&p.max) && p.min <= p.max {
+                if (0..=0xffff).contains(&p.min) && (0..=0xffff).contains(&p.max) && p.min <= p.max
+                {
                     out[j] = (p.min as u32) | (p.max as u32) << 16;
                 }
             }
@@ -818,13 +819,24 @@ entry = "_t_render"
         // the runtime guard's ranges: knob 1 and knob 4 are params (0 .. 100 = 100 << 16), a stock code and an empty knob stay undeclared
         assert_eq!(field(v[0], "rng1"), Some(&int(100 << 16)));
         assert_eq!(field(v[0], "rng4"), Some(&int(100 << 16)));
-        assert!(["rng0", "rng2", "rng3", "rng5", "rng6", "rng7"].iter().all(|k| field(v[0], k).is_none()));
+        assert!(
+            ["rng0", "rng2", "rng3", "rng5", "rng6", "rng7"]
+                .iter()
+                .all(|k| field(v[0], k).is_none())
+        );
         // the Digitone II's knobs live in a page: no ranges
-        let v2 = m.entry.iter().find(|e| e.devices == ["dn2"] && e.registry == "voices").unwrap();
+        let v2 = m
+            .entry
+            .iter()
+            .find(|e| e.devices == ["dn2"] && e.registry == "voices")
+            .unwrap();
         assert!((0..8).all(|j| field(v2, &format!("rng{j}")).is_none()));
         let r = resolve(&manifest(MOD), &models()).unwrap();
         let dt2 = r.iter().find(|x| x.dev == "dt2").unwrap();
-        assert_eq!(voice_ranges(dt2, "t"), [0, 100 << 16, 0, 0, 100 << 16, 0, 0, 0]);
+        assert_eq!(
+            voice_ranges(dt2, "t"),
+            [0, 100 << 16, 0, 0, 100 << 16, 0, 0, 0]
+        );
     }
 
     #[test]

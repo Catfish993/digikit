@@ -100,6 +100,28 @@ def table(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def runtime_bytes(device: str, root: Path = ROOT) -> dict[str, int] | None:
+    """Bytes of core/runtime for DEVICE from its built objects: code and data (bss is not counted) of the ColdFire objects
+    (`cf`) and of the DSP objects (`dsp`). The objects are the ones its module.toml lists for the device. None: not built."""
+    base = root / "modules" / "core" / "runtime"
+    man = tomllib.loads((base / "module.toml").read_text())
+    out = {"cf": 0, "dsp": 0}
+    for o in man.get("object", []):
+        if o.get("devices") and device not in o["devices"]:
+            continue
+        p = base / o["path"]
+        if not p.is_file():
+            return None
+        dko = json.loads(p.read_text())
+        n = sum(s["size"] for s in dko["sections"] if s["kind"] != "bss")
+        out["dsp" if dko["arch"] == "sharc" else "cf"] += n
+    return out
+
+
+def runtime_line(rt: dict[str, int]) -> str:
+    return f"runtime core/runtime: {rt['cf']} bytes ColdFire code+data, {rt['dsp']} bytes DSP"
+
+
 def apply_plan(device: str, firmware: str, modules: list[str]) -> dict[str, Any]:
     """Apply MODULES to the stock image and return the plan; SystemExit(1) with the placement's message when refused."""
     from tools.patchkit import patchkit
@@ -143,9 +165,19 @@ def main(argv: list[str]) -> int:
     regions = port_regions(a.device, fw)
     plan = apply_plan(a.device, fw, a.modules) if a.modules else None
     report = {"device": a.device, "firmware": fw, **usage(regions, plan)}
-    print(
-        json.dumps(report, indent=1) if a.json else f"{a.device}-{fw}\n{table(report)}"
+    rt = (
+        runtime_bytes(a.device)
+        if any(m.startswith("core/runtime") for m in report["modules"])
+        else None
     )
+    if rt is not None:
+        report["runtime_bytes"] = rt
+    if a.json:
+        print(json.dumps(report, indent=1))
+    else:
+        print(f"{a.device}-{fw}\n{table(report)}")
+        if rt is not None:
+            print(runtime_line(rt))
     return 0
 
 

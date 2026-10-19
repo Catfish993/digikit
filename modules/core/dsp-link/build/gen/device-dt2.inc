@@ -46,6 +46,14 @@
 #define KEEP_BASE 1207828480
 // [digikit] keep_bytes
 #define KEEP_BYTES 4096
+// [limits] modules (module records)
+#define LIMIT_MODULES 8
+// [limits] machine_rows (run-time machine and voice rows)
+#define LIMIT_MACHINE_ROWS 8
+// [limits] arena_bytes (the module arena)
+#define LIMIT_ARENA_BYTES 524288
+// [limits] stage_bytes (the staging buffer of a .dkm file)
+#define LIMIT_STAGE_BYTES 65536
 // [digikit] peek: number of ranges
 #define PEEK_N 2
 // [digikit] peek range start (RAM the PEEK command may read)

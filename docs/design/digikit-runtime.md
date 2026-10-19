@@ -62,7 +62,7 @@ results.
 
 On an error nothing is left behind. Codes: `E_NOT_FOUND` -1 (no store / no such file or module), `E_BAD_STORE` -2, `E_READ` -3,
 `E_SHA` -4, `E_FORMAT` -5, `E_RUNTIME` -6, `E_IMPORT` -7, `E_NOMEM` -8, `E_INIT` -9, `E_LOADED` -10, `E_SLOT` -11, `E_BUSY` -12,
-`E_TOO_BIG` -13, `E_TABLE_FULL` -14. The run-time registry's codes are in the same crate and the same table, -20 to -29 (`E_NO_REGISTRY` -20, `E_REG_DEVICE` -21,
+`E_TOO_BIG` -13, `E_TABLE_FULL` -14 (`E_RUNTIME` -6 is no longer returned; `E_CONTRACT` -48: built for another SDK contract, rebuild the module). The run-time registry's codes are in the same crate and the same table, -20 to -29 (`E_NO_REGISTRY` -20, `E_REG_DEVICE` -21,
 `E_TYPE_RANGE` -22, `E_TYPE_USED` -23, `E_PARAM_FULL` -24, `E_PAGE_FULL` -25, `E_TYPE_IN_USE` -26: reserved; it was the unload refusal of hot reload, which is archived,
 docs/design/digikit-registry.md); -30 to -39 are the DSP side's. Codes are only added, never renumbered; `result_text` (menu text)
 covers -1 to -14 and shows `ERROR` for the others until a menu text is added. The addresses of these functions are symbols of the patch plan (`plan.json`

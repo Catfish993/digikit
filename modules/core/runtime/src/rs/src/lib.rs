@@ -24,6 +24,7 @@ mod loader;
 pub mod registry;
 mod sha256;
 mod store;
+mod table;
 pub mod upload;
 
 #[panic_handler]
@@ -33,10 +34,10 @@ fn panic(_: &PanicInfo) -> ! {
 
 /// Arena bytes. A sub-region of `cf.expansion` that is part of this object's bss: patchkit places it with the object, so no
 /// static object of any module can overlap it, and the reset-path loader zeroes it.
-pub const ARENA_BYTES: usize = 512 * 1024;
+pub const ARENA_BYTES: usize = dkrt_sdk::device::LIMIT_ARENA_BYTES as usize;
 /// Staging buffer for a `.dkm` file (and the store directory): files are at most this size in v0.
-pub const STAGE_BYTES: usize = 64 * 1024;
-pub const MAX_MODULES: usize = 8;
+pub const STAGE_BYTES: usize = dkrt_sdk::device::LIMIT_STAGE_BYTES as usize;
+pub const MAX_MODULES: usize = dkrt_sdk::device::LIMIT_MODULES as usize;
 pub const LOG_ENTRIES: usize = 16;
 pub const STATE_MAGIC: u32 = 0x444b_5254; // "DKRT"
 
@@ -361,6 +362,9 @@ unsafe extern "C" fn api_store_read(path: *const u8, dst: *mut u8, cap: u32) -> 
 unsafe extern "C" fn api_log(msg: *const u8, value: u32) {
     log(msg, value);
 }
+unsafe extern "C" fn api_log_lv(level: u32, msg: *const u8, value: u32) {
+    log_at(level, msg, value);
+}
 
 /// The table is built at first use: pointers to the helpers are not constants.
 #[no_mangle]
@@ -380,9 +384,16 @@ pub static mut dkrt_api: Api = Api {
     muldi3: 0,
     udivdi3: 0,
     umoddi3: 0,
+    log_lv: api_log_lv,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {
+    log_at(logk::L_INFO as u32, msg, value);
+}
+
+/// `log` at `level` (0 is an error event; above 4 is 4).
+pub unsafe fn log_at(level: u32, msg: *const u8, value: u32) {
+    let level = if level > logk::L_TRACE as u32 { logk::L_TRACE } else { level as u16 };
     let s = st();
     let e = &mut s.log[(s.log_next as usize) % LOG_ENTRIES];
     let mut i = 0;
@@ -398,7 +409,7 @@ pub unsafe fn log(msg: *const u8, value: u32) {
     s.log_next = s.log_next.wrapping_add(1);
     dlog::ev(
         logk::MOD_LOG,
-        0,
+        (level << logk::LEVEL_SHIFT) | if level == logk::L_ERROR { logk::F_ERROR } else { 0 },
         [dlog::word_of(e.msg.as_ptr(), 0, 24), dlog::word_of(e.msg.as_ptr(), 4, 24), dlog::word_of(e.msg.as_ptr(), 8, 24), dlog::word_of(e.msg.as_ptr(), 12, 24), value],
     );
 }
@@ -763,7 +774,7 @@ pub unsafe extern "C" fn dkrt_restart() -> i32 {
     if card_busy() {
         return E_CARD_BUSY;
     }
-    dlog::ev(logk::MENU, 0, [logk::MENU_RESTART, 0, 0, 0, 0]);
+    dlog::ev(logk::MENU, dlog::INFO, [logk::MENU_RESTART, 0, 0, 0, 0]);
     save_working_state();
     let sr = dkrt_irq_mask();
     if card_busy() {
@@ -815,7 +826,16 @@ pub unsafe extern "C" fn dkrt_tick() {
     if f != 0 {
         write_volatile(addr_of_mut!(s.entered[0]), s.entered[0] + 1);
         let call: unsafe extern "C" fn(*const Api) = core::mem::transmute(f as usize);
+        // the module that owns slot 0 is the source of what it logs
+        let mut owner = 0;
+        while owner < MAX_MODULES && !(s.modules[owner].used != 0 && s.modules[owner].slot_mask & 1 != 0) {
+            owner += 1;
+        }
+        let prev = if owner < MAX_MODULES { dlog::enter_module(owner) } else { 0 };
         call(addr_of!(dkrt_api));
+        if owner < MAX_MODULES {
+            dlog::leave_module(prev);
+        }
         write_volatile(addr_of_mut!(s.entered[0]), s.entered[0] - 1);
         s.slot_calls = s.slot_calls.wrapping_add(1);
     }

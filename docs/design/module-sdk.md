@@ -631,6 +631,7 @@ These supersede earlier text where they conflict; the passages they change point
 - **D6. Languages and containment.** ColdFire: Rust or C. SHARC: assembly in v1 (no usable SHARC C compiler: docs/findings/20-patch-toolchains.md). Neither CPU has memory protection, so the runtime's Rust does not contain module code. Containment is the build-time checks, the load checks, the adapter guard on both devices and the write-set check in the rig.
 - **D7. Machine ids.** A machine has a global id `author/name:machine`. The card keeps a sticky map from global id to run-time type number (16 to 23) in the module store: a machine keeps its number while it stays installed, so projects and presets, which store the type byte, keep working. Later: when a project loads, check that its machines are installed and valid, or load them automatically. This needs a map from project to modules saved with each project, and so a project save and load hook, which is not found yet.
 - **D8. Limits per type.** `[limits]` in the device profile, enforced by the runtime: 8 machine rows (types 16 to 23), 8 modules, the DSP area, the ColdFire arena. The menu shows the slots in use.
+- **D9. Runtime version.** The runtime has a semantic version, packed major<<16 | minor<<8 | patch, starting at 0.1.0 (sdk/sdk.toml). Versions 1 to 5 were plain integers and read as 0.0.1 to 0.0.5. While 0.x, MINOR may break (a contract major, the card store format or the SysEx protocol) and PATCH covers features and fixes; from 1.0.0, MAJOR breaks, MINOR adds, PATCH fixes. The runtime's bump is the largest among the interfaces it carries; the adapter is versioned with the runtime image it is built into. Module compatibility is decided by the contracts (D3), not by this number.
 - **Estimate.** With D4 (DSP relocation, one pluck body) and the steps merged into three PRs, about 30 to 45 agent hours. Most of the risk is in the DN2 adapter. The table in 11.3 is the earlier per-step upper bound.
 
 ## 12. Hot reload as a later goal
@@ -679,7 +680,7 @@ Scope: what the SDK contract and the adapter must provide. The tools and the tra
 | Item | Fact |
 | --- | --- |
 | log | 512 events of 32 bytes in RAM: `seq`, block-counter `time`, `kind`, `flags` (bit 0 error), five words; DEBUG off keeps errors only (`dlog.rs:13-60`; `46-digikit-debug.md:56-58`) |
-| switch | DEBUG on/off, remembered in the selection record (`FLAG_DEBUG_OFF`, `sdk/src/lib.rs:337`); no levels, no categories |
+| switch | DEBUG on/off, remembered in the selection record (`FLAG_DEBUG_OFF`, `modules/core/runtime/sdk/src/lib.rs:337`); no levels, no categories |
 | transport | SysEx LOG 0x20, PEEK 0x21, INFO (`upload.rs:36-45`); the emulator answers the same (`dklog.py --emu`); one decoder, `tools/device/dklog.py` (`KINDS`, :111), a hand copy of `dkrt_sdk::logk` (`lib.rs:866`) |
 | module logging | ColdFire only: `Api.log(msg, value)`, 24 characters, kind MOD_LOG (14), no module id (`digikit-runtime.md:82`, `46-digikit-debug.md`, table row 14) |
 | DSP | no API. The wrapper writes fixed words: heartbeat, context registers, breadcrumb, dispatch and return counters, guard words, 24 words in the reply record (`dlog.rs:123-134`; `48-dsp-breadcrumbs.md:8-40`; `51:59-62`) |

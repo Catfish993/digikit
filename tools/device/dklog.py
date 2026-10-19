@@ -31,6 +31,15 @@ from pathlib import Path
 from typing import Any
 
 from tools.device import dkupload as D
+from tools.device.dklog_kinds import (
+    GUARD_KINDS,
+    KINDS,
+    LEVEL_MASK,
+    LEVEL_SHIFT,
+    LEVELS,
+    SOURCE_MASK,
+    SOURCE_SHIFT,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 BLOCKS_PER_SECOND = 1500
@@ -107,44 +116,8 @@ def crumb_text(w: int) -> str:
     return f"{c['stage']} voice={c['voice']} type={c['type']}"
 
 
-# kind -> (name, argument names). The argument words are as `modules/core/runtime/src/rs/src` writes them; docs/findings/46-digikit-debug.md.
-KINDS: dict[int, tuple[str, tuple[str, ...]]] = {
-    1: (
-        "BOOT_START",
-        ("runtime", "device", "stable_blocks", "record_seq", "boot_counter"),
-    ),
-    2: ("CARD_CHECK", ("state", "first_nonblank", "hash", "read_errors", "-")),
-    3: ("SAFE", ("reason", "boot_counter", "record_seq", "-", "-")),
-    4: ("BOOT_RECORD", ("seq", "copy", "boot_counter", "selected", "flags")),
-    5: ("MOD_LOAD", ("index", "result", "name0", "name1", "name2")),
-    6: ("MOD_DSP", ("index", "result", "-", "-", "-")),
-    7: ("UPLOAD", ("cmd", "status", "card_writes", "-", "-")),
-    8: ("MENU", ("action", "arg", "-", "-", "-")),
-    9: (
-        "HEALTH",
-        ("flags_cpu", "dsp_avg_x10", "dsp_max_x10", "arena_free", "heap_free_kb"),
-    ),
-    10: ("DSP_DIAG", ("count_chunk", "w0", "w1", "w2", "w3")),
-    11: ("DSP_STOPPED", ("heartbeat", "voice_beat", "crumb", "dispatches", "resumed")),
-    12: ("CRASH_FOUND", ("pc", "vector_format", "sr", "a7", "time")),
-    13: ("CARD_REFUSED", ("sector", "bytes", "reason", "card_state", "-")),
-    14: ("MOD_LOG", ("msg0", "msg1", "msg2", "msg3", "value")),
-    15: ("UI_FIRST", ("blocks", "safe", "loaded", "-", "-")),
-    16: ("STABLE", ("blocks", "floor", "-", "-", "-")),
-    17: ("DEBUG_SET", ("on", "-", "-", "-", "-")),
-    18: ("RAM_KEEP", ("kept", "generation", "-", "-", "-")),
-    19: ("CRASH_DETAIL", ("-", "-", "-", "-", "-")),
-    20: ("DSP_ABSENT", ("-", "-", "-", "-", "-")),
-    21: ("MOD_LIST", ("index", "slots", "name0", "name1", "name2")),
-    22: ("CRASH_MOD", ("module", "entered_stable", "name0", "name1", "name2")),
-    23: ("CRASH_REG", ("first", "r0", "r1", "r2", "r3")),
-    24: ("CRASH_STACK", ("first", "w0", "w1", "w2", "w3")),
-    25: ("CRASH_TAIL", ("a", "b", "c", "d", "e")),
-    26: ("MACHINE_CHANGE", ("track", "old_type", "new_type", "-", "-")),
-    27: ("MACHINE_FAULT", ("type_voice", "kind_faults", "p01", "p23", "p45")),
-    28: ("MACHINE_DISABLED", ("type", "disabled", "faults", "-", "-")),
-}
-GUARD_KINDS = {1: "nonfinite", 2: "overlevel"}
+# kind -> (name, argument names): `KINDS` and `GUARD_KINDS` come from sdk/sdk.toml (`dklog_kinds.py`). The argument words are as
+# `modules/core/runtime/src/rs/src` writes them; docs/findings/46-digikit-debug.md.
 K = {name: kid for kid, (name, _) in KINDS.items()}
 CARD_STATES = {0: "unknown", 1: "ours", 2: "blank", 3: "foreign", 4: "unreadable"}
 SAFE_REASONS = {1: "counter", 2: "key", 3: "flag"}
@@ -287,6 +260,7 @@ def fields_of(kind: int, a: tuple[int, ...]) -> dict[str, Any]:
 def event_dict(ev: tuple[int, int, int, int, tuple[int, ...]]) -> dict[str, Any]:
     seq, t, kind, flags, a = ev
     name = KINDS.get(kind, (f"KIND{kind}", ()))[0]
+    lv = (flags >> LEVEL_SHIFT) & LEVEL_MASK
     return {
         "seq": seq,
         "blocks": t,
@@ -294,19 +268,70 @@ def event_dict(ev: tuple[int, int, int, int, tuple[int, ...]]) -> dict[str, Any]
         "kind": name,
         "kind_id": kind,
         "error": bool(flags & EVENT_FLAG_ERROR),
+        "level": LEVELS[lv] if lv < len(LEVELS) else str(lv),
+        "source": (flags >> SOURCE_SHIFT) & SOURCE_MASK,
         "args": list(a),
         "fields": fields_of(kind, a),
     }
 
 
-def text_of(d: dict[str, Any]) -> str:
+def text_of(d: dict[str, Any], names: dict[int, str] | None = None) -> str:
+    """One readable line. `names` maps a source (module record index + 1) to the module's name, when known; else `mod#N`."""
     parts = []
     for k, v in d["fields"].items():
         if isinstance(v, list):
             v = ",".join(map(str, v))
         parts.append(f"{k}={v}")
     flag = "!" if d["error"] else " "
-    return f"{d['seq']:6d} {d['t']:10.3f}s {flag}{d['kind']:<13s} {' '.join(parts)}"
+    src = d.get("source", 0)
+    who = (names or {}).get(src, f"mod#{src - 1}") if src else ""
+    return f"{d['seq']:6d} {d['t']:10.3f}s {d.get('level', ''):<5s} {who:<10s}{flag}{d['kind']:<13s} {' '.join(parts)}"
+
+
+def level_of(v: str | int) -> int:
+    """A level by name (`LEVELS`) or number 0 to 4."""
+    s = str(v).lower()
+    if s in LEVELS:
+        return LEVELS.index(s)
+    if s.isdigit() and int(s) < len(LEVELS):
+        return int(s)
+    raise ValueError(
+        f"unknown level {v!r} (one of {', '.join(LEVELS)} or 0 to {len(LEVELS) - 1})"
+    )
+
+
+def module_names(
+    events: list[tuple[int, int, int, int, tuple[int, ...]]],
+) -> dict[int, str]:
+    """Source (module record index + 1) -> name, from the MOD_LIST events in `events`."""
+    out: dict[int, str] = {}
+    for _seq, _t, kind, _fl, a in events:
+        if kind == K["MOD_LIST"]:
+            out[a[0] + 1] = ascii_of(a[2], a[3], a[4])
+    return out
+
+
+def source_of(module: str, names: dict[int, str]) -> int:
+    """The source of the module `module`: a name `module_names` knows, or a record index."""
+    for src, n in names.items():
+        if n == module:
+            return src
+    if module.isdigit():
+        return int(module) + 1
+    raise ValueError(
+        f"no module {module!r} (the log names modules only in MOD_LIST events; give the record index 0 to 7)"
+    )
+
+
+def shown(
+    d: dict[str, Any], level: int | None = None, source: int | None = None
+) -> bool:
+    """The host-side display filter: errors always pass the level; `source` limits the events to one module."""
+    if source is not None and d["source"] != source:
+        return False
+    if level is None or d["error"]:
+        return True
+    return d["level"] not in LEVELS or LEVELS.index(d["level"]) <= level
 
 
 def read_all(
@@ -334,9 +359,17 @@ class Follower:
         up: D.Uploader,
         emit: Callable[[str, dict[str, Any] | None], None],
         start: int = 0,
+        level: int | None = None,
+        source: int | None = None,
+        names: dict[int, str] | None = None,
     ):
         self.up, self.emit, self.next = up, emit, start
         self.seen_newest = 0
+        self.level, self.source = (
+            level,
+            source,
+        )  # display filters (the events are still read)
+        self.names = dict(names or {})
 
     def poll(self) -> int:
         """One round of polling; returns the number of events written."""
@@ -360,7 +393,10 @@ class Follower:
                 )
             for ev in evs:
                 d = event_dict(ev)
-                self.emit(text_of(d), d)
+                self.names.update(module_names([ev]))
+                if not shown(d, self.level, self.source):
+                    continue
+                self.emit(text_of(d, self.names), d)
                 n += 1
             self.next = evs[-1][0] + 1
             self.seen_newest = max(self.seen_newest, newest)
@@ -377,6 +413,9 @@ def follow(
     start: int = 0,
     echo: bool = True,
     sleep: Callable[[float], None] = time.sleep,
+    level: int | None = None,
+    source: int | None = None,
+    names: dict[int, str] | None = None,
 ) -> int:
     """Poll the log and write it; `once` reads what is there and returns. Returns the number of events written."""
     f = None
@@ -406,7 +445,7 @@ def follow(
                 )
             f.flush()
 
-    fol = Follower(up, emit, start)
+    fol = Follower(up, emit, start, level, source, names)
     total = 0
     try:
         while True:
@@ -553,6 +592,40 @@ def peek_range(up: D.Uploader, addr: int, length: int) -> bytes:
     return out
 
 
+LOGCFG_RUNTIME = 0x000100  # runtime 0.1.0, packed
+
+
+def level_config(
+    up: D.Uploader,
+    default: str | None = None,
+    modules: list[str] | None = None,
+    names: dict[int, str] | None = None,
+) -> str:
+    """The `level` subcommand: set the default level and/or module levels (`NAME=LEVEL` or `NAME=default`), then show the configuration."""
+    mods: dict[int, int | None] = {}
+    for item in modules or []:
+        name, _, lv = item.partition("=")
+        if not lv:
+            raise ValueError(f"--module {item!r}: expected NAME=LEVEL")
+        mods[source_of(name, names or {}) - 1] = (
+            None if lv == "default" else level_of(lv)
+        )
+    cfg = up.logcfg(None if default is None else level_of(default), mods or None)
+    names = names or {}
+
+    def lv(v: int) -> str:
+        return "default" if v == 0xFF else (LEVELS[v] if v < len(LEVELS) else str(v))
+
+    lines = [
+        f"default: {lv(cfg['default'])}",
+        f"debug: {'on' if cfg['debug'] else 'off'}",
+    ]
+    for i, v in enumerate(cfg["modules"]):
+        if v != 0xFF:
+            lines.append(f"module {i} ({names.get(i + 1, f'mod#{i}')}): {lv(v)}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -589,7 +662,27 @@ def main(argv: list[str] | None = None) -> int:
         default=0,
         help="first sequence number to read (default: the oldest)",
     )
+    p.add_argument(
+        "--level",
+        help="show events at or below this level (error, warn, info, debug, trace or 0 to 4); errors always",
+    )
+    p.add_argument(
+        "--module",
+        help="show only this module's events (its name from MOD_LIST, or its record index)",
+    )
     sub.add_parser("crash")
+    p = sub.add_parser("level", help="show or set the log levels")
+    p.add_argument(
+        "level",
+        nargs="?",
+        help="the default level (error, warn, info, debug, trace or 0 to 4)",
+    )
+    p.add_argument(
+        "--module",
+        action="append",
+        default=[],
+        help="NAME=LEVEL (or NAME=default); repeatable; NAME is a name from MOD_LIST or a record index",
+    )
     p = sub.add_parser("peek")
     p.add_argument("addr", type=lambda s: int(s, 0))
     p.add_argument("length", type=lambda s: int(s, 0))
@@ -612,7 +705,22 @@ def main(argv: list[str] | None = None) -> int:
                 / f"{datetime.date.today().isoformat()}.log"
             )
             print(f"# writing {out}", file=sys.stderr)
-            follow(up, out, args.interval, args.once, args.start)
+            names = module_names(read_all(up)[2]) if args.module else {}
+            follow(
+                up,
+                out,
+                args.interval,
+                args.once,
+                args.start,
+                level=None if args.level is None else level_of(args.level),
+                source=None if args.module is None else source_of(args.module, names),
+                names=names,
+            )
+        elif args.cmd == "level":
+            if up.info()["runtime"] < LOGCFG_RUNTIME:
+                raise ValueError("LOGCFG needs runtime 0.1.0 or newer")
+            names = module_names(read_all(up)[2]) if args.module else {}
+            print(level_config(up, args.level, args.module, names))
         elif args.cmd == "crash":
             _, _, evs = read_all(up)
             rec = crash_record(evs)
@@ -625,7 +733,10 @@ def main(argv: list[str] | None = None) -> int:
             print(hexdump(args.addr, peek_range(up, args.addr, args.length)))
         elif args.cmd == "info":
             for k, v in up.info().items():
-                print(f"{k}: {v}")
+                print(f"{k}: {D.fmt_runtime(v) if k == 'runtime' else v}")
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     except D.UploadError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

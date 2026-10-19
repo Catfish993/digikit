@@ -43,6 +43,7 @@ const CMD_CLEAR: u32 = 0x14;
 const CMD_ABORT: u32 = 0x15;
 const CMD_LOG: u32 = 0x20;
 const CMD_PEEK: u32 = 0x21;
+pub const CMD_LOGCFG: u8 = 0x22;
 const CMD_SELECT: u32 = 0x30;
 const CMD_RESTART: u32 = 0x31;
 
@@ -209,8 +210,8 @@ unsafe fn reply(cmd: u32, seq: u32, status: i32, extra: usize) -> i32 {
     let n = pack(rb, 1 + extra, w.add(7));
     *w.add(7 + n) = 0xf7;
     DKRT_UPLOAD_LAST = status;
-    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK {
-        dlog::ev(logk::UPLOAD, if status == 0 { 0 } else { logk::F_ERROR }, [cmd, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
+    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG as u32 {
+        dlog::ev(logk::UPLOAD, if status == 0 { dlog::INFO } else { logk::F_ERROR }, [cmd, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
     }
     if !tx_room(8 + n) {
         DKRT_UPLOAD_DROPPED = DKRT_UPLOAD_DROPPED.wrapping_add(1);
@@ -827,6 +828,49 @@ unsafe fn cmd_peek(seq: u32, body: *const u8, blen: usize) -> i32 {
     reply(CMD_PEEK, seq, OK, 6 + len as usize)
 }
 
+/// LOGCFG: body `u8 op` (0 get, 1 set); a set adds `u8 default` and 8 bytes, the level of module record 0 to 7 (0xff: use the default). Levels are 0 to 4.
+/// Reply (both ops): `u8 default`, 8 module levels, `u8 debug_on`.
+unsafe fn cmd_logcfg(seq: u32, body: *const u8, blen: usize) -> i32 {
+    if blen < 1 {
+        return reply(CMD_LOGCFG as u32, seq, E_MSG, 0);
+    }
+    let op = *body;
+    if op == 1 {
+        if blen != 10 {
+            return reply(CMD_LOGCFG as u32, seq, E_MSG, 0);
+        }
+        let mut i = 0;
+        while i < 9 {
+            let v = *body.add(1 + i);
+            if i == 0 {
+                if v > 4 {
+                    return reply(CMD_LOGCFG as u32, seq, E_PROTO, 0);
+                }
+            } else if v > 4 && v != 0xff {
+                return reply(CMD_LOGCFG as u32, seq, E_PROTO, 0);
+            }
+            i += 1;
+        }
+        dlog::set_level_default(*body.add(1));
+        i = 0;
+        while i < 8 {
+            dlog::set_level_module(i, *body.add(2 + i));
+            i += 1;
+        }
+    } else if op != 0 {
+        return reply(CMD_LOGCFG as u32, seq, E_PROTO, 0);
+    }
+    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
+    *rb = dlog::level_default();
+    let mut i = 0;
+    while i < 8 {
+        *rb.add(1 + i) = dlog::level_module(i);
+        i += 1;
+    }
+    *rb.add(9) = if dlog::debug_on() { 1 } else { 0 };
+    reply(CMD_LOGCFG as u32, seq, OK, 10)
+}
+
 /// SELECT (runtime 4): save the selection record, the same `boot::selection_set` the menu's APPLY & RESTART calls (so the card range check and
 /// the "blank or ours" rule apply). Body: `u8 n`, then `n` store paths, each NUL terminated. Status: 0, `E_MSG` (malformed), `E_INUSE` (card
 /// not writable), or the selection code (`E_SEL_COUNT`, `E_SEL_PATH`, `E_SEL_WRITE`, `E_CARD_RO`). Takes effect at the next boot.
@@ -963,6 +1007,8 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
         cmd_log(seq, body, blen)
     } else if cmd == CMD_PEEK {
         cmd_peek(seq, body, blen)
+    } else if cmd == CMD_LOGCFG as u32 {
+        cmd_logcfg(seq, body, blen)
     } else if cmd == CMD_SELECT {
         cmd_select(seq, body, blen)
     } else if cmd == CMD_RESTART {

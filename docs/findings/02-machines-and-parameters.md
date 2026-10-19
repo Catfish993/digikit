@@ -1649,3 +1649,12 @@ the model's cursor on **row 5 (MIDI)**, while the panel still drew row 3
 (SWARMER) highlighted. YES then committed MIDI. Read the cursor (`view+420`)
 rather than trusting the panel after a held key; a shorter hold would need the
 press and release serviced closer together.
+
+## Knob slots 3 and 6 on a run-time SAMPLE clone (DT2 1.17)
+
+**[D]** A run-time machine that clones SAMPLE (test/dyn-pluck, type 18) was packed with an extra parameter on slot 6
+(mirror 33), then on slot 3 (mirror 28), range 0..0x7f00, and driven in the emulator (page encoder, Sound mirror, TX
+frame word, note PCM; 2026-10-20). Slot 6: the TX word equals the stored value at every step (0..0x7f00) and the note
+PCM equals the control with the slot empty: usable. Slot 3: the stored value follows the encoder, but the TX word is
+`value & 0x3ff` (0x1234 -> 0x234, 0x7f00 -> 0x300): the DSP sees only the sample number bits, so slot 3 is reserved
+on a SAMPLE clone (docs/design/module-sdk.md 11.5 D1). Not tested: slot 3 on a track with a sample assigned.

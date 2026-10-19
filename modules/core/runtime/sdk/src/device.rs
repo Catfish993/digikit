@@ -35,3 +35,11 @@ pub const DSP_BLOCK_CYCLES: u32 = 0xa2c2b;
 pub const KEEP_BASE: u32 = 0x47fe0000;
 /// [digikit] keep_bytes
 pub const KEEP_BYTES: u32 = 0x1000;
+/// [limits] modules (module records)
+pub const LIMIT_MODULES: u32 = 0x8;
+/// [limits] machine_rows (run-time machine and voice rows)
+pub const LIMIT_MACHINE_ROWS: u32 = 0x8;
+/// [limits] arena_bytes (the module arena)
+pub const LIMIT_ARENA_BYTES: u32 = 0x80000;
+/// [limits] stage_bytes (the staging buffer of a .dkm file)
+pub const LIMIT_STAGE_BYTES: u32 = 0x10000;

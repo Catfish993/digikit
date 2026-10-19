@@ -253,6 +253,20 @@ fn run(a: Args) -> Result<()> {
                     }
                 }
             }
+            for (rel, text) in patchkit::sdkgen::generate(&a.root)? {
+                let path = a.root.join(&rel);
+                let have = std::fs::read_to_string(&path).ok();
+                if have.as_deref() == Some(text.as_str()) {
+                    continue;
+                }
+                if check {
+                    println!("stale    {}", path.display());
+                    stale += 1;
+                } else {
+                    write(&path.to_string_lossy(), text.as_bytes())?;
+                    println!("wrote    {}", path.display());
+                }
+            }
             if stale > 0 {
                 return Err(Error(format!(
                     "{stale} generated file(s) are stale: run `patchkit gen`"
@@ -394,7 +408,7 @@ plan.json {}",
                     Some(v) => v
                         .parse()
                         .map_err(|_| Error("--runtime-min: a number".into()))?,
-                    None => patchkit::dkm::RUNTIME_VERSION,
+                    None => patchkit::dkm::runtime_version(),
                 },
             };
             // a run-time module: its typed sections, lowered for one device, are the `register` records
@@ -492,6 +506,7 @@ plan.json {}",
                 d.imports.len(),
                 d.sha256
             );
+            println!("size     {out}: {}", d.size_summary(file.len()));
         }
         "dkm-dsp-image" => {
             // the DSP image of a .dkm placed at the L2 byte address BASE, imports as NAME=VALUE: the reference loader
@@ -515,7 +530,9 @@ plan.json {}",
             println!("{}", patchkit::error::hex(&img));
         }
         "dkm-info" => {
-            let d = patchkit::dkm::Dkm::parse(&read(need(rest)?)?)?;
+            let raw = read(need(rest)?)?;
+            let file_len = raw.len();
+            let d = patchkit::dkm::Dkm::parse(&raw)?;
             println!("name      {}", d.name);
             println!(
                 "version   {}.{}.{}",
@@ -523,8 +540,9 @@ plan.json {}",
                 d.version >> 8 & 255,
                 d.version & 255
             );
-            println!("runtime   >= {}", d.runtime_min);
+            println!("runtime   >= {}", patchkit::dkm::fmt_runtime(d.runtime_min));
             println!("sha256    {}", d.sha256);
+            println!("size      {}", d.size_summary(file_len));
             println!(
                 "image     {} bytes, bss {}, align {}",
                 d.image.len(),

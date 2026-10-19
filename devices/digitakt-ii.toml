@@ -103,6 +103,13 @@ keep_bytes = 0x1000
 # runtime's own region with the keep range. No peripheral registers; at most 4 ranges.
 peek = [[0x40000000, 0x47e30000], [0x47e8b000, 0x47fe1000]]
 
+# The runtime's per-type limits (docs/design/module-sdk.md 11.5 D8); generated into the runtime's device.rs.
+[limits]
+modules = 8
+machine_rows = 8
+arena_bytes = 524288
+stage_bytes = 65536
+
 # What patchkit needs of this device: the container and section limits of a port (written into devices/ports/*.toml by
 # tools/patchkit/port_resolve.py; docs/findings/01 "NOR flash map") and the DSP L2 range the free-region search runs in.
 [patch]

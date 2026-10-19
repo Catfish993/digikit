@@ -183,7 +183,7 @@ pub unsafe fn selection_set(s: *const DkrtSelection) -> i32 {
         r.paths[k] = s.paths[k];
         k += 1;
     }
-    dlog::ev(logk::MENU, 0, [logk::MENU_SELECT, s.count, 0, 0, 0]);
+    dlog::ev(logk::MENU, dlog::INFO, [logk::MENU_SELECT, s.count, 0, 0, 0]);
     let e = write_copy(0, &r);
     if e != OK {
         return e;
@@ -275,7 +275,7 @@ pub unsafe extern "C" fn dkrt_boot() {
     let valid = rec.is_some();
     let mut r = rec.unwrap_or(Record::empty());
     dlog::set_debug(r.flags & sel::FLAG_DEBUG_OFF == 0);
-    dlog::ev(logk::BOOT_START, 0, [RUNTIME_VERSION, crate::device(), r.stable_blocks, r.seq, r.boot_counter]);
+    dlog::ev(logk::BOOT_START, dlog::INFO, [RUNTIME_VERSION, crate::device(), r.stable_blocks, r.seq, r.boot_counter]);
     // the card's area: ours, blank or neither (read-only), before anything is written
     card::check();
     // the crash record and the RAM probe of the boot before
@@ -311,7 +311,7 @@ pub unsafe extern "C" fn dkrt_boot() {
     };
     dlog::ev(
         logk::BOOT_RECORD,
-        0,
+        dlog::INFO,
         [r.seq, copy, r.boot_counter, r.count, r.flags],
     );
     if reason != SAFE_NONE {
@@ -358,7 +358,7 @@ pub unsafe extern "C" fn dkrt_boot() {
             }
             i += 1;
         }
-        let bad = if res == OK || res == LOADING { 0 } else { logk::F_ERROR };
+        let bad = if res == OK || res == LOADING { dlog::INFO } else { logk::F_ERROR };
         dlog::ev(
             logk::MOD_LOAD,
             bad,
@@ -372,7 +372,7 @@ pub unsafe extern "C" fn dkrt_boot() {
 
 /// The DSP part of the module loaded for selection index `idx` is over with result `r` (called by the DSP loader).
 pub unsafe fn note_result(idx: u32, r: i32) {
-    dlog::ev(logk::MOD_DSP, if r == OK { 0 } else { logk::F_ERROR }, [idx, r as u32, 0, 0, 0]);
+    dlog::ev(logk::MOD_DSP, if r == OK { dlog::INFO } else { logk::F_ERROR }, [idx, r as u32, 0, 0, 0]);
     if (idx as usize) < SEL_MAX {
         let b = info();
         b.results[idx as usize] = r;
@@ -400,7 +400,7 @@ pub unsafe fn ui_pass() {
         b.ui_reached = 1;
         DKRT_UI_START.0 = now;
         UI_PASSES = 0;
-        dlog::ev(logk::UI_FIRST, 0, [now, b.safe, b.loaded, 0, 0]);
+        dlog::ev(logk::UI_FIRST, dlog::INFO, [now, b.safe, b.loaded, 0, 0]);
     }
     UI_PASSES = UI_PASSES.wrapping_add(1);
     let elapsed = now.wrapping_sub(DKRT_UI_START.0);
@@ -418,7 +418,7 @@ pub unsafe fn ui_pass() {
                 update(r, copy, true);
             }
         }
-        dlog::ev(logk::STABLE, 0, [now, floor, 0, 0, 0]);
+        dlog::ev(logk::STABLE, dlog::INFO, [now, floor, 0, 0, 0]);
     }
 }
 

@@ -293,7 +293,7 @@ pub unsafe fn keep_probe() {
     let gen = read_volatile(p.add(1));
     let kept = magic == PROBE_MAGIC && read_volatile(p.add(2)) == !gen;
     c.ram_kept = kept as u32;
-    dlog::ev(logk::RAM_KEEP, 0, [kept as u32, if kept { gen } else { 0 }, 0, 0, 0]);
+    dlog::ev(logk::RAM_KEEP, dlog::INFO, [kept as u32, if kept { gen } else { 0 }, 0, 0, 0]);
     let ngen = if kept { gen.wrapping_add(1) } else { 1 };
     write_volatile(p, PROBE_MAGIC);
     write_volatile(p.add(1), ngen);

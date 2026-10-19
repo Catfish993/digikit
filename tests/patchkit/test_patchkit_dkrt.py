@@ -1,7 +1,7 @@
 """core/runtime and the .dkm packer (digikit runtime v0, finding 29).
 
 The committed objects are current and plain ColdFire; the packer is deterministic and the file checks itself; the emulator
-proof (tools/patchkit/pk_dkrt.py) patches the runtime into a firmware, boots it on a card whose selection record names three bad
+proof (tools/patchkit/pk_dkrt.py) patches the runtime into a firmware, boots it on a card whose selection record names five bad
 files, the good module and a duplicate, reads the boot report, watches the module's counter rise while the UI task runs, and
 checks that a load after the boot is refused (E_BOOT_ONLY), with the write-watch and the flush check on. One boot of about 25 s
 per image."""
@@ -63,7 +63,7 @@ def test_boot_loads_the_module_and_refuses_the_bad_files(image, tmp_path):
     assert not failed, failed
     n = report["numbers"]
     assert n["counter"][0] < n["counter"][1] < n["counter"][2]
-    assert n["boot_results"] == [-4, -7, -1, 0, -11]
+    assert n["boot_results"] == [-4, -7, -1, -48, -48, 0, -11]
     assert n["write_watch"]["events"] == 0
 
 

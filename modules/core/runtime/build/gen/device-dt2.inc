@@ -22,6 +22,10 @@
     .equ DL_TAIL_WORDS, 0xae    /* [digikit] dsp_tail_words */
     .equ KEEP_BASE, 0x47fe0000    /* [digikit] keep_base (RAM a soft reset is assumed to keep: the crash record) */
     .equ KEEP_BYTES, 0x1000    /* [digikit] keep_bytes */
+    .equ LIMIT_MODULES, 0x8    /* [limits] modules (module records) */
+    .equ LIMIT_MACHINE_ROWS, 0x8    /* [limits] machine_rows (run-time machine and voice rows) */
+    .equ LIMIT_ARENA_BYTES, 0x80000    /* [limits] arena_bytes (the module arena) */
+    .equ LIMIT_STAGE_BYTES, 0x10000    /* [limits] stage_bytes (the staging buffer of a .dkm file) */
     .equ PEEK_N, 0x2    /* [digikit] peek: number of ranges */
     .equ PEEK_LO_0, 0x40000000    /* [digikit] peek range start (RAM the PEEK command may read) */
     .equ PEEK_HI_0, 0x47e30000    /* [digikit] peek range end (exclusive) */

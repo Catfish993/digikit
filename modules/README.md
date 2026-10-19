@@ -373,6 +373,8 @@ Rules:
 - A parameter's slot is its knob position: `slot_base + position` (Digitakt II engine slots 0 to 7, Digitone II
   sound-array slots 25 to 32). A param used at two positions (two machines, or a machine and its page) is refused.
   A param that no machine of a device uses is left out there; with an explicit `devices` it is an error.
+  On a Digitakt II SAMPLE clone, slot 3 passes only the sample bits (`value & 0x3ff`): put no parameter there. Slot 6 is usable
+  (docs/findings/02-machines-and-parameters.md, last section).
 - Parameter codes follow the order of the `[[param]]` sections (`params.<id>.index`, as before). Type numbers stay
   permanent (`core/machines/types.toml`); the lowering needs none.
 - Lowered rows, per device: `voices` (`type = machines.<id>.index`, `pc = entry`), `machines`, `params`, `pages`.
@@ -395,7 +397,7 @@ table gives it the mirror index `mirror_base + j + (j / group) * gap`.
 
 #### Generated files (`patchkit gen`)
 
-`patchkit gen` (`uv run python -m tools.patchkit.patchkit gen`, or the binary) writes
+`mise run gen:modules` (`uv run python -m tools.patchkit.patchkit gen`, or the binary; add `-- --check` to only report stale files) writes
 `modules/<id>/build/gen/` for every module with typed sections; `gen --check` fails when a committed file is
 stale (`packages/patchkit/tests/typed.rs` runs it). The files hold no firmware bytes.
 
@@ -408,7 +410,14 @@ stale (`packages/patchkit/tests/typed.rs` runs it). The files hold no firmware b
 A module can also ask for constants from the device files (`devices/*.toml`: `[board]`, `[digikit]`, `[card.store]`) and
 `core/machines` `types.toml` with `[[gen]]` entries in its `module.toml` (`kind` = `rust`, `gas-shared`, `gas` or `sharc`, and a
 `path`; `{dev}` in the path makes one file per device). They are written by the same `patchkit gen` and checked by `gen --check`;
-what each kind holds, which fact lives where and what a new device needs are in `docs/design/device-data.md`. In a SHARC
+what each kind holds, which fact lives where and what a new device needs are in `docs/design/device-data.md`.
+
+`sdk/sdk.toml` is the one source of the runtime version (0.1.0, packed `major<<16|minor<<8|patch`; runtimes 1 to 5 read as 0.0.1 to 0.0.5), the
+contract versions (api, machine, fx, service) and the log kinds. `gen` writes `modules/core/runtime/sdk/src/gen_sdk.rs` and
+`tools/device/dklog_kinds.py` from it, and the per-type limits (`[limits]` in `devices/*.toml`: modules, machine_rows, arena_bytes,
+stage_bytes) into the runtime's `device.rs`. The patchkit tests fail on a stale file. `runtime_min` (header byte 0x30) is informational;
+a module is refused only on a contract mismatch (`E_CONTRACT` -48: rebuild the module). The runtime refuses further loads when its
+module table is inconsistent (`E_TABLE` -49). `patchkit pack` and `dkm-info` print a `size` line by section. In a SHARC
 include the note of each constant is on the line before its `#define`: a trailing comment would become part of the macro.
 
 Example (pluck, Digitakt II): `R1 = FRAME_BASE;` and `R0 = R13 + PLUCK_DECAY_FRAME_OFF;` instead of `0x6d` and `1`.

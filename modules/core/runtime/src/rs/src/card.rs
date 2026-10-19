@@ -171,7 +171,7 @@ unsafe fn report() {
     let bad = c.state != CARD_OURS && c.state != CARD_BLANK;
     dlog::ev(
         logk::CARD_CHECK,
-        if bad { logk::F_ERROR } else { 0 },
+        if bad { logk::F_ERROR } else { dlog::INFO },
         [c.state, c.first_nonblank, c.hash, c.read_errors, 0],
     );
 }

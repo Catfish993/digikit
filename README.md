@@ -71,6 +71,7 @@ Useful while testing:
 
 ```sh
 mise run dk:log -- --port Digitakt follow                       # follow the debug log (saved under out/runs/device-logs/)
+mise run dk:log -- --port Digitakt level debug                  # log more: levels error, warn, info (default), debug, trace
 mise run dk:screen -- --port Digitakt out/runs/shots/screen.png # a screenshot of the display
 mise run dk:store -- --port Digitakt ls                         # the modules on the +Drive
 ```
@@ -95,6 +96,7 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 ## More
 
 - [Writing modules](docs/MODULE-AUTHORING.md), and the planned module SDK: [docs/design/module-sdk.md](docs/design/module-sdk.md)
+- [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
 - [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, tests, analysis tools, repository layout
 - [Testing](docs/TESTING.md) and [results of the research](docs/FINDINGS.md)

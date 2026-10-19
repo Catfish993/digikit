@@ -45,7 +45,6 @@ import contextlib
 import hashlib
 import json
 import os
-import re
 import struct
 import sys
 import tempfile
@@ -59,6 +58,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 from tools.coldfire import arena_safety  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
+from tools.device.dklog_kinds import RUNTIME_PACKED  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_device  # noqa: E402
 from tools.patchkit import pk_dkrt_machine as M  # noqa: E402
@@ -70,17 +70,9 @@ from tools.patchkit.pk_dkrt import (  # noqa: E402
     patch,
 )
 
-
-def sdk_const(name: str) -> int:
-    """A `pub const NAME: u32 = N;` of the runtime's shared crate (modules/core/runtime/sdk/src/lib.rs): one definition, read here."""
-    text = (ROOT / "modules/core/runtime/sdk/src/lib.rs").read_text()
-    m = re.search(rf"pub const {name}: u32 = (\d+);", text)
-    if not m:
-        raise RuntimeError(f"dkrt-sdk has no u32 constant {name}")
-    return int(m.group(1))
-
-
-RUNTIME_VERSION = sdk_const("RUNTIME_VERSION")
+RUNTIME_VERSION = (
+    RUNTIME_PACKED  # packed major << 16 | minor << 8 | patch (sdk/sdk.toml, generated)
+)
 SEL_MAGIC, SEL_VERSION = 0x444B534C, 1
 SEL_MAX, SEL_PATH = 8, 56
 _STORE = pk_device.store()  # devices/*.toml [card.store], the same on every device

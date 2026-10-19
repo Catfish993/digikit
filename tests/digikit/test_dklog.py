@@ -29,7 +29,7 @@ def word(s):
 
 
 def test_every_kind_has_a_name_and_five_arguments():
-    assert sorted(L.KINDS) == list(range(1, 29))
+    assert sorted(L.KINDS) == list(range(1, len(L.KINDS) + 1))
     assert all(len(v[1]) == 5 for v in L.KINDS.values())
     assert len(set(v[0] for v in L.KINDS.values())) == len(L.KINDS)
 
@@ -246,6 +246,82 @@ def test_follow_writes_text_and_json_notes_a_gap_and_a_restart(tmp_path):
         "host_time" in j and j["kind"] == "UPLOAD" for j in js
     )
     assert sum(1 for x in rows if x.startswith("#") and "UPLOAD" in x) == 5
+
+
+def lv(level, src=0, error=False):
+    return level << 1 | src << 8 | (1 if error else 0)
+
+
+def test_level_and_source_are_decoded():
+    d = L.event_dict(ev(1, "MOD_LOG", flags=lv(4, 3)))
+    assert (d["level"], d["source"], d["error"]) == ("trace", 3, False)
+    d = L.event_dict(ev(2, "SAFE", flags=lv(0, 0, True)))
+    assert (d["level"], d["source"], d["error"]) == ("error", 0, True)
+    assert L.event_dict(ev(3, "MENU", flags=7 << 1))["level"] == "7"
+    line = L.text_of(L.event_dict(ev(4, "MOD_LOG", flags=lv(2, 2))))
+    assert "info" in line and "mod#1" in line
+    assert "c-demo" in L.text_of(
+        L.event_dict(ev(5, "MOD_LOG", flags=lv(2, 2))), {2: "c-demo"}
+    )
+
+
+def test_display_filters_by_level_and_module():
+    ring = [
+        ev(1, "MENU", flags=lv(2)),
+        ev(2, "MENU", flags=lv(4)),
+        ev(3, "SAFE", flags=lv(0, 0, True)),
+        ev(4, "MOD_LOG", flags=lv(3, 1)),
+        ev(5, "MOD_LOG", flags=lv(2, 2)),
+    ]
+    out: list = []
+    fol = L.Follower(FakeUp(ring), lambda t, d: out.append(d), level=L.level_of("info"))
+    assert fol.poll() == 3 and [d["seq"] for d in out] == [
+        1,
+        3,
+        5,
+    ]  # errors always, trace and debug hidden
+    out.clear()
+    fol = L.Follower(FakeUp(ring), lambda t, d: out.append(d), source=2)
+    assert fol.poll() == 1 and out[0]["seq"] == 5
+    out.clear()
+    fol = L.Follower(FakeUp(ring), lambda t, d: out.append(d), level=3, source=1)
+    assert fol.poll() == 1 and out[0]["seq"] == 4
+    assert L.level_of("Debug") == 3 and L.level_of("0") == 0
+
+
+def test_module_names_come_from_mod_list():
+    evs = [ev(1, "MOD_LIST", (1, 3, word("c-de"), word("mo"), 0))]
+    names = L.module_names(evs)
+    assert names == {2: "c-demo"}
+    assert L.source_of("c-demo", names) == 2 and L.source_of("3", names) == 4
+
+
+class FakeCfg:
+    """What `Uploader.logcfg` does against the runtime's LOGCFG: the state lives here."""
+
+    def __init__(self):
+        self.default, self.modules, self.debug = 2, [0xFF] * 8, True
+
+    def logcfg(self, default=None, modules=None):
+        if default is not None:
+            self.default = default
+        for i, v in (modules or {}).items():
+            self.modules[i] = 0xFF if v is None else v
+        return {
+            "default": self.default,
+            "modules": list(self.modules),
+            "debug": self.debug,
+        }
+
+
+def test_level_subcommand_round_trip():
+    up = FakeCfg()
+    assert "default: info" in L.level_config(up)
+    text = L.level_config(up, "error", ["c-demo=trace", "3=warn"], {2: "c-demo"})
+    assert "default: error" in text and "(c-demo): trace" in text
+    assert up.default == 0 and up.modules[1] == 4 and up.modules[0] == 0xFF
+    text = L.level_config(up, None, ["c-demo=default"], {2: "c-demo"})
+    assert up.modules[1] == 0xFF and "default: error" in text
 
 
 def test_read_all_pages_through_the_ring():
