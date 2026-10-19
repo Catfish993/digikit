@@ -418,7 +418,7 @@ New tools approved (Em, 2026-10-19): `sccache`, `cargo-nextest`, a test-impact t
      Example: the runtime-4 merge (one `mise.toml` line) ran all 13 steps, about 25 min, for about 4 min of relevant tests.
    - [x] v-rust (commit 632dc41b; nextest not installed, not used): Rust tests for affected crates only (reverse dependencies from `cargo metadata`, tools/devtools/rust_ws.py), `cargo-nextest`;
      `verify:full` keeps the whole workspace. rust-tests today 260-600 s.
-   - [ ] v-slow: `tests/patchkit/test_pluck.py` sharded or cheapened (about 370 s alone; lever 2b, ceiling about 200 s); the SHARC `tests_gen`
+   - [x] v-slow (merged; 417 s to 136 s CPU, tests_gen 121 s to 15 s): `tests/patchkit/test_pluck.py` sharded or cheapened (about 370 s alone; lever 2b, ceiling about 200 s); the SHARC `tests_gen`
      differential tests only when their crate changed (lever 2a, about 100 s).
    - [ ] Then, measured: `sccache` across lanes (only if it hits at the lanes' paths); why an emulator edit rebuilds so much (crate split).
    Baseline 2026-10-18: wall 881 s; python-tests 881 s, rust-tests 598 s, check-no-aot 492 s, tier-quick 421 s. Approved tools: `sccache`,
@@ -448,7 +448,7 @@ twice (a conformance suite before shipping, the runtime on the device), a templa
 2. [ ] Machine conformance suite from the manifest on the routine rig (every parameter at its limits, notes x pitch parameters, per-block
    modulation, long notes, retriggers; finite, bounded, returns, within budget), `mise run module:check NAME`, routed by verify.
 3. [ ] Layout: one module per machine (patched in or loaded at run time is a build choice; `test/dyn-pluck`, `test/dyn-xslice`, `twin-*`
-   removed), framework fixtures from `modules/test/` to `tests/fixtures/modules/`, framework scenarios on fixtures, a module's own tests
+   removed), framework fixtures from `modules/test/` to a fixtures folder under `tests/` (new), framework scenarios on fixtures, a module's own tests
    in its `tests/`. Oracle: images and `.dkm` byte-identical except the module ids.
 4. [ ] Manifest with author concepts only: firmware codes (templates, knob codes, placement, entry) into the device profiles, parameter kinds.
 5. [ ] `mise run module:new machine NAME` and docs/MODULE-AUTHORING.md rewritten around new, build, `module:check`, emulator, device.
