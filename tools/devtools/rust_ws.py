@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run cargo over the whole native workspace with the pinned toolchain.
 
-    uv run python -m tools.devtools.rust_ws test [-- CARGO_ARGS...]   cargo test --workspace --release
-    uv run python -m tools.devtools.rust_ws test --packages A,B       cargo test -p A -p B --release (verify's affected crates)
+    uv run python -m tools.devtools.rust_ws test [-- CARGO_ARGS...]   cargo nextest run --workspace --release
+    uv run python -m tools.devtools.rust_ws test --packages A,B       cargo nextest run -p A -p B --release (verify's affected crates)
     uv run python -m tools.devtools.rust_ws check [-- CARGO_ARGS...]  cargo check --workspace --all-targets
     uv run python -m tools.devtools.rust_ws gates                     the ignored coupled gate (needs the private DN2 ready inputs)
     uv run python -m tools.devtools.rust_ws fmt                       cargo fmt --check on the clean crates
@@ -233,9 +233,15 @@ def main(argv: list[str]) -> int:
                 f"rust_ws: only {DESKTOP} is affected; it is tested by the desktop step"
             )
             return 0
-        sub = ["test", *(x for p in packages for x in ("-p", p)), "--release", *target]
+        sub = [
+            "nextest",
+            "run",
+            *(x for p in packages for x in ("-p", p)),
+            "--release",
+            *target,
+        ]
     else:
-        sub = ["test", *workspace_args("test"), "--release", *target]
+        sub = ["nextest", "run", *workspace_args("test"), "--release", *target]
     return cargo([*sub, *extra], env)
 
 

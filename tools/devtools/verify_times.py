@@ -1,17 +1,13 @@
 """How long each python-tests file took in earlier verify runs (the order of its jobs: longest first).
 
-The record is the one verify already writes: out/runs/verify/<run>/python-tests/summary.tsv, or, for a run
-that did not finish, the JUnit XML of each file next to it. Nothing else is kept.
+The record is the one verify already writes: out/runs/verify/<run>/python-tests/summary.tsv. Nothing else is kept.
 """
 
 from __future__ import annotations
 
 import contextlib
-import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from pathlib import Path
-
-from tools.devtools import test_outcomes
 
 DEFAULT_SECONDS = 60.0  # a file no earlier run has timed
 RUNS_SCANNED = 12  # the newest runs read
@@ -30,14 +26,7 @@ def run_seconds(run: Path, files: Iterable[str]) -> dict[str, float]:
                 with contextlib.suppress(ValueError):
                     found[cols[0]] = float(cols[3])
         return found
-    for rel in wanted:
-        xml = out / "xml" / f"{test_outcomes.slug_of(rel)}.xml"
-        try:
-            suite = next(ET.parse(xml).getroot().iter("testsuite"))
-            found[rel] = float(suite.get("time", "nan"))
-        except (OSError, ET.ParseError, StopIteration, ValueError):
-            pass
-    return {k: v for k, v in found.items() if v == v}  # drop nan
+    return found
 
 
 def file_seconds(

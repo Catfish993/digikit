@@ -13,6 +13,7 @@ pnpm = "12.8.2"
 "aqua:WebAssembly/binaryen" = "version_133"
 wasm-tools = "1.261.0"
 "github:mstange/samply" = "samply-v0.13.1"
+"github:nextest-rs/nextest" = "cargo-nextest-0.9.144"
 
 # --- setup ---
 

@@ -37,7 +37,7 @@ python-tests runs the PY_GATE files, the PY_SUITES whose trigger prefixes match 
 every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
 test files that import a changed tests/support module. With
 --full it runs PY_GATE plus every suite, not all of tests/ (`mise run test` runs all of tests/).
-rust-tests runs cargo test --workspace --release, or only the crates rust_ws.affected_packages names
+rust-tests runs cargo nextest run --workspace --release, or only the crates rust_ws.affected_packages names
 for the changed files (a routed run; --full and --only keep the workspace). The finer rules for modules/,
 tools/device/, tests/digikit scenarios and mise.toml tasks are in tools/devtools/verify_route.py
 (docs/TESTING.md, "What verify runs for a change"). --explain takes the same options as a run, then
@@ -1095,7 +1095,7 @@ def next_starts(
 
 
 def rust_tests_command(packages: list[str] | None = None) -> list[str]:
-    """cargo test --workspace --release (rust_ws.py); digiemu-desktop is always excluded (the desktop
+    """cargo nextest run --workspace --release (rust_ws.py); digiemu-desktop is always excluded (the desktop
     step tests it). PACKAGES (from rust_scope) limit the run to those crates
     when rust_ws accepts `--packages`; until it does, the whole workspace runs."""
     cmd = [*PY, "-m", "tools.devtools.rust_ws", "test"]

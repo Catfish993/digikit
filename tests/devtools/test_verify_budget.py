@@ -135,6 +135,7 @@ def test_step_env_names_every_pool() -> None:
     assert env["RAYON_NUM_THREADS"] == "10"
     assert set(env) >= {
         "RUST_TEST_THREADS",
+        "NEXTEST_TEST_THREADS",
         "DIGI_PY_JOBS",
         "DIGIKIT_JOBS",
         "DIGI_CONFORM_JOBS",
@@ -582,33 +583,25 @@ def test_files_longest_first_and_unknown_files_in_plan_order() -> None:
 def test_file_seconds_read_the_newest_runs(tmp_path: Path) -> None:
     from tools.devtools import verify_times
 
-    def run(
-        name: str, tsv: str | None = None, xml: dict[str, float] | None = None
-    ) -> None:
+    def run(name: str, tsv: str | None = None) -> None:
         out = tmp_path / name / "python-tests"
-        (out / "xml").mkdir(parents=True)
+        out.mkdir(parents=True)
         if tsv:
             (out / "summary.tsv").write_text("file\tstatus\trc\tseconds\n" + tsv)
-        for slug, sec in (xml or {}).items():
-            (out / "xml" / f"{slug}.xml").write_text(
-                f'<testsuites><testsuite name="pytest" time="{sec}"></testsuite></testsuites>'
-            )
 
     run("20260101-000000", tsv="fa.py\tOK\t0\t10.0\nfb.py\tOK\t0\t20.0\n")
     run(
         "20260102-000000",
         tsv="fa.py\tOK\t0\t30.0\nfb.py\tTIMEOUT\t1\t900.0\n",
     )
-    run(
-        "20260103-000000", xml={"fc": 7.5}
-    )  # a run that did not finish: the XML of each file
+    run("20260103-000000")  # a run that did not finish: no summary.tsv
     run("20260104-000000")  # this run: left out
     got = verify_times.file_seconds(
         tmp_path,
         ["fa.py", "fb.py", "fc.py", "fd.py"],
         tmp_path / "20260104-000000",
     )
-    assert got == {"fa.py": 30.0, "fb.py": 20.0, "fc.py": 7.5}
+    assert got == {"fa.py": 30.0, "fb.py": 20.0}
 
 
 def test_file_jobs_leave_the_cores_a_waiting_step_needs() -> None:

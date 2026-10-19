@@ -489,6 +489,8 @@ def step_env(node: str, share: int, cargo_cap: int | None = None) -> dict[str, s
     return {
         "CARGO_BUILD_JOBS": str(cargo),
         "RUST_TEST_THREADS": str(w.libtest),
+        # cargo-nextest reads this, not RUST_TEST_THREADS
+        "NEXTEST_TEST_THREADS": str(w.libtest),
         "RAYON_NUM_THREADS": str(w.rayon),
         "DIGI_JOBS": str(w.emulators),
         "DIGI_TIER_JOBS": str(w.emulators),
