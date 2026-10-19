@@ -261,10 +261,18 @@ def xml_counts(path: Path) -> tuple[int, int, int, int] | None:
 
 
 def run_one(
-    root: Path, out: Path, rel: str, pytest_args: list[str], timeout: float
+    root: Path,
+    out: Path,
+    rel: str,
+    pytest_args: list[str],
+    timeout: float,
+    env: dict[str, str] | None = None,
 ) -> dict[str, object]:
-    """Run pytest on one file in its own process group; return its record."""
+    """Run pytest on one file in its own process group (ENV: its environment, default ours); return
+    its record."""
     slug = slug_of(rel)
+    (out / "logs").mkdir(parents=True, exist_ok=True)
+    (out / "xml").mkdir(parents=True, exist_ok=True)
     xml = out / "xml" / f"{slug}.xml"
     cmd = [
         sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
@@ -276,6 +284,7 @@ def run_one(
         proc = subprocess.Popen(
             cmd,
             cwd=root,
+            env=env,
             stdout=log,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -312,6 +321,15 @@ def run_one(
     }
 
 
+def record_line(rec: dict[str, object]) -> str:
+    """The one-line summary of a record: rc, seconds, passed/failed/skipped/errors, file."""
+    cnt = rec["counts"]
+    shown = (
+        "/".join(str(n) for n in cnt) if isinstance(cnt, tuple) else str(rec["status"])
+    )
+    return f"{rec['rc']}  {rec['seconds']:.1f}  {shown}  {rec['file']}"
+
+
 def run_all(
     root: Path,
     out: Path,
@@ -323,8 +341,6 @@ def run_all(
     """Run every file, print one line each, write summary.tsv and all.xml.
 
     Returns the sorted files that did not pass."""
-    (out / "logs").mkdir(parents=True, exist_ok=True)
-    (out / "xml").mkdir(parents=True, exist_ok=True)
     records: list[dict[str, object]] = []
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = [
@@ -332,15 +348,16 @@ def run_all(
         ]
         for fut in as_completed(futures):
             rec = fut.result()
-            cnt = rec["counts"]
-            if isinstance(cnt, tuple):
-                shown = "/".join(str(n) for n in cnt)
-            else:
-                shown = str(rec["status"])
-            print(
-                f"{rec['rc']}  {rec['seconds']:.1f}  {shown}  {rec['file']}", flush=True
-            )
+            print(record_line(rec), flush=True)
             records.append(rec)
+    return write_reports(out, records, timeout)
+
+
+def write_reports(
+    out: Path, records: list[dict[str, object]], timeout: float
+) -> list[str]:
+    """Write summary.tsv and all.xml for RECORDS (run_one results); the sorted files that did not pass."""
+    records = list(records)
     records.sort(key=lambda r: str(r["file"]))
     suites = ET.Element("testsuites")
     lines = ["file\tstatus\trc\tseconds\tpassed\tfailed\tskipped\terrors"]

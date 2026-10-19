@@ -626,6 +626,13 @@ impl Watch {
         self.cacr = v & !(CACR_ICINVA | CACR_DCINVA);
     }
 
+    /// A snapshot was restored past the trigger: with `After::Cacr` and the caches already on, the watch runs from here.
+    pub(crate) fn resume(&mut self) {
+        if self.cfg.after == After::Cacr && self.cacr & (CACR_IEC | CACR_DEC) != 0 {
+            self.started = true;
+        }
+    }
+
     /// The icount trigger of `After::Icount`.
     fn tick(&mut self, icount: u64) {
         if !self.started && matches!(self.cfg.after, After::Icount(n) if icount >= n) {
@@ -815,6 +822,22 @@ mod tests {
         w.cacr_written(IEC_DEC_INV, 2);
         w.dma("esdhc-dma59", 0x4700_0200, 512, 3);
         w.dma("esdhc-dma59", 0x4600_0000, 512, 4);
+        assert_eq!(w.totals().0, 1);
+    }
+
+    #[test]
+    fn a_restored_state_past_the_cacr_trigger_runs_the_watch() {
+        let mut w = Watch::new(WatchConfig {
+            ranges: vec![(0x4700_0000, 0x4700_1000)],
+            after: After::Cacr,
+            ..WatchConfig::default()
+        });
+        w.resume(); // caches off in the restored state: still waiting
+        w.dma("esdhc-dma59", 0x4700_0200, 512, 1);
+        assert_eq!(w.totals().0, 0);
+        w.set_cacr(IEC_DEC_INV); // what load_state does, then resume
+        w.resume();
+        w.dma("esdhc-dma59", 0x4700_0200, 512, 2);
         assert_eq!(w.totals().0, 1);
     }
 

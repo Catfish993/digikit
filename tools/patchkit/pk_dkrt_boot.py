@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -542,13 +543,65 @@ class BootRig(M.Rig):
         }
 
 
+# The ColdFire state of a cold boot at the main panel (`state.save`), shared by the rigs of one key (the daemon binary, the
+# image, the card, the environment) and by the later runs: a rig restores it (`state.load`, about 0.3 s) instead of booting (about 6 s).
+STATE_DIR = H.SHARED_CACHE / "cf-states"
+KEEP_STATES = 64  # newest files kept
+_UNKEYED_ENV = (
+    "DIGI_WRITE_WATCH",
+    "DIGI_FLUSH_CHECK",
+)  # the watch looks, it does not change the boot
+_EXE_IDS: dict[tuple[str, int, int], str] = {}
+
+
+def exe_id(exe: Path) -> str:
+    """The content hash of a daemon binary (read once per file version): a changed emulator never restores an old state."""
+    st = exe.stat()
+    key = (str(exe), st.st_size, st.st_mtime_ns)
+    if key not in _EXE_IDS:
+        _EXE_IDS[key] = hashlib.sha256(exe.read_bytes()).hexdigest()
+    return _EXE_IDS[key]
+
+
+def state_key(exe: Path, image: Path, card: Path, env: dict[str, str]) -> str:
+    """The name of the saved boot state of (daemon, image, card, environment). The card is named by path, size and mtime as
+    the daemon names a card (the digikit cards are cached by content, so one content is one path)."""
+    st = card.stat()
+    h = hashlib.sha256()
+    h.update(exe_id(exe).encode())
+    h.update(hashlib.sha256(image.read_bytes()).digest())
+    h.update(f"{card.resolve()}:{st.st_size}:{st.st_mtime_ns}".encode())
+    for k, v in sorted(
+        {**env, "DIGIKIT_RUN_SALT": os.environ.get("DIGIKIT_RUN_SALT", "")}.items()
+    ):
+        if not k.startswith(_UNKEYED_ENV):
+            h.update(f"{k}={v};".encode())
+    return h.hexdigest()[:24]
+
+
+def prune_states(keep: int = KEEP_STATES) -> None:
+    """Delete all but the KEEP newest saved states."""
+    files = sorted(
+        STATE_DIR.glob("*.snap"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
+    for old in files[keep:]:
+        old.unlink(missing_ok=True)
+
+
 class CfFolderSession(M.FolderSession):
     """A daemon without DSP and audio: the ColdFire alone. Its cold boot to the main panel takes about 6 s (the coupled one 10 to 20 s)
     and a second of emulated idle time costs almost nothing (the coupled daemon runs at about a quarter of real time). What the
-    firmware does on the ColdFire is the same; what needs the DSP (a module's DSP part, voice rows, PCM) is not there."""
+    firmware does on the ColdFire is the same; what needs the DSP (a module's DSP part, voice rows, PCM) is not there.
+
+    The first boot of a key saves its state at the main panel (`state.save`, STATE_DIR); every later `load` of the key, and `reset()`,
+    is `firmware.load` then `state.load` of that file."""
+
+    exe: Path | None = None
+    state_hit = False  # the last load restored a saved state
 
     def open(self, image: Path | None = None) -> None:
         exe = H.daemon_binary(self.cell.device, self.syx)
+        self.exe = Path(exe)
         self.emu = Emu.spawn(
             binary=exe,
             timeout=300,
@@ -560,12 +613,23 @@ class CfFolderSession(M.FolderSession):
         assert image is not None
         self.load(image)
 
-    def load(self, image: Path, settle: bool = False) -> dict[str, Any]:
-        emu = self.emu
-        assert emu is not None and self.card is not None
-        started = time.monotonic()
+    def state_file(self, image: Path) -> Path | None:
+        """Where the boot state of this daemon, image and card is kept (None: no cache for this daemon)."""
+        if (
+            self.exe is None
+            or self.card is None
+            or os.environ.get("DIGI_CF_STATES") == "0"
+        ):
+            return None
+        return (
+            STATE_DIR
+            / f"{self.cell.device}-{state_key(self.exe, image, Path(self.card), self.env)}.snap"
+        )
+
+    def _firmware_load(self, image: Path) -> dict[str, Any]:
+        assert self.emu is not None and self.card is not None
         try:
-            report = emu.call(
+            return self.emu.call(
                 "firmware.load",
                 syx=str(image),
                 force=True,
@@ -575,11 +639,31 @@ class CfFolderSession(M.FolderSession):
             )
         except EmuError as e:
             raise H.LoadFailure(f"firmware.load {image.name}: {e}") from e
+
+    def load(self, image: Path, settle: bool = False) -> dict[str, Any]:
+        emu = self.emu
+        assert emu is not None and self.card is not None
+        started = time.monotonic()
+        report = self._firmware_load(image)
+        state = self.state_file(image)
+        self.state_hit = False
+        if state is not None and state.is_file():
+            try:
+                emu.state_load(state)
+                self.state_hit = True
+            except (
+                EmuError
+            ) as e:  # a file the daemon refuses is stale or torn: boot cold, save again
+                print(f"cf state {state.name}: {e}; booting cold", file=sys.stderr)
+                state.unlink(missing_ok=True)
+                report = self._firmware_load(
+                    image
+                )  # a fresh runtime: the failed restore may have changed this one
         self.image, self.load_report = image, report
         emu.watchdog(self.cell.stall_ms)
-        # the boot job runs when the daemon is stepped; the panel is up when the main UI has been reached (a used card never runs
-        # the DT2 filesystem check the coupled readiness contract waits for)
-        for _ in range(400):
+        # the boot runs when the daemon is stepped; the panel is up when the main UI has been reached (a used card never runs
+        # the DT2 filesystem check the coupled readiness contract waits for). A restored state is at that point already.
+        for _ in range(0 if self.state_hit else 400):
             emu.step(20_000_000)
             cf = emu.status()["cf"]
             if cf.get("error") or cf["phase"] == "fault":
@@ -587,13 +671,21 @@ class CfFolderSession(M.FolderSession):
             if cf["main_ui_reached"]:
                 break
         else:
-            raise H.LoadFailure("cold boot: the main panel was not reached")
+            cf = emu.status()["cf"]
+            if not cf["main_ui_reached"]:
+                raise H.LoadFailure("cold boot: the main panel was not reached")
         emu.drain_events()
+        if state is not None and not self.state_hit:
+            state.parent.mkdir(parents=True, exist_ok=True)
+            emu.state_save(state)
+            prune_states()
         self.timings["load_s"] = time.monotonic() - started
         return report
 
     def reset(self) -> None:
-        raise Fail("a ColdFire-only daemon has no reset to the ready state")
+        """Back to the boot state of the loaded image: a fresh runtime, restored (or booted when the key has no state yet)."""
+        assert self.image is not None
+        self.load(self.image)
 
     def mark_pcm(self) -> None:  # no PCM tap
         pass
@@ -621,6 +713,11 @@ class CfBootRig(BootRig):
 
     def restart(self, timeout_s: float = 900.0) -> None:
         raise Fail("the soft-reset model is coupled only")
+
+    def reset(self) -> None:
+        """Back to the state after `start()`: the boot state restored (a fresh daemon runtime) and the settle time run again."""
+        self.s.reset()
+        self.s.run_ms(self.settle_ms)
 
 
 # ---- the proof ----------------------------------------------------------------------------------------------------------------

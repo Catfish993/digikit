@@ -135,6 +135,7 @@ def test_step_env_names_every_pool() -> None:
     assert env["RAYON_NUM_THREADS"] == "10"
     assert set(env) >= {
         "RUST_TEST_THREADS",
+        "NEXTEST_TEST_THREADS",
         "DIGI_PY_JOBS",
         "DIGIKIT_JOBS",
         "DIGI_CONFORM_JOBS",
@@ -174,8 +175,8 @@ def test_lower_priority(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_builds_are_a_chain_and_steps_wait_for_theirs() -> None:
     nodes, deps = verify.plan(verify.EVERYTHING, ["tests/digikit"])
     assert deps["build"] == ()
-    assert deps["build-dt2"] == ("build",)
-    assert deps["build-daemons"] == ("build", "build-dt2")
+    assert deps["build-daemons"] == ("build",)
+    assert deps["build-dt2"] == ("build", "build-daemons")
     assert deps["pins"] == deps["check"] == ("build",)
     assert deps["dt2-check"] == ("build-dt2",)
     assert deps["python-tests"] == deps["card"] == ("build-daemons",)
@@ -500,3 +501,126 @@ def test_detect_machine_here_is_sane() -> None:
     assert 1 <= m.cores <= (os.cpu_count() or m.cores)
     assert m.ram is None or m.ram > GB
     assert verify_budget.default_budget() >= 1
+
+
+# ---- python-tests: one job per file in the budget queue ----------------------------------------------------------
+
+
+FILE = verify_budget.FILE_PREFIX
+
+
+def test_file_jobs_need_their_whole_ask_and_do_not_count_as_steps() -> None:
+    budget = verify_budget.Budget(14)
+    assert budget.admit("tier-sweep") == 10  # 4 free
+    assert budget.admit(FILE + "a.py") == 2
+    assert budget.admit(FILE + "b.py") == 2
+    assert budget.free == 0 and budget.admit(FILE + "d.py") is None
+    budget.release(FILE + "b.py")
+    assert budget.admit(FILE + "d.py") == 2
+    budget = verify_budget.Budget(5)
+    budget.running = {"x": 4}  # one core free: a file job does not start on a sliver
+    assert budget.admit(FILE + "a.py") is None
+    # many file jobs never hit MAX_STEPS
+    budget = verify_budget.Budget(64)
+    for i in range(20):
+        assert budget.admit(f"{FILE}{i}.py") == 2
+
+
+def test_file_job_pools_match_the_old_python_tests_share() -> None:
+    """A job of 2 cores sets the pools one file had in the old 6-core share with 3 files at once."""
+    env = verify_budget.step_env(FILE + "a.py", 2)
+    old = verify_budget.step_env("python-tests", 6)
+    for key in (
+        "DIGIKIT_JOBS",
+        "DIGIKIT_PART_JOBS",
+        "DIGI_PK_JOBS",
+        "CARGO_BUILD_JOBS",
+    ):
+        assert env[key] == old[key], key
+    assert env["DIGI_PY_JOBS"] == "1"
+
+
+def test_files_wait_for_their_builds_and_python_tests_judges_them() -> None:
+    nodes, deps = verify.plan(
+        verify.EVERYTHING,
+        ["tests/digikit/test_menu_dt2.py", "tests/devtools/test_verify.py"],
+    )
+    secs = {
+        "tests/digikit/test_menu_dt2.py": 372.0,
+        "tests/devtools/test_verify.py": 2.0,
+    }
+    nodes, deps = verify.expand_python(nodes, deps, list(secs), secs)
+    daemon, plain = (
+        FILE + "tests/digikit/test_menu_dt2.py",
+        FILE + "tests/devtools/test_verify.py",
+    )
+    assert deps[daemon] == ("build-daemons",)  # not the DT2 build behind it
+    assert deps[plain] == ("build", "build-daemons", "build-dt2")
+    assert set(deps["python-tests"]) == {daemon, plain}
+    # the long file starts before the steps, the short one after them, the judge is last
+    assert nodes.index(daemon) < nodes.index("tier-quick") < nodes.index(plain)
+    assert nodes[-1] == "python-tests"
+    nodes, deps = verify.plan(("python-tests",), ["tests/devtools/test_verify.py"])
+    nodes, deps = verify.expand_python(
+        nodes, deps, ["tests/devtools/test_verify.py"], {}
+    )
+    assert deps[plain] == ()  # no daemon build in the plan: nothing to wait for
+
+
+def test_files_longest_first_and_unknown_files_in_plan_order() -> None:
+    from tools.devtools import verify_times
+
+    rows = verify_times.longest_first(["a", "b", "c", "d"], {"a": 5.0, "c": 300.0})
+    assert [r[0] for r in rows] == [
+        "c",
+        "b",
+        "d",
+        "a",
+    ]  # b, d: DEFAULT_SECONDS, plan order
+    assert [r[2] for r in rows] == [True, False, False, True]
+
+
+def test_file_seconds_read_the_newest_runs(tmp_path: Path) -> None:
+    from tools.devtools import verify_times
+
+    def run(name: str, tsv: str | None = None) -> None:
+        out = tmp_path / name / "python-tests"
+        out.mkdir(parents=True)
+        if tsv:
+            (out / "summary.tsv").write_text("file\tstatus\trc\tseconds\n" + tsv)
+
+    run("20260101-000000", tsv="fa.py\tOK\t0\t10.0\nfb.py\tOK\t0\t20.0\n")
+    run(
+        "20260102-000000",
+        tsv="fa.py\tOK\t0\t30.0\nfb.py\tTIMEOUT\t1\t900.0\n",
+    )
+    run("20260103-000000")  # a run that did not finish: no summary.tsv
+    run("20260104-000000")  # this run: left out
+    got = verify_times.file_seconds(
+        tmp_path,
+        ["fa.py", "fb.py", "fc.py", "fd.py"],
+        tmp_path / "20260104-000000",
+    )
+    assert got == {"fa.py": 30.0, "fb.py": 20.0}
+
+
+def test_file_jobs_leave_the_cores_a_waiting_step_needs() -> None:
+    nodes = ["pins", FILE + "x.py"]
+    deps: dict[str, tuple[str, ...]] = {n: () for n in nodes}
+    budget = verify_budget.Budget(14)
+    budget.running = {"tier-sweep": 8, "check": 5}  # 1 free: pins (asks 7) waits
+    assert verify.next_starts(nodes, deps, set(), budget) == []
+    budget.running = {
+        "tier-sweep": 8
+    }  # 6 free: pins starts on 6, the file job waits for cores
+    got = verify.next_starts(nodes, deps, set(), budget)
+    assert got == [("pins", 6)]
+    # a file job before the waiting step is not held back
+    budget = verify_budget.Budget(14)
+    budget.running = {"tier-sweep": 8, "check": 5}
+    assert (
+        verify.next_starts(
+            [FILE + "y.py", "pins"], deps | {FILE + "y.py": ()}, set(), budget
+        )
+        == []
+    )

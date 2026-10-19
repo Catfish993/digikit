@@ -3230,6 +3230,13 @@ impl Emulator {
         Ok(w.buf)
     }
 
+    /// After `load_state`: start the write watch when the restored state is past its `cacr` trigger.
+    pub fn resume_watch(&mut self) {
+        if let Some(w) = self.bus.guards.watch_mut() {
+            w.resume();
+        }
+    }
+
     /// Restore a `save_state` blob into this freshly built emulator.
     pub fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
         use periph::snap::Reader;

@@ -1393,6 +1393,8 @@ impl Actor {
                         .map_err(|e| RpcError::new(code::GUEST_FAULT, e))
                 })
                 .map(Some),
+            "state.save" => self.rpc_state_save(&p).map(Some),
+            "state.load" => self.rpc_state_load(&p).map(Some),
             "pcm.tap" => self.rpc_pcm_tap(&p).map(Some),
             "cf.profile" => self
                 .with_runtime(|r| {
@@ -1452,6 +1454,49 @@ impl Actor {
             Some(runtime) => action(runtime),
             None => no_firmware(),
         }
+    }
+
+    /// `state.save {path}`: the ColdFire state (registers, RAM, peripherals, the card's write overlay)
+    /// as a snapshot file, written whole (`.part`, then renamed). The scenario clock restarts here
+    /// (`rebase_clock`), as after a cold boot that reached ready, so a run that goes on after the save
+    /// and one that restores it count `elapsed` the same way.
+    fn rpc_state_save(&mut self, p: &Params) -> RpcResult {
+        let path = PathBuf::from(p.str("path")?);
+        if self.job.is_some() {
+            return Err(RpcError::new(code::BUSY, "a job is running; wait for it before saving"));
+        }
+        let runtime = self.runtime.as_mut().ok_or_else(RpcError::no_firmware)?;
+        save_cache(runtime, &path)?;
+        runtime.rebase_clock();
+        let bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
+        Ok(json!({"path": path.display().to_string(), "bytes": bytes}))
+    }
+
+    /// `state.load {path}`: restore a `state.save` snapshot into the runtime a `firmware.load` just
+    /// installed (not stepped yet; the same MAIN and the same card, which the snapshot checks by
+    /// digest and capacity). A fresh state after a reset is `firmware.load` then `state.load`, about
+    /// 0.3 s instead of a cold boot.
+    fn rpc_state_load(&mut self, p: &Params) -> RpcResult {
+        let path = PathBuf::from(p.str("path")?);
+        if self.job.is_some() {
+            return Err(RpcError::new(code::BUSY, "a job is running; wait for it before loading"));
+        }
+        let runtime = self.runtime.as_mut().ok_or_else(RpcError::no_firmware)?;
+        if runtime.icount() != 0 {
+            return Err(RpcError::new(
+                code::BAD_PARAMS,
+                "state.load needs a runtime that has not run: firmware.load first",
+            ));
+        }
+        let data = std::fs::read(&path).map_err(|e| RpcError::io(format!("{}: {e}", path.display())))?;
+        runtime
+            .restore_state(&data)
+            .map_err(|e| RpcError::new(code::FIRMWARE_REJECTED, format!("{}: {e}", path.display())))?;
+        runtime.resume_watch();
+        self.held_frame = None;
+        self.held_leds = None;
+        self.epoch += 1;
+        Ok(json!({"path": path.display().to_string(), "bytes": data.len(), "icount": runtime.icount()}))
     }
 
     fn start_job(

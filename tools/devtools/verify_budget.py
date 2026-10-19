@@ -58,6 +58,10 @@ WANT: dict[str, float] = {
     "dt2-tier-sweep": 0.75,
 }
 DEFAULT_WANT = 0.30
+# One python-tests file is a job of its own (verify.py expand_python): it asks for the cores of one
+# emulator process pair (its digikit daemon, or the cargo/rayon of a unit test) and, unlike a step, only
+# starts on all of them. The jobs do not count against MAX_STEPS: the cores bound them.
+FILE_PREFIX = "py:"
 BUILDS = ("build", "build-dt2", "build-daemons")
 EMULATOR_POOLS = (
     "pins",
@@ -358,8 +362,14 @@ def lower_priority(foreground: bool = False) -> int | None:
         return None
 
 
+def is_file_job(node: str) -> bool:
+    return node.startswith(FILE_PREFIX)
+
+
 def want_cores(node: str, total: int) -> int:
     """The cores NODE asks for in a budget of TOTAL (an emulator pool asks for at least one process)."""
+    if is_file_job(node):
+        return min(EMULATOR_CORES, total)
     cores = max(1, round(WANT.get(node, DEFAULT_WANT) * total))
     if node in EMULATOR_POOLS:
         cores = max(cores, min(EMULATOR_CORES, total))
@@ -381,15 +391,21 @@ class Budget:
     def admit(self, node: str) -> int | None:
         """The share NODE gets (and holds until `release`), or None when it must wait: fewer than
         half of its ask is free (a step may start on less than the ask, not on a sliver of it), or
-        MAX_STEPS steps run already. Alone, a step always starts."""
+        MAX_STEPS steps run already. Alone, a step always starts. A file job (FILE_PREFIX) starts only
+        on its whole ask and is not counted in MAX_STEPS."""
         if node in self.running:
             raise ValueError(f"{node} is running already")
         want = want_cores(node, self.total)
         share = min(want, self.free)
-        if share < 1 or len(self.running) >= self.max_steps:
-            return None
-        if self.running and share < math.ceil(want / 2):
-            return None
+        if is_file_job(node):
+            if share < want:
+                return None
+        else:
+            steps = sum(1 for n in self.running if not is_file_job(n))
+            if share < 1 or steps >= self.max_steps:
+                return None
+            if self.running and share < math.ceil(want / 2):
+                return None
         self.running[node] = share
         return share
 
@@ -439,7 +455,7 @@ class Workers:
 def workers_for(node: str, share: int) -> Workers:
     share = max(1, share)
     emulators = max(1, share // EMULATOR_CORES)
-    if node == "python-tests":
+    if node == "python-tests" or is_file_job(node):
         # `py_files` test files at once; each file holds at most `share // py_files` cores, which
         # its cargo and rayon use or its daemons do (two threads each)
         py_files = max(1, share // EMULATOR_CORES)
@@ -473,6 +489,8 @@ def step_env(node: str, share: int, cargo_cap: int | None = None) -> dict[str, s
     return {
         "CARGO_BUILD_JOBS": str(cargo),
         "RUST_TEST_THREADS": str(w.libtest),
+        # cargo-nextest reads this, not RUST_TEST_THREADS
+        "NEXTEST_TEST_THREADS": str(w.libtest),
         "RAYON_NUM_THREADS": str(w.rayon),
         "DIGI_JOBS": str(w.emulators),
         "DIGI_TIER_JOBS": str(w.emulators),
@@ -524,5 +542,6 @@ LABELS = {
 
 def describe(node: str, share: int) -> str:
     w = workers_for(node, share)
-    parts = [f"{LABELS[k]} {getattr(w, k)}" for k in SHOWN.get(node, ("cargo",))]
+    shown = SHOWN["python-tests"] if is_file_job(node) else SHOWN.get(node, ("cargo",))
+    parts = [f"{LABELS[k]} {getattr(w, k)}" for k in shown]
     return ", ".join(parts)

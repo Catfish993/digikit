@@ -398,6 +398,14 @@ class Emu:
     def state_digest(self) -> str:
         return str(self.call("state.digest")["digest"])
 
+    def state_save(self, path: str | os.PathLike[str]) -> dict[str, Any]:
+        """Write the ColdFire state to PATH (docs/CONTROL.md `state.save`)."""
+        return self.call("state.save", path=str(path))
+
+    def state_load(self, path: str | os.PathLike[str]) -> dict[str, Any]:
+        """Restore a `state_save` file into the runtime just loaded (docs/CONTROL.md `state.load`)."""
+        return self.call("state.load", path=str(path))
+
     def audio(self) -> Any:
         return self.call("audio.report")["audio"]
 

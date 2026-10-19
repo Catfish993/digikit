@@ -41,6 +41,7 @@ TYPED = [
     "tools/sharc_dev/aot_fxprof.py",
     "tools/devtools/benchlock.py",
     "tools/devtools/verify_budget.py",
+    "tools/devtools/verify_times.py",
     "tools/control/digi_client.py",
     "tools/sharc_dev/sharc_peer.py",
     "tools/coldfire/cf.py",

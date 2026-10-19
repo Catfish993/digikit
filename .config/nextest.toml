@@ -1,0 +1,6 @@
+# cargo-nextest (rust-tests): every test in its own process, test binaries side by side.
+[profile.default]
+fail-fast = false
+
+[profile.default.junit]
+path = "junit.xml"

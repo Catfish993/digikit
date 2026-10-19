@@ -75,6 +75,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `diagnostics` | | `call` |
 | `audio.report` | `audio` | `call` |
 | `state.digest` | `state_digest` | `call` |
+| `state.save {path}`, `state.load {path}` | `state_save`, `state_load` | `call` |
 | `pcm.tap` (`start`, `report`, `capture`, `capture_stop`) | `pcm_start`, `pcm_report` | `call` |
 | `cf.profile` | | `call`; only with the `cf-profile` feature |
 | `dsp.peek` | `dsp_peek` | `call` |
@@ -93,6 +94,17 @@ cold boot (a model of a device whose RAM survives a reset; `docs/findings/46-dig
 
 `leds.get` returns `{led_revision, leds, rgb}`: `leds` is 128 hex digits (64 LED values), `rgb` 384 hex digits
 (64 x r, g, b) or null until any is set. It reads the emulator's current state and does not consume it from the UI.
+
+`state.save {path}` writes the ColdFire state (registers, RAM, peripherals, the card's write overlay) to `path` (whole file:
+written as `path.part`, then renamed) and restarts the scenario clock there (`elapsed` counts from the save, as after a cold
+boot to ready). `state.load {path}` restores such a file into the runtime a `firmware.load` just installed: the runtime must not
+have run (`icount` 0; otherwise `firmware.load` again), the MAIN and the card must be those of the save (the snapshot checks the
+MAIN digest, the device and the card capacity), and a job must not be running. The restored state has the same
+`state.digest` as the saved one and goes on the same way (`packages/emulator/control/tests/state_save.rs`). A write watch
+(`DIGI_WRITE_WATCH_AFTER=cacr`) that the snapshot is already past runs from the restore. No DSP or audio state is saved: use it on
+a ColdFire-only daemon. The digikit ColdFire-only rigs (`tools/patchkit/pk_dkrt_boot.py` `CfFolderSession`) save the state of
+their first cold boot at the main panel, keyed by the daemon binary, the image, the card and the environment, and restore it
+(about 0.3 s instead of a 6 s boot) for every later rig of the same key and for `reset()`.
 
 `--dsp zero --cf-snapshot FILE` (on `digi-emud` and the app) starts without a DSP: SSI paced, the DSPI2 peer
 answers zeros, the ColdFire state restored from the snapshot (about 2.2x real time). `status.dsp` is `"zero"`,
