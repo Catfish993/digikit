@@ -60,8 +60,8 @@ Tools: `tools/patchkit/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.
   addend and fails otherwise. Locals (`.L_...`) appear as symbols.
 - **Re-decode gate [D].** After linking, parcels are swapped to boot order and every instruction is decoded by
   `tools/sharc_dev/sharc_isa.py`: the form must exist, its extent must equal the extent Selache chose, and each relocated
-  field must read back as the intended value. A corrupted word fails the build (tested). Known Selache encode
-  bug (`LSHIFT ... BY -n`, finding 05) is refused at assembly time. Selache's *disassembler* prints `m4` for
+  field must read back as the intended value. A corrupted word fails the build (tested). Selache's shift-immediate
+  encode bugs are repaired or refused (finding 05, "Selache shift-immediate encodings"). Selache's *disassembler* prints `m4` for
   `dm(i0,m0)` stores (finding 05 bug 2 class); the bytes are right, our decoder reads M0.
 - **Running on the core [D].** `pk_sharc.run_call` builds a `LoadedMemory` from the linked bytes (at the short
   word alias `0x28000000 + 2*sw`), pokes normal-word DM, runs `tools/sharc_dev/sharc_run.py` to a breakpoint. Scale-in-place
@@ -76,11 +76,18 @@ float field, a `switch`, a bit-count loop, a float scale loop. Calling conventio
 (`cjump`/`rframe`; frame pointer I6, return address at `[I6-1]`), arguments R4/R8/R12, result R0, symbols get a
 trailing dot (`scale.`). Findings: (1) **pointers are byte addresses** (index scaled by 4); the loops are right
 only with `0x2xxxxxxx` byte-alias pointers, not with normal-word addresses (`0x08xxxxxx`), and our core accepts
-a byte address for a normal-word access, so whether silicon agrees is **[O]**; (2) integer divide and modulo call
-`___div32.`/`___mod32.` (no library is linked); (3) `-O`, `-Oa`, `-Os` produce identical output (no optimiser to
-speak of: the scale loop is 24 instructions against 7 by hand); (4) patchkit would have to supply the frame for a
+a byte address for a normal-word access; **[C]** the manual says the silicon does the same (finding 05, "A normal-word access
+through a byte-address pointer matches the manual"); (2) integer divide and modulo call
+`___div32.`/`___mod32.` (no library is linked); (3) `-O`, `-Oa`, `-Os` produce identical output; **[C]** (2026-10-21) because the
+optimisation passes (constant folding, dead code, hardware `DO` loops, copy removal, multifunction packing) always run: the
+level is parsed and not read. What makes the code slow is the register use: every local variable (the loop index, filter
+states) lives in a stack slot and is loaded and stored each iteration, an address is rebuilt with shifts and adds instead of
+a post-modify, and a `static` helper is not inlined (a call each). The scale loop body is 15 instructions per element against
+3 by hand; a delay line with a one-pole low-pass in a flat C loop is 46 per sample against about 6-7; a call to a block
+routine costs about 25 (`R4/R8/R12`, the frame); (4) patchkit would have to supply the frame for a
 top-level call (the tests build it). Recommendation: assembly for DSP code on the hot path, selcc only for glue
-and only after (1) is settled on hardware or by the PRM.
+and only after (1) is settled on hardware or by the PRM. Selache's shift-immediate encodings: finding 05, "Selache
+shift-immediate encodings" (selcc's assembly is checked like hand-written assembly).
 
 ## Recommendation for the `.dko` format
 

@@ -1471,3 +1471,50 @@ shapes (DT2 1.16 `sw 0x1c4b99`, `sw 0x1c4e10`). selache and the native decoder n
 
 **Open** **[O]**: whether the PGR prefix `000000011` is the real Type2b. No firmware instance
 of it is known, so the table does not take it.
+
+## Selache shift-immediate encodings (2026-10-21) **[D]** **[C]**
+
+A Type 6 shift-immediate instruction (forms `6a_mem`, `6a_nomem`, `6b_shiftimm`) carries its operation in the ShiftImm
+opcode (`shiftimm[22:16]`; PRM Table 17-9 "SHIFTOP/SHIFTIMM Encode Table", bits 21-16) and, for a signed shift, an 8-bit
+count in `shiftimm[15:8]` whose sign extension is the 4-bit field `dataex[3:0]` (frame bits 30-27: `0x78` in byte 2 of the
+48-bit word in Selache parcel order). It extends bug 2 of the Selache cross-check above, which found the LSHIFT case only.
+
+**Stock rule.** In every aligned instruction inside a function of the stock DSP images, `dataex` is 0xF for a negative count
+and 0 for a positive one, for the opcodes 0x00 LSHIFT, 0x01 ASHIFT, 0x08 OR LSHIFT and 0x09 OR ASHIFT: DT2 1.17 721 `6b`
+and 21 `6a_mem`, DN2 1.12 651 `6b` and 18 `6a_mem`, no exception. Every opcode in use is in Table 17-9 (DT2: 0x00, 0x01, 0x08,
+0x10, 0x12, 0x14, 0x19, 0x1D, 0x1F, 0x30-0x33). The exceptions in the database (3 on DT2, 2 on DN2) are unaligned decodes
+outside any function. `tests/patchkit/test_pk_sharc.py::test_every_stock_shift_immediate_passes_the_check` re-checks this.
+
+**Selache at the pinned revision (`2b26d3b`), one line each:**
+
+| Source | Selache writes | Table 17-9 |
+| --- | --- | --- |
+| `R0 = LSHIFT R11 BY -16;` | `023e0000f00b`: opcode 0, `dataex` 0 | `dataex` 0xF: `023e7800f00b` (stock form) |
+| `R0 = LSHIFT R11 BY 16;`, `FEXT R11 BY 4:8`, `BSET`/`BCLR`/`BTGL`/`BTST R11 BY 5` | correct | |
+| `R0 = ASHIFT R11 BY ±3;` | opcode 0x20 (100000) | ASHIFT is 000001; 100000 is not in the table |
+| `R0 = R0 OR LSHIFT R11 BY 3;` | opcode 0x00, a plain LSHIFT | 001000 |
+| `R0 = R0 OR ASHIFT R11 BY -3;` | opcode 0x20 | 001001 |
+| `R0 = FDEP R11 BY 4:8;` | opcode 0x13, FDEP (SE) | 010001 |
+| `R0 = R0 OR FDEP R11 BY 4:8;` | opcode 0x11, FDEP | 011011 |
+| `R0 = FEXT R11 BY 4:8 (SE);`, `FDEP ... (SE)` | `0f0000000000` (another form) | 010010 / 010011 |
+| `R0 = ROT R11 BY 3;` | refused by Selache | |
+
+Each wrong word still decodes to a valid-looking form, so the re-decode gate of `pk_sharc.verify` does not see it, and the
+emulator reads only the low 8 bits of a count.
+
+**Silicon evidence (external, [M] there).** A public project, `angellinares/dn2_firmware_explore`
+(`docs/waverider-dsp-compare.md`, section 11, 2026-09-29), ran its own Selache-assembled code on a Digitone II 1.11: the DSP
+stopped on the first call (ILOPI, raised by look-ahead), and passed every emulator gate, including digikit's runner. The cause
+was four `LSHIFT ... BY -n` without `dataex`; setting the six bytes to the stock form made it play. Not measured here: what the
+silicon does with opcode 0x20 **[O]** (undefined; our core raises "unsupported ShiftImm opcode").
+
+**The gate (`tools/patchkit/pk_sharc.py`).** `fix_shift_counts` sets `dataex` of every signed shift in an object after Selache
+(assembly and selcc alike), so `LSHIFT ... BY -n` is allowed again. `ENCODE_HAZARDS` refuses the source forms Selache gets
+wrong (ASHIFT, OR LSHIFT and FDEP by an immediate, FEXT by an immediate with (SE)); selcc's assembly (`-S`) passes the same
+check. `verify` fails an object with an undefined ShiftImm opcode or a signed count without its sign extension. A shift count
+in a register (`R0 = ASHIFT R11 BY R1;`) assembles correctly; selcc uses that form. None of the 35 tracked assembly files uses a
+refused form or a negative count.
+
+**Open [O].** The other Selache forms with an immediate have not been compared byte for byte with stock. The external
+project's rule fits: "decodes the same" is not proof of an encoding; compare the exact bytes with stock for every instruction
+form that carries an immediate.
