@@ -480,8 +480,8 @@ CONFORMANCE = "tests/modules/test_machine_conformance.py"
     [
         "modules/machines/pluck/module.toml",
         "modules/machines/pluck/src/dsp/pluck.s",
-        "tests/fixtures/modules/sine-voice/src/dsp/sine_voice.s",
-        "tests/fixtures/modules/dn2-sine/module.toml",
+        "tests/fixtures/modules/sine/src/dsp/sine.s",
+        "tests/fixtures/modules/sine/module.toml",
         "modules/core/dsp-voice/src/dsp/dsp-voice-dn2.s",
     ],
 )

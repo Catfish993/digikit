@@ -78,7 +78,7 @@ non-zero the load is undone (`E_INIT`).
 
 A run-time machine can bring its own SHARC+ code (finding 32). `patchkit pack MODULE --device dt2|dn2` links the module's DSP object
 (`[[object]] place = "dsp.l2"` for that device; at most one) into the section; the typed `[[voice]]` entries (machine id and the routine's
-global symbol) or the explicit `[[dsp_voice]] type = N, entry = "_sym"` give the voice rows. The code holds no address of the image it
+global symbol) give the voice rows. The code holds no address of the image it
 runs in: it is linked at the nominal base `0x20000000` (L2 byte base) and **relocated by the runtime on the ColdFire** before it sends
 the bytes, so several DSP modules coexist in the DSP area (`_dl_area` of `core/dsp-link`, 512 KiB on the Digitakt II, 320 KiB on the
 Digitone II; first fit, freed when a boot-time DSP part fails). Relocation is cheap here: the repository's DSP objects use only two kinds, `sharc.abs24`

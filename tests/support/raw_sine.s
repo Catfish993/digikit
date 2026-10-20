@@ -1,5 +1,5 @@
-// test/sine-voice: a pitched sine voice for the per-voice hook (core/dsp-voice), the proof that a registered machine
-// type renders through the engine's later stages (amp envelope, filter, FX, sends, master).
+// A pitched sine routine of the raw form (a voice row with no note_on: no contract, no guard clamp) for the rig of core/dsp-voice
+// (tests/support/dsp_voice_rig.py). The machine of the SDK contract is tests/fixtures/modules/sine.
 //
 // Routine ABI: see core/dsp-voice. Per track state in _sv_state: phase[16] (0 .. 1, float) and the sample count
 // [16] (integer). The pitch follows the frame: n = note + (tune - 64) semitones, f = 440 * 2^((n - 69) / 12), where

@@ -6,4 +6,4 @@ a free row has a type no machine has, so the DSP renders every track as before. 
 `core/dsp-voice` (added automatically). Digitakt II 1.16 and 1.17, Digitone II 1.11 and 1.12, emulator only.
 
 How it works and its limits: `docs/design/digikit-dkm.md` ("DSP section"), `docs/findings/32-runtime-dsp-machines.md`. Test modules:
-`test/dyn-pluck` (Digitakt II), `test/dyn-sine-dn2` (Digitone II).
+`test/dyn-pluck` (Digitakt II), `test/sine` (both devices).

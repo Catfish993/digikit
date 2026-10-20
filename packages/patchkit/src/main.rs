@@ -422,8 +422,7 @@ plan.json {}",
                 })?;
                 let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
                 let res = patchkit::typed::resolve(&m.manifest, &models)?;
-                // the DSP object of the device, if any: its voices are the `[[voice]]` entries (type from the machine) and the
-                // `[[dsp_voice]]` entries (explicit type)
+                // the DSP object of the device, if any: its voices are the `[[voice]]` entries (type from the machine)
                 let sharc: Vec<_> = m
                     .objects
                     .iter()
@@ -456,18 +455,6 @@ plan.json {}",
                         desc: v.desc.clone(),
                         ranges,
                     });
-                }
-                for v in m
-                    .manifest
-                    .dsp_voice
-                    .iter()
-                    .filter(|v| v.devices.is_empty() || v.devices.iter().any(|d| *d == dev))
-                {
-                    voices.push(patchkit::dkmdsp::VoiceSpec::old(
-                        v.type_no as u32,
-                        v.entry.clone(),
-                        [0; 8],
-                    ));
                 }
                 match sharc.first() {
                     Some((o, _)) => {

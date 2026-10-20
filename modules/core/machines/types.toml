@@ -44,8 +44,7 @@ dynamic_first = 16
 [dn2.alloc]
 "test/dn2-clone:fmclone" = 5
 "test/dn2-pages:pages" = 6
-"test/dn2-sine:dn2sine" = 7
-"test/dn2-edge:dn2edge" = 8
+# 7 and 8 are retired (test/dn2-sine and test/dn2-edge, removed): a gap row, never reused (the next free number is above 10).
 "digikit/pluck:pluck" = 9
 "test/twin-dn2:dyn_pluck" = 10
 "core/dynreg:dyn16" = 16

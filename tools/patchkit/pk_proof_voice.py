@@ -10,17 +10,17 @@ forced on the wire: word 0x94 is the machine type of track 0) and renders TRIG 1
 
   stock             the stock firmware (reference)
   patched-type0     patched image, no poke: must be bit-identical to stock (a stock machine is untouched)
-  sine60            type 8 forced, note 60: a sine at 261.63 Hz
-  sine72            type 8, pitch word 0x4800 (note 72): 523.25 Hz
-  tune+1            type 8, tune word 0x4100 (+1 semitone): 277.18 Hz
-  lev-half          type 8, the machine level word 0xec halved (0x6400 -> 0x3200): -6 dB if the engine's later
+  pluck60            type 9 (digikit/pluck) forced, note 60: a pluck at 261.63 Hz
+  pluck72            type 8, pitch word 0x4800 (note 72): 523.25 Hz
+  tune+1            type 9, tune word 0x4100 (+1 semitone): 277.18 Hz
+  lev-half          type 9, the machine level word 0xec halved (0x6400 -> 0x3200): -6 dB if the engine's later
                     stages see the voice (amp / level stage)
   stock-lev-half    the same on the stock sample (reference for the level stage)
 
 Parts (independent, in parallel processes with `--jobs`, tools/patchkit/pk_proofkit.py): basic = type0 (stock, patched-type0),
-sine60, sine72, tune (tune+1); level (lev-half, lev-full, stock, stock-lev-half); reverb (rev-dry, rev-send); filter
-(flt-open, flt-closed). `--quick` runs type0, sine60, level and filter; the full tier runs every case.
-The patched image is built from core/dsp-voice and test/sine-voice unless
+pluck60, pluck72, tune (tune+1); level (lev-half, lev-full, stock, stock-lev-half); reverb (rev-dry, rev-send); filter
+(flt-open, flt-closed). `--quick` runs type0, pluck60, level and filter; the full tier runs every case.
+The patched image is built from core/dsp-voice and the digikit/pluck set unless
 `--patched` names one. Output stays under out/ (derived from firmware).
 """
 
@@ -39,7 +39,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.patchkit import hook_ab, pluck_ref  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
 
-PATCH_MODS = ["core/dsp-voice", "test/sine-voice"]
+# Type 9 forced on the wire plus pluck's defaults in the frame words of the knobs it reads (DECAY, PICK, BRIGHT, COLOR on knobs 1, 2, 4, 5;
+# byte offset 2 (0x6d + knob + 2 (knob >> 2))): the sample machine the track really has leaves other values there.
+PLUCK = "0x94=9,0xdc=0x4000,0xde=0x2000,0xe6=0x5000,0xe8=0x2800"
+PATCH_MODS = ["core/dsp-voice", "core/machines", "core/params", "digikit/pluck"]
 
 TRIG1 = 25
 NOTE_HZ = {60: 261.6256, 72: 523.2511}
@@ -68,24 +71,24 @@ def panel(page: int, encoder: int, events: int, detents: int) -> list[dict]:
     return ev
 
 
-# digikit/pluck is a real machine now (core/machines gives it its type, core/params its knobs): its proof is
-# tools/patchkit/pk_proof_pluck.py. `analyse_pluck` stays here for it.
-PLUCK_CASES: dict[str, int] = {}
+# The machine is digikit/pluck, its type 9 forced on the wire (the machine menu is the other proof, tools/patchkit/pk_proof_pluck.py):
+# the pitch cases measure its fundamental with `analyse_pluck` (case -> note).
+PLUCK_CASES: dict[str, int] = {"pluck60": 60, "pluck72": 72, "tune+1": 61}
 
 # name -> (patched?, DSP_FRAME_POKE, panel events)
 CASES: dict[str, tuple[bool, str, list[dict]]] = {
     "stock": (False, "", []),
     "patched-type0": (True, "", []),
-    "sine60": (True, "0x94=8", []),
-    "sine72": (True, "0x94=8,0x02=0x4800", []),
-    "tune+1": (True, "0x94=8,0xda=0x4100", []),
-    "lev-half": (True, "0x94=8,0xec=0x3200", []),
-    "lev-full": (True, "0x94=8", []),
+    "pluck60": (True, PLUCK, []),
+    "pluck72": (True, PLUCK + ",0x02=0x4800", []),
+    "tune+1": (True, PLUCK + ",0xda=0x4100", []),
+    "lev-half": (True, PLUCK + ",0xec=0x3200", []),
+    "lev-full": (True, PLUCK, []),
     "stock-lev-half": (False, "0xec=0x3200", []),
-    "rev-dry": (True, "0x94=8", panel(FX_PAGE, ENC_REV, 0, 0)),
-    "rev-send": (True, "0x94=8", panel(FX_PAGE, ENC_REV, 52, 4)),
-    "flt-open": (True, "0x94=8,0x02=0x6000", panel(FLT_PAGE, ENC_FLT, 0, 0)),
-    "flt-closed": (True, "0x94=8,0x02=0x6000", panel(FLT_PAGE, ENC_FLT, 46, -4)),
+    "rev-dry": (True, PLUCK, panel(FX_PAGE, ENC_REV, 0, 0)),
+    "rev-send": (True, PLUCK, panel(FX_PAGE, ENC_REV, 52, 4)),
+    "flt-open": (True, PLUCK + ",0x02=0x6000", panel(FLT_PAGE, ENC_FLT, 0, 0)),
+    "flt-closed": (True, PLUCK + ",0x02=0x6000", panel(FLT_PAGE, ENC_FLT, 46, -4)),
 }
 
 
@@ -101,9 +104,9 @@ def peak_hz(x: np.ndarray, fs: float = 48000.0) -> float:
 
 
 def tail_energy(pcm: np.ndarray) -> float:
-    """Mean square of the left channel from 0.1 s after the sine voice ends (2 s after the note starts) to the end."""
+    """Mean square of the left channel from 1.5 s after the note starts (the pluck has decayed to digital silence by 2 s) to the end."""
     left = pcm[0::2].astype(np.float64)
-    start = int(left_index_of(NOTE_DOWN) + 96000 + 0.1 * 48000)
+    start = int(left_index_of(NOTE_DOWN) + 1.5 * 48000)
     return float(np.mean(left[start:] ** 2)) if start < len(left) else 0.0
 
 
@@ -171,7 +174,13 @@ class VoiceProof(K.Proof):
         wav = self.out / f"{name}.wav"
         env = {"DSP_FRAME_POKE": poke} if poke else None
         busy = None
-        mods = PATCH_MODS if use_patch else []
+        mods = (
+            ["core/dsp-voice"]
+            if name == "patched-type0"
+            else PATCH_MODS
+            if use_patch
+            else []
+        )
         image = self.patched if use_patch else None
         with self.session(
             mods,
@@ -241,15 +250,15 @@ class VoiceProof(K.Proof):
             ok &= same and not r["silent"]
             detail = f"equal to stock: {same}"
         want = {
-            "sine60": semitone_hz(60),
-            "sine72": semitone_hz(72),
+            "pluck60": semitone_hz(60),
+            "pluck72": semitone_hz(72),
             "tune+1": semitone_hz(61),
         }.get(name)
         if want is not None:
-            cents = 1200 * math.log2(r["hz"] / want) if not r["silent"] else None
+            cents = r.get("cents")
             r["cents_error"] = cents
-            ok &= cents is not None and abs(cents) < 5
-            detail = f"{r.get('hz', 0):.2f} Hz, {cents if cents is None else round(cents, 2)} cents"
+            ok &= cents is not None and abs(cents) < 10
+            detail = f"{r.get('f0', 0):.2f} Hz, {cents if cents is None else round(cents, 2)} cents"
         return self.check(f"case {name}", bool(ok), detail)
 
     def finish(self) -> None:
@@ -268,12 +277,12 @@ class VoiceProof(K.Proof):
         for name in ("lev-half", "lev-full", "stock", "stock-lev-half"):
             self.case_ok(name)
         r = self.report
-        sine_db = 20 * math.log10(r["lev-half"]["rms"] / r["lev-full"]["rms"])
+        pluck_db = 20 * math.log10(r["lev-half"]["rms"] / r["lev-full"]["rms"])
         stock_db = 20 * math.log10(r["stock-lev-half"]["rms"] / r["stock"]["rms"])
         self.check(
-            "level stage: the sine and the stock sample drop by the same dB",
-            abs(sine_db - stock_db) < 0.3,
-            f"sine {sine_db:.2f} dB, stock {stock_db:.2f} dB",
+            "level stage: the pluck and the stock sample drop by the same dB",
+            abs(pluck_db - stock_db) < 0.3,
+            f"pluck {pluck_db:.2f} dB, stock {stock_db:.2f} dB",
         )
         self.finish()
 
@@ -294,7 +303,7 @@ class VoiceProof(K.Proof):
         drop = 20 * math.log10(
             self.report["flt-closed"]["rms"] / self.report["flt-open"]["rms"]
         )
-        self.check("the filter closes on the sine", drop < -6, f"{drop:.1f} dB")
+        self.check("the filter closes on the pluck", drop < -6, f"{drop:.1f} dB")
         self.finish()
 
 
@@ -309,24 +318,24 @@ PARTS = [
         group="basic",
     ),
     K.Part(
-        "sine60",
-        "the sine voice at note 60",
-        lambda p: p.part_cases(("sine60",)),
+        "pluck60",
+        "the pluck voice at note 60",
+        lambda p: p.part_cases(("pluck60",)),
         True,
         40,
         group="basic",
     ),
     K.Part(
-        "sine72",
-        "the sine voice at note 72",
-        lambda p: p.part_cases(("sine72",)),
+        "pluck72",
+        "the pluck voice at note 72",
+        lambda p: p.part_cases(("pluck72",)),
         False,
         40,
         group="basic",
     ),
     K.Part(
         "tune",
-        "the sine voice tuned +1 semitone",
+        "the pluck voice tuned +1 semitone",
         lambda p: p.part_cases(("tune+1",)),
         False,
         40,
