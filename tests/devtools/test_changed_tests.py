@@ -18,7 +18,7 @@ def _no_directory(sel: changed_tests.Selection) -> None:
 
 
 def test_docs_select_nothing() -> None:
-    assert changed_tests.select(["docs/x.md"]).tests == {}
+    assert changed_tests.select(["docs/TESTING.md"]).tests == {}
 
 
 def test_patchkit_tool_selects_its_importer() -> None:
