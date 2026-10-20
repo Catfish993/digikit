@@ -242,7 +242,7 @@ description = "Build or inspect a standalone +Drive image"
 
 [tasks."module:new"]
 run = "uv run python -m tools.patchkit.pk_new"
-description = "Create a module from a template: mise run module:new -- category/name [--cf] [--dsp] (stubs, tests/smoke.toml, README.md, gallery/icon.svg; builds it)"
+description = "Create a module from a template: mise run module:new -- category/name [--cf] [--dsp] (stubs, tests/smoke.toml, README.md, gallery/icon.svg; builds it), or -- author/name --machine [--dir DIR] (a run-time machine of the SDK contract, a copy of test/sine; docs/MODULE-AUTHORING.md)"
 
 [tasks."module:build"]
 run = "uv run python -m tools.patchkit.pk_build"
@@ -259,6 +259,14 @@ description = "ColdFire memory audit of one run-time module in the emulator: `mo
 [tasks."module:pack"]
 run = "uv run python -m tools.patchkit.patchkit pack"
 description = "Pack a run-time module as a .dkm: mise run module:pack -- test/dyn-pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"
+
+[tasks."module:export"]
+run = "uv run python -m tools.patchkit.pk_package export"
+description = "Export a module as a deterministic .dkmod: mise run module:export -- ID [-o FILE] [--previous OLD.dkmod] (no build/, package.toml with sha256 per file; --previous refuses a parameter that moved to another knob)"
+
+[tasks."module:import"]
+run = "uv run python -m tools.patchkit.pk_package import"
+description = "Import a .dkmod: mise run module:import -- FILE [--dir DIR] [--replace] (checks every sha256, refuses author core and type framework, refuses a known id without --replace; default target: the first PATCHKIT_MODULES folder)"
 
 [tasks."module:dev"]
 run = "uv run python -m tools.patchkit.pk_dev"
