@@ -1,5 +1,7 @@
 """pk_conform: what the machine conformance suite reads from the manifests (no core runs here)."""
 
+import tomllib
+
 from tools.patchkit import pk_conform as c
 
 
@@ -26,7 +28,10 @@ def test_pluck_parameters_come_from_the_manifest_and_the_device_frame():
         (f"pluck_{n}", k) for k, n in enumerate(("decay", "pick", "bright", "color"))
     ]
     assert dn2.frame.hw(3, 1) == dn2.frame.base + 3 * dn2.frame.stride + 1
-    assert dt2.machine_type == dn2.machine_type == 9
+    # a run-time machine has no fixed number: the rig takes the first number of the run-time range of the device (core/machines types.toml)
+    types = tomllib.loads((c.ROOT / "modules/core/machines/types.toml").read_text())
+    assert dt2.machine_type == types["dt2"]["dynamic_first"]
+    assert dn2.machine_type == types["dn2"]["dynamic_first"]
     assert [p.default for p in dn2.params] == [0x4000, 0x2000, 0x5000, 0x2800]
 
 

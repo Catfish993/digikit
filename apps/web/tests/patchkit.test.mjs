@@ -131,7 +131,7 @@ test('wasm and CLI produce byte-identical output for core/params and PLUCK', { s
   py('tools.patchkit.patchkit', 'bundle', '-o', bundlePath);
   const bundle = readFileSync(bundlePath);
   const { x, put, get, text } = await load();
-  const mods = 'core/dsp-voice,core/machines,core/params,digikit/pluck';
+  const mods = 'core/dsp-voice,core/machines,core/params,test/patched-pluck';
   const fw = readFileSync(images.dt2);
   const out = join(work, 'dt2-pluck.syx');
   const plan = join(work, 'dt2-pluck.plan.json');
@@ -220,13 +220,13 @@ test('wasm adds the requirements of the selection like the CLI', { skip: !need }
       '--firmware',
       images[dev],
       '--modules',
-      'digikit/pluck',
+      'test/patched-pluck',
       '-o',
       out,
     );
     assert.match(said, /added by requires: .*core\/machines/);
     const [fp, fl] = put(readFileSync(images[dev]));
-    const [ip, il] = put(Buffer.from('digikit/pluck'));
+    const [ip, il] = put(Buffer.from('test/patched-pluck'));
     assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
     assert.ok(
       Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)),

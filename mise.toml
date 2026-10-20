@@ -258,7 +258,7 @@ description = "ColdFire memory audit of one run-time module in the emulator: `mo
 
 [tasks."module:pack"]
 run = "uv run python -m tools.patchkit.patchkit pack"
-description = "Pack a run-time module as a .dkm: mise run module:pack -- test/dyn-pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"
+description = "Pack a run-time module as a .dkm: mise run module:pack -- digikit/pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"
 
 [tasks."module:export"]
 run = "uv run python -m tools.patchkit.pk_package export"
@@ -299,7 +299,7 @@ description = "Site-by-site account of a patch (disassembly before and after, al
 
 [tasks."patch:mem"]
 run = "uv run python -m tools.patchkit.pk_mem"
-description = "Patch memory per region (size, used by each module, free; also the runtime's own bytes), refused when the modules do not fit: mise run patch:mem -- digikit/master-gain digikit/pluck [--device dt2|dn2] [--firmware VER] [--json]"
+description = "Patch memory per region (size, used by each module, free; also the runtime's own bytes), refused when the modules do not fit: mise run patch:mem -- digikit/master-gain digikit/master-drive [--device dt2|dn2] [--firmware VER] [--json]"
 
 [tasks."patch:test"]
 run = "uv run python -m tools.patchkit.pk_harness run"
@@ -321,7 +321,7 @@ description = "Resolve the anchors and regions of a firmware into devices/ports/
 
 [tasks."dk:run"]
 run = "uv run --with python-rtmidi python -m tools.device.dkrun"
-description = "Build, pack, upload, select, restart and follow the log of a run-time module on a device with runtime 0.0.4 or newer or the emulator: mise run dk:run -- test/dyn-pluck --port Digitakt [--seconds 30] (the target is --emu or --port NAME)"
+description = "Build, pack, upload, select, restart and follow the log of a run-time module on a device with runtime 0.0.4 or newer or the emulator: mise run dk:run -- digikit/pluck --port Digitakt [--seconds 30] (the target is --emu or --port NAME)"
 
 [tasks."dk:log"]
 run = "uv run --with python-rtmidi python -m tools.device.dklog"

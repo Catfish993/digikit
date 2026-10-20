@@ -27,8 +27,8 @@ def test_ids_are_unique_and_every_manifest_is_found() -> None:
 
 
 def test_fixture_ids_stay_test_slash_name() -> None:
-    d = modroots.module_dir("test/dyn-pluck")
-    assert d == ROOT / "tests" / "fixtures" / "modules" / "dyn-pluck"
+    d = modroots.module_dir("test/patched-pluck")
+    assert d == ROOT / "tests" / "fixtures" / "modules" / "patched-pluck"
     assert modroots.module_dir("digikit/pluck") == ROOT / "modules/machines/pluck"
 
 
@@ -37,8 +37,8 @@ def test_module_id_of_a_path() -> None:
         modroots.module_id("modules/machines/pluck/src/dsp/pluck.s") == "digikit/pluck"
     )
     assert (
-        modroots.module_id(ROOT / "tests/fixtures/modules/dyn-pluck/module.toml")
-        == "test/dyn-pluck"
+        modroots.module_id(ROOT / "tests/fixtures/modules/patched-pluck/module.toml")
+        == "test/patched-pluck"
     )
     assert modroots.module_id("tools/patchkit/modroots.py") is None
 

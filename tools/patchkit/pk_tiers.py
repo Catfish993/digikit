@@ -32,7 +32,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.patchkit import pk_harness as H  # noqa: E402
 
 TRIG1 = H.button("TRIG 1")
-PLUCK_MODS = ["core/dsp-voice", "core/machines", "core/params", "digikit/pluck"]
+PLUCK_MODS = ["core/dsp-voice", "core/machines", "core/params", "test/patched-pluck"]
 PLUCK_DOWNS = 7
 
 # name -> (modules, DSP_FRAME_POKE, select PLUCK, hold TRIG 1)

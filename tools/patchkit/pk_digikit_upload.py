@@ -544,7 +544,7 @@ def run_rust(c: Any) -> None:
     import subprocess
 
     exe = rust_binary(c)
-    mod = c.pack("test/dyn-pluck", "rust.dkm")
+    mod = c.pack("digikit/pluck", "rust.dkm")
     dkm_file = c.env.folder / "digikit" / mod
     dkm = dkm_file.read_bytes()
     dkm_file.unlink()

@@ -573,7 +573,7 @@ def part_modules(c: Any, img: Any) -> None:
     the voice rows; paging by start index; it is not logged as an UPLOAD event."""
     files = {
         m: c.pack(m, m.split("/")[-1] + ".dkm")
-        for m in ("test/dyn-pluck", "test/dyn-xslice")
+        for m in ("digikit/pluck", "test/dyn-xslice")
     }
     card = c.card(list(files.values()))
     with c.rig(img, card, "modules") as rig:
@@ -587,7 +587,7 @@ def part_modules(c: Any, img: Any) -> None:
         n_up = len(events(rig, "UPLOAD"))
         m = up.modules()
         names = [x["name"] for x in m["modules"]]
-        pl = next(x for x in m["modules"] if x["name"] == "test/dyn-pluck")
+        pl = next(x for x in m["modules"] if x["name"] == "digikit/pluck")
         xs = next(x for x in m["modules"] if x["name"] == "test/dyn-xslice")
         st = M.sym(rig.plan, "core/runtime", "DKRT_STATE")
         arena_lo, arena_hi = rig.w(st + 28), rig.w(st + 32)
@@ -603,7 +603,7 @@ def part_modules(c: Any, img: Any) -> None:
         c.check(
             "MODULES lists the two loaded modules by record index, with the file's version and contract bytes",
             m["total"] == 2
-            and names == ["test/dyn-pluck", "test/dyn-xslice"]
+            and names == ["digikit/pluck", "test/dyn-xslice"]
             and [x["index"] for x in m["modules"]] == [0, 1]
             and all(
                 x["version"] == hdr(x["name"])[0]
@@ -638,7 +638,7 @@ def part_modules(c: Any, img: Any) -> None:
             and pl["dsp_off"] + pl["dsp_len"] > pl["dsp_off"],
             f"dsp free {m['dsp_free']}, pluck {pl['dsp_off']:#x}+{pl['dsp_len']:#x}",
         )
-        t_pl = rig.dyn_type("test/dyn-pluck", "pluck")
+        t_pl = rig.dyn_type("digikit/pluck", "pluck")
         t_xs = rig.dyn_type("test/dyn-xslice", "xslice_d")
         rows = {k: r[0] for k, r in enumerate(rig.voice_rows())}
         pl_rows = [k for k in range(8) if pl["rows"] >> k & 1]
@@ -695,7 +695,7 @@ def run_sticky(c: Any) -> None:
     from tools.patchkit.pk_digikit_project import card_after, export
 
     PL, XS, PA = (
-        ("test/dyn-pluck", "pluck"),
+        ("digikit/pluck", "pluck"),
         ("test/dyn-xslice", "xslice_d"),
         ("test/dyn-params", "dynp"),
     )
@@ -1147,7 +1147,7 @@ def run_guard(c: Any) -> None:
     if not c.dt2:
         return run_guard_dn2(c)
     nan = c.pack("test/dyn-guard-nan", "nan.dkm")
-    plk = c.pack("test/dyn-pluck", "pluck.dkm")
+    plk = c.pack("digikit/pluck", "pluck.dkm")
     img = c.image_for(B.RT, "guard")
     card = c.card([plk, nan])
     with c.rig(img, card, "guard") as rig:
@@ -1181,7 +1181,7 @@ def run_guard(c: Any) -> None:
                     return
             raise M.Fail(f"no list position gives type {want} on track {track}")
 
-        t_pluck = rig.dyn_type("test/dyn-pluck", "pluck")
+        t_pluck = rig.dyn_type("digikit/pluck", "pluck")
         t_nan = rig.dyn_type("test/dyn-guard-nan", "guardnan")
         pick(1, t_pluck, GUARD_PLUCK_HINT)
         pick(2, t_nan, GUARD_NAN_HINT)

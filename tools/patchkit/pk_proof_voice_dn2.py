@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""patchkit core/dsp-voice on Digitone II 1.12: digikit/pluck renders through the FM engine's later stages.
+"""patchkit core/dsp-voice on Digitone II 1.12: test/patched-pluck renders through the FM engine's later stages.
 
     uv run python -m tools.patchkit.pk_proof_voice_dn2 [--out DIR] [--only a,b,c] [--quick] [--jobs N]
 
-Emulator only (finding 06, "Per-voice hook on DN2"). PLUCK is the machine type 9 that digikit/pluck adds (selected in the
+Emulator only (finding 06, "Per-voice hook on DN2"). PLUCK is the machine type 9 that test/patched-pluck adds (selected in the
 machine menu; the track's frame words are forced with DSP_FRAME_POKE where a case needs another note):
 
-  a  stock   with core/dsp-voice and the digikit/pluck set patched in, FM TONE selected: the PCM is bit-identical to the stock
+  a  stock   with core/dsp-voice and the test/patched-pluck set patched in, FM TONE selected: the PCM is bit-identical to the stock
              firmware's (the hook with no registered type changes nothing), up to the phase of the key release: a patched
              image boots to a different sub-block phase of the scripted key (which image bytes decide, not the code that
              runs), so the release can land one envelope step away. Then the audio before the release is bit-identical and
@@ -75,7 +75,7 @@ def release_phase_equal(
     return False, "no alignment"
 
 
-MODS = ["core/machines", "core/params", "core/dsp-voice", "digikit/pluck"]
+MODS = ["core/machines", "core/params", "core/dsp-voice", "test/patched-pluck"]
 PLUCK_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, PLUCK (before MIDI)
 READY = ROOT / "out" / "ready-fastweb-dn2"
 

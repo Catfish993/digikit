@@ -314,7 +314,7 @@ fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
                 "core/dsp-voice",
                 "core/machines",
                 "core/params",
-                "digikit/pluck",
+                "test/patched-pluck",
             ],
         ) else {
             continue;

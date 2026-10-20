@@ -475,9 +475,9 @@ mod tests {
     fn the_machine_key_is_the_fnv_hash_of_the_global_id() {
         // low 24 bits of FNV-1a 32 of "<module id>:<machine id>" (docs/design/module-sdk.md 11.5 D7); the runtime and the test tools compute the same
         assert_eq!(machine_hash("a", "b"), 0xbd8540);
-        assert_eq!(machine_hash("test/dyn-pluck", "pluck"), 0xe53b3a);
-        assert_eq!(machine_key("test/dyn-pluck", "pluck", 0), 0xe53b_3a00);
-        assert_eq!(machine_key("test/dyn-pluck", "pluck", 18), 0xe53b_3a12);
+        assert_eq!(machine_hash("digikit/pluck", "pluck"), 0x734543);
+        assert_eq!(machine_key("digikit/pluck", "pluck", 0), 0x7345_4300);
+        assert_eq!(machine_key("digikit/pluck", "pluck", 18), 0x7345_4312);
         assert_eq!(fmt_type(machine_key("a", "b", 0)), "hbd8540");
         assert_eq!(fmt_type(machine_key("a", "b", 18)), "hbd8540+18");
         assert_eq!(fmt_type(18), "18");

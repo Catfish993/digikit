@@ -1,6 +1,6 @@
 # Pluck
 
-**Category:** machines  **Devices:** Digitakt II 1.16, 1.17; Digitone II 1.12  **Status:** experimental (emulator only)
+**Category:** machines  **Devices:** Digitakt II 1.16, 1.17; Digitone II 1.12  **Status:** experimental (emulator only)  **Kind:** run-time module (`.dkm`)
 
 A new machine in the SRC machine list: a plucked string (Karplus-Strong). On the Digitakt II every track with the
 PLUCK machine is one string tuned to the note you play, so it follows the keyboard, the sequencer's notes and the
@@ -31,13 +31,13 @@ voice's amplitude envelope (AMP page), filter, overdrive, FX sends and reverb wo
 hold the key, or set a long amp release, to hear a long DECAY. Each note starts a new string; the same key pressed
 again starts another one. FLTR, AMP, FX and MOD pages are the usual ones.
 
-Needs `core/machines`, `core/params` and `core/dsp-voice`, which patchkit adds for you. Changes both processors: ColdFire
-tables for the machine and its four parameters (on the Digitone II also its own parameter page), and DSP code in free
-DSP memory.
+A run-time module: it is not patched into the firmware. The digikit runtime loads the `.dkm` from the card and sends the DSP
+code to the DSP. Load it with `mise run dk:run -- digikit/pluck --emu` (or `--port Digitakt`), or pack it with
+`mise run module:pack -- digikit/pluck --device dt2` (`dn2` for the Digitone II) and upload `out/patch/pluck-<device>.dkm`. The
+image needs the digikit runtime (see docs/PATCHING.md, "Test a run-time module in the emulator"). The machine adds ColdFire
+rows for itself and its four parameters (on the Digitone II also its own parameter page) and DSP code.
 
-Projects saved with a PLUCK track keep the machine and its knob values when loaded on the same patched firmware. On
-stock firmware (or a firmware patched with other machines) the track loads as SAMPLE (Digitone II: FM TONE) and its
-values land in that machine's slots; saving there removes the machine.
+What a saved project does with a PLUCK track when the module is not loaded: docs/findings/52-sticky-machine-ids.md.
 
 MIDI CC and NRPN do not reach the machine's knobs yet (stock tracks take them through a table the patch does not
 extend), and parameter locks were not tried in the emulator. Not tested on hardware.

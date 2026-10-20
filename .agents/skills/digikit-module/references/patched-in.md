@@ -1,8 +1,8 @@
 # Patched-in modules
 
 A module without `dynamic = true` is linked into a stock firmware image by patchkit (`packages/patchkit`). Use this route for hooks in
-firmware code (master-bus effects, ColdFire UI changes). The project's PLUCK machine (`digikit/pluck`) stays patched in: it is the public
-module of the browser page until the browser delivers a `.dkm`.
+firmware code (master-bus effects, ColdFire UI changes). The project's PLUCK machine (`digikit/pluck`) is a run-time module; its patched-in twin `test/patched-pluck` is a test fixture.
+The browser patch page lists patched-in modules only; a `.dkm` goes to the device through `/upload`.
 
 - **Anchors, not addresses.** Every firmware site is a named anchor resolved by an `[[anchor_rule]]` (masked signature, `cfmatch`
   offset, or SHARC `reloc_hash` plus offset) into `devices/ports/<dev>-<ver>.toml` by `mise run patch:port`. A rule that matches nothing or

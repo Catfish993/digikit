@@ -5,7 +5,6 @@
 #define FRAME_STRIDE 48 // halfwords from one track (voice) to the next
 #define SLOT_BASE 0 // slot of knob 0
 #define KNOBS 8 // knobs per machine
-#define PLUCK_TYPE 9 // permanent machine type number
 #define PLUCK_KNOB0_FRAME_OFF 0
 #define PLUCK_KNOB1_FRAME_OFF 1
 #define PLUCK_KNOB2_FRAME_OFF 2

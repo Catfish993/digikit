@@ -5,11 +5,11 @@
 The rung C image (`core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp`) boots from a card with a sample filesystem (a few
 WAV files) and a blank module store. Then, in this order, what Em does:
 
-  1. `dkupload info` and `dkupload put out/patch/dyn-pluck-dt2.dkm` (the command line of tools/device/dkupload.py, with `--emu --run-dir`
+  1. `dkupload info` and `dkupload put out/patch/pluck-dt2.dkm` (the command line of tools/device/dkupload.py, with `--emu --run-dir`
      where Em types `--port Digitakt`); the sectors the upload wrote are all inside the store range;
   2. SETTINGS > DIGIKIT > MODULES, tick the module, APPLY & RESTART (two presses);
   3. after the restart: ABOUT and the log say the module loaded, RAM was kept, HEALTH is sane;
-  4. FUNC + SRC, choose the run-time pluck machine on track 1, hold TRIG 1: the note equals the patched-in `digikit/pluck` sample for
+  4. FUNC + SRC, choose the run-time pluck machine on track 1, hold TRIG 1: the note equals the patched-in `test/patched-pluck` sample for
      sample; the DSP's counters say that every dispatch to type 18 returned; no DSP_STOPPED.
 
 Screenshots of the OLED and the log files go to `out/runs/lanes/b-rungC/` (never committed).
@@ -36,7 +36,7 @@ from tools.patchkit import pk_harness as H
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNG_C = "core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp"
-DKM = ROOT / "out" / "patch" / "dyn-pluck-dt2.dkm"
+DKM = ROOT / "out" / "patch" / "pluck-dt2.dkm"
 PLUCK_HINT = 7
 STORE_FIRST, STORE_END = B.STORE_FIRST, B.STORE_FIRST + B.STORE_SECTORS
 
@@ -150,7 +150,7 @@ def _run_rungc(
     # ---- the files: the image, the module, the card with samples ------------------------------------------------------------
     DKM.parent.mkdir(parents=True, exist_ok=True)
     c.env.tools.patchkit_run(
-        "pack", "test/dyn-pluck", "--device", "dt2", "-o", DKM
+        "pack", "digikit/pluck", "--device", "dt2", "-o", DKM
     )  # always: a kept file from an older packer has other type fields
     img = c.image_for(RUNG_C, "rungC")
     plan = D.Plan(img.plan)
@@ -165,11 +165,11 @@ def _run_rungc(
         __import__("hashlib").sha256(img.syx.read_bytes()).hexdigest()
     )
 
-    # ---- the twin: digikit/pluck patched in, the PCM the run-time machine has to equal ----------------------------------------
+    # ---- the twin: test/patched-pluck patched in, the PCM the run-time machine has to equal ----------------------------------------
     ref_img = (
         None
         if bisect or probe
-        else c.image_for(M.MODULES_STATIC + ",digikit/pluck", "ref")
+        else c.image_for(M.MODULES_STATIC + ",test/patched-pluck", "ref")
     )
     ref: dict[str, Any] = {}
 
@@ -238,14 +238,14 @@ def _run_rungc(
             )
             rc, text = cli(DK.main, rig, "put", str(DKM))
             c.check(
-                "dkupload put out/patch/dyn-pluck-dt2.dkm: the sha256 is checked on the device",
+                "dkupload put out/patch/pluck-dt2.dkm: the sha256 is checked on the device",
                 rc == 0 and "sha256 checked on the device" in text,
                 text.strip(),
             )
             rc, text = cli(DK.main, rig, "ls")
             c.check(
                 "dkupload ls lists the module",
-                rc == 0 and "dyn-pluck-dt2.dkm" in text,
+                rc == 0 and "pluck-dt2.dkm" in text,
                 text.strip(),
             )
             after = sectors_written(rig)

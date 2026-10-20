@@ -52,10 +52,10 @@ name is `out/patch/<firmware>+<modules>.syx`. The command verifies the result be
 - The input must be a stock image. A patched image is refused.
 - Everything under `out/` is derived from firmware and is never committed.
 
-A machine needs its framework modules, which are added for you:
+A machine needs its framework modules, which are added for you (`test/patched-pluck` is the patched-in test machine; the project's PLUCK, `digikit/pluck`, is a run-time module, see below):
 
 ```sh
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/pluck -o out/patch/pluck.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules test/patched-pluck -o out/patch/pluck.syx
 ```
 
 ### Inspect, check, explain, verify
@@ -66,7 +66,7 @@ uv run python -m tools.patchkit.patchkit inspect out/patch/mg.syx               
 uv run python -m tools.patchkit.patchkit check --firmware firmware/Digitakt_II_OS1.17.syx           # which modules fit this firmware
 uv run python -m tools.patchkit.patchkit verify out/patch/mg.syx --base firmware/Digitakt_II_OS1.17.syx   # re-decode and check
 mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-gain
-mise run patch:mem -- digikit/master-gain digikit/pluck --device dt2 --firmware 1.17    # bytes used and free per region
+mise run patch:mem -- digikit/master-gain digikit/master-drive --device dt2 --firmware 1.17    # bytes used and free per region
 ```
 
 - `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.11, dn2-1.12").
@@ -124,7 +124,7 @@ in the firmware and a card.
 ```sh
 uv run python -m tools.patchkit.patchkit patch --firmware firmware/Digitakt_II_OS1.17.syx \
   --modules core/dynreg,core/dyndsp,core/digikit-menu,core/health -o out/patch/rt-dt2.syx
-mise run module:pack -- test/dyn-pluck --device dt2       # out/patch/dyn-pluck-dt2.dkm (--device dn2 for the Digitone II)
+mise run module:pack -- digikit/pluck --device dt2       # out/patch/pluck-dt2.dkm (--device dn2 for the Digitone II)
 mkdir -p plus_drive/dt2 && cp notes.txt plus_drive/dt2/    # any file: the card is built only when the folder has content
 mise run workbench -- out/patch/rt-dt2.syx
 ```
@@ -134,7 +134,7 @@ device, the stock base image for the card builder and the `plus_drive/<device>/`
 keeps. Then:
 
 1. Upload the module: the Modules panel of the desktop app, or
-   `uv run python -m tools.device.dkupload --emu put out/patch/dyn-pluck-dt2.dkm` (it lands in `modules/` of the store).
+   `uv run python -m tools.device.dkupload --emu put out/patch/pluck-dt2.dkm` (it lands in `modules/` of the store).
 2. On the emulated device: SETTINGS > DIGIKIT > MODULES, select the module, APPLY & RESTART.
 3. After the restart check the module in HEALTH and ABOUT (the same menu).
 4. Quit the emulator: the card's files, including the module store (`digikit/`), are exported back to
@@ -228,7 +228,7 @@ first `mise run web` in a fresh tree compiles the browser cores and takes severa
 |---|---|---|
 | Port | Per-firmware facts: named anchors with SHA-256 of the expected bytes, free regions, container limits. Generated, keyed by the `.syx` SHA-256. | `devices/ports/dt2-1.17.toml` |
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
-| Content module | Own code and declarative registry entries. No addresses. | `digikit/master-gain`, `digikit/pluck` |
+| Content module | Own code and declarative registry entries. No addresses. | `digikit/master-gain`, `digikit/master-drive` |
 
 Device, board and firmware facts are data (`devices/*.toml`, `devices/ports/*.toml`, `modules/core/machines/types.toml`); code that needs a constant gets it from `patchkit gen` (`[[gen]]` in a `module.toml`). Where each fact lives and what a new device needs: `docs/design/device-data.md`.
 
@@ -425,7 +425,7 @@ device.
 | --- | --- | --- | --- | --- |
 | A | the runtime and the menu, no DSP change | `core/runtime,core/digikit-menu,core/health` | 3 only; 7 is the stock DSP | 1,869,472 |
 | B | A plus the DSP link and the run-time machine rows (no module installed) | `core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp` | 3 and 7 | 1,876,512 |
-| C | B's module list rebuilt (the DSP now writes breadcrumbs, the runtime decodes them: a new image, flash it), then the test module `test/dyn-pluck` uploaded at run time | same as B (the module is a file, not part of the image) | 3 and 7 | 1,885,088 |
+| C | B's module list rebuilt (the DSP now writes breadcrumbs, the runtime decodes them: a new image, flash it), then the test module `digikit/pluck` uploaded at run time | same as B (the module is a file, not part of the image) | 3 and 7 | 1,885,088 |
 
 - Rung A: the requires added are `core/expansion` only. `core/health` has no DSP part: it reads the DSP's own cycle count from the reply
   record and counts idle iterations on the ColdFire, so it needs no `dsp-link` and leaves section 7 stock (checked: the plan changes
@@ -453,18 +453,20 @@ device.
 
 ### Rung C: a machine loaded at run time (Digitakt II 1.17)
 
-Rung C plays an added machine type, `test/dyn-pluck` (run-time type 18), for the first time on the device. It is the step where another
+Rung C plays an added machine type, `digikit/pluck` (run-time type 18), for the first time on the device. It is the step where another
 user's Digitakt II halted its SHARC (finding 45), so the image now records where the DSP is (finding 48): a halt is read from the log, not
 guessed. Rehearsed in the emulator on 2026-10-18 with exactly these images and commands (scenario `rung-c`, screenshots in
 `out/runs/lanes/b-rungC/`, not committed): every step below ended as described. **The device itself has not run this yet.**
+
+Since 2026-10-21 (P3e-1) the module of these sections is `digikit/pluck` and its file is `pluck-dt2.dkm` (before: `test/dyn-pluck`, `dyn-pluck-dt2.dkm`). The module sizes and sha256 values quoted below were measured before the rename and change with it (the module id and the machine key are in the file): compare with the values `pack` and `shasum` print.
 
 **1. Build and check the image** (the rung B module list; the file is new because the DSP changed):
 
 ```sh
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rungC-dt2-1.17.syx
 mise run patch:preflight -- out/patch/rungC-dt2-1.17.syx     # must end with PREFLIGHT OK; sections 3 and 7 differ from stock, nothing else
-mise run module:pack -- test/dyn-pluck --device dt2           # out/patch/dyn-pluck-dt2.dkm
-shasum -a 256 out/patch/rungC-dt2-1.17.syx out/patch/dyn-pluck-dt2.dkm
+mise run module:pack -- digikit/pluck --device dt2           # out/patch/pluck-dt2.dkm
+shasum -a 256 out/patch/rungC-dt2-1.17.syx out/patch/pluck-dt2.dkm
 ```
 
 Image: 1,885,088 bytes, sha256 `fb6caf044c633db18c803b0797731fcfec78a73e9b2e30a717e45c1ecd779cbf`; module: 4,484 bytes, sha256 `e66c4660c028fda721e680f3b1aa0c3106133647f9016aa0531773c1d6e64b41`. (`pack` prints a second sha256, that of the image inside the module; the one to compare is the file's, as `shasum` and `dkupload ls` print it.) A different hash means
@@ -488,20 +490,20 @@ a word other than a beat or a counter changes, and a `HEALTH` line every ten sec
 
 ```sh
 uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info    # reads only: protocol 1, runtime 3, free_bytes about 12.5 MB
-uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt put out/patch/dyn-pluck-dt2.dkm
-uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt ls      # modules/dyn-pluck-dt2.dkm  4484  <the sha256 of the file>
+uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt put out/patch/pluck-dt2.dkm
+uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt ls      # modules/pluck-dt2.dkm  4484  <the sha256 of the file>
 ```
 
 `put` ends with `4484 bytes in ... (sha256 checked on the device)`. In the rehearsal the upload wrote 12 sectors, all inside the store range
 (sectors 0x38000 to 0x3e000); the firmware's own project sectors were not touched. If `put` fails, nothing else has happened: `dkupload ... clear`
 empties the store (it changes only that range).
 
-**5. Tick it and restart** (on the device): SETTINGS > DIGIKIT > MODULES. The list shows `[ ] DYN-PLUCK-DT2.DKM`. Press **YES** (it shows
+**5. Tick it and restart** (on the device): SETTINGS > DIGIKIT > MODULES. The list shows `[ ] PLUCK-DT2.DKM`. Press **YES** (it shows
 `[X]`), press **DOWN** (the cursor goes to `APPLY & RESTART`), press **YES**: the row reads `CONFIRM RESTART` and a popup says `UNSAVED CHANGES LOST`.
 Press **NO** to dismiss the popup, then **YES** again on the row: the selection is saved and the device restarts (a few seconds, the OLED goes
 dark and the main screen returns).
 
-**6. After the restart:** SETTINGS > DIGIKIT > ABOUT shows `BOOT: 1 OF 1 OK`, `DYN-PLUCK-DT2.DKM`, `- OK` and `RAM KEPT: YES` (RAM survived this
+**6. After the restart:** SETTINGS > DIGIKIT > ABOUT shows `BOOT: 1 OF 1 OK`, `PLUCK-DT2.DKM`, `- OK` and `RAM KEPT: YES` (RAM survived this
 restart; `NO` would mean it did not, which is still open on the device). HEALTH (one row down) shows CPU about 20-30 %, DSP about 30-40 %, RAM free
 about 26 MB. Log:
 
@@ -509,7 +511,7 @@ about 26 MB. Log:
 uv run --with python-rtmidi python -m tools.device.dklog --port Digitakt follow --once --out out/runs/device-logs/rungC-2.log
 ```
 
-Good: `RAM_KEEP kept=1`, `MOD_LOAD index=0 result=1 name=dyn-pluck-dt` (the CF part is in; result 1 means the DSP part follows), a moment later
+Good: `RAM_KEEP kept=1`, `MOD_LOAD index=0 result=1 name=pluck-dt2.dk` (the CF part is in; result 1 means the DSP part follows), a moment later
 `MOD_DSP index=0 result=0` (the DSP part is in), `BOOT_RECORD ... selected=1`, no `SAFE`.
 
 **7. Choose the machine on track 1** (user manual A.1): select track 1 (TRK + TRIG 1), press **FUNC + SRC** to open the MACHINE menu (`MACHINE SEL >
@@ -519,7 +521,7 @@ bug of an image built before 2026-10-19 (finding 50). Rebuild the image to get o
 (The emulator rig pressed YES twice, 300 ms apart; if the track page does not show those parameters after one press, press YES once more.)
 
 **8. Play:** press **TRIG 1** (hold it for a few seconds). Expected: a plucked-string tone, decaying (the rehearsal's note is sample for sample the
-patched-in `digikit/pluck`). Keep the key down for 10 to 20 seconds once, then read the log again (command of step 6, new `--out`):
+patched-in `test/patched-pluck`). Keep the key down for 10 to 20 seconds once, then read the log again (command of step 6, new `--out`):
 
 Good log (dispatches and returns rise together; this is the rehearsal's):
 
@@ -578,7 +580,7 @@ more (its first `CALL`/`RTS`, and for a registered type the `MODE1` writes, the 
 type it never saw. Rung C2 separates them. It is the rung C image with one build option of `core/dsp-voice`, `DV_BISECT_C2`: for a type of 7 or more
 the wrapper writes its breadcrumb inline (no `CALL`, no `RTS`) and takes the stock path, and it never dispatches (so no `MODE1` or other system-register
 write, no stores below the frame, no loop, no indirect jump). The stock-type path (types below 7) is byte-identical to rung C (proof in finding 49,
-section 8). The module `dyn-pluck-dt2.dkm` is the same file; it loads and registers its row, and the wrapper ignores the row.
+section 8). The module `pluck-dt2.dkm` is the same file; it loads and registers its row, and the wrapper ignores the row.
 
 **Build** (the option is a `#ifdef` in the one source file; `pk_variant` builds the objects with it into `out/variants/dv-c2/`, the committed objects are not
 touched, and `DIGI_PK_ROOT` makes `patch` and `preflight` use that tree):
@@ -630,7 +632,7 @@ any shipped image; the module and all steps are those of "Rung C".
 | **b** | nested interrupts across the registered path (MODE1.IRPTEN cleared, entry MODE1 restored) | `out/patch/rungC3b-dt2-1.17.syx` | `5dd9e7a7c459f72e1550069bc66b55023c4e1a3ce39c12ab4f6ea59127834c4e` |
 | **c** | the MODE1 writes (`BIT CLR`/`BIT SET`/`NOP` and the restore) | `out/patch/rungC3c-dt2-1.17.syx` | `aaa9f365b229a5a74c0eb5a605f30dd9246786211fa84d96a7ab6c6ffe00c906` |
 
-All three: 1,885,472 bytes, `PREFLIGHT OK` (sections 3 and 7 differ from stock, nothing else), base `26c22f66...`, module `out/patch/dyn-pluck-dt2.dkm` unchanged (sha256 `e66c4660...`). All three also restore `B3` before `I3`
+All three: 1,885,472 bytes, `PREFLIGHT OK` (sections 3 and 7 differ from stock, nothing else), base `26c22f66...`, module `out/patch/pluck-dt2.dkm` unchanged (sha256 `e66c4660...`). All three also restore `B3` before `I3`
 (finding 49 section 9.2). Each passes `rung-c3a`/`b`/`c` in the emulator (PCM of the run-time pluck equal to the patched-in pluck, 19,574 dispatches and returns) and the quick `pk_proof_voice` (stock type 0 bit-identical).
 
 **Build** (each variant is `pk_variant make core/dsp-voice OPTIONS LABEL`; `DIGI_PK_ROOT` makes `patch` and `preflight` use it):
@@ -666,7 +668,7 @@ are not instructions of the ISA: a DM store cannot take a DAG1 register (I0-I7, 
 | **d1** | (not buildable any more) | the stores kept as they are; twelve inline breadcrumbs (stages 11 to 22) between them | `out/patch/rungC3d1-dt2-1.17.syx` | `3972e3929bbcde01a3719496b860ecc6c760334be94ee4023df412f6fa6515cf` |
 | **d3** | `DV_C3_DEEP` | both | `out/patch/rungC3d3-dt2-1.17.syx` | `0840b3bba8c32fbda7fd7fb98b923b76fb9b411d90efa8c3a9e7a789c860f0fa` |
 
-All three `PREFLIGHT OK` (sections 3 and 7 differ from stock, nothing else); 1,885,600 bytes (d2), 1,885,728 bytes (d1, d3); the module is the unchanged `dyn-pluck-dt2.dkm` (`e66c4660...`). Not part of any shipped image.
+All three `PREFLIGHT OK` (sections 3 and 7 differ from stock, nothing else); 1,885,600 bytes (d2), 1,885,728 bytes (d1, d3); the module is the unchanged `pluck-dt2.dkm` (`e66c4660...`). Not part of any shipped image.
 Emulator (scenarios `rung-c3d1`, `rung-c3d2`, `rung-c3d3`, full tier): see "Emulator proof" below. The emulator accepts the excluded stores, so d1 does not halt there; a pass in the emulator says the
 variants keep the path working, not that the cause is found.
 
@@ -748,8 +750,8 @@ selection of rung C4 keeps both.
 comes back, the tool connects again within 90 s):
 
 ```sh
-uv run --with python-rtmidi python -m tools.device.dkrun test/dyn-pluck --port Digitakt --seconds 30
-# or: mise run dk:run -- test/dyn-pluck --port Digitakt --seconds 30
+uv run --with python-rtmidi python -m tools.device.dkrun digikit/pluck --port Digitakt --seconds 30
+# or: mise run dk:run -- digikit/pluck --port Digitakt --seconds 30
 ```
 
 It prints one `dk run:` line per step, then the boot's `MOD_LOAD ... result=1` (the DSP part is loading) and `MOD_DSP ... result=0` (loaded), and exits 1 with the reason
@@ -780,16 +782,16 @@ One flash, and the `.dkm` files must be packed again (a DSP section of version 2
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rt5-dt2-1.17.syx
 mise run patch:preflight -- out/patch/rt5-dt2-1.17.syx     # PREFLIGHT OK and "ISA check: ok"; sections 3 and 7 differ from stock, nothing else
 shasum -a 256 out/patch/rt5-dt2-1.17.syx
-mise run module:pack -- test/dyn-pluck --device dt2          # the machine as a .dkm (DSP section version 2)
+mise run module:pack -- digikit/pluck --device dt2          # the machine as a .dkm (DSP section version 2)
 ```
 
 Image: 1,887,392 bytes, sha256 `ced22f18eb8c1a955be440b3d6bffe8b776fd00d0ce1d20053d1c90e46f8d16f` (a different hash means the sources changed since this text was written: use the printed value and the preflight result).
-`test/dyn-pluck` for dt2: `d0463cbbfb90db2d196563e23f165cfd3cdf57e1b015151c15d6d956f175edc7` (4,580 bytes, `out/patch/dyn-pluck-dt2.dkm`).
+`digikit/pluck` for dt2: `d0463cbbfb90db2d196563e23f165cfd3cdf57e1b015151c15d6d956f175edc7` (4,580 bytes, `out/patch/pluck-dt2.dkm`).
 
 **2. Flash it** as for runtime 4 (Transfer, SETTINGS > SYSTEM > OS UPGRADE, drop the `.syx` on DROP). Keep the volume low.
 
 **3. Check** `uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info` prints `runtime: 5`. A `.dkm` packed for runtime 4 (DSP section version 1) still loads
-(every range undeclared, so the guard clamps to 0 .. 0x7f00), but the pluck inside it has the old arithmetic: run `dk run test/dyn-pluck` again so that the new file is uploaded.
+(every range undeclared, so the guard clamps to 0 .. 0x7f00), but the pluck inside it has the old arithmetic: run `dk run digikit/pluck` again so that the new file is uploaded.
 
 **4. Run the pluck with an LFO on TUNE** (`dk run` as for runtime 4, then the LFO on the TUNE knob of the SRC page, depth over the whole range, a note held on track 1):
 the sound follows the pitch to the limits of the string and stays; no track goes silent. Read the log (`uv run --with python-rtmidi python -m tools.device.dklog --port Digitakt`):

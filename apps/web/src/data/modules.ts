@@ -77,6 +77,8 @@ export interface ModuleInfo {
   icon: string;
   /** Machines the module adds (empty for the others). */
   machines: GalleryMachine[];
+  /** A run-time module (`dynamic = true`): it is loaded from the card by the digikit runtime and cannot be patched into a firmware. */
+  dynamic: boolean;
 }
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -103,6 +105,7 @@ type Manifest = {
     category: Category;
     status: string;
     summary: string;
+    dynamic?: boolean;
     requires?: string[];
     conflicts?: string[];
   };
@@ -129,9 +132,13 @@ export const modules: ModuleInfo[] = Object.entries(manifests)
       devices: order.filter((d) => named.has(d)),
       icon: icons[path.replace(/module\.toml$/, 'gallery/icon.svg')] ?? FRAMEWORK_ICON,
       machines: galleryMachines(galleries[path.replace(/module\.toml$/, 'build/gen/gallery.json')]),
+      dynamic: m.dynamic ?? false,
     };
   })
   .sort((a, b) => a.id.localeCompare(b.id));
 
+/** The modules a visitor patches into a firmware: no run-time modules (those are uploaded to the device). */
+export const patchableModules = modules.filter((m) => !m.dynamic);
+
 /** The modules a visitor picks from (no framework or test modules). */
-export const publicModules = modules.filter((m) => !HIDDEN_CATEGORIES.has(m.category));
+export const publicModules = patchableModules.filter((m) => !HIDDEN_CATEGORIES.has(m.category));

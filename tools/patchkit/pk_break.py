@@ -9,7 +9,7 @@ The break is made in a copy of the module sources (out/broken/KIND/modules; the 
 
   persist  core/machines leaves the persistence immediate at the stock value: a saved project does not keep the
            machine type (the type falls back to SAMPLE or FM TONE when the project is loaded).
-  rows     digikit/pluck lists DECAY and PICK in each other's descriptor fields (a wrong parameter mapping): the
+  rows     test/patched-pluck lists DECAY and PICK in each other's descriptor fields (a wrong parameter mapping): the
            knobs, the names and the sound of those two parameters are exchanged.
 
 `PK_PROOF_IMAGE` makes every proof session that has modules load that image instead of the patch of its modules
@@ -30,15 +30,15 @@ ROOT = HERE.parent.parent
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import modroots, patchkit  # noqa: E402
 
-# kind -> (module manifest, old text, new text); the old text must occur exactly once
+# kind -> (module manifest relative to the copied root, old text, new text); the old text must occur exactly once
 BREAKS = {
     "persist": (
-        "core/machines/module.toml",
+        "modules/core/machines/module.toml",
         'value = "image.u8(cf.machines.persist + 1) + machines.count"',
         'value = "image.u8(cf.machines.persist + 1)"',
     ),
     "rows": (
-        "machines/pluck/module.toml",
+        "tests/fixtures/modules/patched-pluck/module.toml",
         'knobs = [0xca, "pluck_decay", "pluck_pick", 0,',
         'knobs = [0xca, "pluck_pick", "pluck_decay", 0,',
     ),
@@ -58,7 +58,7 @@ def build(kind: str, mods: str, device: str, fw: str, out: Path) -> Path:
     for r in modroots.REPO_ROOTS:
         shutil.copytree(ROOT / r, root / r)
     (root / "devices").symlink_to(ROOT / "devices")
-    path = root / "modules" / manifest
+    path = root / manifest
     text = path.read_text()
     if text.count(old) != 1:
         raise SystemExit(

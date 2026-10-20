@@ -10,10 +10,10 @@ tier = "quick"
 
 [debug]
 part = "memaudit"
-modules = ["test/c-demo", "test/dyn-demo", "test/dyn-pluck"]
+modules = ["test/c-demo", "test/dyn-demo", "digikit/pluck"]
 must_run = ["test/dyn-demo"]
 
 [[debug.machines]]
 track = 1
-machine = "test/dyn-pluck:pluck"
+machine = "digikit/pluck:pluck"
 hint = 7

@@ -25,7 +25,7 @@ dynamic_first = 16
 [dt2.alloc]
 "test/xslice:xslice" = 7
 "test/machine-clone:xclone" = 8
-"digikit/pluck:pluck" = 9
+"test/patched-pluck:pluck" = 9
 "test/twin-xslice:xslice_d" = 10
 "core/dynreg:dyn16" = 16
 "core/dynreg:dyn17" = 17
@@ -45,7 +45,7 @@ dynamic_first = 16
 "test/dn2-clone:fmclone" = 5
 "test/dn2-pages:pages" = 6
 # 7 and 8 are retired (test/dn2-sine and test/dn2-edge, removed): a gap row, never reused (the next free number is above 10).
-"digikit/pluck:pluck" = 9
+"test/patched-pluck:pluck" = 9
 "test/twin-dn2:dyn_pluck" = 10
 "core/dynreg:dyn16" = 16
 "core/dynreg:dyn17" = 17

@@ -1,43 +1,39 @@
 [module]
 id = "digikit/pluck"
 version = "0.1.0"
-name = "Pluck"
+name = "PLUCK-D"
 category = "machines"
 type = "machine"
 author = "digikit"
 status = "experimental"
-summary = "A plucked-string synth machine with decay, pick position, brightness and colour."
+summary = "A plucked-string synth machine with decay, pick position, brightness and colour, loaded at run time."
+dynamic = true
 ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
-requires = ["core/dsp-voice", "core/machines", "core/params"]
+requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "untested"
+"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "untested"
+"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
+# A machine loaded at run time (docs/findings/32-runtime-dsp-machines.md). `patchkit pack digikit/pluck --device dt2 -o ...dkm` lowers the
+# typed sections below into the `register` records and links the DSP object into the `.dkm` DSP section; the digikit runtime sends the code
+# to the DSP and publishes the voice row (type 18 on the Digitakt II, 17 on the Digitone II) and the machine row.
+# The patched-in twin test/patched-pluck (tests/fixtures/modules) builds from the same source file (one body for both devices), so the
+# routine that runs is the same in both.
 [[object]]
 path = "build/pluck-dsp.dko.json"
 sources = ["src/dsp/pluck.s"]
 place = "dsp.l2"
 
-# Typed sections (packages/patchkit/src/typed.rs; shape in modules/README.md "Typed sections"). They are lowered per
-# device with the knob model of devices/<device>.toml into the `voices`, `machines`, `params` and `pages` rows.
-
-# The DSP routines render the permanent type number of this machine (core/machines types.toml), one body for both devices: a machine of
-# the SDK contract (sdk/dk_machine.h), `desc` holds its voices, state and clear bytes.
 [[voice]]
 machine = "pluck"
 render = "_pk_render"
 note_on = "_pk_note_on"
 desc = "_pk_desc"
 
-# The machine clones SAMPLE (type 0: its permission, per-type byte and DSP selector, so the track plays through the
-# sample renderer where the voice hook takes over). Digitakt II: the SRC page is SAMPLE's, knobs 0 TUNE (stock code
-# 0xca) and 7 LEV (0xd1) are its own rows, 1 DECAY, 2 PICK, 4 BRIGHT, 5 COLOR are rows this module adds (core/params);
-# knobs 3 and 6 stay empty (0).
-# Values are 0 .. 0x7f00 (UI 0 .. 127); the defaults give a medium-length, slightly damped, lightly combed pluck.
 [[machine]]
 id = "pluck"
 name = "Pluck"
@@ -45,15 +41,15 @@ short = "PLK"
 clone_of = 0
 knobs = [0xca, "pluck_decay", "pluck_pick", 0, "pluck_bright", "pluck_color", 0, 0xd1]
 
-# Digitone II: a machine of its own type (the FM engine renders nothing for it: `own_dsp`) with its own SYN page below:
-# DECAY, PICK, BRIGHT, COLOR on knobs A .. D (sound-array slots 25 .. 28), the engine's level on the last knob.
+# Digitone II: a machine of its own type (own_dsp) with its own SYN page: DECAY, PICK, BRIGHT, COLOR on knobs A .. D.
+[machine.dt2]
+type_hint = 18   # the numbers these machines had before sticky ids (finding 52)
+
 [machine.dn2]
-position = 4
+type_hint = 17
 own_dsp = true
 knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
 
-# `template` is the stock code whose row is copied: 0xd1 on the Digitakt II, 0xd5 (A Env Decay, a plain 0 .. 127 word)
-# on the Digitone II. The slot follows from the knob position.
 [[param]]
 id = "pluck_decay"
 name = "Decay"
@@ -62,6 +58,7 @@ template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x4000
+
 [param.dn2]
 template = 0xd5
 
@@ -73,6 +70,7 @@ template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x2000
+
 [param.dn2]
 template = 0xd5
 
@@ -84,6 +82,7 @@ template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x5000
+
 [param.dn2]
 template = 0xd5
 
@@ -95,6 +94,7 @@ template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x2800
+
 [param.dn2]
 template = 0xd5
 
