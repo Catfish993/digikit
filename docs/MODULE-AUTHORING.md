@@ -149,6 +149,7 @@ once). A store outside these ranges fails with the module, device, call, PC, add
 ```sh
 mise run module:build -- PATH           # compile the sources to build/*.dko.json (PATH is the module folder)
 mise run module:check -- em/my-synth    # conformance + own tests + packed size per device
+mise run module:audit -- em/my-synth    # ColdFire memory audit (--device dt2|dn2)
 mise run module:pack -- em/my-synth --device dt2 -o my-synth.dkm
 mise run workbench                      # the emulator (another shell)
 mise run dk:run -- em/my-synth --emu    # build, pack, upload, select, restart, follow the log
@@ -158,6 +159,12 @@ mise run dk:run -- em/my-synth --port Digitakt    # the same on a device with th
 The conformance suite runs your routine on the concrete SHARC+ core through `core/dsp-voice`: every parameter at its limits, many notes,
 modulation, long notes and retriggers. Each block must return, keep the context registers, stay finite and below 8.0, and stay in the
 instruction budget. The module's own tests are `tests/test_*.py` and `tests/*.toml`.
+
+`module:audit` runs the ColdFire memory audit for one run-time module and the run-time modules it requires (docs/TESTING.md,
+"ColdFire memory audit"). It loads them on a ColdFire-only emulator, drives the UI for a bounded time (DIGIKIT menu, the machine list
+with parameter turns, a project save and load, 10 to 35 s per device) and fails when ColdFire code stores into the free memory regions
+outside the module blocks. A hit gives the PC, the address, the size and the code it belongs to. A second boot audits the load and
+`dkm_init`. The audit does not see DMA or the stores a module asks the runtime to make. A patched-in module is skipped.
 
 When you change tests of the repository, run only the tests you changed: `mise run test:changed`.
 

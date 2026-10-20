@@ -7,6 +7,7 @@ card   card safety. A blank card works as before; the one card-write function re
        before the first upload write leaves a card that the next boot calls ours when the upload is cut.
 debug  the debug log: LOG and PEEK over SysEx, INFO's sequence numbers, the DEBUG switch (errors only when off, saved in the record's flags
        and kept by the selection), the periodic events, `tools/device/dklog.py` against the emulator.
+memaudit  the ColdFire memory audit (pk_digikit_memaudit.py): the write guard armed on the free regions outside the modules' blocks while the UI is driven.
 crash  a CPU exception in a module's slot: the runtime's hook records it in RAM that the soft reset keeps and resets; the next boot reports
        the record with the right PC; two in a row lead to safe mode, for a crash before the stable period and for one after it.
 """
@@ -360,6 +361,10 @@ def run_debug(c: Any) -> None:
         return run_guard(c)
     if c.table().get("part") == "sticky":
         return run_sticky(c)
+    if c.table().get("part") == "memaudit":
+        from tools.patchkit import pk_digikit_memaudit as MA
+
+        return MA.run_memaudit(c)
     img = c.image_for(B.RT, "run")
     blank = c.card(None)
     has_diag = any(k.endswith(":dl_diag") for k in img.plan["symbols"])

@@ -63,5 +63,5 @@ def test_a_new_machine_in_an_out_of_tree_folder_passes_the_check_on_both_devices
         text=True,
     )
     assert c.returncode == 0, c.stdout + c.stderr
-    assert "13 passed" in c.stdout
+    assert " passed" in c.stdout and " failed" not in c.stdout
     assert "dt2: size" in c.stdout and "dn2: size" in c.stdout

@@ -197,6 +197,10 @@ class Rig:
                 ProofError
             ):  # nor the upload buffer (36,896 bytes, card reads of the store land in it)
                 holes.append((sym(plan, "core/runtime", "DKRT_UPLOAD_BUF"), 36896))
+            with contextlib.suppress(
+                ProofError
+            ):  # nor the store-peek sector (the card read of the store's header DMAs into it)
+                holes.append((sym(plan, "core/runtime", "DKRT_STORE_PEEK"), 512))
             ranges, at = [], lo
             for start, size in sorted(holes):
                 if start > at:  # adjacent holes leave no range between them
