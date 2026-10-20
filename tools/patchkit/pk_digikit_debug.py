@@ -956,8 +956,96 @@ def run_hang(c: Any) -> None:
 
 # list positions of the two run-time machines in the guard scenario (the pluck is the first entry of the run-time machines, the fixture the second);
 # their type numbers are the ones the boot assigned (card order: pluck, then the fixture)
+GUARD_DN2_HINT = 5  # Digitone II: the run-time machine follows MIDI (as in equiv-dyn-pluck)
 GUARD_NAN_HINT = 8
 GUARD_PLUCK_HINT = 7
+
+
+def run_guard_dn2(c: Any) -> None:
+    """The guard on the Digitone II (the same contract body, one `own_dsp` machine with a one-knob page on track 1): ten presses of TRIG 1 in a second give
+    8 or more MACHINE_FAULT (the count in the event) and one MACHINE_DISABLED, and the master output holds no NaN or Inf. (The Digitakt II part
+    also keeps a second machine audible and sends the faulting track into the delay: the stock sound there needs a sample.)"""
+    import numpy as np
+
+    from tools.patchkit import hook_ab
+
+    nan = c.pack("test/dyn-guard-nan", "nan.dkm")
+    img = c.image_for(B.RT, "guard")
+    card = c.card([nan])
+    with c.rig(img, card, "guard") as rig:
+        info = rig.boot_info()
+        c.check(
+            "the fixture loaded at boot (CF part, DSP part, one voice row)",
+            info["count"] == 1
+            and info["results"] == [0]
+            and len([r for r in rig.voice_rows() if r[0] != B.FREE_TYPE]) == 1,
+            str(info["results"]),
+        )
+        ui_first = next(e for e in events(rig) if e[2] == L.K["UI_FIRST"])[4][0]
+        for _ in range(60):
+            if int(rig.emu.call("status")["dsp_frames"]) >= ui_first + 3300:
+                break
+            rig.s.run_ms(500)
+        t_nan = rig.dyn_type("test/dyn-guard-nan", "guardnan")
+        rig.select(GUARD_DN2_HINT)
+        rig.s.run_ms(800)
+        chg = [e for e in events(rig, "MACHINE_CHANGE") if e[4][2] == t_nan]
+        c.check(
+            "the machine list shows the fixture and track 1 takes its type (MACHINE_CHANGE)",
+            bool(chg),
+            str([e[4][:3] for e in events(rig, "MACHINE_CHANGE")]),
+        )
+        wav = c.work / "guard.wav"
+        rig.emu.call("pcm.tap", action="capture", path=str(wav))
+        rig.s.run_ms(400)
+        for _ in range(10):
+            rig.s.do_tap("TRIG 1")
+            rig.s.run_ms(100)
+        rig.s.run_ms(1500)  # a poll of the guard's words is a second apart
+        rig.emu.call("pcm.tap", action="capture_stop")
+        rig.s.run_ms(2500)
+        evs = events(rig)
+        faults = [e for e in evs if e[2] == L.K["MACHINE_FAULT"]]
+        disabled = [e for e in evs if e[2] == L.K["MACHINE_DISABLED"]]
+        last = L.event_dict(faults[-1])["fields"] if faults else {}
+        c.check(
+            "MACHINE_FAULT is logged (an error event): the fixture's type, kind nonfinite, count 8 or more",
+            bool(faults)
+            and all(e[3] & 1 for e in faults)
+            and last.get("type") == t_nan
+            and last.get("kind") == "nonfinite"
+            and last.get("faults", 0) >= 8,
+            str([L.event_dict(e)["fields"] for e in faults]),
+        )
+        c.check(
+            "MACHINE_DISABLED is logged once, for the fixture's type",
+            len(disabled) == 1 and disabled[0][4][0] == t_nan and disabled[0][3] & 1,
+            str([L.event_dict(e)["fields"] for e in disabled]),
+        )
+        n_before = len(faults)
+        rig.s.do_tap("TRIG 1")
+        rig.s.run_ms(2500)
+        c.check(
+            "a press after the switch-off causes no new fault",
+            len(events(rig, "MACHINE_FAULT")) == n_before,
+            f"{n_before} -> {len(events(rig, 'MACHINE_FAULT'))}",
+        )
+        pcm = hook_ab.read_wav(wav)
+        c.check(
+            "the master output stays finite (no NaN or Inf in the capture)",
+            bool(np.all(np.isfinite(pcm))) and len(pcm) > 48000,
+            f"{len(pcm)} samples",
+        )
+        m = uploader(rig).modules()
+        x = m["modules"][0]
+        c.check(
+            "MODULES shows the fixture's faults and that the guard switched it off",
+            x["types"] == [t_nan] and x["faults"] >= 8 and x["guard_off"],
+            str(x),
+        )
+        c.report["guard_wav"] = str(wav)
+        c.done(rig)
+    c.common_checks_upload(project_writes_ok=True)
 
 
 def run_guard(c: Any) -> None:
@@ -970,6 +1058,8 @@ def run_guard(c: Any) -> None:
 
     from tools.patchkit import hook_ab
 
+    if not c.dt2:
+        return run_guard_dn2(c)
     nan = c.pack("test/dyn-guard-nan", "nan.dkm")
     plk = c.pack("test/dyn-pluck", "pluck.dkm")
     img = c.image_for(B.RT, "guard")

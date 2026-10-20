@@ -7,7 +7,13 @@ pub mod dn2 {
     pub const SLOT_BASE: u32 = 0x19; // slot of knob 0
     pub const KNOBS: u32 = 0x8; // knobs per machine
     pub const GUARDNAN_KNOB0_FRAME_OFF: u32 = 0x0;
-    pub const GUARDNAN_KNOB7_FRAME_OFF: u32 = 0x7;
+    pub const NAN_A_KNOB: u32 = 0x0; // knob position
+    pub const NAN_A_SLOT: u32 = 0x19; // engine or sound-array slot
+    pub const NAN_A_FRAME_OFF: u32 = 0x0; // halfwords from knob 0 of the same track
+    pub const NAN_A_MIRROR: u32 = 0x19; // index in the parameter table
+    pub const NAN_A_MIN: u32 = 0x0;
+    pub const NAN_A_MAX: u32 = 0x7f00;
+    pub const NAN_A_DEFAULT: u32 = 0x2000;
 
     /// Halfword index in the DSP's frame copy of the word at `offset` of `track` (voice).
     pub const fn frame_halfword(track: u32, offset: u32) -> u32 {
