@@ -31,7 +31,7 @@
           },
           "position": null,
           "short": "PLK",
-          "type": 17
+          "type": null
         },
         "dt2": {
           "clone_of": 0,
@@ -69,7 +69,7 @@
           "page": null,
           "position": null,
           "short": "PLK",
-          "type": 18
+          "type": null
         }
       },
       "id": "pluck",

@@ -200,13 +200,25 @@ id = 29
 name = "TABLE_BAD"
 args = ["invariant", "module", "a", "b", "-"]
 
+# a run-time machine got its type number at the boot load (docs/design/module-sdk.md 11.5 D7); `sticky` 1: the number the card remembered
+[[log.kind]]
+id = 30
+name = "MACHINE_TYPE_ASSIGNED"
+args = ["hash", "type", "sticky", "-", "-"]
+
+# the map of remembered numbers was full and an entry of a module that is not loaded in this boot was dropped
+[[log.kind]]
+id = 31
+name = "MACHINE_TYPE_EVICTED"
+args = ["hash", "type", "-", "-", "-"]
+
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO
 
 [protocol.commands] # command numbers; never reuse or renumber (additive only)
 INFO = 0x01
 LIST = 0x02
-MODULES = 0x03      # not implemented yet (its capability bit is not set)
+MODULES = 0x03      # the loaded modules with their ranges, types and faults
 BEGIN = 0x10
 DATA = 0x11
 END = 0x12
@@ -241,7 +253,7 @@ PEEK = 1
 LOGCFG = 2
 SELECT = 3
 RESTART = 4
-MODULES = 5         # not set by the runtime yet
+MODULES = 5
 
 [load.status]       # result codes of `dkrt_load` and the boot-time selection (also the status of SELECT); never renumber
 E_NOT_FOUND = { code = -1, text = "no store, or no such file or module" }

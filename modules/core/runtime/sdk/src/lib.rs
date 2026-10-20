@@ -309,12 +309,23 @@ pub mod sel {
         /// The stable period of this card in DSP blocks (bytes 24 to 27 of the record, reserved zero before): 0 takes `STABLE_BLOCKS`. A
         /// setting for tests and for people who debug a module; nothing in the menu writes it.
         pub stable_blocks: u32,
+        /// The sticky machine types (docs/design/module-sdk.md 11.5 D7): up to 8 entries, each `hash24 << 8 | type`, 0 = empty. Entry 0 is
+        /// bytes 28 to 31 of the record, entries 1 to 7 bytes 480 to 507.
+        pub map: [u32; MAP_N],
         pub paths: [[u8; SEL_PATH]; SEL_MAX],
+    }
+
+    /// Entries of the sticky type map.
+    pub const MAP_N: usize = 8;
+
+    /// Byte offset of map entry `i`.
+    pub const fn map_at(i: usize) -> usize {
+        if i == 0 { 28 } else { 480 + 4 * (i - 1) }
     }
 
     impl Record {
         pub const fn empty() -> Record {
-            Record { seq: 0, boot_counter: 0, flags: 0, count: 0, stable_blocks: 0, paths: [[0; SEL_PATH]; SEL_MAX] }
+            Record { seq: 0, boot_counter: 0, flags: 0, count: 0, stable_blocks: 0, map: [0; MAP_N], paths: [[0; SEL_PATH]; SEL_MAX] }
         }
     }
 
@@ -354,6 +365,11 @@ pub mod sel {
         put(out, 16, r.flags);
         put(out, 20, r.count);
         put(out, 24, r.stable_blocks);
+        let mut m = 0;
+        while m < MAP_N {
+            put(out, map_at(m), r.map[m]);
+            m += 1;
+        }
         let mut k = 0;
         while k < SEL_MAX {
             let mut j = 0;
@@ -382,6 +398,11 @@ pub mod sel {
         r.flags = get(b, 16);
         r.count = count;
         r.stable_blocks = get(b, 24);
+        let mut m = 0;
+        while m < MAP_N {
+            r.map[m] = get(b, map_at(m));
+            m += 1;
+        }
         let mut k = 0;
         while k < SEL_MAX {
             let mut j = 0;

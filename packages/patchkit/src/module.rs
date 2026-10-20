@@ -164,6 +164,7 @@ pub struct AllocTable {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DevAlloc {
     /// The highest index the framework supports on this device.
     pub last: i64,
@@ -172,9 +173,6 @@ pub struct DevAlloc {
     /// First number of the range reserved for run-time modules (`core/dynreg` reserves `dynamic_first ..= last`).
     #[serde(default)]
     pub dynamic_first: Option<i64>,
-    /// Permanent numbers of run-time (`dynamic = true`) modules, keyed like `alloc`; each lies in `dynamic_first ..= last`.
-    #[serde(default)]
-    pub dynamic: BTreeMap<String, i64>,
 }
 
 impl AllocTable {
@@ -205,30 +203,12 @@ impl AllocTable {
 }
 
 impl DevAlloc {
-    /// Check the run-time range: numbers inside `dynamic_first ..= last`, unique, none of the static `alloc` numbers.
+    /// Check the run-time range: a static `alloc` number never lies in it (run-time machines take their number at load,
+    /// docs/design/module-sdk.md 11.5 D7).
     fn check_dynamic(&self, dev: &str) -> Result<()> {
-        if self.dynamic.is_empty() && self.dynamic_first.is_none() {
-            return Ok(());
-        }
         let Some(first) = self.dynamic_first else {
-            return Err(err!(
-                "allocation table [{dev}]: [{dev}.dynamic] needs dynamic_first"
-            ));
+            return Ok(());
         };
-        let mut seen: BTreeMap<i64, &str> = BTreeMap::new();
-        for (k, v) in &self.dynamic {
-            if *v < first || *v > self.last {
-                return Err(err!(
-                    "allocation table [{dev}.dynamic]: {k} = {v} is outside {first}..={}",
-                    self.last
-                ));
-            }
-            if let Some(prev) = seen.insert(*v, k) {
-                return Err(err!(
-                    "allocation table [{dev}.dynamic]: {prev} and {k} both have number {v}"
-                ));
-            }
-        }
         // the range belongs to the run-time modules; `core/dynreg` reserves its rows there
         if let Some((k, v)) = self
             .alloc

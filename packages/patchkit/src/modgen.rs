@@ -29,7 +29,7 @@ fn type_number(lib: &Library, dev: &str, module: &str, machine: &str) -> Option<
         .devices
         .get(dev)?;
     let key = format!("{module}:{machine}");
-    d.alloc.get(&key).or_else(|| d.dynamic.get(&key)).copied()
+    d.alloc.get(&key).copied()
 }
 
 fn hex(v: i64) -> String {

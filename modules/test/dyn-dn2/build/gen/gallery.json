@@ -31,7 +31,7 @@
           },
           "position": null,
           "short": "DSY",
-          "type": 16
+          "type": null
         }
       },
       "id": "dyn_pluck",

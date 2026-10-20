@@ -26,7 +26,7 @@
           "page": null,
           "position": null,
           "short": "NAN",
-          "type": 18
+          "type": null
         },
         "dt2": {
           "clone_of": 0,
@@ -52,7 +52,7 @@
           "page": null,
           "position": null,
           "short": "NAN",
-          "type": 20
+          "type": null
         }
       },
       "id": "guardnan",

@@ -9,7 +9,7 @@ tier = "full"
 
 [roundtrip]
 order = ["A", "A", "B", "A2"]
-types = [16]
+types = ["test/dyn-dn2:dyn_pluck"]
 lock_turn = 11
 sound_lock_turn = 2
 
@@ -20,5 +20,5 @@ A2 = ["test/dyn-sine-dn2", "test/dyn-dn2"]
 
 [[roundtrip.machines]]
 track = 1
-type = 16
+machine = "test/dyn-dn2:dyn_pluck"
 hint = 5

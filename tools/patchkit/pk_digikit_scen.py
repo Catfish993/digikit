@@ -246,7 +246,12 @@ class Ctx:
             h.update(str(f.relative_to(store_dir)).encode() + f.read_bytes())
         a, b = recs if recs else (None, None)
         if recs is None and selection is not None:
-            a = b = B.make_record(selection, seq, counter, flags, stable_blocks)
+            # a card laid over a base keeps the base's sticky machine types, as the menu's SELECT does (the new record is not a fresh card's)
+            tmap = None
+            if base is not None:
+                cur = B.current(B.records_in(base, b""))
+                tmap = cur["map"] if cur else None
+            a = b = B.make_record(selection, seq, counter, flags, stable_blocks, tmap)
         for x in (a, b):
             h.update(x or b"-")
         if base is not None:  # a card made by `card_after` is named by its content

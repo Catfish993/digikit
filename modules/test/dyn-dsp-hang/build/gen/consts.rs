@@ -20,7 +20,6 @@ pub mod dt2 {
     pub const FRAME_STRIDE: u32 = 0x30; // halfwords from one track (voice) to the next
     pub const SLOT_BASE: u32 = 0x0; // slot of knob 0
     pub const KNOBS: u32 = 0x8; // knobs per machine
-    pub const HANG_TYPE: u32 = 0x13; // permanent machine type number
     pub const HANG_KNOB0_FRAME_OFF: u32 = 0x0;
     pub const HANG_KNOB7_FRAME_OFF: u32 = 0x9;
 

@@ -5,7 +5,7 @@ use patchkit::apply;
 use patchkit::dkm;
 use patchkit::module::{AllocTable, Library};
 use patchkit::port::Registry;
-use patchkit::register::{KNOB_PARAM, Register};
+use patchkit::register::{KNOB_PARAM, Register, machine_hash, machine_key};
 use patchkit::typed::{Models, resolve};
 use std::path::PathBuf;
 
@@ -18,21 +18,6 @@ fn library() -> Library {
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     lib
-}
-
-fn dynamic_types(
-    lib: &Library,
-    dev: &str,
-    module: &str,
-) -> std::collections::BTreeMap<String, i64> {
-    lib.get("core/machines").unwrap().alloc["machines"].devices[dev]
-        .dynamic
-        .iter()
-        .filter_map(|(k, v)| {
-            k.strip_prefix(&format!("{module}:"))
-                .map(|n| (n.to_string(), *v))
-        })
-        .collect()
 }
 
 #[test]
@@ -67,13 +52,13 @@ fn the_register_records_are_the_lowered_typed_sections() {
         res.iter().map(|r| r.dev.as_str()).collect::<Vec<_>>(),
         ["dt2"]
     );
-    let reg = Register::lower(&res[0], &dynamic_types(&lib, "dt2", "test/dyn-xslice")).unwrap();
+    let reg = Register::lower(&res[0], "test/dyn-xslice").unwrap();
     assert_eq!(reg.device, 1);
     assert_eq!(reg.machines.len(), 1);
     let mach = &reg.machines[0];
     assert_eq!(
         (mach.type_no, mach.clone_of, mach.position, mach.level),
-        (16, 6, 255, 10)
+        (machine_key("test/dyn-xslice", "xslice_d"), 6, 255, 10)
     );
     // knobs: XSLICE's stock codes, knob 6 the module's own parameter (index 0)
     assert_eq!(
@@ -96,29 +81,15 @@ fn the_register_records_are_the_lowered_typed_sections() {
     let d = dkm::Dkm::parse(&a).unwrap();
     assert_eq!(d.init, Some(0));
     assert_eq!(Register::parse(&d.register).unwrap(), reg);
-    // a machine on a device without a run-time type number is refused, with the way to fix it
-    let e = Register::lower(&res[0], &Default::default()).unwrap_err();
-    assert!(e.0.contains("dynamic"), "{e}");
+    // the key is the 24-bit FNV-1a hash of "<module id>:<machine id>" above a zero type byte (D7)
+    assert_eq!(mach.type_no & 0xff, 0);
+    assert_eq!(machine_hash("a", "b"), 0xbd8540);
 }
 
 #[test]
 fn the_run_time_type_range_is_checked() {
-    let ok = "[dt2]\nlast = 23\ndynamic_first = 16\n[dt2.alloc]\n\"a:x\" = 7\n\"core/dynreg:d\" = 16\n[dt2.dynamic]\n\"m:y\" = 17\n";
+    let ok = "[dt2]\nlast = 23\ndynamic_first = 16\n[dt2.alloc]\n\"a:x\" = 7\n\"core/dynreg:d\" = 16\n";
     assert!(AllocTable::parse(ok).is_ok());
-    let below = ok.replace("\"m:y\" = 17", "\"m:y\" = 9");
-    assert!(
-        AllocTable::parse(&below)
-            .unwrap_err()
-            .0
-            .contains("outside 16..=23")
-    );
-    let twice = format!("{ok}\"n:z\" = 17\n");
-    assert!(
-        AllocTable::parse(&twice)
-            .unwrap_err()
-            .0
-            .contains("both have number 17")
-    );
     let static_in_range = ok.replace("\"a:x\" = 7", "\"a:x\" = 18");
     assert!(
         AllocTable::parse(&static_in_range)
@@ -126,13 +97,9 @@ fn the_run_time_type_range_is_checked() {
             .0
             .contains("run-time range")
     );
-    let no_first = "[dt2]\nlast = 23\n[dt2.dynamic]\n\"m:y\" = 17\n";
-    assert!(
-        AllocTable::parse(no_first)
-            .unwrap_err()
-            .0
-            .contains("dynamic_first")
-    );
+    // run-time machines have no number in the table any more: `[dt2.dynamic]` is refused
+    let old = format!("{ok}[dt2.dynamic]\n\"m:y\" = 17\n");
+    assert!(AllocTable::parse(&old).is_err());
 }
 
 /// The framework reserves 8 machine types (16 .. 23) and 16 parameter codes, with the runtime's table of addresses; the

@@ -44,6 +44,51 @@ unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
     off <= size && len <= size - off
 }
 
+/// The machine keys (first word of each MACHINE record of the `register` section) of the `.dkm` at `path`, for the boot's type assignment
+/// (`assign::plan`): at most 8, the count returned. Reads the file into the staging buffer, so it runs before the first load. A file that is
+/// missing, torn or not a `.dkm` has none (its load reports the error).
+pub unsafe fn machine_keys(path: *const u8, out: &mut [u32; 8]) -> usize {
+    let found = match store::find(path) {
+        Ok(f) => f,
+        Err(_) => return 0,
+    };
+    if store::load_to_stage(&found) != OK {
+        return 0;
+    }
+    let f = store::stage() as *const u8;
+    let size = found.size;
+    if size < HEADER || rd32(f) != MAGIC || rd32(f.add(H_SIZE)) != size {
+        return 0;
+    }
+    let (off, len) = (rd32(f.add(H_REG_OFF)), rd32(f.add(H_REG_SIZE)));
+    if len < 16 || !in_file(off, len, size) {
+        return 0;
+    }
+    let reg = f.add(off as usize);
+    if rd32(reg) != 0x444b_5247 {
+        return 0;
+    }
+    let (n, mut at) = (rd32(reg.add(12)), 16u32);
+    let mut found_n = 0;
+    let mut i = 0;
+    while i < n {
+        if len - at < 8 {
+            break;
+        }
+        let (kind, rl) = (rd32(reg.add(at as usize)), rd32(reg.add(at as usize + 4)));
+        if rl < 12 || rl > len - at {
+            break;
+        }
+        if kind == 2 && found_n < 8 {
+            out[found_n] = rd32(reg.add(at as usize + 8));
+            found_n += 1;
+        }
+        at += rl;
+        i += 1;
+    }
+    found_n
+}
+
 /// Validate and load the `.dkm` at `path`. See `dkrt_load`. The tables are checked after every attempt, and none starts once a check has
 /// failed (`table::check`).
 pub unsafe fn load(path: *const u8) -> i32 {

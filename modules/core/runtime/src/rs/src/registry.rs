@@ -312,7 +312,8 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
                 bad = E_FORMAT;
             }
         } else {
-            let t = rd32(b);
+            // the first word is a machine key; `assign` has the number for it (0: none, which is out of range below)
+            let t = crate::assign::resolve(rd32(b));
             let clone = rd32(b.add(4));
             let own = rd32(b.add(12));
             if rd32(b.add(8)) != 255 || own > 1 || (own == 1 && !has_pages) || rd32(b.add(16)) > 0xffff {
@@ -367,7 +368,7 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
         if kind != KIND_PAGE || bad != OK {
             return;
         }
-        let t = rd32(b);
+        let t = crate::assign::resolve(rd32(b));
         let mut j = 0;
         let mut found = false;
         while j < ns {
@@ -545,7 +546,7 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
         wr(s0 + 4 * KNOBS as u32, 0);
         wr(row + iw(inf, w::PGO_NAME), name);
         wr(row + iw(inf, w::PGO_TITLE), title);
-        wr(row + iw(inf, w::PGO_MACH), rd32(b)); // the page belongs to its machine from this store on
+        wr(row + iw(inf, w::PGO_MACH), crate::assign::resolve(rd32(b))); // the page belongs to its machine from this store on
     });
     // machines
     let knobs = iw(inf, w::KNOBS) as usize;
@@ -553,7 +554,7 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
         if kind != KIND_MACHINE {
             return;
         }
-        let t = rd32(b);
+        let t = crate::assign::resolve(rd32(b));
         let clone = rd32(b.add(4));
         let k = (t - iw(inf, w::M_DYN0)) as usize;
         let row = iw(inf, w::M_ROWS) + (t - iw(inf, w::M_FIRST)) * iw(inf, w::M_ROW_SIZE);

@@ -5,7 +5,6 @@
 #define FRAME_STRIDE 48 // halfwords from one track (voice) to the next
 #define SLOT_BASE 0 // slot of knob 0
 #define KNOBS 8 // knobs per machine
-#define XSLICE_D_TYPE 16 // permanent machine type number
 #define XSLICE_D_KNOB0_FRAME_OFF 0
 #define XSLICE_D_KNOB1_FRAME_OFF 1
 #define XSLICE_D_KNOB2_FRAME_OFF 2

@@ -36,7 +36,8 @@ FREE_TYPE = 0xFFFF_FFFF
 L2_BYTE_BASE, L2_SW_BASE = 0x2000_0000, 0x00B8_0000
 TRACK_OBJ_WORD = 0x4265338C  # the type byte is the third byte of this word (finding 02)
 MODULES_STATIC = "core/runtime,core/dynreg,core/dyndsp"
-PLUCK_STATIC_TYPE, PLUCK_DYN_TYPE = 9, 18
+PLUCK_STATIC_TYPE = 9
+PLUCK_DYN_TYPE = 18  # only the DN2 sine proof pins a run-time number (`[[dsp_voice]] type`); a machine gets its number at load (`BootRig.dyn_type`)
 MODULE = "test/dyn-pluck"
 MODULE_DN2 = "test/dyn-sine-dn2"
 MODULES_STATIC_DN2 = "core/runtime,core/dyndsp,core/machines"  # core/machines in both: the same ColdFire hooks
@@ -64,6 +65,14 @@ class Fail(RuntimeError):
 
 def be32(b: bytes, off: int) -> int:
     return struct.unpack_from(">I", b, off)[0]
+
+
+def machine_hash(module: str, machine: str) -> int:
+    """The 24-bit hash of a run-time machine's global id `<module id>:<machine id>`: the low 24 bits of FNV-1a 32 (D7; `register.rs`)."""
+    h = 0x811C9DC5
+    for b in f"{module}:{machine}".encode():
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h & 0xFFFFFF
 
 
 def sym(plan: dict, owner: str, name: str) -> int:

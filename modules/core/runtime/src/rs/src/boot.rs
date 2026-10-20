@@ -10,7 +10,7 @@
 //!
 //! The record is the only thing the runtime writes to the card here, and only to its two sectors (`sel::SECTOR_A`/`SECTOR_B`), through
 //! `block_write`, which refuses a write when the card's area is not ours (`card.rs`): then the boot counter is not raised either.
-use crate::{block_read, block_write, card, crash, dlog, loader, st};
+use crate::{assign, block_read, block_write, card, crash, dlog, loader, st};
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_sdk::sel::{self, Record};
 use dkrt_sdk::*;
@@ -176,6 +176,7 @@ pub unsafe fn selection_set(s: *const DkrtSelection) -> i32 {
     r.seq = cur.seq.wrapping_add(1);
     r.boot_counter = cur.boot_counter;
     r.stable_blocks = cur.stable_blocks;
+    r.map = cur.map; // the sticky machine types survive a new selection
     r.flags = (s.flags & sel::FLAG_SAFE_ONCE) | (cur.flags & sel::FLAG_DEBUG_OFF);
     r.count = s.count;
     k = 0;
@@ -203,6 +204,7 @@ pub unsafe fn selection_set_one(i: u32, s: *const DkrtSelection) -> i32 {
     r.seq = cur.seq.wrapping_add(1);
     r.boot_counter = cur.boot_counter;
     r.stable_blocks = cur.stable_blocks;
+    r.map = cur.map; // the sticky machine types survive a new selection
     r.flags = (s.flags & sel::FLAG_SAFE_ONCE) | (cur.flags & sel::FLAG_DEBUG_OFF);
     r.count = s.count;
     let mut k = 0;
@@ -340,6 +342,8 @@ pub unsafe extern "C" fn dkrt_boot() {
     // The frames that carry DSP code do not flow yet (they start with the sound engine, later in the task), so a module's CF part
     // goes live now and its DSP part follows over the UI-loop passes (`LOADING` in the report until then).
     loader::EARLY = true;
+    // the type numbers of every machine of the selection, before the first load (reads the files; the staging buffer is free)
+    assign::plan(&r);
     let mut k = 0;
     while k < r.count as usize {
         loader::BOOT_IDX = k as u32;
@@ -368,6 +372,12 @@ pub unsafe extern "C" fn dkrt_boot() {
     }
     loader::EARLY = false;
     loader::BOOT_IDX = u32::MAX;
+    // the sticky map: written once, after the loads, and only when this boot changed it
+    if let Some(map) = assign::changed_map() {
+        let mut nr = REC;
+        nr.map = map;
+        update(nr, REC_COPY, REC_VALID);
+    }
 }
 
 /// The DSP part of the module loaded for selection index `idx` is over with result `r` (called by the DSP loader).

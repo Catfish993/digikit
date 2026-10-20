@@ -15,6 +15,7 @@ use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
 mod arena;
+mod assign;
 pub mod boot;
 pub mod card;
 pub mod crash;

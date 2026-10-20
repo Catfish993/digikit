@@ -173,13 +173,15 @@ def track_type(rig: B.BootRig, track: int) -> int:
 
 
 def select_dt2(c: Any, rig: B.BootRig, track: int, want: int, hint: int) -> None:
-    for downs in (hint, hint + 1, hint - 1, hint + 2):
+    seen: list[tuple[int, int]] = []
+    for downs in (hint, hint + 1, hint - 1, hint + 2, hint + 3, hint - 2):
         rig.select(downs)
-        if track_type(rig, track) == want:
+        seen.append((downs, track_type(rig, track)))
+        if seen[-1][1] == want:
             c.check(f"track {track} holds type {want}", True, f"{downs} downs")
             return
     raise Fail(
-        f"no list position gives type {want} on track {track}: {track_type(rig, track)}"
+        f"no list position gives type {want} on track {track}: (downs, type) {seen}"
     )
 
 
@@ -188,6 +190,10 @@ def build_project(c: Any, rig: B.BootRig, t: dict[str, Any]) -> None:
     values, a p-lock and a sound lock on step 1 of track 1."""
     s = rig.s
     machines = t["machines"]  # [{track, type, hint}]
+    if c.dt2:
+        # the first SRC list after a project save does not take (the keys go to the save's leftovers): one no-op choice (the first entry, the
+        # sample machine the track holds) so that the hints are the entries' list positions
+        rig.select(0)
     for m in machines:
         if m["track"] != 1:
             s.do_tap(["TRK", f"TRIG {m['track']}"])
@@ -275,8 +281,35 @@ def boot_check(
     return th
 
 
+def dyn_numbers(rig: B.BootRig, t: dict[str, Any], sets: dict[str, list[str]], name: str,
+                known: dict[str, int], c: Any) -> None:
+    """The run-time machines the scenario names (`types` and `machines[].machine`, as "<module id>:<machine id>") get their number from the boot's
+    assignment table. A machine keeps its number in every later boot that loads its module (the card remembers it: D7)."""
+    specs = list(t.get("types", [])) + [m["machine"] for m in t["machines"] if "machine" in m]
+    for spec in dict.fromkeys(x for x in specs if isinstance(x, str)):
+        if spec.split(":")[0] not in sets[name]:
+            continue
+        got = rig.dyn_type(*spec.split(":"))
+        if spec in known:
+            c.check(f"set {name}: {spec} keeps type {known[spec]}", got == known[spec], f"type {got}")
+        known[spec] = got
+    c.report[f"assigned_{name}_{len(known)}"] = rig.assign_table()
+
+
+def resolve_scenario(t: dict[str, Any], known: dict[str, int]) -> dict[str, Any]:
+    """A copy of the scenario table with the machine specs replaced by the numbers of the first boot."""
+    out = dict(t)
+    out["types"] = [known[x] if isinstance(x, str) else x for x in t.get("types", [])]
+    out["machines"] = [
+        {**m, "type": known[m["machine"]]} if "machine" in m else m
+        for m in t["machines"]
+    ]
+    return out
+
+
 def run_roundtrip(c: Any) -> None:
     t = c.table()
+    known: dict[str, int] = {}
     sets: dict[str, list[str]] = t["sets"]
     files: dict[str, str] = {}
     for mods in sets.values():
@@ -329,7 +362,9 @@ def run_roundtrip(c: Any) -> None:
                     and all(r == 0 for r in info["results"]),
                     str(info["results"]),
                 )
+            dyn_numbers(rig, t, sets, name, known, c)
             if step == 0:
+                t = resolve_scenario(t, known)
                 save_project(rig)
                 base_ov = export(rig, "base")
                 build_project(c, rig, t)
