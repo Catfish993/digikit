@@ -266,6 +266,20 @@ def test_the_cost_of_a_chain_in_instructions():
     assert steady < 1200 and fade_out < 1800 and off < 200
 
 
+GAIN = ROOT / "tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s"
+
+
+def test_the_fixture_test_fx_gain_halves_the_master_through_the_adapter():
+    rig = FxRig([Row("_fg_process", "_fg_state", desc="_fg_desc")], sources=(GAIN,))
+    rig.block(RAMP)
+    for _ in range(3):
+        b = rig.block(RAMP)
+        assert b.master == tuple(HALF)
+        assert b.ctx_bad == [] and b.regs_bad == []
+    assert rig.symbol_word("_fg_gain") == f2w(0.5)
+    assert rig.block(RAMP).instructions < 800
+
+
 # ---- patchkit: the hook on both devices ------------------------------------------------------------------------------------
 DT2_117 = config.stock("Digitakt_II_OS1.17.syx")
 DN2_112 = config.stock("Digitone_II_OS1.12.syx")
@@ -325,3 +339,31 @@ def test_the_hook_takes_the_first_instruction_of_the_post_master_function(
     )  # the tail returns to the second instruction (the first is 3 parcels, 48 bits)
     assert any(k.endswith(":_fx_entry") for k in plan["symbols"])
     assert plan["symbols"]["core/fx@0.1.0:fx.rows"] > 0
+
+
+@needs_images
+@pytest.mark.parametrize("fw", [DT2_117, DN2_112], ids=["dt2-1.17", "dn2-1.12"])
+def test_the_fixture_puts_one_row_in_the_chain_on_both_devices(
+    patchkit, tmp_path: Path, fw
+):
+    out = tmp_path / "fx-gain.syx"
+    plan_path = tmp_path / "fx-gain.plan.json"
+    patchkit(
+        "apply",
+        "--firmware",
+        fw,
+        "--modules",
+        "core/fx,test/fx-gain",
+        "-o",
+        out,
+        "--plan",
+        plan_path,
+    )
+    plan = json.loads(plan_path.read_text())
+    sym = plan["symbols"]
+    assert sym["core/fx@0.1.0:fx.count"] == 1
+    assert sym["core/fx@0.1.0:fx.row_size"] == 64
+    assert (
+        "test/fx-gain@0.1.0:_fg_process" in sym
+        and "test/fx-gain@0.1.0:_fg_state" in sym
+    )
