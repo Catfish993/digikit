@@ -304,10 +304,14 @@ class Rig:
     def type_now(self) -> int:
         return (self.w(TRACK_OBJ_WORD) >> 8) & 0xFF
 
-    def select(self, downs: int) -> None:
+    def select(self, downs: int, ups: int = 0) -> None:
+        """Open the machine list, press UP UPS times (the cursor starts at the track's current machine; UP stops at the top) and DOWN `downs` times, commit."""
         s = self.s
         s.do_tap(["FUNC", "SRC"])
         s.run_ms(200)
+        for _ in range(ups):
+            s.do_tap("UP")
+            s.run_ms(80)
         for _ in range(downs):
             s.do_tap("DOWN")
             s.run_ms(80)

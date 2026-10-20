@@ -174,8 +174,10 @@ def track_type(rig: B.BootRig, track: int) -> int:
 
 def select_dt2(c: Any, rig: B.BootRig, track: int, want: int, hint: int) -> None:
     seen: list[tuple[int, int]] = []
-    for downs in (hint, hint + 1, hint - 1, hint + 2, hint + 3, hint - 2):
-        rig.select(downs)
+    # The first SRC list after a project save may not take (the keys go to the save's leftovers; how many presses it eats depends on the engine), so the
+    # hint is tried up to four times (the coupled engine ate two tries, the ColdFire-only one). Every try starts from the top of the list (UP presses), so a try does not depend on the machine the track holds.
+    for downs in (hint, hint, hint, hint, hint + 1, hint - 1):
+        rig.select(downs, ups=12)
         seen.append((downs, track_type(rig, track)))
         if seen[-1][1] == want:
             c.check(f"track {track} holds type {want}", True, f"{downs} downs")
@@ -190,10 +192,6 @@ def build_project(c: Any, rig: B.BootRig, t: dict[str, Any]) -> None:
     values, a p-lock and a sound lock on step 1 of track 1."""
     s = rig.s
     machines = t["machines"]  # [{track, type, hint}]
-    if c.dt2:
-        # the first SRC list after a project save does not take (the keys go to the save's leftovers): one no-op choice (the first entry, the
-        # sample machine the track holds) so that the hints are the entries' list positions
-        rig.select(0)
     for m in machines:
         if m["track"] != 1:
             s.do_tap(["TRK", f"TRIG {m['track']}"])
