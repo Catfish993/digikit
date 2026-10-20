@@ -356,6 +356,8 @@ def run_debug(c: Any) -> None:
         return run_hang(c)
     if c.table().get("part") == "guard":
         return run_guard(c)
+    if c.table().get("part") == "sticky":
+        return run_sticky(c)
     img = c.image_for(B.RT, "run")
     blank = c.card(None)
     has_diag = any(k.endswith(":dl_diag") for k in img.plan["symbols"])
@@ -551,15 +553,220 @@ def run_debug(c: Any) -> None:
             out.getvalue()[-300:],
         )
         c.done(rig)
+    if c.dt2:
+        part_modules(c, img)
     if c.tier == "full":
         periodic(c, img, blank, has_diag)
     c.common_checks_upload(project_writes_ok=True)
 
 
-HANG_TYPE, HANG_HINT = (
-    19,
-    7,
-)  # its permanent run-time type (modules/core/machines/types.toml); seven steps down the machine list
+def part_modules(c: Any, img: Any) -> None:
+    """MODULES (protocol command 3, docs/design/digikit-upload.md): after a boot with a module with DSP code (pluck) and a ColdFire-only one (xslice),
+    the reply lists both with ranges inside the arena and the DSP area, the contract bytes and version of the file, the assigned machine types and
+    the voice rows; paging by start index; it is not logged as an UPLOAD event."""
+    files = {m: c.pack(m, m.split("/")[-1] + ".dkm") for m in ("test/dyn-pluck", "test/dyn-xslice")}
+    card = c.card(list(files.values()))
+    with c.rig(img, card, "modules") as rig:
+        up = uploader(rig)
+        info = up.info()
+        c.check(
+            "INFO sets the MODULES capability",
+            DK.has_cap(info, "MODULES"),
+            str(info["caps"]),
+        )
+        n_up = len(events(rig, "UPLOAD"))
+        m = up.modules()
+        names = [x["name"] for x in m["modules"]]
+        pl = next(x for x in m["modules"] if x["name"] == "test/dyn-pluck")
+        xs = next(x for x in m["modules"] if x["name"] == "test/dyn-xslice")
+        st = M.sym(rig.plan, "core/runtime", "DKRT_STATE")
+        arena_lo, arena_hi = rig.w(st + 28), rig.w(st + 32)
+        dkm = {k: (Path(v).read_bytes()) for k, v in ((k, c.env.folder / "digikit" / v) for k, v in files.items())}
+
+        def hdr(name: str) -> tuple[int, bytes]:
+            raw = dkm[name]
+            return int.from_bytes(raw[0x34:0x38], "big"), raw[0x38:0x40]
+
+        c.check(
+            "MODULES lists the two loaded modules by record index, with the file's version and contract bytes",
+            m["total"] == 2
+            and names == ["test/dyn-pluck", "test/dyn-xslice"]
+            and [x["index"] for x in m["modules"]] == [0, 1]
+            and all(
+                x["version"] == hdr(x["name"])[0]
+                and bytes(b for pair in x["contracts"] for b in pair) == hdr(x["name"])[1]
+                for x in m["modules"]
+            ),
+            str(m["modules"]),
+        )
+        c.check(
+            "the ColdFire ranges lie inside the arena, do not overlap, and with the free figure stay inside its size",
+            all(arena_lo <= x["cf_base"] and x["cf_base"] + x["cf_size"] <= arena_hi and x["cf_size"] > 0 for x in m["modules"])
+            and (pl["cf_base"] + pl["cf_size"] <= xs["cf_base"] or xs["cf_base"] + xs["cf_size"] <= pl["cf_base"])
+            and m["arena_free"] + pl["cf_size"] + xs["cf_size"] <= arena_hi - arena_lo
+            and 0 < m["arena_largest"] <= m["arena_free"],
+            f"arena {arena_lo:#x}..{arena_hi:#x}, {m['arena_free']} free, {[(hex(x['cf_base']), x['cf_size']) for x in m['modules']]}",
+        )
+        c.check(
+            "the DSP part: pluck has a range (and the free figure leaves room for it), xslice has none",
+            pl["dsp_len"] > 0 and xs["dsp_len"] == 0 and m["dsp_free"] > 0
+            and 0 < m["dsp_largest"] <= m["dsp_free"] and pl["dsp_off"] + pl["dsp_len"] > pl["dsp_off"],
+            f"dsp free {m['dsp_free']}, pluck {pl['dsp_off']:#x}+{pl['dsp_len']:#x}",
+        )
+        t_pl = rig.dyn_type("test/dyn-pluck", "pluck")
+        t_xs = rig.dyn_type("test/dyn-xslice", "xslice_d")
+        rows = {k: r[0] for k, r in enumerate(rig.voice_rows())}
+        pl_rows = [k for k in range(8) if pl["rows"] >> k & 1]
+        c.check(
+            "the assigned machine types are the ones in the boot's table; pluck owns the one voice row, with its type; xslice owns none",
+            pl["types"] == [t_pl] and xs["types"] == [t_xs] and (t_pl, t_xs) == (16, 17)
+            and len(pl_rows) == 1 and rows[pl_rows[0]] == t_pl and xs["rows"] == 0,
+            f"{pl['types']} {xs['types']} rows {pl['rows']:#x} {xs['rows']:#x}",
+        )
+        c.check(
+            "no guard fault so far, and the guard has switched nothing off",
+            pl["faults"] == 0 and xs["faults"] == 0 and not pl["guard_off"] and not xs["guard_off"],
+            "",
+        )
+        # paging: from record index 1 only xslice; past the end nothing
+        b1 = up._ok(DK.CMD_MODULES, "modules", bytes((1,)))
+        b9 = up._ok(DK.CMD_MODULES, "modules", bytes((9,)))
+        c.check(
+            "MODULES pages by start index: from 1 one record (index 1), from 9 none; the total stays 2",
+            (b1[16], b1[17], b1[18]) == (2, 1, 1) and (b9[16], b9[17]) == (2, 0),
+            f"{b1[16:19].hex()} {b9[16:18].hex()}",
+        )
+        c.check(
+            "MODULES is not logged as an UPLOAD event",
+            len(events(rig, "UPLOAD")) == n_up,
+            f"{n_up} -> {len(events(rig, 'UPLOAD'))}",
+        )
+        c.report["modules"] = m
+        c.done(rig)
+
+
+def key_of(module: str, machine: str) -> int:
+    """The machine key of a machine in a .dkm and in the sticky map: the 24-bit hash above a zero type byte."""
+    return M.machine_hash(module, machine) << 8
+
+
+def run_sticky(c: Any) -> None:
+    """Sticky machine type numbers (docs/design/module-sdk.md 11.5 D7): the runtime gives a run-time machine a number in 16..23 at the boot load and the card
+    remembers it in the selection record's map (8 entries of hash24 << 8 | type). On ColdFire-only rigs, one boot after the other on the card the
+    previous boot left: (1) pluck and xslice: two numbers, written; (2) only xslice: it keeps its number, nothing is written; (3) xslice and params: the
+    new machine does not take the number of the absent pluck; (4) the same set again: the map survived; (5) a forged full map: the new machine drops the lowest
+    entry of a machine that is not in this boot, and the entry of a machine that is in it is safe."""
+    from tools.patchkit.pk_digikit_project import card_after, export
+
+    PL, XS, PA = (
+        ("test/dyn-pluck", "pluck"),
+        ("test/dyn-xslice", "xslice_d"),
+        ("test/dyn-params", "dynp"),
+    )
+    files = {m: c.pack(m, m.split("/")[-1] + ".dkm") for m in (PL[0], XS[0], PA[0])}
+    img = c.image_for(B.RT, "run")
+    mapk = lambda rig: B.current(rig.sel_records())["map"]  # noqa: E731
+
+    def boot(card: Any, tag: str, mods: list[tuple[str, str]]) -> tuple[Any, Any, list, list]:
+        """Boot CARD, return (assigned types by module, map on the card, ASSIGNED events, EVICTED events, card after)."""
+        with c.rig(img, card, tag, cf_only=True) as rig:
+            info = rig.boot_info()
+            c.check(
+                f"{tag}: every module loaded (ColdFire part)",
+                info["count"] == len(mods)
+                and all(r in (0, B.E_LOADING) for r in info["results"]),
+                str(info["results"]),
+            )
+            got = {m: rig.dyn_type(*m) for m in mods}
+            table = rig.assign_table()
+            asg = [e[4] for e in events(rig, "MACHINE_TYPE_ASSIGNED")]
+            ev = [e for e in events(rig, "MACHINE_TYPE_EVICTED")]
+            m = mapk(rig)
+            # SELECT (the menu's save and the SysEx command) writes a whole new record: the map in it is the old one
+            r = rig.set_selection([files[x[0]] for x in mods])
+            c.check(
+                f"{tag}: SELECT keeps the map bytes",
+                r == 0 and mapk(rig) == m,
+                f"{r} {[hex(x) for x in mapk(rig)]}",
+            )
+            ov = export(rig, tag)
+            c.done(rig)
+        return got, (m, table), asg, ev, card_after(c, card, ov)
+
+    h = lambda mm: M.machine_hash(*mm)  # noqa: E731
+    # 1: a fresh card
+    card1 = c.card([files[PL[0]], files[XS[0]]])
+    got, (m, tb), asg, _ev, after1 = boot(card1, "st1", [PL, XS])
+    a, b = got[PL], got[XS]
+    c.check(
+        "boot 1 (pluck, xslice): the first two numbers, in load order, and the map on the card holds both entries",
+        (a, b) == (16, 17)
+        and m[:2] == [key_of(*PL) | a, key_of(*XS) | b]
+        and m[2:] == [0] * 6
+        and tb["dirty"] == 1
+        and [x[:3] for x in asg] == [(h(PL), a, 0), (h(XS), b, 0)],
+        f"types {got}, map {[hex(x) for x in m]}, events {asg}",
+    )
+    # 2: only xslice, on the card boot 1 left (the selection is the builder's, the map is kept: as SELECT does)
+    card2 = c.card([files[XS[0]]], base=after1)
+    got, (m2, tb), asg, _ev, after2 = boot(card2, "st2", [XS])
+    c.check(
+        "boot 2 (xslice only): xslice keeps its number (sticky), the map is unchanged and not rewritten",
+        got[XS] == b and m2 == m and tb["dirty"] == 0 and [x[:3] for x in asg] == [(h(XS), b, 1)],
+        f"types {got}, map {[hex(x) for x in m2]}, events {asg}",
+    )
+    # 3: add params: it must not take pluck's number (16), which no loaded module has but the card still remembers
+    card3 = c.card([files[XS[0]], files[PA[0]]], base=after2)
+    got, (m3, tb), asg, _ev, after3 = boot(card3, "st3", [XS, PA])
+    c.check(
+        "boot 3 (xslice, params): params does not take pluck's remembered number while a free one exists; xslice keeps its own",
+        got[XS] == b and got[PA] == 18 and 16 not in got.values() and tb["dirty"] == 1
+        and m3[:3] == [key_of(*PL) | a, key_of(*XS) | b, key_of(*PA) | 18],
+        f"types {got}, map {[hex(x) for x in m3]}",
+    )
+    # 4: the same set again (the map written by boot 3 is on the card), then pluck back: it gets its own number again
+    card4 = c.card([files[PA[0]], files[PL[0]], files[XS[0]]], base=after3)
+    got, (m4, tb), asg, _ev, _after4 = boot(card4, "st4", [PA, PL, XS])
+    c.check(
+        "boot 4 (params, pluck, xslice): every machine has the number the card remembered, whatever the load order; nothing is rewritten",
+        (got[PA], got[PL], got[XS]) == (18, a, b) and tb["dirty"] == 0 and m4 == m3
+        and all(x[2] == 1 for x in asg),
+        f"types {got}, events {asg}",
+    )
+    # 5: a forged map of eight entries: slot 2 is xslice's (a machine of this boot), the others belong to no module
+    fakes = [0x111100 + 0x100 * i for i in range(8)]
+    forged = [fakes[i] | (16 + i) for i in range(8)]
+    forged[2] = key_of(*XS) | 18
+    rec = B.make_record([files[PL[0]], files[XS[0]]], 1, 0, 0, 0, forged)
+    card5 = c.card(None, recs=(rec, rec))
+    got, (m5, tb), asg, ev, _after5 = boot(card5, "st5", [PL, XS])
+    want_ev = [(fakes[0] >> 8, 16)]
+    c.check(
+        "boot 5 (a full map): xslice keeps its entry's number (18); pluck drops the lowest entry of a machine that is not in this boot (slot 0, logged as an error event), takes its number and records its own entry there",
+        got[XS] == 18 and got[PL] == 16
+        and [tuple(e[4][:2]) for e in ev] == want_ev and all(e[3] & 1 for e in ev)
+        and m5 == [key_of(*PL) | 16, *forged[1:]]
+        and tb["dirty"] == 1,
+        f"types {got}, map {[hex(x) for x in m5]}, evicted {[e[4][:2] for e in ev]}",
+    )
+    # 6: a full map and a machine that is protected in slot 0: the next lowest entry goes
+    forged2 = list(forged)
+    forged2[0] = key_of(*XS) | 16
+    forged2[2] = fakes[2] | 18
+    rec = B.make_record([files[PL[0]], files[XS[0]]], 1, 0, 0, 0, forged2)
+    card6 = c.card(None, recs=(rec, rec))
+    got, (m6, tb), asg, ev, _after6 = boot(card6, "st6", [PL, XS])
+    c.check(
+        "boot 6 (a full map, xslice in slot 0): the entry of a machine that loads in this boot is never the one dropped: slot 1 goes and pluck takes its number (17)",
+        got[XS] == 16 and got[PL] == 17
+        and [tuple(e[4][:2]) for e in ev] == [(fakes[1] >> 8, 17)]
+        and m6[0] == key_of(*XS) | 16 and m6[1] == key_of(*PL) | 17,
+        f"types {got}, map {[hex(x) for x in m6]}, evicted {[e[4][:2] for e in ev]}",
+    )
+    c.common_checks_upload(project_writes_ok=True)
+
+
+HANG_HINT = 7  # seven steps down the machine list: the first run-time machine; its type is the one the boot assigned (the only module: the first number)
 CRUMB_CALLED = 4  # core/dsp-voice's stage "routine about to be called"
 
 
@@ -590,6 +797,7 @@ def run_hang(c: Any) -> None:
             if int(rig.emu.call("status")["dsp_frames"]) >= ui_first + 3300:
                 break
             rig.s.run_ms(500)
+        HANG_TYPE = rig.dyn_type("test/dyn-dsp-hang", "hang")
         rig.select_type(HANG_TYPE, HANG_HINT)
         rig.s.run_ms(3000)
         before = events(rig)
@@ -665,7 +873,7 @@ def run_hang(c: Any) -> None:
         crumb = stop[0][4][2] if stop else 0
         want = CRUMB_CALLED | 0 << 8 | HANG_TYPE << 16
         c.check(
-            "the stop event's breadcrumb: ROUTINE_CALLED, voice 0, machine type 19 (the track with the hang machine)",
+            "the stop event's breadcrumb: ROUTINE_CALLED, voice 0, the hang machine's type (the track with the hang machine)",
             crumb == want,
             f"{crumb:#x} {L.crumb_text(crumb)}; want {want:#x}",
         )
@@ -735,8 +943,8 @@ def run_hang(c: Any) -> None:
         png.write_bytes(rig.emu.frame_png())
         c.report["about_stopped_png"] = str(png)
         c.check(
-            "ABOUT shows DSP STOPPED and the step: LAST: CALL V0 T19",
-            "DSP STOPPED" in rows and "LAST: CALL V0 T19" in rows,
+            "ABOUT shows DSP STOPPED and the step: LAST: CALL V0 T<the hang machine's type>",
+            "DSP STOPPED" in rows and f"LAST: CALL V0 T{HANG_TYPE}" in rows,
             str(rows),
         )
         text = c.work / "hang.log"
