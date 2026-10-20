@@ -154,9 +154,70 @@ def test_selcc_float_loop(selcc_module):
     assert [val(r[f"o{i}"][0]) for i in range(4)] == [v * 1.5 for v in vals]
 
 
-def test_known_encode_hazard_is_refused():
+def test_negative_lshift_count_gets_its_sign_extension():
+    # Selache writes 023e0000f00b for the first line; stock has 023e7800f00b (dataex 0xF), as for `R2 = lshift(R15, -1)`
+    obj = pk_sharc.assemble(
+        ".SECTION/PM seg_pmco;\nR0 = LSHIFT R11 BY -16;\nR0 = LSHIFT R11 BY 16;\nR2 = LSHIFT R15 BY -1;\n"
+    )
+    assert [h for _, h in obj.rows] == ["023e7800f00b", "023e0000100b", "023e7800ff2f"]
+    assert obj.section.hex() == "".join(h for _, h in obj.rows)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "R0 = ASHIFT R11 BY -3;",
+        "R0 = ASHIFT R11 BY 3;",
+        "R0 = R0 OR LSHIFT R11 BY 3;",
+        "R0 = R0 OR ASHIFT R11 BY -3;",
+        "R0 = FDEP R11 BY 4:8;",
+        "R0 = R0 OR FDEP R11 BY 4:8;",
+        "R0 = FEXT R11 BY 4:8 (SE);",
+    ],
+)
+def test_misencoded_shift_immediates_are_refused(line):
     with pytest.raises(pk_sharc.PkSharcError, match="known Selache encode bug"):
-        pk_sharc.assemble(".SECTION/PM seg_pmco;\nR0 = LSHIFT R1 BY -3;\n")
+        pk_sharc.assemble(".SECTION/PM seg_pmco;\n" + line + "\n")
+
+
+def test_register_shift_counts_and_comments_pass():
+    obj = pk_sharc.assemble(
+        ".SECTION/PM seg_pmco;\nR0 = ASHIFT R11 BY R1;  // not ASHIFT R0 BY -3\nR0 = FEXT R11 BY 4:8;\n"
+    )
+    assert len(obj.rows) == 2
+
+
+def test_shift_imm_problem():
+    def problem(op, low, ex):
+        fields = {"shiftimm[22:16]": op, "shiftimm[15:0]": low, "dataex[3:0]": ex}
+        return pk_sharc.shift_imm_problem(fields, "6b_shiftimm")
+
+    assert (problem(0x20, 0x030B, 0) or "").startswith("undefined")  # Selache's ASHIFT
+    assert problem(0x00, 0xF00B, 0)  # LSHIFT BY -16 without the sign extension
+    assert problem(0x00, 0xF00B, 0xF) is None
+    assert problem(0x01, 0x100B, 0) is None
+    assert problem(0x10, 0x040B, 2) is None  # FEXT: dataex is part of the field
+
+
+@pytest.mark.parametrize("image", ["dt2-1.17", "dn2-1.12"])
+def test_every_stock_shift_immediate_passes_the_check(image):
+    import json
+    import sqlite3
+
+    db = ROOT / "out" / "sharcdb" / f"{image}.sqlite"
+    if not db.is_file():
+        pytest.skip(f"no {db} (tools/sharc_dev/sharcdb build)")
+    with sqlite3.connect(db) as c:
+        rows = c.execute(
+            "select sw, form, fields from insn where form in ('6a_mem', '6a_nomem', '6b_shiftimm')"
+            " and aligned = 1 and function_sw is not null"
+        ).fetchall()
+    bad = [
+        (hex(sw), form)
+        for sw, form, fields in rows
+        if pk_sharc.shift_imm_problem(json.loads(fields), form)
+    ]
+    assert len(rows) > 1000 and bad == []
 
 
 TIE = """

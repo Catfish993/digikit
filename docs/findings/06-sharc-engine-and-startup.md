@@ -4807,7 +4807,7 @@ displacement units:
   Also always `0x0` on every voice, every frame tried.
 
 Both arrays sit **just past the voice-record array itself**
-(`profile.voice_records = 0x2412cc`, 32 * `0x1d8` = `0x24cdcc` end -- field1/
+(`profile.voice_records = 0x2412cc`, 32 * `0x1d8` = `0x244dcc` end (**[C]** 2026-10-21: was `0x24cdcc`, an arithmetic slip; finding 53) -- field1/
 field2 start about `0x2300` bytes after that), **not** inside it, and
 **not** inside the DSPI2 transfer's own landing ring (`0x264220`/`0x265220`,
 2,748 bytes) or `render_frame`'s 2,048-byte working copy at `0x2558dc`

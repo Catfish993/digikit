@@ -169,16 +169,71 @@ def _object(obj: Path, source_sha: str, section: str | None) -> SharcObject:
         for s in elf.symbols
         if s.name and 0 < s.shndx < 0xFF00 and elf.sections[s.shndx].name in data
     }
+    native = _native_rows(
+        [(r.parcel_address, r.raw.hex()) for r in rows], relocs, sec.data
+    )
+    code, native = fix_shift_counts(sec.data, native)
     return SharcObject(
         source_sha,
-        sec.data,
+        code,
         symbols,
         relocs,
-        _native_rows([(r.parcel_address, r.raw.hex()) for r in rows], relocs, sec.data),
+        native,
         tc,
         data,
         data_symbols,
     )
+
+
+# Shift-immediate (Type 6) forms. shiftimm[22:16] is the ShiftImm opcode, PRM Table 17-9 (bits 21-16); these are the defined values.
+SHIFT_IMM_FORMS = frozenset({"6a_mem", "6a_nomem", "6b_shiftimm"})
+SHIFT_IMM_OPCODES = frozenset(
+    {0x00, 0x01, 0x02, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x19, 0x1B, 0x1D, 0x1F}
+    | {0x30, 0x31, 0x32, 0x33}
+)
+# LSHIFT, ASHIFT, OR LSHIFT, OR ASHIFT take a signed 8-bit count in shiftimm[15:8]; dataex[3:0] holds its sign extension (0xF for a
+# negative count, else 0) in every such instruction of the stock images (finding 05, "Selache shift-immediate encodings"). Selache
+# writes 0, and the silicon raises ILOPI on a negative count without it.
+SIGNED_SHIFT_OPCODES = frozenset({0x00, 0x01, 0x08, 0x09})
+
+
+def shift_imm_problem(fields: dict[str, int], form: str) -> str | None:
+    """Why a decoded shift-immediate instruction is wrong for the silicon, or None."""
+    if form not in SHIFT_IMM_FORMS:
+        return None
+    op = fields.get("shiftimm[22:16]")
+    if op not in SHIFT_IMM_OPCODES:
+        return f"undefined ShiftImm opcode {op} (PRM Table 17-9)"
+    if op in SIGNED_SHIFT_OPCODES:
+        negative = (fields.get("shiftimm[15:0]", 0) >> 8) & 0x80
+        if fields.get("dataex[3:0]") != (0xF if negative else 0):
+            return "shift count without its sign extension (dataex)"
+    return None
+
+
+def fix_shift_counts(
+    code: bytes, rows: list[tuple[int, str]]
+) -> tuple[bytes, list[tuple[int, str]]]:
+    """Set dataex of each signed shift count to its sign extension (the one Selache shift encoding that is repaired; the others are
+    refused, ENCODE_HAZARDS). CODE and ROWS are in Selache parcel order; dataex is bits 6-3 of byte 2 of the 48-bit word."""
+    out = bytearray(code)
+    fixed = list(rows)
+    items = sel.compare_rows(
+        [sel.ExternalInstruction(p, bytes.fromhex(h), "") for p, h in rows]
+    ).instructions
+    for k, item in enumerate(items):
+        fields = dict(item.native_fields)
+        form = item.native_form_id or ""
+        if form not in SHIFT_IMM_FORMS:
+            continue
+        if fields.get("shiftimm[22:16]") not in SIGNED_SHIFT_OPCODES:
+            continue
+        negative = (fields.get("shiftimm[15:0]", 0) >> 8) & 0x80
+        at = item.external.parcel_address * 2 + 2
+        out[at] = (out[at] & ~0x78) | (0x78 if negative else 0)
+        p, h = rows[k]
+        fixed[k] = (p, out[p * 2 : p * 2 + len(h) // 2].hex())
+    return bytes(out), fixed
 
 
 def _native_rows(
@@ -238,14 +293,37 @@ def _native_rows(
     return native
 
 
-# Selache encode bugs found against the firmware image (docs/findings/05-sharc-isa-and-decoding.md): the
-# re-decode below cannot see them when both decodes agree on a wrong immediate, so refuse the form.
+# Selache encode bugs found against the firmware image and PRM Table 17-9 (docs/findings/05-sharc-isa-and-decoding.md, "Selache
+# shift-immediate encodings"): each form assembles to another instruction or to an undefined opcode, and the bytes still decode to a
+# valid-looking form, so the source form is refused. A shift count in a register (`R0 = ASHIFT R1 BY R2;`) assembles correctly.
+# LSHIFT by a negative count is repaired instead (fix_shift_counts).
+_IMM = r"\bby\s+[-+]?\s*\d"
 ENCODE_HAZARDS = [
     (
-        re.compile(r"\blshift\b[^;]*\bby\s+-\s*\d", re.I),
-        "LSHIFT ... BY -n clears the immediate's sign-extension nibble",
+        re.compile(r"\bashift\b[^;]*" + _IMM, re.I),
+        "ASHIFT ... BY <count> gets an undefined ShiftImm opcode (100000, PRM: 000001)",
+    ),
+    (
+        re.compile(r"\bor\s+lshift\b[^;]*" + _IMM, re.I),
+        "Rn = Rn OR LSHIFT ... BY <count> assembles as a plain LSHIFT",
+    ),
+    (
+        re.compile(r"\bfdep\b[^;]*" + _IMM, re.I),
+        "FDEP ... BY <pos:len> gets the (SE) or the plain FDEP opcode",
+    ),
+    (
+        re.compile(r"\bfext\b[^;]*" + _IMM + r"[^;]*\(\s*se\s*\)", re.I),
+        "FEXT ... BY <pos:len> (SE) assembles to an unrelated word",
     ),
 ]
+
+
+def _hazards(source: str) -> None:
+    code = re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.S)
+    for pat, why in ENCODE_HAZARDS:
+        m = pat.search(code)
+        if m:
+            raise PkSharcError(f"known Selache encode bug ({why}): {m.group(0)!r}")
 
 
 # Selache ignores the (SW)/(SWSE) suffix of a direct load (it emits the normal-word form), so
@@ -327,10 +405,7 @@ def _bss_prepare(source: str) -> tuple[str, list[tuple[str, int, bool]]]:
 
 
 def assemble(source: str, section: str | None = None) -> SharcObject:
-    for pat, why in ENCODE_HAZARDS:
-        m = pat.search(source)
-        if m:
-            raise PkSharcError(f"known Selache encode bug ({why}): {m.group(0)!r}")
+    _hazards(source)
     original = source
     source, bss_decls = _bss_prepare(source)
     source, sw_marks = _sw_prepare(source)
@@ -360,8 +435,17 @@ def assemble(source: str, section: str | None = None) -> SharcObject:
 def compile_c(source: str, section: str | None = None) -> SharcObject:
     """Selache's C compiler (selcc); evaluated in docs/findings/20-patch-toolchains.md."""
     with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
-        src, obj = Path(d) / "m.c", Path(d) / "m.doj"
+        src, obj, asm = Path(d) / "m.c", Path(d) / "m.doj", Path(d) / "m.s"
         src.write_text(source)
+        # the compiler's assembly passes the same source check as hand-written assembly
+        s = subprocess.run(
+            [str(_tool("selcc")), "-proc", PROCESSOR, "-S", "-o", str(asm), str(src)],
+            capture_output=True,
+            text=True,
+        )
+        if s.returncode:
+            raise PkSharcError(f"selcc failed:\n{s.stdout}{s.stderr}")
+        _hazards(asm.read_text())
         r = subprocess.run(
             [str(_tool("selcc")), "-proc", PROCESSOR, "-c", "-o", str(obj), str(src)],
             capture_output=True,
@@ -477,6 +561,11 @@ def verify(obj: SharcObject, linked: Linked, externs: dict[str, int]) -> None:
             f"parcel {item.external.parcel_address:#x}",
             item.native_form_id or "",
         )
+        shift = shift_imm_problem(dict(item.native_fields), item.native_form_id or "")
+        if shift:
+            problems.append(
+                f"parcel {item.external.parcel_address:#x} {item.external.raw.hex()}: {shift}"
+            )
         if item.native_form_id is None or not item.extent_agrees:
             # a width tie (Type 2c against Type 2b): the assembler's extent decides when a form of that width matches
             n = item.external.extent_bytes
