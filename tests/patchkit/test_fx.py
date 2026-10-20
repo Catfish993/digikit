@@ -367,3 +367,33 @@ def test_the_fixture_puts_one_row_in_the_chain_on_both_devices(
         "test/fx-gain@0.1.0:_fg_process" in sym
         and "test/fx-gain@0.1.0:_fg_state" in sym
     )
+
+
+@needs_images
+def test_the_dsp_diff_of_the_patched_image_is_the_hook_and_the_placed_code(
+    patchkit, tmp_path: Path
+):
+    """tools/patchkit/pk_dsp_diff.py: a headless run (coupled_ab --patch) gets the hook word and the appended L2 bytes, and nothing else."""
+    from tools.patchkit import pk_dsp_diff
+
+    out = tmp_path / "fx.syx"
+    patchkit(
+        "apply",
+        "--firmware",
+        DT2_117,
+        "--modules",
+        "core/fx",
+        "-o",
+        out,
+        "--plan",
+        tmp_path / "p.json",
+    )
+    text = pk_dsp_diff.patch_text(DT2_117, out)
+    lines = [ln.split() for ln in text.splitlines() if ln.startswith("BYTES")]
+    assert (
+        lines[0][1] == f"{0x28000000 + 2 * 0x1C14E7:x}"
+    )  # the hook at the alias of the first instruction
+    assert len(lines[0][2]) == 12  # one 48-bit jump
+    assert all(
+        int(ln[1], 16) >= 0x2001AB7C for ln in lines[1:]
+    )  # the rest is appended L2
