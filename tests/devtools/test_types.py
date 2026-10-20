@@ -75,6 +75,8 @@ TYPED = [
     "tools/devtools/pathcheck.py",
     "tests/devtools/test_pathcheck.py",
     "tests/devtools/test_pathcheck_repo.py",
+    "tools/devtools/changed_tests.py",
+    "tools/devtools/agent_guard.py",
 ]
 
 

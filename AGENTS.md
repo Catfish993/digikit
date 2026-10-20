@@ -41,12 +41,14 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   in after about an hour.
 - Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
   with a bound (`sleep N; tail -n 5 FILE`) or use a monitor.
-- Lane agents iterate and finish on the quick proof tier (`--quick`, budget about 60 s per tool) and run
-  `mise run verify:pre` (1 to 2 min: lint, types, pathcheck, `pk_build --check`, the changed tests, Rust tests of the
-  affected crates; it is not the merge gate). The coordinator runs `mise run verify` once per merge, plus the smoke matrix
-  (`uv run python -m tools.patchkit.pk_harness run --jobs N`), not by re-running every proof tool. Check what a change
-  selects with `mise run verify -- --explain` (`--base A --head B` for a range) instead of running the gate. Full-tier proofs run only
-  before a merge to `main`. Do not re-run old full proofs to measure a baseline that is already recorded.
+- Lane agents iterate with `mise run test:changed` (the tests the changed files select, quick tier, no build step;
+  `--explain` prints why each file runs and what the gate adds) and finish with `mise run verify:pre` (1 to 2 min: lint,
+  types, pathcheck, `pk_build --check`, the same tests, Rust tests of the affected crates; it is not the merge gate). The
+  proof tools (`pk_proof_*`, `digikit_menu_proof`, `pk_dkrt_boot proof`, `pk_registry proof`) take `--quick` (budget about
+  60 s per tool) while iterating; verify has no tier flag. The coordinator runs `mise run verify` once per merge, plus the
+  smoke matrix (`uv run python -m tools.patchkit.pk_harness run --jobs N`), not by re-running every proof tool. Check what a
+  change selects with `mise run verify -- --explain` (`--base A --head B` for a range) instead of running the gate. Full-tier
+  proofs run only before a merge to `main`. Do not re-run old full proofs to measure a baseline that is already recorded.
 - Stop only processes you started (by PID or run directory). Never `pkill`/`killall` emulator processes: other lanes
   and Em run them on the same machine.
 - Each lane runs its own dev server (own port; `tools/devtools/browser_bench.mjs --url`). Do not change Python dependencies
@@ -54,6 +56,24 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 
 ## Verify
 
+What to run for a change (`mise run test:changed -- --explain` shows the selection):
+
+| Change | Lane, while iterating | The gate adds (`mise run verify -- --base main`) | A merge to `main` adds |
+| --- | --- | --- | --- |
+| Docs (`*.md`) | nothing | nothing | nothing |
+| Python under tools/ or tests/ | `test:changed`: the tests that import the module (`--deep`: also through other tools) | PY_GATE and the PY_SUITES the path triggers | smoke matrix |
+| tools/patchkit, packages/patchkit, devices/ports | `test:changed`, then `verify:pre` (`pk_build build-all --check`, patchkit Rust tests) | the patchkit suite, build-daemons | smoke matrix |
+| Leaf module (modules/machines, fx, test, ...) | `test:changed`: the tests and scenarios that name it, conformance for a machine; `verify:pre` | rust-tests; web when the gallery reads the file | smoke matrix |
+| Framework module (`FRAMEWORK` in tools/devtools/verify_route.py) | `test:changed`: the tests and scenarios that name the module itself | tests/patchkit and tests/digikit | smoke matrix |
+| SHARC core or transpiler (the `CORE_FINGERPRINT` files) | regenerate the cores, then `test:changed` | every step | `mise run verify:full` |
+| SHARC engine, fast tier, other emulator crates | `test:changed` (the crates' Rust tests) | build, pins, check and tier steps | smoke matrix |
+| tools/devtools/verify*.py | `test:changed` | every step | smoke matrix |
+| PCM pins (`tests/scenarios/*.json`) | only with Em's approval | | |
+
+- Never run a test directory (`pytest tests/patchkit`), `--tier full`, `verify:full` or smoke `--update` across all
+  cells while iterating. Long runs go in the background and wait for the completion notification; no `sleep` over 60 s,
+  no `tail -f`. A repo PreToolUse hook (tools/devtools/agent_guard.py, .claude/settings.json) blocks directory pytest,
+  `--tier full`, `verify:full`, `sleep` over 60 s and `tail -f`; only the coordinator prefixes `DIGI_GUARD=off`, deliberately.
 - Test layout, commands and the current baseline: docs/TESTING.md.
 - `mise run verify:pre` is the lane check (no emulator; not the merge gate). `mise run verify` is the merge gate and runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
   changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running; `--rerun-failed` re-runs only the steps that failed in the last run). `mise run verify:full` runs every
@@ -67,7 +87,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   (in-process DT2 card: trigs play the files), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
 - Tests and the gate run on the newest image of each device only (DT2 1.17, DN2 1.12); 1.16 and 1.11 remain analysis references.
 - Scenario renders are cached by content (out/cache/renders; tools/devtools/render_cache.py): a render reruns only when the binary, input files, scenario, peeks, device TOMLs or a SHARC_/DIGI_/DSP_ variable changed. `--no-cache` or DIGI_RENDER_CACHE=0 forces renders; `uv run python -m tools.emulator.coupled cache clear` empties it. Only emulator output is cached; oracles, hash compares and pins run fresh. Guard 1: tests/devtools/test_render_inputs.py fails when a render input (env read or file read) is not classified; regenerate counts with `uv run python -m tests.devtools.test_render_inputs --scan` after review. Guard 2: verify sets DIGI_RENDER_CACHE_CHECK=0.03, which re-renders about 3% of hits and fails on any difference. Use `verify --no-cache` for release gates.
-- While working, run only the tests for the code you changed.
+- While working, run `mise run test:changed`.
 - Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
   `tests/devtools/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11
   (`tests/devtools/test_pypy.py`, slow).

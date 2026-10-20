@@ -144,6 +144,8 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "tools/devtools/verify.py",
             "tools/devtools/verify_route.py",
             "tools/devtools/verify_pre.py",
+            "tools/devtools/changed_tests.py",
+            "tools/devtools/agent_guard.py",
             "tools/devtools/verify_budget.py",
             "tools/devtools/verify_build.py",
             "tools/devtools/rust_ws.py",
@@ -154,6 +156,8 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         (
             "tests/devtools/test_verify.py",
             "tests/devtools/test_verify_budget.py",
+            "tests/devtools/test_changed_tests.py",
+            "tests/devtools/test_agent_guard.py",
             "tests/devtools/test_test_outcomes.py",
             "tests/devtools/test_benchlock.py",
             "tests/patchkit/test_pk_proofs.py",
@@ -1342,7 +1346,8 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
     gets a share of the cores, which sets its inner pools, and the shares of the running nodes never
     add up to more than the budget. python-tests is one job per file (expand_python) in the same
     queue, longest first. Each step's output is buffered and printed whole when it finishes. A step
-    whose build failed is skipped. Returns (node, seconds) in completion order."""
+    whose build failed is skipped. Returns (node, seconds) in completion order.
+    Writes jobs.tsv (node, start, end, share, load average at start and end) to the run directory."""
     nodes, deps = plan(steps, gate.py_tests)
     gate.py_files = [rel for rel, _ in python_files(gate.py_tests)]
     nodes, deps = expand_python(
@@ -1352,8 +1357,10 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
     done: set[str] = set()
     failed_nodes: set[str] = set()
     pending = list(nodes)
-    running: dict[object, tuple[str, float]] = {}
+    running: dict[object, tuple[str, float, int, float]] = {}
     times: list[tuple[str, float]] = []
+    t0 = time.monotonic()
+    jobs: list[list[str]] = []
 
     def work(node: str, share: int) -> list[str]:
         gate.local.lines = []
@@ -1402,7 +1409,12 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                         f"({verify_budget.describe(node, share)})",
                         flush=True,
                     )
-                running[pool.submit(work, node, share)] = (node, time.monotonic())
+                running[pool.submit(work, node, share)] = (
+                    node,
+                    time.monotonic(),
+                    share,
+                    os.getloadavg()[0],
+                )
             if not running:
                 if pending and not started and len(pending) == queued:
                     for node in pending:  # a dependency is neither done nor running
@@ -1413,9 +1425,19 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                 continue
             finished, _ = wait(list(running), return_when=FIRST_COMPLETED)
             for fut in finished:
-                node, began = running.pop(fut)
+                node, began, node_share, load_start = running.pop(fut)
                 budget.release(node)
                 lines = fut.result()
+                jobs.append(
+                    [
+                        node,
+                        f"{began - t0:.1f}",
+                        f"{time.monotonic() - t0:.1f}",
+                        str(node_share),
+                        f"{load_start:.1f}",
+                        f"{os.getloadavg()[0]:.1f}",
+                    ]
+                )
                 print("\n".join(lines), flush=True)
                 if not verify_budget.is_file_job(node):
                     times.append((node, time.monotonic() - began))
@@ -1423,6 +1445,10 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                     failed_nodes.add(node)
                 else:
                     done.add(node)
+    header = "node\tstart_s\tend_s\tshare\tload_start\tload_end"
+    (gate.out / "jobs.tsv").write_text(
+        "\n".join([header, *("\t".join(row) for row in jobs)]) + "\n"
+    )
     return times
 
 
