@@ -1,5 +1,5 @@
 // Build step of the patch gallery: writes public/modules/bundle.json (what patchkit.wasm reads: ports + modules as
-// texts) from the COMMITTED devices/ports/ and modules/. Never reads out/modules (generated oracles hold firmware
+// texts) from the COMMITTED devices/ports/, modules/ and tests/fixtures/modules/. Never reads out/modules (generated oracles hold firmware
 // words). The bundle equals `tools/patchkit/patchkit.py bundle` (the node test compares them).
 //
 //   node scripts/gen-modules.mjs [--out DIR]
@@ -36,7 +36,10 @@ export function buildModuleData(root = repoRoot) {
     .filter((f) => f.endsWith('.toml'))
     .sort()
     .map((f) => readFileSync(join(root, 'devices', 'ports', f), 'utf8'));
-  const manifests = walk(join(root, 'modules'), 'module.toml').sort(byParts);
+  // the module roots in the order of tools/patchkit/modroots.py REPO_ROOTS; the tests use the fixtures
+  const manifests = ['modules', join('tests', 'fixtures', 'modules')].flatMap((r) =>
+    walk(join(root, r), 'module.toml').sort(byParts),
+  );
   const modules = [];
   for (const file of manifests) {
     const dir = dirname(file);
