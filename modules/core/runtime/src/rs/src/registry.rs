@@ -595,6 +595,22 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
     OK
 }
 
+/// The machine type numbers of the machine rows `owner` filled (at most 8), in type order; returns how many.
+pub fn types_of(owner: u8, out: &mut [u8; MAX_MACH]) -> usize {
+    let s = rs();
+    let first = dkrt_sdk::device::DYN_TYPE_FIRST;
+    let mut n = 0;
+    let mut k = 0;
+    while k < MAX_MACH {
+        if s.mach_owner[k] == owner && n < MAX_MACH {
+            out[n] = (first + k as u32) as u8;
+            n += 1;
+        }
+        k += 1;
+    }
+    n
+}
+
 /// Give back every row `owner` filled: the machines first (hidden, then reset to a gap row), then the parameters.
 pub unsafe fn remove(owner: u8) {
     let inf = info();

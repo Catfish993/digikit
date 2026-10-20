@@ -37,7 +37,6 @@ from tools.patchkit import pk_harness as H
 ROOT = Path(__file__).resolve().parents[2]
 RUNG_C = "core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp"
 DKM = ROOT / "out" / "patch" / "dyn-pluck-dt2.dkm"
-PLUCK_TYPE = M.PLUCK_DYN_TYPE  # 18
 PLUCK_HINT = 7
 STORE_FIRST, STORE_END = B.STORE_FIRST, B.STORE_FIRST + B.STORE_SECTORS
 
@@ -362,11 +361,11 @@ def _run_rungc(
                 snap(rig, f"07-machine-menu-{downs}-down")
                 tap(rig, "YES", 300)
                 tap(rig, "YES", 300)
-                if rig.type_now() == PLUCK_TYPE:
+                if rig.type_now() == rig.dyn_type(M.MODULE, "pluck"):
                     picked = downs
                     break
             c.check(
-                "the run-time pluck machine can be chosen on track 1 (type 18)",
+                "the run-time pluck machine can be chosen on track 1 (the type the boot assigned)",
                 picked is not None,
                 f"{picked} presses of DOWN",
             )

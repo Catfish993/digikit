@@ -746,7 +746,7 @@ def run_playback(c: Any) -> None:
         def run() -> None:
             with c.rig(img, card, f"play-{key}") as rig:
                 if c.dt2:
-                    rig.select_type(M.PLUCK_DYN_TYPE, t.get("hint", 7))
+                    rig.select_type(rig.dyn_type(M.MODULE, "pluck"), t.get("hint", 7))
                 else:
                     rig.select(t.get("hint_run", t["hint"]))
                 up = D.Uploader(transport(rig))

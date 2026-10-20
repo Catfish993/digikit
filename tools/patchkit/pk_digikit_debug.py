@@ -31,7 +31,7 @@ from tools.patchkit import pk_dkrt_boot as B
 from tools.patchkit import pk_dkrt_machine as M
 from tools.patchkit import pk_harness as H
 
-E_INUSE, E_PEEK = -62, -63
+E_NOSTORE, E_INUSE, E_PEEK = -61, -62, -63
 FIRST, SECTORS = B.STORE_FIRST, B.STORE_SECTORS
 END = FIRST + SECTORS
 HEADER_B = B.HEADER_B  # absolute sector of store header copy B
@@ -77,6 +77,10 @@ def run_card(c: Any) -> None:
     blank = c.card(None)
     stray = 100  # relative sector of the foreign bytes
     foreign = c.card(None, foreign={FIRST + stray: pat})
+    # a valid selection record and nothing else in the range makes the area ours; with blank header sectors it is an empty store, with foreign
+    # bytes in both header sectors it is not (these two come before the first pack, like the cards above)
+    selonly = c.card([])
+    selforeign = c.card([], foreign={FIRST: pat, FIRST + B.HEADER_B: pat})
     mod = c.pack("test/c-demo", "a.dkm")
     ours = c.card([mod])
     plan = D.Plan(menu_img.plan)
@@ -238,6 +242,44 @@ def run_card(c: Any) -> None:
             )
             c.done(rig)
 
+    def part_selonly() -> None:
+        # only a selection record is valid. Blank header sectors: an empty store, an upload works. Foreign bytes in header A and B: the store is
+        # somebody's data, BEGIN, DELETE and LIST refuse (E_NOSTORE) and nothing is written to the range.
+        with c.rig(img, selonly, "selblank", cf_only=True) as rig:
+            ci = rig.card_info()
+            up = uploader(rig)
+            st = U.put_status(up, "modules/s.dkm", U.blob(3_000, 4))
+            c.check(
+                "selection record only, blank header sectors: the card is ours, the store is empty and an upload works",
+                ci["state_name"] == "ours" and "modules/s.dkm" in U.device_ls(up) and st == 0,
+                f"{ci['state_name']} {st}",
+            )
+            c.done(rig)
+        with c.rig(img, selforeign, "selforeign", cf_only=True) as rig:
+            ci = rig.card_info()
+            up = uploader(rig)
+            ops = [
+                up.request(
+                    DK.CMD_BEGIN, b"modules/x.dkm\0" + struct.pack(">I", 10) + bytes(32)
+                )[0],
+                up.request(DK.CMD_DELETE, b"modules/x.dkm\0")[0],
+                up.request(DK.CMD_LIST, struct.pack(">I", 0))[0],
+            ]
+            up.request(
+                DK.CMD_DATA, struct.pack(">I", 0) + bytes(10)
+            )  # no upload is open (BEGIN was refused): E_STATE, nothing staged
+            c.check(
+                "selection record only, foreign bytes in header A and B: the card counts as ours, but BEGIN, DELETE and LIST answer E_NOSTORE",
+                ci["state_name"] == "ours" and ops == [E_NOSTORE] * 3,
+                f"{ci['state_name']} {ops}",
+            )
+            c.check(
+                "selection record only, foreign bytes in header A and B: nothing was written to the store range",
+                rig.card_store_writes() == [] and rig.card_info()["writes"] == 0,
+                f"{rig.card_store_writes()}",
+            )
+            c.done(rig)
+
     def part_ours() -> None:
         with c.rig(img, ours, "ours", cf_only=True) as rig:
             ci = rig.card_info()
@@ -302,7 +344,7 @@ def run_card(c: Any) -> None:
             )
             c.done(rig)
 
-    c.parallel(part_blank, part_foreign, part_ours, part_claim)
+    c.parallel(part_blank, part_foreign, part_selonly, part_ours, part_claim)
     c.common_checks_upload(project_writes_ok=True)
 
 
@@ -704,11 +746,10 @@ def run_hang(c: Any) -> None:
     c.common_checks_upload(project_writes_ok=True)
 
 
-GUARD_NAN = (
-    20,
-    8,
-)  # test/dyn-guard-nan: its permanent run-time type and the list position (the pluck, type 18, is the 7th entry)
-GUARD_PLUCK = (18, 7)
+# list positions of the two run-time machines in the guard scenario (the pluck is the first entry of the run-time machines, the fixture the second);
+# their type numbers are the ones the boot assigned (card order: pluck, then the fixture)
+GUARD_NAN_HINT = 8
+GUARD_PLUCK_HINT = 7
 
 
 def run_guard(c: Any) -> None:
@@ -756,8 +797,10 @@ def run_guard(c: Any) -> None:
                     return
             raise M.Fail(f"no list position gives type {want} on track {track}")
 
-        pick(1, *GUARD_PLUCK)
-        pick(2, *GUARD_NAN)
+        t_pluck = rig.dyn_type("test/dyn-pluck", "pluck")
+        t_nan = rig.dyn_type("test/dyn-guard-nan", "guardnan")
+        pick(1, t_pluck, GUARD_PLUCK_HINT)
+        pick(2, t_nan, GUARD_NAN_HINT)
         # track 2's delay send up: FX page, encoder E (docs/findings: the panel of the DT2 FX pages)
         rig.s.do_tap("FX")
         rig.s.run_ms(300)
@@ -778,10 +821,10 @@ def run_guard(c: Any) -> None:
         disabled = [e for e in evs if e[2] == L.K["MACHINE_DISABLED"]]
         pcm = hook_ab.read_wav(wav)
         c.check(
-            "MACHINE_FAULT is logged (an error event): type 20, voice 2 (track 2), kind nonfinite, the parameter words of the call",
+            "MACHINE_FAULT is logged (an error event): the fixture's type, voice 2 (track 2), kind nonfinite, the parameter words of the call",
             len(faults) >= 1
             and all(e[3] & 1 for e in faults)
-            and L.event_dict(faults[-1])["fields"]["type"] == GUARD_NAN[0]
+            and L.event_dict(faults[-1])["fields"]["type"] == t_nan
             and L.event_dict(faults[-1])["fields"]["track"] == 2
             and L.event_dict(faults[-1])["fields"]["kind"] == "nonfinite",
             str([L.event_dict(e)["fields"] for e in faults]),
@@ -793,9 +836,9 @@ def run_guard(c: Any) -> None:
             str(last),
         )
         c.check(
-            "MACHINE_DISABLED is logged once for type 20",
+            "MACHINE_DISABLED is logged once for the fixture's type",
             len(disabled) == 1
-            and disabled[0][4][0] == GUARD_NAN[0]
+            and disabled[0][4][0] == t_nan
             and disabled[0][3] & 1,
             str([L.event_dict(e)["fields"] for e in disabled]),
         )

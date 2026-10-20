@@ -107,7 +107,7 @@ def measure(
     trig = M.TRIG_FRAME
     with env.boot(img, card, tag, watch=False) as rig:
         b = rig.boot_info()
-        rig.select_type(M.PLUCK_DYN_TYPE, 7)
+        rig.select_type(rig.dyn_type(M.MODULE, "pluck"), 7)
         pcm = rig.note(env.work / f"{tag}.wav", trig)
         rig.s.run_ms(2000)  # the health windows are one second each: settle
         st0 = rig.emu.status()

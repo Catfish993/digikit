@@ -37,11 +37,11 @@ L2_BYTE_BASE, L2_SW_BASE = 0x2000_0000, 0x00B8_0000
 TRACK_OBJ_WORD = 0x4265338C  # the type byte is the third byte of this word (finding 02)
 MODULES_STATIC = "core/runtime,core/dynreg,core/dyndsp"
 PLUCK_STATIC_TYPE = 9
-PLUCK_DYN_TYPE = 18  # only the DN2 sine proof pins a run-time number (`[[dsp_voice]] type`); a machine gets its number at load (`BootRig.dyn_type`)
 MODULE = "test/dyn-pluck"
 MODULE_DN2 = "test/dyn-sine-dn2"
 MODULES_STATIC_DN2 = "core/runtime,core/dyndsp,core/machines"  # core/machines in both: the same ColdFire hooks
-SINE_STATIC_TYPE, SINE_DYN_TYPE = 7, 18
+SINE_STATIC_TYPE = 7
+SINE_DYN_TYPE = 18  # the DN2 sine proof pins a run-time number (`[[dsp_voice]] type = 18`); a machine gets its number at load (`BootRig.dyn_type`)
 DN2_TYPE_POKE = "0x94={:#x}"  # byte offset of the DSP frame's halfword 74 (the machine type of slot 0)
 # DspState (modules/core/runtime/src/rs/src/dsp.rs), byte offsets of the fields the proof reads
 D_MAGIC, D_PHASE, D_STEP, D_TRANSFERS, D_ROW_WRITES, D_FAILURES = 0, 4, 12, 36, 40, 44

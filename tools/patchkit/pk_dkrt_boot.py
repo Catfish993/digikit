@@ -27,11 +27,12 @@ Python API for the scenario suite (lane C builds on it; everything below is impo
     with env.boot(img, card, tag="a") as rig:           # a coupled daemon, cold-booted on that card: the boot hook has run
         rig.boot_info()        # dict: safe, reason, counter, seq, copy, count, loaded, results[], ui_reached, dsp_wait
         rig.voice_rows()       # [(type, pc)] of the DSP voice registry (type 0xffffffff: free)
-        rig.machine_listed(18) # is the machine row of that type named
+        rig.dyn_type("test/dyn-pluck", "pluck")   # the type the runtime assigned at this boot (from DKRT_ASSIGN)
+        rig.machine_listed(16) # is the machine row of that type named
         rig.sel_records()      # the two record copies as the card holds them now: [dict|None, dict|None]
         rig.set_selection(["modules/x.dkm"])   # dkrt_selection_set through the mailbox (returns its result)
         rig.restart()          # dkrt_restart, then the emulator's soft reset; returns when the new boot is ready
-        rig.select_type(18, 7) # the machine list on the panel (DT2); rig.note(wav, B.M.TRIG_FRAME) plays TRIG 1, returns the PCM
+        rig.select_type(16, 7) # the machine list on the panel (DT2); rig.note(wav, B.M.TRIG_FRAME) plays TRIG 1, returns the PCM
     B.make_record(paths, seq=1, counter=0, flags=0)     # the 512 bytes of one record copy (the layout of docs/design/digikit-store.md)
     B.write_record_sectors(card, copy_a, copy_b)        # raw sector images over the two record sectors of a card file
 
@@ -854,9 +855,16 @@ class Proof:
                 str(rec),
             )
             used = [r for r in run.voice_rows() if r[0] != FREE_TYPE]
+            # DT2: the pluck's machine type, assigned at load; DN2: the sine module's voice has a pinned type (`[[dsp_voice]] type`)
+            mach = (
+                run.dyn_type("test/dyn-pluck", "pluck")
+                if self.dt2
+                else run.dyn_type("test/dyn-dn2", "dyn_pluck")
+            )
+            vtype = mach if self.dt2 else M.SINE_DYN_TYPE
             self.check(
                 "the voice row of the DSP module is claimed",
-                len(used) == 1 and used[0][0] == 18,
+                len(used) == 1 and used[0][0] == vtype,
                 str([(hex(a), hex(b)) for a, b in used]),
             )
             idx = self.mods.index("modules/m1.dkm")
@@ -872,14 +880,12 @@ class Proof:
                 got == want,
                 f"{len(want)} bytes at {base:#x}",
             )
-            self.check(
-                "the machine row is named", run.machine_listed(18 if self.dt2 else 16)
-            )
+            self.check("the machine row is named", run.machine_listed(mach))
             if self.dt2:
-                downs = run.select_type(M.PLUCK_DYN_TYPE, 7)
+                downs = run.select_type(mach, 7)
                 self.check(
-                    "the stock machine list shows it: the track takes type 18",
-                    run.type_now() == M.PLUCK_DYN_TYPE,
+                    f"the stock machine list shows it: the track takes type {mach}",
+                    run.type_now() == mach,
                     f"downs {downs}",
                 )
             pcm = run.note(self.work / "run.wav", trig)

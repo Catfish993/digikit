@@ -66,8 +66,11 @@ def test_dsp_section_is_deterministic_and_relocates_like_the_reference(tmp_path)
         tools.patchkit_run("pack", "test/dyn-pluck", "--device", "dt2", "-o", out)
     assert a.read_bytes() == b.read_bytes()
     info = tools.patchkit_run("dkm-info", a)
+    # the voice names its machine by key: the 24-bit hash of "test/dyn-pluck:pluck" (the runtime assigns the type at load)
+    h = pk_dkrt_machine.machine_hash("test/dyn-pluck", "pluck")
     assert (
-        "voice type 18 entry +0x3ce note_on +0x1fa state 16x16512 clear 16512" in info
+        f"voice type h{h:06x} entry +0x3ce note_on +0x1fa state 16x16512 clear 16512"
+        in info
         and "imports _dv_exp2" in info
     )
     # the guard's ranges: DECAY, PICK, BRIGHT, COLOR (knobs 1, 2, 4, 5) declare 0 .. 0x7f00; TUNE and LEV are stock rows (undeclared)

@@ -338,6 +338,12 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         i += 1;
     }
     m.version = rd32(f.add(H_VERSION));
+    let ct = &mut (*addr_of_mut!(crate::DKRT_CONTRACTS))[rec];
+    i = 0;
+    while i < 8 {
+        ct[i] = *f.add(H_CONTRACT + i);
+        i += 1;
+    }
     m.base = base;
     m.size = total;
     m.fini = if fini == NONE { 0 } else { base + fini };

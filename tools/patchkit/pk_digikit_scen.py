@@ -608,7 +608,8 @@ def run_equiv(c: Ctx) -> None:
             if play:
                 if c.dt2:
                     rig.select_type(
-                        M.PLUCK_DYN_TYPE, t.get("hint_run", t.get("hint", 7))
+                        rig.dyn_type(M.MODULE, "pluck"),
+                        t.get("hint_run", t.get("hint", 7)),
                     )
                 select(rig, "hint_run")
                 out["run_pcm"] = rig.note(c.work / "run.wav", trig)
@@ -1093,7 +1094,9 @@ def run_menu(c: Ctx) -> None:
         used = [r for r in rig.voice_rows() if r[0] != B.FREE_TYPE]
         c.check("voice row claimed", len(used) == t.get("voices", 1), str(used))
         if c.dt2:
-            rig.select_type(M.PLUCK_DYN_TYPE, t.get("hint_run", t.get("hint", 7)))
+            rig.select_type(
+                rig.dyn_type(M.MODULE, "pluck"), t.get("hint_run", t.get("hint", 7))
+            )
         else:
             rig.select(t.get("hint_run", t["hint"]))
         # the DSP block count runs on through the panel script and the restart: the note starts a little after the setup

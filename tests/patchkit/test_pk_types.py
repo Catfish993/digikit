@@ -34,16 +34,18 @@ def test_every_machine_entry_has_a_number_per_device() -> None:
             "module"
         ].get("dynamic", False)
         for dev in devs:
-            # a run-time module's number is in [<dev>.dynamic]
-            table = t[dev]["dynamic"] if dynamic else t[dev]["alloc"]
-            assert f"{mod}:{eid}" in table, f"{mod}:{eid} on {dev}"
+            # a run-time module has no number: the runtime assigns it at load (D7), so it is in no table
+            if dynamic:
+                assert f"{mod}:{eid}" not in t[dev]["alloc"], f"{mod}:{eid} on {dev}"
+                assert "dynamic" not in t[dev], dev
+            else:
+                assert f"{mod}:{eid}" in t[dev]["alloc"], f"{mod}:{eid} on {dev}"
 
 
 def test_numbers_are_unique_in_range_and_never_stock() -> None:
     t = tomllib.loads(TYPES.read_text())
     for dev, first in pk_new.STOCK_TYPES.items():
-        # a run-time module's number is the row core/dynreg reserves for it: unique within each table
-        for table in ("alloc", "dynamic"):
+        for table in ("alloc",):
             nums = list(t[dev].get(table, {}).values())
             assert len(nums) == len(set(nums)), f"{dev} {table}"
             assert all(first <= n <= t[dev]["last"] for n in nums), f"{dev} {table}"
@@ -51,11 +53,6 @@ def test_numbers_are_unique_in_range_and_never_stock() -> None:
         dyn_first = t[dev].get("dynamic_first")
         for k, v in t[dev]["alloc"].items():
             assert dyn_first is None or v < dyn_first or k.startswith("core/dynreg:"), k
-        assert (
-            all(v >= dyn_first for v in t[dev].get("dynamic", {}).values())
-            if dyn_first
-            else True
-        )
     assert t["dt2"]["last"] < 24  # the DSP selector table was read to entry 23
 
 

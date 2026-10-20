@@ -11,6 +11,5 @@ twin = "machines/pluck,test/twin-xslice"
 play = "pluck"
 static_type = 9
 hint = 7        # list position of the patched-in pluck (the xslice twin follows it)
-hint_run = 8    # the run-time xslice (type 16) comes before the run-time pluck (type 18)
 trig_frame = 9500   # two machines to choose from: the setup takes longer than the default
 voices = 1
