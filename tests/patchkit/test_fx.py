@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support.fx_rig import FxRig, f2w, w2f
+from support.fx_rig import FxRig, Row, f2w, w2f
 from support.paths import REPO_ROOT
 
 from tools.firmware import config
@@ -65,6 +65,205 @@ def test_the_empty_chain_costs_a_few_instructions():
     b = rig.block(SIGNALS["dc"], ctx="friendly")
     assert 10 <= b.instructions <= 24, b.instructions
     print(f"empty chain: {b.instructions} instructions per block on the concrete core")
+
+
+# ---- the chain ------------------------------------------------------------------------------------------------------------
+def f32(x: float) -> float:
+    return w2f(f2w(x))
+
+
+def fade(dry, wet, mode: str):
+    """The adapter's fade in float32: master = dry + (wet - dry) * w, w = (k + 1) / 32 ("in") or 1 - (k + 1) / 32 ("out"), per channel."""
+    out = []
+    for ch in (0, 32):
+        w = 0.0 if mode == "in" else 1.0
+        dw = 1 / 32 if mode == "in" else -1 / 32
+        for k in range(32):
+            w = f32(w + dw)
+            d, t = dry[ch + k], wet[ch + k]
+            out.append(f32(d + f32(f32(t - d) * w)))
+    return tuple(out)
+
+
+RAMP = [f32(i / 64.0 - 0.5) for i in range(64)]
+HALF = [f32(x * 0.5) for x in RAMP]
+
+
+def test_an_effect_fades_in_over_the_first_block_and_then_replaces_the_master():
+    rig = FxRig([Row("_te_half", "_te_state_a")])
+    b0 = rig.block(RAMP)
+    assert b0.returned and b0.ctx_bad == [] and b0.regs_bad == []
+    assert b0.master == fade(RAMP, HALF, "in")
+    for _ in range(3):
+        b = rig.block(RAMP)
+        assert b.master == tuple(HALF)
+        assert b.ctx_bad == [] and b.regs_bad == []
+    assert rig.row_word(0, 8) == 1  # was
+
+
+def test_a_new_effect_gets_a_zeroed_state_when_it_switches_on():
+    rig = FxRig([Row("_te_half", "_te_state_a")])
+    rig.block(RAMP)
+    assert [rig.state_word(0, k) for k in range(4)] == [
+        1,
+        0,
+        0,
+        0,
+    ]  # the poison is gone, one call
+    rig.block(RAMP)
+    rig.block(RAMP)
+    assert rig.state_word(0, 0) == 3
+    rig.set_enabled(0, False)
+    rig.block(RAMP)  # the fade out runs it once more
+    assert rig.state_word(0, 0) == 4
+    rig.set_enabled(0, True)
+    rig.block(RAMP)
+    assert rig.state_word(0, 0) == 1  # a fresh state
+
+
+def test_an_effect_fades_out_for_one_block_and_is_not_called_while_off():
+    rig = FxRig([Row("_te_half", "_te_state_a")])
+    for _ in range(2):
+        rig.block(RAMP)
+    rig.set_enabled(0, False)
+    b = rig.block(RAMP)
+    assert b.master == fade(RAMP, HALF, "out")
+    assert (
+        b.master[31] == RAMP[31] and b.master[63] == RAMP[63]
+    )  # the last sample is dry
+    calls = rig.state_word(0, 0)
+    for _ in range(5):
+        b = rig.block(RAMP)
+        assert b.master == tuple(RAMP)
+    assert rig.state_word(0, 0) == calls
+    assert rig.row_word(0, 8) == 0
+
+
+def test_a_row_that_starts_off_is_skipped():
+    rig = FxRig([Row("_te_half", "_te_state_a", enabled=0)])
+    for _ in range(3):
+        b = rig.block(RAMP)
+        assert b.master == tuple(RAMP)
+    assert rig.state_word(0, 0) == 0x7FC00001  # never touched
+
+
+def test_the_chain_runs_in_row_order_and_each_effect_sees_the_previous_output():
+    for first, second, want in (
+        ("_te_half", "_te_add1", lambda x: f32(f32(x * 0.5) + 1.0)),
+        ("_te_add1", "_te_half", lambda x: f32(f32(x + 1.0) * 0.5)),
+    ):
+        rig = FxRig([Row(first, "_te_state_a"), Row(second, "_te_state_b")])
+        rig.block(RAMP)
+        b = rig.block(RAMP)
+        assert b.master == tuple(want(x) for x in RAMP), (first, second)
+
+
+def test_four_effects_chain():
+    rows = [
+        Row("_te_half", "_te_state_a"),
+        Row("_te_half", "_te_state_b"),
+        Row("_te_add1", "_te_state_a"),
+        Row("_te_add1", "_te_state_b"),
+    ]
+    rig = FxRig(rows)
+    rig.block(RAMP)
+    b = rig.block(RAMP)
+    assert b.master == tuple(
+        f32(f32(f32(f32(x * 0.5) * 0.5) + 1.0) + 1.0) for x in RAMP
+    )
+    with pytest.raises(ValueError):
+        FxRig([*rows, Row("_te_half", "_te_state_a")])
+
+
+def test_the_process_routine_gets_the_row_parameters_and_the_block_number():
+    rig = FxRig([Row("_te_param", "_te_state_a", params=(7, 0, 0, 0))])
+    for n in (1, 2, 3):
+        b = rig.block(RAMP)
+        assert (
+            rig.state_word(0, 1) == n
+        )  # dk_fx_in.block counts the blocks that ran a chain
+    assert b.master == (7.0,) * 64
+    rig.set_row_word(0, 4, 3)
+    assert rig.block(RAMP).master == (3.0,) * 64
+
+
+@pytest.mark.parametrize("effect", ["_te_nan", "_te_big", "_te_neg"])
+def test_a_bad_block_plays_dry_and_clears_the_state(effect):
+    """The faulting effect sits behind a working one: the master block after it is the working effect's output, unchanged by the fault."""
+    rig = FxRig([Row("_te_half", "_te_state_a"), Row(effect, "_te_state_b")])
+    rig.block(RAMP)
+    for _ in range(3):
+        b = rig.block(RAMP)
+        assert b.returned and b.ctx_bad == [] and b.regs_bad == []
+        assert b.master == tuple(HALF) or b.master == fade(RAMP, HALF, "in")
+    assert [rig.state_word(1, k) for k in range(4)] == [
+        0,
+        0,
+        0,
+        0,
+    ]  # the poison is cleared by the fault
+    assert rig.row_word(1, 8) == 0  # was
+    assert (
+        rig.row_word(1, 13) == 4
+    )  # faults since the start (the first block faults too)
+    assert rig.row_word(0, 13) == 0
+
+
+def test_the_eighth_fault_within_1500_blocks_switches_the_effect_off():
+    rig = FxRig([Row("_te_nan", "_te_state_a")])
+    for n in range(7):
+        rig.block(RAMP)
+        assert rig.row_word(0, 10) == 0, n
+    b = rig.block(RAMP)
+    assert b.master == tuple(RAMP)
+    assert rig.row_word(0, 10) == 1  # dis
+    assert rig.row_word(0, 13) == 8
+    for _ in range(5):
+        assert rig.block(RAMP).master == tuple(RAMP)
+    assert rig.row_word(0, 13) == 8  # not called any more
+    assert rig.symbol_word("_fx_diag", 1) == 8
+
+
+def test_faults_spread_over_more_than_1500_blocks_do_not_switch_it_off():
+    rig = FxRig([Row("_te_nan", "_te_state_a")])
+    for _ in range(7):
+        rig.block(RAMP)
+    rig.set_enabled(0, False)
+    for _ in range(1600):
+        rig.block(RAMP)
+    rig.set_enabled(0, True)
+    for _ in range(7):  # the window restarts: 7 faults again
+        rig.block(RAMP)
+    assert rig.row_word(0, 10) == 0
+    assert rig.row_word(0, 13) == 14
+    rig.block(RAMP)
+    assert rig.row_word(0, 10) == 1
+
+
+def test_an_effect_that_clobbers_every_allowed_register_changes_nothing_else():
+    """The module may clobber R0-R15, I0-I5, M1-M4 and B3; the stock function gets all of them back, in 24 hostile contexts."""
+    rig = FxRig([Row("_te_trash", "_te_state_a")])
+    rng = random.Random(3)
+    for _ in range(24):
+        master = [f32(rng.uniform(-1.5, 1.5)) for _ in range(64)]
+        b = rig.block(master)
+        assert b.returned, b.halt
+        assert b.ctx_bad == [] and b.regs_bad == [], (b.ctx_bad, b.regs_bad)
+    assert rig.block(master).master == tuple(master)  # out = in
+
+
+def test_the_cost_of_a_chain_in_instructions():
+    rig = FxRig([Row("_te_half", "_te_state_a")])
+    rig.block(RAMP, ctx="friendly")
+    steady = rig.block(RAMP, ctx="friendly").instructions
+    rig.set_enabled(0, False)
+    fade_out = rig.block(RAMP, ctx="friendly").instructions
+    rig.block(RAMP, ctx="friendly")
+    off = rig.block(RAMP, ctx="friendly").instructions
+    print(
+        f"one effect: steady {steady}, fade {fade_out}, off {off} instructions per block (the effect itself is 64 samples of 3 instructions)"
+    )
+    assert steady < 1200 and fade_out < 1800 and off < 200
 
 
 # ---- patchkit: the hook on both devices ------------------------------------------------------------------------------------
