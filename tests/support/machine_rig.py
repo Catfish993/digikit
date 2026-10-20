@@ -211,7 +211,9 @@ class MachineRig:
             for p in self.spec.params:  # words 2 to 9: the declared range of knob j (min | max << 16; none for a stock knob)
                 if not p.stock and 0 <= p.lo <= p.hi <= 0xFFFF:
                     poke(nw(dv.TABLE) + 2 + p.knob, p.lo | p.hi << 16)
-            if self.spec.note_on is not None:  # words 16 to 19: note_on pc, state base, stride, clear bytes
+            if (
+                self.spec.note_on is not None
+            ):  # words 16 to 19: note_on pc, state base, stride, clear bytes
                 poke(nw(dv.TABLE) + 16, b.symbols[self.spec.note_on])
                 poke(nw(dv.TABLE) + 17, b.state)
                 poke(nw(dv.TABLE) + 18, b.stride)

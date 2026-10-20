@@ -110,7 +110,9 @@ class MachineSpec:
     params: tuple[Param, ...]
     frame: Frame
     declared: dict = field(default_factory=dict)  # the manifest's [conformance] table
-    note_on: str | None = None  # a contract voice (docs/design/module-sdk.md 4.1): the note_on routine's symbol and the `dk_machine_desc` symbol
+    note_on: str | None = (
+        None  # a contract voice (docs/design/module-sdk.md 4.1): the note_on routine's symbol and the `dk_machine_desc` symbol
+    )
     desc: str | None = None
 
     @property

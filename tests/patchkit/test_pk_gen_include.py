@@ -22,6 +22,7 @@ pytestmark = pytest.mark.skipif(
 
 MOD = REPO_ROOT / "modules" / "core" / "dsp-voice"
 
+
 def test_include_expansion():
     with tempfile.TemporaryDirectory() as d:
         (Path(d) / "a.inc").write_text("#define A 1\n")

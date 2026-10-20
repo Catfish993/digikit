@@ -21,7 +21,10 @@ pytestmark = pytest.mark.skipif(
 
 MODULE = "test/dyn-guard-nan"
 FIX = pk_conform.ROOT / "modules" / "test" / "dyn-guard-nan" / "src" / "dsp"
-KNOB = {"dt2": 1, "dn2": 0}  # the knob position of the first module parameter (ADM_PARAM_SLOT0)
+KNOB = {
+    "dt2": 1,
+    "dn2": 0,
+}  # the knob position of the first module parameter (ADM_PARAM_SLOT0)
 
 
 def rig(device: str, fixture: str = "nan", prefix: str = "gn") -> MachineRig:
@@ -75,7 +78,9 @@ def test_a_parameter_beyond_the_range_is_clamped_before_the_module(device):
     r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, KNOB[device]), 0xFFFF)
     b = note(r)
     assert b.faults == 0
-    assert all(x == 0x7F00 * 2.0**-12 for x in b.samples)  # 0xffff reached the module as 0x7f00
+    assert all(
+        x == 0x7F00 * 2.0**-12 for x in b.samples
+    )  # 0xffff reached the module as 0x7f00
 
 
 @pytest.mark.parametrize("device", ["dt2", "dn2"])

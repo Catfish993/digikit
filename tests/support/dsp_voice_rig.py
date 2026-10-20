@@ -27,7 +27,13 @@ SV_L4 = DIAG + 0x100  # the wrapper's data symbols (the build places them in fre
 SV3, SV5, BCW, REC_PTRS = DIAG + 0x104, DIAG + 0x108, DIAG + 0x10C, DIAG + 0x110
 GUARD = DIAG + 0x200  # the guard's scalars and arrays (_dv_g, 128 bytes)
 # the contract adapter's data (`_dv_in` 16 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64): zero, and not used by a row of the old form
-ADAPTER = {"_dv_in": DIAG + 0x300, "_dv_params": DIAG + 0x320, "_dv_blk": DIAG + 0x360, "_dv_c": DIAG + 0x3A0, "_dv_slots": DIAG + 0x3E0}
+ADAPTER = {
+    "_dv_in": DIAG + 0x300,
+    "_dv_params": DIAG + 0x320,
+    "_dv_blk": DIAG + 0x360,
+    "_dv_c": DIAG + 0x3A0,
+    "_dv_slots": DIAG + 0x3E0,
+}
 ROW = 24  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields, the contract fields (words 16 to 19)
 RING_A, RING_B = (
     0x200A0000,
@@ -176,7 +182,9 @@ class Rig:
         for k in range(32):
             self.dm[nw(GUARD) + k] = 0
         for k, w in enumerate((1, 2, 4, 5, 255, 255, 255, 255)):
-            self.dm[nw(ADAPTER["_dv_slots"]) + k] = w  # the Digitakt II's knob positions of the parameters (ADM_PARAM_SLOT*)
+            self.dm[nw(ADAPTER["_dv_slots"]) + k] = (
+                w  # the Digitakt II's knob positions of the parameters (ADM_PARAM_SLOT*)
+            )
 
     def set_rings(self) -> None:
         """The two reply records core/dsp-link's block tail would have registered."""
