@@ -104,7 +104,10 @@ test('selection: requires are added, dependents removed, clashes explained', () 
 });
 
 test('patched file names', () => {
-  assert.equal(patchedFileName('Digitakt II', '1.17', ['digikit/master-gain']), 'Digitakt_II_OS1.17+digikit-master-gain.syx');
+  assert.equal(
+    patchedFileName('Digitakt II', '1.17', ['digikit/master-gain']),
+    'Digitakt_II_OS1.17+digikit-master-gain.syx',
+  );
 });
 
 test('worker core: check and apply equal the command line (digikit/master-gain)', { skip: !have }, async () => {
