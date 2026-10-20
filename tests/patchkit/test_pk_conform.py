@@ -35,8 +35,8 @@ def test_machines_are_found_and_the_framework_is_not():
     assert {
         "digikit/pluck@dt2",
         "digikit/pluck@dn2",
-        "test/sine-voice@dt2",
-        "test/dn2-sine@dn2",
+        "test/sine@dt2",
+        "test/sine@dn2",
     } <= labels
     assert not any(label.startswith("core/") for label in labels)
     assert "test/dyn-dsp-hang@dt2" in {s.label for s in c.machine_specs(negative=True)}

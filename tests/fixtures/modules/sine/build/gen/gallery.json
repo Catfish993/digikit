@@ -1,0 +1,86 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "param": "sine_level",
+              "slot": 25
+            }
+          ],
+          "level": 10,
+          "name": "Sine",
+          "own_dsp": true,
+          "page": {
+            "name": "SINE",
+            "title": "Sine"
+          },
+          "position": null,
+          "short": "SIN",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "sine_level",
+              "slot": 1
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Sine",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "SIN",
+          "type": null
+        }
+      },
+      "id": "sine",
+      "name": "Sine",
+      "short": "SIN"
+    }
+  ],
+  "module": "test/sine",
+  "params": {
+    "dn2": [
+      {
+        "default": 32512,
+        "id": "sine_level",
+        "max": 32512,
+        "min": 0,
+        "name": "Level",
+        "short": "LEVEL",
+        "slot": 25,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 32512,
+        "id": "sine_level",
+        "max": 32512,
+        "min": 0,
+        "name": "Level",
+        "short": "LEVEL",
+        "slot": 1,
+        "template": 209
+      }
+    ]
+  }
+}
