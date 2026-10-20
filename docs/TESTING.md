@@ -2,6 +2,7 @@
 
 Python tests are in `tests/`, grouped by the code they test. Web tests and Rust
 tests live with their code.
+Planned changes (four test levels, native module tests, TypeScript): [docs/plans/test-architecture.md](plans/test-architecture.md).
 
 ## Layout
 
