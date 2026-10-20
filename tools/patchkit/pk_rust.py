@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rust crates for ColdFire modules: crate -> one relocatable ELF that pk_link.object_from_elf turns into a `.dko.json`.
 
-    uv run python -m tools.patchkit.pk_rust modules/test/rust-demo/src/rs/Cargo.toml [-o out.o]
+    uv run python -m tools.patchkit.pk_rust tests/fixtures/modules/rust-demo/src/rs/Cargo.toml [-o out.o]
 
 The crate is `#![no_std]`, `panic = "abort"`, `crate-type = ["staticlib"]` and has its own `[workspace]`. It is built with
 the GCC back end for -mcpu=54418 (tools/patchkit/pk_toolchains.py codegen-gcc) and `-Zbuild-std=core,compiler_builtins`

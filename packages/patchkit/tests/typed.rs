@@ -21,7 +21,7 @@ fn root() -> PathBuf {
 }
 
 fn library() -> Library {
-    Library::scan(&root().join("modules")).unwrap()
+    Library::scan_repo(&root()).unwrap()
 }
 
 /// SHA-256 over the id, length and data of every section except 7 (the SHARC DSP stream), in container order.
@@ -107,7 +107,7 @@ fn generated_files_are_current() {
     let mut n = 0;
     for m in &lib.modules {
         for (rel, text) in modgen::generate(&lib, &models, m.id()).unwrap() {
-            let path = root().join("modules").join(m.id()).join(&rel);
+            let path = m.dir.join(&rel);
             let have = std::fs::read_to_string(&path).unwrap_or_default();
             assert_eq!(
                 have,

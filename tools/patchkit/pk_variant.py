@@ -18,7 +18,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from tools.patchkit import pk_build
+from tools.patchkit import modroots, pk_build
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,13 +30,15 @@ def make(module: str, defines: list[str], label: str) -> Path:
     (base / "modules").mkdir(parents=True)
     for top in ("devices", "firmware"):
         (base / top).symlink_to(ROOT / top)
-    # modules/: every module directory linked, the variant's a real directory (its sources linked, its objects built)
-    for toml in sorted((ROOT / "modules").rglob("module.toml")):
-        d = toml.parent
-        rel = d.relative_to(ROOT / "modules")
-        dest = base / "modules" / rel
+    # module directories (same place as in the repository): every one linked, the variant's a real directory
+    # (its sources linked, its objects built)
+    moddir = modroots.module_dir(module)
+    dest_of = {}
+    for d in modroots.manifests().values():
+        dest = base / d.relative_to(ROOT)
+        dest_of[d] = dest
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if rel.as_posix() != module:
+        if d != moddir:
             dest.symlink_to(d)
             continue
         dest.mkdir()
@@ -45,11 +47,8 @@ def make(module: str, defines: list[str], label: str) -> Path:
                 (dest / child.name).symlink_to(child)
         if (d / "build").is_dir():
             shutil.copytree(d / "build", dest / "build")
-    moddir = ROOT / "modules" / module
-    if not (base / "modules" / module).is_dir():
-        raise SystemExit(f"pk_variant: no module {module}")
     for line in pk_build.build_module(
-        moddir, False, frozenset(defines), base / "modules" / module
+        moddir, False, frozenset(defines), dest_of[moddir]
     ):
         print(line, file=sys.stderr)
     return base

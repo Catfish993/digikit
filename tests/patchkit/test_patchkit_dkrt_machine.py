@@ -15,6 +15,7 @@ ROOT = REPO_ROOT
 
 from tools.device.dklog_kinds import RUNTIME_VERSION  # noqa: E402
 from tools.patchkit import (  # noqa: E402
+    modroots,
     pk_build,
     pk_dkrt,
     pk_dkrt_machine,
@@ -33,7 +34,7 @@ needs_selache = pytest.mark.skipif(
     ["core/dsp-link", "core/dyndsp", "test/dyn-pluck", "test/dyn-sine-dn2"],
 )
 def test_committed_objects_are_current(mod):
-    pk_build.build_module(MODS / mod, check=True)
+    pk_build.build_module(modroots.module_dir(mod), check=True)
 
 
 def test_the_area_size_is_the_same_on_both_sides():

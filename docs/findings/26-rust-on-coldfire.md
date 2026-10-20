@@ -5,7 +5,7 @@ device. Marks: **[D]** measured or read once, **[O]** open.
 
 ## What ran **[D]**
 
-- `modules/test/rust-demo` is a `#![no_std]`, `panic = "abort"` crate (`src/rs/`, 6 exported symbols) built with
+- `tests/fixtures/modules/rust-demo` is a `#![no_std]`, `panic = "abort"` crate (`src/rs/`, 6 exported symbols) built with
   rustc_codegen_gcc for `-mcpu=54418`, converted by `tools/patchkit/pk_build` into a committed
   `build/rust-demo.dko.json` and placed in `cf.expansion` by the stock patchkit linker (no linker change).
   Functions: a bss counter that stores a magic and a count, a 64-bit FNV-1a hash (u64 multiply), a `match` with a

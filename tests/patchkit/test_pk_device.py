@@ -8,7 +8,7 @@ import tomllib
 
 from support.paths import REPO_ROOT
 
-from tools.patchkit import pk_device, port_resolve
+from tools.patchkit import modroots, pk_device, port_resolve
 
 ROOT = REPO_ROOT
 TYPES = tomllib.loads(
@@ -17,7 +17,7 @@ TYPES = tomllib.loads(
 
 
 def module(mid: str) -> dict:
-    return tomllib.loads((ROOT / "modules" / mid / "module.toml").read_text())
+    return tomllib.loads((modroots.module_dir(mid) / "module.toml").read_text())
 
 
 def test_the_store_geometry_is_the_device_files() -> None:

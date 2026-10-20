@@ -69,7 +69,7 @@ from tools import python_env  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
 from tools.emulator import card_check  # noqa: E402
 from tools.firmware import config  # noqa: E402
-from tools.patchkit import pk_dsp_budget  # noqa: E402
+from tools.patchkit import modroots, pk_dsp_budget  # noqa: E402
 
 MS = 132_000  # ColdFire instructions per emulated millisecond (the oracle clock)
 OUT = ROOT / "out" / "runs" / "patchkit"
@@ -1008,7 +1008,7 @@ def module_tests(
     modules: list[str], device: str, quick_only: bool
 ) -> Iterator[tuple[str, list[dict[str, Any]]]]:
     for mod in modules:
-        for f in sorted((ROOT / "modules" / mod / "tests").glob("*.toml")):
+        for f in sorted((modroots.module_dir(mod) / "tests").glob("*.toml")):
             data = tomllib.loads(f.read_text())
             t = data.get("test", {})
             if device not in t.get("devices", ["dt2", "dn2"]):

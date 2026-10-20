@@ -20,7 +20,7 @@ IMAGES = [
     "Digitakt_II_OS1.17.syx",
     "Digitone_II_OS1.12.syx",
 ]
-MODULE = ROOT / "modules/test/rust-demo"
+MODULE = ROOT / "tests/fixtures/modules/rust-demo"
 TABLE = [3, 1, 4, 1, 5, 9, 2, 6]
 M32, M64 = 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF
 

@@ -32,7 +32,7 @@ from tools.patchkit.pk_dkrt import (
 )
 
 M64 = (1 << 64) - 1
-# c_demo_in / c_demo_n of modules/test/c-demo/src/c/c_demo.c
+# c_demo_in / c_demo_n of tests/fixtures/modules/c-demo/src/c/c_demo.c
 A, B = 0xFEDCBA9876543210, 0x0000000123456789
 C, D = 0xFFFFFFFF89ABCDEF - (1 << 64), 12345  # as signed
 N0, N1, N2 = 13, 7, 9

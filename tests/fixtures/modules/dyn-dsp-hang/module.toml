@@ -1,0 +1,39 @@
+[module]
+id = "test/dyn-dsp-hang"
+version = "0.1.0"
+name = "HANG-D"
+category = "test"
+type = "machine"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: a run-time machine whose DSP routine never returns after a few blocks, to see what the debug log shows when the SHARC stops."
+dynamic = true
+ports = ["dt2-1.16", "dt2-1.17"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+
+# Like test/dyn-pluck, with a routine that hangs (src/dsp/hang.s). `patchkit pack test/dyn-dsp-hang --device dt2` makes the .dkm.
+# Never select this module on a device you care about: the DSP stops until the next restart. Emulator scenario: debug-hang.
+[[object]]
+path = "build/dyn-dsp-hang-dsp.dko.json"
+sources = ["src/dsp/hang.s"]
+place = "dsp.l2"
+devices = ["dt2"]
+
+[[voice]]
+machine = "hang"
+entry = "_hg_render"
+
+[[machine]]
+id = "hang"
+name = "Hang"
+short = "HNG"
+clone_of = 0
+knobs = [0xca, 0, 0, 0, 0, 0, 0, 0xd1]
+
+[machine.dt2]
+type_hint = 19   # the number this machine had before sticky ids (finding 52)

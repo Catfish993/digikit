@@ -16,7 +16,7 @@ fn root() -> PathBuf {
 
 #[test]
 fn every_generated_file_is_current() {
-    let mut lib = Library::scan(&root().join("modules")).unwrap();
+    let mut lib = Library::scan_repo(&root()).unwrap();
     let models = Models::from_dir(&root().join("devices")).unwrap();
     lib.lower(&models).unwrap();
     let facts = Facts::from_dir(&root().join("devices")).unwrap();
@@ -25,7 +25,7 @@ fn every_generated_file_is_current() {
         let mut files = modgen::generate(&lib, &models, m.id()).unwrap();
         files.extend(devgen::generate(&lib, &facts, m.id()).unwrap());
         for (rel, text) in files {
-            let path = root().join("modules").join(m.id()).join(&rel);
+            let path = m.dir.join(&rel);
             let have = std::fs::read_to_string(&path).unwrap_or_default();
             assert_eq!(
                 have,
@@ -41,7 +41,7 @@ fn every_generated_file_is_current() {
 
 #[test]
 fn the_runtime_constants_are_the_device_files_numbers() {
-    let mut lib = Library::scan(&root().join("modules")).unwrap();
+    let mut lib = Library::scan_repo(&root()).unwrap();
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let facts = Facts::from_dir(&root().join("devices")).unwrap();
@@ -110,7 +110,7 @@ fn peek_and_keep_ranges_are_checked() {
 
 #[test]
 fn a_fact_that_devices_disagree_on_is_refused_for_the_shared_runtime() {
-    let mut lib = Library::scan(&root().join("modules")).unwrap();
+    let mut lib = Library::scan_repo(&root()).unwrap();
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let dt2 = std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap();

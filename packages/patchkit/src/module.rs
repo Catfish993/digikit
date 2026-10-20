@@ -246,13 +246,27 @@ pub struct EntryDef {
     pub fields: BTreeMap<String, toml::Value>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModuleKind {
+    Machine,
+    Fx,
+    Service,
+    Raw,
+    Framework,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ModuleInfo {
-    /// `category/name`, the path under `modules/`
+    /// `category/name`; unique in a library (it need not equal the directory)
     pub id: String,
     pub version: String,
     pub name: String,
     pub category: String,
+    /// What the module is; `framework` is internal (core modules)
+    #[serde(rename = "type")]
+    pub kind: ModuleKind,
+    pub author: String,
     pub status: String,
     pub summary: String,
     #[serde(default)]
@@ -351,6 +365,8 @@ pub struct Module {
     pub alloc: BTreeMap<String, AllocTable>,
     /// sha256 of the manifest text and the object texts, in order (for the plan)
     pub digest: String,
+    /// The directory of the manifest (empty for a module built from parts)
+    pub dir: std::path::PathBuf,
 }
 
 /// A patched-in contract voice (`[[voice]]` with `desc`) needs memory for the state of its voices, which a `.dkm` gets from the runtime at load
@@ -469,6 +485,7 @@ impl Module {
             objects,
             alloc,
             digest: sha256_hex(all.as_bytes()),
+            dir: Default::default(),
         })
     }
 
@@ -553,8 +570,8 @@ impl Library {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Library {
-    /// Every `module.toml` under `root` (a `modules/` directory).
-    pub fn scan(root: &std::path::Path) -> Result<Library> {
+    /// Every `module.toml` under `root` (a module root), without lowering.
+    fn read_root(root: &std::path::Path) -> Result<Vec<Module>> {
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else {
                 return;
@@ -579,22 +596,43 @@ impl Library {
                 std::fs::read_to_string(dir.join(rel))
                     .map_err(|e| err!("{}: {e}", dir.join(rel).display()))
             };
-            let m = Module::from_parts(&text, &read).map_err(|e| err!("{}: {e}", p.display()))?;
-            let want = dir
-                .strip_prefix(root)
-                .ok()
-                .map(|d| d.to_string_lossy().replace('\\', "/"));
-            if want.as_deref() != Some(m.id()) {
-                return Err(err!(
-                    "{}: id {} does not match its directory {:?}",
-                    p.display(),
-                    m.id(),
-                    want
-                ));
-            }
+            let mut m =
+                Module::from_parts(&text, &read).map_err(|e| err!("{}: {e}", p.display()))?;
+            m.dir = dir;
             modules.push(m);
         }
-        let mut lib = Library { modules };
+        Ok(modules)
+    }
+
+    /// Add modules; refuses an id that is already there (the error names both directories).
+    pub fn extend_unique(&mut self, more: Vec<Module>) -> Result<()> {
+        for m in more {
+            if let Some(o) = self.get(m.id()) {
+                return Err(err!(
+                    "duplicate module id {}: {} and {}",
+                    m.id(),
+                    o.dir.display(),
+                    m.dir.display()
+                ));
+            }
+            self.modules.push(m);
+        }
+        Ok(())
+    }
+
+    /// The default module roots of a repository: `modules/` and `tests/fixtures/modules/`, lowered with `devices/`.
+    pub fn scan_repo(root: &std::path::Path) -> Result<Library> {
+        let mut lib = Library::default();
+        lib.extend_unique(Self::read_root(&root.join("modules"))?)?;
+        lib.extend_unique(Self::read_root(&root.join("tests/fixtures/modules"))?)?;
+        lib.lower(&crate::typed::Models::from_dir(&root.join("devices"))?)?;
+        Ok(lib)
+    }
+
+    /// Every `module.toml` under `root` (a module root); lowered when `devices/` sits next to it.
+    pub fn scan(root: &std::path::Path) -> Result<Library> {
+        let mut lib = Library::default();
+        lib.extend_unique(Self::read_root(root)?)?;
         // the device models sit next to `modules/` (`devices/*.toml`); an extra module root without them
         // is lowered by the caller
         let devices = root.parent().map(|p| p.join("devices"));

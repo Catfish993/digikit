@@ -30,6 +30,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools.emulator import native_target  # noqa: E402
+from tools.patchkit import modroots  # noqa: E402
 
 
 def target_dir() -> Path:
@@ -100,12 +101,12 @@ GALLERY = "build/gen/gallery.json"
 def bundle(extra: list[Path] | None = None) -> dict:
     """Ports and modules as texts: the input of `pk_apply` in patchkit.wasm.
 
-    Only committed modules/ by default; `extra` roots (e.g. out/modules for generated
+    Only the committed module roots by default (modules/ and the fixtures); `extra` roots (e.g. out/modules for generated
     oracles) are for tests, never for the published page.
     """
     ports = [p.read_text() for p in sorted((ROOT / "devices" / "ports").glob("*.toml"))]
     modules = []
-    roots = [ROOT / "modules", *(extra or [])]
+    roots = [*(ROOT / r for r in modroots.REPO_ROOTS), *(extra or [])]
     for m in (m for r in roots for m in sorted(r.rglob("module.toml"))):
         d = tomllib.loads(m.read_text())
         files = {

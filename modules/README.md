@@ -26,15 +26,15 @@ modules/<category>/<name>/
   gallery/icon.svg     the gallery card's icon
 ```
 
-Sources may sit in subfolders (`src/cf/dt2/`, `src/cf/dn2/`) when one module serves both devices. The directory path
-must equal the module id.
+Sources may sit in subfolders (`src/cf/dt2/`, `src/cf/dn2/`) when one module serves both devices.
 
 ## Conventions
 
-- **Module id**: `category/name`, lower case, hyphens (`fx/master-gain`). The id is the path under `modules/`;
-  patchkit refuses a manifest whose id differs from its directory.
+- **Module id**: `category/name`, lower case, hyphens (`fx/master-gain`). The id need not equal the directory; patchkit
+  refuses two modules with one id. Module roots: `modules/`, `tests/fixtures/modules/` (test fixtures, ids `test/NAME`) and the
+  extra roots of `--modules-dir` and `PATCHKIT_MODULES`.
 - **Categories**: `core` (frameworks other modules require), `fx`, `machines`, `ui`, `tools`, `test` (fixtures and
-  research probes; they are not for users). `mise run module:new` accepts these.
+  research probes; they are not for users). `mise run module:new` accepts these, except `core`.
 - **Entry ids** (in `[[entry]]`): `[a-z][a-z0-9_]*`. They become symbols (`machines.pluck.index`).
 - **Symbols** in expressions: `[A-Za-z_.][A-Za-z0-9_.]*`.
 - **Version**: `major.minor.patch`; raise it when the module's behaviour or its interface to other modules changes.
@@ -66,10 +66,12 @@ Numbers can be written as TOML integers or as strings holding an *expression* (s
 
 | Key | Meaning |
 |---|---|
-| `id` | `category/name`, equal to the directory path under `modules/` |
+| `id` | `category/name`, unique in the library |
 | `version` | module version, `major.minor.patch` |
 | `name` | display name in the gallery |
 | `category` | `core`, `fx`, `machines`, `ui`, `tools` or `test` |
+| `type` | `machine`, `fx`, `service`, `raw` or `framework` (`framework` is internal, for core modules) |
+| `author` | who wrote the module (`digikit` for the modules of this repository) |
 | `status` | `experimental` or `stable` |
 | `summary` | one sentence for the gallery card |
 | `requires` | module ids that must be selected too (frameworks) |
@@ -83,6 +85,8 @@ id = "fx/master-gain"
 version = "0.1.0"
 name = "Master gain"
 category = "fx"
+type = "fx"
+author = "digikit"
 status = "experimental"
 summary = "Scales the final stereo block before the Q31 conversion by a gain word (1.0 = bit-identical)"
 requires = []

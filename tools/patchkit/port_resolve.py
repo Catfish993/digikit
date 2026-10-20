@@ -75,6 +75,7 @@ import tomllib
 from pathlib import Path
 
 from tools.firmware import config
+from tools.patchkit import modroots
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -122,7 +123,9 @@ def ported_firmware(root: Path = ROOT) -> list[str]:
 
 def module_rules(root: Path) -> list[dict]:
     rules = []
-    for m in sorted((root / "modules").rglob("module.toml")):
+    for m in (
+        m for r in modroots.REPO_ROOTS for m in sorted((root / r).rglob("module.toml"))
+    ):
         d = tomllib.loads(m.read_text())
         for r in d.get("anchor_rule", []):
             rules.append({**r, "_module": d["module"]["id"]})

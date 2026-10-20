@@ -1014,7 +1014,7 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 ## core.machines: N added machine types on Digitakt II 1.17 (patchkit Phase 3)
 
 Plan: `docs/plans/patchkit.md` (Phase 3). Code: `a1cf1df^:native/patchkit/src/machines.rs` (the Rust generator, removed in a1cf1df), `modules/core/machines`,
-`modules/machines/xslice`, `modules/test/machine-clone`, `tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
+`modules/machines/xslice`, `tests/fixtures/modules/machine-clone`, `tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
 `tools/emulator/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
 stated. A second agent verified **[V]** the static facts: the 24-site count, the list allocation sites (`pea 0x1c` and
 `lea 0x1c(A0)` on DT2; `pea 0x14` on DN2 at `0x4004d8e0`), `FUN_400da23e` (typearg), the vector-191 type store, the 7th
@@ -1257,7 +1257,7 @@ emulator (health asserted after every input; the numbers below are 1.17):
 Emulator only, nothing flashed, one agent, not checked by a second one: **[D]** unless marked. Code:
 `a1cf1df^:native/patchkit/src/machines/dn2.rs` (the Digitone II part of `machines.rs`: the Digitakt code paths for rank,
 per-type byte, clone tests and the DSP selector table are skipped on `dn2`), rules `tools/patchkit/pk_machine_rules_dn2.py`
-(`cf_func` hashes, 1.12 reference, 1.11 resolves every one), module `modules/test/dn2-clone` (a clone of FM TONE as
+(`cf_func` hashes, 1.12 reference, 1.11 resolves every one), module `tests/fixtures/modules/dn2-clone` (a clone of FM TONE as
 type 5), proof `tools/patchkit/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `a1cf1df^:native/patchkit/tests/machines.rs`
 (DN2 1.12 and 1.11 patch; the Digitakt output is byte-identical to the previous patchkit for `core/machines` +
 `machines/xslice` + `test/machine-clone` on 1.16 and 1.17). Addresses are 1.12; 1.11 is the same by function hash.
@@ -1472,7 +1472,7 @@ the behaviour and the evidence above stand; what changed is who builds the table
 Emulator only, one agent, not checked by a second one: **[D]**. Realises "DN2 parameter pages" above as modules; the research
 there stands except where marked **[C]**. Code: `modules/core/machines` (DN2 assembly `src/cf/dn2/machines.s`, registry `pages`),
 `modules/core/params` (the Digitone II side: registry, `pf_table` section, hooks and writes for 321 rows, rules in
-`modules/core/params/module.toml`), `modules/test/dn2-pages` (the content proof), `tools/patchkit/pk_proof_pages_dn2.py` (quick and full),
+`modules/core/params/module.toml`), `tests/fixtures/modules/dn2-pages` (the content proof), `tools/patchkit/pk_proof_pages_dn2.py` (quick and full),
 `tests/patchkit/test_pk_machines_dn2_fw.py` (the routines on the ColdFire call harness, 5 new tests). No change in `packages/patchkit`.
 
 **What a content module writes.** Parameters as on the Digitakt (`registry = "params"`: `name`, `short`, `template` = a stock code

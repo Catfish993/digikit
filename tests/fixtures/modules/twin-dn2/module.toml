@@ -1,0 +1,73 @@
+[module]
+id = "test/twin-dn2"
+version = "0.1.0"
+name = "TWIN-DN2"
+category = "test"
+type = "machine"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: test/dyn-dn2 patched in (a static twin), to compare a run-time machine with its patched-in form."
+ports = ["dn2-1.11", "dn2-1.12"]
+requires = ["core/machines", "core/params"]
+conflicts = []
+
+[targets]
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
+
+# Static twin of test/dyn-dn2 (same typed sections, patched in at build time): tests/digikit compares the rows.
+[[machine]]
+id = "dyn_pluck"
+name = "DynSyn"
+short = "DSY"
+clone_of = 0
+own_dsp = true
+knobs = ["dn_a", "dn_b", "dn_c", "dn_d"]
+devices = ["dn2"]
+
+[[param]]
+id = "dn_a"
+name = "Dyn Alpha"
+short = "ALPH"
+template = 0xd5
+min = 0
+max = 0x7f00
+default = 0x2000
+devices = ["dn2"]
+
+[[param]]
+id = "dn_b"
+name = "Dyn Beta"
+short = "BETA"
+template = 0xd5
+min = 0
+max = 0x3f00
+default = 0x1000
+devices = ["dn2"]
+
+[[param]]
+id = "dn_c"
+name = "Dyn Gamma"
+short = "GAMA"
+template = 0xd5
+min = 0x100
+max = 0x7f00
+default = 0x7000
+devices = ["dn2"]
+
+[[param]]
+id = "dn_d"
+name = "Dyn Delta"
+short = "DELT"
+template = 0xd5
+min = 0
+max = 0x7f00
+default = 0x4000
+devices = ["dn2"]
+
+[[page]]
+id = "dyn_syn"
+machine = "dyn_pluck"
+name = "DYN"
+title = "Dyn Synth"
+devices = ["dn2"]

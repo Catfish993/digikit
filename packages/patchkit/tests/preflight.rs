@@ -23,7 +23,7 @@ struct Rig {
 fn rig() -> Option<Rig> {
     let stock = std::fs::read(root().join("firmware/Digitakt_II_OS1.17.syx")).ok()?;
     let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
-    let mut lib = Library::scan(&root().join("modules")).unwrap();
+    let mut lib = Library::scan_repo(&root()).unwrap();
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let ids = lib

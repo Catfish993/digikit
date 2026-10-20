@@ -17,7 +17,7 @@ Related: `docs/plans/digikit-runtime.md` (Phase 11), `docs/design/digikit-dkm.md
 | ColdFire service | `test/c-demo`, `test/rust-demo` | `dkm_init`, `dkm_fini`, `dkm_slot_n` | `.dkm` (`docs/design/digikit-dkm.md:73-75`) |
 | fixture | `test/dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-crash`, `twin-*`, `dn2-*` | framework tests, today beside real modules | both ways |
 
-`modules/test/` holds 23 directories; about 15 of them are fixtures, not modules (`ls modules/test`).
+`tests/fixtures/modules/` holds 23 directories; about 15 of them are fixtures, not modules (`ls tests/fixtures/modules`).
 
 ### 1.2 Build path
 
@@ -35,7 +35,7 @@ build data (`place = "dsp.l2"`, `devices`, `[object.externs]`). Example: `module
 
 | Item | Patched in | Run time |
 | --- | --- | --- |
-| module | `modules/machines/pluck` | `modules/test/dyn-pluck/module.toml:23-34` builds from `../../machines/pluck/src/dsp/pluck.s` and `pluck_dn2.s` |
+| module | `modules/machines/pluck` | `tests/fixtures/modules/dyn-pluck/module.toml:23-34` builds from `../../../../modules/machines/pluck/src/dsp/pluck.s` and `pluck_dn2.s` |
 | type number | 9 (`types.toml:27`, DN2 :54) | 18 on DT2 (`types.toml:41`), 17 on DN2 (`:67`) |
 | DSP routine | `pluck.s` (DT2, 432 lines), `pluck_dn2.s` (DN2, 419 lines) | the same two files |
 

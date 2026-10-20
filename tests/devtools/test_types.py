@@ -16,6 +16,7 @@ ROOT = str(REPO_ROOT)
 TYPED = [
     "tools/__init__.py",
     "tools/patchkit/pk_dsplink.py",
+    "tools/patchkit/modroots.py",
     "tools/patchkit/pk_conform.py",
     "tools/patchkit/pk_modcheck.py",
     "tools/coldfire/fw.py",

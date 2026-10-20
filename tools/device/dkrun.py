@@ -27,6 +27,7 @@ from typing import Any
 from tools import python_env
 from tools.device import dklog as L
 from tools.device import dkupload as D
+from tools.patchkit import modroots
 
 ROOT = Path(__file__).resolve().parents[2]
 MIN_RUNTIME = 4
@@ -46,7 +47,12 @@ def build_pack(module: str, device: str, build: bool = True) -> Path:
     """Compile the module's objects (unless `build` is off) and pack the .dkm for DEVICE; returns its path."""
     if build:
         r = subprocess.run(
-            [sys.executable, "-m", "tools.patchkit.pk_build", f"modules/{module}"],
+            [
+                sys.executable,
+                "-m",
+                "tools.patchkit.pk_build",
+                str(modroots.module_dir(module)),
+            ],
             cwd=ROOT,
             env=python_env(),
         )

@@ -16,7 +16,7 @@ from tools.firmware import config
 from tools.patchkit import pk_build, pk_cdemo, pk_dkrt, pk_toolchains
 
 ROOT = REPO_ROOT
-DEMO = ROOT / "modules/test/c-demo"
+DEMO = ROOT / "tests/fixtures/modules/c-demo"
 needs_gcc = pytest.mark.skipif(
     pk_toolchains.m68k_bin("gcc") is None, reason="m68k-elf toolchain not installed"
 )

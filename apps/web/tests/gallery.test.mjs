@@ -34,7 +34,10 @@ const manifestFiles = (dir = join(root, 'modules')) =>
 
 test('bundle lists the committed modules and ports', () => {
   const { bundle } = buildModuleData(root);
-  assert.equal(bundle.modules.length, manifestFiles().length);
+  assert.equal(
+    bundle.modules.length,
+    manifestFiles().length + manifestFiles(join(root, 'tests/fixtures/modules')).length,
+  );
   assert.ok(bundle.modules.some((m) => m.manifest.includes('id = "fx/master-gain"')));
   assert.equal(bundle.ports.length, readdirSync(join(root, 'devices/ports')).length);
   // committed content only: nothing generated under out/ and no firmware-sized blobs

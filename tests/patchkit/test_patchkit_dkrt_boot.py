@@ -196,8 +196,8 @@ def test_committed_runtime_objects_are_current():
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
     pk_build.build_module(RUNTIME, check=True)
-    pk_build.build_module(ROOT / "modules/test/dyn-fault", check=True)
-    pk_build.build_module(ROOT / "modules/test/dyn-fault-late", check=True)
+    pk_build.build_module(ROOT / "tests/fixtures/modules/dyn-fault", check=True)
+    pk_build.build_module(ROOT / "tests/fixtures/modules/dyn-fault-late", check=True)
 
 
 def test_the_fault_module_packs_for_both_devices(tmp_path):

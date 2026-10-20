@@ -36,7 +36,7 @@ from tools.devtools import (  # noqa: E402
     verify_route,
 )
 from tools.emulator import digi_env  # noqa: E402
-from tools.patchkit import pk_conform  # noqa: E402
+from tools.patchkit import modroots, pk_conform  # noqa: E402
 
 
 @dataclass
@@ -190,12 +190,10 @@ def select(files: list[str], deep: bool = False) -> Selection:
                     sel.gate_adds.append(f"{entry} ({fine.label})")
                 else:
                     add(entry, fine.label)
-            parts = f.split("/")
-            mid = "/".join(parts[1:3])
+            mid = modroots.module_id(f)
             if (
-                parts[0] == "modules"
-                and len(parts) > 3
-                and mid in verify_route.manifests()
+                mid is not None
+                and f.startswith(modroots.REPO_ROOTS)
                 and verify_route.dependents({mid}) & verify_route.FRAMEWORK
             ):
                 for t in framework_tests(mid):

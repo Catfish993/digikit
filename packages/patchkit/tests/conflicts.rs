@@ -24,7 +24,7 @@ fn registry() -> Registry {
 
 /// The real library (core/expansion, fx/master-gain, ...) plus synthetic modules.
 fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan(&root().join("modules")).unwrap();
+    let mut lib = Library::scan_repo(&root()).unwrap();
     lib.modules.extend(extra);
     lib
 }
@@ -32,7 +32,7 @@ fn library(extra: Vec<Module>) -> Library {
 /// A module whose manifest is `body` after a standard [module] header; `dko` is its only object, if any.
 fn module(id: &str, header_extra: &str, body: &str, dko: Option<serde_json::Value>) -> Module {
     let text = format!(
-        "[module]\nid = \"{id}\"\nversion = \"1.0.0\"\nname = \"{id}\"\ncategory = \"test\"\nstatus = \"experimental\"\nsummary = \"synthetic\"\n{header_extra}\n{body}\n"
+        "[module]\nid = \"{id}\"\nversion = \"1.0.0\"\nname = \"{id}\"\ncategory = \"test\"\ntype = \"raw\"\nauthor = \"digikit\"\nstatus = \"experimental\"\nsummary = \"synthetic\"\n{header_extra}\n{body}\n"
     );
     let read = move |_p: &str| -> patchkit::Result<String> { Ok(dko.clone().unwrap().to_string()) };
     Module::from_parts(&text, &read).unwrap()

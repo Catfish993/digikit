@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
 from tools.firmware import config  # noqa: E402
-from tools.patchkit import pk_device  # noqa: E402
+from tools.patchkit import modroots, pk_device  # noqa: E402
 
 # dkrt-sdk result codes
 OK, E_NOT_FOUND, E_BAD_STORE, E_READ, E_SHA, E_FORMAT, E_RUNTIME, E_IMPORT = (
@@ -149,13 +149,13 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
     """From a module's object: `bad-sha.dkm` (one byte of the image changed after packing) and `bad-import.dkm`
     (a relocation against a name the runtime does not provide), and `contract-major.dkm` / `contract-minor.dkm` (api major 2; api
     minor 9, the file sha256 recomputed)."""
-    man = (ROOT / "modules" / module / "module.toml").read_text()
+    man = (modroots.module_dir(module) / "module.toml").read_text()
     obj_path = next(
         ln.split("=", 1)[1].strip().strip('"')
         for ln in man.splitlines()
         if ln.startswith("path =")
     )
-    obj = json.loads((ROOT / "modules" / module / obj_path).read_text())
+    obj = json.loads((modroots.module_dir(module) / obj_path).read_text())
     good = folder / "modules" / "dyn-demo.dkm"
     bad = bytearray(good.read_bytes())
     bad[-1] ^= (

@@ -11,6 +11,7 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.devtools import verify, verify_pre, verify_route  # noqa: E402
+from tools.patchkit import modroots  # noqa: E402
 
 
 def test_rust_tests_command_has_no_package_flags() -> None:
@@ -257,6 +258,11 @@ PCM_STEPS = {
 }
 
 
+def mpath(mid: str) -> str:
+    """The repo-relative directory of a module."""
+    return modroots.module_dir(mid).relative_to(ROOT).as_posix()
+
+
 def selected(*files: str) -> set[str]:
     """The python-tests paths beyond the always-on gate files."""
     return set(verify.python_tests(list(files), False)) - set(verify.PY_GATE)
@@ -422,7 +428,7 @@ def test_module_leaf_selects_the_tests_that_name_it() -> None:
 
 
 def test_module_scenario_modules_select_their_scenarios() -> None:
-    got = selected("modules/test/dyn-pluck/module.toml")
+    got = selected("tests/fixtures/modules/dyn-pluck/module.toml")
     for name in (
         "test_equiv_dn2",
         "test_equiv_dt2",
@@ -453,8 +459,8 @@ CONFORMANCE = "tests/modules/test_machine_conformance.py"
     [
         "modules/machines/pluck/module.toml",
         "modules/machines/pluck/src/dsp/pluck.s",
-        "modules/test/sine-voice/src/dsp/sine_voice.s",
-        "modules/test/dn2-sine/module.toml",
+        "tests/fixtures/modules/sine-voice/src/dsp/sine_voice.s",
+        "tests/fixtures/modules/dn2-sine/module.toml",
         "modules/core/dsp-voice/src/dsp/dsp-voice-dn2.s",
     ],
 )
@@ -485,7 +491,7 @@ def test_the_conformance_machinery_selects_the_conformance_suite(path: str) -> N
 
 @pytest.mark.parametrize("module", sorted(verify_route.FRAMEWORK))
 def test_framework_module_selects_both_suites(module: str) -> None:
-    path = f"modules/{module}/module.toml"
+    path = f"{mpath(module)}/module.toml"
     assert {"tests/patchkit", "tests/digikit"} <= selected(path)
     assert {"python-tests", "rust-tests"} <= set(verify.steps_for([path]))
     assert not set(verify.steps_for([path])) & PCM_STEPS
@@ -493,7 +499,7 @@ def test_framework_module_selects_both_suites(module: str) -> None:
 
 def test_module_changes_select_no_pcm_step() -> None:
     for module in verify_route.manifests():
-        steps = verify.steps_for([f"modules/{module}/module.toml"])
+        steps = verify.steps_for([f"{mpath(module)}/module.toml"])
         assert not set(steps) & PCM_STEPS, module
 
 
@@ -504,7 +510,7 @@ def test_module_change_drops_no_test_that_names_a_dependent() -> None:
     mods = verify_route.manifests()
     scenarios = sorted((ROOT / "tests/digikit/scenarios").glob("*.toml"))
     for mid in mods:
-        got = selected(f"modules/{mid}/module.toml") | set(verify.PY_GATE)
+        got = selected(f"{mpath(mid)}/module.toml") | set(verify.PY_GATE)
         if "tests/patchkit" in got:
             continue
         hit = verify_route.dependents({mid})
@@ -541,7 +547,7 @@ def test_web_only_for_what_it_reads() -> None:
         "tools/device/dkrun.py",
         "tests/digikit/scenarios/upload-quick.toml",
         "tools/patchkit/pk_digikit_scen.py",
-        "modules/test/dyn-demo/src/x.s",
+        "tests/fixtures/modules/dyn-demo/src/x.s",
     ):
         assert "web" not in verify.steps_for([path]), path
 
@@ -574,7 +580,7 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
         "modules/core/digikit-menu/build/digikit-menu-rs.dko.json",
         "modules/core/runtime/build/runtime.dko.json",
         "modules/core/runtime/src/rs/src/upload.rs",
-        "modules/test/dyn-demo/build/dyn-demo.dko.json",
+        "tests/fixtures/modules/dyn-demo/build/dyn-demo.dko.json",
         "tests/digikit/scenarios/menu-dkrun-pluck.toml",
         "tests/digikit/test_dkrun.py",
         "tools/device/dkrun.py",  # the mise.toml dk:run task

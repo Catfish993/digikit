@@ -150,7 +150,7 @@ def test_menu_calls_the_runtime_by_symbol():
     assert tomllib.loads((MODULE / "module.toml").read_text())["module"][
         "requires"
     ] == ["core/runtime"]
-    assert not (ROOT / "modules" / "test" / "digikit-rt-stub").exists()
+    assert not (ROOT / "tests" / "fixtures" / "modules" / "digikit-rt-stub").exists()
 
 
 def test_the_menu_and_the_runtime_share_the_store_reader():

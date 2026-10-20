@@ -28,7 +28,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools.firmware import config  # noqa: E402
-from tools.patchkit import patchkit  # noqa: E402
+from tools.patchkit import modroots, patchkit  # noqa: E402
 
 # kind -> (module manifest, old text, new text); the old text must occur exactly once
 BREAKS = {
@@ -55,7 +55,8 @@ def build(kind: str, mods: str, device: str, fw: str, out: Path) -> Path:
     root = ROOT / "out" / "broken" / kind
     if root.exists():
         shutil.rmtree(root)
-    shutil.copytree(ROOT / "modules", root / "modules")
+    for r in modroots.REPO_ROOTS:
+        shutil.copytree(ROOT / r, root / r)
     (root / "devices").symlink_to(ROOT / "devices")
     path = root / "modules" / manifest
     text = path.read_text()
