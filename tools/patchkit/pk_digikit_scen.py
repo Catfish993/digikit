@@ -36,6 +36,8 @@ Kinds:
   card       card safety (finding 46): the one card-write function refuses writes outside the store range; a blank card works as before, a card
              with foreign bytes in the range goes read-only and the runtime writes nothing, a card with our store keeps working.
   debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
+             `[debug] part = "sticky"`: sticky machine type numbers (assigned at the boot load, kept in the selection record's map, eviction); the plain part also checks MODULES.
+             `part = "guard"` (both images): the runtime guard on a NaN fixture.
   crash      a CPU exception in a module's slot: the runtime's hook records it in RAM that a soft reset keeps and resets; the next boot reports
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
   rungc      the rehearsal of rung C on a Digitakt II (docs/PATCHING.md): the rung C image, a card with samples and a blank store, `dkupload put`,

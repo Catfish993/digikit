@@ -22,8 +22,12 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
       kind 2 MACHINE (0x6c): u32 type, clone_of, position, own_dsp, level; u32 knobs[8]; name[24]; short[24]
       kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II only)
 
-- MACHINE `type` is the machine's permanent number from `modules/core/machines/types.toml`, table `[dt2.dynamic]` (key
-  `"<module id>:<machine id>"`), in the range `dynamic_first ..= last` (Digitakt II 16 to 23). A project stores that number, as for a patched machine.
+- MACHINE `type` is the machine **key** (since sticky ids, 2026-10-20, docs/design/module-sdk.md 11.5 D7): `hash24 << 8 | type`. The hash is the low 24 bits of FNV-1a 32 over the
+  UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is 0, which means "assign a type at load". The runtime
+  gives the machine a number in `dynamic_first ..= last` (Digitakt II and Digitone II 16 to 23) and remembers it on the card (below), so a project that stores the number
+  keeps its machine while the map holds the hash. A low byte of 16 to 23 with hash 0 pins that number (hand-made files and tests; it is in no map and the loader
+  refuses it when another machine of the boot has it). A PAGE's `type` and a DSP voice's type are the key of their machine (the DSP section's version is unchanged: the
+  field was a type number, it is now a key). No table in the repository has the numbers any more: `[<dev>.dynamic]` of `types.toml` is gone.
 - `knobs[i]` (Digitakt II: the descriptor fields f0 to f7 of the machine row): a stock parameter code, or `0x80000000 | j` for PARAM record `j` of the same
   file (the runtime replaces it by the code it allocated). `level` is the ninth field (f8, the level code).
 - `clone_of` is a stock type (below `machines.first`): the permission long, the per-type byte and the name hint of that type are copied into the
@@ -39,6 +43,21 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
 - Not carried yet: DSP code and `[[voice]]` records. The packer refuses a voice; the runtime refuses any record it does not know (`E_FORMAT`).
 - `patchkit pack` of a module without code writes a four-byte image (`moveq #0,d0; rts` as `dkm_init`) so that the loader's rules stay as they are.
 
+## Machine keys and sticky type numbers (D7)
+
+`assign.rs` of the runtime (`plan`, before the first module of a boot loads) reads the machine keys of every selected module, in load order, and gives each machine a number; the
+loader, the registry and the DSP loader then take the number from `assign::resolve(key)` (the module's selection index and the key). The card remembers numbers in the **map** in the
+reserved bytes of the selection record (`docs/design/digikit-store.md`): 8 entries, each `hash24 << 8 | type`, 0 = empty. For each machine of the boot, in order:
+
+1. the map has an entry for its hash and that type is not taken in this boot: use it (`MACHINE_TYPE_ASSIGNED`, sticky 1);
+2. else the lowest type in 16..23 that no map entry references and this boot has not given out; the entry is recorded (sticky 0);
+3. else drop the lowest-index entry whose hash is not a machine of this boot (`MACHINE_TYPE_EVICTED`, an error event, so it is kept), take its type, record the entry in its slot;
+4. two machines with the same key in one boot (a hash collision, or a file twice under two names): the second takes a fresh number that is not recorded.
+
+The boot hook writes the record once after the loads (the boot counter's single-copy `update`, seq + 1) and only when the map changed; `SELECT` and the menu's save keep the map
+bytes. A card made by the store builder has a zero map, so a fresh card gets 16, 17, ... in load order. `DKRT_ASSIGN` (peekable) holds the boot's table; `dkupload modules`
+and the MODULES command show each module's assigned types. Scenario: `sticky-types`.
+
 ## Reserved rows (patch time, `core/dynreg`)
 
 `core/dynreg` requires `core/runtime`, `core/machines` and `core/params`. It adds ordinary registry entries (so nothing in the frameworks changes
@@ -51,8 +70,8 @@ and an image without `core/dynreg` is byte-identical to before):
 | page rows (Digitone II) | 8: `pages.dpg0.index` ... `dpg7` | `pages.rows` (84 bytes each) | empty name and title, no knobs, level 10, and a `machine` no type has (0x7fffffff; not -1, which a track without a sound reads) |
 
 So the machine tables span types 7 to 23 (`machines.count` 17): `mf_names`, `mf_permit`, `mf_pertype`, the DSP selector block, the persistence bound
-(`8 + N`), the name, permission and per-type bounds. The run-time type numbers 16 to 23 are in `types.toml` (`dynamic_first = 16`; `core/dynreg:dyn16 ...
-dyn23` hold the reservation); a patched machine never takes one. Numbers 10 to 15 are plain gap rows.
+(`8 + N`), the name, permission and per-type bounds. The run-time type numbers 16 to 23 are the range of `types.toml` (`dynamic_first = 16`; `core/dynreg:dyn16 ...
+dyn23` hold the reservation); a patched machine never takes one, and the runtime picks a number from the range for each run-time machine at load. Numbers 10 to 15 are plain gap rows.
 
 `core/dynreg` exports `dynreg_info`, a table of the addresses and layouts the registry needs (`dynreg.s`, 264 bytes since version 2): the machine rows and their
 field offsets, the name, permission and per-type tables, the parameter table and registry rows, the first reserved type and parameter code, how to

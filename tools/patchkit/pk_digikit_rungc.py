@@ -148,8 +148,8 @@ def _run_rungc(
     pngs: dict[str, str] = {}
 
     # ---- the files: the image, the module, the card with samples ------------------------------------------------------------
-    if not DKM.exists():
-        c.env.tools.patchkit_run("pack", "test/dyn-pluck", "--device", "dt2", "-o", DKM)
+    DKM.parent.mkdir(parents=True, exist_ok=True)
+    c.env.tools.patchkit_run("pack", "test/dyn-pluck", "--device", "dt2", "-o", DKM)  # always: a kept file from an older packer has other type fields
     img = c.image_for(RUNG_C, "rungC")
     plan = D.Plan(img.plan)
     folder = c.env.folder

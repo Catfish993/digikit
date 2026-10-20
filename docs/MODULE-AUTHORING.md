@@ -172,6 +172,9 @@ the DSP does not halt and the main loop keeps running.
 - **Machines** (`core/machines`): add machine types to the machine list on both devices, with their own names, a
   permanent type number that projects keep, and save/load that survives stock firmware (an unknown type loads as a
   stock machine).
+  A machine of a run-time module (`dynamic = true`) has no entry in `types.toml`: its global id is `<module id>:<machine id>`, the runtime gives it a
+  type number in 16 to 23 when it loads the module, and the card remembers the number (by a hash of that id) so the machine keeps it while it stays in the
+  card's map of 8 machines. Read the number a boot assigned from `dkupload modules` (or the boot report), never write it into code or a test.
 - **Parameters** (`core/params`): give a machine its own parameters (names, ranges, defaults) on its pages; they
   persist with the project and appear as modulation destinations (parameter locks on added parameters are not
   tested yet). On the Digitone II a machine gets its own parameter pages.

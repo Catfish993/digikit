@@ -127,7 +127,7 @@ last; a free row has type `0xffffffff`, which no machine equals, so the DSP's re
 it writes the machine and parameter rows, runs `init` and binds the slots. When the DSP part fails at boot the module is taken down the other way: machine row, voice row (type
 to `0xffffffff` first), then the range (the run-time unload that did this is archived). Refusal codes -30 to -39 (`dkrt-sdk`): `E_NO_DSP` -30 (no `core/dsp-link` and `core/dyndsp` in
 the image), `E_DSP_FORMAT` -31, `E_DSP_IMPORT` -32, `E_DSP_NOSPACE` -33, `E_DSP_ROWS` -34 (no free voice row), `E_DSP_XFER` -35 (transfer
-failed or timed out), `E_DSP_DEVICE` -36, `E_DSP_TYPE` -37 (a voice type outside 16..23 or in use).
+failed or timed out), `E_DSP_DEVICE` -36, `E_DSP_TYPE` -37 (a voice key that has no assigned type, a pinned voice type outside 16..23, or a type in use).
 
 The DSP's per-type **selector** word (which render path a track uses) is not set by this section: the selector of a run-time type is
 type 0's (finding 30). A machine that clones SAMPLE, like `pluck`, is right already.
