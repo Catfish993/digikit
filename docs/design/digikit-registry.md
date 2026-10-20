@@ -22,10 +22,10 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
       kind 2 MACHINE (0x6c): u32 type, clone_of, position, own_dsp, level; u32 knobs[8]; name[24]; short[24]
       kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II only)
 
-- MACHINE `type` is the machine **key** (since sticky ids, 2026-10-20, docs/design/module-sdk.md 11.5 D7): `hash24 << 8 | type`. The hash is the low 24 bits of FNV-1a 32 over the
-  UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is 0, which means "assign a type at load". The runtime
+- MACHINE `type` is the machine **key** (since sticky ids, 2026-10-20, docs/design/module-sdk.md 11.5 D7): `hash24 << 8 | hint`. The hash is the low 24 bits of FNV-1a 32 over the
+  UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is the machine's `type_hint` (manifest, per device, 16 to 23; the pack refuses another value), 0 when it has none: "assign a type at load", preferring the hint (finding 52). The runtime
   gives the machine a number in `dynamic_first ..= last` (Digitakt II and Digitone II 16 to 23) and remembers it on the card (below), so a project that stores the number
-  keeps its machine while the map holds the hash. A low byte of 16 to 23 with hash 0 pins that number (hand-made files and tests; it is in no map and the loader
+  keeps its machine while the map holds the hash. A key with hash 0 and a low byte of 16 to 23 pins that number (hand-made files and tests; it is in no map and the loader
   refuses it when another machine of the boot has it). A PAGE's `type` and a DSP voice's type are the key of their machine (the DSP section's version is unchanged: the
   field was a type number, it is now a key). No table in the repository has the numbers any more: `[<dev>.dynamic]` of `types.toml` is gone.
 - `knobs[i]` (Digitakt II: the descriptor fields f0 to f7 of the machine row): a stock parameter code, or `0x80000000 | j` for PARAM record `j` of the same

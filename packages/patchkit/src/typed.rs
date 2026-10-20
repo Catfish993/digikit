@@ -195,6 +195,8 @@ pub struct MachineDef {
     pub own_dsp: Option<bool>,
     pub knobs: Option<Vec<Knob>>,
     pub level: Option<i64>,
+    /// Run-time machine: the type number it prefers on this device (`[machine.<device>] type_hint`); 0 or absent: none.
+    pub type_hint: Option<i64>,
     #[serde(default)]
     pub devices: Vec<String>,
     /// `[machine.<device>]` overrides.
@@ -212,6 +214,7 @@ struct MachineOver {
     own_dsp: Option<bool>,
     knobs: Option<Vec<Knob>>,
     level: Option<i64>,
+    type_hint: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -263,6 +266,8 @@ pub struct RMachine {
     pub own_dsp: bool,
     pub knobs: Vec<Knob>,
     pub level: i64,
+    /// Preferred run-time type number (1 ..= 255; the pack checks the device's range); 0: none.
+    pub type_hint: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -409,8 +414,13 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             if own_dsp && !kn.own_dsp {
                 return Err(err!("{who}: {what}: {dev} has no own_dsp machines"));
             }
+            let type_hint = o.type_hint.or(d.type_hint).unwrap_or(0);
+            if !(0..=255).contains(&type_hint) {
+                return Err(err!("{who}: {what}: type_hint {type_hint} is not a type number"));
+            }
             machines.push(RMachine {
                 id: d.id.clone(),
+                type_hint: type_hint as u32,
                 name,
                 short,
                 clone_of,

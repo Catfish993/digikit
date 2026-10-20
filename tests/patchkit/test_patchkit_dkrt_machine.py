@@ -66,10 +66,10 @@ def test_dsp_section_is_deterministic_and_relocates_like_the_reference(tmp_path)
         tools.patchkit_run("pack", "test/dyn-pluck", "--device", "dt2", "-o", out)
     assert a.read_bytes() == b.read_bytes()
     info = tools.patchkit_run("dkm-info", a)
-    # the voice names its machine by key: the 24-bit hash of "test/dyn-pluck:pluck" (the runtime assigns the type at load)
+    # the voice names its machine by key: the 24-bit hash of "test/dyn-pluck:pluck" plus its type_hint (18 on the Digitakt)
     h = pk_dkrt_machine.machine_hash("test/dyn-pluck", "pluck")
     assert (
-        f"voice type h{h:06x} entry +0x3ce note_on +0x1fa state 16x16512 clear 16512"
+        f"voice type h{h:06x}+18 entry +0x3ce note_on +0x1fa state 16x16512 clear 16512"
         in info
         and "imports _dv_exp2" in info
     )

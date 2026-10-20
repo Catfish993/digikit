@@ -155,6 +155,16 @@ def test_info_short_and_long_replies_and_has_cap():
     assert D.has_cap(new, "MODULES") and not D.has_cap(new, "PEEK")
 
 
+def test_info_command_prints_the_runtime_version_and_the_caps_as_names():
+    caps = sum(1 << D.CAP[n] for n in ("LOG", "PEEK", "LOGCFG", "SELECT", "RESTART", "MODULES"))
+    info = {"protocol": 1, "runtime": 0x000200, "caps": caps}
+    lines = D.info_lines(info)
+    assert "runtime: 0.2.0 (512)" in lines
+    assert "caps: LOG PEEK LOGCFG SELECT RESTART MODULES" in lines
+    assert info["runtime"] == 0x000200 and info["caps"] == caps  # the dict is not changed
+    assert D.info_lines({"runtime": 4, "caps": None}) == ["runtime: 0.0.4 (4)", "caps: None"]
+
+
 def test_modules_pages_by_start_index_and_decodes_the_records():
     """MODULES (protocol command 3): the host asks again from the last index + 1 until it has `total` records."""
     import struct

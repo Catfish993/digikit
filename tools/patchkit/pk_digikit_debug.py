@@ -641,7 +641,7 @@ def part_modules(c: Any, img: Any) -> None:
             "the assigned machine types are the ones in the boot's table; pluck owns the one voice row, with its type; xslice owns none",
             pl["types"] == [t_pl]
             and xs["types"] == [t_xs]
-            and (t_pl, t_xs) == (16, 17)
+            and (t_pl, t_xs) == (18, 16)  # their type_hints
             and len(pl_rows) == 1
             and rows[pl_rows[0]] == t_pl
             and xs["rows"] == 0,
@@ -673,16 +673,20 @@ def part_modules(c: Any, img: Any) -> None:
 
 
 def key_of(module: str, machine: str) -> int:
-    """The machine key of a machine in a .dkm and in the sticky map: the 24-bit hash above a zero type byte."""
+    """The key of a machine in the sticky map (its entry is this | type): the 24-bit hash above a zero type byte. In a .dkm the low byte is the
+    machine's type_hint."""
     return M.machine_hash(module, machine) << 8
 
 
 def run_sticky(c: Any) -> None:
     """Sticky machine type numbers (docs/design/module-sdk.md 11.5 D7): the runtime gives a run-time machine a number in 16..23 at the boot load and the card
-    remembers it in the selection record's map (8 entries of hash24 << 8 | type). On ColdFire-only rigs, one boot after the other on the card the
-    previous boot left: (1) pluck and xslice: two numbers, written; (2) only xslice: it keeps its number, nothing is written; (3) xslice and params: the
-    new machine does not take the number of the absent pluck; (4) the same set again: the map survived; (5) a forged full map: the new machine drops the lowest
-    entry of a machine that is not in this boot, and the entry of a machine that is in it is safe."""
+    remembers it in the selection record's map (8 entries of hash24 << 8 | type). Without a map entry a machine takes its manifest's type_hint
+    (pluck 18, xslice 16, params 17 on the Digitakt) when that number is free and no other machine's entry references it, else the lowest free one
+    (docs/findings/52-sticky-machine-ids.md). On ColdFire-only rigs, one boot after the other on the card the previous boot left: (1) pluck and
+    xslice: their hints, written; (2) only xslice: it keeps its number, nothing is written; (3) xslice and params: the new machine takes its hint, not the
+    number of the absent pluck; (4) the same set again: the map survived; (5) a forged full map: the new machine drops the lowest entry of a machine that
+    is not in this boot, and the entry of a machine that is in it is safe; (6) the same with the entry in slot 0 protected; (7) a fresh card: pluck gets
+    its hint; (8) its hint is another machine's entry: the lowest free number; (9) its own entry beats its hint."""
     from tools.patchkit.pk_digikit_project import card_after, export
 
     PL, XS, PA = (
@@ -728,12 +732,12 @@ def run_sticky(c: Any) -> None:
     got, (m, tb), asg, _ev, after1 = boot(card1, "st1", [PL, XS])
     a, b = got[PL], got[XS]
     c.check(
-        "boot 1 (pluck, xslice): the first two numbers, in load order, and the map on the card holds both entries",
-        (a, b) == (16, 17)
+        "boot 1 (pluck, xslice): both take their type_hint (18, 16), the events say rule 2 (hint), and the map on the card holds both entries",
+        (a, b) == (18, 16)
         and m[:2] == [key_of(*PL) | a, key_of(*XS) | b]
         and m[2:] == [0] * 6
         and tb["dirty"] == 1
-        and [x[:3] for x in asg] == [(h(PL), a, 0), (h(XS), b, 0)],
+        and [x[:4] for x in asg] == [(h(PL), a, 0, 2), (h(XS), b, 0, 2)],
         f"types {got}, map {[hex(x) for x in m]}, events {asg}",
     )
     # 2: only xslice, on the card boot 1 left (the selection is the builder's, the map is kept: as SELECT does)
@@ -751,12 +755,12 @@ def run_sticky(c: Any) -> None:
     card3 = c.card([files[XS[0]], files[PA[0]]], base=after2)
     got, (m3, tb), asg, _ev, after3 = boot(card3, "st3", [XS, PA])
     c.check(
-        "boot 3 (xslice, params): params does not take pluck's remembered number while a free one exists; xslice keeps its own",
+        "boot 3 (xslice, params): params takes its hint (17), not pluck's remembered number (18); xslice keeps its own",
         got[XS] == b
-        and got[PA] == 18
-        and 16 not in got.values()
+        and got[PA] == 17
+        and a not in got.values()
         and tb["dirty"] == 1
-        and m3[:3] == [key_of(*PL) | a, key_of(*XS) | b, key_of(*PA) | 18],
+        and m3[:3] == [key_of(*PL) | a, key_of(*XS) | b, key_of(*PA) | 17],
         f"types {got}, map {[hex(x) for x in m3]}",
     )
     # 4: the same set again (the map written by boot 3 is on the card), then pluck back: it gets its own number again
@@ -764,7 +768,7 @@ def run_sticky(c: Any) -> None:
     got, (m4, tb), asg, _ev, _after4 = boot(card4, "st4", [PA, PL, XS])
     c.check(
         "boot 4 (params, pluck, xslice): every machine has the number the card remembered, whatever the load order; nothing is rewritten",
-        (got[PA], got[PL], got[XS]) == (18, a, b)
+        (got[PA], got[PL], got[XS]) == (17, a, b)
         and tb["dirty"] == 0
         and m4 == m3
         and all(x[2] == 1 for x in asg),
@@ -803,6 +807,40 @@ def run_sticky(c: Any) -> None:
         and m6[0] == key_of(*XS) | 16
         and m6[1] == key_of(*PL) | 17,
         f"types {got}, map {[hex(x) for x in m6]}, evicted {[e[4][:2] for e in ev]}",
+    )
+    # 7: a fresh card, pluck alone: its hint (18), recorded
+    card7 = c.card([files[PL[0]]])
+    got, (m7, tb), asg, _ev, _after7 = boot(card7, "st7", [PL])
+    c.check(
+        "boot 7 (fresh card, pluck): the hint 18 is free and unreferenced: pluck gets 18 by rule 2 and the entry is written",
+        got[PL] == 18
+        and [x[:4] for x in asg] == [(h(PL), 18, 0, 2)]
+        and m7 == [key_of(*PL) | 18, *[0] * 7]
+        and tb["dirty"] == 1,
+        f"types {got}, map {[hex(x) for x in m7]}, events {asg}",
+    )
+    # 8: pluck's hint (18) is the number of xslice's entry (xslice is not in this boot): pluck takes the lowest number no entry references
+    rec = B.make_record([files[PL[0]]], 1, 0, 0, 0, [key_of(*XS) | 18] + [0] * 7)
+    card8 = c.card(None, recs=(rec, rec))
+    got, (m8, tb), asg, _ev, _after8 = boot(card8, "st8", [PL])
+    c.check(
+        "boot 8 (xslice's entry holds 18): pluck does not take its hint but the lowest free number (16), by rule 0; xslice's entry stays",
+        got[PL] == 16
+        and [x[:4] for x in asg] == [(h(PL), 16, 0, 0)]
+        and m8[:2] == [key_of(*XS) | 18, key_of(*PL) | 16],
+        f"types {got}, map {[hex(x) for x in m8]}, events {asg}",
+    )
+    # 9: pluck's own entry (20) beats its hint (18)
+    rec = B.make_record([files[PL[0]]], 1, 0, 0, 0, [key_of(*PL) | 20] + [0] * 7)
+    card9 = c.card(None, recs=(rec, rec))
+    got, (m9, tb), asg, _ev, _after9 = boot(card9, "st9", [PL])
+    c.check(
+        "boot 9 (pluck's own entry holds 20): the map beats the hint: pluck gets 20 (rule 1) and nothing is rewritten",
+        got[PL] == 20
+        and [x[:4] for x in asg] == [(h(PL), 20, 1, 1)]
+        and m9[0] == key_of(*PL) | 20
+        and tb["dirty"] == 0,
+        f"types {got}, map {[hex(x) for x in m9]}, events {asg}",
     )
     c.common_checks_upload(project_writes_ok=True)
 

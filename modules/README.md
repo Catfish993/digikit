@@ -343,6 +343,7 @@ clone_of = 0                  # the stock type it copies
 knobs = [0xca, "pluck_decay", "pluck_pick", 0, "pluck_bright", "pluck_color", 0, 0xd1]
 #        ^ knob 0 .. 7: a stock parameter code, the id of a [[param]] of this module, or 0 for none
 level = 10                    # optional; default: the device model's level_default
+type_hint = 18                # optional, run-time modules only (per device: [machine.dt2] type_hint = 18): the number the machine takes when the card has none for it
 devices = ["dt2"]             # optional; default: every device with a model
 [machine.dn2]                 # per-device override of any key above, plus position and own_dsp
 position = 4                  # place in the machine list (default: last)
