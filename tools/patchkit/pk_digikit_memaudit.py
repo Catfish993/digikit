@@ -12,7 +12,7 @@ Allowed writers (`allow_pc`): the code of the patch objects in the image (the pl
 object up to the start of the arena, which is the end of the object). The runtime keeps the arena's bookkeeping; a module's code may
 write its own block and nothing else.
 Not covered: stores by DMA and by the host, and a store made by the runtime for a module (an API call: the writer is the runtime).
-The guard is armed after the boot, so the modules' load and `dkm_init` are not audited.
+The UI drive runs with the guard armed after the boot; a second cold boot with the write watch on the same ranges audits the load and `dkm_init`.
 """
 
 from __future__ import annotations
@@ -171,6 +171,50 @@ def drive(c: Any, rig: Any, machines: list[dict], positions: int = 0) -> None:
     s.run_ms(1000)
 
 
+def load_pass(
+    c: Any,
+    img: Any,
+    card: Path,
+    prot: list[tuple[str, int, int]],
+    code: list[tuple[str, int, int]],
+    mods: list[dict],
+) -> list[dict]:
+    """The second pass: a cold boot of the same card with the write watch on the protected ranges from the first cache enable on, so the
+    load of the modules and their `dkm_init` are audited too. The ranges come from the first pass (the arena is deterministic). Returns
+    the CPU stores (DMA events are not judged), each with its writer."""
+    import hashlib
+    import json
+
+    key = hashlib.sha256(card.name.encode() + img.syx.read_bytes()).hexdigest()[:10]
+    tag = f"scn-ma{key}"
+    out = c.work / f"{tag}.writewatch.jsonl"
+    env = {
+        "DIGI_WRITE_WATCH": ",".join(f"0x{a:x}-0x{b:x}" for _, a, b in prot),
+        "DIGI_WRITE_WATCH_ALLOW_PC": ",".join(f"0x{a:x}-0x{b:x}" for _, a, b in code),
+        "DIGI_WRITE_WATCH_AFTER": "cacr",
+        "DIGI_WRITE_WATCH_OUT": str(out),
+    }
+    with c.env.boot(img, card, tag, watch=False, extra_env=env, cf_only=True) as rig:
+        rig.boot_info()
+        rig.s.run_ms(300)
+    hits = []
+    for f in sorted(c.work.glob(f"{tag}.writewatch*.jsonl")):
+        for line in f.read_text().splitlines():
+            e = json.loads(line)
+            if e.get("t") != "w":
+                continue
+            pc, addr = int(e["pc"], 16), int(e["addr"], 16)
+            hits.append(
+                {
+                    "pc": pc,
+                    "addr": addr,
+                    "size": e["size"],
+                    "writer": who(pc, mods, code),
+                }
+            )
+    return hits
+
+
 def run_memaudit(c: Any) -> None:
     from tools.patchkit import pk_digikit_debug as DBG
 
@@ -268,4 +312,14 @@ def run_memaudit(c: Any) -> None:
                 "; ".join(lines),
             )
         c.done(rig)
+    late = load_pass(c, img, card, prot, code, mods)
+    c.report["memaudit"]["load_hits"] = late
+    c.check(
+        "no store outside the module blocks and the patch code during the load of the modules and their init (second boot, watch from the first cache enable)",
+        not late,
+        "; ".join(
+            f"pc {h['pc']:#x} ({h['writer']}) addr {h['addr']:#x} size {h['size']}"
+            for h in late
+        ),
+    )
     c.common_checks_upload(project_writes_ok=True)

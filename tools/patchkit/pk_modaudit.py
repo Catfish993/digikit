@@ -18,6 +18,7 @@ import argparse
 import tempfile
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from tools.patchkit import modroots, patchkit, pk_modcheck
 
@@ -67,7 +68,7 @@ def audit(mid: str, device: str) -> int:
         if why := packs(m, device):
             print(f"{device}: {m}: not a run-time module ({why}); skipped")
             return 0
-    data = {
+    data: dict[str, Any] = {
         "scenario": {"name": f"module-audit-{mid.split('/')[-1]}"},
         "debug": {
             "part": "memaudit",

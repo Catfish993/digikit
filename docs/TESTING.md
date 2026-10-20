@@ -146,7 +146,7 @@ while the UI is driven. The rig is ColdFire-only (about 0.3 s to boot from the s
 `guard.set` (docs/CONTROL.md):
 
 - Protected: the `cpu = "cf"` `[[region]]` blocks of `devices/ports/<image>.toml` (`cf.flash_cave`, `cf.expansion`, minus `excludes`; the
-  same source as `tests/regression`), minus each module's block `[cf_base, cf_base + cf_size)` from MODULES. The rest of the arena
+  same source as `tests/regression`), minus each module's block `[cf_base, cf_base + cf_size)` from MODULES. Two passes use these ranges: the first boot reads MODULES and drives the UI with `guard.set` armed; a second cold boot of the same card runs with the write watch (`DIGI_WRITE_WATCH` and `_ALLOW_PC`, from the first cache enable) on the same ranges, so the load of the modules and their `dkm_init` are audited too. The rest of the arena
   (`DKRT_STATE` words 28 and 32) is labelled `arena`.
 - Allowed writers (`allow_pc`): the code of every object the patch placed (`plan.json` writes of kind `place`, and the hook tails). For the
   runtime's object that is the part below the arena; the arena is the end of the object. A module's code may write its own block only.
@@ -154,7 +154,7 @@ while the UI is driven. The rig is ColdFire-only (about 0.3 s to boot from the s
   turns, a p-lock and a sound lock, a project save, an edit, a second save and a load (`must_run` modules are checked to have changed their block while the guard was armed).
 - Result: `guard.report` total 0. A hit prints the PC, address, size and label, and which code the PC belongs to (`module NAME`, `patch OWNER` or `stock`).
 
-Not covered: DMA and host writes (the guard does not see them), the load and `dkm_init` of the modules (the guard is armed after the boot), and
+Not covered: DMA and host writes (the guard does not see them) and
 stores that the runtime makes for a module through the API (the writer is the runtime). `test/rust-demo` has no run-time entry points and cannot be loaded; `test/c-demo` loads and is not called.
 
 Scenarios (`tests/digikit/scenarios/`, quick): `memaudit-dt2` (c-demo, dyn-demo, dyn-pluck; about 16 s), `memaudit-dn2` (c-demo, dyn-demo, dyn-dn2; about 8 s),

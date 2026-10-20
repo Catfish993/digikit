@@ -234,7 +234,7 @@ A module can also be packed as a `.dkm` and loaded by the digikit runtime at boo
   requires (docs/TESTING.md, "ColdFire memory audit"). It loads them on a ColdFire-only emulator, drives the UI for a bounded time (DIGIKIT
   menu, the machine list with parameter turns, a project save and load, 10 to 35 s per device) and fails when ColdFire code stores into
   the free memory regions outside the module blocks. A hit gives the PC, the address, the size and the code it belongs to. The audit
-  does not see DMA or the stores a module asks the runtime to make, and it arms the guard after the boot. A patched-in module is skipped.
+  does not see DMA or the stores a module asks the runtime to make. It audits the load and `dkm_init` in a second boot. A patched-in module is skipped.
 
 ### Versions and compatibility
 
