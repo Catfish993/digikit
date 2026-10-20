@@ -1467,7 +1467,8 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
 
 
 def load_last_result(verify_dir: Path, exclude: Path | None) -> dict | None:
-    """The newest (by directory name) result.json under VERIFY_DIR, skipping EXCLUDE."""
+    """The newest (by directory name) result.json under VERIFY_DIR, skipping EXCLUDE and runs
+    whose "root" is another worktree (a result.json without "root" counts)."""
     if not verify_dir.is_dir():
         return None
     for run in sorted(verify_dir.iterdir(), key=lambda p: p.name, reverse=True):
@@ -1475,7 +1476,10 @@ def load_last_result(verify_dir: Path, exclude: Path | None) -> dict | None:
             continue
         path = run / "result.json"
         if run.is_dir() and not run.is_symlink() and path.is_file():
-            return json.loads(path.read_text())
+            result = json.loads(path.read_text())
+            if result.get("root", str(ROOT)) != str(ROOT):
+                continue
+            return result
     return None
 
 
@@ -1659,6 +1663,7 @@ def main(argv: list[str] | None = None) -> int:
         "base": args.base,
         "head": git_lines("rev-parse", "HEAD")[0],
         "py_tests": gate.py_tests,
+        "root": str(ROOT),
     }
     (out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     if gate.failed:

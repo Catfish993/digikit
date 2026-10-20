@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -177,6 +178,25 @@ def test_load_last_result_picks_newest(tmp_path: Path) -> None:
     (tmp_path / "20260102-000000" / "result.json").write_text('{"n": 2}')
     assert verify.load_last_result(tmp_path, None) == {"n": 2}
     assert verify.load_last_result(tmp_path, tmp_path / "20260102-000000") == {"n": 1}
+
+
+def test_load_last_result_skips_other_root(tmp_path: Path) -> None:
+    older = tmp_path / "20260101-000000"
+    newer = tmp_path / "20260102-000000"
+    older.mkdir()
+    newer.mkdir()
+    (older / "result.json").write_text(
+        json.dumps({"root": str(verify.ROOT), "failed": ["pins"]})
+    )
+    (newer / "result.json").write_text(
+        json.dumps({"root": "/elsewhere", "failed": ["web"]})
+    )
+    assert verify.load_last_result(tmp_path, None) == {
+        "root": str(verify.ROOT),
+        "failed": ["pins"],
+    }
+    (newer / "result.json").write_text(json.dumps({"failed": ["web"]}))
+    assert verify.load_last_result(tmp_path, None) == {"failed": ["web"]}
 
 
 def test_rerun_plan() -> None:
