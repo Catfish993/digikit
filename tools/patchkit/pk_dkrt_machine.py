@@ -10,6 +10,7 @@ which uses `Rig`, `pcm_check`, `parse_dsp_section` and `relocate` from here.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import struct
 import sys
@@ -38,11 +39,6 @@ TRACK_OBJ_WORD = 0x4265338C  # the type byte is the third byte of this word (fin
 MODULES_STATIC = "core/runtime,core/dynreg,core/dyndsp"
 PLUCK_STATIC_TYPE = 9
 MODULE = "test/dyn-pluck"
-MODULE_DN2 = "test/dyn-sine-dn2"
-MODULES_STATIC_DN2 = "core/runtime,core/dyndsp,core/machines"  # core/machines in both: the same ColdFire hooks
-SINE_STATIC_TYPE = 7
-SINE_DYN_TYPE = 18  # the DN2 sine proof pins a run-time number (`[[dsp_voice]] type = 18`); a machine gets its number at load (`BootRig.dyn_type`)
-DN2_TYPE_POKE = "0x94={:#x}"  # byte offset of the DSP frame's halfword 74 (the machine type of slot 0)
 # DspState (modules/core/runtime/src/rs/src/dsp.rs), byte offsets of the fields the proof reads
 D_MAGIC, D_PHASE, D_STEP, D_TRANSFERS, D_ROW_WRITES, D_FAILURES = 0, 4, 12, 36, 40, 44
 D_MOD_OFF, D_MOD_LEN, D_ROW_TYPE, D_ROW_PC, D_ROW_OWNER = 52, 84, 148, 180, 212
@@ -56,6 +52,9 @@ PRESS_OFFSET = (
     44_000  # ColdFire instructions after the block boundary (a block is 88 000)
 )
 TRIG1 = "TRIG 1"
+PIN_SAMPLES = (
+    24000  # interleaved samples a PCM pin covers from the onset (0.25 s of stereo)
+)
 NOTE_FRAMES = 1500  # 1 s of audio, captured from the trig on
 
 
@@ -417,6 +416,38 @@ def pcm_check(
             and aligned_differ == 0
         ),
         f"{len(run_pcm)} samples, exact {exact}, onset shift {shift}, {aligned_differ} differ after alignment",
+    )
+
+
+def pcm_pin(
+    run: Rig,
+    run_pcm: np.ndarray,
+    pin: str,
+    report: dict[str, Any],
+    what: str,
+    n: int = PIN_SAMPLES,
+) -> None:
+    """The run-time PCM from the note's onset on, N interleaved samples as little-endian float32, has the SHA-256 PIN.
+
+    The onset is the first sample above 1e-6 (as `aligned_compare`); it must lie on a whole stereo frame, and the N samples must
+    end before the key is released (the release reaches the engine a block apart in two images). PIN "record" fails and reports
+    the hash, to record a pin: the value is approved by Em, not by a run."""
+    nz = np.flatnonzero(np.abs(run_pcm) > 1e-6)
+    onset = int(nz[0]) if len(nz) else -1
+    window = run_pcm[onset : onset + n] if onset >= 0 else run_pcm[:0]
+    got = hashlib.sha256(
+        np.ascontiguousarray(window, dtype="<f4").tobytes()
+    ).hexdigest()
+    report["pcm_pin"] = {
+        "sha256": got,
+        "onset": onset,
+        "samples": int(len(window)),
+        "peak": float(abs(window).max()) if len(window) else 0.0,
+    }
+    run.check(
+        f"PCM of the run-time {what} from the onset ({onset}) over {n} samples has the pinned SHA-256",
+        onset >= 0 and onset % 2 == 0 and len(window) == n and got == pin,
+        f"sha256 {got}, onset {onset}, {len(window)} samples",
     )
 
 

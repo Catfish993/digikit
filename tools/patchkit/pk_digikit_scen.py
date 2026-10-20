@@ -24,6 +24,9 @@ Kinds:
              with the static twin of the set patched in (compared by decoded content: names, ranges, defaults, slots, knobs
              by parameter name; the type numbers and the pointers differ by construction), and the same PCM for a note when
              the set has a sound (`play`). A set without a twin (`twin = ""`) must leave every table as a boot with no module.
+             `pcm_sha256` (with `play`) replaces the PCM compare when no twin has the sound: the SHA-256 of the run-time note from its onset over
+             `pcm_samples` (default 24000) interleaved float32 samples; "record" fails and prints the hash. `ignore_run_machines` drops a run-time
+             machine (with its parameters and pages) that the twin has no counterpart of.
   roundtrip  a project with the run-time machine on tracks, parameter values, p-locks and a sound lock is saved under set A,
              loaded and saved under set B (machine absent) and under A again: the project slot's sound records, the sequencer
              data and the sound locks are byte-identical to the first save; the track keeps its type while its machine is absent.
@@ -519,12 +522,11 @@ def run_equiv(c: Ctx) -> None:
     empty = c.card(None)
     play = t.get("play", "")
     trig = t.get("trig_frame", M.TRIG_FRAME if c.dt2 else M.TRIG_FRAME_DN2)
-    env_ref, env_run = {}, {}
-    if (
-        play == "sine"
-    ):  # finding 32: the frame copy's type is forced to the static or the run-time number
-        env_ref = {"DSP_FRAME_POKE": M.DN2_TYPE_POKE.format(M.SINE_STATIC_TYPE)}
-        env_run = {"DSP_FRAME_POKE": M.DN2_TYPE_POKE.format(M.SINE_DYN_TYPE)}
+    env_ref: dict[str, str] = {}
+    env_run: dict[str, str] = {}
+    pin = t.get(
+        "pcm_sha256", ""
+    )  # the run-time note is compared with this hash, not with a twin's note
     plain = bool(
         t.get("ref_plain")
     )  # the patched-in set does not fit next to the runtime's DSP area (DN2 pluck)
@@ -535,10 +537,11 @@ def run_equiv(c: Ctx) -> None:
     def select(rig: Any, hint_key: str) -> None:
         if c.dt2:
             return
-        if (
-            play == "pluck"
+        if play in (
+            "pluck",
+            "sine",
         ):  # DN2: the machine list position (finding 33); the sound proves the type
-            rig.select(t.get(hint_key, t["hint"]))
+            rig.select(t[hint_key] if hint_key in t else t["hint"])
 
     def base_boot() -> (
         None
@@ -564,7 +567,7 @@ def run_equiv(c: Ctx) -> None:
         )
         with ref_rig as rig:
             out["ref"] = decode_tables(rig)
-            if play:
+            if play and not pin:
                 if c.dt2:
                     rig.select_type(t["static_type"], t.get("hint", 7))
                 select(rig, "hint")
@@ -624,6 +627,14 @@ def run_equiv(c: Ctx) -> None:
         "ignore_machines", []
     ):  # a static twin's machine with no run-time counterpart
         ref["machines"].pop(name, None)
+    for name in t.get(
+        "ignore_run_machines", []
+    ):  # a run-time module's machine with no twin: its machine row, its parameters and its pages
+        gone = got["machines"].pop(name, None) or {}
+        mine = [p for p in got["pages"] if p["machine"] == name]
+        for k in list(gone.get("knobs", [])) + [k for p in mine for k in p["knobs"]]:
+            got["params"].pop(k, None)
+        got["pages"] = [p for p in got["pages"] if p["machine"] != name]
     d = diff_tables(got, ref)
     c.check(
         "machine, parameter and page rows equal the "
@@ -636,7 +647,18 @@ def run_equiv(c: Ctx) -> None:
             "the run-time set added rows",
             bool(got["machines"]) or bool(got["params"]) or bool(got["pages"]),
         )
-    if play:
+    if play and pin:
+        rr = out["run_rig_checks"]
+        M.pcm_pin(
+            rr,
+            out["run_pcm"],
+            pin,
+            c.report,
+            "voice",
+            t.get("pcm_samples", M.PIN_SAMPLES),
+        )
+        c.checks += rr.checks
+    elif play:
         rr = out["run_rig_checks"]
         M.pcm_check(
             rr,
