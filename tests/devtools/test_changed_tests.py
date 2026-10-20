@@ -35,6 +35,40 @@ def test_framework_module_selects_conformance_not_a_directory() -> None:
     assert any(line.startswith("tests/patchkit") for line in sel.gate_adds)
 
 
+def test_graph_links_support_imports() -> None:
+    # tests import helpers as `support.x`; the graph links them to tests.support.x
+    g = changed_tests.graph()
+    assert "tests.support.pluck_rig" in g.find_modules_directly_imported_by(
+        "tests.patchkit.test_pluck"
+    )
+
+
+def test_graph_links_a_module_run_by_name() -> None:
+    # test_machine_conformance starts `-m support.conform_worker` in a subprocess
+    g = changed_tests.graph()
+    assert "tests.support.conform_worker" in g.find_modules_directly_imported_by(
+        "tests.modules.test_machine_conformance"
+    )
+
+
+def test_graph_drops_imports_inside_functions_of_tools() -> None:
+    # digi_env imports the patchkit front end only inside one function
+    g = changed_tests.graph()
+    assert "tools.patchkit.patchkit" not in g.find_modules_directly_imported_by(
+        "tools.emulator.digi_env"
+    )
+
+
+def test_pk_sharc_selects_the_routine_tests_and_no_sharc_semantics() -> None:
+    tests, _ = changed_tests.gate_tests(["tools/patchkit/pk_sharc.py"])
+    assert {
+        verify_route.CONFORMANCE,
+        "tests/patchkit/test_pluck.py",
+        "tests/patchkit/test_sine.py",
+    } <= set(tests)
+    assert not any(t.startswith("tests/sharc/") for t in tests)
+
+
 def test_changed_test_selects_itself() -> None:
     sel = changed_tests.select(["tests/devtools/test_verify.py"])
     assert sel.tests["tests/devtools/test_verify.py"] == "changed"

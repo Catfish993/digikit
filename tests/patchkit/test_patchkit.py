@@ -150,24 +150,3 @@ def test_rust_linker_equals_python_linker(patchkit, tmp_path, fw, image):
     got = stream.read(place["addr"], len(linked.code_boot))
     assert got == linked.code_boot
     assert stream.read(gain, 4) == (0x3F800000).to_bytes(4, "little")
-
-
-def test_pk_build_objects_are_current():
-    r = subprocess.run(
-        [sys.executable, "-m", "tools.patchkit.pk_build", "build-all", "--check"],
-        cwd=ROOT,
-        env=python_env(),
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 0, r.stdout + r.stderr
-
-
-def test_ports_are_current():
-    for name, fw in (
-        ("dt2-1.17", DT2_117),
-        ("dn2-1.12", DN2_112),
-    ):
-        got_name, text = port_resolve.resolve(fw)
-        assert got_name == name
-        assert (ROOT / "devices" / "ports" / f"{name}.toml").read_text() == text

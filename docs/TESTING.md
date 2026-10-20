@@ -116,11 +116,12 @@ Routing is in `tools/devtools/verify.py` (path prefixes, `PY_SUITES`) and `tools
 | a file of a module under `modules/` | `python-tests`, `rust-tests` (affected crates), `web` only for what the gallery bundle reads (not `src/`, `sdk/`, `tests/`, `*.md`). Never a PCM step. | Framework modules (`FRAMEWORK`: runtime, dsp-voice, dsp-link, machines, params, dynreg, dyndsp, digikit-menu, health, expansion): all of `tests/patchkit` and `tests/digikit`. Other modules: the test files that name the module or a module that requires it or builds from its sources, and the digikit test files of the scenarios that name it (TOML or runner code) |
 | a scenario file of `tests/digikit/scenarios` | `python-tests` | the test files that run its kind, and `test_scenarios.py` |
 | `tests/digikit/test_*.py`, `tests/patchkit/test_*.py` | `python-tests` | the file itself |
+| another `.py` file of `tools/` or `tests/` | by its prefix (RULES) | the tests that reach it in the import graph (`changed_tests.gate_tests`: imports through any chain, a helper imported by its pytest path, a module started by name with `-m` or a script path; imports inside a function of a tools module do not count), and the PY_SUITES that list files. A suite with a test directory (`tests/patchkit`, `tests/digikit`, `tests/modules`, `tests/control`) triggers only on other files (Rust, ports, module folders) and on a module the root conftest reaches |
 | `packages/dkupload/` | `rust-tests`, `web` | |
 | `tools/devtools/verify.py`, `verify_route.py` | every step | every suite |
 | generated-core inputs, emulator crates, `sharc_dev` | as before (broad) | as before |
 
-`PY_GATE` runs in every case (it includes `pk_build build-all --check`). Not run by any pytest file: the scenario kinds `rungc` and `pages`, and the module smoke
+`PY_GATE` runs in every case: lint, types, pathcheck and `tests/patchkit/test_pk_current.py` (`pk_build build-all --check` and the port files). Not run by any pytest file: the scenario kinds `rungc` and `pages`, and the module smoke
 cells (`uv run python -m tools.patchkit.pk_harness run`; the `smoke` step of `verify` runs them). A new `tools/device` module must be listed in `DEVICE_KINDS`
 (a test fails until it is).
 

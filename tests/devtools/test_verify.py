@@ -39,13 +39,20 @@ def test_claude_settings_run_the_agent_guard_test() -> None:
     assert "tests/devtools/test_agent_guard.py" in plan
 
 
-def test_pk_harness_triggers_the_patchkit_suite() -> None:
+def test_a_python_module_selects_its_importers_not_the_directory() -> None:
     tests = verify.python_tests(["tools/patchkit/pk_harness.py"], False)
-    assert "tests/patchkit" in tests
+    assert "tests/patchkit/smoke/test_pk_harness_units.py" in tests
+    assert "tests/patchkit" not in tests
+
+
+def test_a_rust_change_keeps_the_directory_suite() -> None:
+    assert "tests/patchkit" in verify.python_tests(
+        ["packages/patchkit/src/lib.rs"], False
+    )
 
 
 def test_digi_client_triggers_its_test() -> None:
-    assert "tests/control" in verify.python_tests(
+    assert "tests/control/test_digi_client.py" in verify.python_tests(
         ["tools/control/digi_client.py"], False
     )
     assert "python-tests" in verify.steps_for(["tools/control/digi_client.py"])
@@ -422,8 +429,10 @@ def test_digikit_test_files_and_scenarios() -> None:
         "python-tests",
         "smoke",
     )
-    # a helper of the suite is not a test file: the whole suite
-    assert "tests/digikit" in selected("tests/digikit/scen_cases.py")
+    # a helper of the suite: the test files that import it
+    helper = selected("tests/digikit/scen_cases.py")
+    assert "tests/digikit/test_menu_dt2.py" in helper
+    assert "tests/digikit" not in helper
     # every scenario kind that a test file runs maps to a test file of tests/digikit
     for scen, (kind, _) in verify_route.scenario_refs().items():
         got = selected(scen)
@@ -507,7 +516,7 @@ def test_other_modules_do_not_select_the_conformance_suite(path: str) -> None:
     ],
 )
 def test_the_conformance_machinery_selects_the_conformance_suite(path: str) -> None:
-    assert "tests/modules" in selected(path)
+    assert verify_route.CONFORMANCE in selected(path)
 
 
 @pytest.mark.parametrize("module", sorted(verify_route.FRAMEWORK))
