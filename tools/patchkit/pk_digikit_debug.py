@@ -251,7 +251,9 @@ def run_card(c: Any) -> None:
             st = U.put_status(up, "modules/s.dkm", U.blob(3_000, 4))
             c.check(
                 "selection record only, blank header sectors: the card is ours, the store is empty and an upload works",
-                ci["state_name"] == "ours" and "modules/s.dkm" in U.device_ls(up) and st == 0,
+                ci["state_name"] == "ours"
+                and "modules/s.dkm" in U.device_ls(up)
+                and st == 0,
                 f"{ci['state_name']} {st}",
             )
             c.done(rig)
@@ -564,7 +566,10 @@ def part_modules(c: Any, img: Any) -> None:
     """MODULES (protocol command 3, docs/design/digikit-upload.md): after a boot with a module with DSP code (pluck) and a ColdFire-only one (xslice),
     the reply lists both with ranges inside the arena and the DSP area, the contract bytes and version of the file, the assigned machine types and
     the voice rows; paging by start index; it is not logged as an UPLOAD event."""
-    files = {m: c.pack(m, m.split("/")[-1] + ".dkm") for m in ("test/dyn-pluck", "test/dyn-xslice")}
+    files = {
+        m: c.pack(m, m.split("/")[-1] + ".dkm")
+        for m in ("test/dyn-pluck", "test/dyn-xslice")
+    }
     card = c.card(list(files.values()))
     with c.rig(img, card, "modules") as rig:
         up = uploader(rig)
@@ -581,7 +586,10 @@ def part_modules(c: Any, img: Any) -> None:
         xs = next(x for x in m["modules"] if x["name"] == "test/dyn-xslice")
         st = M.sym(rig.plan, "core/runtime", "DKRT_STATE")
         arena_lo, arena_hi = rig.w(st + 28), rig.w(st + 32)
-        dkm = {k: (Path(v).read_bytes()) for k, v in ((k, c.env.folder / "digikit" / v) for k, v in files.items())}
+        dkm = {
+            k: (Path(v).read_bytes())
+            for k, v in ((k, c.env.folder / "digikit" / v) for k, v in files.items())
+        }
 
         def hdr(name: str) -> tuple[int, bytes]:
             raw = dkm[name]
@@ -594,23 +602,35 @@ def part_modules(c: Any, img: Any) -> None:
             and [x["index"] for x in m["modules"]] == [0, 1]
             and all(
                 x["version"] == hdr(x["name"])[0]
-                and bytes(b for pair in x["contracts"] for b in pair) == hdr(x["name"])[1]
+                and bytes(b for pair in x["contracts"] for b in pair)
+                == hdr(x["name"])[1]
                 for x in m["modules"]
             ),
             str(m["modules"]),
         )
         c.check(
             "the ColdFire ranges lie inside the arena, do not overlap, and with the free figure stay inside its size",
-            all(arena_lo <= x["cf_base"] and x["cf_base"] + x["cf_size"] <= arena_hi and x["cf_size"] > 0 for x in m["modules"])
-            and (pl["cf_base"] + pl["cf_size"] <= xs["cf_base"] or xs["cf_base"] + xs["cf_size"] <= pl["cf_base"])
+            all(
+                arena_lo <= x["cf_base"]
+                and x["cf_base"] + x["cf_size"] <= arena_hi
+                and x["cf_size"] > 0
+                for x in m["modules"]
+            )
+            and (
+                pl["cf_base"] + pl["cf_size"] <= xs["cf_base"]
+                or xs["cf_base"] + xs["cf_size"] <= pl["cf_base"]
+            )
             and m["arena_free"] + pl["cf_size"] + xs["cf_size"] <= arena_hi - arena_lo
             and 0 < m["arena_largest"] <= m["arena_free"],
             f"arena {arena_lo:#x}..{arena_hi:#x}, {m['arena_free']} free, {[(hex(x['cf_base']), x['cf_size']) for x in m['modules']]}",
         )
         c.check(
             "the DSP part: pluck has a range (and the free figure leaves room for it), xslice has none",
-            pl["dsp_len"] > 0 and xs["dsp_len"] == 0 and m["dsp_free"] > 0
-            and 0 < m["dsp_largest"] <= m["dsp_free"] and pl["dsp_off"] + pl["dsp_len"] > pl["dsp_off"],
+            pl["dsp_len"] > 0
+            and xs["dsp_len"] == 0
+            and m["dsp_free"] > 0
+            and 0 < m["dsp_largest"] <= m["dsp_free"]
+            and pl["dsp_off"] + pl["dsp_len"] > pl["dsp_off"],
             f"dsp free {m['dsp_free']}, pluck {pl['dsp_off']:#x}+{pl['dsp_len']:#x}",
         )
         t_pl = rig.dyn_type("test/dyn-pluck", "pluck")
@@ -619,13 +639,20 @@ def part_modules(c: Any, img: Any) -> None:
         pl_rows = [k for k in range(8) if pl["rows"] >> k & 1]
         c.check(
             "the assigned machine types are the ones in the boot's table; pluck owns the one voice row, with its type; xslice owns none",
-            pl["types"] == [t_pl] and xs["types"] == [t_xs] and (t_pl, t_xs) == (16, 17)
-            and len(pl_rows) == 1 and rows[pl_rows[0]] == t_pl and xs["rows"] == 0,
+            pl["types"] == [t_pl]
+            and xs["types"] == [t_xs]
+            and (t_pl, t_xs) == (16, 17)
+            and len(pl_rows) == 1
+            and rows[pl_rows[0]] == t_pl
+            and xs["rows"] == 0,
             f"{pl['types']} {xs['types']} rows {pl['rows']:#x} {xs['rows']:#x}",
         )
         c.check(
             "no guard fault so far, and the guard has switched nothing off",
-            pl["faults"] == 0 and xs["faults"] == 0 and not pl["guard_off"] and not xs["guard_off"],
+            pl["faults"] == 0
+            and xs["faults"] == 0
+            and not pl["guard_off"]
+            and not xs["guard_off"],
             "",
         )
         # paging: from record index 1 only xslice; past the end nothing
@@ -667,7 +694,9 @@ def run_sticky(c: Any) -> None:
     img = c.image_for(B.RT, "run")
     mapk = lambda rig: B.current(rig.sel_records())["map"]  # noqa: E731
 
-    def boot(card: Any, tag: str, mods: list[tuple[str, str]]) -> tuple[Any, Any, list, list]:
+    def boot(
+        card: Any, tag: str, mods: list[tuple[str, str]]
+    ) -> tuple[Any, Any, list, list]:
         """Boot CARD, return (assigned types by module, map on the card, ASSIGNED events, EVICTED events, card after)."""
         with c.rig(img, card, tag, cf_only=True) as rig:
             info = rig.boot_info()
@@ -712,7 +741,10 @@ def run_sticky(c: Any) -> None:
     got, (m2, tb), asg, _ev, after2 = boot(card2, "st2", [XS])
     c.check(
         "boot 2 (xslice only): xslice keeps its number (sticky), the map is unchanged and not rewritten",
-        got[XS] == b and m2 == m and tb["dirty"] == 0 and [x[:3] for x in asg] == [(h(XS), b, 1)],
+        got[XS] == b
+        and m2 == m
+        and tb["dirty"] == 0
+        and [x[:3] for x in asg] == [(h(XS), b, 1)],
         f"types {got}, map {[hex(x) for x in m2]}, events {asg}",
     )
     # 3: add params: it must not take pluck's number (16), which no loaded module has but the card still remembers
@@ -720,7 +752,10 @@ def run_sticky(c: Any) -> None:
     got, (m3, tb), asg, _ev, after3 = boot(card3, "st3", [XS, PA])
     c.check(
         "boot 3 (xslice, params): params does not take pluck's remembered number while a free one exists; xslice keeps its own",
-        got[XS] == b and got[PA] == 18 and 16 not in got.values() and tb["dirty"] == 1
+        got[XS] == b
+        and got[PA] == 18
+        and 16 not in got.values()
+        and tb["dirty"] == 1
         and m3[:3] == [key_of(*PL) | a, key_of(*XS) | b, key_of(*PA) | 18],
         f"types {got}, map {[hex(x) for x in m3]}",
     )
@@ -729,7 +764,9 @@ def run_sticky(c: Any) -> None:
     got, (m4, tb), asg, _ev, _after4 = boot(card4, "st4", [PA, PL, XS])
     c.check(
         "boot 4 (params, pluck, xslice): every machine has the number the card remembered, whatever the load order; nothing is rewritten",
-        (got[PA], got[PL], got[XS]) == (18, a, b) and tb["dirty"] == 0 and m4 == m3
+        (got[PA], got[PL], got[XS]) == (18, a, b)
+        and tb["dirty"] == 0
+        and m4 == m3
         and all(x[2] == 1 for x in asg),
         f"types {got}, events {asg}",
     )
@@ -743,8 +780,10 @@ def run_sticky(c: Any) -> None:
     want_ev = [(fakes[0] >> 8, 16)]
     c.check(
         "boot 5 (a full map): xslice keeps its entry's number (18); pluck drops the lowest entry of a machine that is not in this boot (slot 0, logged as an error event), takes its number and records its own entry there",
-        got[XS] == 18 and got[PL] == 16
-        and [tuple(e[4][:2]) for e in ev] == want_ev and all(e[3] & 1 for e in ev)
+        got[XS] == 18
+        and got[PL] == 16
+        and [tuple(e[4][:2]) for e in ev] == want_ev
+        and all(e[3] & 1 for e in ev)
         and m5 == [key_of(*PL) | 16, *forged[1:]]
         and tb["dirty"] == 1,
         f"types {got}, map {[hex(x) for x in m5]}, evicted {[e[4][:2] for e in ev]}",
@@ -758,9 +797,11 @@ def run_sticky(c: Any) -> None:
     got, (m6, tb), asg, ev, _after6 = boot(card6, "st6", [PL, XS])
     c.check(
         "boot 6 (a full map, xslice in slot 0): the entry of a machine that loads in this boot is never the one dropped: slot 1 goes and pluck takes its number (17)",
-        got[XS] == 16 and got[PL] == 17
+        got[XS] == 16
+        and got[PL] == 17
         and [tuple(e[4][:2]) for e in ev] == [(fakes[1] >> 8, 17)]
-        and m6[0] == key_of(*XS) | 16 and m6[1] == key_of(*PL) | 17,
+        and m6[0] == key_of(*XS) | 16
+        and m6[1] == key_of(*PL) | 17,
         f"types {got}, map {[hex(x) for x in m6]}, evicted {[e[4][:2] for e in ev]}",
     )
     c.common_checks_upload(project_writes_ok=True)
@@ -956,7 +997,9 @@ def run_hang(c: Any) -> None:
 
 # list positions of the two run-time machines in the guard scenario (the pluck is the first entry of the run-time machines, the fixture the second);
 # their type numbers are the ones the boot assigned (card order: pluck, then the fixture)
-GUARD_DN2_HINT = 5  # Digitone II: the run-time machine follows MIDI (as in equiv-dyn-pluck)
+GUARD_DN2_HINT = (
+    5  # Digitone II: the run-time machine follows MIDI (as in equiv-dyn-pluck)
+)
 GUARD_NAN_HINT = 8
 GUARD_PLUCK_HINT = 7
 
@@ -1135,9 +1178,7 @@ def run_guard(c: Any) -> None:
         )
         c.check(
             "MACHINE_DISABLED is logged once for the fixture's type",
-            len(disabled) == 1
-            and disabled[0][4][0] == t_nan
-            and disabled[0][3] & 1,
+            len(disabled) == 1 and disabled[0][4][0] == t_nan and disabled[0][3] & 1,
             str([L.event_dict(e)["fields"] for e in disabled]),
         )
         # no fault after the switch-off: a press now changes nothing

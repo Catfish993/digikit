@@ -323,7 +323,11 @@ class Uploader:
             af, al, df, dl = struct.unpack_from(">IIII", b, 0)
             total, n = b[16], b[17]
             out.update(
-                arena_free=af, arena_largest=al, dsp_free=df, dsp_largest=dl, total=total
+                arena_free=af,
+                arena_largest=al,
+                dsp_free=df,
+                dsp_largest=dl,
+                total=total,
             )
             at = 18
             for _ in range(n):

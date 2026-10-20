@@ -279,17 +279,29 @@ def boot_check(
     return th
 
 
-def dyn_numbers(rig: B.BootRig, t: dict[str, Any], sets: dict[str, list[str]], name: str,
-                known: dict[str, int], c: Any) -> None:
+def dyn_numbers(
+    rig: B.BootRig,
+    t: dict[str, Any],
+    sets: dict[str, list[str]],
+    name: str,
+    known: dict[str, int],
+    c: Any,
+) -> None:
     """The run-time machines the scenario names (`types` and `machines[].machine`, as "<module id>:<machine id>") get their number from the boot's
     assignment table. A machine keeps its number in every later boot that loads its module (the card remembers it: D7)."""
-    specs = list(t.get("types", [])) + [m["machine"] for m in t["machines"] if "machine" in m]
+    specs = list(t.get("types", [])) + [
+        m["machine"] for m in t["machines"] if "machine" in m
+    ]
     for spec in dict.fromkeys(x for x in specs if isinstance(x, str)):
         if spec.split(":")[0] not in sets[name]:
             continue
         got = rig.dyn_type(*spec.split(":"))
         if spec in known:
-            c.check(f"set {name}: {spec} keeps type {known[spec]}", got == known[spec], f"type {got}")
+            c.check(
+                f"set {name}: {spec} keeps type {known[spec]}",
+                got == known[spec],
+                f"type {got}",
+            )
         known[spec] = got
     c.report[f"assigned_{name}_{len(known)}"] = rig.assign_table()
 

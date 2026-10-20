@@ -39,7 +39,9 @@ def test_the_record_layout_is_the_documented_one():
     tm = [0xE53B3A10, 0xCF317D11, 0, 0, 0, 0, 0, 0x00000017]
     withmap = pk_dkrt_boot.make_record(["modules/a.dkm"], seq=2, tmap=tm)
     assert withmap[28:32] == bytes.fromhex("e53b3a10")
-    assert withmap[480:484] == bytes.fromhex("cf317d11") and withmap[504:508] == bytes.fromhex("00000017")
+    assert withmap[480:484] == bytes.fromhex("cf317d11") and withmap[
+        504:508
+    ] == bytes.fromhex("00000017")
     assert pk_dkrt_boot.parse_record(withmap)["map"] == tm
     torn = bytearray(rec)
     torn[100] ^= 1
