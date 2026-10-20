@@ -190,6 +190,16 @@ it is the public module of the browser page until the browser can deliver a `.dk
 `modules/core/machines/types.toml`. Use `module:dev -- --modules ID` to rebuild, patch, inject and run the quick tests on every save, and
 `patch:test` for the smoke tour. Anchors, ports and the rest: [PATCHING.md](PATCHING.md) and [modules/README.md](../modules/README.md).
 
+## Logging
+
+- ColdFire code logs with `Api.log(msg, value)` (level info; 24 characters) or `Api.log_lv(level, msg, value)` (0 error, 1 warn, 2 info, 3 debug, 4 trace).
+  A DSP routine has no log call: the runtime logs its faults (`MACHINE_FAULT`, `MACHINE_DISABLED`) and a stopped DSP.
+- Each event carries its level and its source (the runtime or the module). With DEBUG off in the menu only errors are kept.
+- Read the log with `mise run dk:log -- --port Digitakt follow --level L --module NAME` (for the emulator use `--emu`; `dk:run` follows it
+  for you). `level` prints the levels, `level debug` sets the default, `level --module NAME=trace` sets one module (`NAME=default` clears it).
+  Levels are not stored on the card; they reset at boot and need runtime 0.1.0.
+- Details: [DEVELOPMENT.md, "Module loop"](DEVELOPMENT.md#module-loop), `docs/findings/46-digikit-debug.md`.
+
 ## Where to look next
 
 - [modules/README.md](../modules/README.md): every manifest key, the typed sections, worked examples (`digikit/pluck`, `digikit/master-gain`).

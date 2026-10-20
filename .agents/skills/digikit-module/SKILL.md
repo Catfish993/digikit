@@ -23,7 +23,7 @@ command from the repository root.
 6. Run in the emulator: start `mise run workbench` in another shell, then `mise run dk:run -- AUTHOR/NAME --emu` (builds, packs,
    uploads, selects, restarts, follows the log). On a device with the runtime: `mise run dk:run -- AUTHOR/NAME --port Digitakt`.
    Hardware is Em's decision every time; never flash anything.
-7. Log: `mise run dk:log -- --port Digitakt level [debug | --module NAME=trace]`.
+7. Log: `mise run dk:log -- --port Digitakt level [debug | --module NAME=trace]`, `follow --level L --module NAME`; how a module logs: `docs/MODULE-AUTHORING.md`, "Logging".
 8. Share: `mise run module:export -- AUTHOR/NAME [-o FILE] [--previous OLD.dkmod]` and
    `mise run module:import -- FILE [--dir DIR] [--replace]`. A `.dkmod` is a deterministic zip without `build/` plus `package.toml`
    (id, version, author, type, sha256 per file). `--previous` refuses a parameter that moved to another knob.
