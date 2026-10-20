@@ -36,6 +36,24 @@ desc = [
     "state_clear_bytes", "max_cycles_block", "max_cycles_note_on", "max_call_depth", "stack_bytes",
 ]                                                          # struct dk_machine_desc, DK_DESC_*
 
+# The FX contract's numbers (sdk/dk_fx.h is the hand-written C view; packages/patchkit/tests/sdkgen.rs keeps the two equal).
+# `patchkit gen` writes sdk/dk_fx.inc from this table. Do not include it together with dk_machine.inc (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both).
+[fx]
+consts = [
+    { name = "DK_FX_V1", value = 1 },
+    { name = "DK_BLOCK", value = 32 },
+    { name = "DK_FX_BLOCK", value = 64 },                  # floats of the master block: 32 left, then 32 right
+    { name = "DK_FX_MAX_PARAMS", value = 4 },
+    { name = "DK_FX_MAX", value = 4 },                     # effects in the chain
+    { name = "DK_FX_OK", value = 0 },
+    { name = "DK_LEVEL_BOUND_BITS", value = 1090519040 },  # 8.0f
+    { name = "DK_FX_MAGIC", value = 1145783896 },          # 'DKFX' = 0x444b4658
+]
+fx_in = ["in", "out", "block"]                             # struct dk_fx_in, DK_FX_IN_*
+desc = [
+    "magic", "contract", "n_params", "state_bytes", "max_cycles_block", "max_call_depth", "stack_bytes",
+]                                                          # struct dk_fx_desc, DK_FX_DESC_*
+
 [log]
 f_error = 1        # flags bit 0: error (kept even when debug is off)
 level_shift = 1     # flags bits 1-3: level 0 error, 1 warn, 2 info, 3 debug, 4 trace

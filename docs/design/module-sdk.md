@@ -133,7 +133,7 @@ sdk/                         the contract, the only thing a content author inclu
   dk_machine.h               C header of the Machine contract (section 4.1); the asm include is generated from it
   dk_machine.inc             generated: .equ / #define for assembly (offsets, status codes, register rules)
   dk_machine.rs              generated: Rust SDK types (manifest, parameter kinds, status, header checks)
-  dk_fx.h                    outline only
+  dk_fx.h                    the FX contract, version DK_FX_V1 (section 4.2); dk_fx.inc is generated from sdk.toml [fx]
   README.md                  the authoring guide (docs/MODULE-AUTHORING.md moves here or is generated from it)
 modules/
   core/<fw>/                 framework modules, as today (runtime, dynreg, dyndsp, dsp-link, machines, params, ...)
@@ -237,7 +237,7 @@ Notes on the header:
 
 | Type | Shape of the contract | Open points |
 | --- | --- | --- |
-| FX (insert or send) | `dk_fx_process(state, params, const float in[2][DK_BLOCK], float out[2][DK_BLOCK])`; `n_params`, `state_bytes`, `tail_blocks` (blocks of ring after input stops), a bypass rule (the adapter crossfades, the module never sees a click) | where the DSP hook is (`digikit/master-gain` patches the master chain today); insert versus send; block size of the FX path; latency declaration |
+| FX (insert or send) | **Built (P3d-1a, `sdk/dk_fx.h`, patched-in only).** `process(state, in, params)`: `dk_fx_in` = `{in, out, block}`, the master block as 64 planar floats (32 left, then 32 right), `in` read only, `out` the adapter's scratch; `dk_fx_desc` = magic, contract, `n_params` (at most 4), `state_bytes`, `max_cycles_block`, `max_call_depth`, `stack_bytes`. The adapter `core/fx` hooks the post-master function (finding 53, H1), checks the output (finite, below 8.0), plays dry on a fault, crossfades one block when an effect switches, and switches an effect off after 8 faults in 1500 blocks. Not built: `tail_blocks`, run-time (`.dkm`) effects, parameters (P3d-1b) | send versus insert; latency declaration |
 | ColdFire service | `dkm_init`, `dkm_fini`, `dkm_slot_0` as today (`digikit-dkm.md:73-75`), plus a declared slot use and stack/heap bytes; Rust or C | which slots exist beyond 0 (`digikit-runtime.md:90-91`: 1-7 are bound and not called) |
 | UI page / key handler | needs slots 1-7 from the sequencer or key hooks | not designed; no firmware hook exists |
 | Sample / data | no code; a `.dkm` with a data section | store layout (`digikit-store.md`) |
