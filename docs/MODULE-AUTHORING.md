@@ -1,251 +1,209 @@
-# Writing a patchkit module
+# Writing a digikit module
 
-A module adds something to a stock Digitakt II or Digitone II firmware: a machine, a parameter, a DSP effect, or a
-change to the ColdFire user interface. This page is the short path from an empty module to a patched firmware running
-in the emulator. Details: [PATCHING.md](PATCHING.md) (commands and how patchkit works), [modules/README.md](../modules/README.md)
-(manifest reference and worked examples).
+A module adds something to a Digitakt II or Digitone II: a machine (a new sound source), an effect, or code for the user interface.
+The normal route is a **run-time module**: you build a `.dkm` file, put it on the card, and the digikit runtime loads it at boot. You
+do not patch a firmware image for it. This page takes you from an empty folder to a machine that runs in the emulator. Details:
+[PATCHING.md](PATCHING.md) (patching, flashing, safety), [modules/README.md](../modules/README.md) (every manifest key),
+[design/module-sdk.md](design/module-sdk.md) (the decisions behind the SDK).
 
-Nothing here touches hardware. Flashing a patched image is a separate, deliberate step (see "Safety and hardware" in
-PATCHING.md).
+Nothing here touches hardware. Flashing is a separate, deliberate step (see "Safety and hardware" in PATCHING.md). No file in the
+repository contains firmware bytes: modules find places in the firmware by rules, never by copying bytes.
 
-## Try it: the PLUCK machine in the emulator
-
-The fastest way to see a module work: patch the existing PLUCK machine (a plucked string) into Digitakt II 1.17 and
-inject it into the running desktop emulator. Firmware files go in `firmware/`; the ready state is built once
-(about 2 minutes) and stays under `out/`.
-
-```sh
-uv run python -m tools.emulator.ready dt2 --syx firmware/Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # once
-```
-
-Shell 1, the emulator on Digitakt II 1.17 (`DIGI_EMU_READY_DIR_DT2` points the app at that ready state; the default
-one is for 1.16). The first launch builds the app, which takes several minutes:
-
-```sh
-DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run workbench -- firmware/Digitakt_II_OS1.17.syx
-```
-
-Shell 2, patch and inject:
-
-```sh
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/pluck -o out/patch/pluck.syx
-mise run patch:inject -- out/patch/pluck.syx
-```
-
-`patch` adds the frameworks PLUCK needs (`core/machines`, `core/params`, `core/dsp-voice`) and verifies the image.
-`patch:inject` boots the patched firmware inside the running app with DSP audio (about 15 s the first time, under 1 s after).
-
-On the faceplate:
-
-1. Hold **FUNC** and press **SRC** for machine select; **PLUCK** is at the end of the list, after MIDI. Confirm with
-   **YES**.
-2. The SRC page shows PLUCK's parameters: TUNE, DECAY, PICK, BRIGHT, COLOR, LEV.
-3. Press trig keys to play. Turn knobs with quick turns: slow single detents barely move a value (encoder
-   acceleration).
-4. Save the project and reload it: the track stays PLUCK (machine type 9). Stock firmware loads the same project with
-   the track as SAMPLE.
-
-Audio caveat: the emulator runs patched DSP code slower than real time (about 4.5x for a ringing PLUCK on a build
-without PGO), so in the desktop app the screens and knobs behave normally but PLUCK's audio stutters. To hear it
-clean, record the app's output, which is generated in emulated time:
-
-```sh
-DIGI_EMU_SINK_WAV=out/pluck.wav DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run workbench -- firmware/Digitakt_II_OS1.17.syx
-```
-
-Other modules to try the same way:
-
-```sh
-# a clone machine (XSLICE, a MANUAL SLICE clone with its own name; no DSP code of its own)
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules test/xslice -o out/patch/xslice.syx
-# a master-bus drive: the DRV knob on the FUNC + MOD master page (encoder 7; above 80 adds drive)
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-drive -o out/patch/drive.syx
-# Digitone II 1.12 (start the emulator with firmware/Digitone_II_OS1.12.syx and a 1.12 ready state)
-mise run patch -- --firmware firmware/Digitone_II_OS1.12.syx --modules digikit/pluck -o out/patch/pluck-dn2.syx
-```
-
-Inject each with `mise run patch:inject -- <file>`. To see what a patch changed, and to go back to stock:
-
-```sh
-mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/pluck
-mise run patch:inject -- firmware/Digitakt_II_OS1.17.syx
-```
-
-If the app starts without audio it prints which ready inputs are missing; rebuild them with the `tools/emulator/ready.py` line
-above.
-
-## Quick usage
-
-Run every command from the repository root. Put your own stock firmware files in `firmware/`
-(`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`).
-
-### 1. Set up once
+## Set up once
 
 ```sh
 mise install
-mise run setup         # Python and web dependencies
-mise run patch:toolchains    # pinned ColdFire gcc/binutils and the SHARC+ assembler, into out/tools (about 15 min)
-uv run python -m tools.emulator.ready dt2 --syx firmware/Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # about 2 min
+mise run setup                # Python and web dependencies
+mise run patch:toolchains     # the pinned SHARC+ assembler and ColdFire compiler, into out/tools (about 15 min)
 ```
 
-The last line builds the emulator's ready state for that firmware (it is derived from the firmware, so it stays under
-`out/` and is never committed).
+Put your own stock firmware in `firmware/` (`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`). Run every command from the repository
+root.
 
-### 2. Create a module
+## Start: a new machine
 
 ```sh
-mise run module:new -- machines/my-synth --machine --devices dt2,dn2   # a new machine type
-mise run module:new -- fx/my-drive --dsp                                # a master-bus DSP effect
-mise run module:new -- ui/my-tweak --cf                                 # ColdFire code only
+mise run module:new -- em/my-synth --machine                  # modules/machines/NAME/
+mise run module:new -- em/my-synth --machine --dir ~/mods     # ~/mods/NAME/ (outside the repository)
 ```
 
-This writes `modules/<category>/<name>/` with `module.toml`, source stubs (`src/cf/*.c`, `src/dsp/*.s`),
-`tests/smoke.toml`, `README.md` and `gallery/icon.svg`, and builds it so you start from code that compiles. A machine also gets a
-permanent type number per device in `modules/core/machines/types.toml` (printed by the command; commit it with the
-module: projects store this number).
-
-Edit the sources and `module.toml`, then rebuild:
+`AUTHOR/NAME` is the module id. The command copies the template (`tests/fixtures/modules/sine`, a sine machine with one level
+parameter), renames the ids and the DSP symbols, and builds it, so you start from code that compiles. Then:
 
 ```sh
-mise run module:build -- modules/machines/my-synth
+mise run module:check -- em/my-synth        # conformance suite on both devices + the module's own tests + packed size
 ```
 
-The build decodes every ColdFire instruction with the repository's own decoder and refuses a form the MCF54418 does not have (a 68020 or FPU
-instruction would trap on the device). It then records the passing check in the object (`toolchain.isa_check` of the `.dko.json`, a digest of
-the object's sections, symbols and relocations), and `patchkit pack` refuses a ColdFire object whose record is missing or does not match its
-bytes: an object made by hand or edited after the build cannot become a run-time `.dkm`. It guards against accident; it is not a signature.
-
-### 3. Patch a firmware
+For a folder outside the repository, list it in `PATCHKIT_MODULES` (several folders: separated by `:`); `module:check`,
+`module:build`, `module:dev`, `module:pack` and `module:export` find the module through it:
 
 ```sh
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/my-synth -o out/patch/my-synth.syx
+export PATCHKIT_MODULES=~/mods
+mise run module:check -- em/my-synth
 ```
 
-The frameworks the module `requires` are added for you. The command refuses anything that does not fit (wrong
-firmware, a conflict with another module, no room) and verifies the image before it reports success. To see what went
-where:
+## The module folder
+
+```
+module.toml        the manifest
+src/dsp/NAME.s     SHARC+ assembly: the machine's voice (one body for both devices)
+src/cf/NAME.c      ColdFire code (C or Rust), optional
+tests/             module tests: smoke.toml (panel steps), test_*.py
+README.md          for a player: what it does, in one or two sentences
+gallery/icon.svg   optional
+build/             generated by the build; never committed, never exported
+```
+
+### Manifest fields
+
+```toml
+[module]
+id = "em/my-synth"      # AUTHOR/NAME: lowercase, digits, dashes
+version = "0.1.0"       # major.minor.patch
+name = "My synth"
+category = "machines"
+type = "machine"        # machine | fx | service | raw (framework is internal)
+author = "em"
+status = "experimental"
+summary = "One short sentence for players."
+dynamic = true          # a run-time module (.dkm)
+ports = ["dt2-1.17", "dn2-1.12"]
+```
+
+- **id**: the author part `core` is reserved for the repository's own framework modules, and `test` for its fixtures. Content
+  modules use their own author, and `digikit` for the project's modules. `module:new` refuses `core`.
+- **type**: `machine` has a contract (below). `fx` and `service` have their own contracts. `raw` has none: arbitrary code with only the
+  generic load checks, shown as unchecked. `framework` is the internal type of the `core/` modules; `module:new` and `module:import` refuse it.
+- **category**: a group name for the folder and the gallery (`machines`, `fx`, `ui`, `test`).
+- **version**: change it for every release. The export file name carries it.
+- **dynamic**: `true` for a run-time `.dkm`. A module without it is patched into a firmware image (see "Patched-in modules").
+
+### The machine and its parameters
+
+```toml
+[[voice]]
+machine = "my_synth"
+render = "_my_synth_render"
+note_on = "_my_synth_note_on"
+desc = "_my_synth_desc"
+
+[[machine]]
+id = "my_synth"
+name = "My synth"
+short = "SYN"
+clone_of = 0            # the stock machine whose page layout it copies (0 = SAMPLE)
+knobs = [0xca, "my_synth_level", 0, 0, 0, 0, 0, 0xd1]
+
+[[param]]
+id = "my_synth_level"
+name = "Level"
+short = "LEVEL"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x7f00
+```
+
+The Digitone II has no knob layout in the machine row: its machine takes `[machine.dn2] knobs = [...]` and a `[[page]]`. The template does
+both.
+
+**Knob rules.** The `knobs` array fixes each parameter's slot: the position is the knob (0 to 7). A number is a stock row (`0xca` is
+TUNE, `0xd1` is LEV); `0` leaves the knob empty. The build refuses:
+
+- a module parameter on knob 3 of a Digitakt II SAMPLE clone: it is the sample slot, and only the sample number bits reach the DSP
+  (`docs/findings/02-machines-and-parameters.md`);
+- a name in `knobs` that is no `[[param]]` of the module;
+- a parameter named twice.
+
+Projects store parameter values by slot. Once a version is released, do not move a parameter to another knob: `module:export --previous`
+checks this. Removing a parameter is allowed.
+
+## The contract voice
+
+A machine of the SDK contract (`sdk/dk_machine.h`) is three things in the SHARC+ source:
+
+- `render(state, in, params)`: called once per block of 32 samples while the voice runs. It writes 32 floats to `in->out` and returns
+  `DK_OK`, or `DK_DONE` when the voice has ended.
+- `note_on(state, in, params)`: called once per note, before the first `render`. It returns 0 (or a negative number: a fault).
+- `desc`: the `dk_machine_desc` table (magic, contract version, parameter count, voices, state bytes, bytes cleared at note-on, cycle
+  budgets).
+
+The adapter in `core/dsp-voice` zeroes the state at note-on, builds `in` (pitch with the tune folded in, velocity, block number, output
+block) and the parameter words (clamped to the ranges you declared), and checks the output: a block that is not finite or louder than 8.0 is
+zeroed, the voice ends, and after 8 faults in a second the machine is switched off. The same source runs on both devices. The template
+`src/dsp/NAME.s` shows all of it in about 90 lines; read it before you write your own.
+
+Registers: you may use R0-R15, I0-I5, I13, M1-M4 and B3. Keep I6-I12, I14, I15, M0 and M5-M15 as they are, and do not change the L registers
+or MODE1. The adapter pins M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1 for your routine (so `DM(I0, M6)` steps one word and
+`JUMP (M13, I13)` returns). A 16-bit `Rn = Rn op Rx` followed by some instructions can make the emulator read another instruction than the
+silicon; the build refuses it and says so (use distinct registers).
+
+## Build, check, run
 
 ```sh
-mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/my-synth
+mise run module:build -- PATH           # compile the sources to build/*.dko.json (PATH is the module folder)
+mise run module:check -- em/my-synth    # conformance + own tests + packed size per device
+mise run module:pack -- em/my-synth --device dt2 -o my-synth.dkm
+mise run workbench                      # the emulator (another shell)
+mise run dk:run -- em/my-synth --emu    # build, pack, upload, select, restart, follow the log
+mise run dk:run -- em/my-synth --port Digitakt    # the same on a device with the digikit runtime
 ```
 
-### 4. Run the emulator and inject the patched image
+The conformance suite runs your routine on the concrete SHARC+ core through `core/dsp-voice`: every parameter at its limits, many notes,
+modulation, long notes and retriggers. Each block must return, keep the context registers, stay finite and below 8.0, and stay in the
+instruction budget. The module's own tests are `tests/test_*.py` and `tests/*.toml`.
 
-In one shell, start the emulator:
+When you change tests of the repository, run only the tests you changed: `mise run test:changed`.
+
+The log and its levels: `mise run dk:log -- --port Digitakt level`; ColdFire code logs with `Api.log(msg, value)`
+([DEVELOPMENT.md, "Module loop"](DEVELOPMENT.md#module-loop)).
+
+## Export and import
 
 ```sh
-mise run workbench                    # the desktop app, or the headless daemon (flags in PATCHING.md, "Run it in the emulator")
+mise run module:export -- em/my-synth                       # out/patch/em-my-synth-0.1.0.dkmod
+mise run module:export -- em/my-synth --previous old.dkmod  # refuse a parameter that moved to another knob
+mise run module:import -- my-synth-0.1.0.dkmod --dir ~/mods # unpack into ~/mods/my-synth
 ```
 
-In another shell, load your image into it:
+A `.dkmod` is a deterministic zip: the module folder without `build/` and without OS junk files, entries sorted, one fixed time stamp,
+plus a top-level `package.toml` (id, version, author, type, and the SHA-256 of every file). Two exports of one tree are byte-identical.
+`import` checks every hash and refuses extra or missing files, the author `core`, the type `framework`, and an id that is already known
+(unless `--replace`). Without `--dir` it uses the first folder of `PATCHKIT_MODULES`; it never writes into the repository's `modules/`
+unless you say so with `--dir`. After an import, run `module:check` before you trust the code.
 
-```sh
-mise run patch:inject -- out/patch/my-synth.syx
-```
+## Versions and compatibility
 
-A DSP-only change is applied while the firmware runs (about 1 s). A ColdFire change boots the patched firmware with
-DSP audio (about 15 s the first time, under 1 s afterwards from a cache). Then use the faceplate: select your machine
-with FUNC + SRC, turn its knobs, play trigs.
+- The runtime has a semantic version (now 0.1.0, packed `major<<16|minor<<8|patch`); `sdk/sdk.toml` is the one source. The contract
+  versions are in the same file; `pack` writes the contracts a module uses into the `.dkm` header.
+- Rebuild a module when a contract it declares changes its major version: the loader refuses it with `E_CONTRACT` ("built for another SDK
+  contract: rebuild the module").
+- A machine of a run-time module has no fixed type number. The runtime assigns one in 16 to 23 when it loads the module, and the card
+  remembers it by the machine's global id `<module id>:<machine id>`. Read the number from `dkupload modules` or the boot report; never
+  write it into code or a test. Leave `type_hint` out in a new module.
 
-### 5. Iterate
+## Patched-in modules
 
-```sh
-mise run module:dev -- --modules machines/my-synth --device dt2
-```
+A module without `dynamic = true` is applied to a firmware image by patchkit (`mise run patch -- --firmware FILE --modules a,b -o OUT.syx`,
+then `mise run patch:inject -- OUT.syx` into a running emulator). The project's own PLUCK machine (`digikit/pluck`) stays patched in:
+it is the public module of the browser page until the browser can deliver a `.dkm`. A patched-in machine has a permanent type number in
+`modules/core/machines/types.toml`. Use `module:dev -- --modules ID` to rebuild, patch, inject and run the quick tests on every save, and
+`patch:test` for the smoke tour. Anchors, ports and the rest: [PATCHING.md](PATCHING.md) and [modules/README.md](../modules/README.md).
 
-This watches your sources, rebuilds, patches, injects into the running emulator and runs the module's quick tests on
-every save, one summary line per edit (a few seconds for a DSP change).
+## Logging
 
-### 6. Test
-
-```sh
-mise run patch:test -- --cell "dt2-1.17:machines/my-synth"     # smoke tour + the module's tests/*.toml, one cell
-mise run patch:test                                            # the whole matrix (tests/patchkit/smoke/matrix.toml)
-mise run patch:proofs                                          # the quick tier of every emulator proof (about 7 min)
-```
-
-A new module set needs its screen goldens recorded once (`--update`). Every run checks that the firmware does not fault,
-the DSP does not halt and the main loop keeps running.
-
-## What a module can do today
-
-- **Machines** (`core/machines`): add machine types to the machine list on both devices, with their own names, a
-  permanent type number that projects keep, and save/load that survives stock firmware (an unknown type loads as a
-  stock machine).
-  A machine of a run-time module (`dynamic = true`) has no entry in `types.toml`: its global id is `<module id>:<machine id>`, the runtime gives it a
-  type number in 16 to 23 when it loads the module, and the card remembers the number (by a hash of that id) so the machine keeps it while it stays in the
-  card's map of 8 machines. Read the number a boot assigned from `dkupload modules` (or the boot report), never write it into code or a test.
-  `type_hint` (optional, per machine and device, within 16 to 23) is the number the machine takes when the card has no entry for it and the number is free: it exists for the machines that
-  had a fixed number before sticky ids, so old projects still find them. **A new module leaves it out.**
-- **Parameters** (`core/params`): give a machine its own parameters (names, ranges, defaults) on its pages; they
-  persist with the project and appear as modulation destinations (parameter locks on added parameters are not
-  tested yet). On the Digitone II a machine gets its own parameter pages.
-- **DSP voices** (`core/dsp-voice`): render a machine's sound with your own SHARC+ routine; the stock amplitude
-  envelope, filter, effects and master still apply. `digikit/pluck` (a Karplus-Strong string, both devices) is the
-  worked example.
-- **Master-bus effects**: process the final stereo mix (`digikit/master-gain`, `digikit/master-drive`); a knob on the master
-  page can drive them.
-- **ColdFire code and data** in a 1.3 MiB (Digitakt II) or 24.8 MiB (Digitone II) expansion region, hooks at firmware
-  sites, tables copied from the user's own image at patch time and extended with rows.
-- **One module source for several firmware versions**: modules name firmware sites through anchor rules, never
-  addresses; a new firmware version needs only `mise run patch:port`.
-- **The web gallery** (`mise run web`, page `/patch`): pick modules, patch in the browser, boot the result, download
-  it. The firmware never leaves the browser.
-
-### The register contract of a DSP voice routine
-
-The firmware restores M5, M6, M7, M13, M14, M15, the L registers and MODE1 per DSP context, so a routine that is entered from
-`core/dsp-voice` does not get them from the context: the wrapper saves them, **sets** them and restores them after the
-routine (finding 45). While your routine runs: M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1 (so `DM(I0, M6)`
-steps one word and `JUMP (M13, I13)` returns), L0-L5 = 0 (linear addressing), SIMD off, ALUSAT and TRUNCATE clear, RND32 set.
-You may use R0-R15, I0-I5, I13, M1-M4 and B3 freely; keep I6-I12, I14, I15, M0 and M5-M15 as they are, and do not change L or
-MODE1. The same holds on both devices (on the Digitone II the routine gets the slot's buffer in R4, on the Digitakt II the voice
-record and the output block; the headers of `core/dsp-voice/src/dsp/*.s` list the entry registers). Code that
-runs anywhere else on the DSP (a master-bus effect, a link hook) is not entered through the wrapper: it must not assume these
-values either, unless it saves, sets and restores them itself as `core/dsp-link` does (the two master-bus modules still use M5 = 0
-and M6 = 1 at the converter call they replace, where the stock code uses the same registers; finding 45). A 16-bit `Rn = Rn op Rx` followed by
-some instructions can make the emulator read a different instruction than the silicon; the build refuses such code and says
-so (use distinct registers, finding 45).
-
-Limits to know: type numbers 7..23 for added machines on the Digitakt II (17) and 5..23 on the Digitone II (19, a
-chosen bound); one master-bus module at a time until a master-effects framework exists; patched DSP code runs slower than real
-time in the emulator (correct, but not playable live yet); nothing has been flashed to a device yet.
-
-## Run-time modules (.dkm)
-
-A module can also be packed as a `.dkm` and loaded by the digikit runtime at boot, without patching a new image. The loop is
-`module:new` -> `module:check` -> `dk:run --emu` -> `dk:run --port`, described in
-[DEVELOPMENT.md, "Module loop"](DEVELOPMENT.md#module-loop).
-
-- `mise run module:check -- NAME` prints the packed size by section per device, or "not packed" with the reason (for example a
-  module that is patched in). `patchkit pack` and `patchkit dkm-info` print the same `size` line; `mise run patch:mem` prints the
-  runtime's own bytes.
-- Knob slots on a Digitakt II SAMPLE clone: slot 6 is usable. Slot 3 passes only the sample bits (`value & 0x3ff`): do not put a
-  parameter there: the build refuses it (docs/findings/02-machines-and-parameters.md, last section).
-
-### Versions and compatibility
-
-- The runtime has a semantic version, now 0.1.0, packed as `major<<16|minor<<8|patch`. Runtimes 1 to 5 read as 0.0.1 to 0.0.5.
-  `sdk/sdk.toml` is the one source; `mise run gen:modules` writes the generated files from it (`-- --check` lists stale ones).
-- The contract versions are also in `sdk/sdk.toml`: api (1,1), machine (1,0), fx (0,0), service (1,0). `pack` writes the contracts a
-  module uses into the `.dkm` header: api always, machine when the module has a DSP section, service when it has ColdFire slot
-  functions or init/fini.
-- Rebuild the module when a contract it declares (major not 0) changes its major version, or when the runtime's minor is below the
-  module's. Then the loader and the menu refuse it with `E_CONTRACT` (-48, "built for another SDK contract: rebuild the module").
-  The runtime version the module was built for (header byte 0x30) is informational and is not checked.
-
-### Logging
-
-- `Api.log(msg, value)` logs at level info. `Api.log_lv(level, msg, value)` takes a level: 0 error, 1 warn, 2 info, 3 debug, 4 trace.
-- Each event carries its level and its source (the runtime, or the module). The default level is info; with DEBUG off in the menu only
-  errors are kept.
-- `mise run dk:log -- --port Digitakt level` prints the levels. `level debug` sets the default. `level --module NAME=trace` sets one
-  module (NAME or record index; `NAME=default` clears it). `follow --level L --module NAME` filters the display. The levels are not
-  stored on the card and reset at boot. Setting them needs runtime 0.1.0.
+- ColdFire code logs with `Api.log(msg, value)` (level info; 24 characters) or `Api.log_lv(level, msg, value)` (0 error, 1 warn, 2 info, 3 debug, 4 trace).
+  A DSP routine has no log call: the runtime logs its faults (`MACHINE_FAULT`, `MACHINE_DISABLED`) and a stopped DSP.
+- Each event carries its level and its source (the runtime or the module). With DEBUG off in the menu only errors are kept.
+- Read the log with `mise run dk:log -- --port Digitakt follow --level L --module NAME` (for the emulator use `--emu`; `dk:run` follows it
+  for you). `level` prints the levels, `level debug` sets the default, `level --module NAME=trace` sets one module (`NAME=default` clears it).
+  Levels are not stored on the card; they reset at boot and need runtime 0.1.0.
+- Details: [DEVELOPMENT.md, "Module loop"](DEVELOPMENT.md#module-loop), `docs/findings/46-digikit-debug.md`.
 
 ## Where to look next
 
-- [modules/README.md](../modules/README.md): every manifest key, the test format, `digikit/master-gain` and `digikit/pluck`
-  walked through.
-- [PATCHING.md](PATCHING.md): all commands, the emulator control socket, how patching works, safety and recovery.
-- `.claude/skills/digikit-module/SKILL.md`: the same workflow for coding agents.
+- [modules/README.md](../modules/README.md): every manifest key, the typed sections, worked examples (`digikit/pluck`, `digikit/master-gain`).
+- [design/module-sdk.md](design/module-sdk.md): the SDK design and the decisions of 2026-10-20.
+- [PATCHING.md](PATCHING.md): patching, the emulator control socket, safety and recovery.
+- [DEVELOPMENT.md](DEVELOPMENT.md): the module loop, tests, repository layout.
+- `.agents/skills/digikit-module/SKILL.md`: the same workflow for coding agents.

@@ -19,6 +19,7 @@ TYPED = [
     "tools/patchkit/modroots.py",
     "tools/patchkit/pk_conform.py",
     "tools/patchkit/pk_modcheck.py",
+    "tools/patchkit/pk_package.py",
     "tools/coldfire/fw.py",
     "tools/coldfire/atlas.py",
     "tests/firmware/test_fw.py",

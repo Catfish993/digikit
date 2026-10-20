@@ -273,8 +273,8 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (SELF_BROAD, EVERYTHING),
     # GitHub settings files (templates, CODEOWNERS): only the path check reads them.
     ((".github/",), ("python-tests",)),
-    # the agent hook settings (tools/devtools/agent_guard.py); .claude/skills/ is markdown (docs)
-    ((".claude/",), ("python-tests",)),
+    # the agent hook settings (tools/devtools/agent_guard.py); .claude/skills/ holds links and .agents/skills/ markdown (the skills test)
+    ((".claude/", ".agents/"), ("python-tests",)),
     (
         (
             "tests/scenarios/dt2-",

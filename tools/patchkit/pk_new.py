@@ -4,8 +4,8 @@
     uv run python -m tools.patchkit.pk_new fx/my-drive              # ColdFire and SHARC+ stubs
     uv run python -m tools.patchkit.pk_new fx/my-drive --dsp        # SHARC+ only: a master-bus hook that passes audio through
     uv run python -m tools.patchkit.pk_new test/my-demo --cf        # ColdFire only: code, data and bss in cf.expansion
-    uv run python -m tools.patchkit.pk_new machines/my-synth --machine [--devices dt2,dn2]
-                                                           # a machine type: a clone of type 0 with a permanent number
+    uv run python -m tools.patchkit.pk_new em/my-synth --machine [--dir DIR]
+                                                           # a run-time machine of the SDK contract (a copy of test/sine)
 
 Writes `modules/<category>/<name>/`: `module.toml`, `src/cf/<name>.c` and/or `src/dsp/<name>.s`, `tests/smoke.toml`
 (the quick tests `module:dev` and `patch:test` run), `README.md`, `gallery/icon.svg`; then builds the objects with
@@ -13,9 +13,10 @@ tools/patchkit/pk_build.py, so the template is known to compile. The DSP stub re
 only: masked signatures and hashes, never firmware bytes). A new module claims `dsp.master.hook` when it has a DSP
 part, so it conflicts with digikit/master-gain: pick one at a time until the master-fx framework (Phase 3) exists.
 
-A machine module (`--machine`) gets its permanent type number per device: the next free number in
-modules/core/machines/types.toml, which the script appends and prints. The file is committed with the module; a number
-is never reused or changed (a project stores only the number).
+`--machine` takes `AUTHOR/NAME` and writes a run-time machine of the SDK contract: a copy of tests/fixtures/modules/sine (one DSP
+body for both devices, one parameter) with the ids and symbols renamed, in `modules/machines/<name>/` or, with `--dir DIR`, in
+`DIR/<name>/` (a folder that PATCHKIT_MODULES names finds it). A run-time machine has no permanent type number: the runtime
+assigns one at load (docs/design/module-sdk.md 11.5 D7). `core` is refused as author.
 """
 
 from __future__ import annotations
@@ -179,19 +180,6 @@ resource = "dsp.master.hook"
     return "".join(parts)
 
 
-MACHINE_SECTION = """
-# Typed section (modules/README.md, "Typed sections"): lowered per device into the machine, param and page rows.
-# Give it knobs = [...] (stock codes and the ids of [[param]] sections), then [[param]], [[voice]] and, on a Digitone II,
-# a [[page]]; `patchkit gen` writes the constants a DSP routine includes.
-[[machine]]
-id = "{eid}"
-name = "{title}"
-short = "{short}"
-clone_of = 0            # the stock type this machine copies
-devices = [{devices}]
-"""
-
-
 def allocate(key: str, devices: list[str], path: Path = TYPES) -> dict[str, int]:
     """Give `key` ("module id:entry id") the next free number on each device: appended to `[<dev>.alloc]` of `path`."""
     text = path.read_text()
@@ -230,36 +218,50 @@ def allocate(key: str, devices: list[str], path: Path = TYPES) -> dict[str, int]
     return out
 
 
-def machine_manifest(id_: str, name: str, devices: list[str]) -> str:
-    title = name.replace("-", " ").capitalize()
+SINE = ROOT / "tests" / "fixtures" / "modules" / "sine"
+SINE_PLACEHOLDER = (
+    "One short sentence for players, 120 characters at most, ending with a full stop."
+)
+
+
+def machine_files(author: str, name: str) -> dict[str, str]:
+    """The files of a run-time machine: a copy of test/sine with the module id, the machine, parameter and page ids, the file
+    names and the DSP symbols renamed (no build outputs)."""
+    id_ = f"{author}/{name}"
     eid = name.replace("-", "_")
-    head = f"""[module]
-id = "{id_}"
-version = "0.1.0"
-name = "{title}"
-category = "{id_.split("/")[0]}"
-type = "{kind_of(id_, True)}"
-author = "digikit"
-status = "experimental"
-summary = "One short sentence for players, 120 characters at most, ending with a full stop."
-requires = ["core/machines"]
-conflicts = []
-
-[targets]
-"dt2-1.16" = "untested"
-"dt2-1.17" = "untested"
-"dn2-1.11" = "untested"
-"dn2-1.12" = "untested"
-
-# The machine's type number is permanent: modules/core/machines/types.toml, key "{id_}:{eid}".
-"""
+    sym = "_" + eid
+    title = name.replace("-", " ").capitalize()
     short = re.sub(r"[^A-Z0-9]", "", name.upper())[:4] or "NEW"
-    return head + MACHINE_SECTION.format(
-        eid=eid,
-        title=title[:23],
-        short=short,
-        devices=", ".join(f'"{d}"' for d in devices),
-    )
+    man = (SINE / "module.toml").read_text()
+    for old, new in (
+        ('id = "test/sine"', f'id = "{id_}"'),
+        ('name = "SINE"', f'name = "{title[:23]}"'),
+        ('category = "test"', 'category = "machines"'),
+        ('author = "digikit"', f'author = "{author}"'),
+        ("-o sine.dkm", f"-o {name}.dkm"),
+        ("test/sine", id_),
+        ("build/sine-dsp", f"build/{name}-dsp"),
+        ("src/dsp/sine.s", f"src/dsp/{name}.s"),
+        ("sine_level", f"{eid}_level"),
+        ("sine_syn", f"{eid}_syn"),
+        ('machine = "sine"', f'machine = "{eid}"'),
+        ('id = "sine"', f'id = "{eid}"'),
+        ('name = "Sine"', f'name = "{title[:23]}"'),
+        ('short = "SIN"', f'short = "{short}"'),
+        ('name = "SINE"', f'name = "{title[:23].upper()}"'),
+        ('title = "Sine"', f'title = "{title}"'),
+        ("_sn_", sym + "_"),
+    ):
+        man = man.replace(old, new)
+    man = re.sub(r'summary = "[^"]*"', f'summary = "{SINE_PLACEHOLDER}"', man, count=1)
+    dsp = (SINE / "src" / "dsp" / "sine.s").read_text()
+    dsp = dsp.replace("_sn_", sym + "_").replace("test/sine", id_)
+    return {
+        "module.toml": man,
+        f"src/dsp/{name}.s": dsp,
+        "README.md": f"# {title}\n\n{id_}: what the machine sounds like, for a player, in one or two sentences.\n\n"
+        "Built from the template of `mise run module:new -- AUTHOR/NAME --machine` (docs/MODULE-AUTHORING.md).\n",
+    }
 
 
 def create(
@@ -267,37 +269,49 @@ def create(
     cf: bool,
     dsp: bool,
     force: bool = False,
-    machine: list[str] | None = None,
+    machine: bool = False,
+    dir_: Path | None = None,
 ) -> Path:
     m = re.fullmatch(r"([a-z0-9]+)/([a-z0-9][a-z0-9-]*)", id_)
     if not m:
         raise SystemExit(
-            f"module id is category/name (lowercase, digits, dashes): {id_!r}"
+            f"module id is {'author' if machine else 'category'}/name (lowercase, digits, dashes): {id_!r}"
         )
     category, name = m.groups()
     if category == "core":
-        raise SystemExit("core modules are internal: pick another category")
-    if category not in TOP:
+        raise SystemExit(
+            "core modules are internal: pick another "
+            + ("author" if machine else "category")
+        )
+    if machine and category == "framework":
+        raise SystemExit(
+            "framework is a module type of the core modules, not an author"
+        )
+    if not machine and category not in TOP:
         print(
             f"note: category {category!r} is new (known: {', '.join(sorted(TOP))})",
             file=sys.stderr,
         )
     sym = "_" + re.sub(r"[^a-z0-9]+", "_", name)
-    base = MODULES / category / name
+    if machine:
+        base = (dir_ if dir_ is not None else MODULES / "machines") / name
+        files = machine_files(category, name)
+    else:
+        base = (dir_ if dir_ is not None else MODULES / category) / name
+        files = {
+            "module.toml": manifest(id_, sym, name, cf, dsp),
+            "tests/smoke.toml": SMOKE.format(id=id_),
+            "README.md": README.format(
+                id=id_, title=name.replace("-", " ").capitalize()
+            ),
+            "gallery/icon.svg": ICON,
+        }
+        if cf:
+            files[f"src/cf/{name}.c"] = CF_C.format(id=id_, sym="pk" + sym)
+        if dsp:
+            files[f"src/dsp/{name}.s"] = DSP_S.format(id=id_, sym=sym)
     if base.exists() and not force:
         raise SystemExit(f"{base} exists (use --force to overwrite the stubs)")
-    files = {
-        "module.toml": machine_manifest(id_, name, machine)
-        if machine
-        else manifest(id_, sym, name, cf, dsp),
-        "tests/smoke.toml": SMOKE.format(id=id_),
-        "README.md": README.format(id=id_, title=name.replace("-", " ").capitalize()),
-        "gallery/icon.svg": ICON,
-    }
-    if cf and not machine:
-        files[f"src/cf/{name}.c"] = CF_C.format(id=id_, sym="pk" + sym)
-    if dsp and not machine:
-        files[f"src/dsp/{name}.s"] = DSP_S.format(id=id_, sym=sym)
     for rel, text in files.items():
         path = base / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -307,39 +321,48 @@ def create(
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("id", help="category/name, for example fx/my-drive")
+    ap.add_argument(
+        "id", help="category/name (for example fx/my-drive); with --machine author/name"
+    )
     ap.add_argument("--cf", action="store_true", help="ColdFire stub only")
     ap.add_argument("--dsp", action="store_true", help="SHARC+ stub only")
     ap.add_argument(
-        "--machine", action="store_true", help="a machine type (clone of type 0)"
+        "--machine",
+        action="store_true",
+        help="a run-time machine of the SDK contract (a copy of test/sine)",
     )
     ap.add_argument(
-        "--devices", default="dt2,dn2", help="with --machine: dt2, dn2 or dt2,dn2"
+        "--dir",
+        type=Path,
+        help="write DIR/<name> instead of modules/<category>/<name> (list DIR in PATCHKIT_MODULES to use it)",
     )
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args(argv)
     cf, dsp = (a.cf or not a.dsp), (a.dsp or not a.cf)
-    machine = None
     if a.machine:
-        machine = [d for d in a.devices.split(",") if d]
-        if not machine or any(d not in STOCK_TYPES for d in machine):
-            raise SystemExit("--devices is dt2, dn2 or dt2,dn2")
         cf = dsp = False
-    base = create(a.id, cf, dsp, a.force, machine)
-    print(f"created {base.relative_to(ROOT)}")
-    if machine:
-        eid = a.id.split("/")[1].replace("-", "_")
-        for dev, n in allocate(f"{a.id}:{eid}", machine).items():
-            print(
-                f'type number on {dev}: {n} (appended to {TYPES.relative_to(ROOT)} as "{a.id}:{eid}"; commit it)'
-            )
-    if not a.no_build and not machine:
+    base = create(a.id, cf, dsp, a.force, a.machine, a.dir)
+    shown = base.relative_to(ROOT) if base.is_relative_to(ROOT) else base
+    print(f"created {shown}")
+    if not a.no_build:
         from tools.patchkit import pk_build
 
         for line in pk_build.build_module(base, check=False):
             print(line)
-    print(f"next: mise run module:dev -- --modules {a.id}")
+        if a.machine:  # the generated constants and includes of the module (build/gen)
+            import os
+
+            from tools.patchkit import patchkit
+
+            roots = [str(base.parent.resolve()), os.environ.get("PATCHKIT_MODULES", "")]
+            os.environ["PATCHKIT_MODULES"] = os.pathsep.join(r for r in roots if r)
+            patchkit.run(["gen"])
+    where = f"PATCHKIT_MODULES={base.parent} " if a.dir else ""
+    if a.machine:
+        print(f"next: {where}mise run module:check -- {a.id}")
+    else:
+        print(f"next: mise run module:dev -- --modules {a.id}")
     return 0
 
 
