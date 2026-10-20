@@ -41,6 +41,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   in after about an hour.
 - Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
   with a bound (`sleep N; tail -n 5 FILE`) or use a monitor.
+  Poll with an exit condition (the loop in "Verify"), not with a fixed sleep.
 - Lane agents iterate with `mise run test:changed` (the tests the changed files select, quick tier, no build step;
   `--explain` prints why each file runs and what the gate adds) and finish with `mise run verify:pre` (1 to 2 min: lint,
   types, pathcheck, `pk_build --check`, the same tests, Rust tests of the affected crates; it is not the merge gate). The
@@ -71,8 +72,10 @@ What to run for a change (`mise run test:changed -- --explain` shows the selecti
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval | | |
 
 - Never run a test directory (`pytest tests/patchkit`), `--tier full`, `verify:full` or smoke `--update` across all
-  cells while iterating. Long runs go in the background and wait for the completion notification; no `sleep` over 60 s,
-  no `tail -f`. A repo PreToolUse hook (tools/devtools/agent_guard.py, .claude/settings.json) blocks directory pytest,
+  cells while iterating. Long runs go in the background and wait for the completion notification. To poll a log, use a loop
+  that stops when the run ends and never waits more than 60 s in total:
+  `for i in $(seq 12); do grep -q DONE FILE && break; sleep 5; done; tail -n 5 FILE`. No `sleep` over 60 s in one
+  command (the hook adds the sleeps up), no `tail -f`. A repo PreToolUse hook (tools/devtools/agent_guard.py, .claude/settings.json) blocks directory pytest,
   `--tier full`, `verify:full`, `sleep` over 60 s and `tail -f`; only the coordinator prefixes `DIGI_GUARD=off`, deliberately.
 - Test layout, commands and the current baseline: docs/TESTING.md.
 - `mise run verify:pre` is the lane check (no emulator; not the merge gate). `mise run verify` is the merge gate and runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
