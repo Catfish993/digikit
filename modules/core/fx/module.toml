@@ -1,0 +1,158 @@
+[module]
+id = "core/fx"
+version = "0.1.0"
+name = "FX chain"
+category = "core"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Effects adapter of the SHARC engine: effects registered by other modules process the master block in a chain, before the USB pack and the DAC converter; an empty chain plays the stock audio"
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+requires = []
+conflicts = []
+
+# Test status per firmware; patchkit does not read it.
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "untested"
+"dn2-1.12" = "experimental"
+
+# One DSP object for both devices: the hook is the first instruction of the post-master function (H1, docs/findings/53), the master block is the
+# literal of the Q31 converter, and the displaced instruction runs in the hook's tail.
+[[object]]
+path = "build/fx-dsp.dko.json"
+sources = ["src/dsp/fx.s"]
+place = "dsp.l2"
+
+[object.externs]
+_fx_table = "fx.rows"
+_fx_master = "dsp.master.float_buf"
+_fx_back = "hook.dsp.fx.entry.tail"
+
+[[op]]
+op = "hook"
+cpu = "sharc"
+anchor = "dsp.fx.entry"
+offset = 0
+to = "_fx_entry"
+displaced = "run"
+
+# Effect modules add rows with `[[entry]] registry = "fx"`:
+#
+#     [[entry]]
+#     registry = "fx"
+#     id = "gain"
+#     pc = "_fg_process"        # the process routine's symbol in the module's DSP object
+#     desc = "_fg_desc"         # its dk_fx_desc (sdk/dk_fx.h)
+#     state = "_fg_state"       # its state block (state_bytes of the desc)
+#
+# The chain runs in module order. The scan ends at the zero row patchkit appends (terminator); at most DK_FX_MAX (4) effects
+# (packages/patchkit/tests/sdkgen.rs checks this number against sdk/dk_fx.h).
+[[registry]]
+name = "fx"
+first = "0"
+max = 4
+region = "dsp.l2"
+terminator = true
+
+# A row is 16 words:
+#   0 pc (0 ends the table), 1 desc, 2 state, 3 enabled (1: on), 4 to 7 the parameter words, 8 was (enabled in the last block),
+#   9 spare, 10 dis (1: switched off by its faults until the next start), 11 the block of the fault window's start, 12 faults in the
+#   window, 13 faults since the start, 14 and 15 spare. The words from 8 on belong to the adapter.
+[[registry.field]]
+name = "pc"
+kind = "u32"
+[[registry.field]]
+name = "desc"
+kind = "u32"
+[[registry.field]]
+name = "state"
+kind = "u32"
+[[registry.field]]
+name = "enabled"
+kind = "u32"
+default = 1
+[[registry.field]]
+name = "p0"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "p1"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "p2"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "p3"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "was"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "spare9"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "dis"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "wstart"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "wcount"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "nfault"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "spare14"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "spare15"
+kind = "u32"
+default = 0
+
+[[claim]]
+resource = "dsp.fx.hook"
+
+# H1: the first instruction of the function the block orchestrator calls after the master mix (Digitakt II FUN_1c14e7 at 0x1c30a0; Digitone II
+# FUN_1c244d at 0x1c307b, which also packs the USB stream). 48 bits, `I7 = MODIFY(I7, imm)`, one caller each. The rules hold on the older versions:
+# the DSP blobs of 1.16/1.17 and of 1.11/1.12 are byte-identical.
+[[anchor_rule]]
+name = "dsp.fx.entry"
+devices = ["dt2"]
+cpu = "sharc"
+kind = "sharc_func"
+reloc_hash = "06bffd968e77307e81a2dafe2b0cff6bcec4f84c01e60a827306fd6b92b9d783"
+offset = 0x0
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "dsp.fx.entry"
+devices = ["dn2"]
+cpu = "sharc"
+kind = "sharc_func"
+reloc_hash = "0655a833019771f60976478adc8625fad9fec2879dc1156c2fc50d621cea2974"
+offset = 0x0
+len = 6
+mark = "D"
+
+# The master float buffer: the literal `I3 = 0x25f180` (Digitakt II) or `0x268438` (Digitone II) of the Q31 converter.
+[[anchor_rule]]
+name = "dsp.master.float_buf"
+cpu = "sharc"
+kind = "sharc_literal"
+reloc_hash = "83fba5710c2b395cbd54e3cd583b1e205915fa6d1905d7285c3535203e52d05b"
+offset = 0xf
+mark = "D"

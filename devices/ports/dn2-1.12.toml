@@ -1931,6 +1931,17 @@ mark = "D"
 rule = "core/dsp-link:sharc_func"
 
 [[anchor]]
+name = "dsp.fx.entry"
+cpu = "sharc"
+kind = "code"
+addr = 0x2838489a
+pm = 0x1c244d
+len = 6
+sha256 = "8ce0248162c12f3d31bc59968ef980514942faad3dcdd0237ee2f7a78a96ef2f"
+mark = "D"
+rule = "core/fx:sharc_func"
+
+[[anchor]]
 name = "dsp.fx.sidechain_filter_word"
 cpu = "sharc"
 kind = "value"
@@ -1950,7 +1961,7 @@ src = 0x28393a9c
 len = 6
 sha256 = "49c14d830f1886f48c876c6240b992a3ed118205f79f162c2fd27a0b0c365086"
 mark = "D"
-rule = "digikit/master-drive:sharc_literal"
+rule = "core/fx:sharc_literal"
 
 [[anchor]]
 name = "dsp.master.q31_call"

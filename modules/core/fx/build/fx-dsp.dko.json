@@ -1,0 +1,137 @@
+{
+ "arch": "sharc",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 0,
+   "section": "seg_pmco",
+   "symbol": "_fx_s_r0",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 5,
+   "section": "seg_pmco",
+   "symbol": "_fx_s_i4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": "seg_pmco",
+   "symbol": "_fx_s_l4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 15,
+   "section": "seg_pmco",
+   "symbol": "_fx_table",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": "seg_pmco",
+   "symbol": "_fx_s_l4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 25,
+   "section": "seg_pmco",
+   "symbol": "_fx_s_i4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 30,
+   "section": "seg_pmco",
+   "symbol": "_fx_s_r0",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 33,
+   "section": "seg_pmco",
+   "symbol": "_fx_back",
+   "type": "sharc.abs24"
+  }
+ ],
+ "sections": [
+  {
+   "align": 8,
+   "hex": "0011000000007e713f000011000000007e733f00001100000000b40f0000140f00000000089800000010000000003e703f1a0010000000003e703f0a0010000000003e0600000000",
+   "kind": "text",
+   "name": "seg_pmco",
+   "size": 72
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__fx_s_r0",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__fx_s_i4",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__fx_s_l4",
+   "size": 4
+  }
+ ],
+ "source_sha256": "d74ebf966d1926add5e53266fdd88bc9f45b594331e2017d7bb43826649a3ac1",
+ "symbols": [
+  {
+   "global": true,
+   "name": "_fx_entry",
+   "section": "seg_pmco",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fx_s_i4",
+   "section": "pkdata__fx_s_i4",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fx_s_l4",
+   "section": "pkdata__fx_s_l4",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fx_s_r0",
+   "section": "pkdata__fx_s_r0",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fx_back",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fx_table",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "instructions_redecoded": "14",
+  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
+  "selas_sha256": "042aa5aa52ddfc9e687f627580e413b259b18a29874c28e2f2bf0251429514c0",
+  "seldump_sha256": "527162a78a7b94377c310e31b025ba51dafe8b6194d71ee09a575b6a9eb78916"
+ }
+}
