@@ -3115,7 +3115,7 @@ below, by measurement]**:
 | device | Fx array index `k` | TX frame offset | DSP address of the frame copy |
 |---|---|---|---|
 | DT2 | 25 .. 69 | `0x6da + 2*(k-25)` | `0x2558dc + offset` |
-| DN2 | 25 .. 100 (to be checked past 69) | `0x9fa + 2*(k-25)` | `0x25c48c + offset` |
+| DN2 | 25 .. 69 (**[C]** 2026-10-21, finding 53: fx[70..100] are not sent) | `0x9fa + 2*(k-25)` | `0x25c48c + offset` |
 
 Checked offsets, DT2: fx[26] `0x6dc`, fx[35] `0x6ee`, fx[36] `0x6f0`, fx[39] `0x6f6`, fx[42] `0x6fc`, fx[43] `0x6fe`,
 fx[44] `0x700`, fx[45] `0x702`, fx[60] `0x720`, fx[61] `0x722`, fx[62] `0x724`, fx[63] `0x726`, fx[64] `0x728`,
