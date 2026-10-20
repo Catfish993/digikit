@@ -54,3 +54,83 @@ pub mod logk {
     pub const L_DEBUG: u16 = 3;
     pub const L_TRACE: u16 = 4;
 }
+
+pub mod proto {
+    pub const VERSION: u8 = 1;
+    pub const CMD_INFO: u8 = 0x01;
+    pub const CMD_LIST: u8 = 0x02;
+    pub const CMD_MODULES: u8 = 0x03;
+    pub const CMD_BEGIN: u8 = 0x10;
+    pub const CMD_DATA: u8 = 0x11;
+    pub const CMD_END: u8 = 0x12;
+    pub const CMD_DELETE: u8 = 0x13;
+    pub const CMD_CLEAR: u8 = 0x14;
+    pub const CMD_ABORT: u8 = 0x15;
+    pub const CMD_LOG: u8 = 0x20;
+    pub const CMD_PEEK: u8 = 0x21;
+    pub const CMD_LOGCFG: u8 = 0x22;
+    pub const CMD_SELECT: u8 = 0x30;
+    pub const CMD_RESTART: u8 = 0x31;
+    pub const E_MSG: i32 = -50;
+    pub const E_PATH: i32 = -51;
+    pub const E_FULL: i32 = -52;
+    pub const E_STATE: i32 = -53;
+    pub const E_OFFSET: i32 = -54;
+    pub const E_LENGTH: i32 = -55;
+    pub const E_HASH: i32 = -56;
+    pub const E_WRITE: i32 = -57;
+    pub const E_READ: i32 = -58;
+    pub const E_NOFILE: i32 = -59;
+    pub const E_PROTO: i32 = -60;
+    pub const E_NOSTORE: i32 = -61;
+    pub const E_INUSE: i32 = -62;
+    pub const E_PEEK: i32 = -63;
+    pub const CAP_LOG: u32 = 1 << 0;
+    pub const CAP_PEEK: u32 = 1 << 1;
+    pub const CAP_LOGCFG: u32 = 1 << 2;
+    pub const CAP_SELECT: u32 = 1 << 3;
+    pub const CAP_RESTART: u32 = 1 << 4;
+    pub const CAP_MODULES: u32 = 1 << 5;
+}
+
+pub mod load {
+    pub const E_NOT_FOUND: i32 = -1;
+    pub const E_BAD_STORE: i32 = -2;
+    pub const E_READ: i32 = -3;
+    pub const E_SHA: i32 = -4;
+    pub const E_FORMAT: i32 = -5;
+    pub const E_RUNTIME: i32 = -6;
+    pub const E_IMPORT: i32 = -7;
+    pub const E_NOMEM: i32 = -8;
+    pub const E_INIT: i32 = -9;
+    pub const E_LOADED: i32 = -10;
+    pub const E_SLOT: i32 = -11;
+    pub const E_BUSY: i32 = -12;
+    pub const E_TOO_BIG: i32 = -13;
+    pub const E_TABLE_FULL: i32 = -14;
+    pub const E_NO_REGISTRY: i32 = -20;
+    pub const E_REG_DEVICE: i32 = -21;
+    pub const E_TYPE_RANGE: i32 = -22;
+    pub const E_TYPE_USED: i32 = -23;
+    pub const E_PARAM_FULL: i32 = -24;
+    pub const E_PAGE_FULL: i32 = -25;
+    pub const E_TYPE_IN_USE: i32 = -26;
+    pub const E_NO_DSP: i32 = -30;
+    pub const E_DSP_FORMAT: i32 = -31;
+    pub const E_DSP_IMPORT: i32 = -32;
+    pub const E_DSP_NOSPACE: i32 = -33;
+    pub const E_DSP_ROWS: i32 = -34;
+    pub const E_DSP_XFER: i32 = -35;
+    pub const E_DSP_DEVICE: i32 = -36;
+    pub const E_DSP_TYPE: i32 = -37;
+    pub const E_SEL_PATH: i32 = -40;
+    pub const E_SEL_COUNT: i32 = -41;
+    pub const E_SEL_WRITE: i32 = -42;
+    pub const E_CARD_BUSY: i32 = -43;
+    pub const E_SAFE_MODE: i32 = -44;
+    pub const E_BOOT_ONLY: i32 = -45;
+    pub const E_RANGE: i32 = -46;
+    pub const E_CARD_RO: i32 = -47;
+    pub const E_CONTRACT: i32 = -48;
+    pub const E_TABLE: i32 = -49;
+}

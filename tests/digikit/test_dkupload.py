@@ -113,3 +113,43 @@ def test_uploader_select_and_restart_send_the_commands():
     up.select(["modules/a.dkm"])
     up.restart()
     assert seen == [(D.CMD_SELECT, b"\x01modules/a.dkm\0"), (D.CMD_RESTART, b"")]
+
+
+def _info_of(runtime: int, tail: bytes) -> dict:
+    import struct
+
+    from tools.firmware.build import encode_8in7
+
+    body = (
+        b"\x00"
+        + struct.pack(">HH", 1, runtime & 0xFFFF)
+        + b"dt2\0"
+        + struct.pack(">IIB", 1024, 32768, 0)
+        + tail
+    )
+
+    class Fake:
+        def send(self, msg: bytes) -> None:
+            self.msg = msg
+
+        def recv(self) -> bytes:
+            m = self.msg
+            return m[:4] + bytes([1, m[5] | 0x40, m[6]]) + encode_8in7(body) + b"\xf7"
+
+    return D.Uploader(Fake()).info()
+
+
+def test_info_short_and_long_replies_and_has_cap():
+    import struct
+
+    log = struct.pack(">II", 3, 9)
+    old = _info_of(4, log)
+    assert old["caps"] is None and old["runtime"] == 4 and old["log_newest"] == 9
+    assert D.has_cap(old, "SELECT") and D.has_cap(old, "PEEK")
+    assert not D.has_cap(old, "LOGCFG") and not D.has_cap(old, "MODULES")
+    assert D.has_cap(_info_of(0x100, log), "LOGCFG")
+    assert not D.has_cap(_info_of(2, b""), "LOG")
+    caps = (1 << D.CAP["LOG"]) | (1 << D.CAP["MODULES"])
+    new = _info_of(0x0002, log + struct.pack(">II", 0x000200, caps))
+    assert new["runtime"] == 0x000200 and new["caps"] == caps
+    assert D.has_cap(new, "MODULES") and not D.has_cap(new, "PEEK")

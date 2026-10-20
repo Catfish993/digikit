@@ -9,14 +9,9 @@ pub const MAX_CHUNK: usize = 32768;
 pub const MAX_REQUEST_WIRE: usize = 40 * 1024;
 pub const MAX_REPLY_WIRE: usize = 1024;
 
-pub const CMD_INFO: u8 = 0x01;
-pub const CMD_LIST: u8 = 0x02;
-pub const CMD_BEGIN: u8 = 0x10;
-pub const CMD_DATA: u8 = 0x11;
-pub const CMD_END: u8 = 0x12;
-pub const CMD_DELETE: u8 = 0x13;
-pub const CMD_CLEAR: u8 = 0x14;
-pub const CMD_ABORT: u8 = 0x15;
+pub use crate::gen_proto::{
+    CMD_ABORT, CMD_BEGIN, CMD_CLEAR, CMD_DATA, CMD_DELETE, CMD_END, CMD_INFO, CMD_LIST,
+};
 pub const CLEAR_MAGIC: u32 = 0x434c_5221;
 
 /// Pack: each group of up to 7 bytes becomes a collector byte (bit `6 - n` is the top bit of byte `n`) and the 7 bytes

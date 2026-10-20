@@ -29,53 +29,65 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from tools.device import dkproto
+from tools.device.dkproto import (
+    CAP,
+    CMD_ABORT,
+    CMD_BEGIN,
+    CMD_CLEAR,
+    CMD_DATA,
+    CMD_DELETE,
+    CMD_END,
+    CMD_INFO,
+    CMD_LIST,
+    CMD_LOG,
+    CMD_LOGCFG,
+    CMD_PEEK,
+    CMD_RESTART,
+    CMD_SELECT,
+    LOAD_STATUS,
+    VERSION,
+)
 from tools.device.midisniff import unpack_8in7
 from tools.firmware.build import encode_8in7
 
 PREFIX = bytes((0xF0, 0x7D, 0x64, 0x6B))
-VERSION = 1
-CMD_INFO, CMD_LIST = 0x01, 0x02
-CMD_BEGIN, CMD_DATA, CMD_END, CMD_DELETE, CMD_CLEAR, CMD_ABORT = (
-    0x10,
-    0x11,
-    0x12,
-    0x13,
-    0x14,
-    0x15,
-)
-CMD_LOG, CMD_PEEK, CMD_LOGCFG = 0x20, 0x21, 0x22
-CMD_SELECT, CMD_RESTART = 0x30, 0x31  # runtime 4
 CLEAR_MAGIC = 0x434C5221
 MAX_CHUNK = 32768
 DEPTH = 2
 
-STATUS = {
+# status code -> name: the upload statuses, and the load and selection codes (SELECT answers them as the menu's APPLY gets them)
+STATUS: dict[int, str] = {
     0: "ok",
-    -50: "E_MSG",
-    -51: "E_PATH",
-    -52: "E_FULL",
-    -53: "E_STATE",
-    -54: "E_OFFSET",
-    -55: "E_LENGTH",
-    -56: "E_HASH",
-    -57: "E_WRITE",
-    -58: "E_READ",
-    -59: "E_NOFILE",
-    -60: "E_PROTO",
-    -61: "E_NOSTORE",
-    -62: "E_INUSE",
-    -63: "E_PEEK",
-    # the selection record's codes (SELECT answers them as the menu's APPLY gets them)
-    -40: "E_SEL_PATH",
-    -41: "E_SEL_COUNT",
-    -42: "E_SEL_WRITE",
-    -47: "E_CARD_RO",
+    **{c: n for c, (n, _) in LOAD_STATUS.items()},
+    **{c: n for c, (n, _) in dkproto.STATUS.items()},
+}
+
+# The runtimes before INFO carried `caps` had these features from this packed version on (0.0.3 LOG and PEEK, 0.0.4 SELECT and
+# RESTART, 0.1.0 LOGCFG). MODULES is known by `caps` only.
+CAP_SINCE: dict[str, int] = {
+    "LOG": 0x000003,
+    "PEEK": 0x000003,
+    "SELECT": 0x000004,
+    "RESTART": 0x000004,
+    "LOGCFG": 0x000100,
 }
 
 
 def fmt_runtime(packed: int) -> str:
     """A packed runtime version (major << 16 | minor << 8 | patch) as "major.minor.patch"; the plain integers 1 to 5 of old runtimes read as 0.0.N."""
     return f"{packed >> 16}.{packed >> 8 & 255}.{packed & 255}"
+
+
+def has_cap(info: dict[str, Any], name: str) -> bool:
+    """Does the device have the feature `name` (a key of `CAP`)? From the INFO `caps` word; a runtime without one is judged by its version
+    (`CAP_SINCE`), and a feature known by `caps` only (MODULES) is absent there."""
+    if name not in CAP:
+        raise KeyError(name)
+    if info.get("caps") is not None:
+        return bool(info["caps"] >> CAP[name] & 1)
+    since = CAP_SINCE.get(name)
+    return since is not None and info["runtime"] >= since
 
 
 class UploadError(RuntimeError):
@@ -259,9 +271,14 @@ class Uploader:
         oldest, newest = (
             struct.unpack_from(">II", b, end + 10) if len(b) >= end + 18 else (0, 0)
         )
+        # appended after the log range: the packed runtime version (u32) and the capability bits (u32)
+        caps = None
+        if len(b) >= end + 26:
+            runtime, caps = struct.unpack_from(">II", b, end + 18)
         return {
             "protocol": proto,
             "runtime": runtime,
+            "caps": caps,
             "port": port,
             "free_bytes": free,
             "max_chunk": max_chunk,

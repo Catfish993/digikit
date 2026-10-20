@@ -592,9 +592,6 @@ def peek_range(up: D.Uploader, addr: int, length: int) -> bytes:
     return out
 
 
-LOGCFG_RUNTIME = 0x000100  # runtime 0.1.0, packed
-
-
 def level_config(
     up: D.Uploader,
     default: str | None = None,
@@ -717,7 +714,7 @@ def main(argv: list[str] | None = None) -> int:
                 names=names,
             )
         elif args.cmd == "level":
-            if up.info()["runtime"] < LOGCFG_RUNTIME:
+            if not D.has_cap(up.info(), "LOGCFG"):
                 raise ValueError("LOGCFG needs runtime 0.1.0 or newer")
             names = module_names(read_all(up)[2]) if args.module else {}
             print(level_config(up, args.level, args.module, names))
