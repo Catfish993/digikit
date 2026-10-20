@@ -433,7 +433,8 @@ class BootRig(M.Rig):
 
     def dyn_type(self, module: str, machine: str) -> int:
         """The type number the runtime assigned to `<module>:<machine>` in this boot (read from `DKRT_ASSIGN`)."""
-        h = M.machine_hash(module, machine)  # the key's low byte is the machine's type_hint
+        # the key's low byte is the machine's type_hint
+        h = M.machine_hash(module, machine)
         for m in self.assign_table()["machines"]:
             if m["key"] >> 8 == h and m["type"]:
                 return m["type"]
