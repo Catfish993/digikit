@@ -1,7 +1,7 @@
 """A Claude Code PreToolUse hook for the Bash tool: blocks the commands that cost agents the most time.
 
 Blocked (docs/TESTING.md, AGENTS.md "Verify"): pytest on a test directory, `--tier full`, `verify:full` (or
-`tools.devtools.verify --full`), `sleep` over 60 s and `tail -f`. A command that starts with `DIGI_GUARD=off `
+`tools.devtools.verify --full`), `sleep` that adds up to over 60 s and `tail -f`. A command that starts with `DIGI_GUARD=off `
 passes (the coordinator, deliberately). Registered in .claude/settings.json. Stdlib only.
 
 The hook reads one JSON object from stdin. Exit 2 with a reason on stderr blocks the command; exit 0 lets it
@@ -88,12 +88,21 @@ def unquoted(command: str) -> str:
 def check(command: str, cwd: Path) -> str | None:
     """The reason to block `command`, or None. The first match wins."""
     bare = unquoted(command)
+    total = 0.0
     for m in SLEEP_RE.finditer(bare):
-        if float(m.group(1)) * SLEEP_UNIT[m.group(2)] > SLEEP_LIMIT_S:
+        seconds = float(m.group(1)) * SLEEP_UNIT[m.group(2)]
+        if seconds > SLEEP_LIMIT_S:
             return (
                 f"sleep {m.group(1)}{m.group(2)} is over 60 s: run the command in the background and wait "
                 "for its completion notification, or poll with a bound (sleep 60 or less, then tail -n)"
             )
+        total += seconds
+    if total > SLEEP_LIMIT_S:
+        return (
+            f"sleep adds up to {total:g} s (over 60 s): poll with an exit condition instead, e.g. "
+            "for i in $(seq 12); do grep -q DONE FILE && break; sleep 5; done; tail -n 5 FILE, "
+            "or run the command in the background and wait for its completion notification"
+        )
     if TAIL_FOLLOW_RE.search(bare):
         return "tail -f never exits: poll with a bound (sleep 60 or less, then tail -n)"
     if TIER_FULL_RE.search(bare):
