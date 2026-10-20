@@ -23,9 +23,9 @@ last = 23
 dynamic_first = 16
 
 [dt2.alloc]
-"machines/xslice:xslice" = 7
+"test/xslice:xslice" = 7
 "test/machine-clone:xclone" = 8
-"machines/pluck:pluck" = 9
+"digikit/pluck:pluck" = 9
 "test/twin-xslice:xslice_d" = 10
 "core/dynreg:dyn16" = 16
 "core/dynreg:dyn17" = 17
@@ -46,7 +46,7 @@ dynamic_first = 16
 "test/dn2-pages:pages" = 6
 "test/dn2-sine:dn2sine" = 7
 "test/dn2-edge:dn2edge" = 8
-"machines/pluck:pluck" = 9
+"digikit/pluck:pluck" = 9
 "test/twin-dn2:dyn_pluck" = 10
 "core/dynreg:dyn16" = 16
 "core/dynreg:dyn17" = 17

@@ -1,5 +1,5 @@
 [module]
-id = "fx/master-drive"
+id = "digikit/master-drive"
 version = "0.1.0"
 name = "Master drive"
 category = "fx"
@@ -8,7 +8,7 @@ author = "digikit"
 status = "experimental"
 summary = "Soft-clip saturation on the master output, on one knob."
 requires = []
-conflicts = ["fx/master-gain"]
+conflicts = ["digikit/master-gain"]
 
 # Test status per firmware; patchkit does not read it.
 [targets]
@@ -55,7 +55,7 @@ offset = 0x30
 hex = "00000000"
 reloc = [{ offset = 0, type = "cf.32", symbol = "md_name_short" }]
 
-# Resources: the master hook (also claimed by fx/master-gain), the Sidechain Filter frame word, and its descriptor row.
+# Resources: the master hook (also claimed by digikit/master-gain), the Sidechain Filter frame word, and its descriptor row.
 [[claim]]
 resource = "dsp.master.hook"
 
@@ -65,7 +65,7 @@ resource = "frame.fx66"
 [[claim]]
 resource = "cf.param.master_sidechain_filter"
 
-# Anchors. The hook anchors are the ones of fx/master-gain (same rules, same device-independent hashes).
+# Anchors. The hook anchors are the ones of digikit/master-gain (same rules, same device-independent hashes).
 [[anchor_rule]]
 name = "dsp.master.q31_call"
 cpu = "sharc"

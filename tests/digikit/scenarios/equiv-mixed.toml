@@ -7,7 +7,7 @@ tier = "full"
 
 [equiv]
 modules = ["test/dyn-pluck", "test/dyn-xslice"]
-twin = "machines/pluck,test/twin-xslice"
+twin = "digikit/pluck,test/twin-xslice"
 play = "pluck"
 static_type = 9
 hint = 7        # list position of the patched-in pluck (the xslice twin follows it)

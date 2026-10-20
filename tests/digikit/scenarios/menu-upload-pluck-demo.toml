@@ -1,5 +1,5 @@
 # Upload, then the menu: the two modules are uploaded over USB SysEx to a card with no store, they appear in SETTINGS > DIGIKIT > MODULES,
-# are ticked, APPLY & RESTART loads them, and the machine plays like the patched-in machines/pluck (menu-pluck-demo with the store
+# are ticked, APPLY & RESTART loads them, and the machine plays like the patched-in digikit/pluck (menu-pluck-demo with the store
 # filled by the upload instead of the card build).
 [scenario]
 name = "menu-upload-pluck-demo"
@@ -9,7 +9,7 @@ tier = "full"
 
 [menu]
 modules = ["test/dyn-demo", "test/dyn-pluck"]
-twin = "machines/pluck"
+twin = "digikit/pluck"
 static_type = 9
 hint = 7
 voices = 1

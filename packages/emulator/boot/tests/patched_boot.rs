@@ -19,10 +19,10 @@ fn patched(file: &str, modules: &[&str]) -> Option<Vec<u8>> {
 
 #[test]
 fn a_patched_image_with_a_changed_main_boots_from_its_record() {
-    // machines/xslice adds ColdFire code, so neither the file nor the MAIN digest is a known one.
+    // test/xslice adds ColdFire code, so neither the file nor the MAIN digest is a known one.
     let Some(syx) = patched(
         "Digitakt_II_OS1.17.syx",
-        &["core/expansion", "core/machines", "machines/xslice"],
+        &["core/expansion", "core/machines", "test/xslice"],
     ) else {
         return;
     };
@@ -33,7 +33,7 @@ fn a_patched_image_with_a_changed_main_boots_from_its_record() {
 
 #[test]
 fn a_patched_dsp_only_image_boots() {
-    let Some(syx) = patched("Digitone_II_OS1.12.syx", &["fx/master-drive"]) else {
+    let Some(syx) = patched("Digitone_II_OS1.12.syx", &["digikit/master-drive"]) else {
         return;
     };
     Emulator::new(&syx, None).expect("the patched image boots");

@@ -100,7 +100,7 @@ needed, so `.dko` can be that model with a binary container and a canonical enco
   ISA check (cfdis, SHARC re-decode) belongs in the module build, not at patch time.
 
 
-## Assembler facts found writing core/dsp-voice and machines/pluck (patchkit 4.2) **[D]**
+## Assembler facts found writing core/dsp-voice and digikit/pluck (patchkit 4.2) **[D]**
 
 One agent; each item was met as a build failure or a wrong result and fixed in the source.
 

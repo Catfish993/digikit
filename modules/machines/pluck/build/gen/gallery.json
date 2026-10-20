@@ -77,7 +77,7 @@
       "short": "PLK"
     }
   ],
-  "module": "machines/pluck",
+  "module": "digikit/pluck",
   "params": {
     "dn2": [
       {

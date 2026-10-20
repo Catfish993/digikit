@@ -1,6 +1,6 @@
 # `dk run` (tools/device/dkrun.py, runtime 4): a boot with no module selected; dkrun uploads test/dyn-pluck over USB SysEx, SELECTs it
 # (the selection record, written by the menu's own code), RESTARTs, and the next boot loads it (MOD_LOAD result 1, MOD_DSP result 0). The
-# machine then plays like the patched-in machines/pluck, as in menu-upload-pluck-demo. A second dkrun finds the same sha256 and uploads nothing.
+# machine then plays like the patched-in digikit/pluck, as in menu-upload-pluck-demo. A second dkrun finds the same sha256 and uploads nothing.
 [scenario]
 name = "menu-dkrun-pluck"
 kind = "menu"
@@ -9,7 +9,7 @@ tier = "quick"
 
 [menu]
 modules = ["test/dyn-pluck"]
-twin = "machines/pluck"
+twin = "digikit/pluck"
 static_type = 9
 hint = 7
 voices = 1

@@ -47,7 +47,7 @@ test('patchkit.wasm is small and carries no firmware', () => {
   }
 });
 
-test('wasm and CLI produce byte-identical output for fx/master-gain', { skip: !need }, async () => {
+test('wasm and CLI produce byte-identical output for digikit/master-gain', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');
   py('tools.patchkit.patchkit', 'bundle', '-o', bundlePath);
@@ -63,7 +63,7 @@ test('wasm and CLI produce byte-identical output for fx/master-gain', { skip: !n
       '--firmware',
       path,
       '--modules',
-      'fx/master-gain',
+      'digikit/master-gain',
       '-o',
       out,
       '--plan',
@@ -71,7 +71,7 @@ test('wasm and CLI produce byte-identical output for fx/master-gain', { skip: !n
     );
     const [fp, fl] = put(fw);
     const [bp, bl] = put(bundle);
-    const [ip, il] = put(Buffer.from('fx/master-gain'));
+    const [ip, il] = put(Buffer.from('digikit/master-gain'));
     const rc = x.pk_apply(fp, fl, bp, bl, ip, il);
     assert.equal(rc, 0, text(x.pk_err_ptr, x.pk_err_len));
     const wasmOut = Buffer.from(get(x.pk_out_ptr, x.pk_out_len));
@@ -85,7 +85,7 @@ test('wasm and CLI produce byte-identical output for fx/master-gain', { skip: !n
     assert.equal(x.pk_verify(op, ol, bp, bl, fbp, fbl), 0, text(x.pk_err_ptr, x.pk_err_len));
     const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
     assert.equal(report.device, name);
-    assert.ok(report.record.modules[0].startsWith('fx/master-gain@'));
+    assert.ok(report.record.modules[0].startsWith('digikit/master-gain@'));
   }
 });
 
@@ -98,7 +98,7 @@ test(
     py('tools.patchkit.patchkit', 'bundle', '-o', bundlePath);
     const bundle = readFileSync(bundlePath);
     const { x, put, get, text } = await load();
-    const mods = 'core/machines,machines/xslice,test/machine-clone';
+    const mods = 'core/machines,test/xslice,test/machine-clone';
     const fw = readFileSync(images.dt2);
     const out = join(work, 'dt2-machines.syx');
     const plan = join(work, 'dt2-machines.plan.json');
@@ -116,7 +116,7 @@ test(
     ]);
     // Digitone II has core/machines, but XSLICE clones a Digitakt machine (MANUAL SLICE, type 6)
     const [dp, dl] = put(readFileSync(images.dn2));
-    const [mp, ml] = put(Buffer.from('core/machines,machines/xslice'));
+    const [mp, ml] = put(Buffer.from('core/machines,test/xslice'));
     assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
     assert.match(
       text(x.pk_err_ptr, x.pk_err_len),
@@ -131,7 +131,7 @@ test('wasm and CLI produce byte-identical output for core/params and PLUCK', { s
   py('tools.patchkit.patchkit', 'bundle', '-o', bundlePath);
   const bundle = readFileSync(bundlePath);
   const { x, put, get, text } = await load();
-  const mods = 'core/dsp-voice,core/machines,core/params,machines/pluck';
+  const mods = 'core/dsp-voice,core/machines,core/params,digikit/pluck';
   const fw = readFileSync(images.dt2);
   const out = join(work, 'dt2-pluck.syx');
   const plan = join(work, 'dt2-pluck.plan.json');
@@ -220,13 +220,13 @@ test('wasm adds the requirements of the selection like the CLI', { skip: !need }
       '--firmware',
       images[dev],
       '--modules',
-      'machines/pluck',
+      'digikit/pluck',
       '-o',
       out,
     );
     assert.match(said, /added by requires: .*core\/machines/);
     const [fp, fl] = put(readFileSync(images[dev]));
-    const [ip, il] = put(Buffer.from('machines/pluck'));
+    const [ip, il] = put(Buffer.from('digikit/pluck'));
     assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
     assert.ok(
       Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)),

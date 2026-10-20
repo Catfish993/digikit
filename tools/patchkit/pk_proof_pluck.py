@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """patchkit proof: the PLUCK machine end to end on Digitakt II (core/dsp-voice + core/machines + core/params +
-machines/pluck), in the emulator, through the panel.
+digikit/pluck), in the emulator, through the panel.
 
     uv run python -m tools.patchkit.pk_proof_pluck [--fw 1.17] [--out DIR] [--only a,b,c,d,e,f,g] [--quick] [--jobs N]
 
@@ -61,8 +61,8 @@ from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proof_machines as M  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
 
-PLUCK_TYPE = 9  # core/machines types.toml, "machines/pluck:pluck" on dt2
-MODS = ["core/dsp-voice", "core/machines", "core/params", "machines/pluck"]
+PLUCK_TYPE = 9  # core/machines types.toml, "digikit/pluck:pluck" on dt2
+MODS = ["core/dsp-voice", "core/machines", "core/params", "digikit/pluck"]
 PLUCK_DOWNS = (
     7  # presses of DOWN from the top of the machine list to PLUCK (the 8th entry)
 )

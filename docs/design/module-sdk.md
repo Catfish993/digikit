@@ -12,7 +12,7 @@ Related: `docs/plans/digikit-runtime.md` (Phase 11), `docs/design/digikit-dkm.md
 | Kind | Example | What it is | Loaded how |
 | --- | --- | --- | --- |
 | framework | `core/runtime`, `core/dynreg`, `core/dyndsp`, `core/dsp-link`, `core/dsp-voice`, `core/machines`, `core/params` | has firmware hooks, anchor rules, patch ops | patched into the image (`modules/core/*/module.toml`) |
-| content, patched in | `machines/pluck`, `machines/xslice`, `fx/master-gain` | machine rows and a DSP routine, placed by patchkit | patched into the image |
+| content, patched in | `digikit/pluck`, `test/xslice`, `digikit/master-gain` | machine rows and a DSP routine, placed by patchkit | patched into the image |
 | content, run time | `test/dyn-pluck`, `test/dyn-xslice` | the same machine as a `.dkm` (`dynamic = true`) | `dkrt_load` at boot (`docs/design/digikit-runtime.md:161-183`) |
 | ColdFire service | `test/c-demo`, `test/rust-demo` | `dkm_init`, `dkm_fini`, `dkm_slot_n` | `.dkm` (`docs/design/digikit-dkm.md:73-75`) |
 | fixture | `test/dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-crash`, `twin-*`, `dn2-*` | framework tests, today beside real modules | both ways |
@@ -138,8 +138,8 @@ sdk/                         the contract, the only thing a content author inclu
 modules/
   core/<fw>/                 framework modules, as today (runtime, dynreg, dyndsp, dsp-link, machines, params, ...)
   core/adapter-machine/      the Machine adapter: src/dsp/dt2.s, src/dsp/dn2.s (from core/dsp-voice), generated profile constants
-  machines/pluck/            content: module.toml, src/dsp/pluck.s (one source), tests/, gallery/
-  fx/master-gain/            content
+  digikit/pluck/            content: module.toml, src/dsp/pluck.s (one source), tests/, gallery/
+  digikit/master-gain/            content
 tests/fixtures/modules/      framework fixtures (dyn-guard-nan, dyn-dsp-hang, dyn-fault, dyn-crash, c-demo, ...), same layout, not selectable by name from `module:*`
 devices/<dev>.toml           device profile; gains [adapter.*] and [limits] tables (sections 5, 6, 7)
 ```
@@ -237,7 +237,7 @@ Notes on the header:
 
 | Type | Shape of the contract | Open points |
 | --- | --- | --- |
-| FX (insert or send) | `dk_fx_process(state, params, const float in[2][DK_BLOCK], float out[2][DK_BLOCK])`; `n_params`, `state_bytes`, `tail_blocks` (blocks of ring after input stops), a bypass rule (the adapter crossfades, the module never sees a click) | where the DSP hook is (`fx/master-gain` patches the master chain today); insert versus send; block size of the FX path; latency declaration |
+| FX (insert or send) | `dk_fx_process(state, params, const float in[2][DK_BLOCK], float out[2][DK_BLOCK])`; `n_params`, `state_bytes`, `tail_blocks` (blocks of ring after input stops), a bypass rule (the adapter crossfades, the module never sees a click) | where the DSP hook is (`digikit/master-gain` patches the master chain today); insert versus send; block size of the FX path; latency declaration |
 | ColdFire service | `dkm_init`, `dkm_fini`, `dkm_slot_0` as today (`digikit-dkm.md:73-75`), plus a declared slot use and stack/heap bytes; Rust or C | which slots exist beyond 0 (`digikit-runtime.md:90-91`: 1-7 are bound and not called) |
 | UI page / key handler | needs slots 1-7 from the sequencer or key hooks | not designed; no firmware hook exists |
 | Sample / data | no code; a `.dkm` with a data section | store layout (`digikit-store.md`) |
@@ -399,7 +399,7 @@ Author concepts only. Firmware codes move to the device profile.
 ```toml
 # modules/machines/pluck/module.toml
 [module]
-id      = "machines/pluck"
+id      = "digikit/pluck"
 name    = "Pluck"
 short   = "PLK"
 type    = "machine"                     # contract: machine v1
@@ -514,7 +514,7 @@ a step that would move a pin stops and asks.
 | 5. Manifest v2 and profile fields | section 7 | pluck rebuilt from the v2 manifest produces rows equal to today's `plan.json` rows for the same firmware (the test of finding 27, `27-module-schema.md:23-40`, with the new inputs); `patchkit gen --check` |
 | 6. Build-time checks | section 8 | each check has a negative fixture that must fail with the named message (as `pk_conform.NEGATIVE`, `:58-61`) |
 | 7. Fixtures | `dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-fault-late`, `dyn-crash`, `c-demo`, `rust-demo`, `dn2-*`, `twin-*`, `registry-demo`, `dyn-demo`, `dyn-params`, `dyn-sine-dn2` move to `tests/fixtures/modules/`; scenarios and `types.toml` keys are renamed | the scenarios' PCM and log results unchanged; `tools/devtools/pathcheck.py` clean |
-| 8. Retire patched-in content | delete `machines/pluck` as patched-in and `test/dyn-pluck`; one `machines/pluck`, always run time; same for `xslice` and `master-gain` if they fit a contract | see 10.3 |
+| 8. Retire patched-in content | delete `digikit/pluck` as patched-in and `test/dyn-pluck`; one `digikit/pluck`, always run time; same for `xslice` and `master-gain` if they fit a contract | see 10.3 |
 | 9. Tooling and guide | `module:new`, `module:check` extensions, Target, the guide | `module:new machine demo` then `module:check demo` passes on both devices, in CI |
 
 ### 10.2 Pluck first: what is compared
@@ -538,12 +538,12 @@ The new guard test: a fixture that outputs NaN and one that leaves an out-of-ran
 
 ### 10.3 Retiring the patched-in content modules
 
-Patched-in `machines/pluck` has type 9; the run-time one has 18 (DT2) and 17 (DN2) (`types.toml:27,41,54,67`). A project saved with type 9 would load as a gap row that plays as type 0
+Patched-in `digikit/pluck` has type 9; the run-time one has 18 (DT2) and 17 (DN2) (`types.toml:27,41,54,67`). A project saved with type 9 would load as a gap row that plays as type 0
 (`digikit-registry.md:99`). Options: (a) accept, if no saved project uses type 9 (Em has the only device); (b) keep type 9 reserved as an alias that the loader maps to the run-time pluck (needs a
 firmware-side map; not built). Recommendation: (a), after Em confirms. **[O]**
 
 `xslice` clones SLICE and needs the sample renderer, not a synthesized voice: it is not a Machine-contract module. It either stays patched in as a framework-adjacent module until a "sample machine"
-type exists, or it is dropped from the SDK scope. **[O]** `fx/master-gain` and `master-drive` patch the master chain: they wait for the FX contract.
+type exists, or it is dropped from the SDK scope. **[O]** `digikit/master-gain` and `master-drive` patch the master chain: they wait for the FX contract.
 
 ### 10.4 Committed `.dko.json` versus CI-built
 

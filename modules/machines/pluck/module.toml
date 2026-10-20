@@ -1,5 +1,5 @@
 [module]
-id = "machines/pluck"
+id = "digikit/pluck"
 version = "0.1.0"
 name = "Pluck"
 category = "machines"

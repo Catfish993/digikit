@@ -135,7 +135,7 @@ fn section<'a>(p: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
         .unwrap_or_else(|| panic!("no section {name}"))
 }
 
-const XS: [&str; 3] = ["core/machines", "machines/xslice", "test/machine-clone"];
+const XS: [&str; 3] = ["core/machines", "test/xslice", "test/machine-clone"];
 
 #[test]
 fn dt2_machines_get_types_7_and_8_and_the_tables_grow() {
@@ -206,7 +206,7 @@ fn the_selection_order_does_not_change_the_bytes() {
     let r2 = run(
         DT2_117,
         &lib,
-        &["test/machine-clone", "machines/xslice", "core/machines"],
+        &["test/machine-clone", "test/xslice", "core/machines"],
     )
     .unwrap();
     assert!(r1.unwrap().syx == r2.unwrap().syx);
@@ -289,7 +289,7 @@ fn digitone_ii_clone_gets_type_5() {
 #[test]
 fn a_digitakt_machine_is_refused_on_the_digitone() {
     let lib = library(vec![]);
-    let Some(r) = run(DN2_112, &lib, &["core/machines", "machines/xslice"]) else {
+    let Some(r) = run(DN2_112, &lib, &["core/machines", "test/xslice"]) else {
         return;
     };
     // MANUAL SLICE (type 6) is not a Digitone II type: the clone's table reads lie outside the anchors
@@ -298,7 +298,7 @@ fn a_digitakt_machine_is_refused_on_the_digitone() {
         e.contains("outside the anchor")
             || e.contains("anchor")
             || e.contains("no number in the allocation table")
-            || e.contains("not compatible"), // machines/xslice lists its ports
+            || e.contains("not compatible"), // test/xslice lists its ports
         "{e}"
     );
 }
@@ -314,7 +314,7 @@ fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
                 "core/dsp-voice",
                 "core/machines",
                 "core/params",
-                "machines/pluck",
+                "digikit/pluck",
             ],
         ) else {
             continue;

@@ -22,7 +22,7 @@ fn registry() -> Registry {
     Registry::from_dir(&root().join("devices/ports")).unwrap()
 }
 
-/// The real library (core/expansion, fx/master-gain, ...) plus synthetic modules.
+/// The real library (core/expansion, digikit/master-gain, ...) plus synthetic modules.
 fn library(extra: Vec<Module>) -> Library {
     let mut lib = Library::scan_repo(&root()).unwrap();
     lib.modules.extend(extra);
@@ -172,7 +172,7 @@ fn an_anchor_hash_mismatch_is_refused() {
         }
     }
     let lib = library(vec![]);
-    expect_err(run_with(&reg, &lib, &["fx/master-gain"]), "bytes hash");
+    expect_err(run_with(&reg, &lib, &["digikit/master-gain"]), "bytes hash");
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn the_container_cap_is_enforced() {
         p.limits.container_max = 1_000_000;
     }
     let lib = library(vec![]);
-    expect_err(run_with(&reg, &lib, &["fx/master-gain"]), "over the");
+    expect_err(run_with(&reg, &lib, &["digikit/master-gain"]), "over the");
 }
 
 #[test]
@@ -211,9 +211,9 @@ fn sections_2_4_and_8_can_never_change() {
 #[test]
 fn a_patched_image_has_no_port() {
     need_image!();
-    let out = run(&library(vec![]), &["fx/master-gain"]).unwrap();
+    let out = run(&library(vec![]), &["digikit/master-gain"]).unwrap();
     let lib = library(vec![]);
-    let again = apply::apply(&out.syx, &registry(), &lib, &["fx/master-gain".to_string()]);
+    let again = apply::apply(&out.syx, &registry(), &lib, &["digikit/master-gain".to_string()]);
     expect_err(again, "no port for firmware");
 }
 

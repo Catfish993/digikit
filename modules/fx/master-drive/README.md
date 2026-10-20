@@ -1,4 +1,4 @@
-# fx/master-drive
+# digikit/master-drive
 
 A master-bus soft-clip saturator with one knob, for the Digitakt II (1.17) and the Digitone II (1.12) from one source.
 It changes both CPUs.
@@ -15,7 +15,7 @@ The knob is the master compressor's Sidechain Filter, relabelled `DRV` / `Master
 compressor in (its MIX knob above 0), that knob keeps moving the compressor's sidechain filter as well.
 
 Changes both processors: new DSP code in free DSP memory, and two label strings plus two pointers on the ColdFire
-side. Cannot be combined with `fx/master-gain` (both own the master hook).
+side. Cannot be combined with `digikit/master-gain` (both own the master hook).
 
 Not tested on hardware.
 
@@ -52,10 +52,10 @@ can be p-locked like any other.
 
 ## Claims and anchors
 
-- Claims: `dsp.master.hook` (also claimed by `fx/master-gain`, so the two modules are refused together),
+- Claims: `dsp.master.hook` (also claimed by `digikit/master-gain`, so the two modules are refused together),
   `frame.fx66`, `cf.param.master_sidechain_filter`.
 - Anchors, all resolved by rules in `module.toml` (`tools/patchkit/port_resolve.py`), none typed: the call and the entry of
-  the converter and the master buffer (as `fx/master-gain`), `dsp.fx.sidechain_filter_word` (the address inside the
+  the converter and the master buffer (as `digikit/master-gain`), `dsp.fx.sidechain_filter_word` (the address inside the
   stock reader's short-word load: DT2 0x256008, DN2 0x25ced8) and `cf.param.master_sidechain_filter` (the 60-byte
   descriptor row, found by its masked words: mirror index 66, range 0 to 0x7f00, default 0x5000).
 

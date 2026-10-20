@@ -28,7 +28,7 @@ DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run workbench -- firmware/Digit
 Shell 2, patch and inject:
 
 ```sh
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/pluck -o out/patch/pluck.syx
 mise run patch:inject -- out/patch/pluck.syx
 ```
 
@@ -57,17 +57,17 @@ Other modules to try the same way:
 
 ```sh
 # a clone machine (XSLICE, a MANUAL SLICE clone with its own name; no DSP code of its own)
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/xslice -o out/patch/xslice.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules test/xslice -o out/patch/xslice.syx
 # a master-bus drive: the DRV knob on the FUNC + MOD master page (encoder 7; above 80 adds drive)
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-drive -o out/patch/drive.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-drive -o out/patch/drive.syx
 # Digitone II 1.12 (start the emulator with firmware/Digitone_II_OS1.12.syx and a 1.12 ready state)
-mise run patch -- --firmware firmware/Digitone_II_OS1.12.syx --modules machines/pluck -o out/patch/pluck-dn2.syx
+mise run patch -- --firmware firmware/Digitone_II_OS1.12.syx --modules digikit/pluck -o out/patch/pluck-dn2.syx
 ```
 
 Inject each with `mise run patch:inject -- <file>`. To see what a patch changed, and to go back to stock:
 
 ```sh
-mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/pluck
+mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/pluck
 mise run patch:inject -- firmware/Digitakt_II_OS1.17.syx
 ```
 
@@ -181,9 +181,9 @@ the DSP does not halt and the main loop keeps running.
   persist with the project and appear as modulation destinations (parameter locks on added parameters are not
   tested yet). On the Digitone II a machine gets its own parameter pages.
 - **DSP voices** (`core/dsp-voice`): render a machine's sound with your own SHARC+ routine; the stock amplitude
-  envelope, filter, effects and master still apply. `machines/pluck` (a Karplus-Strong string, both devices) is the
+  envelope, filter, effects and master still apply. `digikit/pluck` (a Karplus-Strong string, both devices) is the
   worked example.
-- **Master-bus effects**: process the final stereo mix (`fx/master-gain`, `fx/master-drive`); a knob on the master
+- **Master-bus effects**: process the final stereo mix (`digikit/master-gain`, `digikit/master-drive`); a knob on the master
   page can drive them.
 - **ColdFire code and data** in a 1.3 MiB (Digitakt II) or 24.8 MiB (Digitone II) expansion region, hooks at firmware
   sites, tables copied from the user's own image at patch time and extended with rows.
@@ -245,7 +245,7 @@ A module can also be packed as a `.dkm` and loaded by the digikit runtime at boo
 
 ## Where to look next
 
-- [modules/README.md](../modules/README.md): every manifest key, the test format, `fx/master-gain` and `machines/pluck`
+- [modules/README.md](../modules/README.md): every manifest key, the test format, `digikit/master-gain` and `digikit/pluck`
   walked through.
 - [PATCHING.md](PATCHING.md): all commands, the emulator control socket, how patching works, safety and recovery.
 - `.claude/skills/digikit-module/SKILL.md`: the same workflow for coding agents.

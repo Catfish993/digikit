@@ -8,14 +8,14 @@ bytes). Nothing ran on a device.
 
 ## Result
 
-**[D]** `machines/pluck` loaded at run time (`test/dyn-pluck`, a `.dkm` of 4 484 bytes: the typed machine and four parameter rows and the pluck
-DSP routine) plays **bit-identical** to the patched-in `machines/pluck` on Digitakt II 1.17 and 1.16: a 1 s note (96 000 samples captured, both
+**[D]** `digikit/pluck` loaded at run time (`test/dyn-pluck`, a `.dkm` of 4 484 bytes: the typed machine and four parameter rows and the pluck
+DSP routine) plays **bit-identical** to the patched-in `digikit/pluck` on Digitakt II 1.17 and 1.16: a 1 s note (96 000 samples captured, both
 channels) from the same DSP block, 0 samples differ from the note's onset on. Proof: `uv run python -m tools.patchkit.pk_dkrt_machine proof
 --image dt2-1.17` (about 65 s with a warm daemon; `--quick` skips the control note and the reload; `mise run dkrt:machine`).
 
 | Step (DT2 1.17) | Result |
 | --- | --- |
-| two images with the same ColdFire modules (`core/runtime`, `core/dynreg`, `core/dyndsp` and what they require): reference with `machines/pluck` patched in, run-time image without | same hooks in every block interrupt, so the note-on lands in the same block |
+| two images with the same ColdFire modules (`core/runtime`, `core/dynreg`, `core/dyndsp` and what they require): reference with `digikit/pluck` patched in, run-time image without | same hooks in every block interrupt, so the note-on lands in the same block |
 | `dkrt_load("modules/pluck-d.dkm")` while the firmware runs | answers `LOADING` (1); the final result is 0 after 285 DSP blocks (190 ms), most of it UI-loop passes (about 7 passes at roughly 37 Hz) |
 | the machine row (type 18) while the DSP code is on its way | not listed (sampled every 2 ms of the load); listed after |
 | DSP area (`_dl_area`, 512 KiB) after the load | the 3 532 bytes at the placement are the image relocated by a second implementation (`pk_dkrt_machine.relocate`), 0 bytes differ; the 256 KiB `.PKBSS` delay-line buffer is reserved behind it, not sent |
@@ -102,7 +102,7 @@ finding 31 measured. `pluck_dn2` itself (262 144 bytes of delay lines) fits the 
 - **Selector word of a run-time type.** Not done. The DSP's type to selector table is `mf_selector` of `core/machines` (`dsp.l2`, one word per type
   0..23 on the Digitakt II, copied from the stock table and extended with the clone's word). A third window of `core/dsp-link` onto `mf_selector`
   (24 words, DT2 only), a `selector` field in the DSP section's voice record, one more one-word transfer before the type word, and the reverse on
-  unload would let a run-time SLICE clone play as SLICE (the open point of finding 30); a PCM comparison against the patched-in `machines/xslice`
+  unload would let a run-time SLICE clone play as SLICE (the open point of finding 30); a PCM comparison against the patched-in `test/xslice`
   would prove it. Estimated 3 to 4 agent hours; `pluck` clones SAMPLE, whose selector (0) the reserved rows already have.
 - **Hardware**: the cache sequence of the DSP stub (finding 31) now also covers code the runtime placed at run time; the emulator models no caches.
   The relocated image is read in place by the frame hook (interrupt) while the UI task owns the buffer: it is not freed before DONE.

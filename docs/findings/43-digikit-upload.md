@@ -95,7 +95,7 @@ the scenario is 12 to 21 s of one process.
   firmware (including the build string `1.17`), and `F0 7D 01 02 03 F7` (not our prefix) went the stock way without a reply.
 - **Through the menu** (`menu-upload-pluck-demo`): two modules uploaded to a card with no store appear in SETTINGS > DIGIKIT > MODULES
   (rows counted from the menu's own table), are ticked, APPLY & RESTART loads them, the machine rows equal the patched-in
-  `machines/pluck`'s and the PCM of a note equals its PCM. This is the Phase 7 gate on both devices.
+  `digikit/pluck`'s and the PCM of a note equals its PCM. This is the Phase 7 gate on both devices.
 - **During playback** (`upload-playback`, DT2): a 100 kB module is uploaded while a note sounds. The PCM equals the note without the
   upload from the onset on (the capture starts one block later, 64 samples, in both kinds of run the same way `equiv` shows; **[C]** Phase 8: the
   onset shift between the two runs follows where the upload is when the key arrives: 64 samples here, 128 after the header-agreement flag, 256 when BEGIN

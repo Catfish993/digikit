@@ -2,7 +2,7 @@
 
 **Category:** core  **Devices:** Digitakt II 1.16, 1.17; Digitone II 1.11, 1.12  **Status:** experimental (emulator only)
 
-A framework module: it lets other modules render a machine's sound with their own DSP routine (`machines/pluck` is the
+A framework module: it lets other modules render a machine's sound with their own DSP routine (`digikit/pluck` is the
 example). On its own it changes nothing: a patched image with no registered machine plays exactly the stock audio.
 
 - What changes on the device: nothing you can hear. The first instruction of the DSP's per-voice render function is

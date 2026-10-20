@@ -1,4 +1,4 @@
-"""fx/master-drive end to end in the emulator (slow: a coupled cold boot and six renders per device).
+"""digikit/master-drive end to end in the emulator (slow: a coupled cold boot and six renders per device).
 
 Skips without the inputs: DIGI_EMUD (the digi-emud binary of the device's core), the ready inputs
 `out/ready-md-dt2` / `out/ready-md-dn2` (`tools/emulator/ready.py dt2|dn2 --syx ... --out ... --force`), the stock firmware
@@ -40,7 +40,7 @@ def test_proof(device, tmp_path):
             "--firmware",
             str(config.stock(syx)),
             "--modules",
-            "fx/master-drive",
+            "digikit/master-drive",
             "-o",
             str(patched),
         ],

@@ -137,7 +137,7 @@ def test_machines_shims_live_in_the_expansion_region_not_the_cave(fw, tmp_path):
         "--firmware",
         firmware,
         "--modules",
-        "core/machines,machines/xslice,test/machine-clone",
+        "core/machines,test/xslice,test/machine-clone",
         "-o",
         tmp_path / "out.syx",
         "--plan",

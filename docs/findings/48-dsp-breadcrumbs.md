@@ -112,7 +112,7 @@ Per call, on the concrete core with the wrapper rig (`tests/support/dsp_voice_ri
 
 One track on a run-time machine costs +241 instructions per block (+0.12 %); all 16 tracks +3,856 (+1.9 %, about 0.8 points of DSP load).
 
-PCM [D]: `equiv-dyn-pluck` on dt2-1.17 (quick): the run-time machine equals the patched-in `machines/pluck` sample for sample after the onset alignment (0 differ);
+PCM [D]: `equiv-dyn-pluck` on dt2-1.17 (quick): the run-time machine equals the patched-in `digikit/pluck` sample for sample after the onset alignment (0 differ);
 the onset shift between the two images was -64 samples at HEAD and is +128 now: the exact-equality flag was already false at HEAD (finding 45 recorded it true
 before the link and the voice hook grew), the phase comes from the image sizes and the cost of the code before the note. `tests/patchkit/test_pluck.py` and
 `test_dsp_voice.py` (including six new breadcrumb tests: each step, both records, the odd voice, the stock paths, no records) pass.

@@ -2,7 +2,7 @@
 // Headless Chrome walk through the patch gallery and the hand-off to the emulator page, over CDP (no
 // dependencies, like tools/devtools/browser_bench.mjs). Saves PNGs and checks the downloaded bytes.
 //
-//   node tools/devtools/web_shots.mjs --url http://127.0.0.1:4331 --firmware firmware/Digitakt_II_OS1.17.syx --module fx/master-gain
+//   node tools/devtools/web_shots.mjs --url http://127.0.0.1:4331 --firmware firmware/Digitakt_II_OS1.17.syx --module digikit/master-gain
 //        [--out out/web-shots] [--expect PATCHED.syx] [--no-boot] [--chrome PATH] [--port 9450]
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -17,7 +17,7 @@ const opt = (n, d) => {
 };
 const url = opt('url', 'http://127.0.0.1:4331').replace(/\/$/, '');
 const fw = path.resolve(opt('firmware'));
-const moduleId = opt('module', 'fx/master-gain');
+const moduleId = opt('module', 'digikit/master-gain');
 const out = path.resolve(opt('out', 'out/web-shots'));
 const port = Number(opt('port', 9450));
 const chrome = [

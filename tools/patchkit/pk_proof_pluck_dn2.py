@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """patchkit: the PLUCK machine on Digitone II 1.12 (core/dsp-voice DN2 object + core/machines + core/params +
-machines/pluck), in the emulator, through the panel.
+digikit/pluck), in the emulator, through the panel.
 
     uv run python -m tools.patchkit.pk_proof_pluck_dn2 [--quick] [--only a,b,c,d,e] [--out DIR] [--jobs N]
 
@@ -46,9 +46,9 @@ from tools.patchkit import pk_dn2_common as C  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
 
-MODS = ["core/machines", "core/params", "core/dsp-voice", "machines/pluck"]
+MODS = ["core/machines", "core/params", "core/dsp-voice", "digikit/pluck"]
 PLUCK_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, PLUCK (before MIDI)
-PLUCK_TYPE = 9  # core/machines types.toml, "machines/pluck:pluck" on dn2
+PLUCK_TYPE = 9  # core/machines types.toml, "digikit/pluck:pluck" on dn2
 DECAY, PICK, BRIGHT, COLOR = 25, 26, 27, 28
 ENC = {DECAY: "ENC A", PICK: "ENC B", BRIGHT: "ENC C", COLOR: "ENC D"}
 DEFAULTS = {DECAY: 0x4000, PICK: 0x2000, BRIGHT: 0x5000, COLOR: 0x2800}

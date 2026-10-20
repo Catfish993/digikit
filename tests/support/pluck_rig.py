@@ -1,4 +1,4 @@
-"""The rig of the machines/pluck tests (test_pluck.py, test_pluck_tune.py, test_pluck_tune_low.py): the routine on the concrete SHARC+ core.
+"""The rig of the digikit/pluck tests (test_pluck.py, test_pluck_tune.py, test_pluck_tune_low.py): the routine on the concrete SHARC+ core.
 
 The wrapper (core/dsp-voice) and the routine are assembled from the module sources and run block by block the way
 the engine calls them (see tests/patchkit/test_dsp_voice.py). The generic machine rig keeps the core's memory (the routine's
@@ -30,10 +30,10 @@ def val(x: int) -> float:
 
 
 class PluckRig(MachineRig):
-    """machines/pluck on the Digitakt II wrapper: the generic machine rig (tests/support/machine_rig.py) with the pluck test API."""
+    """digikit/pluck on the Digitakt II wrapper: the generic machine rig (tests/support/machine_rig.py) with the pluck test API."""
 
     def __init__(self, seed: int = 0xD1617) -> None:
-        super().__init__("machines/pluck", "dt2", seed=seed)
+        super().__init__("digikit/pluck", "dt2", seed=seed)
 
     def setup(
         self,

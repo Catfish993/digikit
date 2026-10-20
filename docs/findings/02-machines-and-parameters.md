@@ -1014,7 +1014,7 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 ## core.machines: N added machine types on Digitakt II 1.17 (patchkit Phase 3)
 
 Plan: `docs/plans/patchkit.md` (Phase 3). Code: `a1cf1df^:native/patchkit/src/machines.rs` (the Rust generator, removed in a1cf1df), `modules/core/machines`,
-`modules/machines/xslice`, `tests/fixtures/modules/machine-clone`, `tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
+`tests/fixtures/modules/xslice`, `tests/fixtures/modules/machine-clone`, `tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
 `tools/emulator/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
 stated. A second agent verified **[V]** the static facts: the 24-site count, the list allocation sites (`pea 0x1c` and
 `lea 0x1c(A0)` on DT2; `pea 0x14` on DN2 at `0x4004d8e0`), `FUN_400da23e` (typearg), the vector-191 type store, the 7th
@@ -1054,7 +1054,7 @@ Placement: **the shims and the tables both go to `cf.expansion`; `cf.flash_cave`
 **[C]** the first version put the shims in the cave because the emulator fetched ColdFire instructions from the MAIN OS image
 only, `UnsupportedGuestPc`; the native runtime executes from DDR and SRAM now, finding 07 "ColdFire code outside the MAIN
 image"). Hardware executes from DDR (ACR0 covers it); the loader copies the code before the caches are on. Region use on
-DT2 1.17 with `core/machines` + `machines/xslice` + `test/machine-clone`: `cf.flash_cave` 56 of 2,108 bytes (the loader;
+DT2 1.17 with `core/machines` + `test/xslice` + `test/machine-clone`: `cf.flash_cave` 56 of 2,108 bytes (the loader;
 before: about 316 B of shim code for one type and about 80 B more per added type, 372 and 452 B with the loader, and the
 cave capped the number of types), `cf.expansion` 744 B (code and tables). Evidence **[D]**: `tools/patchkit/pk_proof_machines.py` on
 1.17 and on 1.16 passes 33 of 34 checks each (the one failure is below), the smoke goldens of the XSLICE and XClone cells on 1.17 and 1.16 are unchanged
@@ -1116,7 +1116,7 @@ cave capped the number of types), `cf.expansion` 744 B (code and tables). Eviden
 | control: the same image with the persistence immediate put back to `8` | type 0 after the load (so the immediate is what keeps it) |
 | the saved project's sound records | type 7 in 2 records (`card.overlay` export, `tools/emulator/card_overlay.py`) |
 | the saved card laid over the stock firmware's card; STOCK loads the project | track 1 is **SAMPLE** (type 0), no fault, halt or stall, TRIG 1 sounds |
-| `machines/xslice` + `test/machine-clone` in either order | the same `.syx` bytes; types 7 and 8 |
+| `test/xslice` + `test/machine-clone` in either order | the same `.syx` bytes; types 7 and 8 |
 
 The proof needed one emulator addition: `card.overlay {path}` (packages/emulator/{card,machine,boot,control}: the guest's writes to
 the eMMC as sparse sectors) so a card with a patched firmware's project can be mounted by another firmware.
@@ -1224,7 +1224,7 @@ sites (56 + 55). Cost: 16,832 bytes of expansion for four rows (16,500 + 60 K + 
 
 ### PLUCK on DT2 (`tools/patchkit/pk_proof_pluck.py`, 1.17 and 1.16)
 
-`machines/pluck` clones SAMPLE (so its permission, per-type byte and DSP selector are SAMPLE's and the voice hook takes over in the
+`digikit/pluck` clones SAMPLE (so its permission, per-type byte and DSP selector are SAMPLE's and the voice hook takes over in the
 sample renderer) with descriptor fields `[TUNE 0xca, DECAY, PICK, 0, BRIGHT, COLOR, 0, LEV 0xd1, 0x0a]`; DECAY, PICK, BRIGHT, COLOR are
 rows copied from `LEV` (a plain 0..127 value class and formatter) with range 0..0x7f00 and defaults 0x4000, 0x2000, 0x5000, 0x2800. The
 DSP routine registers `machines.pluck.type` (the same symbol mechanism as the extern) in the `core/dsp-voice` table. Evidence on the
@@ -1260,7 +1260,7 @@ per-type byte, clone tests and the DSP selector table are skipped on `dn2`), rul
 (`cf_func` hashes, 1.12 reference, 1.11 resolves every one), module `tests/fixtures/modules/dn2-clone` (a clone of FM TONE as
 type 5), proof `tools/patchkit/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `a1cf1df^:native/patchkit/tests/machines.rs`
 (DN2 1.12 and 1.11 patch; the Digitakt output is byte-identical to the previous patchkit for `core/machines` +
-`machines/xslice` + `test/machine-clone` on 1.16 and 1.17). Addresses are 1.12; 1.11 is the same by function hash.
+`test/xslice` + `test/machine-clone` on 1.16 and 1.17). Addresses are 1.12; 1.11 is the same by function hash.
 
 **What is shared with the Digitakt framework, unchanged** (sites verified by byte shape): descriptor dispatch
 (`0x400c25f2`, `moveq #4,D1; move.l 4(sp),D0`; our descriptors carry the nine IDs `0 0 0 0 0 0 0 0 10`: the stock DN2
@@ -1529,7 +1529,7 @@ envelope views); hardware never flashed. Estimated the work at 1 to 2 days; it t
 
 ### PLUCK on Digitone II (`tools/patchkit/pk_proof_pluck_dn2.py`, 1.12) **[D]**
 
-`machines/pluck` builds for the Digitone II (device-filtered entries and object): type 5 (`own_dsp`, so the FM engine renders nothing and the
+`digikit/pluck` builds for the Digitone II (device-filtered entries and object): type 5 (`own_dsp`, so the FM engine renders nothing and the
 voice hook does; listed before MIDI), parameters `pluck_decay`, `pluck_pick`, `pluck_bright`, `pluck_color` (template `0xd5`, slots 25..28,
 range 0..0x7f00, defaults 0x4000, 0x2000, 0x5000, 0x2800), one page `PLUCK` / `Pluck` with those four on knobs A..D and the track level last.
 The routine and its contract: finding 06, "DN2 voice routine: PLUCK". Evidence (quick and full proof; the numbers are 1.12):
@@ -1545,7 +1545,7 @@ The routine and its contract: finding 06, "DN2 voice routine: PLUCK". Evidence (
 | the edge, repeated notes | 20 notes of TRIG 1 150 ms apart: 20 plucks of note 60 (sampled in tune); 40 notes 110 ms apart (past 16 voice slots, 16 strings overlapping): 40 plucks; a note after the burst sounds |
 | sequencer | a step recorded on track 1 plucks on both passes of the pattern (onsets at 2.0 s and 4.0 s, the first at note 60: +0.24 cents) |
 | save and load | DECAY and BRIGHT edited, project saved, track set to FM TONE, loaded: PLUCK (row 4) and all four values back; the card's sound records hold type 5; stock loads the project (track 1 is FM TONE), no fault |
-| harness | `tests/patchkit_smoke` cell `dn2-1.12: core/machines, core/params, core/dsp-voice, machines/pluck` (select, own page, trig sounds, BRIGHT knob moves the page) |
+| harness | `tests/patchkit_smoke` cell `dn2-1.12: core/machines, core/params, core/dsp-voice, digikit/pluck` (select, own page, trig sounds, BRIGHT knob moves the page) |
 
 **Differences from the Digitakt PLUCK [D].** No TUNE and no LEV rows (the engine's level is the last knob; pitch is the voice's pitch word);
 the note's end is the engine's amplitude envelope and gate, so a long DECAY is heard only while the key is held or the AMP release is long
@@ -1569,8 +1569,8 @@ and a number above `last`. `mise run patch:new -- machines/NAME --machine` appen
 | Digitakt II 1.16 / 1.17 | 0..6 | 7 | 23 | the DSP type -> selector table was read to entry 23 (finding 06), the entries above are not known; the frame word of type t is `0x94 + 2t` |
 | Digitone II 1.11 / 1.12 | 0..4 | 5 | 23 | chosen, equal to the Digitakt's. Firmware bounds that were read: the persistence byte (`(u8)(type + 1) < imm`, so up to 254), page tables built per type by core/machines, the FM engine knows 0..4 and treats the rest as MIDI. No table that caps the type lower was found **[O]**: the DN2 limit is a choice, not a measurement |
 
-Allocated: Digitakt II `machines/xslice:xslice` 7, `test/machine-clone:xclone` 8, `machines/pluck:pluck` 9; Digitone II
-`test/dn2-clone:fmclone` 5, `test/dn2-pages:pages` 6, `test/dn2-sine:dn2sine` 7, `test/dn2-edge:dn2edge` 8, `machines/pluck:pluck` 9.
+Allocated: Digitakt II `test/xslice:xslice` 7, `test/machine-clone:xclone` 8, `digikit/pluck:pluck` 9; Digitone II
+`test/dn2-clone:fmclone` 5, `test/dn2-pages:pages` 6, `test/dn2-sine:dn2sine` 7, `test/dn2-edge:dn2edge` 8, `digikit/pluck:pluck` 9.
 (`test/sine-voice` names type 8 as a literal on purpose: it adds no machine, the proof forces the wire type; it claims
 `machine.type.8`.)
 

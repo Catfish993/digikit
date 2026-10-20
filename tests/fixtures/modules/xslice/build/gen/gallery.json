@@ -49,7 +49,7 @@
       "short": "XSL"
     }
   ],
-  "module": "machines/xslice",
+  "module": "test/xslice",
   "params": {
     "dt2": []
   }

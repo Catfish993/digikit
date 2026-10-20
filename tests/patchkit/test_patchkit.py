@@ -105,7 +105,7 @@ def test_dn2_master_half_equals_dsp_patch_py(patchkit, tmp_path):
 def test_master_gain_applies_and_verifies(patchkit, tmp_path, fw):
     from tools.firmware import roundtrip
 
-    out, plan = apply(patchkit, tmp_path, fw, "fx/master-gain")
+    out, plan = apply(patchkit, tmp_path, fw, "digikit/master-gain")
     v = patchkit("verify", out, "--base", fw)
     assert "record: base" in v.stdout
     assert roundtrip.check_authenticity(out.read_bytes(), str(out))
@@ -114,7 +114,7 @@ def test_master_gain_applies_and_verifies(patchkit, tmp_path, fw):
     assert all(secs[k] == stock[k] for k in (2, 3, 4, 5, 8))
     # a patched image is never patched again
     again = patchkit(
-        "apply", "--firmware", out, "--modules", "fx/master-gain", check=False
+        "apply", "--firmware", out, "--modules", "digikit/master-gain", check=False
     )
     assert again.returncode != 0 and "no port" in again.stderr
 
@@ -124,7 +124,7 @@ def test_rust_linker_equals_python_linker(patchkit, tmp_path, fw, image):
     """The block patchkit appends is what tools/patchkit/pk_sharc.py's linker makes for the same bases and externs."""
     from tools.patchkit import dsp_patch, pk_sharc
 
-    out, plan = apply(patchkit, tmp_path, fw, "fx/master-gain")
+    out, plan = apply(patchkit, tmp_path, fw, "digikit/master-gain")
     port = (ROOT / "devices" / "ports" / f"{image}.toml").read_text()
     anchors = {}
     for block in port.split("[[anchor]]")[1:]:

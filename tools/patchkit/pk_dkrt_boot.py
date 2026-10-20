@@ -793,7 +793,7 @@ class Proof:
         e = self.env
         if self.dt2:
             e.pack("test/dyn-pluck", "m1.dkm")
-            self.static = RT + ",machines/pluck"
+            self.static = RT + ",digikit/pluck"
             self.mods = ["modules/m1.dkm"]
         else:
             e.pack("test/dyn-dn2", "m0.dkm")

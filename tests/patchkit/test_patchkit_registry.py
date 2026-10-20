@@ -80,7 +80,7 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
         "--root",
         ROOT,
         "pack",
-        "machines/xslice",
+        "test/xslice",
         "--device",
         "dt2",
         "-o",

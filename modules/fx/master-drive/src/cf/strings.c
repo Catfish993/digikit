@@ -1,4 +1,4 @@
-/* fx/master-drive: the label strings for the master page's repurposed knob.
+/* digikit/master-drive: the label strings for the master page's repurposed knob.
  *
  * patchkit places this object in cf.expansion (the core/expansion loader copies it to RAM before the firmware
  * runs) and writes the addresses of these two strings into the parameter descriptor row of the master

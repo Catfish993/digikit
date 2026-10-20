@@ -1,4 +1,4 @@
-"""machines/pluck tuning, notes 48 and up (the test_pluck.py rig; split out so verify runs the notes in parallel processes)."""
+"""digikit/pluck tuning, notes 48 and up (the test_pluck.py rig; split out so verify runs the notes in parallel processes)."""
 
 import numpy as np
 import pytest

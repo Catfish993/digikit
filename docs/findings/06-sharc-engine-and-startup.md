@@ -5479,7 +5479,7 @@ Results.
   question. Block counts and sizes **[V]**; the rest **[D]**.
 - **Patchkit outputs with appended blocks pass** against their stock stream (`check_against_stock`: inserted blocks only
   before FINAL, stock headers unchanged, FIRST pointer grown, inserted blocks in bootable L2, no overlap, BCODE 1,
-  no flags): `fx/master-gain` and `fx/master-drive` on DT2 1.17 and DN2 1.12 (gain: 2 blocks, 148 bytes; drive: 1
+  no flags): `digikit/master-gain` and `digikit/master-drive` on DT2 1.17 and DN2 1.12 (gain: 2 blocks, 148 bytes; drive: 1
   block, 620 bytes; one in-place edit of 3 payload bytes in the stock block that holds the hook CALL), and the L2
   canary at its maximum on both (727,556 and 211,616 bytes; both streams then are `0xFFFFC` bytes). **[D]**
 - **Defects found and fixed [C].** (1) `Stream.append_block` (Python and Rust) left the second FIRST block's
@@ -5515,7 +5515,7 @@ of DT2 1.16 and 1.17 are byte-identical, so every address below holds on both; n
 verified **[V]** the voice hook entry (`1587 ffff ffe6` at `0x1c4ecf`, next instruction `0x1c4ed2`), the DN2
 `FUN_b8251b` entry (`1587 ffff ffee`) and the selector words 0..13, 14/15 = 0 and 16..21 pointers; PCM, headroom, register
 liveness and note-on contracts stay **[D]**. Modules:
-`core/dsp-voice`, `test/sine-voice`, `machines/pluck`. Tests: `tests/patchkit/test_dsp_voice.py`, `tests/patchkit/test_pluck.py`;
+`core/dsp-voice`, `test/sine-voice`, `digikit/pluck`. Tests: `tests/patchkit/test_dsp_voice.py`, `tests/patchkit/test_pluck.py`;
 proof: `tools/patchkit/pk_proof_voice.py`.
 
 **[C] The hook is the first instruction of `0x1c4ecf`, not the call at `0x1c6b00`.** Retargeting the call patches

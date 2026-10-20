@@ -1,4 +1,4 @@
-"""machines/pluck with every note and TUNE word: the loop period is clamped, the string never leaves the finite range.
+"""digikit/pluck with every note and TUNE word: the loop period is clamped, the string never leaves the finite range.
 
 On the Digitakt II an LFO on TUNE silenced every track: the loop period P = fs / f0 left what the delay line can serve
 (about P < 2.5 or P > 4091.5), the fractional-delay fraction left [0.5, 1.5), the allpass coefficient passed the stability

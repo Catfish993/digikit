@@ -39,7 +39,7 @@ installed versions.
 ### Patch a firmware
 
 ```sh
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-gain -o out/patch/mg.syx
 ```
 
 This writes `out/patch/mg.syx` and `out/patch/mg.plan.json` (every write with its owner, diffable). Without `-o` the
@@ -55,7 +55,7 @@ name is `out/patch/<firmware>+<modules>.syx`. The command verifies the result be
 A machine needs its framework modules, which are added for you:
 
 ```sh
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/pluck -o out/patch/pluck.syx
 ```
 
 ### Inspect, check, explain, verify
@@ -65,8 +65,8 @@ uv run python -m tools.patchkit.patchkit list                                   
 uv run python -m tools.patchkit.patchkit inspect out/patch/mg.syx               # device, sha256, port, patch record, sections
 uv run python -m tools.patchkit.patchkit check --firmware firmware/Digitakt_II_OS1.17.syx           # which modules fit this firmware
 uv run python -m tools.patchkit.patchkit verify out/patch/mg.syx --base firmware/Digitakt_II_OS1.17.syx   # re-decode and check
-mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain
-mise run patch:mem -- fx/master-gain machines/pluck --device dt2 --firmware 1.17    # bytes used and free per region
+mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-gain
+mise run patch:mem -- digikit/master-gain digikit/pluck --device dt2 --firmware 1.17    # bytes used and free per region
 ```
 
 - `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.11, dn2-1.12").
@@ -145,8 +145,8 @@ Use `DIGI_PLUS_DRIVE=DIR` or `-- --plus-drive DIR` for a scratch folder instead 
 ### Developer loop
 
 ```sh
-mise run module:dev -- --modules fx/master-gain [--device dt2|dn2] [--firmware 1.17]
-mise run module:dev -- --modules fx/master-gain --once      # one iteration, then exit
+mise run module:dev -- --modules digikit/master-gain [--device dt2|dn2] [--firmware 1.17]
+mise run module:dev -- --modules digikit/master-gain --once      # one iteration, then exit
 ```
 
 One daemon stays up on the stock firmware. Each time a file under the module's `src/` or its `module.toml` changes,
@@ -164,7 +164,7 @@ MAIN hash). The daemon takes 1 to 2 minutes to start.
 
 ```sh
 mise run patch:test                                                    # the whole matrix (about 1 minute per cell)
-mise run patch:test -- --cell "dt2-1.17:fx/master-gain,test/cf-demo"   # one cell; modules joined with a comma
+mise run patch:test -- --cell "dt2-1.17:digikit/master-gain,test/cf-demo"   # one cell; modules joined with a comma
 mise run patch:test -- --cell "..." --update                           # record frame goldens for a new module set
 uv run python -m tools.patchkit.pk_harness list                                 # the cells of tests/patchkit/smoke/matrix.toml
 cargo test -p patchkit                                                 # the patching library
@@ -228,7 +228,7 @@ first `mise run web` in a fresh tree compiles the browser cores and takes severa
 |---|---|---|
 | Port | Per-firmware facts: named anchors with SHA-256 of the expected bytes, free regions, container limits. Generated, keyed by the `.syx` SHA-256. | `devices/ports/dt2-1.17.toml` |
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
-| Content module | Own code and declarative registry entries. No addresses. | `fx/master-gain`, `machines/pluck` |
+| Content module | Own code and declarative registry entries. No addresses. | `digikit/master-gain`, `digikit/pluck` |
 
 Device, board and firmware facts are data (`devices/*.toml`, `devices/ports/*.toml`, `modules/core/machines/types.toml`); code that needs a constant gets it from `patchkit gen` (`[[gen]]` in a `module.toml`). Where each fact lives and what a new device needs: `docs/design/device-data.md`.
 
@@ -519,7 +519,7 @@ bug of an image built before 2026-10-19 (finding 50). Rebuild the image to get o
 (The emulator rig pressed YES twice, 300 ms apart; if the track page does not show those parameters after one press, press YES once more.)
 
 **8. Play:** press **TRIG 1** (hold it for a few seconds). Expected: a plucked-string tone, decaying (the rehearsal's note is sample for sample the
-patched-in `machines/pluck`). Keep the key down for 10 to 20 seconds once, then read the log again (command of step 6, new `--out`):
+patched-in `digikit/pluck`). Keep the key down for 10 to 20 seconds once, then read the log again (command of step 6, new `--out`):
 
 Good log (dispatches and returns rise together; this is the rehearsal's):
 

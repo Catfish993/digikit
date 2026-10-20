@@ -1,4 +1,4 @@
-# 22. patchkit: fx/master-drive on both devices
+# 22. patchkit: digikit/master-drive on both devices
 
 Plan: `docs/plans/patchkit.md` (Phase 4.1). Module: `modules/fx/master-drive` (README there). Tools:
 `tools/patchkit/pk_proof_drive.py`, `tests/patchkit/test_master_drive.py`, `tests/patchkit/test_master_drive_emu.py`. Marks as in AGENTS.md. One

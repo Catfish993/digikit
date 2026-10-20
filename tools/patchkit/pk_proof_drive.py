@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""patchkit Phase 4.1 proof: fx/master-drive on a running coupled emulator (DT2 1.17 or DN2 1.12).
+"""patchkit Phase 4.1 proof: digikit/master-drive on a running coupled emulator (DT2 1.17 or DN2 1.12).
 
     uv run python -m tools.patchkit.pk_proof_drive [dt2|dn2] [--stock STOCK.syx] [--patched PATCHED.syx] [--ready DIR]
         [--out DIR] [--run-dir DIR] [--quick] [--jobs N]
 
 With no arguments: DT2 1.17 (DN2: 1.12), the stock firmware and ready state of tools/patchkit/pk_harness.py and the patch of
-fx/master-drive built on the fly (out/patch/).
+digikit/master-drive built on the fly (out/patch/).
 
 One coupled daemon starts on the stock firmware (ready inputs of `tools/emulator/ready.py ... --force`), the DT2 loads the
 one-sample card, and the same panel script (master page via FUNC+6, encoder 7 turned, TRIG 1 held) is rendered with
@@ -185,7 +185,7 @@ class DriveProof(K.Proof):
     def part_run(self) -> None:
         a = self.args
         dev = a.device
-        cell = H.Cell(dev, FW[dev], ["fx/master-drive"])
+        cell = H.Cell(dev, FW[dev], ["digikit/master-drive"])
         base_syx, base_ready = H.firmware_inputs(cell)
         stock = pathlib.Path(a.stock or base_syx).resolve()
         patched = pathlib.Path(a.patched or H.patched_image(cell, stock)).resolve()
@@ -303,7 +303,7 @@ def main() -> int:
     ap.add_argument("device", nargs="?", default="dt2", choices=("dt2", "dn2"))
     ap.add_argument("--stock")
     ap.add_argument(
-        "--patched", help="default: the patch of fx/master-drive, built here"
+        "--patched", help="default: the patch of digikit/master-drive, built here"
     )
     ap.add_argument("--ready")
     ap.add_argument(

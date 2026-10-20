@@ -1,4 +1,4 @@
-// machines/pluck: a Karplus-Strong plucked string, a machine of the SDK contract (sdk/dk_machine.h, docs/design/module-sdk.md 4.1). One source for
+// digikit/pluck: a Karplus-Strong plucked string, a machine of the SDK contract (sdk/dk_machine.h, docs/design/module-sdk.md 4.1). One source for
 // both devices: the adapter of core/dsp-voice calls `_pk_note_on` once per note and `_pk_render` once per block with R4 = this voice's state,
 // R8 = the `dk_voice_in` (pitch in semitones << 8 with the tune folded in, velocity << 8, the output block), R12 = the four parameter words
 // DECAY, PICK, BRIGHT, COLOR (0 .. 0x7f00 = UI 0 .. 127, clamped by the adapter), and finds the note-on and the voice's end itself. State per voice

@@ -3,7 +3,7 @@
 
     uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2]      (mise run module:check NAME)
 
-NAME is a module id (`machines/pluck`) or its last part (`pluck`). A machine module (tools/patchkit/pk_conform.py) runs the conformance
+NAME is a module id (`digikit/pluck`) or its last part (`pluck`). A machine module (tools/patchkit/pk_conform.py) runs the conformance
 suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). Then the module's own tests
 run: `modules/<group>/<name>/tests/test_*.py`, and until the tests move there, the test files under tests/ whose file name carries the
 module's name (`pluck` -> tests/patchkit/test_pluck*.py). One pytest process runs all of them; the exit code is pytest's.
