@@ -335,7 +335,7 @@ def build_module(
         paths = [moddir / s for s in srcs]
         kinds = {p.suffix for p in paths}
         if kinds <= {".s"} and any("dsp" in Path(s).parts for s in srcs):
-            obj = sharc_object(paths, [moddir / "build" / "gen"], defines)
+            obj = sharc_object(paths, [moddir / "build" / "gen", ROOT / "sdk"], defines)
         else:
             if defines:
                 raise BuildError("--define applies to DSP sources only")

@@ -22,12 +22,12 @@ example). On its own it changes nothing: a patched image with no registered mach
 Around a registered routine the wrapper checks what it cannot trust (docs/findings/51-pluck-tune-guard.md):
 
 - Before the call the eight machine knob words of the track are clamped in the frame copy to the ranges the machine's `[[param]]` declare (`min`/`max`; a stock knob
-  or an undeclared one: 0 .. 0x7f00) and are put back after the call. The ranges are in the voice row (16 words, see the `[[registry.field]]` comment in `module.toml`).
+  or an undeclared one: 0 .. 0x7f00) and are put back after the call. The ranges are in the voice row (24 words, see the `[[registry.field]]` comment in `module.toml`).
 - After the call the block must hold finite samples of at most 8.0 in magnitude. Otherwise it is zeroed, the voice ends (ACTIVE and the mark of the record clear), the fault is counted
   and reported in `dl_diag` words 17 to 23 and the log (`MACHINE_FAULT`). A type that faults 8 times within 1500 blocks is disabled: its voices render silence and the routine is not
   called until the next start (`MACHINE_DISABLED`).
 - Cost: about 400 instructions per registered even voice and block on the rig (0.07 % to 0.09 % of the DSP).
-- The Digitone II wrapper does not guard (it has no voice record to end); it scans rows of the same size.
+- A row with a `note_on` pc (row words 16 to 19: `note_on`, `state_base`, `stride`, `clear`) is a machine of the SDK contract (`sdk/dk_machine.h`) on both devices: the adapter finds the note-on, clears the voice's state, calls `note_on` and `render` with the voice input and the parameter words, ends the voice on `DK_DONE` or a fault, and applies the guard above. On the Digitone II the guard is the same, a faulted slot is silent until the next trig. A row without a `note_on` is a routine of the form below and runs as described.
 
 A routine should therefore render silence for an idle voice and start at its note-on path when byte `+0x1b9` of the record is clear.
 

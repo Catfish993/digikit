@@ -462,7 +462,13 @@ plan.json {}",
                     let ranges = resolved
                         .map(|r| patchkit::typed::voice_ranges(r, &v.machine))
                         .unwrap_or([0; 8]);
-                    voices.push((*t as u32, v.entry.clone(), ranges));
+                    voices.push(patchkit::dkmdsp::VoiceSpec {
+                        type_no: *t as u32,
+                        render: v.entry.clone(),
+                        note_on: v.note_on.clone(),
+                        desc: v.desc.clone(),
+                        ranges,
+                    });
                 }
                 for v in m
                     .manifest
@@ -470,7 +476,11 @@ plan.json {}",
                     .iter()
                     .filter(|v| v.devices.is_empty() || v.devices.iter().any(|d| *d == dev))
                 {
-                    voices.push((v.type_no as u32, v.entry.clone(), [0; 8]));
+                    voices.push(patchkit::dkmdsp::VoiceSpec::old(
+                        v.type_no as u32,
+                        v.entry.clone(),
+                        [0; 8],
+                    ));
                 }
                 match sharc.first() {
                     Some((o, _)) => {
@@ -568,8 +578,14 @@ plan.json {}",
                 );
                 for v in &x.voices {
                     println!(
-                        "  voice type {} entry +{:#x} ranges {:x?}",
-                        v.type_no, v.entry, v.ranges
+                        "  voice type {} entry +{:#x} note_on +{:#x} state {}x{} clear {} ranges {:x?}",
+                        v.type_no,
+                        v.entry,
+                        v.note_on,
+                        v.voices,
+                        v.state_bytes,
+                        v.clear_bytes,
+                        v.ranges
                     );
                 }
             }

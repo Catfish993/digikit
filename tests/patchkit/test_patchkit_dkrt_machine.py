@@ -13,6 +13,7 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
+from tools.device.dklog_kinds import RUNTIME_VERSION  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_build,
     pk_dkrt,
@@ -66,12 +67,13 @@ def test_dsp_section_is_deterministic_and_relocates_like_the_reference(tmp_path)
     assert a.read_bytes() == b.read_bytes()
     info = tools.patchkit_run("dkm-info", a)
     assert (
-        "voice type 18 entry +0x0" in info and "imports _dv_exp2, _dv_frame_hw" in info
+        "voice type 18 entry +0x3ce note_on +0x1fa state 16x16512 clear 16512" in info
+        and "imports _dv_exp2" in info
     )
     # the guard's ranges: DECAY, PICK, BRIGHT, COLOR (knobs 1, 2, 4, 5) declare 0 .. 0x7f00; TUNE and LEV are stock rows (undeclared)
     assert "ranges [0, 7f000000, 7f000000, 0, 7f000000, 7f000000, 0, 0]" in info
     assert (
-        "runtime   >= 0.1.0" in info
+        f"runtime   >= {'.'.join(map(str, RUNTIME_VERSION))}" in info
     )  # DSP sections of version 2 (voices with knob ranges) need runtime 5
     sec = pk_dkrt_machine.parse_dsp_section(a.read_bytes())
     imports = {"_dv_exp2": 0xB9D7E0, "_dv_frame_hw": 0xB9D80E}

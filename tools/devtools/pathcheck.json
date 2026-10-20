@@ -263,11 +263,6 @@
       "reason": "documents of the dn2_firmware repository (a collaborator's), cited by name"
     },
     {
-      "token": "sdk/dk_machine.h",
-      "file": "docs/design/module-sdk.md",
-      "reason": "the machine contract header is a proposal for P3b (section 3)"
-    },
-    {
       "pattern": "sdk/src/.*",
       "file": "packages/patchkit/tests/devdata.rs",
       "reason": "relative to modules/core/runtime"

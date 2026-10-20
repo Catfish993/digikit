@@ -26,7 +26,15 @@ TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK, DIAG = (
 SV_L4 = DIAG + 0x100  # the wrapper's data symbols (the build places them in free L2)
 SV3, SV5, BCW, REC_PTRS = DIAG + 0x104, DIAG + 0x108, DIAG + 0x10C, DIAG + 0x110
 GUARD = DIAG + 0x200  # the guard's scalars and arrays (_dv_g, 128 bytes)
-ROW = 16  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields
+# the contract adapter's data (`_dv_in` 16 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64): zero, and not used by a row of the old form
+ADAPTER = {
+    "_dv_in": DIAG + 0x300,
+    "_dv_params": DIAG + 0x320,
+    "_dv_blk": DIAG + 0x360,
+    "_dv_c": DIAG + 0x3A0,
+    "_dv_slots": DIAG + 0x3E0,
+}
+ROW = 24  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields, the contract fields (words 16 to 19)
 RING_A, RING_B = (
     0x200A0000,
     0x200A2000,
@@ -52,6 +60,7 @@ def core_externs() -> dict[str, int]:
         "_dv_bcw": BCW,
         "_dv_rec": REC_PTRS,
         "_dv_g": GUARD,
+        **ADAPTER,
     }
 
 
@@ -124,7 +133,10 @@ class Rig:
         self.last_ctx: dict[str, int] = {}
         # `defines`: the build options of the wrapper (`#ifdef`, tools/patchkit/pk_build.py), e.g. DV_BISECT_C2
         self.core = pk_sharc.assemble(
-            pk_build.apply_conditionals(CORE.read_text(), defines)
+            pk_build.expand_includes(
+                pk_build.apply_conditionals(CORE.read_text(), defines),
+                [CORE.parents[2] / "build" / "gen", ROOT / "sdk", CORE.parent],
+            )
         )
         self.sine = pk_sharc.assemble(SINE.read_text())
         self.sine_linked = None
@@ -169,6 +181,10 @@ class Rig:
             self.dm[nw(DIAG) + k] = 0
         for k in range(32):
             self.dm[nw(GUARD) + k] = 0
+        for k, w in enumerate((1, 2, 4, 5, 255, 255, 255, 255)):
+            self.dm[nw(ADAPTER["_dv_slots"]) + k] = (
+                w  # the Digitakt II's knob positions of the parameters (ADM_PARAM_SLOT*)
+            )
 
     def set_rings(self) -> None:
         """The two reply records core/dsp-link's block tail would have registered."""

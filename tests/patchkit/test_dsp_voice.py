@@ -502,6 +502,12 @@ def test_the_deep_breadcrumbs_come_in_order_inside_the_frame_save(name):
     context_intact(out)
 
 
+INCLUDES = [
+    CORE.parents[2] / "build" / "gen",
+    CORE.parents[5] / "sdk",
+]  # the adapter's generated includes and the SDK's
+
+
 def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_register(
     tmp_path,
 ):
@@ -521,11 +527,11 @@ def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_regi
     for defines in (frozenset(), *C3_VARIANTS.values()):
         assert stores(defines) == []
         pk_build.sharc_object(
-            [CORE], [], defines
+            [CORE], INCLUDES, defines
         )  # raises BuildError on an excluded store
     # the DN2 copy too
     dn2 = CORE.with_name("dsp-voice-dn2.s")
-    pk_build.sharc_object([dn2], [], frozenset())
+    pk_build.sharc_object([dn2], INCLUDES, frozenset())
     # and a source with one fails, with the parcel address in the message
     bad = tmp_path / "bad.s"
     bad.write_text(".SECTION/PM seg_pmco;\n_x:\n    DM(-16, I6) = I0;\n    RTS;\n")

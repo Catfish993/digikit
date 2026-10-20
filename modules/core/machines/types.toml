@@ -65,3 +65,4 @@ dynamic_first = 16
 [dn2.dynamic]
 "test/dyn-dn2:dyn_pluck" = 16
 "test/dyn-pluck:pluck" = 17
+"test/dyn-guard-nan:guardnan" = 18

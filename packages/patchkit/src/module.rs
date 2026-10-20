@@ -47,10 +47,13 @@ pub struct Manifest {
     /// Set by `typed::lower`.
     #[serde(skip)]
     pub lowered: bool,
+    /// Set by `Library::lower`: the state block of each patched-in contract voice, by machine id.
+    #[serde(skip)]
+    pub voice_state: BTreeMap<String, crate::typed::VoiceState>,
 }
 
 /// One generated file of device data: `kind` is `rust` (constants every device agrees on, one file), `gas-shared` (the same as `.equ` lines), `gas` (a ColdFire assembler
-/// include, `.equ` lines, one file per device) or `sharc` (a SHARC+ include, `#define` lines, one file per device). `path` is relative
+/// include, `.equ` lines, one file per device), `sharc` (a SHARC+ include, `#define` lines, one file per device) or `sharc-adapter` (the `ADM_*` defines of `[adapter.machine]`, one file per device). `path` is relative
 /// to the module; `{dev}` stands for the device's short name in a per-device path.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -370,6 +373,93 @@ pub struct Module {
     pub digest: String,
 }
 
+/// A patched-in contract voice (`[[voice]]` with `desc`) needs memory for the state of its voices, which a `.dkm` gets from the runtime at load
+/// (`dkmdsp.rs`). Here the module's DSP object gets a bss section `dk.state.<machine>` of `voices` x `stride` bytes and the global symbol
+/// `_dkstate_<machine>`, which the voice row names as its state base; the patch linker places it with the rest of the object. `desc` is read
+/// from the object's data (`dk_machine_desc`, little endian: voices at word 3, state_bytes at 4, state_clear_bytes at 5).
+fn reserve_voice_state(m: &mut Module) -> Result<()> {
+    let voices: Vec<(String, String)> = m
+        .manifest
+        .voice
+        .iter()
+        .filter_map(|v| v.desc.clone().map(|d| (v.machine.clone(), d)))
+        .collect();
+    for (machine, desc) in voices {
+        if m.manifest.voice_state.contains_key(&machine) {
+            continue;
+        }
+        let found = m.objects.iter().position(|o| {
+            o.arch == "sharc"
+                && o.symbols
+                    .iter()
+                    .any(|s| s.name == desc && s.section.is_some())
+        });
+        let Some(oi) = found else {
+            return Err(err!(
+                "voice {machine}: desc {desc} is not defined by a DSP object of the module"
+            ));
+        };
+        let o = &mut m.objects[oi];
+        let sym = o.symbols.iter().find(|s| s.name == desc).unwrap().clone();
+        let sec = o
+            .sections
+            .iter()
+            .find(|x| Some(&x.name) == sym.section.as_ref())
+            .unwrap();
+        if sec.kind != "data" {
+            return Err(err!("voice {machine}: desc {desc} is not initialised data"));
+        }
+        let bytes = unhex(&sec.hex)?;
+        let at = sym.value as usize;
+        let words = bytes
+            .get(at..at + crate::dkmdsp::DESC_WORDS * 4)
+            .ok_or_else(|| {
+                err!(
+                    "voice {machine}: desc {desc} is shorter than {} bytes",
+                    crate::dkmdsp::DESC_WORDS * 4
+                )
+            })?;
+        let w = |i: usize| u32::from_le_bytes(words[i * 4..i * 4 + 4].try_into().unwrap());
+        if w(0) != crate::dkmdsp::DESC_MAGIC || w(1) != crate::dkmdsp::DESC_CONTRACT {
+            return Err(err!(
+                "voice {machine}: desc {desc} is no dk_machine_desc of contract {}",
+                crate::dkmdsp::DESC_CONTRACT
+            ));
+        }
+        let (voices_n, state, clear) = (w(3), w(4), w(5));
+        if clear > state || voices_n == 0 {
+            return Err(err!(
+                "voice {machine}: desc {desc}: {voices_n} voices, state {state} bytes, clear {clear}"
+            ));
+        }
+        let stride = state.div_ceil(8) * 8;
+        let name = format!("dk.state.{machine}");
+        let symbol = format!("_dkstate_{machine}");
+        o.sections.push(crate::dko::DkoSection {
+            name: name.clone(),
+            kind: "bss".into(),
+            align: 8,
+            size: voices_n * stride,
+            hex: String::new(),
+        });
+        o.symbols.push(crate::dko::DkoSymbol {
+            name: symbol.clone(),
+            section: Some(name),
+            value: 0,
+            global: true,
+        });
+        m.manifest.voice_state.insert(
+            machine,
+            crate::typed::VoiceState {
+                symbol,
+                stride,
+                clear,
+            },
+        );
+    }
+    Ok(())
+}
+
 impl Module {
     /// Build a module from its manifest text and a reader for the object paths it names.
     pub fn from_parts(
@@ -424,9 +514,13 @@ impl Library {
         self.modules.iter().find(|m| m.id() == id)
     }
 
-    /// Lower the typed sections of every module with the device models (`crate::typed`).
+    /// Lower the typed sections of every module with the device models (`crate::typed`). A patched-in module with contract voices first gets
+    /// the state blocks of its voices (`reserve_voice_state`).
     pub fn lower(&mut self, models: &crate::typed::Models) -> Result<()> {
         for m in &mut self.modules {
+            if !m.manifest.module.dynamic && !m.manifest.lowered {
+                reserve_voice_state(m).map_err(|e| err!("{}: {e}", m.manifest.module.id))?;
+            }
             crate::typed::lower(&mut m.manifest, models)
                 .map_err(|e| err!("{}: {e}", m.manifest.module.id))?;
         }

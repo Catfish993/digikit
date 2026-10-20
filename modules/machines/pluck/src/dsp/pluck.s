@@ -1,5 +1,8 @@
-// machines/pluck: a Karplus-Strong plucked string for the per-voice hook (core/dsp-voice). Routine ABI: see
-// core/dsp-voice. One string per track, 4096 samples of delay line per track in reserved (unloaded) L2.
+// machines/pluck: a Karplus-Strong plucked string, a machine of the SDK contract (sdk/dk_machine.h, docs/design/module-sdk.md 4.1). One source for
+// both devices: the adapter of core/dsp-voice calls `_pk_note_on` once per note and `_pk_render` once per block with R4 = this voice's state,
+// R8 = the `dk_voice_in` (pitch in semitones << 8 with the tune folded in, velocity << 8, the output block), R12 = the four parameter words
+// DECAY, PICK, BRIGHT, COLOR (0 .. 0x7f00 = UI 0 .. 127, clamped by the adapter), and finds the note-on and the voice's end itself. State per voice
+// (PK_STATE bytes, all cleared by the adapter at note-on: a row of 32 words, then the delay line of 4096 samples. The line starts silent because a later block may read further back than this note's N, when the pitch or a parameter moves the period). The module reads no frame word.
 //
 // Loop, per sample, with the write index w and the read index r = w - N (both in bytes, masked to the 16 KiB line):
 //   x   = line[r]
@@ -7,96 +10,49 @@
 //   ap  = a (lp - ap') + lp'                first-order allpass, fractional delay delta = (1 - a) / (1 + a)
 //   y   = g ap;  line[w] = y;  out = y
 // The loop delay is N + tau_lp(b, w0) + tau_ap(delta, w0) = P = fs / f0. Per block:
-//   x   = (pitch word + tune word - 64 * 256) / (256 * 12)          semitones / 12 from note 0
+//   x   = pitch / (256 * 12)                semitones / 12 from note 0 (the adapter added the tune word - 64 * 256)
 //   inc = exp2(x) * INC0 (= f0 / fs);  P = exp2(-x) * P0;  w0^2 = 4 pi^2 inc^2
 //   b   = 0.5 (1 - BRIGHT);  tau_lp = b - w0^2 b (1 - b)(1 - 2b) / 6
 //   N   = trunc(P - tau_lp - 0.5);  R = P - tau_lp - N in [0.5, 1.5);  delta = R - w0^2 R (1 - R^2) / 12
 //   a   = polynomial(delta - 1) (degree 7, error 1.4e-7)
 //   g   = exp2(-GK P invT60), invT60 = 20 exp2(-8.64 DECAY): T60 = 0.05 s .. 20 s on the DECAY knob
-// Note-on (record byte +0x1b9 == 0, or no valid state): the last N + 1 samples of the line are filled with
-// xorshift32 noise through a one-pole lowpass of coefficient c = 0.9 COLOR, scaled by velocity (1 + 2 c) (an
-// amplitude compensation), the mean is removed (sum * inc), and a pick-position comb y[k] -= y[k - p] with
-// p = trunc(PICK / 2 N + 0.5) is applied when p >= 1. The voice ends (ACTIVE = 0) after 8 consecutive blocks
-// whose peak is below 2^-16.
+// Note-on: the last N + 1 samples of the line are filled with xorshift32 noise through a one-pole lowpass of coefficient c = 0.9 COLOR, scaled
+// by velocity (1 + 2 c) (an amplitude compensation), the mean is removed (sum * inc), and a pick-position comb y[k] -= y[k - p] with
+// p = trunc(PICK / 2 N + 0.5) is applied when p >= 1. The coefficients of the note-on block are computed once, by note_on (word 5 of the row
+// tells render). The voice ends (DK_DONE) after 8 consecutive blocks whose peak is below 2^-16.
 //
-// Machine slots (frame words from 0xda + 0x60 t, mirror index - 25): 0 TUNE (25), 1 DECAY (26), 2 PICK (27),
-// 3 unused (28, the sample slot), 4 BRIGHT (31), 5 COLOR (32), 6 unused (33), 7 LEV (34, the engine's level).
-// Parameters are 0 .. 127 on the UI as words 0 .. 0x7f00 (UI * 256); TUNE is 64 * 256 at rest.
+// State row words: 0 w, 2 quiet blocks, 3 lp', 4 ap', 5 coefficients are fresh (set by note_on), 6 DECAY, 7 PICK, 8 BRIGHT, 9 COLOR, 10 velocity,
+// 11 N, 12 1 - b, 13 b, 14 a, 15 g, 16 inc, 17 comb p, 18 c, 19 amplitude. The random state `_pk_rng` is shared by all voices (a note's noise
+// continues the sequence of the last).
+
+#include "dk_machine.inc"
+#define PK_LINE 128
+#define PK_STATE 16512
+#define PK_VOICES 16
 
 .SECTION/PM seg_pmco;
 .GLOBAL _pk_render;
+.GLOBAL _pk_note_on;
 .EXTERN _dv_exp2;
-.EXTERN _dv_frame_hw;
 
-_pk_render:
-    R5 = R2;                              // t
-    I0 = R8;                              // output block
-    I1 = R4;
-    MODIFY(I1, 440);                      // record byte +0x1b8: ACTIVE, +0x1b9 mark
-    R9 = DM(I1, M5);
-    R0 = 0xff;
-    R0 = R9 AND R0;
-    IF EQ JUMP _pk_idle;
-    R0 = LSHIFT R5 BY 7;
-    R1 = _pk_state;
-    R10 = R1 + R0;
-    I3 = R10;                             // this track's state row
-    DM(5, I3) = R4;
-
-    // note-on: mark == 0, or the row was never initialised
-    R12 = 1;
-    R11 = 0;
-    R0 = 0xff00;
-    R0 = R9 AND R0;
-    IF EQ R11 = PASS R12;
-    R0 = DM(1, I3);
-    R1 = 0x4b50;
-    COMP(R0, R1);
-    IF NE R11 = PASS R12;
-    DM(20, I3) = R11;
-    R0 = PASS R11;
-    IF EQ JUMP _pk_marked;
-    R0 = 0x5a00;
-    R9 = R9 OR R0;
-    DM(I1, M5) = R9;
-_pk_marked:
-
-    // raw parameters: DECAY, PICK, BRIGHT, COLOR, velocity
-    R0 = LSHIFT R5 BY 5;
-    R1 = LSHIFT R5 BY 4;
-    R0 = R1 + R0;
-    R1 = 0x6d;
-    R13 = R1 + R0;                        // frame index of machine slot 0
-    R0 = R13 + 1;
-    CALL _dv_frame_hw;
-    DM(6, I3) = R0;
-    R1 = 2;
-    R0 = R1 + R13;
-    CALL _dv_frame_hw;
-    DM(7, I3) = R0;
-    R1 = 6;
-    R0 = R1 + R13;
-    CALL _dv_frame_hw;
-    DM(8, I3) = R0;
-    R1 = 7;
-    R0 = R1 + R13;
-    CALL _dv_frame_hw;
-    DM(9, I3) = R0;
-    R1 = 26;
-    R0 = R1 + R5;
-    CALL _dv_frame_hw;
+// The coefficients of this block from the pitch, the parameters and the velocity. In: I3 = the state row, R8 = the voice input, R12 = the
+// parameter words. Writes the row (words 6 to 19 but 17 to 19). Clobbers R0 to R3, R9 to R15 (not R4, R5, R8).
+_pk_coef:
+    I1 = R12;
+    R0 = DM(0, I1);
+    DM(6, I3) = R0;                       // DECAY
+    R0 = DM(1, I1);
+    DM(7, I3) = R0;                       // PICK
+    R0 = DM(2, I1);
+    DM(8, I3) = R0;                       // BRIGHT
+    R0 = DM(3, I1);
+    DM(9, I3) = R0;                       // COLOR
+    I2 = R8;
+    R0 = DM(DK_IN_W_VELOCITY, I2);
     DM(10, I3) = R0;
-
-    // x = (pitch + tune - 64 * 256) / (256 * 12)
-    R0 = R5 + 1;
-    CALL _dv_frame_hw;
+    // x = pitch / (256 * 12)
+    R0 = DM(DK_IN_W_PITCH, I2);
     F10 = FLOAT R0;
-    R0 = PASS R13;
-    CALL _dv_frame_hw;
-    F11 = FLOAT R0;
-    R1 = 0x46800000;                      // 16384.0
-    F11 = F11 - F1;
-    F10 = F10 + F11;
     R1 = 0x39aaaaab;                      // 1 / (256 * 12)
     F10 = F10 * F1;                       // x
     R1 = 0x41333333;                      // 11.2: P = P0 2^-x stays at 2.5 or more (the loop has no shorter period)
@@ -216,10 +172,13 @@ _pk_marked:
     F0 = -F0;
     CALL _dv_exp2;
     DM(15, I3) = R0;                      // g
+    RTS;
 
-    R0 = DM(20, I3);
-    R0 = PASS R0;
-    IF EQ JUMP _pk_run;
+_pk_note_on:
+    I3 = R4;
+    CALL _pk_coef;
+    R0 = 1;
+    DM(5, I3) = R0;                       // render reads these coefficients in the note-on block
 
     // ---- note-on: excitation ----
     // comb offset p
@@ -261,15 +220,9 @@ _pk_marked:
     DM(19, I3) = R15;
 
     // line base, start of the last N + 1 samples
-    R0 = LSHIFT R5 BY 14;
-    R1 = _pk_buf;
-    R3 = R1 + R0;
-    // the whole line starts silent: a later block may read further back than this note's N (TUNE or the pitch moved the period),
-    // and the part the excitation does not cover would otherwise hold whatever the memory held (stale notes, or garbage at power-up)
-    I2 = R3;
-    R0 = 0;
-    LCNTR = 4096, DO _pk_zline UNTIL LCE;
-_pk_zline: DM(I2, M6) = R0;
+    R3 = I3;
+    R0 = PK_LINE;
+    R3 = R3 + R0;
     R0 = DM(11, I3);
     R4 = LSHIFT R0 BY 2;                  // 4 N
     R6 = 0x4000;
@@ -335,13 +288,28 @@ _pk_nocomb:
     DM(3, I3) = R0;                       // lp'
     DM(4, I3) = R0;                       // ap'
     R0 = 0x4b50;
-    DM(1, I3) = R0;
+    DM(1, I3) = R0;    R0 = 0;
+    JUMP (M13, I13);
+
+_pk_render:
+    I3 = R4;
+    R0 = DM(5, I3);
+    R0 = PASS R0;
+    IF NE JUMP _pk_fresh;
+    CALL _pk_coef;
+    JUMP _pk_run;
+_pk_fresh:
+    R0 = 0;
+    DM(5, I3) = R0;
 
     // ---- the block ----
 _pk_run:
-    R0 = LSHIFT R5 BY 14;
-    R1 = _pk_buf;
-    R3 = R1 + R0;                         // base of this track's line
+    I1 = R8;
+    R0 = DM(DK_IN_W_OUT, I1);
+    I0 = R0;                              // the output block
+    R3 = I3;
+    R0 = PK_LINE;
+    R3 = R3 + R0;                         // base of this voice's line
     R4 = 4;
     R2 = 0x3fff;
     R15 = DM(0, I3);                      // w
@@ -403,30 +371,24 @@ _pk_counted:
     R2 = 8;
     COMP(R1, R2);
     IF LT JUMP _pk_return;
-    R0 = DM(5, I3);
-    I1 = R0;
-    MODIFY(I1, 440);
-    R9 = DM(I1, M5);
-    R0 = 0xffff0000;
-    R9 = R9 AND R0;                       // ACTIVE = 0, mark cleared
-    DM(I1, M5) = R9;
-_pk_return:
+    R0 = DK_DONE;
     JUMP (M13, I13);
-
-_pk_idle:
-    R0 = 0xff00;
-    R0 = R9 AND R0;
-    IF EQ JUMP _pk_zero;
-    R0 = 0xffff00ff;                      // a stopped voice: clear the mark
-    R9 = R9 AND R0;
-    DM(I1, M5) = R9;
-_pk_zero:
-    R0 = 0;
-    LCNTR = 32, DO _pk_zloop UNTIL LCE;
-_pk_zloop: DM(I0, M6) = R0;
+_pk_return:
+    R0 = DK_OK;
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
 .VAR _pk_rng = 0x2545f491;
-.PKDATA _pk_state, 2048;                  // 16 rows of 32 words
-.PKBSS _pk_buf, 262144;                   // 16 lines of 4096 samples, written before they are read
+// dk_machine_desc (sdk/dk_machine.h): magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on,
+// max_call_depth, stack_bytes.
+.GLOBAL _pk_desc;
+.VAR _pk_desc = DK_MAGIC;
+.VAR _pk_desc1 = DK_MACHINE_V1;
+.VAR _pk_desc2 = 4;
+.VAR _pk_desc3 = PK_VOICES;
+.VAR _pk_desc4 = PK_STATE;
+.VAR _pk_desc5 = PK_STATE;
+.VAR _pk_desc6 = 2200;
+.VAR _pk_desc7 = 9000;
+.VAR _pk_desc8 = 2;
+.VAR _pk_desc9 = 0;

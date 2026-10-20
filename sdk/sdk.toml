@@ -3,7 +3,7 @@
 # (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
-version = "0.1.0"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
+version = "0.2.0"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
@@ -13,8 +13,31 @@ machine = [1, 0]
 fx = [0, 0]         # no FX contract yet: a module that declares fx is always refused
 service = [1, 0]
 
+# The machine contract's numbers (sdk/dk_machine.h is the hand-written C view; packages/patchkit/tests/sdkgen.rs keeps the two equal).
+# `patchkit gen` writes sdk/dk_machine.inc from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
+[machine]
+consts = [
+    { name = "DK_MACHINE_V1", value = 1 },
+    { name = "DK_BLOCK", value = 32 },
+    { name = "DK_MAX_PARAMS", value = 8 },
+    { name = "DK_MAX_VOICES", value = 16 },
+    { name = "DK_OK", value = 0 },
+    { name = "DK_DONE", value = 1 },
+    { name = "DK_P_PERCENT", value = 0 },
+    { name = "DK_P_BIPOLAR", value = 1 },
+    { name = "DK_P_ENUM", value = 2 },
+    { name = "DK_P_PITCH", value = 3 },
+    { name = "DK_LEVEL_BOUND_BITS", value = 1090519040 },  # 8.0f
+    { name = "DK_MAGIC", value = 1145785665 },             # 'DKMA' = 0x444b4d41
+]
+voice_in = ["pitch", "velocity", "block", "out"]           # struct dk_voice_in, DK_IN_*
+desc = [
+    "magic", "contract", "n_params", "voices", "state_bytes",
+    "state_clear_bytes", "max_cycles_block", "max_cycles_note_on", "max_call_depth", "stack_bytes",
+]                                                          # struct dk_machine_desc, DK_DESC_*
+
 [log]
-f_error = 1         # flags bit 0: error (kept even when debug is off)
+f_error = 1        # flags bit 0: error (kept even when debug is off)
 level_shift = 1     # flags bits 1-3: level 0 error, 1 warn, 2 info, 3 debug, 4 trace
 level_mask = 7
 source_shift = 8    # flags bits 8-15: source module (0 = runtime, n = module table index + 1)

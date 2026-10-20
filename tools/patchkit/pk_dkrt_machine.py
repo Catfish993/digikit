@@ -276,10 +276,10 @@ class Rig:
         return self.w(sym(self.plan, "core/dyndsp", "dyndsp_info") + 4 * k)
 
     def voice_row(self, k: int) -> tuple[int, int]:
-        """(type, pc) of voice row k; a row is 16 words (core/dsp-voice module.toml), the first two are these."""
+        """(type, pc) of voice row k; a row is 24 words (core/dsp-voice module.toml), the first two are these."""
         rows = sym(self.plan, "core/dsp-voice", "voices.rows")
         first = self.info_word(6)
-        raw = self.dsp_bytes(rows + 64 * (first + k), 8)
+        raw = self.dsp_bytes(rows + 96 * (first + k), 8)
         return struct.unpack(
             "<II", raw
         )  # dsp_peek returns memory bytes: DSP words are little endian
