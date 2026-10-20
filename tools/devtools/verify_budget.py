@@ -47,6 +47,7 @@ WANT: dict[str, float] = {
     "rust-tests": 0.30,
     "python-tests": 0.45,
     "card": 0.15,
+    "smoke": 0.50,
     "dt2-tone": 0.15,
     "pins": 0.50,
     "check": 0.50,
@@ -65,6 +66,7 @@ FILE_PREFIX = "py:"
 BUILDS = ("build", "build-dt2", "build-daemons")
 EMULATOR_POOLS = (
     "pins",
+    "smoke",
     "check",
     "check-no-aot",
     "dt2-check",
