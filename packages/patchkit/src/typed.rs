@@ -42,6 +42,20 @@ pub struct KnobModel {
     /// May a machine render with its own DSP routine (`own_dsp`)?
     #[serde(default)]
     pub own_dsp: bool,
+    /// Knobs the firmware keeps for itself on a clone of a base machine (`[[modules.knobs.reserved]]`).
+    #[serde(default)]
+    pub reserved: Vec<ReservedKnobs>,
+}
+
+/// Knobs of a base machine that a module parameter must not use: a clone of machine `clone_of` (named `name` in messages) keeps them.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReservedKnobs {
+    pub clone_of: i64,
+    pub name: String,
+    pub knobs: Vec<usize>,
+    /// Why, for the message.
+    pub why: String,
 }
 
 /// `[modules.frame]`: where the DSP finds a knob's word in its copy of the ColdFire frame.
@@ -416,7 +430,9 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             }
             let type_hint = o.type_hint.or(d.type_hint).unwrap_or(0);
             if !(0..=255).contains(&type_hint) {
-                return Err(err!("{who}: {what}: type_hint {type_hint} is not a type number"));
+                return Err(err!(
+                    "{who}: {what}: type_hint {type_hint} is not a type number"
+                ));
             }
             machines.push(RMachine {
                 id: d.id.clone(),
@@ -429,6 +445,22 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 knobs,
                 level: o.level.or(d.level).unwrap_or(kn.level_default),
             });
+        }
+        // knobs the firmware keeps on a clone of the base machine: no module parameter there
+        for x in &machines {
+            for r in kn.reserved.iter().filter(|r| r.clone_of == x.clone_of) {
+                for &j in &r.knobs {
+                    if let Some(Knob::Param(p)) = x.knobs.get(j) {
+                        return Err(err!(
+                            "{who}: machine {}: param {p:?} sits at knob {j}, but knob {j} of a {} clone is {} \
+                             (docs/findings/02-machines-and-parameters.md)",
+                            x.id,
+                            r.name,
+                            r.why
+                        ));
+                    }
+                }
+            }
         }
         // slots of the module's parameters: the knob position in the machines that use them
         let mut slot_of: BTreeMap<String, usize> = BTreeMap::new();
@@ -444,11 +476,22 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             knob_lists.push((id.as_str(), k));
         }
         for (owner, ks) in &knob_lists {
+            let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
             for (j, k) in ks.iter().enumerate() {
                 let Knob::Param(p) = k else { continue };
+                if !m.param.iter().any(|d| &d.id == p) {
+                    return Err(err!(
+                        "{who}: {owner}: knob {j} names {p:?}, which is not a [[param]] of this module"
+                    ));
+                }
                 if !m.param.iter().any(|d| &d.id == p && on(&d.devices, dev)) {
                     return Err(err!(
                         "{who}: {owner}: knob {j} names {p:?}, which is not a param of {dev}"
+                    ));
+                }
+                if let Some(first) = seen.insert(p.as_str(), j) {
+                    return Err(err!(
+                        "{who}: {owner}: knob {j} names {p:?}, which knob {first} already names; a param appears once in knobs"
                     ));
                 }
                 if let Some(prev) = slot_of.insert(p.clone(), j)
@@ -755,6 +798,11 @@ to = "machine"
 knob_field = "f"
 level_field = "f8"
 level_default = 10
+[[modules.knobs.reserved]]
+clone_of = 0
+name = "SAMPLE"
+knobs = [3]
+why = "the sample slot: only the sample number bits reach the DSP"
 [modules.frame]
 base = 0x6d
 stride = 48
@@ -988,6 +1036,53 @@ entry = "_t_render"
             )
             .replace("knobs = [\"t_a\", \"t_b\"]", "knobs = [\"t_a\"]"));
         assert!(e.contains("no machine of dt2 uses it"), "{e}");
+    }
+
+    #[test]
+    fn knob_layout_checks() {
+        let ms = models();
+        let bad = |t: String| -> String {
+            let mut m = manifest(&t);
+            match lower(&mut m, &ms) {
+                Err(e) => e.0,
+                Ok(()) => panic!("accepted:\n{t}"),
+            }
+        };
+        let ok = |t: String| lower(&mut manifest(&t), &ms).unwrap();
+        // a param on knob 3 of a SAMPLE clone: the sample slot
+        let e = bad(MOD.replace(
+            "[0xca, \"t_a\", 0, 0, \"t_b\"]",
+            "[0xca, \"t_a\", 0, \"t_b\"]",
+        ));
+        assert!(
+            e.contains(
+                "knob 3 of a SAMPLE clone is the sample slot: only the sample number bits reach the DSP (docs/findings/02-machines-and-parameters.md)"
+            ),
+            "{e}"
+        );
+        // a stock code on knob 3 and a param on knob 3 of a machine that is not a SAMPLE clone are fine
+        ok(MOD.replace(
+            "[0xca, \"t_a\", 0, 0, \"t_b\"]",
+            "[0xca, \"t_a\", 0, 0xcc, \"t_b\"]",
+        ));
+        ok(MOD.replace("clone_of = 0", "clone_of = 1").replace(
+            "[0xca, \"t_a\", 0, 0, \"t_b\"]",
+            "[0xca, \"t_a\", 0, \"t_b\"]",
+        ));
+        // a name that is no [[param]] of the module
+        let e = bad(MOD.replace("\"t_a\", 0, 0, \"t_b\"]", "\"t_zz\", 0, 0, \"t_b\"]"));
+        assert!(
+            e.contains("knob 1 names \"t_zz\", which is not a [[param]] of this module"),
+            "{e}"
+        );
+        // a param twice in one list
+        let e = bad(MOD.replace("\"t_a\", 0, 0, \"t_b\"]", "\"t_a\", \"t_a\", 0, \"t_b\"]"));
+        assert!(
+            e.contains("knob 2 names \"t_a\", which knob 1 already names"),
+            "{e}"
+        );
+        // the Digitone II has no reserved knob: knob 3 of a page is free
+        ok(MOD.replace("knobs = [\"t_a\", \"t_b\"]", "knobs = [\"t_a\", \"t_b\"]"));
     }
 
     #[test]

@@ -221,7 +221,7 @@ A module can also be packed as a `.dkm` and loaded by the digikit runtime at boo
   module that is patched in). `patchkit pack` and `patchkit dkm-info` print the same `size` line; `mise run patch:mem` prints the
   runtime's own bytes.
 - Knob slots on a Digitakt II SAMPLE clone: slot 6 is usable. Slot 3 passes only the sample bits (`value & 0x3ff`): do not put a
-  parameter there (docs/findings/02-machines-and-parameters.md, last section).
+  parameter there: the build refuses it (docs/findings/02-machines-and-parameters.md, last section).
 
 ### Versions and compatibility
 

@@ -1657,4 +1657,11 @@ press and release serviced closer together.
 frame word, note PCM; 2026-10-20). Slot 6: the TX word equals the stored value at every step (0..0x7f00) and the note
 PCM equals the control with the slot empty: usable. Slot 3: the stored value follows the encoder, but the TX word is
 `value & 0x3ff` (0x1234 -> 0x234, 0x7f00 -> 0x300): the DSP sees only the sample number bits, so slot 3 is reserved
-on a SAMPLE clone (docs/design/module-sdk.md 11.5 D1). Not tested: slot 3 on a track with a sample assigned.
+on a SAMPLE clone (docs/design/module-sdk.md 11.5 D1).
+
+**[D]** Slot 3 on a track with a sample assigned (2026-10-20, patched-in digikit/pluck with `pluck_decay` moved to knob 3, SRC page
+encoder 4, Sound mirror 28 and the TX frame word after a trig, one bounded run). Control, stock SAMPLE: mirror 28 is the sample
+number (7 at the start, 0xf and 0x16 after two bursts), TX word equal to it. Clone with the module parameter on knob 3: the module
+default 0x4000 replaces the sample number at selection (the DSP sees 0), the stored value follows the encoder (0x3c00, 0x6e00,
+0x7a00) and the TX word is `value & 0x3ff` (0x0, 0x200, 0x200). The DSP therefore sees only the sample number bits of a value that
+moves in raw steps, and the track's sample assignment is lost: slot 3 is not usable with a sample assigned either.

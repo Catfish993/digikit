@@ -300,6 +300,15 @@ knob_field = "f"
 level_field = "f8"
 level_default = 10          # 0x0a: the track level code
 
+# A clone of SAMPLE (machine 0) keeps knob 3: it is the sample slot, the firmware's own sample number field. The DSP gets only the sample
+# number bits of its value (`value & 0x3ff`), the module default replaces the track's sample number, so no module parameter goes there.
+# Measured 2026-10-20: docs/findings/02-machines-and-parameters.md, "Knob slots 3 and 6 on a run-time SAMPLE clone".
+[[modules.knobs.reserved]]
+clone_of = 0
+name = "SAMPLE"
+knobs = [3]
+why = "the sample slot: only the sample number bits reach the DSP"
+
 # The DSP's copy of the frame holds knob j of track t at halfword 0x6d + 48 t + j + (j / 4) * 2 (byte 0xda + 0x60 t);
 # the parameter table gives knob j the mirror index 25 + j + (j / 4) * 2 (core/params builds the same index).
 [modules.frame]

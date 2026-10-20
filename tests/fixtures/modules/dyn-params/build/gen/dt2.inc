@@ -8,7 +8,6 @@
 #define DYNP_KNOB0_FRAME_OFF 0
 #define DYNP_KNOB1_FRAME_OFF 1
 #define DYNP_KNOB2_FRAME_OFF 2
-#define DYNP_KNOB3_FRAME_OFF 3
 #define DYNP_KNOB4_FRAME_OFF 6
 #define DYNP_KNOB5_FRAME_OFF 7
 #define DYNP_KNOB6_FRAME_OFF 8
@@ -34,13 +33,6 @@
 #define P2_MIN 2
 #define P2_MAX 32000
 #define P2_DEFAULT 4642
-#define P3_KNOB 3 // knob position
-#define P3_SLOT 3 // engine or sound-array slot
-#define P3_FRAME_OFF 3 // halfwords from knob 0 of the same track
-#define P3_MIRROR 28 // index in the parameter table
-#define P3_MIN 3
-#define P3_MAX 31744
-#define P3_DEFAULT 4915
 #define P4_KNOB 4 // knob position
 #define P4_SLOT 4 // engine or sound-array slot
 #define P4_FRAME_OFF 6 // halfwords from knob 0 of the same track
