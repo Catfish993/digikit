@@ -64,6 +64,59 @@ def test_deep_is_a_superset() -> None:
     assert set(shallow.tests) <= set(deep.tests)
 
 
+HEADER = "file\tstatus\trc\tseconds\tpassed\tfailed\tskipped\terrors\n"
+
+
+def _write_summary(out: Path, rows: list[str]) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "summary.tsv").write_text(HEADER + "".join(r + "\n" for r in rows))
+
+
+def test_failure_report_failed_file(tmp_path: Path) -> None:
+    _write_summary(
+        tmp_path,
+        [
+            "tests/a/test_ok.py\tOK\t0\t1.0\t3\t0\t0\t0",
+            "tests/a/test_bad.py\tFAILED\t1\t2.0\t1\t1\t0\t0",
+        ],
+    )
+    (tmp_path / "xml").mkdir()
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "xml" / "tests__a__test_bad.xml").write_text(
+        '<testsuite><testcase name="test_x"><failure message="AssertionError: x != y">'
+        'trace</failure></testcase><testcase name="test_y"/></testsuite>'
+    )
+    (tmp_path / "logs" / "tests__a__test_bad.log").write_text("log\n")
+    head, detail = changed_tests.failure_report(tmp_path)
+    assert head.startswith("FAIL python-tests: 1 of 2 files failed")
+    assert any("tests/a/test_bad.py" in d and "1 failed" in d for d in detail)
+    assert any("AssertionError: x != y" in d for d in detail)
+    assert not any("test_y" in d for d in detail)
+
+
+def test_failure_report_all_ok(tmp_path: Path) -> None:
+    _write_summary(
+        tmp_path,
+        [
+            "tests/a/test_one.py\tOK\t0\t1.0\t3\t0\t0\t0",
+            "tests/a/test_two.py\tOK\t0\t1.0\t1\t0\t1\t0",
+        ],
+    )
+    head, detail = changed_tests.failure_report(tmp_path)
+    assert head.startswith("PASS python-tests: 2 files, 4 passed")
+    assert detail == []
+
+
+def test_failure_report_no_xml_shows_log_tail(tmp_path: Path) -> None:
+    _write_summary(tmp_path, ["tests/a/test_gone.py\tNO-XML\t2\t1.0\t0\t0\t0\t0"])
+    (tmp_path / "logs").mkdir()
+    lines = [f"line {i}" for i in range(20)]
+    (tmp_path / "logs" / "tests__a__test_gone.log").write_text("\n".join(lines) + "\n")
+    head, detail = changed_tests.failure_report(tmp_path)
+    assert head.startswith("FAIL python-tests: 1 of 1 files failed")
+    assert detail[1:] == [f"    line {i}" for i in range(5, 20)]
+
+
 def test_explain_runs_nothing(capsys: pytest.CaptureFixture[str]) -> None:
     assert changed_tests.main(["--explain"]) == 0
     assert "the gate adds:" in capsys.readouterr().out

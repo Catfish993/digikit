@@ -7,7 +7,8 @@ changed test files, the tests that import a changed tools/ or tests/ module (thr
 following only tests/ helpers and conftest files) or run it by name in a subprocess, the tests a changed
 module of modules/ names, and the Rust tests of the affected crates. No PY_GATE, no build step (a test
 that needs a daemon builds it), digikit scenarios on the quick tier, never a test directory. It prints
-each selected file with the reason, and what the merge gate (`mise run verify`) adds. A test that reaches
+one line per check; a failed check lists the failed files, their failing tests and log paths.
+`--explain` lists each selected file with the reason and what the merge gate (`mise run verify`) adds. A test that reaches
 a changed module only through other tools modules runs with --deep. It runs at nice 10 (--foreground:
 normal priority) and sets cargo's and libtest's pools from the verify CPU budget.
 """
@@ -18,6 +19,7 @@ import argparse
 import re
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
@@ -27,7 +29,12 @@ import grimp
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools import python_env  # noqa: E402
-from tools.devtools import verify, verify_budget, verify_route  # noqa: E402
+from tools.devtools import (  # noqa: E402
+    test_outcomes,
+    verify,
+    verify_budget,
+    verify_route,
+)
 from tools.emulator import digi_env  # noqa: E402
 from tools.patchkit import pk_conform  # noqa: E402
 
@@ -255,6 +262,109 @@ def plan(
     return out
 
 
+def _tail(path: Path, n: int, indent: str) -> list[str]:
+    """The last N lines of the file at PATH, indented."""
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    return [f"{indent}{line}" for line in lines[-n:]]
+
+
+def _failing_cases(xml: Path, limit: int = 10) -> list[str]:
+    """`name: message` for the testcases of the JUnit file XML that have a failure or error child."""
+    try:
+        root = ET.parse(xml).getroot()
+    except (OSError, ET.ParseError):
+        return []
+    out: list[str] = []
+    for case in root.iter("testcase"):
+        child = case.find("failure")
+        if child is None:
+            child = case.find("error")
+        if child is None:
+            continue
+        text = child.get("message") or child.text or ""
+        first = (text.strip().splitlines() or [""])[0][:200]
+        out.append(f"    {case.get('name', '?')}: {first}")
+        if len(out) >= limit:
+            break
+    return out
+
+
+def failure_report(out_dir: Path) -> tuple[str, list[str]]:
+    """The PASS/FAIL headline of a python-tests run and the detail lines for its failed files.
+
+    Reads OUT_DIR/summary.tsv, OUT_DIR/xml/<slug>.xml and OUT_DIR/logs/<slug>.log."""
+    rows: list[dict[str, str]] = []
+    with (out_dir / "summary.tsv").open(encoding="utf-8") as f:
+        header = f.readline().rstrip("\n").split("\t")
+        for line in f:
+            if line.strip():
+                rows.append(
+                    dict(zip(header, line.rstrip("\n").split("\t"), strict=False))
+                )
+    seconds = sum(float(r.get("seconds") or 0) for r in rows)
+
+    def num(r: dict[str, str], key: str) -> int:
+        return int(r.get(key) or 0)
+
+    bad = [
+        r
+        for r in rows
+        if r["status"] != "OK" or num(r, "failed") + num(r, "errors") > 0
+    ]
+    if not bad:
+        passed = sum(num(r, "passed") for r in rows)
+        skipped = sum(num(r, "skipped") for r in rows)
+        return (
+            f"PASS python-tests: {len(rows)} files, {passed} passed, "
+            f"{skipped} skipped ({seconds:.0f} s)",
+            [],
+        )
+    head = (
+        f"FAIL python-tests: {len(bad)} of {len(rows)} files failed ({seconds:.0f} s)"
+    )
+    detail: list[str] = []
+    for r in bad:
+        slug = test_outcomes.slug_of(r["file"])
+        log = out_dir / "logs" / f"{slug}.log"
+        try:
+            shown = log.relative_to(ROOT)
+        except ValueError:
+            shown = log
+        detail.append(
+            f"  {r['file']}: {r['status']}, {num(r, 'failed')} failed, "
+            f"{num(r, 'errors')} errors  (log: {shown})"
+        )
+        cases = _failing_cases(out_dir / "xml" / f"{slug}.xml")
+        detail += cases or _tail(log, 15, "    ")
+    return head, detail
+
+
+_RUST_KEEP = re.compile(r"^(---- |test result:|FAIL)|panicked at")
+
+
+def rust_failure_lines(output: str) -> list[str]:
+    """The lines of cargo OUTPUT that show a failure (at most 40), else its last 30 lines."""
+    lines = output.strip().splitlines()
+    hits = [line for line in lines if _RUST_KEEP.search(line)]
+    return hits[:40] if hits else lines[-30:]
+
+
+def _count_gate_adds(gate_adds: list[str]) -> tuple[int, int]:
+    """(steps, more python files) that the gate adds."""
+    steps = 0
+    more = 0
+    for line in gate_adds:
+        if line.startswith("steps:"):
+            steps = len(line.removeprefix("steps:").split(","))
+        m = re.match(r"python-tests: (\d+) more files", line)
+        if m:
+            more = int(m.group(1))
+    return steps, more
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Tests the changed files select; not the merge gate."
@@ -278,29 +388,30 @@ def main(argv: list[str] | None = None) -> int:
         verify_budget.lower_priority(args.foreground)
     files = verify.changed_files(args.base)
     sel = select(files, args.deep)
-    print(f"test:changed: {len(files)} changed files since {args.base}")
-    for test, reason in sel.tests.items():
-        print(f"  {test}  ({reason})")
-    if sel.deep_only and not args.deep:
-        print(
-            f"  ({len(sel.deep_only)} more tests reach a changed module through other "
-            "tools modules: --deep runs them)"
-        )
     scope = verify.rust_scope(files)
     if scope is None:
-        print("rust: needs the whole workspace: left to `mise run verify`")
+        rust = "whole workspace, left to the gate"
     else:
-        print(
-            f"rust: {', '.join(scope) if scope else 'no changed file reaches a Rust test'}"
-        )
-    print("the gate adds:")
-    for line in sel.gate_adds or ["nothing"]:
-        print(f"  {line}")
+        rust = ", ".join(scope) if scope else "no Rust test"
+    header = (
+        f"test:changed: {len(sel.tests)} test files for {len(files)} changed files "
+        f"since {args.base}; rust: {rust}"
+    )
+    if sel.deep_only and not args.deep:
+        header += f"; {len(sel.deep_only)} more with --deep"
+    print(header)
+    if args.explain:
+        for test, reason in sel.tests.items():
+            print(f"  {test}  ({reason})")
+        print("the gate adds:")
+        for line in sel.gate_adds or ["nothing"]:
+            print(f"  {line}")
     failed: list[str] = []
     out_dir = Path("OUT") if args.explain else Path(digi_env.run_dir("test-changed"))
     for name, cmd, note in plan(files, out_dir, args.deep):
         if cmd is None:
-            print(f"SKIP {name}: {note}", flush=True)
+            if args.explain:
+                print(f"SKIP {name}: {note}", flush=True)
             continue
         if args.explain:
             print(f"RUN  {name}: {' '.join(cmd[:8])}{' ...' if len(cmd) > 8 else ''}")
@@ -312,19 +423,38 @@ def main(argv: list[str] | None = None) -> int:
             cmd, cwd=ROOT, env=python_env(env), capture_output=True, text=True
         )
         seconds = time.monotonic() - start
-        if done.returncode:
+        output = done.stdout + done.stderr
+        if name == "python-tests":
+            report: tuple[str, list[str]] | None
+            try:
+                report = failure_report(out_dir)
+            except (OSError, KeyError):
+                report = None
+            if report is not None and not done.returncode:
+                print(report[0], flush=True)
+                continue
             failed.append(name)
-            tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-15:])
-            print(f"FAIL {name} ({seconds:.0f} s)\n{tail}", flush=True)
+            if report is None or report[0].startswith("PASS"):
+                tail = "\n".join(output.strip().splitlines()[-15:])
+                print(f"FAIL {name} ({seconds:.0f} s)\n{tail}", flush=True)
+            else:
+                print("\n".join([report[0], *report[1]]), flush=True)
+        elif done.returncode:
+            failed.append(name)
+            lines = "\n".join(rust_failure_lines(output))
+            print(f"FAIL {name} ({seconds:.0f} s)\n{lines}", flush=True)
         else:
             print(f"PASS {name} ({seconds:.0f} s)", flush=True)
-    verdict = "explained, nothing run" if args.explain else "all passed"
     if failed:
-        verdict = f"FAILED: {', '.join(failed)}"
-    print(f"test:changed: {verdict}")
-    print(
-        "test:changed is not the merge gate: the coordinator runs `mise run verify` once per merge."
-    )
+        print(f"test:changed: FAILED: {', '.join(failed)}.")
+    elif args.explain:
+        print("test:changed: explained, nothing run.")
+    else:
+        steps, more = _count_gate_adds(sel.gate_adds)
+        print(
+            f"test:changed: all passed. The gate adds {steps} steps and {more} more "
+            "python files (--explain lists them)."
+        )
     return 1 if failed else 0
 
 
