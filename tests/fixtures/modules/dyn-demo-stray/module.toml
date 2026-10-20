@@ -1,0 +1,23 @@
+[module]
+id = "test/dyn-demo-stray"
+version = "0.1.0"
+name = "Run-time module with a stray store"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture for the ColdFire memory audit: test/dyn-demo that also writes one word outside its own block, once"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
+
+# Rust, built like test/dyn-demo (pack it with `patchkit pack test/dyn-demo-stray`).
+[[object]]
+path = "build/dyn-demo-stray.dko.json"
+sources = ["src/rs/Cargo.toml"]
+place = "cf.expansion"
