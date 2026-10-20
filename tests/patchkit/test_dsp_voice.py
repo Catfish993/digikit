@@ -1,10 +1,10 @@
-"""core/dsp-voice and test/sine-voice on the concrete SHARC+ core.
+"""core/dsp-voice and a raw sine routine (tests/support/raw_sine.s) on the concrete SHARC+ core.
 
 The wrapper and the sine routine are assembled from the module sources, linked at test bases with the firmware
 symbols stood in by test addresses, and run the way the engine calls them: R4 = voice record, R8 = output block, R14
 = loop counter, a frame built by the caller's CJUMP. The stock path must fall through with nothing but the displaced
 stack adjustment and R0-R2 / I4 changed; a registered type must run the routine (even voice) or copy its block (odd
-voice) and leave the callee-saved registers as found. The emulator proof is tools/patchkit/pk_proof_voice.py. Skips when
+voice) and leave the callee-saved registers as found. The emulator proof is tools/patchkit/pk_proof_voice.py. The machine of the SDK contract is tested in test_sine.py. Skips when
 Selache is not built."""
 
 import re

@@ -37,10 +37,6 @@ pub struct Manifest {
     pub page: Vec<crate::typed::PageDef>,
     #[serde(default)]
     pub voice: Vec<crate::typed::VoiceDef>,
-    /// `[[dsp_voice]]`: a voice row of a run-time module's DSP object with an explicit machine type (no machine record to
-    /// take the type from: the Digitone II, whose registry has no machine rows for run-time modules yet).
-    #[serde(default)]
-    pub dsp_voice: Vec<DspVoiceDef>,
     /// `[[gen]]`: files `patchkit gen` writes from device data (`crate::devgen`).
     #[serde(default, rename = "gen")]
     pub gens: Vec<GenDef>,
@@ -60,17 +56,6 @@ pub struct Manifest {
 pub struct GenDef {
     pub kind: String,
     pub path: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DspVoiceDef {
-    #[serde(rename = "type")]
-    pub type_no: i64,
-    /// The routine's global symbol in the module's DSP object.
-    pub entry: String,
-    #[serde(default)]
-    pub devices: Vec<String>,
 }
 
 /// A number or an expression (`crate::expr`) written either as a TOML integer or as a string.

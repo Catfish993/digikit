@@ -797,8 +797,7 @@ class Proof:
             self.mods = ["modules/m1.dkm"]
         else:
             e.pack("test/dyn-dn2", "m0.dkm")
-            e.pack("test/dyn-sine-dn2", "m1.dkm")
-            self.static = M.MODULES_STATIC_DN2 + ",test/dn2-sine"
+            e.pack("test/sine", "m1.dkm")
             self.mods = ["modules/m0.dkm", "modules/m1.dkm"]
         e.pack("test/dyn-fault", "fault.dkm")
         self.run_img = e.build_image(RT, "run")
@@ -817,26 +816,19 @@ class Proof:
     def equiv(self) -> None:
         e = self.env
         trig = M.TRIG_FRAME if self.dt2 else M.TRIG_FRAME_DN2
-        run_env = (
-            {}
-            if self.dt2
-            else {"DSP_FRAME_POKE": M.DN2_TYPE_POKE.format(M.SINE_DYN_TYPE)}
-        )
-        ref_env = (
-            {}
-            if self.dt2
-            else {"DSP_FRAME_POKE": M.DN2_TYPE_POKE.format(M.SINE_STATIC_TYPE)}
-        )
-        ref_img = e.build_image(self.static, "ref")
-        with self.rig(ref_img, e.card(None, tag="ref"), "ref", ref_env) as ref:
-            if self.dt2:
+        ref_pcm: Any = None
+        if self.dt2:  # the Digitone II has no patched-in twin of test/sine: its note is checked for sound only
+            ref_img = e.build_image(self.static, "ref")
+            with self.rig(ref_img, e.card(None, tag="ref"), "ref") as ref:
                 ref.select_type(M.PLUCK_STATIC_TYPE, 7)
-            ref_pcm = ref.note(self.work / "ref.wav", trig)
-            peak = float(abs(ref_pcm).max())
-            self.check("the reference note is audible", peak > 0.01, f"peak {peak:.3f}")
-            self.finish(ref)
+                ref_pcm = ref.note(self.work / "ref.wav", trig)
+                peak = float(abs(ref_pcm).max())
+                self.check(
+                    "the reference note is audible", peak > 0.01, f"peak {peak:.3f}"
+                )
+                self.finish(ref)
         card = e.card(self.mods, tag="equiv")
-        with self.rig(self.run_img, card, "equiv", run_env) as run:
+        with self.rig(self.run_img, card, "equiv") as run:
             n = len(self.mods)
             info = run.boot_info()
             self.report["boot_info"] = info
@@ -856,13 +848,13 @@ class Proof:
                 str(rec),
             )
             used = [r for r in run.voice_rows() if r[0] != FREE_TYPE]
-            # DT2: the pluck's machine type, assigned at load; DN2: the sine module's voice has a pinned type (`[[dsp_voice]] type`)
+            # DT2: the pluck's machine type, assigned at load; DN2: the voice row is test/sine's (the other machine has none)
             mach = (
                 run.dyn_type("test/dyn-pluck", "pluck")
                 if self.dt2
                 else run.dyn_type("test/dyn-dn2", "dyn_pluck")
             )
-            vtype = mach if self.dt2 else M.SINE_DYN_TYPE
+            vtype = mach if self.dt2 else run.dyn_type("test/sine", "sine")
             self.check(
                 "the voice row of the DSP module is claimed",
                 len(used) == 1 and used[0][0] == vtype,
@@ -889,10 +881,16 @@ class Proof:
                     run.type_now() == mach,
                     f"downs {downs}",
                 )
+            if not self.dt2:  # the sine machine follows MIDI and the first run-time machine in the list
+                run.select(6)
             pcm = run.note(self.work / "run.wav", trig)
-            M.pcm_check(
-                run, ref_pcm, pcm, self.report, "machine" if self.dt2 else "voice"
-            )
+            if self.dt2:
+                M.pcm_check(run, ref_pcm, pcm, self.report, "machine")
+            else:
+                peak = float(abs(pcm).max())
+                self.check(
+                    "the run-time note is audible", peak > 0.01, f"peak {peak:.3f}"
+                )
             self.finish(run)
 
     def restart(self) -> None:

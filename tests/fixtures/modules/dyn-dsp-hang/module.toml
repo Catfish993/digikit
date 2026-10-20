@@ -16,7 +16,7 @@ conflicts = []
 "dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
-# Like test/dyn-pluck, with a routine that hangs (src/dsp/hang.s). `patchkit pack test/dyn-dsp-hang --device dt2` makes the .dkm.
+# Like test/dyn-guard-nan, a machine of the SDK contract whose render hangs on the third block of a note (src/dsp/hang.s). `patchkit pack test/dyn-dsp-hang --device dt2` makes the .dkm.
 # Never select this module on a device you care about: the DSP stops until the next restart. Emulator scenario: debug-hang.
 [[object]]
 path = "build/dyn-dsp-hang-dsp.dko.json"
@@ -26,7 +26,9 @@ devices = ["dt2"]
 
 [[voice]]
 machine = "hang"
-entry = "_hg_render"
+render = "_hg_render"
+note_on = "_hg_note_on"
+desc = "_hg_desc"
 
 [[machine]]
 id = "hang"

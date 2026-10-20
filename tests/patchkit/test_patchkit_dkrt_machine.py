@@ -31,7 +31,7 @@ needs_selache = pytest.mark.skipif(
 @needs_selache
 @pytest.mark.parametrize(
     "mod",
-    ["core/dsp-link", "core/dyndsp", "test/dyn-pluck", "test/dyn-sine-dn2"],
+    ["core/dsp-link", "core/dyndsp", "test/dyn-pluck", "test/sine"],
 )
 def test_committed_objects_are_current(mod):
     pk_build.build_module(modroots.module_dir(mod), check=True)
@@ -89,29 +89,4 @@ def test_dsp_section_is_deterministic_and_relocates_like_the_reference(tmp_path)
         assert bytes.fromhex(out.strip()) == want, hex(base)
     # a placement that is not 8-aligned is refused by the reference loader
     r = tools.run(tools.patchkit, "--root", ROOT, "dkm-dsp-image", a, "2000004")
-    assert r.returncode != 0
-
-
-def test_a_dsp_only_module_packs_for_the_digitone_ii(tmp_path):
-    tools = pk_dkrt.Tools()
-    out = tmp_path / "s.dkm"
-    tools.patchkit_run("pack", "test/dyn-sine-dn2", "--device", "dn2", "-o", out)
-    info = tools.patchkit_run("dkm-info", out)
-    assert (
-        "device 2 image" in info
-        and "voice type 18" in info
-        and "register  0 bytes" in info
-    )
-    # the other device has no DSP object of this module: nothing to pack
-    r = tools.run(
-        tools.patchkit,
-        "--root",
-        ROOT,
-        "pack",
-        "test/dyn-sine-dn2",
-        "--device",
-        "dt2",
-        "-o",
-        tmp_path / "x",
-    )
     assert r.returncode != 0

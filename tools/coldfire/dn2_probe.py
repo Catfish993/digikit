@@ -6,7 +6,6 @@
     uv run python -m tools.coldfire.dn2_probe edge [--hold MS --after MS --repeat N]   # header words of the frame at trig / release
     uv run python -m tools.coldfire.dn2_probe slotmap [--track 6 --notes 3 --live]     # voice slot -> track, live parameter blocks
     uv run python -m tools.coldfire.dn2_probe dspblock [--notes 10]        # CF block vs the DSP's frame copy per slot
-    uv run python -m tools.coldfire.dn2_probe edgepcm [--trig N --notes N] # test/dn2-edge clicks per note (patches and boots)
     uv run python -m tools.coldfire.dn2_probe pagepoke --page 1 --code 0xe3   # bind a page field to another parameter code
     uv run python -m tools.coldfire.dn2_probe shots                        # OLED screenshots of every stock SYN page
 
@@ -139,75 +138,6 @@ def cmd_edge(a: argparse.Namespace) -> int:
                 t += a.step
                 log("release")
     return 0
-
-
-def cmd_edgepcm(a: argparse.Namespace) -> int:
-    """test/dn2-edge on the Digitone II: play NOTES trigs of one key (HOLD ms down, GAP ms up) and count the clicks the
-    routine writes for the frame's trig / release pulses (finding 06, "note-on edge"). Expect two clicks per pulse pair,
-    16 samples apart (masks 0x11 and 0x13 at sample 0 and 16 of the block, 0x12 and 0x14 at 8 and 24), and one group of
-    them at the note-on and one at the release for every note, however often the same key is retriggered."""
-
-    import numpy as np
-
-    from tools.patchkit import hook_ab
-
-    os.environ["DIGI_PK_READY_DN2_112"] = os.environ.get(
-        "DIGI_PK_READY_DN2_112", str(ROOT / "out" / "ready-fastweb-dn2")
-    )
-    mods = ["core/machines", "core/dsp-voice", "test/dn2-edge"]
-    s = H.Session(
-        H.Cell("dn2", "1.12", mods), H.Goldens(), log=None, run_name="dn2edge"
-    )
-    s.open()
-    out = ROOT / "out" / "runs" / "dn2-edge"
-    out.mkdir(parents=True, exist_ok=True)
-    with s:
-        s.reset()
-        s.run_ms(1500)
-        if a.trig != 1:
-            s.do_tap(
-                ["TRK", f"TRIG {a.trig}"]
-            )  # select the track whose key is played: its voice goes to slot 0, not slot trig-1
-            s.run_ms(300)
-        s.do_tap(["FUNC", "SRC"])
-        s.run_ms(300)
-        for _ in range(4):
-            s.do_tap("DOWN")
-            s.run_ms(80)
-        s.do_tap("YES")
-        s.run_ms(300)
-        s.do_tap("YES")
-        s.run_ms(300)
-        wav = out / "edge.wav"
-        s.emu.call("pcm.tap", action="capture", path=str(wav))
-        for _ in range(a.notes):
-            s.emu.tap(H.button(f"TRIG {a.trig}"), hold=int(a.hold * H.MS))
-            s.run_ms(a.hold + a.gap)
-        s.run_ms(300)
-        s.emu.call("pcm.tap", action="capture_stop")
-        s.health("edgepcm")
-    x = hook_ab.read_wav(wav)[0::2].astype(np.float64)
-    mag = np.abs(x)
-    thr = 0.02 * float(mag.max()) if mag.max() > 0 else 1.0
-    idx = np.flatnonzero(mag > thr)
-    groups: list[list[int]] = []
-    for i in idx:
-        if groups and i - groups[-1][-1] <= a.merge:
-            groups[-1].append(int(i))
-        else:
-            groups.append([int(i)])
-    print(
-        f"notes played {a.notes}; peak {mag.max():.4f}; click groups {len(groups)} (merge {a.merge} samples)"
-    )
-    starts = [g[0] for g in groups]
-    gaps = np.diff(starts)
-    print(
-        "group start samples:",
-        starts[: a.show],
-        "... gaps (ms):",
-        [round(g / 48.0, 1) for g in gaps[: a.show]],
-    )
-    return 0 if groups else 1
 
 
 def blocks(s: H.Session) -> list[list[int]]:
@@ -383,14 +313,6 @@ def main() -> int:
     e.add_argument("--step", type=float, default=0.35)
     e.add_argument("--repeat", type=int, default=1)
     e.set_defaults(fn=cmd_edge)
-    c = sub.add_parser("edgepcm")
-    c.add_argument("--trig", type=int, default=1)
-    c.add_argument("--notes", type=int, default=24)
-    c.add_argument("--hold", type=float, default=40.0)
-    c.add_argument("--gap", type=float, default=60.0)
-    c.add_argument("--merge", type=int, default=400)
-    c.add_argument("--show", type=int, default=12)
-    c.set_defaults(fn=cmd_edgepcm)
     m = sub.add_parser("slotmap")
     m.add_argument("--track", type=int, default=6)
     m.add_argument("--notes", type=int, default=3)

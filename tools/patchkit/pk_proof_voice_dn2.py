@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""patchkit core/dsp-voice on Digitone II 1.12: test/dn2-sine renders through the FM engine's later stages.
+"""patchkit core/dsp-voice on Digitone II 1.12: digikit/pluck renders through the FM engine's later stages.
 
     uv run python -m tools.patchkit.pk_proof_voice_dn2 [--out DIR] [--only a,b,c] [--quick] [--jobs N]
 
-Emulator only (finding 06, "Per-voice hook on DN2"). SINE is the machine type 7 that test/dn2-sine adds (selected in the
+Emulator only (finding 06, "Per-voice hook on DN2"). PLUCK is the machine type 9 that digikit/pluck adds (selected in the
 machine menu; the track's frame words are forced with DSP_FRAME_POKE where a case needs another note):
 
-  a  stock   with core/dsp-voice and test/dn2-sine patched in, FM TONE selected: the PCM is bit-identical to the stock
+  a  stock   with core/dsp-voice and the digikit/pluck set patched in, FM TONE selected: the PCM is bit-identical to the stock
              firmware's (the hook with no registered type changes nothing), up to the phase of the key release: a patched
              image boots to a different sub-block phase of the scripted key (which image bytes decide, not the code that
              runs), so the release can land one envelope step away. Then the audio before the release is bit-identical and
              the tail is the stock tail times one constant (finding 45, "Phase sensitivity")
-  b  pitch   SINE: note 60 gives 261.63 Hz, note 72 (pitch word 0x4800) 523.25 Hz
-  c  stages  the level knob (LEVEL encoder), the filter frequency, the overdrive and the reverb send change the sine:
+  b  pitch   PLUCK: note 60 gives 261.63 Hz, note 72 (pitch word 0x4800) 523.25 Hz
+  c  stages  the level knob (LEVEL encoder), the filter frequency, the overdrive and the reverb send change the pluck:
              the engine's per-track processing, FX and mix see the registered voice
 
 Parts are independent and run in parallel processes (`--jobs`, tools/patchkit/pk_proofkit.py): a; b60 and b72 (group b); c1 level,
@@ -33,7 +33,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-from tools.patchkit import hook_ab  # noqa: E402
+from tools.patchkit import hook_ab, pluck_ref  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
 from tools.patchkit.pk_proof_drive import aligned_equal, analyse  # noqa: E402
@@ -75,20 +75,9 @@ def release_phase_equal(
     return False, "no alignment"
 
 
-MODS = ["core/machines", "core/dsp-voice", "test/dn2-sine"]
-SINE_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, SINE (before MIDI)
+MODS = ["core/machines", "core/params", "core/dsp-voice", "digikit/pluck"]
+PLUCK_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, PLUCK (before MIDI)
 READY = ROOT / "out" / "ready-fastweb-dn2"
-
-
-def peak_hz(x: np.ndarray, fs: float = 48000.0) -> float:
-    """Frequency of the strongest partial, refined by parabolic interpolation on a zero-padded Hann spectrum."""
-    n = len(x)
-    spec = np.abs(np.fft.rfft(x * np.hanning(n), 8 * n))
-    k = int(np.argmax(spec))
-    if 0 < k < len(spec) - 1:
-        a, b, c = np.log(spec[k - 1 : k + 2] + 1e-30)
-        k = k + 0.5 * (a - c) / (a - 2 * b + c)
-    return float(k * fs / (8 * n))
 
 
 def semitone_hz(note: float) -> float:
@@ -173,14 +162,14 @@ class Proof(K.Proof):
         for note, poke in ((60, ""), (72, "0x02=0x4800")):
             if note not in notes:
                 continue
-            x = self.render(f"sine{note}", MODS, downs=SINE_DOWNS, poke=poke)
+            x = self.render(f"pluck{note}", MODS, downs=PLUCK_DOWNS, poke=poke)
             act = np.flatnonzero(np.abs(x) > 1e-5)
             seg = x[act[0] + 2000 : act[0] + 26000] if len(act) > 30000 else x[:0]
-            f = peak_hz(seg) if len(seg) else 0.0
             want = semitone_hz(note)
+            f = pluck_ref.f0_from_crossings(seg, want) if len(seg) else 0.0
             cents = 1200 * math.log2(f / want) if f else 99.0
             self.check(
-                f"SINE note {note}: {want:.2f} Hz",
+                f"PLUCK note {note}: {want:.2f} Hz",
                 abs(cents) < 2.0,
                 f"{f:.3f} Hz, {cents:+.2f} cents",
             )
@@ -194,17 +183,17 @@ class Proof(K.Proof):
         hold = 500 if self.quick and "level" not in sections else 1000
         end = 30000 if self.quick and "level" not in sections else 50000
         base = (
-            self.render("c-base", MODS, downs=SINE_DOWNS, run_ms=run)
+            self.render("c-base", MODS, downs=PLUCK_DOWNS, run_ms=run)
             if {"level", "overdrive", "reverb"} & set(sections)
             else None
         )
         rms = lambda x, a=8000, b=end: float(np.sqrt(np.mean(x[a:b] ** 2)))  # noqa: E731
         if "level" in sections:
             lev = self.render(
-                "c-level", MODS, downs=SINE_DOWNS, turns=(("LEVEL", -300),), run_ms=run
+                "c-level", MODS, downs=PLUCK_DOWNS, turns=(("LEVEL", -300),), run_ms=run
             )
             db = 20 * math.log10(max(rms(lev), 1e-9) / rms(base))
-            self.check("the LEVEL knob lowers the sine", db < -10, f"{db:+.1f} dB")
+            self.check("the LEVEL knob lowers the pluck", db < -10, f"{db:+.1f} dB")
             env = [rms(base, k, k + 4800) for k in range(0, 40000, 4800)]
             tail = rms(base, 60000, 66000) / max(rms(base, 8000, 14000), 1e-9)
             self.check(
@@ -217,7 +206,7 @@ class Proof(K.Proof):
             open_ = self.render(
                 "c-flt-open",
                 MODS,
-                downs=SINE_DOWNS,
+                downs=PLUCK_DOWNS,
                 poke=hi,
                 hold_ms=hold,
                 run_ms=700 if self.quick else 1300,
@@ -225,7 +214,7 @@ class Proof(K.Proof):
             closed = self.render(
                 "c-flt-closed",
                 MODS,
-                downs=SINE_DOWNS,
+                downs=PLUCK_DOWNS,
                 poke=hi,
                 page="FLTR",
                 turns=(("ENC E", -300),),
@@ -234,35 +223,28 @@ class Proof(K.Proof):
             )
             db = 20 * math.log10(max(rms(closed), 1e-9) / rms(open_))
             self.check(
-                "the filter frequency closes on the sine", db < -6, f"{db:+.1f} dB"
+                "the filter frequency closes on the pluck", db < -6, f"{db:+.1f} dB"
             )
         if "overdrive" in sections:
             od = self.render(
                 "c-overdrive",
                 MODS,
-                downs=SINE_DOWNS,
+                downs=PLUCK_DOWNS,
                 page="FX",
                 turns=(("ENC B", 300),),
             )
-            spec = np.abs(np.fft.rfft(od[8000:40000] * np.hanning(32000)))
-            spec0 = np.abs(np.fft.rfft(base[8000:40000] * np.hanning(32000)))
-            k1 = int(261.63 / 48000 * 32000)
-            h3 = float(
-                spec[3 * k1 - 4 : 3 * k1 + 5].max() / spec[k1 - 4 : k1 + 5].max()
-            )
-            h3b = float(
-                spec0[3 * k1 - 4 : 3 * k1 + 5].max() / spec0[k1 - 4 : k1 + 5].max()
-            )
+            crest = lambda x: float(np.abs(x).max() / np.sqrt(np.mean(x**2)))  # noqa: E731
+            c0, c1 = crest(base[8000:40000]), crest(od[8000:40000])
             self.check(
-                "the overdrive adds harmonics to the sine",
-                h3 > 100 * max(h3b, 1e-6),
-                f"3rd harmonic {h3b:.2e} -> {h3:.2e} of the fundamental",
+                "the overdrive clips the pluck (the crest factor falls by 10 percent or more)",
+                c1 < 0.9 * c0,
+                f"crest factor {c0:.2f} -> {c1:.2f}",
             )
         if "reverb" in sections:
             rev = self.render(
                 "c-reverb",
                 MODS,
-                downs=SINE_DOWNS,
+                downs=PLUCK_DOWNS,
                 page="FX",
                 turns=(("ENC F", 300),),
                 run_ms=2600,
@@ -280,10 +262,15 @@ P = Proof
 PARTS = [
     K.Part("a", "stock (hook patched in, FM TONE selected)", P.part_a, True, 80),
     K.Part(
-        "b60", "pitch: SINE at note 60", lambda p: p.part_b((60,)), True, 50, group="b"
+        "b60", "pitch: PLUCK at note 60", lambda p: p.part_b((60,)), True, 50, group="b"
     ),
     K.Part(
-        "b72", "pitch: SINE at note 72", lambda p: p.part_b((72,)), False, 50, group="b"
+        "b72",
+        "pitch: PLUCK at note 72",
+        lambda p: p.part_b((72,)),
+        False,
+        50,
+        group="b",
     ),
     K.Part(
         "c1",

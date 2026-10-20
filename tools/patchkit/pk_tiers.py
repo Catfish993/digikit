@@ -9,7 +9,6 @@ counters of `status`, so boot and settling are excluded):
   stock         the stock firmware, the sample voice
   gain          digikit/master-gain
   voice0        core/dsp-voice, no type registered
-  sine          core/dsp-voice + test/sine-voice, type forced to the sine with DSP_FRAME_POKE
   pluck-idle    the PLUCK module set, PLUCK selected on track 1, no note
   pluck-ring    the same, TRIG 1 held at the default DECAY
 
@@ -41,7 +40,6 @@ CONFIGS: dict[str, tuple[list[str], str, bool, bool]] = {
     "stock": ([], "", False, True),
     "gain": (["digikit/master-gain"], "", False, True),
     "voice0": (["core/dsp-voice"], "", False, True),
-    "sine": (["core/dsp-voice", "test/sine-voice"], "0x94=8", False, True),
     "pluck-idle": (PLUCK_MODS, "", True, False),
     "pluck-ring": (PLUCK_MODS, "", True, True),
 }
