@@ -242,7 +242,8 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   container check). Without that the DT2 card builder fails with `StreamOutOfBounds`. **[V]**
   `Registry::load()` reads `devices/*.toml` at run time (`$DIGI_DEVICES_DIR`, else `devices/` of the
   working directory or an ancestor of the executable) and falls back to the embedded copy, so a new
-  firmware hash needs a TOML edit and no rebuild. **[D]**
+  firmware hash needs a TOML edit and no rebuild. The stock images that a soft reset needs come from `$DIGI_FIRMWARE_DIR`, else
+  `firmware/` found the same way (tools/firmware/config.py honours the variable too). **[D]**
 - **Scenarios** (ready inputs from the .syx alone, `snapshots/dt2-117-ready`, `dn2-112-ready`).
   DN2 1.12: three of the four pinned PCM hashes (`exactness-100m`, `trig1-taps`,
   `trig1-tap-release`) equal the 1.11 pins; `trig1-noqa-40m` (a 40 M-instruction validation

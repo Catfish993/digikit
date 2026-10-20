@@ -39,7 +39,8 @@ import os
 import pathlib
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-FIRMWARE_DIR = REPO / "firmware"
+# $DIGI_FIRMWARE_DIR overrides it, as it does for the control daemon (packages/emulator/control, Loaded::find_base)
+FIRMWARE_DIR = pathlib.Path(os.environ.get("DIGI_FIRMWARE_DIR") or REPO / "firmware")
 SECTIONS_ROOT = REPO / "out" / "sections"
 SNAPSHOTS_DEFAULT = REPO / "out" / "snapshots"
 

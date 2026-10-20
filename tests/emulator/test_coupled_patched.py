@@ -112,3 +112,47 @@ def test_hot_inject_of_an_appended_stream_block_lands_at_its_address(
         assert l2canary.verify(emu, addr, length, seed)["intact"]
         back = emu.load(syx)
         assert back["dsp"]["dropped_bytes"] == length
+
+
+@pytest.mark.slow
+def test_a_patched_image_from_the_command_line_soft_resets(monkeypatch, tmp_path):
+    """A digikit image given to the daemon as its firmware argument (`mise run emu:serve -- out/patch/X.syx`) is loaded as stock,
+    without an analysis and with itself as its base. A guest soft reset (the runtime's restart, RCM.RCR) used to return silently and
+    the guest spun for ever; it now finds the base from the patch record, cold-boots the image again and the guest runs on.
+    About 3 minutes: the image build, the ready state for its card, the boot and the restart's cold boot."""
+    import time
+
+    from tools.device import dkupload
+    from tools.emulator import native_emu
+    from tools.patchkit import pk_dkrt_boot
+
+    _, _ = inputs("dt2", monkeypatch)
+    env = pk_dkrt_boot.Env("dt2-1.17", tmp_path)
+    img = env.build_image("core/runtime,core/dynreg,core/dyndsp")
+    args = native_emu.default_audio_args(
+        [str(img.syx), "--card-image", str(env.card(None))]
+    )
+    assert "--auto-coupled" in args, "no coupled ready inputs for this card"
+    with Emu.spawn(*args, timeout=600, run_dir=tmp_path / "run") as emu:
+        emu.subscribe()
+        emu.step(2_000_000)
+        before = emu.status()["cf"]["mainloop_hits"]
+        emu.drain_events()
+        dkupload.Uploader(dkupload.EmuTransport(emu)).restart()
+        seen = []
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 300:
+            try:
+                emu.step(400_000)
+            except EmuError:  # steps are refused while the cold boot runs on its worker
+                time.sleep(0.5)
+            seen += emu.drain_events()
+            if any(e["kind"] == "firmware.loaded" for e in seen):
+                break
+            assert not any(e.get("restart") == "unsupported" for e in seen), seen
+        resets = [e for e in seen if e["kind"] == "cpu.reset"]
+        assert resets and resets[0]["restart"] == "cold boot started", seen
+        assert any(e["kind"] == "firmware.loaded" and e["ok"] for e in seen), seen
+        emu.step(20_000_000)
+        assert emu.status()["cf"]["mainloop_hits"] > 0
+        assert before > 0

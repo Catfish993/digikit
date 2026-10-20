@@ -310,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     emu = None
     if args.emu:
         emu = D._emu(args.run_dir)
+        emu.subscribe()  # the boot waiter reads the cpu.reset and firmware.loaded events
         t = D.EmuTransport(emu)
         up = D.Uploader(t)
         steps = {"n": 0}
