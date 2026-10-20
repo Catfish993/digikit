@@ -195,6 +195,7 @@ STEPS = (
     "python-tests",
     "rust-tests",
     "card",
+    "smoke",
     "dt2-tone",
     "dt2-check",
     "dt2-tier-quick",
@@ -533,6 +534,8 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
             and any(path.startswith(triggers) for _, triggers, _ in PY_SUITES)
         ):
             wanted.add("python-tests")
+    if wanted:  # the patchkit smoke matrix runs whenever the gate runs anything (docs-only: nothing)
+        wanted.add("smoke")
     return tuple(s for s in STEPS if s in wanted)
 
 
@@ -917,7 +920,7 @@ DN2_BINARY = ("pins", "check", "check-no-aot", "tier-quick", "tier-sweep")
 DT2_BINARY = ("dt2-tone", "dt2-check", "dt2-tier-quick", "dt2-tier-sweep")
 # Test files that drive a `digi-emud` daemon: python-tests builds the daemons once (build-daemons) when
 # its plan has one of them (a file not listed here still works: it builds the daemon itself).
-DAEMON_NODES = ("python-tests", "card")
+DAEMON_NODES = ("python-tests", "card", "smoke")
 DAEMON_TESTS = (
     "tests/digikit/",
     "tests/patchkit/smoke/",
@@ -950,6 +953,7 @@ PRIORITY = (
     "dt2-tier-quick",
     "check-no-aot",
     "check",
+    "smoke",
     "tier-quick",
     "dt2-check",
     "pins",
@@ -957,8 +961,8 @@ PRIORITY = (
 
 
 def needs_daemons(steps: tuple[str, ...], py_tests: list[str] | None) -> bool:
-    """Whether a step drives a digi-emud daemon: card, or python-tests with a DAEMON_TESTS file."""
-    if "card" in steps:
+    """Whether a step drives a digi-emud daemon: card, smoke, or python-tests with a DAEMON_TESTS file."""
+    if "card" in steps or "smoke" in steps:
         return True
 
     def overlaps(test: str) -> bool:  # a file or a directory of the plan
@@ -996,7 +1000,7 @@ def plan(
             deps[node] = ("build-dt2",)
         elif node == "rust-tests" and "build" in nodes:
             deps[node] = ("build",)
-        elif node in ("card", "python-tests") and "build-daemons" in nodes:
+        elif node in DAEMON_NODES and "build-daemons" in nodes:
             deps[node] = ("build-daemons",)
         else:
             deps[node] = ()
@@ -1334,6 +1338,11 @@ def run_step(gate: Gate, step: str) -> None:
         gate.run("card-fs", [*PY, "-m", "tools.firmware.plusdrive_check"])
         # The module store through the firmware's block read, on the DN2 too.
         gate.run("card-fs-dn2", [*PY, "-m", "tools.firmware.plusdrive_check", "--dn2"])
+    elif step == "smoke":
+        # patchkit smoke matrix: one cell = one digi-emud daemon, so the share's emulator processes are the cells at once
+        gate.run(
+            "smoke", [*PY, "-m", "tools.patchkit.pk_harness", "run", "--jobs", jobs]
+        )
     elif step == "dt2-tone":
         gate.run("dt2-tone", [*PY, "-m", "tools.emulator.dt2_sample_check"])
     elif step == "dt2-check":

@@ -44,10 +44,10 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   Poll with an exit condition (the loop in "Verify"), not with a fixed sleep.
 - Lane agents iterate with `mise run test:changed` (the tests the changed files select, quick tier, no build step;
   `--explain` prints why each file runs and what the gate adds) and finish with `mise run verify:pre` (1 to 2 min: lint,
-  types, pathcheck, `pk_build --check`, the same tests, Rust tests of the affected crates; it is not the merge gate). The
+  types, pathcheck, `pk_build --check`, the same tests, Rust tests of the affected crates; it is not the merge gate). Run `verify:pre` once, before handing the branch back; it already runs the tests `test:changed` selects. The
   proof tools (`pk_proof_*`, `digikit_menu_proof`, `pk_dkrt_boot proof`, `pk_registry proof`) take `--quick` (budget about
-  60 s per tool) while iterating; verify has no tier flag. The coordinator runs `mise run verify` once per merge, plus the
-  smoke matrix (`uv run python -m tools.patchkit.pk_harness run --jobs N`), not by re-running every proof tool. Check what a
+  60 s per tool) while iterating; verify has no tier flag. The coordinator runs `mise run verify` once per merge; it includes the
+  smoke matrix (step `smoke`), so no proof tool is re-run by hand. Check what a
   change selects with `mise run verify -- --explain` (`--base A --head B` for a range) instead of running the gate. Full-tier
   proofs run only before a merge to `main`. Do not re-run old full proofs to measure a baseline that is already recorded.
 - Stop only processes you started (by PID or run directory). Never `pkill`/`killall` emulator processes: other lanes
@@ -62,13 +62,13 @@ What to run for a change (`mise run test:changed -- --explain` shows the selecti
 | Change | Lane, while iterating | The gate adds (`mise run verify -- --base main`) | A merge to `main` adds |
 | --- | --- | --- | --- |
 | Docs (`*.md`) | nothing | nothing | nothing |
-| Python under tools/ or tests/ | `test:changed`: the tests that import the module (`--deep`: also through other tools) | PY_GATE and the PY_SUITES the path triggers | smoke matrix |
-| tools/patchkit, packages/patchkit, devices/ports | `test:changed`, then `verify:pre` (`pk_build build-all --check`, patchkit Rust tests) | the patchkit suite, build-daemons | smoke matrix |
-| Leaf module (modules/machines, fx, test, ...) | `test:changed`: the tests and scenarios that name it, conformance for a machine; `verify:pre` | rust-tests; web when the gallery reads the file | smoke matrix |
-| Framework module (`FRAMEWORK` in tools/devtools/verify_route.py) | `test:changed`: the tests and scenarios that name the module itself | tests/patchkit and tests/digikit | smoke matrix |
+| Python under tools/ or tests/ | `test:changed`: the tests that import the module (`--deep`: also through other tools) | PY_GATE and the PY_SUITES the path triggers | nothing |
+| tools/patchkit, packages/patchkit, devices/ports | `test:changed`, then `verify:pre` (`pk_build build-all --check`, patchkit Rust tests) | the patchkit suite, build-daemons | nothing |
+| Leaf module (modules/machines, fx, test, ...) | `test:changed`: the tests and scenarios that name it, conformance for a machine; `verify:pre` | rust-tests; web when the gallery reads the file | nothing |
+| Framework module (`FRAMEWORK` in tools/devtools/verify_route.py) | `test:changed`: the tests and scenarios that name the module itself | tests/patchkit and tests/digikit | nothing |
 | SHARC core or transpiler (the `CORE_FINGERPRINT` files) | regenerate the cores, then `test:changed` | every step | `mise run verify:full` |
-| SHARC engine, fast tier, other emulator crates | `test:changed` (the crates' Rust tests) | build, pins, check and tier steps | smoke matrix |
-| tools/devtools/verify*.py | `test:changed` | every step | smoke matrix |
+| SHARC engine, fast tier, other emulator crates | `test:changed` (the crates' Rust tests) | build, pins, check and tier steps | nothing |
+| tools/devtools/verify*.py | `test:changed` | every step | nothing |
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval | | |
 
 - Never run a test directory (`pytest tests/patchkit`), `--tier full`, `verify:full` or smoke `--update` across all
@@ -87,7 +87,7 @@ What to run for a change (`mise run test:changed -- --explain` shows the selecti
   DN2 scenario oracles), check-no-aot, tier-quick / tier-sweep (AOT = no-AOT PCM on a fixed subset of the FX scenarios, `NO_AOT_SUBSET` in tools/devtools/verify.py; `--all-no-aot` runs every one: all 134 in tier-sweep, all 61 oracle tests in check-no-aot) (one shared queue of small chunks, the step's share of the budget in emulator processes), python-tests (the PY_GATE files, the PY_SUITES the change
   triggers and the changed test files; not all of tests/, which `mise run test` runs) — one process per file (the step's share; DIGI_PY_TIMEOUT), rust-tests (cargo nextest run
   --workspace: each test its own process; JUnit at `<target-dir>/nextest/default/junit.xml`), card
-  (in-process DT2 card: trigs play the files), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
+  (in-process DT2 card: trigs play the files), smoke (the patchkit smoke matrix, `pk_harness run`: 17 cells, one `digi-emud` daemon each, the step's emulator processes at once; runs with every non-docs change, after build-daemons), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
 - Tests and the gate run on the newest image of each device only (DT2 1.17, DN2 1.12); 1.16 and 1.11 remain analysis references.
 - Scenario renders are cached by content (out/cache/renders; tools/devtools/render_cache.py): a render reruns only when the binary, input files, scenario, peeks, device TOMLs or a SHARC_/DIGI_/DSP_ variable changed. `--no-cache` or DIGI_RENDER_CACHE=0 forces renders; `uv run python -m tools.emulator.coupled cache clear` empties it. Only emulator output is cached; oracles, hash compares and pins run fresh. Guard 1: tests/devtools/test_render_inputs.py fails when a render input (env read or file read) is not classified; regenerate counts with `uv run python -m tests.devtools.test_render_inputs --scan` after review. Guard 2: verify sets DIGI_RENDER_CACHE_CHECK=0.03, which re-renders about 3% of hits and fails on any difference. Use `verify --no-cache` for release gates.
 - While working, run `mise run test:changed`.

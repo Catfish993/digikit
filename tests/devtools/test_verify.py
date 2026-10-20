@@ -33,7 +33,7 @@ def test_changed_pk_test_runs_itself_and_the_gate() -> None:
 
 
 def test_claude_settings_run_the_agent_guard_test() -> None:
-    assert verify.steps_for([".claude/settings.json"]) == ("python-tests",)
+    assert verify.steps_for([".claude/settings.json"]) == ("python-tests", "smoke")
     plan = [p for p, _ in verify.python_test_plan([".claude/settings.json"], False)]
     assert "tests/devtools/test_agent_guard.py" in plan
 
@@ -276,7 +276,7 @@ def test_mise_new_task_routes_like_its_tool() -> None:
         ["tools/device/dkrun.py"],
         {"tools/device/dkrun.py": "mise.toml task dk:run"},
     )
-    assert verify.steps_for(got[0]) == ("python-tests",)
+    assert verify.steps_for(got[0]) == ("python-tests", "smoke")
     # only the description or the alias changed: the same tool
     again = task.replace('description = "x"', 'description = "y"')
     assert verify_route.mise_paths(old + task, old + again) == got
@@ -351,7 +351,7 @@ def test_expand_mise_replaces_a_task_change(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_device_tools_select_their_tests_only() -> None:
-    assert verify.steps_for(["tools/device/dkscreen.py"]) == ("python-tests",)
+    assert verify.steps_for(["tools/device/dkscreen.py"]) == ("python-tests", "smoke")
     assert selected("tools/device/dkscreen.py") == {
         "tests/digikit/test_dkscreen.py",
         "tests/digikit/test_scenarios.py",
@@ -400,6 +400,7 @@ def test_digikit_test_files_and_scenarios() -> None:
     }
     assert verify.steps_for(["tests/digikit/scenarios/menu-dkrun-pluck.toml"]) == (
         "python-tests",
+        "smoke",
     )
     # a helper of the suite is not a test file: the whole suite
     assert "tests/digikit" in selected("tests/digikit/scen_cases.py")
@@ -411,7 +412,7 @@ def test_digikit_test_files_and_scenarios() -> None:
 
 def test_module_leaf_selects_the_tests_that_name_it() -> None:
     src = "modules/fx/master-gain/src/cf/gain.s"
-    assert verify.steps_for([src]) == ("python-tests", "rust-tests")
+    assert verify.steps_for([src]) == ("python-tests", "rust-tests", "smoke")
     # test_patchkit.py (a gate file) and the tests that use a tool that builds master-gain
     assert "tests/patchkit/test_patchkit.py" in verify.python_tests([src], False)
     assert "tests/patchkit/test_pk_mem.py" in selected(src)
@@ -558,7 +559,10 @@ def test_routing_changes_select_everything() -> None:
         got = verify.python_tests([path], False)
         assert set(verify.python_tests([], True)) <= set(got)
     # the lane helper is checked by the routing tests only
-    assert verify.steps_for(["tools/devtools/verify_pre.py"]) == ("python-tests",)
+    assert verify.steps_for(["tools/devtools/verify_pre.py"]) == (
+        "python-tests",
+        "smoke",
+    )
     assert "tests/devtools/test_verify.py" in verify.python_tests(
         ["tools/devtools/verify_pre.py"], False
     )
@@ -587,7 +591,7 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
         "tools/patchkit/pk_digikit_scen.py",
         "tools/patchkit/pk_digikit_upload.py",
     ]
-    assert verify.steps_for(files) == ("web", "python-tests", "rust-tests")
+    assert verify.steps_for(files) == ("web", "python-tests", "rust-tests", "smoke")
 
 
 def test_rust_scope(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -662,3 +666,29 @@ def test_rust_tests_leaves_the_desktop_crate_to_the_desktop_step() -> None:
         "desktop",
         "rust-tests",
     )
+
+
+# ---- smoke step ------------------------------------------------------------------------------------
+
+
+def test_smoke_runs_with_any_gate_step_not_for_docs() -> None:
+    assert "smoke" in verify.steps_for(["tools/device/dkscreen.py"])
+    assert "smoke" in verify.steps_for(["packages/emulator/machine/src/lib.rs"])
+    assert "smoke" in verify.EVERYTHING
+    assert "smoke" not in verify.steps_for(["docs/x.md"])
+    assert verify.steps_for(["AGENTS.md"]) == ()
+
+
+def test_smoke_waits_for_build_daemons_and_runs_after_it() -> None:
+    nodes, deps = verify.plan(("smoke",))
+    assert deps["smoke"] == ("build-daemons",)
+    assert nodes.index("build-daemons") < nodes.index("smoke")
+    assert "build" not in nodes
+    assert "smoke" in verify.DAEMON_NODES
+
+
+def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
+    assert verify.main(["--explain", "--only", "smoke"]) == 0
+    out = capsys.readouterr().out
+    assert "smoke" in out
+    assert "pins" not in out
