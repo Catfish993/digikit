@@ -1,7 +1,7 @@
 [module]
 id = "digikit/pluck"
 version = "0.1.0"
-name = "PLUCK-D"
+name = "PLUCK"
 category = "machines"
 type = "machine"
 author = "digikit"
