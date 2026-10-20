@@ -75,7 +75,7 @@ Numbers can be written as TOML integers or as strings holding an *expression* (s
 | `requires` | module ids that must be selected too (frameworks) |
 | `conflicts` | module ids that must not be selected |
 | `ports` | optional: only these ports, for example `["dt2-1.16", "dt2-1.17"]` (empty: any firmware whose anchors resolve) |
-| `dynamic` | optional, default false: a run-time module. It is never patched into an image (patchkit refuses it); its typed sections are not lowered into rows; `patchkit pack MODULE --device dt2 -o X.dkm` lowers them into the `.dkm` `register` records that the digikit runtime writes into the rows `core/dynreg` reserved (docs/design/digikit-registry.md). Its machine numbers are in `core/machines/types.toml` `[<dev>.dynamic]` |
+| `dynamic` | optional, default false: a run-time module. It is never patched into an image (patchkit refuses it); its typed sections are not lowered into rows; `patchkit pack MODULE --device dt2 -o X.dkm` lowers them into the `.dkm` `register` records that the digikit runtime writes into the rows `core/dynreg` reserved (docs/design/digikit-registry.md). Its machines have no number in `core/machines/types.toml`: the runtime assigns a type in 16 to 23 when it loads the module and the card remembers it (the sticky map of the selection record; docs/design/digikit-registry.md "Machine keys") |
 
 ```toml
 [module]

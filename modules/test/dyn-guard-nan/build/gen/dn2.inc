@@ -5,6 +5,11 @@
 #define FRAME_STRIDE 73 // halfwords from one track (voice) to the next
 #define SLOT_BASE 25 // slot of knob 0
 #define KNOBS 8 // knobs per machine
-#define GUARDNAN_TYPE 18 // permanent machine type number
 #define GUARDNAN_KNOB0_FRAME_OFF 0
-#define GUARDNAN_KNOB7_FRAME_OFF 7
+#define NAN_A_KNOB 0 // knob position
+#define NAN_A_SLOT 25 // engine or sound-array slot
+#define NAN_A_FRAME_OFF 0 // halfwords from knob 0 of the same track
+#define NAN_A_MIRROR 25 // index in the parameter table
+#define NAN_A_MIN 0
+#define NAN_A_MAX 32512
+#define NAN_A_DEFAULT 8192

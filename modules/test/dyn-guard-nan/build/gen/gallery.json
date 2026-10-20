@@ -6,27 +6,20 @@
           "clone_of": 0,
           "knobs": [
             {
-              "slot": 25,
-              "stock": 202
-            },
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            {
-              "slot": 32,
-              "stock": 209
+              "param": "nan_a",
+              "slot": 25
             }
           ],
           "level": 10,
           "name": "NaN fixture",
-          "own_dsp": false,
-          "page": null,
+          "own_dsp": true,
+          "page": {
+            "name": "NAN",
+            "title": "NaN fixture"
+          },
           "position": null,
           "short": "NAN",
-          "type": 18
+          "type": null
         },
         "dt2": {
           "clone_of": 0,
@@ -52,7 +45,7 @@
           "page": null,
           "position": null,
           "short": "NAN",
-          "type": 20
+          "type": null
         }
       },
       "id": "guardnan",
@@ -62,7 +55,18 @@
   ],
   "module": "test/dyn-guard-nan",
   "params": {
-    "dn2": [],
+    "dn2": [
+      {
+        "default": 8192,
+        "id": "nan_a",
+        "max": 32512,
+        "min": 0,
+        "name": "Nan alpha",
+        "short": "ALPH",
+        "slot": 25,
+        "template": 213
+      }
+    ],
     "dt2": []
   }
 }

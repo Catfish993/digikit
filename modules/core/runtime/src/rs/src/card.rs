@@ -75,7 +75,7 @@ unsafe fn stage() -> *mut u8 {
 }
 
 /// Is the sector at `p` all 0x00 or all 0xFF?
-unsafe fn blank(p: *const u8) -> bool {
+pub(crate) unsafe fn blank(p: *const u8) -> bool {
     let v = *p;
     if v != 0x00 && v != 0xff {
         return false;

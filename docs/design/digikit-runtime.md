@@ -134,7 +134,7 @@ shared tail of a load. Link: `dl_send`, `dl_send_win`, `dl_poll` of `core/dsp-li
 (`[object] optional`): an image without them refuses a file that has a DSP section with `E_NO_DSP`.
 
 1. **Synchronous part** (inside the load, in the boot hook): the file's checks, now including the DSP section (`dsp::check`: device,
-   bounds, imports resolve in `dyndsp_info`, free voice rows, voice types in 16..23 and unused). Then `dsp::reserve` takes a range of the
+   bounds, imports resolve in `dyndsp_info`, free voice rows, voice types (a machine key resolved to its assigned type, or a pinned number) in 16..23 and unused). Then `dsp::reserve` takes a range of the
    DSP area (first fit over the per-module table `DKRT_DSP.mod_off/mod_len`, 64-byte granules, aligned for the object), copies the image
    into an arena block and applies the relocations there (`abs24`/`abs32`, shifts for the placement, import values), and claims the
    voice rows. The ColdFire image is copied, relocated and flushed, the machine and parameter rows, `init` and the slots go live at once

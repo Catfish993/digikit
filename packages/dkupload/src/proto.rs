@@ -1,6 +1,7 @@
 //! Status codes, request bodies and reply parsers.
 
 use crate::codec::*;
+use crate::gen_proto::{CAP_LOG, CAP_LOGCFG, CAP_PEEK, CAP_RESTART, CAP_SELECT};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,8 +159,41 @@ pub struct Info {
     pub free_bytes: u32,
     pub max_chunk: u32,
     pub flags: u8,
+    /// Sequence numbers of the oldest and newest log event (runtime 0.0.3 and later).
+    pub log_oldest: Option<u32>,
+    pub log_newest: Option<u32>,
+    /// The whole packed runtime version (major << 16 | minor << 8 | patch), when the reply carries it.
+    pub runtime32: Option<u32>,
+    /// The capability bits (`CAP_*`), when the reply carries them.
+    pub caps: Option<u32>,
 }
 impl Info {
+    /// The packed runtime version: the 32-bit field when present, else the 16-bit one.
+    pub fn runtime(&self) -> u32 {
+        self.runtime32.unwrap_or(u32::from(self.runtime_version))
+    }
+    /// The capability bits: the reply's `caps`, or for a runtime that sends none the features it is known to have by version
+    /// (LOG and PEEK since 0.0.3, SELECT and RESTART since 0.0.4, LOGCFG since 0.1.0; MODULES only by `caps`).
+    pub fn caps(&self) -> u32 {
+        if let Some(c) = self.caps {
+            return c;
+        }
+        let v = self.runtime();
+        let mut c = 0;
+        if v >= 0x03 {
+            c |= CAP_LOG | CAP_PEEK;
+        }
+        if v >= 0x04 {
+            c |= CAP_SELECT | CAP_RESTART;
+        }
+        if v >= 0x0100 {
+            c |= CAP_LOGCFG;
+        }
+        c
+    }
+    pub fn has_cap(&self, cap: u32) -> bool {
+        self.caps() & cap == cap
+    }
     pub fn safe_mode(&self) -> bool {
         self.flags & 1 != 0
     }
@@ -216,13 +250,34 @@ impl<'a> Cur<'a> {
 
 pub fn parse_info(body: &[u8]) -> Result<Info, Error> {
     let mut c = Cur(body);
+    let protocol = c.u16()?;
+    let runtime_version = c.u16()?;
+    let port = c.cstr()?;
+    let free_bytes = c.u32()?;
+    let max_chunk = c.u32()?;
+    let flags = c.u8()?;
+    // what follows was appended by later runtimes: present only when the reply is long enough
+    let (log_oldest, log_newest) = if c.0.len() >= 8 {
+        (Some(c.u32()?), Some(c.u32()?))
+    } else {
+        (None, None)
+    };
+    let (runtime32, caps) = if log_oldest.is_some() && c.0.len() >= 8 {
+        (Some(c.u32()?), Some(c.u32()?))
+    } else {
+        (None, None)
+    };
     Ok(Info {
-        protocol: c.u16()?,
-        runtime_version: c.u16()?,
-        port: c.cstr()?,
-        free_bytes: c.u32()?,
-        max_chunk: c.u32()?,
-        flags: c.u8()?,
+        protocol,
+        runtime_version,
+        port,
+        free_bytes,
+        max_chunk,
+        flags,
+        log_oldest,
+        log_newest,
+        runtime32,
+        caps,
     })
 }
 
@@ -310,5 +365,48 @@ mod tests {
         );
         assert!(i.safe_mode() && !i.upload_open());
         assert!(parse_info(&b[..b.len() - 1]).is_err());
+        assert_eq!((i.log_oldest, i.runtime32, i.caps), (None, None, None));
+    }
+
+    fn info_body(runtime: u16, tail: &[u8]) -> Vec<u8> {
+        let mut b = vec![0, 1];
+        b.extend(runtime.to_be_bytes());
+        b.extend(b"dt2\0");
+        b.extend(1024u32.to_be_bytes());
+        b.extend(32768u32.to_be_bytes());
+        b.push(0);
+        b.extend(tail);
+        b
+    }
+
+    #[test]
+    fn info_old_and_new_replies_parse() {
+        use crate::gen_proto::CAP_MODULES;
+        // an old reply: the log range, no runtime32 or caps
+        let mut log = 5u32.to_be_bytes().to_vec();
+        log.extend(9u32.to_be_bytes());
+        let old = parse_info(&info_body(4, &log)).unwrap();
+        assert_eq!((old.log_oldest, old.log_newest), (Some(5), Some(9)));
+        assert_eq!((old.runtime32, old.caps), (None, None));
+        // a reply that ends after flags
+        assert_eq!(parse_info(&info_body(2, &[])).unwrap().log_oldest, None);
+        // a new reply
+        let mut tail = log.clone();
+        tail.extend(0x0002_0000u32.to_be_bytes());
+        tail.extend((CAP_LOG | CAP_MODULES).to_be_bytes());
+        let new = parse_info(&info_body(0, &tail)).unwrap();
+        assert_eq!((new.runtime32, new.runtime()), (Some(0x0002_0000), 0x0002_0000));
+        assert!(new.has_cap(CAP_LOG) && new.has_cap(CAP_MODULES) && !new.has_cap(CAP_PEEK));
+    }
+
+    #[test]
+    fn fallback_caps_by_version() {
+        let caps = |v: u16| parse_info(&info_body(v, &[])).unwrap().caps();
+        assert_eq!(caps(2), 0);
+        assert_eq!(caps(4), CAP_LOG | CAP_PEEK | CAP_SELECT | CAP_RESTART);
+        assert_eq!(
+            caps(0x0100),
+            CAP_LOG | CAP_PEEK | CAP_SELECT | CAP_RESTART | CAP_LOGCFG
+        );
     }
 }

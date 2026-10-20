@@ -6,9 +6,9 @@
 //! ```text
 //!   0   4   magic "DKSL" (0x444b534c)        4   4   version = 1          8   4   seq
 //!  12   4   boot_counter                    16   4   flags (bit 0: safe mode once)
-//!  20   4   count (0 to 8)                  24   8   reserved
+//!  20   4   count (0 to 8)                  24   4   stable_blocks; 28 4 sticky type map entry 0 (zero from the builder)
 //!  32 448   8 paths of 56 bytes: store paths, NUL padded, at most 55 characters, load order
-//! 480  28   reserved                       508   4   crc32 of bytes 0..508
+//! 480  28   sticky type map, entries 1 to 7 508   4   crc32 of bytes 0..508
 //! ```
 //!
 //! In the `plus_drive/<device>/digikit/` folder the selection is `selection.txt`: one store path per line, load order; blank

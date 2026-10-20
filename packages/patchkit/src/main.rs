@@ -422,20 +422,6 @@ plan.json {}",
                 })?;
                 let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
                 let res = patchkit::typed::resolve(&m.manifest, &models)?;
-                let types: std::collections::BTreeMap<String, i64> = lib
-                    .get("core/machines")
-                    .and_then(|f| f.alloc.get("machines"))
-                    .and_then(|t| t.devices.get(&dev))
-                    .map(|d| {
-                        d.dynamic
-                            .iter()
-                            .filter_map(|(k, v)| {
-                                k.strip_prefix(&format!("{id}:"))
-                                    .map(|n| (n.to_string(), *v))
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
                 // the DSP object of the device, if any: its voices are the `[[voice]]` entries (type from the machine) and the
                 // `[[dsp_voice]]` entries (explicit type)
                 let sharc: Vec<_> = m
@@ -456,14 +442,12 @@ plan.json {}",
                 let resolved = res.iter().find(|r| r.dev == dev);
                 let mut voices = vec![];
                 for v in resolved.map(|r| r.voices.as_slice()).unwrap_or_default() {
-                    let t = types.get(&v.machine).ok_or_else(|| {
-                        Error(format!("voice {}: no run-time type number", v.machine))
-                    })?;
+                    let t = patchkit::register::machine_key(id, &v.machine);
                     let ranges = resolved
                         .map(|r| patchkit::typed::voice_ranges(r, &v.machine))
                         .unwrap_or([0; 8]);
                     voices.push(patchkit::dkmdsp::VoiceSpec {
-                        type_no: *t as u32,
+                        type_no: t,
                         render: v.entry.clone(),
                         note_on: v.note_on.clone(),
                         desc: v.desc.clone(),
@@ -496,7 +480,7 @@ plan.json {}",
                     None => {}
                 }
                 match resolved {
-                    Some(r) => patchkit::register::Register::lower(r, &types)?.encode(),
+                    Some(r) => patchkit::register::Register::lower(r, id)?.encode(),
                     None if !dsp.is_empty() => vec![],
                     None => return Err(Error(format!("{id}: nothing for device {dev}"))),
                 }
@@ -579,7 +563,7 @@ plan.json {}",
                 for v in &x.voices {
                     println!(
                         "  voice type {} entry +{:#x} note_on +{:#x} state {}x{} clear {} ranges {:x?}",
-                        v.type_no,
+                        patchkit::register::fmt_type(v.type_no),
                         v.entry,
                         v.note_on,
                         v.voices,
@@ -607,13 +591,13 @@ plan.json {}",
                 for m in &r.machines {
                     println!(
                         "  machine type {} {:?} {:?} clone_of {} level {} own_dsp {} knobs {:x?}",
-                        m.type_no, m.name, m.short, m.clone_of, m.level, m.own_dsp, m.knobs
+                        patchkit::register::fmt_type(m.type_no), m.name, m.short, m.clone_of, m.level, m.own_dsp, m.knobs
                     );
                 }
                 for g in &r.pages {
                     println!(
                         "  page of type {} {:?} {:?} level {} knobs {:x?}",
-                        g.type_no, g.name, g.title, g.level, g.knobs
+                        patchkit::register::fmt_type(g.type_no), g.name, g.title, g.level, g.knobs
                     );
                 }
             }

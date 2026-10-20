@@ -469,7 +469,8 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     i = 0;
     while i < nvoice {
         let e = s.add(voice_off as usize + vstride as usize * i as usize);
-        let t = rd32(e);
+        // the voice names its machine by key (or by a pinned number): `assign` has the type
+        let t = crate::assign::resolve(rd32(e));
         let entry = rd32(e.add(4));
         if !(TYPE_FIRST..=TYPE_LAST).contains(&t) || entry >= image_size || entry & 1 != 0 {
             return E_DSP_TYPE;
@@ -483,7 +484,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         }
         let mut j = 0;
         while j < i {
-            if rd32(s.add(voice_off as usize + vstride as usize * j as usize)) == t {
+            if crate::assign::resolve(rd32(s.add(voice_off as usize + vstride as usize * j as usize))) == t {
                 return E_DSP_TYPE; // twice in this file
             }
             j += 1;
@@ -575,7 +576,7 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
             row += 1;
         }
         let e = job.voices.add(job.vstride as usize * v);
-        d.row_type[row] = rd32(e);
+        d.row_type[row] = crate::assign::resolve(rd32(e));
         d.row_pc[row] = L2_SW_BASE + (base + rd32(e.add(4)) - L2_BYTE_BASE) / 2;
         let mut k = 0;
         while k < 8 {

@@ -39,6 +39,8 @@ KINDS: dict[int, tuple[str, tuple[str, str, str, str, str]]] = {
     27: ("MACHINE_FAULT", ("type_voice", "kind_faults", "p01", "p23", "p45")),
     28: ("MACHINE_DISABLED", ("type", "disabled", "faults", "-", "-")),
     29: ("TABLE_BAD", ("invariant", "module", "a", "b", "-")),
+    30: ("MACHINE_TYPE_ASSIGNED", ("hash", "type", "sticky", "-", "-")),
+    31: ("MACHINE_TYPE_EVICTED", ("hash", "type", "-", "-", "-")),
 }
 GUARD_KINDS: dict[int, str] = {1: "nonfinite", 2: "overlevel"}
 F_ERROR = 1

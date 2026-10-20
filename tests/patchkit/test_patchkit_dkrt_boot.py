@@ -33,7 +33,16 @@ def test_the_record_layout_is_the_documented_one():
         "counter": 1,
         "flags": 0,
         "paths": ["modules/a.dkm", "modules/b.dkm"],
+        "map": [0] * 8,
     }
+    # the sticky machine-type map: entry 0 at byte 28, entries 1 to 7 at 480 (docs/design/digikit-store.md); the same bytes as the Rust test of dkrt_sdk::sel
+    tm = [0xE53B3A10, 0xCF317D11, 0, 0, 0, 0, 0, 0x00000017]
+    withmap = pk_dkrt_boot.make_record(["modules/a.dkm"], seq=2, tmap=tm)
+    assert withmap[28:32] == bytes.fromhex("e53b3a10")
+    assert withmap[480:484] == bytes.fromhex("cf317d11") and withmap[
+        504:508
+    ] == bytes.fromhex("00000017")
+    assert pk_dkrt_boot.parse_record(withmap)["map"] == tm
     torn = bytearray(rec)
     torn[100] ^= 1
     assert pk_dkrt_boot.parse_record(bytes(torn)) is None
@@ -56,7 +65,7 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
     # the record, the store header copies, the reader against a commit that runs during it (finding 43) and the card-write range (finding 46): 13 tests
-    assert r.returncode == 0 and "13 passed; 0 failed" in r.stdout, r.stdout
+    assert r.returncode == 0 and "14 passed; 0 failed" in r.stdout, r.stdout
 
 
 def test_the_store_profile_reserves_the_two_record_sectors():

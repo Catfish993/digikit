@@ -61,6 +61,13 @@ DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "dkscreen": ("upload",),
     "dklog": ("debug", "crash", "card"),
     "dklog_kinds": ("debug", "crash", "card"),  # the event kinds dklog reads
+    "dkproto": (
+        "upload",
+        "menu",
+        "debug",
+        "crash",
+        "card",
+    ),  # the protocol numbers dkupload uses
     "devrpc": ("upload",),
     "midisniff": ("upload", "menu", "debug", "crash", "card"),
     "mmon": (),

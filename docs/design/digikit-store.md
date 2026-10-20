@@ -108,11 +108,16 @@ zero (no record) on a card the builder made.
   16  4   u32 flags           bit 0: start in safe mode once (set by the menu, cleared by the boot that honours it)
   20  4   u32 count           selected modules, 0 to 8
   24  4   u32 stable_blocks    the stable period of this card in DSP blocks; 0 = the runtime's default, 45,000 (30 s)
-  28  4   reserved, zero
+  28  4   sticky type map, entry 0 (see below)
   32  448 8 paths of 56 bytes: store paths ("modules/dyn-pluck.dkm"), NUL padded, at most 55 characters, load order
-  480 28  reserved, zero
+  480 28  sticky type map, entries 1 to 7 (4 bytes each)
   508 4   u32 crc32 of bytes 0..508 (IEEE, as the store table)
 ```
+
+**The sticky type map** (since 2026-10-20, runtime 0.2.0, docs/design/module-sdk.md 11.5 D7): up to 8 entries, each 4 bytes big endian, `hash24 << 8 | type`: the low 24 bits of FNV-1a 32 of the
+machine's global id `<module id>:<machine id>` and the run-time machine type (16 to 23) the runtime gave it; all zero = empty. Entry 0 is bytes 28 to 31, entries 1 to 7 are bytes 480 to 507. A card
+that was written before the map existed has zeros there (an empty map). The boot's assignment reads the map, the boot hook writes it back once after the loads when it changed (`docs/design/digikit-registry.md`,
+"Machine keys and sticky type numbers"), and every other writer of the record (the menu's save, `SELECT`, the DEBUG and counter updates) carries it over. The builder writes a zero map.
 
 **Reading.** Read both sectors; a copy is valid when the magic, version, count (<= 8), path NULs and CRC hold. Use the valid copy with
 the higher `seq` (equal: A). No valid copy is an empty selection with counter 0.

@@ -35,6 +35,7 @@
     "packages/patchkit/src/modgen.rs": 2,
     "packages/patchkit/src/module.rs": 3,
     "packages/patchkit/src/port.rs": 2,
+    "packages/patchkit/src/sdkgen.rs": 4,
     "packages/patchkit/src/typed.rs": 2
   }
 }

@@ -29,45 +29,15 @@ pub const SLOTS: usize = 8;
 
 /// Result codes of `dkrt_load` and `Api::store_read` (negative = error).
 pub const OK: i32 = 0;
-pub const E_NOT_FOUND: i32 = -1; // no store, or no such file / module
-pub const E_BAD_STORE: i32 = -2; // store header or table check failed
-pub const E_READ: i32 = -3; // the firmware's block read failed
-pub const E_SHA: i32 = -4; // store sha256 or .dkm sha256 does not match
-pub const E_FORMAT: i32 = -5; // magic, version, bounds, alignment of the .dkm
-pub const E_RUNTIME: i32 = -6; // the module needs a newer runtime
-pub const E_IMPORT: i32 = -7; // an import name is not in the runtime's table
-pub const E_NOMEM: i32 = -8; // arena full
-pub const E_INIT: i32 = -9; // init returned non-zero
-pub const E_LOADED: i32 = -10; // a module of that name is loaded
-pub const E_SLOT: i32 = -11; // a slot it binds is taken
-pub const E_BUSY: i32 = -12; // a task is still inside the module (a boot-time DSP failure that takes the module down again)
-pub const E_TOO_BIG: i32 = -13; // larger than the staging buffer
-pub const E_TABLE_FULL: i32 = -14; // no free module record
-
-/// Codes of the run-time registry (`register` records, docs/design/digikit-registry.md): -20 to -29. Lane ranges: -30 to
-/// -39 are the DSP side's. Additive: a code is never renumbered.
-pub const E_NO_REGISTRY: i32 = -20; // the file has register records, the image has no core/dynreg
-pub const E_REG_DEVICE: i32 = -21; // the records are for another device
-pub const E_TYPE_RANGE: i32 = -22; // a machine type outside the reserved range, or a clone_of that is not built in
-pub const E_TYPE_USED: i32 = -23; // the type number is in use
-pub const E_PARAM_FULL: i32 = -24; // no free reserved parameter row
-pub const E_PAGE_FULL: i32 = -25; // no free reserved page row (Digitone II)
-pub const E_TYPE_IN_USE: i32 = -26; // archived with hot reload (docs/plans/digikit-hot-reload.md): no code returns it now; the number stays reserved
+// The codes themselves are written by `patchkit gen` from `[load.status]` of `sdk/sdk.toml` (`gen_sdk.rs`, module `load`, with their
+// texts): -1 to -14 `dkrt_load`; -20 to -29 the run-time registry (`register` records, docs/design/digikit-registry.md); -30 to -39 the
+// DSP side's (docs/design/digikit-dkm.md, "DSP section"); -40 to -49 boot-time loading (finding 37). Additive: a code is never renumbered.
+pub use gen_sdk::load::*;
 
 /// The boot-time load of a module with DSP code answers `LOADING`: its ColdFire part is live, the DSP part follows over the first
 /// UI-loop passes (the transfer takes many audio blocks). The final result is in `DkrtBootInfo::results`. A module whose DSP part is
 /// still going is reported by `dkrt_module` with `state` `MOD_LOADING`.
 pub const LOADING: i32 = 1;
-
-/// Codes of the DSP side of a module (docs/design/digikit-dkm.md, "DSP section"): -30 to -39 belong to the DSP loader.
-pub const E_NO_DSP: i32 = -30; // the file has DSP code, the image has no core/dsp-link and core/dyndsp
-pub const E_DSP_FORMAT: i32 = -31; // the DSP section is malformed
-pub const E_DSP_IMPORT: i32 = -32; // a DSP symbol the object imports is not exported by the image
-pub const E_DSP_NOSPACE: i32 = -33; // no free range in the DSP area
-pub const E_DSP_ROWS: i32 = -34; // no free voice row
-pub const E_DSP_XFER: i32 = -35; // the transfer to the DSP failed or timed out
-pub const E_DSP_DEVICE: i32 = -36; // the DSP code is for the other device
-pub const E_DSP_TYPE: i32 = -37; // a voice type outside the run-time range, or used by another module
 
 /// The table `init` receives (also reachable as `dkrt_api`). Appended-to only; check `size`.
 #[repr(C)]
@@ -261,18 +231,6 @@ pub const CMD_CARD_PROBE: u32 = 7;
 /// Test hook: `arg[0]` = 1 or 0: `dkrt_debug_set` (the menu's DEBUG row); the answer is its result.
 pub const CMD_DEBUG: u32 = 8;
 
-/// Codes of boot-time loading (-40 to -49, finding 37).
-pub const E_SEL_PATH: i32 = -40; // a path of the selection is empty, too long or has a bad character
-pub const E_SEL_COUNT: i32 = -41; // more than `SEL_MAX` paths
-pub const E_SEL_WRITE: i32 = -42; // the firmware's block write failed
-pub const E_CARD_BUSY: i32 = -43; // `dkrt_restart`: a card transfer is in flight
-pub const E_SAFE_MODE: i32 = -44; // this boot is in safe mode: no module was loaded
-pub const E_BOOT_ONLY: i32 = -45; // `dkrt_load` after the boot hook: the module set is fixed per session (hot reload is archived)
-pub const E_RANGE: i32 = -46; // a card write outside the store range (refused by the one card-write function)
-pub const E_CARD_RO: i32 = -47; // the card's store area is not ours and not blank: the runtime never writes it (finding 46)
-pub const E_CONTRACT: i32 = -48; // the module was built for another SDK contract (major differs, or its minor is above the runtime's): rebuild it
-pub const E_TABLE: i32 = -49; // the runtime's tables failed their consistency check (`table::check`): no further load this boot
-
 /// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
 /// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
 pub const SEL_MAX: usize = 8;
@@ -351,12 +309,23 @@ pub mod sel {
         /// The stable period of this card in DSP blocks (bytes 24 to 27 of the record, reserved zero before): 0 takes `STABLE_BLOCKS`. A
         /// setting for tests and for people who debug a module; nothing in the menu writes it.
         pub stable_blocks: u32,
+        /// The sticky machine types (docs/design/module-sdk.md 11.5 D7): up to 8 entries, each `hash24 << 8 | type`, 0 = empty. Entry 0 is
+        /// bytes 28 to 31 of the record, entries 1 to 7 bytes 480 to 507.
+        pub map: [u32; MAP_N],
         pub paths: [[u8; SEL_PATH]; SEL_MAX],
+    }
+
+    /// Entries of the sticky type map.
+    pub const MAP_N: usize = 8;
+
+    /// Byte offset of map entry `i`.
+    pub const fn map_at(i: usize) -> usize {
+        if i == 0 { 28 } else { 480 + 4 * (i - 1) }
     }
 
     impl Record {
         pub const fn empty() -> Record {
-            Record { seq: 0, boot_counter: 0, flags: 0, count: 0, stable_blocks: 0, paths: [[0; SEL_PATH]; SEL_MAX] }
+            Record { seq: 0, boot_counter: 0, flags: 0, count: 0, stable_blocks: 0, map: [0; MAP_N], paths: [[0; SEL_PATH]; SEL_MAX] }
         }
     }
 
@@ -396,6 +365,11 @@ pub mod sel {
         put(out, 16, r.flags);
         put(out, 20, r.count);
         put(out, 24, r.stable_blocks);
+        let mut m = 0;
+        while m < MAP_N {
+            put(out, map_at(m), r.map[m]);
+            m += 1;
+        }
         let mut k = 0;
         while k < SEL_MAX {
             let mut j = 0;
@@ -424,6 +398,11 @@ pub mod sel {
         r.flags = get(b, 16);
         r.count = count;
         r.stable_blocks = get(b, 24);
+        let mut m = 0;
+        while m < MAP_N {
+            r.map[m] = get(b, map_at(m));
+            m += 1;
+        }
         let mut k = 0;
         while k < SEL_MAX {
             let mut j = 0;
@@ -871,7 +850,7 @@ pub const DIAG_MAGIC: u32 = 0x4449_4147; // "DIAG"
 /// off), five argument words.
 /// Written by `patchkit gen` from `sdk/sdk.toml` (`gen_sdk.rs`), with the contract version numbers (`contract`).
 mod gen_sdk;
-pub use gen_sdk::{contract, logk};
+pub use gen_sdk::{contract, logk, proto};
 
 #[cfg(test)]
 mod tests {
@@ -899,6 +878,25 @@ mod tests {
         assert_eq!(&b[32..45], b"modules/a.dkm");
         assert_eq!(&b[32 + SEL_PATH..45 + SEL_PATH], b"modules/b.dkm");
         assert_eq!(&b[508..512], &0xce5a_5f11u32.to_be_bytes());
+    }
+
+    /// The sticky type map: entry 0 is bytes 28 to 31, entries 1 to 7 are bytes 480 to 507 (docs/design/digikit-store.md); the same bytes as
+    /// `make_record(..., tmap=...)` in tests/patchkit/test_patchkit_dkrt_boot.py. The words before and after keep their places.
+    #[test]
+    fn the_sticky_map_is_in_the_reserved_bytes() {
+        let mut r = example();
+        r.map = [0xe53b_3a10, 0xcf31_7d11, 0, 0, 0, 0, 0, 0x17];
+        let mut b = [0u8; 512];
+        encode(&r, &mut b);
+        assert_eq!(&b[28..32], &0xe53b_3a10u32.to_be_bytes());
+        assert_eq!(&b[480..484], &0xcf31_7d11u32.to_be_bytes());
+        assert_eq!(&b[504..508], &0x17u32.to_be_bytes());
+        assert_eq!(&b[24..28], &[0, 0, 0, 0]); // stable_blocks stays where it was
+        assert_eq!(&b[32..45], b"modules/a.dkm");
+        assert_eq!(decode(&b).unwrap().map, r.map);
+        // a record without a map (the builder's, an older runtime's) has an empty one
+        encode(&example(), &mut b);
+        assert_eq!(decode(&b).unwrap().map, [0; MAP_N]);
     }
 
     #[test]

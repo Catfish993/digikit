@@ -13,6 +13,7 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.patchkit import pk_build, pk_dkrt, pk_toolchains  # noqa: E402
+from tools.patchkit.pk_dkrt_machine import machine_hash  # noqa: E402
 
 DYNREG = ROOT / "modules/core/dynreg"
 RUNTIME = ROOT / "modules/core/runtime"
@@ -35,7 +36,11 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
     assert a.read_bytes() == b.read_bytes()
     info = tools.patchkit_run("dkm-info", a)
     assert "device 1 (1 params, 1 machines, 0 pages)" in info
-    assert 'machine type 16 "XSlice-D" "XSD" clone_of 6' in info
+    # the type field is the machine key: the hash of "<module id>:<machine id>" (D7); the runtime assigns the number at load
+    assert (
+        f'machine type h{machine_hash("test/dyn-xslice", "xslice_d"):06x} "XSlice-D" "XSD" clone_of 6'
+        in info
+    )
     # a run-time module needs its device, and a machine module that is not dynamic cannot be packed without code
     r = tools.run(
         tools.patchkit,
@@ -54,8 +59,9 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
     assert c.read_bytes() == d.read_bytes()
     info = tools.patchkit_run("dkm-info", c)
     assert "device 2 (4 params, 1 machines, 1 pages)" in info
-    assert 'machine type 16 "DynSyn" "DSY" clone_of 0 level 10 own_dsp 1' in info
-    assert 'page of type 16 "DYN" "Dyn Synth"' in info
+    h = f"h{machine_hash('test/dyn-dn2', 'dyn_pluck'):06x}"
+    assert f'machine type {h} "DynSyn" "DSY" clone_of 0 level 10 own_dsp 1' in info
+    assert f'page of type {h} "DYN" "Dyn Synth"' in info
     # a Digitakt II module has no page, and a Digitone II one is refused on the Digitakt
     r = tools.run(
         tools.patchkit,

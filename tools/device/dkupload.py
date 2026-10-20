@@ -3,6 +3,7 @@
 
     uv run python -m tools.device.dkupload --emu info                       # the running emulator (out/native/run/current.json)
     uv run python -m tools.device.dkupload --emu ls
+    uv run python -m tools.device.dkupload --emu modules                   # the loaded modules: ranges, contracts, assigned types, guard faults
     uv run python -m tools.device.dkupload --emu put build/m.dkm modules/m.dkm
     uv run python -m tools.device.dkupload --emu rm modules/m.dkm
     uv run python -m tools.device.dkupload --emu clear
@@ -29,53 +30,66 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from tools.device import dkproto
+from tools.device.dkproto import (
+    CAP,
+    CMD_ABORT,
+    CMD_BEGIN,
+    CMD_CLEAR,
+    CMD_DATA,
+    CMD_DELETE,
+    CMD_END,
+    CMD_INFO,
+    CMD_LIST,
+    CMD_LOG,
+    CMD_LOGCFG,
+    CMD_MODULES,
+    CMD_PEEK,
+    CMD_RESTART,
+    CMD_SELECT,
+    LOAD_STATUS,
+    VERSION,
+)
 from tools.device.midisniff import unpack_8in7
 from tools.firmware.build import encode_8in7
 
 PREFIX = bytes((0xF0, 0x7D, 0x64, 0x6B))
-VERSION = 1
-CMD_INFO, CMD_LIST = 0x01, 0x02
-CMD_BEGIN, CMD_DATA, CMD_END, CMD_DELETE, CMD_CLEAR, CMD_ABORT = (
-    0x10,
-    0x11,
-    0x12,
-    0x13,
-    0x14,
-    0x15,
-)
-CMD_LOG, CMD_PEEK, CMD_LOGCFG = 0x20, 0x21, 0x22
-CMD_SELECT, CMD_RESTART = 0x30, 0x31  # runtime 4
 CLEAR_MAGIC = 0x434C5221
 MAX_CHUNK = 32768
 DEPTH = 2
 
-STATUS = {
+# status code -> name: the upload statuses, and the load and selection codes (SELECT answers them as the menu's APPLY gets them)
+STATUS: dict[int, str] = {
     0: "ok",
-    -50: "E_MSG",
-    -51: "E_PATH",
-    -52: "E_FULL",
-    -53: "E_STATE",
-    -54: "E_OFFSET",
-    -55: "E_LENGTH",
-    -56: "E_HASH",
-    -57: "E_WRITE",
-    -58: "E_READ",
-    -59: "E_NOFILE",
-    -60: "E_PROTO",
-    -61: "E_NOSTORE",
-    -62: "E_INUSE",
-    -63: "E_PEEK",
-    # the selection record's codes (SELECT answers them as the menu's APPLY gets them)
-    -40: "E_SEL_PATH",
-    -41: "E_SEL_COUNT",
-    -42: "E_SEL_WRITE",
-    -47: "E_CARD_RO",
+    **{c: n for c, (n, _) in LOAD_STATUS.items()},
+    **{c: n for c, (n, _) in dkproto.STATUS.items()},
+}
+
+# The runtimes before INFO carried `caps` had these features from this packed version on (0.0.3 LOG and PEEK, 0.0.4 SELECT and
+# RESTART, 0.1.0 LOGCFG). MODULES is known by `caps` only.
+CAP_SINCE: dict[str, int] = {
+    "LOG": 0x000003,
+    "PEEK": 0x000003,
+    "SELECT": 0x000004,
+    "RESTART": 0x000004,
+    "LOGCFG": 0x000100,
 }
 
 
 def fmt_runtime(packed: int) -> str:
     """A packed runtime version (major << 16 | minor << 8 | patch) as "major.minor.patch"; the plain integers 1 to 5 of old runtimes read as 0.0.N."""
     return f"{packed >> 16}.{packed >> 8 & 255}.{packed & 255}"
+
+
+def has_cap(info: dict[str, Any], name: str) -> bool:
+    """Does the device have the feature `name` (a key of `CAP`)? From the INFO `caps` word; a runtime without one is judged by its version
+    (`CAP_SINCE`), and a feature known by `caps` only (MODULES) is absent there."""
+    if name not in CAP:
+        raise KeyError(name)
+    if info.get("caps") is not None:
+        return bool(info["caps"] >> CAP[name] & 1)
+    since = CAP_SINCE.get(name)
+    return since is not None and info["runtime"] >= since
 
 
 class UploadError(RuntimeError):
@@ -259,9 +273,14 @@ class Uploader:
         oldest, newest = (
             struct.unpack_from(">II", b, end + 10) if len(b) >= end + 18 else (0, 0)
         )
+        # appended after the log range: the packed runtime version (u32) and the capability bits (u32)
+        caps = None
+        if len(b) >= end + 26:
+            runtime, caps = struct.unpack_from(">II", b, end + 18)
         return {
             "protocol": proto,
             "runtime": runtime,
+            "caps": caps,
             "port": port,
             "free_bytes": free,
             "max_chunk": max_chunk,
@@ -290,6 +309,58 @@ class Uploader:
                 at = end + 37
             first += n
             if first >= total or n == 0:
+                return out
+
+    def modules(self) -> dict[str, Any]:
+        """MODULES (runtime 0.2.0, capability MODULES): the arena and DSP-area figures and the loaded modules, every page. Returns
+        `{arena_free, arena_largest, dsp_free, dsp_largest, total, modules: [...]}`; a module is `{index, name, version, contracts
+        ((major, minor) of api, machine, fx, service), cf_base, cf_size, dsp_off, dsp_len, rows (voice-row mask), types (assigned machine
+        types), faults (the guard's count for those types), guard_off (the guard switched one of them off)}`."""
+        out: dict[str, Any] = {"modules": []}
+        start = 0
+        while True:
+            b = self._ok(CMD_MODULES, "modules", bytes((start,)))
+            af, al, df, dl = struct.unpack_from(">IIII", b, 0)
+            total, n = b[16], b[17]
+            out.update(
+                arena_free=af,
+                arena_largest=al,
+                dsp_free=df,
+                dsp_largest=dl,
+                total=total,
+            )
+            at = 18
+            for _ in range(n):
+                idx = b[at]
+                name = b[at + 1 : at + 33].split(b"\0")[0].decode()
+                version = struct.unpack_from(">I", b, at + 33)[0]
+                cts = [(b[at + 37 + 2 * k], b[at + 38 + 2 * k]) for k in range(4)]
+                cf_base, cf_size, dsp_off, dsp_len, rows = struct.unpack_from(
+                    ">IIIII", b, at + 45
+                )
+                nt = b[at + 65]
+                types = list(b[at + 66 : at + 66 + nt])
+                faults = struct.unpack_from(">I", b, at + 66 + nt)[0]
+                flags = b[at + 70 + nt]
+                out["modules"].append(
+                    {
+                        "index": idx,
+                        "name": name,
+                        "version": version,
+                        "contracts": cts,
+                        "cf_base": cf_base,
+                        "cf_size": cf_size,
+                        "dsp_off": dsp_off,
+                        "dsp_len": dsp_len,
+                        "rows": rows,
+                        "types": types,
+                        "faults": faults,
+                        "guard_off": bool(flags & 1),
+                    }
+                )
+                at += 71 + nt
+                start = idx + 1
+            if len(out["modules"]) >= total or n == 0:
                 return out
 
     def log_page(
@@ -390,6 +461,22 @@ class Uploader:
         self.end()
 
 
+def modules_lines(m: dict[str, Any]) -> list[str]:
+    """The `modules` subcommand's output: a header with the free space, then one line per loaded module."""
+    out = [
+        f"arena free {m['arena_free']} (largest {m['arena_largest']}), dsp area free {m['dsp_free']} (largest {m['dsp_largest']}), {m['total']} module(s)"
+    ]
+    for x in m["modules"]:
+        cts = " ".join(f"{a}.{b}" for a, b in x["contracts"])
+        v = x["version"]
+        out.append(
+            f"{x['index']}  {x['name']}  v{v >> 16}.{v >> 8 & 255}.{v & 255}  contracts {cts}  "
+            f"cf {x['cf_base']:#x}+{x['cf_size']:#x}  dsp {x['dsp_off']:#x}+{x['dsp_len']:#x}  rows {x['rows']:#x}  "
+            f"types {','.join(map(str, x['types'])) or '-'}  faults {x['faults']}{'  GUARD OFF' if x['guard_off'] else ''}"
+        )
+    return out
+
+
 def _emu(run_dir: Path | None = None) -> Any:
     from tools.control.digi_client import Emu
 
@@ -417,6 +504,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info")
     sub.add_parser("ls")
+    sub.add_parser("modules")
     p = sub.add_parser("put")
     p.add_argument("file", type=Path)
     p.add_argument("path", nargs="?")
@@ -435,6 +523,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "ls":
             for path, size, sha in up.ls():
                 print(f"{path}\t{size}\t{sha}")
+        elif args.cmd == "modules":
+            for line in modules_lines(up.modules()):
+                print(line)
         elif args.cmd == "put":
             data = args.file.read_bytes()
             path = args.path or f"modules/{args.file.name}"

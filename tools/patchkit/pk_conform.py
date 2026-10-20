@@ -187,9 +187,11 @@ def _type_number(mid: str, man: dict, device: str, literal: str | None) -> int:
     if literal is not None:  # "machines.<name>.index": the type allocated to <name>
         mach = str(literal).split(".")[1]
     key = f"{mid}:{mach}"
-    for table in ("alloc", "dynamic"):
-        if key in types.get(table, {}):
-            return int(types[table][key])
+    if key in types.get("alloc", {}):
+        return int(types["alloc"][key])
+    if man.get("module", {}).get("dynamic") and "dynamic_first" in types:
+        # a run-time machine has no fixed number (the runtime assigns one at load); the rig only needs a type in the run-time range
+        return int(types["dynamic_first"])
     raise ConformError(
         f"{mid}: no machine type for {key} in core/machines types.toml [{device}]"
     )

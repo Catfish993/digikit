@@ -27,11 +27,12 @@ Python API for the scenario suite (lane C builds on it; everything below is impo
     with env.boot(img, card, tag="a") as rig:           # a coupled daemon, cold-booted on that card: the boot hook has run
         rig.boot_info()        # dict: safe, reason, counter, seq, copy, count, loaded, results[], ui_reached, dsp_wait
         rig.voice_rows()       # [(type, pc)] of the DSP voice registry (type 0xffffffff: free)
-        rig.machine_listed(18) # is the machine row of that type named
+        rig.dyn_type("test/dyn-pluck", "pluck")   # the type the runtime assigned at this boot (from DKRT_ASSIGN)
+        rig.machine_listed(16) # is the machine row of that type named
         rig.sel_records()      # the two record copies as the card holds them now: [dict|None, dict|None]
         rig.set_selection(["modules/x.dkm"])   # dkrt_selection_set through the mailbox (returns its result)
         rig.restart()          # dkrt_restart, then the emulator's soft reset; returns when the new boot is ready
-        rig.select_type(18, 7) # the machine list on the panel (DT2); rig.note(wav, B.M.TRIG_FRAME) plays TRIG 1, returns the PCM
+        rig.select_type(16, 7) # the machine list on the panel (DT2); rig.note(wav, B.M.TRIG_FRAME) plays TRIG 1, returns the PCM
     B.make_record(paths, seq=1, counter=0, flags=0)     # the 512 bytes of one record copy (the layout of docs/design/digikit-store.md)
     B.write_record_sectors(card, copy_a, copy_b)        # raw sector images over the two record sectors of a card file
 
@@ -135,14 +136,21 @@ class Fail(RuntimeError):
     pass
 
 
+def map_at(i: int) -> int:
+    """Byte offset of sticky-map entry I in a selection record."""
+    return 28 if i == 0 else 480 + 4 * (i - 1)
+
+
 def make_record(
     paths: list[str],
     seq: int = 1,
     counter: int = 0,
     flags: int = 0,
     stable_blocks: int = 0,
+    tmap: list[int] | None = None,
 ) -> bytes:
-    """One copy of the selection record (docs/design/digikit-store.md). STABLE_BLOCKS: the stable period of safe mode (0: the default)."""
+    """One copy of the selection record (docs/design/digikit-store.md). STABLE_BLOCKS: the stable period of safe mode (0: the default).
+    TMAP: the 8 sticky machine-type entries (`hash24 << 8 | type`, 0 = empty), entry 0 at byte 28, entries 1 to 7 at 480."""
     if len(paths) > SEL_MAX or any(len(p) >= SEL_PATH or not p for p in paths):
         raise Fail("selection: at most 8 paths of 1 to 55 characters")
     b = bytearray(512)
@@ -160,6 +168,8 @@ def make_record(
     )
     for i, p in enumerate(paths):
         b[32 + i * SEL_PATH : 32 + i * SEL_PATH + len(p)] = p.encode()
+    for i, e in enumerate(tmap or []):
+        struct.pack_into(">I", b, map_at(i), e)
     struct.pack_into(">I", b, 508, zlib.crc32(bytes(b[:508])))
     return bytes(b)
 
@@ -182,7 +192,14 @@ def parse_record(b: bytes) -> dict[str, Any] | None:
         if 0 not in raw or raw[0] == 0:
             return None
         paths.append(raw.split(b"\0")[0].decode())
-    return {"seq": seq, "counter": counter, "flags": flags, "paths": paths}
+    tmap = [struct.unpack_from(">I", b, map_at(i))[0] for i in range(8)]
+    return {
+        "seq": seq,
+        "counter": counter,
+        "flags": flags,
+        "paths": paths,
+        "map": tmap,
+    }
 
 
 def write_record_sectors(card: Path, a: bytes | None, b: bytes | None) -> None:
@@ -397,6 +414,30 @@ class BootRig(M.Rig):
         d["stable"] = self.w(self.boot_sym + 4 * (len(BI_FIELDS) + SEL_MAX + 1))
         d["reason_name"] = SAFE_NAMES.get(d["reason"], "?")
         return d
+
+    def assign_table(self) -> dict[str, Any]:
+        """The boot's machine-type assignment (`DKRT_ASSIGN`, assign.rs): the sticky map and, per machine of the selection, its module's
+        selection index, machine key (`hash << 8`) and assigned type (0: none was free)."""
+        base = M.sym(self.plan, "core/runtime", "DKRT_ASSIGN")
+        w = [self.w(base + 4 * i) for i in range(3 + 8 + 3 * 64)]
+        n = w[1]
+        return {
+            "magic": w[0],
+            "dirty": w[2],
+            "map": w[3:11],
+            "machines": [
+                {"index": w[11 + i], "key": w[75 + i], "type": w[139 + i]}
+                for i in range(n)
+            ],
+        }
+
+    def dyn_type(self, module: str, machine: str) -> int:
+        """The type number the runtime assigned to `<module>:<machine>` in this boot (read from `DKRT_ASSIGN`)."""
+        key = M.machine_hash(module, machine) << 8
+        for m in self.assign_table()["machines"]:
+            if m["key"] == key and m["type"]:
+                return m["type"]
+        raise Fail(f"{self.tag}: {module}:{machine} has no assigned type")
 
     def voice_rows(self) -> list[tuple[int, int]]:
         return [self.voice_row(k) for k in range(8)]
@@ -814,9 +855,16 @@ class Proof:
                 str(rec),
             )
             used = [r for r in run.voice_rows() if r[0] != FREE_TYPE]
+            # DT2: the pluck's machine type, assigned at load; DN2: the sine module's voice has a pinned type (`[[dsp_voice]] type`)
+            mach = (
+                run.dyn_type("test/dyn-pluck", "pluck")
+                if self.dt2
+                else run.dyn_type("test/dyn-dn2", "dyn_pluck")
+            )
+            vtype = mach if self.dt2 else M.SINE_DYN_TYPE
             self.check(
                 "the voice row of the DSP module is claimed",
-                len(used) == 1 and used[0][0] == 18,
+                len(used) == 1 and used[0][0] == vtype,
                 str([(hex(a), hex(b)) for a, b in used]),
             )
             idx = self.mods.index("modules/m1.dkm")
@@ -832,14 +880,12 @@ class Proof:
                 got == want,
                 f"{len(want)} bytes at {base:#x}",
             )
-            self.check(
-                "the machine row is named", run.machine_listed(18 if self.dt2 else 16)
-            )
+            self.check("the machine row is named", run.machine_listed(mach))
             if self.dt2:
-                downs = run.select_type(M.PLUCK_DYN_TYPE, 7)
+                downs = run.select_type(mach, 7)
                 self.check(
-                    "the stock machine list shows it: the track takes type 18",
-                    run.type_now() == M.PLUCK_DYN_TYPE,
+                    f"the stock machine list shows it: the track takes type {mach}",
+                    run.type_now() == mach,
                     f"downs {downs}",
                 )
             pcm = run.note(self.work / "run.wav", trig)

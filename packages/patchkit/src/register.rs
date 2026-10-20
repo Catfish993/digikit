@@ -8,9 +8,13 @@
 //! 0x00 u32 magic "DKRG"   0x04 u32 version = 1   0x08 u32 device (1 dt2, 2 dn2)   0x0c u32 record count
 //! 0x10 records, each: u32 kind, u32 length (bytes, a multiple of 4, this header included), then
 //!   kind 1 PARAM   (0x50): u32 index, template, slot; i32 min, max, default; name[32]; short[16]
-//!   kind 2 MACHINE (0x6c): u32 type, clone_of, position, own_dsp, level; i32 knobs[8]; name[24]; short[24]
+//!   kind 2 MACHINE (0x6c): u32 key, clone_of, position, own_dsp, level; i32 knobs[8]; name[24]; short[24]
 //!   kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II)
 //! ```
+//!
+//! `key` (a machine's and a page's first field, a DSP voice's type) is `hash << 8 | type`: the 24-bit hash of the machine's global id
+//! (`machine_hash`) above a type byte of 0, which tells the runtime to assign a type number in the run-time range at load (and to remember
+//! it on the card). A type byte of 16 to 23 with hash 0 pins that number (tests and hand-made files).
 //!
 //! A knob is a stock parameter code (0 = none) or `KNOB_PARAM | index` of a PARAM record of the same file. A page's knob
 //! is `KNOB_PARAM | index` or 0; its sound-array slot is the device's slot base plus the knob position. On a device that
@@ -18,7 +22,6 @@
 
 use crate::error::*;
 use crate::typed::{DevResolved, Knob};
-use std::collections::BTreeMap;
 
 pub const MAGIC: u32 = 0x444b_5247; // "DKRG"
 pub const VERSION: u32 = 1;
@@ -40,6 +43,31 @@ pub const MAX_PAGES: usize = 8;
 pub const MACHINE_NAME: usize = 24;
 pub const PARAM_NAME: usize = 32;
 pub const PARAM_SHORT: usize = 16;
+
+/// The 24-bit hash of a run-time machine's global id `<module id>:<machine id>`: the low 24 bits of FNV-1a 32 of the UTF-8 string
+/// (docs/design/module-sdk.md 11.5 D7, docs/design/digikit-registry.md "Machine keys").
+pub fn machine_hash(module: &str, machine: &str) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in format!("{module}:{machine}").bytes() {
+        h = (h ^ b as u32).wrapping_mul(0x0100_0193);
+    }
+    h & 0x00ff_ffff
+}
+
+/// The machine key a `.dkm` carries where a stock machine has its type: the hash in the upper 24 bits and 0 in the low byte
+/// ("assign a type at load"). A page and a DSP voice name their machine by the same key.
+pub fn machine_key(module: &str, machine: &str) -> u32 {
+    machine_hash(module, machine) << 8
+}
+
+/// A type field as `dkm-info` prints it: a machine key as `h<hash>` (six hex digits), a plain type number as decimal.
+pub fn fmt_type(t: u32) -> String {
+    if t & 0xff == 0 && t != 0 {
+        format!("h{:06x}", t >> 8)
+    } else {
+        t.to_string()
+    }
+}
 
 /// The id digikit gives a device (`[digikit] id` of the device file).
 pub fn device_id(dev: &str) -> Result<u32> {
@@ -111,8 +139,10 @@ fn p32(out: &mut Vec<u8>, v: u32) {
 }
 
 impl Register {
-    /// Lower one device's resolved typed sections. `types` maps a machine id to its permanent run-time type number.
-    pub fn lower(r: &DevResolved, types: &BTreeMap<String, i64>) -> Result<Register> {
+    /// Lower one device's resolved typed sections of module `module`. A machine's `type_no` is its machine key (`machine_key`):
+    /// the runtime assigns the type number at load.
+    pub fn lower(r: &DevResolved, module: &str) -> Result<Register> {
+        let key = |machine: &str| machine_key(module, machine);
         let mut reg = Register {
             device: device_id(&r.dev)?,
             ..Default::default()
@@ -136,13 +166,10 @@ impl Register {
                     m.id
                 ));
             }
-            let t = types.get(&m.id).copied().ok_or_else(|| {
-                err!(
-                    "machine {}: no run-time type number (add it to [{}.dynamic] of modules/core/machines/types.toml)",
-                    m.id,
-                    r.dev
-                )
-            })?;
+            let t = key(&m.id);
+            if t == 0 {
+                return Err(err!("machine {}: its id hashes to 0; rename it", m.id));
+            }
             let mut knobs = [0u32; KNOBS];
             if r.model.knobs.to == "machine" {
                 for (j, k) in m.knobs.iter().enumerate() {
@@ -160,7 +187,7 @@ impl Register {
             }
             // otherwise the device keeps its knobs in pages: the machine record's knobs stay 0
             reg.machines.push(Machine {
-                type_no: t as u32,
+                type_no: t,
                 clone_of: m.clone_of as u32,
                 position: POS_END,
                 own_dsp: u32::from(m.own_dsp),
@@ -171,13 +198,7 @@ impl Register {
             });
         }
         for g in &r.pages {
-            let t = types.get(&g.machine).copied().ok_or_else(|| {
-                err!(
-                    "page {}: machine {:?} has no run-time type number",
-                    g.id,
-                    g.machine
-                )
-            })?;
+            let t = key(&g.machine);
             let mut knobs = [0u32; KNOBS];
             for (j, k) in g.knobs.iter().enumerate() {
                 knobs[j] = match k {
@@ -193,7 +214,7 @@ impl Register {
                 };
             }
             reg.pages.push(Page {
-                type_no: t as u32,
+                type_no: t,
                 knobs,
                 level: g.level as u32,
                 name: g.name.clone(),
@@ -429,6 +450,16 @@ mod tests {
             title: "Syn".into(),
         });
         r
+    }
+
+    #[test]
+    fn the_machine_key_is_the_fnv_hash_of_the_global_id() {
+        // low 24 bits of FNV-1a 32 of "<module id>:<machine id>" (docs/design/module-sdk.md 11.5 D7); the runtime and the test tools compute the same
+        assert_eq!(machine_hash("a", "b"), 0xbd8540);
+        assert_eq!(machine_hash("test/dyn-pluck", "pluck"), 0xe53b3a);
+        assert_eq!(machine_key("test/dyn-pluck", "pluck"), 0xe53b_3a00);
+        assert_eq!(fmt_type(machine_key("a", "b")), "hbd8540");
+        assert_eq!(fmt_type(18), "18");
     }
 
     #[test]

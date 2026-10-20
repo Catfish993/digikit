@@ -5,6 +5,5 @@
 #define FRAME_STRIDE 48 // halfwords from one track (voice) to the next
 #define SLOT_BASE 0 // slot of knob 0
 #define KNOBS 8 // knobs per machine
-#define GUARDNAN_TYPE 20 // permanent machine type number
 #define GUARDNAN_KNOB0_FRAME_OFF 0
 #define GUARDNAN_KNOB7_FRAME_OFF 9

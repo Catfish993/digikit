@@ -14,38 +14,12 @@ use crate::sha256::Sha;
 use crate::{block_read, block_write, boot, card, dlog, midi_send, rd32, tx_in_flight, wr32};
 use core::ptr::{addr_of, addr_of_mut};
 use dkrt_sdk::store::{self, Hdr, ENTRY, FIRST, HEADER_B, LIMIT};
+use dkrt_sdk::proto::*;
 use dkrt_sdk::{logk, E_NOT_FOUND, OK, RUNTIME_VERSION};
 
-pub const E_MSG: i32 = -50;
-pub const E_PATH: i32 = -51;
-pub const E_FULL: i32 = -52;
-pub const E_STATE: i32 = -53;
-pub const E_OFFSET: i32 = -54;
-pub const E_LENGTH: i32 = -55;
-pub const E_HASH: i32 = -56;
-pub const E_WRITE: i32 = -57;
-pub const E_READ: i32 = -58;
-pub const E_NOFILE: i32 = -59;
-pub const E_PROTO: i32 = -60;
-pub const E_NOSTORE: i32 = -61;
-/// The card's store area is not ours and not blank: the runtime writes nothing there (finding 46).
-pub const E_INUSE: i32 = -62;
-/// PEEK: the range is not inside a range the device file lists, or the length is 0 or over 512.
-pub const E_PEEK: i32 = -63;
-
-const CMD_INFO: u32 = 0x01;
-const CMD_LIST: u32 = 0x02;
-const CMD_BEGIN: u32 = 0x10;
-const CMD_DATA: u32 = 0x11;
-const CMD_END: u32 = 0x12;
-const CMD_DELETE: u32 = 0x13;
-const CMD_CLEAR: u32 = 0x14;
-const CMD_ABORT: u32 = 0x15;
-const CMD_LOG: u32 = 0x20;
-const CMD_PEEK: u32 = 0x21;
-pub const CMD_LOGCFG: u8 = 0x22;
-const CMD_SELECT: u32 = 0x30;
-const CMD_RESTART: u32 = 0x31;
+// The protocol numbers (commands, the `E_*` statuses, `VERSION`, the INFO capability bits) are `dkrt_sdk::proto`, written by `patchkit gen`
+// from `[protocol]` of `sdk/sdk.toml`. E_INUSE: the card's store area is not ours and not blank, the runtime writes nothing there
+// (finding 46). E_PEEK: the range is not inside a range the device file lists, or the length is 0 or over 512.
 
 /// Largest DATA chunk (INFO says so) and the unpacked body we accept: offset (4) + chunk.
 pub const MAX_CHUNK: u32 = 32768;
@@ -196,7 +170,7 @@ unsafe fn tx_room(wire: usize) -> bool {
 }
 
 /// Send the reply for `cmd`/`seq`: status, then the `extra` bytes already in `RBODY[1..1+extra]`.
-unsafe fn reply(cmd: u32, seq: u32, status: i32, extra: usize) -> i32 {
+unsafe fn reply(cmd: u8, seq: u32, status: i32, extra: usize) -> i32 {
     let rb = addr_of_mut!(RBODY) as *mut u8;
     *rb = status as u8;
     let w = addr_of_mut!(RWIRE) as *mut u8;
@@ -204,14 +178,14 @@ unsafe fn reply(cmd: u32, seq: u32, status: i32, extra: usize) -> i32 {
     *w.add(1) = 0x7d;
     *w.add(2) = 0x64;
     *w.add(3) = 0x6b;
-    *w.add(4) = 1;
-    *w.add(5) = ((cmd | 0x40) & 0x7f) as u8;
+    *w.add(4) = VERSION;
+    *w.add(5) = (cmd | 0x40) & 0x7f;
     *w.add(6) = (seq & 0x7f) as u8;
     let n = pack(rb, 1 + extra, w.add(7));
     *w.add(7 + n) = 0xf7;
     DKRT_UPLOAD_LAST = status;
-    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG as u32 {
-        dlog::ev(logk::UPLOAD, if status == 0 { dlog::INFO } else { logk::F_ERROR }, [cmd, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
+    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG && cmd != CMD_MODULES {
+        dlog::ev(logk::UPLOAD, if status == 0 { dlog::INFO } else { logk::F_ERROR }, [cmd as u32, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
     }
     if !tx_room(8 + n) {
         DKRT_UPLOAD_DROPPED = DKRT_UPLOAD_DROPPED.wrapping_add(1);
@@ -252,12 +226,30 @@ unsafe fn state(buf: *mut u8) -> Result<St, i32> {
         }
         Err(e) => {
             if e == E_NOT_FOUND {
+                // "No store" is an empty range (or one with only a selection record, which also makes the card ours). Bytes in a header sector that are
+                // not a store header are somebody's data: a write would overwrite them, so refuse (finding 46, card safety).
+                if !header_sectors_blank(buf.add(SCRATCH_AT)) {
+                    return Err(E_NOSTORE);
+                }
                 Ok(St { used: 1, seq: 0, count: 0, sectors: 0, copy: 0, agree: true })
             } else {
                 Err(E_NOSTORE)
             }
         }
     }
+}
+
+/// Do both header sectors (A, B) read all 0x00 or all 0xFF? A sector that cannot be read does not count as blank.
+unsafe fn header_sectors_blank(scratch: *mut u8) -> bool {
+    let mut k = 0;
+    while k < 2 {
+        let rel = if k == 0 { 0 } else { HEADER_B };
+        if block_read(FIRST + rel, 512, scratch) != 0 || !card::blank(scratch) {
+            return false;
+        }
+        k += 1;
+    }
+    true
 }
 
 unsafe extern "C" fn rd(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
@@ -476,7 +468,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     };
     let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
     *rb = 0;
-    *rb.add(1) = 1; // protocol 1
+    *rb.add(1) = VERSION; // protocol 1
     *rb.add(2) = (RUNTIME_VERSION >> 8) as u8;
     *rb.add(3) = RUNTIME_VERSION as u8;
     wr32(rb.add(4), crate::device_name()); // the device's short name from its device file
@@ -491,7 +483,99 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     let (oldest, newest) = dlog::range();
     wr32(rb.add(17), oldest);
     wr32(rb.add(21), newest);
-    reply(CMD_INFO, seq, OK, 25)
+    // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
+    wr32(rb.add(25), RUNTIME_VERSION);
+    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES);
+    reply(CMD_INFO, seq, OK, 33)
+}
+
+/// MODULES: the loaded modules and what they hold. Body: `u8 start` (a module record index). Reply: `u32 arena_free, arena_largest, dsp_free,
+/// dsp_largest`, `u8 total` (loaded modules), `u8 n` (records in this reply), then per record `u8 index`, `name[32]`, `u32 version`, 8 contract bytes
+/// (api, machine, fx, service as major, minor), `u32 cf_base, cf_size, dsp_off, dsp_len, rows` (voice rows as a mask), `u8 n_types` and that many machine
+/// type bytes (at most 8: the machine rows of the module, then its voice rows' types), `u32 faults` (the guard's count for those types), `u8 flags` (bit 0:
+/// the guard switched one of them off). A reply holds the records from `start` on that fit; the host asks again from the last index + 1 until it has `total`.
+unsafe fn cmd_modules(seq: u32, body: *const u8, blen: usize) -> i32 {
+    if blen < 1 {
+        return reply(CMD_MODULES, seq, E_MSG, 0);
+    }
+    let start = *body as usize;
+    let s = crate::st();
+    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
+    let (af, al) = crate::arena::stats();
+    let (df, dl) = crate::dsp::area_stats();
+    wr32(rb, af);
+    wr32(rb.add(4), al);
+    wr32(rb.add(8), df);
+    wr32(rb.add(12), dl);
+    let mut total = 0u8;
+    let mut i = 0;
+    while i < crate::MAX_MODULES {
+        if s.modules[i].used != 0 {
+            total += 1;
+        }
+        i += 1;
+    }
+    *rb.add(16) = total;
+    let mut at = 18usize;
+    let mut n = 0u8;
+    let d = crate::dsp::ds();
+    i = start;
+    while i < crate::MAX_MODULES {
+        let m = &s.modules[i];
+        if m.used == 0 {
+            i += 1;
+            continue;
+        }
+        // the machine types: rows of the registry, then voice rows (pinned numbers of a DSP-only module)
+        let mut types = [0u8; 8];
+        let mut nt = crate::registry::types_of(i as u8 + 1, &mut types);
+        let mut r = 0;
+        while r < crate::dsp::MAX_ROWS {
+            if d.row_owner[r] == i as u8 + 1 && d.row_type[r] < 256 && nt < 8 {
+                let t = d.row_type[r] as u8;
+                let mut dup = false;
+                let mut j = 0;
+                while j < nt {
+                    dup |= types[j] == t;
+                    j += 1;
+                }
+                if !dup {
+                    types[nt] = t;
+                    nt += 1;
+                }
+            }
+            r += 1;
+        }
+        if at + 71 + nt > REPLY_BODY_MAX - 1 {
+            break;
+        }
+        *rb.add(at) = i as u8;
+        copy(rb.add(at + 1), m.name.as_ptr(), 32);
+        wr32(rb.add(at + 33), m.version);
+        copy(rb.add(at + 37), (*addr_of!(crate::DKRT_CONTRACTS))[i].as_ptr(), 8);
+        wr32(rb.add(at + 45), m.base);
+        wr32(rb.add(at + 49), m.size);
+        wr32(rb.add(at + 53), d.mod_off[i]);
+        wr32(rb.add(at + 57), d.mod_len[i]);
+        wr32(rb.add(at + 61), d.mod_rows[i]);
+        *rb.add(at + 65) = nt as u8;
+        let mut faults = 0u32;
+        let mut off = false;
+        let mut j = 0;
+        while j < nt {
+            *rb.add(at + 66 + j) = types[j];
+            faults = faults.wrapping_add(dlog::guard_faults(types[j] as u32));
+            off |= dlog::guard_disabled(types[j] as u32);
+            j += 1;
+        }
+        wr32(rb.add(at + 66 + nt), faults);
+        *rb.add(at + 70 + nt) = off as u8;
+        at += 71 + nt;
+        n += 1;
+        i += 1;
+    }
+    *rb.add(17) = n;
+    reply(CMD_MODULES, seq, OK, at)
 }
 
 unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
@@ -832,22 +916,22 @@ unsafe fn cmd_peek(seq: u32, body: *const u8, blen: usize) -> i32 {
 /// Reply (both ops): `u8 default`, 8 module levels, `u8 debug_on`.
 unsafe fn cmd_logcfg(seq: u32, body: *const u8, blen: usize) -> i32 {
     if blen < 1 {
-        return reply(CMD_LOGCFG as u32, seq, E_MSG, 0);
+        return reply(CMD_LOGCFG,seq, E_MSG, 0);
     }
     let op = *body;
     if op == 1 {
         if blen != 10 {
-            return reply(CMD_LOGCFG as u32, seq, E_MSG, 0);
+            return reply(CMD_LOGCFG,seq, E_MSG, 0);
         }
         let mut i = 0;
         while i < 9 {
             let v = *body.add(1 + i);
             if i == 0 {
                 if v > 4 {
-                    return reply(CMD_LOGCFG as u32, seq, E_PROTO, 0);
+                    return reply(CMD_LOGCFG,seq, E_PROTO, 0);
                 }
             } else if v > 4 && v != 0xff {
-                return reply(CMD_LOGCFG as u32, seq, E_PROTO, 0);
+                return reply(CMD_LOGCFG,seq, E_PROTO, 0);
             }
             i += 1;
         }
@@ -858,7 +942,7 @@ unsafe fn cmd_logcfg(seq: u32, body: *const u8, blen: usize) -> i32 {
             i += 1;
         }
     } else if op != 0 {
-        return reply(CMD_LOGCFG as u32, seq, E_PROTO, 0);
+        return reply(CMD_LOGCFG,seq, E_PROTO, 0);
     }
     let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
     *rb = dlog::level_default();
@@ -868,7 +952,7 @@ unsafe fn cmd_logcfg(seq: u32, body: *const u8, blen: usize) -> i32 {
         i += 1;
     }
     *rb.add(9) = if dlog::debug_on() { 1 } else { 0 };
-    reply(CMD_LOGCFG as u32, seq, OK, 10)
+    reply(CMD_LOGCFG,seq, OK, 10)
 }
 
 /// SELECT (runtime 4): save the selection record, the same `boot::selection_set` the menu's APPLY & RESTART calls (so the card range check and
@@ -945,7 +1029,7 @@ pub unsafe fn restart_poll() {
     if (drained && RESTART_WAIT > 3) || RESTART_WAIT > RESTART_TICKS_MAX {
         RESTART_WAIT = 0;
         let r = crate::dkrt_restart();
-        dlog::ev(logk::UPLOAD, logk::F_ERROR, [CMD_RESTART, r as u32, 0, 0, 0]);
+        dlog::ev(logk::UPLOAD, logk::F_ERROR, [CMD_RESTART as u32, r as u32, 0, 0, 0]);
     }
 }
 
@@ -963,10 +1047,10 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
     if len < 8 || *msg.add(len as usize - 1) != 0xf7 {
         return reply(0, 0, E_MSG, 0);
     }
-    let ver = *msg.add(4) as u32;
-    let cmd = *msg.add(5) as u32;
+    let ver = *msg.add(4);
+    let cmd = *msg.add(5);
     let seq = *msg.add(6) as u32;
-    if ver != 1 {
+    if ver != VERSION {
         return reply(cmd, seq, E_PROTO, 0);
     }
     let wire = len - 8;
@@ -990,6 +1074,8 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
         cmd_info(seq, buf)
     } else if cmd == CMD_LIST {
         cmd_list(seq, buf, body, blen)
+    } else if cmd == CMD_MODULES {
+        cmd_modules(seq, body, blen)
     } else if cmd == CMD_BEGIN {
         cmd_begin(seq, buf, body, blen)
     } else if cmd == CMD_DATA {
@@ -1007,7 +1093,7 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
         cmd_log(seq, body, blen)
     } else if cmd == CMD_PEEK {
         cmd_peek(seq, body, blen)
-    } else if cmd == CMD_LOGCFG as u32 {
+    } else if cmd == CMD_LOGCFG {
         cmd_logcfg(seq, body, blen)
     } else if cmd == CMD_SELECT {
         cmd_select(seq, body, blen)

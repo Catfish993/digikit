@@ -36,11 +36,12 @@ FREE_TYPE = 0xFFFF_FFFF
 L2_BYTE_BASE, L2_SW_BASE = 0x2000_0000, 0x00B8_0000
 TRACK_OBJ_WORD = 0x4265338C  # the type byte is the third byte of this word (finding 02)
 MODULES_STATIC = "core/runtime,core/dynreg,core/dyndsp"
-PLUCK_STATIC_TYPE, PLUCK_DYN_TYPE = 9, 18
+PLUCK_STATIC_TYPE = 9
 MODULE = "test/dyn-pluck"
 MODULE_DN2 = "test/dyn-sine-dn2"
 MODULES_STATIC_DN2 = "core/runtime,core/dyndsp,core/machines"  # core/machines in both: the same ColdFire hooks
-SINE_STATIC_TYPE, SINE_DYN_TYPE = 7, 18
+SINE_STATIC_TYPE = 7
+SINE_DYN_TYPE = 18  # the DN2 sine proof pins a run-time number (`[[dsp_voice]] type = 18`); a machine gets its number at load (`BootRig.dyn_type`)
 DN2_TYPE_POKE = "0x94={:#x}"  # byte offset of the DSP frame's halfword 74 (the machine type of slot 0)
 # DspState (modules/core/runtime/src/rs/src/dsp.rs), byte offsets of the fields the proof reads
 D_MAGIC, D_PHASE, D_STEP, D_TRANSFERS, D_ROW_WRITES, D_FAILURES = 0, 4, 12, 36, 40, 44
@@ -64,6 +65,14 @@ class Fail(RuntimeError):
 
 def be32(b: bytes, off: int) -> int:
     return struct.unpack_from(">I", b, off)[0]
+
+
+def machine_hash(module: str, machine: str) -> int:
+    """The 24-bit hash of a run-time machine's global id `<module id>:<machine id>`: the low 24 bits of FNV-1a 32 (D7; `register.rs`)."""
+    h = 0x811C9DC5
+    for b in f"{module}:{machine}".encode():
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h & 0xFFFFFF
 
 
 def sym(plan: dict, owner: str, name: str) -> int:
@@ -295,10 +304,14 @@ class Rig:
     def type_now(self) -> int:
         return (self.w(TRACK_OBJ_WORD) >> 8) & 0xFF
 
-    def select(self, downs: int) -> None:
+    def select(self, downs: int, ups: int = 0) -> None:
+        """Open the machine list, press UP UPS times (the cursor starts at the track's current machine; UP stops at the top) and DOWN `downs` times, commit."""
         s = self.s
         s.do_tap(["FUNC", "SRC"])
         s.run_ms(200)
+        for _ in range(ups):
+            s.do_tap("UP")
+            s.run_ms(80)
         for _ in range(downs):
             s.do_tap("DOWN")
             s.run_ms(80)

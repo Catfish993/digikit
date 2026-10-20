@@ -60,6 +60,7 @@ SELECT also answers the selection record's own codes (runtime codes -40 to -49):
 |---|---|---|---|
 | 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION (4 since SELECT and RESTART, 5 since the DSP guard: voice rows of 16 words, DSP sections of version 2, 24 DSP diagnostic words, log events 27 and 28; the commands are unchanged), device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags, u32 log_oldest, u32 log_newest` (flags: bit 0 safe mode, bit 1 upload open, bit 2 card read-only, bit 3 debug log ON, bit 4 a crash record was found at this boot; the two sequence numbers are those of the oldest and newest event in the log ring, 0 and 0 when empty; runtime 2 stops after the flags) |
 | 0x02 | LIST | `u32 first` | `u32 total, u8 n`, then n entries `path NUL, u32 size, sha256[32]` from index `first`, as many as fit the reply |
+| 0x03 | MODULES (runtime 0.2.0, capability bit 5) | `u8 start` (a module record index) | `u32 arena_free, u32 arena_largest, u32 dsp_free, u32 dsp_largest, u8 total, u8 n`, then `n` records (below). The loaded modules and what they hold; see "MODULES". |
 | 0x10 | BEGIN | `path NUL, u32 size, sha256[32]` | (none). Opens an upload; a BEGIN while one is open drops the old one. |
 | 0x11 | DATA | `u32 offset, bytes` | (none). |
 | 0x12 | END | (none) | (none). Verifies, then commits (below). |
@@ -92,6 +93,33 @@ DATA rules: `offset` equals the next expected byte, or the offset of the previou
 reply is ok and nothing is written again). The length is 1 to 32768 and a multiple of 512, except for the chunk that ends the
 file. The host may keep at most 2 DATA requests in flight; replies come in order.
 
+## MODULES
+
+A read-only command like INFO and LIST: it works in every state (an open upload, safe mode, a read-only card), reads no card sector and is not logged as an UPLOAD event. INFO's `caps` bit 5
+(`CAP_MODULES`) says the runtime has it. `start` is a module record index (0 to 7); the reply holds the used records from `start` on that fit one reply body (880 bytes), so a host asks again from
+the last index + 1 until it has `total` records (`Uploader.modules()` in `tools/device/dkupload.py` does that). `total` is the number of loaded modules (a module whose CF part is in, with its DSP part
+still loading, counts). The four figures are `arena_free` and `arena_largest` (bytes of the ColdFire arena, the largest free block), `dsp_free` and `dsp_largest` (the same for the DSP area; 0 on an image without
+the DSP loader). A record, big endian:
+
+```text
+  0   1  u8 index            module record index
+  1  32  name               the module's name field, NUL padded
+ 33   4  u32 version        the module's packed version (major << 16 | minor << 8 | patch)
+ 37   8  contracts          api, machine, fx, service as (major, minor) bytes, as the file declared them (0 = not declared)
+ 45   4  u32 cf_base        the module's ColdFire block in the arena (image + bss)
+ 49   4  u32 cf_size
+ 53   4  u32 dsp_off        its range in the DSP area (byte offset into the area; 0 and 0 without DSP code)
+ 57   4  u32 dsp_len
+ 61   4  u32 rows           the DSP voice rows it owns, as a bit mask
+ 65   1  u8 n_types         0 to 8
+ 66  nt  type bytes         the machine types it has: its machine rows (the types the boot assigned, in type order), then its voice rows' types not listed yet (a pinned voice type)
+ 66+nt 4 u32 faults        the DSP guard's fault count for those types since the boot
+ 70+nt 1 u8 flags          bit 0: the guard has switched one of them off
+```
+
+A record is 71 + `n_types` bytes. `faults` and the flag come from the guard words the runtime polls once a second (`DSP_DIAG` words 17 to 23): they name only the type of the *last* fault and of the last type switched off,
+so the count is exact for one faulting type and, when two types fault inside one poll, goes to the last one. `dkupload --port NAME modules` (`mise run dk:store -- --port NAME modules`) prints a header with the free space and one line per module.
+
 ## The debug log (LOG and PEEK; finding 46)
 
 The runtime keeps a RAM ring of 512 events (`modules/core/runtime/src/rs/src/dlog.rs`): boot steps, safe mode and why, the card check, each module's
@@ -105,7 +133,7 @@ firmware's TX ring has room, so a host that does not read its input cannot hang 
 
 Every card write of the runtime goes through one function, which refuses (a) any write outside the store range of the device file (`[card.store]`; error
 `E_RANGE` inside the runtime, counted, logged) and (b) every write when the store area is neither ours nor blank. At boot (or at the first write when no boot
-hook ran) the runtime looks: the area is **ours** when store header A or B is a valid header or a selection copy is valid; otherwise every sector of the range
+hook ran) the runtime looks: the area is **ours** when store header A or B is a valid header or a selection copy is valid (when only a selection copy is valid and *both* header sectors hold bytes that are neither a store header nor blank, the upload commands (BEGIN, DELETE, LIST) answer `E_NOSTORE`: the store is somebody's data and is not treated as empty); otherwise every sector of the range
 must read all 0x00 or all 0xFF (**blank**, read once, 64 KiB at a time, stopping at the first sector that is not); else it is **foreign** (or **unreadable**
 when a read failed) and the runtime is read-only for this card: no boot counter (so no safe mode by counter), no selection, no upload (BEGIN, DELETE and CLEAR
 answer `E_INUSE`; INFO, LIST, LOG and PEEK still work), ABOUT shows `CARD READ-ONLY` and where the foreign data starts, and the log has one error event with the

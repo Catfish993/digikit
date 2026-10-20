@@ -7,6 +7,7 @@
 //! - `mock`: an in-memory device that follows the spec's state rules, for tests.
 //! - `wasm`: the C ABI the web app loads.
 pub mod codec;
+mod gen_proto;
 pub mod mock;
 pub mod proto;
 pub mod put;

@@ -15,6 +15,7 @@ use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
 mod arena;
+mod assign;
 pub mod boot;
 pub mod card;
 pub mod crash;
@@ -98,6 +99,9 @@ pub static mut DKRT_STATE: State = unsafe { core::mem::zeroed() };
 /// The store path each module record was loaded from (kept apart from `State`, whose layout the proof tools peek).
 #[no_mangle]
 pub static mut DKRT_PATHS: [[u8; 64]; MAX_MODULES] = [[0; 64]; MAX_MODULES];
+/// The contract versions each module record declared: api, machine, fx, service as (major, minor) bytes (`MODULES` reports them).
+#[no_mangle]
+pub static mut DKRT_CONTRACTS: [[u8; 8]; MAX_MODULES] = [[0; 8]; MAX_MODULES];
 #[no_mangle]
 pub static mut DKRT_MAILBOX: Mailbox = Mailbox {
     cmd: 0,

@@ -1,6 +1,6 @@
-# The module contract: version numbers and log kinds. `patchkit gen` writes
-# modules/core/runtime/sdk/src/gen_sdk.rs and tools/device/dklog_kinds.py from this file
-# (`patchkit gen --check` fails when they are stale).
+# The module contract: version numbers, log kinds and the SysEx protocol numbers. `patchkit gen` writes
+# modules/core/runtime/sdk/src/gen_sdk.rs, tools/device/dklog_kinds.py, tools/device/dkproto.py and
+# packages/dkupload/src/gen_proto.rs from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
 version = "0.2.0"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
@@ -199,3 +199,99 @@ args = ["type", "disabled", "faults", "-", "-"]
 id = 29
 name = "TABLE_BAD"
 args = ["invariant", "module", "a", "b", "-"]
+
+# a run-time machine got its type number at the boot load (docs/design/module-sdk.md 11.5 D7); `sticky` 1: the number the card remembered
+[[log.kind]]
+id = 30
+name = "MACHINE_TYPE_ASSIGNED"
+args = ["hash", "type", "sticky", "-", "-"]
+
+# the map of remembered numbers was full and an entry of a module that is not loaded in this boot was dropped
+[[log.kind]]
+id = 31
+name = "MACHINE_TYPE_EVICTED"
+args = ["hash", "type", "-", "-", "-"]
+
+[protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
+version = 1         # the request version byte; a request with another version gets E_PROTO
+
+[protocol.commands] # command numbers; never reuse or renumber (additive only)
+INFO = 0x01
+LIST = 0x02
+MODULES = 0x03      # the loaded modules with their ranges, types and faults
+BEGIN = 0x10
+DATA = 0x11
+END = 0x12
+DELETE = 0x13
+CLEAR = 0x14
+ABORT = 0x15
+LOG = 0x20
+PEEK = 0x21
+LOGCFG = 0x22
+SELECT = 0x30
+RESTART = 0x31
+
+[protocol.status]   # reply status codes of the upload commands (0 = ok); never renumber
+E_MSG = { code = -50, text = "body too short or malformed" }
+E_PATH = { code = -51, text = "path breaks the store rules" }
+E_FULL = { code = -52, text = "not enough free sectors in the store" }
+E_STATE = { code = -53, text = "no upload open (or not in this state)" }
+E_OFFSET = { code = -54, text = "offset is neither the next byte nor a retry" }
+E_LENGTH = { code = -55, text = "bad chunk length, or the file would pass its size" }
+E_HASH = { code = -56, text = "the staged file does not match the sha256 of BEGIN" }
+E_WRITE = { code = -57, text = "the firmware's block write failed" }
+E_READ = { code = -58, text = "the firmware's block read failed" }
+E_NOFILE = { code = -59, text = "that path is not in the store" }
+E_PROTO = { code = -60, text = "unknown protocol version, command or option" }
+E_NOSTORE = { code = -61, text = "the store header is unreadable (CLEAR still works)" }
+E_INUSE = { code = -62, text = "the card's store area is not ours and not blank" }
+E_PEEK = { code = -63, text = "PEEK range not allowed, or length 0 or over 512" }
+
+[protocol.caps]     # INFO capability bits (bit numbers of the `caps` word)
+LOG = 0
+PEEK = 1
+LOGCFG = 2
+SELECT = 3
+RESTART = 4
+MODULES = 5
+
+[load.status]       # result codes of `dkrt_load` and the boot-time selection (also the status of SELECT); never renumber
+E_NOT_FOUND = { code = -1, text = "no store, or no such file or module" }
+E_BAD_STORE = { code = -2, text = "store header or table check failed" }
+E_READ = { code = -3, text = "the firmware's block read failed" }
+E_SHA = { code = -4, text = "store or .dkm sha256 does not match" }
+E_FORMAT = { code = -5, text = "bad magic, version, bounds or alignment of the .dkm" }
+E_RUNTIME = { code = -6, text = "the module needs a newer runtime" }  # reserved
+E_IMPORT = { code = -7, text = "an import name is not in the runtime's table" }
+E_NOMEM = { code = -8, text = "arena full" }
+E_INIT = { code = -9, text = "init returned non-zero" }
+E_LOADED = { code = -10, text = "a module of that name is loaded" }
+E_SLOT = { code = -11, text = "a slot it binds is taken" }
+E_BUSY = { code = -12, text = "a task is still inside the module" }
+E_TOO_BIG = { code = -13, text = "larger than the staging buffer" }
+E_TABLE_FULL = { code = -14, text = "no free module record" }
+E_NO_REGISTRY = { code = -20, text = "register records, but the image has no registry" }
+E_REG_DEVICE = { code = -21, text = "the records are for another device" }
+E_TYPE_RANGE = { code = -22, text = "machine type outside the range, or bad clone_of" }
+E_TYPE_USED = { code = -23, text = "the type number is in use" }
+E_PARAM_FULL = { code = -24, text = "no free reserved parameter row" }
+E_PAGE_FULL = { code = -25, text = "no free reserved page row (Digitone II)" }
+E_TYPE_IN_USE = { code = -26, text = "reserved (hot reload is archived); never returned" }
+E_NO_DSP = { code = -30, text = "DSP code in the file, no DSP loader in the image" }
+E_DSP_FORMAT = { code = -31, text = "the DSP section is malformed" }
+E_DSP_IMPORT = { code = -32, text = "a DSP symbol is not exported by the image" }
+E_DSP_NOSPACE = { code = -33, text = "no free range in the DSP area" }
+E_DSP_ROWS = { code = -34, text = "no free voice row" }
+E_DSP_XFER = { code = -35, text = "the transfer to the DSP failed or timed out" }
+E_DSP_DEVICE = { code = -36, text = "the DSP code is for the other device" }
+E_DSP_TYPE = { code = -37, text = "voice type out of range, or used by another module" }
+E_SEL_PATH = { code = -40, text = "a selection path is empty, too long or bad" }
+E_SEL_COUNT = { code = -41, text = "more selection paths than the record holds" }
+E_SEL_WRITE = { code = -42, text = "the firmware's block write failed" }
+E_CARD_BUSY = { code = -43, text = "a card transfer is in flight" }
+E_SAFE_MODE = { code = -44, text = "this boot is in safe mode: no module was loaded" }
+E_BOOT_ONLY = { code = -45, text = "the module set is fixed after the boot hook" }
+E_RANGE = { code = -46, text = "a card write outside the store range" }
+E_CARD_RO = { code = -47, text = "the card's store area is not ours and not blank" }
+E_CONTRACT = { code = -48, text = "the module was built for another SDK contract" }
+E_TABLE = { code = -49, text = "the runtime's tables failed their check" }
