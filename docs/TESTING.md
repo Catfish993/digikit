@@ -125,7 +125,7 @@ cells (`uv run python -m tools.patchkit.pk_harness run`, run by the coordinator)
 Tiers: `DIGIKIT_TIER=quick` (default; the scenarios marked `tier = "quick"`, the newest image of each device) is what `mise run verify` runs when
 a framework module (see the routing table), a scenario, a module a scenario names, the `.dkm` packer, `plusdrive`, the boot tools or `tests/digikit` changed (the
 suite `digikit-boot` in `tools/devtools/verify.py` and `verify_route.py`; one pytest file per group, so they run in parallel); `verify --full` sets `DIGIKIT_TIER=full`: every
-scenario, on the newest image of each device (DT2 1.17, DN2 1.12). The quick tier is the pluck equivalence (both devices), the DN2 set and the DT2 round trip (under a minute in parallel);
+scenario, on the newest image of each device (DT2 1.17, DN2 1.12). The quick tier is the pluck equivalence (both devices), the DN2 set and the DT2 round trip (under a minute in parallel), and since sticky machine ids `sticky-types` (the type numbers, the map, eviction) and the MODULES part of `debug-log`; `debug-guard` (full tier) runs on both images;
 safe mode and the power cut run in the full tier. Cards are cached by content in `out/cache/digikit/cards/` (read-only for the guest; its writes live in an overlay),
 so a repeated scenario reuses the daemon's boot cache; most of the time of a scenario is emulated panel time (a project save and load take about 10 s each), not the boots.
 A scenario file is `tests/digikit/scenarios/NAME.toml`: `[scenario] name, kind, devices, tier`, and a table named like the kind (the runner's docstring lists the keys).
