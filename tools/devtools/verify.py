@@ -32,7 +32,9 @@ tier steps run NO_AOT_SUBSET (a fixed subset of the FX scenarios, documented the
 for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups into small chunks of scenarios and run
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
 check-no-aot runs CHECK_NO_AOT_K, 17 of the 61 oracle tests (--all-no-aot: all).
-python-tests runs the PY_GATE files, the PY_SUITES whose trigger prefixes match a changed file,
+python-tests runs the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
+import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
+a test directory only for the other files),
 every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
 test files that import a changed tests/support module. With
 --full it runs PY_GATE plus every suite, not all of tests/ (`mise run test` runs all of tests/).
@@ -81,18 +83,17 @@ from tools.emulator import (  # noqa: E402
 PY = ["uv", "run", "python"]
 FX_FILES = ("tests/scenarios/dn2-trackfx.json", "tests/scenarios/dn2-sendfx.json")
 DT2_FX_FILES = ("tests/scenarios/dt2-trackfx.json", "tests/scenarios/dt2-sendfx.json")
-# python-tests always runs PY_GATE. A suite of PY_SUITES, (name, trigger prefixes, test
-# paths), runs when a changed file starts with one of its prefixes (all suites with
-# --full). Test paths may be globs or directories; one that matches nothing is an error.
+# python-tests always runs PY_GATE: lint, types, paths and the staleness checks (built module objects and
+# port files match their sources). A suite of PY_SUITES, (name, trigger prefixes, test paths), runs when a
+# changed file starts with one of its prefixes (all suites with --full); a suite with a test directory
+# triggers only on files that are not Python modules of tools/ or tests/, which select the tests that
+# reach them in the import graph instead (changed_tests.gate_tests). Test paths may be globs or
+# directories; one that matches nothing is an error.
 PY_GATE = (
-    "tests/sharc/integration/test_sharc_golden.py",
-    "tests/sharc/semantics/test_sharc_denormal.py",
-    "tests/sharc/generation/test_sharc_rsgen_density.py",
     "tests/devtools/test_lint.py",
     "tests/devtools/test_types.py",
     "tests/devtools/test_pathcheck_repo.py",
-    "tests/patchkit/test_patchkit.py",
-    "tests/patchkit/test_patchkit_expansion.py",
+    "tests/patchkit/test_pk_current.py",
 )
 PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
@@ -133,6 +134,21 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "tests/digikit/",
         ),
         ("tests/digikit",),
+    ),
+    (
+        # the SHARC core and its generator (CORE_FINGERPRINT); in PY_GATE until 2026-10-21, so --full keeps them
+        "sharc-core",
+        (
+            "tools/sharc_dev/sharc_core/",
+            "tools/sharc_dev/sharc_transpile/",
+            "tools/sharc_dev/sharc_transpile_infer.py",
+            "tools/sharc_dev/sharc_rsgen.py",
+        ),
+        (
+            "tests/sharc/integration/test_sharc_golden.py",
+            "tests/sharc/semantics/test_sharc_denormal.py",
+            "tests/sharc/generation/test_sharc_rsgen_density.py",
+        ),
     ),
     (
         "control-client",
@@ -463,6 +479,15 @@ def route(path: str) -> tuple[str, tuple[str, ...]]:
     return "fallback", FALLBACK
 
 
+def is_python_source(path: str) -> bool:
+    """A .py file of tools/ or tests/ outside tests/scenarios/ (python-tests routes it by the import graph)."""
+    return (
+        path.endswith(".py")
+        and path.startswith(("tools/", "tests/"))
+        and not path.startswith("tests/scenarios/")
+    )
+
+
 def is_changed_test(path: str) -> bool:
     """A changed test file that python-tests runs itself (scenario tests have steps)."""
     name = path.rsplit("/", 1)[-1]
@@ -504,13 +529,23 @@ def python_test_plan(files: list[str], full: bool) -> list[tuple[str, str]]:
     """(pytest path, source) in run order, without duplicates: the gate files, the
     suites a changed file triggers (all of them when FULL), changed test files, then
     the tests that import a changed tests/support/ module."""
+    from tools.devtools import changed_tests  # it imports this module
+
     plan_: list[tuple[str, str]] = [(path, "gate") for path in PY_GATE]
     full = full or any(f.startswith(SELF_BROAD) for f in files)
     finer = {f: verify_route.fine(f) for f in files if not f.endswith(".md")}
     coarse = [f for f in files if finer.get(f) is None]
+    # A changed Python module selects the tests that reach it in the import graph; the suites that
+    # name a test directory trigger only on the other files (and on a module the root conftest reaches).
+    graph_tests, conftest_broad = changed_tests.gate_tests(
+        [f for f in coarse if is_python_source(f)]
+    )
+    by_dir = [f for f in coarse if not is_python_source(f) or f in conftest_broad]
     for name, triggers, tests in PY_SUITES:
-        if full or any(f.startswith(triggers) for f in coarse):
+        hit = by_dir if any((ROOT / t).is_dir() for t in tests) else coarse
+        if full or any(f.startswith(triggers) for f in hit):
             plan_ += [(path, name) for path in resolve_tests(tests)]
+    plan_ += [(t, "imports") for t in graph_tests]
     plan_ += [(t, f.label) for f in finer.values() if f for t in f.tests]
     plan_ += [(f, "changed") for f in files if is_changed_test(f)]
     plan_ += [(t, "support") for f in files for t in support_users(f)]

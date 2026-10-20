@@ -16,6 +16,7 @@ normal priority) and sets cargo's and libtest's pools from the verify CPU budget
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import subprocess
 import time
@@ -46,10 +47,71 @@ class Selection:
     deep_only: dict[str, str] = field(default_factory=dict)  # selected by --deep only
 
 
+# A module named in a string: `-m tools.x.y`, `-m support.x` (tests/ is on the pytest path), or a script path.
+_RUN_NAME = re.compile(r"(?:tools|support)(?:\.\w+)+|(?:tools|tests)/[\w/]+\.py")
+
+
+def _named_module(text: str) -> str | None:
+    if text.startswith("support."):
+        return "tests." + text
+    if text.endswith(".py"):
+        return module_of(text)
+    return text
+
+
 @cache
 def graph() -> grimp.ImportGraph:
+    """The import graph of tools/ and tests/, corrected in three ways:
+    - an import inside a function of a tools module is dropped: it runs only when that function runs, and
+      such edges join unrelated tools (tools/emulator/digi_env.py reaches all of patchkit through one);
+    - a test's import of a helper by its pytest path (`support.x`, a sibling `scen_cases`) is an edge to the
+      tests.* module (grimp does not resolve those names);
+    - a module named by a whole string constant (`[sys.executable, "-m", "tools.x.y"]`, a script path) is an
+      edge: the module runs it in a subprocess."""
     # tests/ is a namespace package; grimp reads it all the same
-    return grimp.build_graph("tools", "tests", cache_dir=None)
+    g = grimp.build_graph("tools", "tests", cache_dir=None)
+    mods = set(g.modules)
+    for mod in sorted(mods):
+        try:
+            text = (ROOT / path_of(mod)).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if mod.startswith("tools."):
+            lines = text.splitlines()
+            for dst in sorted(g.find_modules_directly_imported_by(mod)):
+                details = g.get_import_details(importer=mod, imported=dst)
+                if details and all(
+                    lines[d["line_number"] - 1][:1] in (" ", "\t") for d in details
+                ):
+                    g.remove_import(importer=mod, imported=dst)
+        try:
+            nodes = list(ast.walk(ast.parse(text)))
+        except SyntaxError:
+            nodes = []
+        targets = {
+            _named_module(n.value) or ""
+            for n in nodes
+            if isinstance(n, ast.Constant)
+            and isinstance(n.value, str)
+            and _RUN_NAME.fullmatch(n.value)
+        }
+        if mod.startswith("tests."):
+            # pytest puts tests/ and each test's own directory on the path: `support.x`, `from support import x`
+            # and a sibling helper (`from scen_cases import run` in tests/digikit) are tests.* modules
+            here = mod.rsplit(".", 1)[0]
+            for n in nodes:
+                if isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+                    names = [n.module] + [f"{n.module}.{a.name}" for a in n.names]
+                elif isinstance(n, ast.Import):
+                    names = [a.name for a in n.names]
+                else:
+                    continue
+                targets |= {f"tests.{x}" for x in names} | {
+                    f"{here}.{x}" for x in names
+                }
+        for dst in sorted(targets & mods - {mod}):
+            g.add_import(importer=mod, imported=dst)
+    return g
 
 
 def module_of(path: str) -> str | None:
@@ -145,6 +207,25 @@ def deep_tests(module: str) -> dict[str, str]:
         if is_test_file(path) and path not in direct:
             out[path] = f"reaches {module} through tools"
     return out
+
+
+def gate_tests(files: list[str]) -> tuple[dict[str, str], list[str]]:
+    """For the merge gate (tools/devtools/verify.py): test path -> reason for the tests that reach a changed
+    Python module of tools/ or tests/ through any chain of the graph or run it by name, and the changed files
+    whose module the root conftest reaches (every test imports them: verify keeps their directory suites)."""
+    g = graph()
+    out: dict[str, str] = {}
+    broad: list[str] = []
+    for f in files:
+        module = module_of(f)
+        if module is None or is_test_file(f) or module not in g.modules:
+            continue
+        if "tests.conftest" in g.find_downstream_modules(module):
+            broad.append(f)
+        for t, reason in {**importing_tests(module), **deep_tests(module)}.items():
+            if not t.startswith("tests/scenarios/"):
+                out.setdefault(t, reason)
+    return out, broad
 
 
 def framework_tests(mid: str) -> list[str]:
