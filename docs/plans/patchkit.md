@@ -352,7 +352,7 @@ clicks while the knob moves, no fault. 20 to 968 DSP instructions per block.
 ### Phase 2: developer loop and harness (about 3 days, high)
 
 - [x] mise tasks above (`patch:new`, `patch:dev`, `patch:test`); module template; agent skill
-      `.claude/skills/digikit-module/`.
+      `.agents/skills/digikit-module/`.
 - [x] Emulator: emit `fault` and `halt` events; main-loop heartbeat (+ `stall` event); check whether the MCF5441x
       watchdog is modelled (no: and the firmware never configures it, finding 17).
 - [x] Harness: smoke tour, goldens, stress, matrix; `patch:dev` watch loop.

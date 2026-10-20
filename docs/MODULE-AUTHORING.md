@@ -23,8 +23,8 @@ root.
 ## Start: a new machine
 
 ```sh
-mise run module:new -- em/my-synth --machine                  # modules/machines/my-synth/
-mise run module:new -- em/my-synth --machine --dir ~/mods     # ~/mods/my-synth/ (outside the repository)
+mise run module:new -- em/my-synth --machine                  # modules/machines/NAME/
+mise run module:new -- em/my-synth --machine --dir ~/mods     # ~/mods/NAME/ (outside the repository)
 ```
 
 `AUTHOR/NAME` is the module id. The command copies the template (`tests/fixtures/modules/sine`, a sine machine with one level
