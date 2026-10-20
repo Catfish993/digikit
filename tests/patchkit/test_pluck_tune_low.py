@@ -1,4 +1,4 @@
-"""machines/pluck tuning, notes 24 and 36 (the longest renders; a file of their own for verify's parallel python-tests)."""
+"""digikit/pluck tuning, notes 24 and 36 (the longest renders; a file of their own for verify's parallel python-tests)."""
 
 import numpy as np
 import pytest

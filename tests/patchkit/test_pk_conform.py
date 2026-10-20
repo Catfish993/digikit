@@ -4,8 +4,8 @@ from tools.patchkit import pk_conform as c
 
 
 def test_pluck_parameters_come_from_the_manifest_and_the_device_frame():
-    dt2 = c.spec("machines/pluck", "dt2")
-    dn2 = c.spec("machines/pluck", "dn2")
+    dt2 = c.spec("digikit/pluck", "dt2")
+    dn2 = c.spec("digikit/pluck", "dn2")
     assert dt2 is not None and dn2 is not None
     # Digitakt II: TUNE is the stock row 0xca on knob 0; knobs 1, 2, 4, 5 are the module's; the frame skips two halfwords per group of four
     assert [(p.id, p.knob) for p in dt2.params] == [
@@ -33,15 +33,15 @@ def test_pluck_parameters_come_from_the_manifest_and_the_device_frame():
 def test_machines_are_found_and_the_framework_is_not():
     labels = {s.label for s in c.machine_specs()}
     assert {
-        "machines/pluck@dt2",
-        "machines/pluck@dn2",
+        "digikit/pluck@dt2",
+        "digikit/pluck@dn2",
         "test/sine-voice@dt2",
         "test/dn2-sine@dn2",
     } <= labels
     assert not any(label.startswith("core/") for label in labels)
     assert "test/dyn-dsp-hang@dt2" in {s.label for s in c.machine_specs(negative=True)}
     assert not c.is_machine_module(
-        "machines/xslice"
+        "test/xslice"
     )  # a machine row without a DSP routine
 
 
@@ -55,7 +55,7 @@ def test_the_budget_follows_the_headroom_of_the_device():
 
 
 def test_the_cases_cover_the_groups_and_are_deterministic():
-    sp = c.spec("machines/pluck", "dt2")
+    sp = c.spec("digikit/pluck", "dt2")
     assert sp is not None
     cases = c.cases(sp)
     assert cases == c.cases(sp)

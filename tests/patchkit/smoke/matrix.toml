@@ -9,7 +9,7 @@ modules = []
 [[cell]]
 device = "dt2"
 firmware = "1.17"
-modules = ["fx/master-gain", "test/cf-demo"]
+modules = ["digikit/master-gain", "test/cf-demo"]
 
 [[cell]]
 device = "dn2"
@@ -19,12 +19,12 @@ modules = []
 [[cell]]
 device = "dn2"
 firmware = "1.12"
-modules = ["fx/master-gain", "test/cf-demo"]
+modules = ["digikit/master-gain", "test/cf-demo"]
 
 [[cell]]
 device = "dt2"
 firmware = "1.17"
-modules = ["core/machines", "machines/xslice"]
+modules = ["core/machines", "test/xslice"]
 
 [[cell]]
 device = "dt2"
@@ -34,13 +34,13 @@ modules = ["core/machines", "test/machine-clone"]
 [[cell]]
 device = "dt2"
 firmware = "1.17"
-modules = ["core/dsp-voice", "core/machines", "core/params", "machines/pluck"]
+modules = ["core/dsp-voice", "core/machines", "core/params", "digikit/pluck"]
 
 # The device on the desk runs DT2 1.17.
 [[cell]]
 device = "dt2"
 firmware = "1.17"
-modules = ["fx/master-drive"]
+modules = ["digikit/master-drive"]
 
 # Rust on the ColdFire (finding 26)
 [[cell]]
@@ -62,7 +62,7 @@ modules = ["core/machines", "core/dsp-voice", "test/dn2-sine"]
 [[cell]]
 device = "dn2"
 firmware = "1.12"
-modules = ["core/machines", "core/params", "core/dsp-voice", "machines/pluck"]
+modules = ["core/machines", "core/params", "core/dsp-voice", "digikit/pluck"]
 
 [[cell]]
 device = "dn2"

@@ -1,5 +1,5 @@
 [module]
-id = "fx/master-gain"
+id = "digikit/master-gain"
 version = "0.1.0"
 name = "Master gain"
 category = "fx"

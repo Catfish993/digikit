@@ -9,7 +9,7 @@ The break is made in a copy of the module sources (out/broken/KIND/modules; the 
 
   persist  core/machines leaves the persistence immediate at the stock value: a saved project does not keep the
            machine type (the type falls back to SAMPLE or FM TONE when the project is loaded).
-  rows     machines/pluck lists DECAY and PICK in each other's descriptor fields (a wrong parameter mapping): the
+  rows     digikit/pluck lists DECAY and PICK in each other's descriptor fields (a wrong parameter mapping): the
            knobs, the names and the sound of those two parameters are exchanged.
 
 `PK_PROOF_IMAGE` makes every proof session that has modules load that image instead of the patch of its modules

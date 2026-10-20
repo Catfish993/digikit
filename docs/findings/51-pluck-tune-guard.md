@@ -6,7 +6,7 @@ run runtime 5.**
 
 ## 1. The failure
 
-On Em's Digitakt II an LFO on the TUNE knob of `machines/pluck` (run as `test/dyn-pluck`) silenced every track. The DSP kept running (`dispatches` = `returns` in
+On Em's Digitakt II an LFO on the TUNE knob of `digikit/pluck` (run as `test/dyn-pluck`) silenced every track. The DSP kept running (`dispatches` = `returns` in
 the log, no `DSP_STOPPED`): nothing halted, a voice's block carried Inf/NaN into the send FX, which keep it (their feedback never loses it).
 
 **Cause [D].** `pluck.s` computes `x = (pitch + TUNE - 16384) / 3072` with no limit and the loop period `P = P0 2^-x` (P0 = 5870.99, `fs / f0` of note 0 plus

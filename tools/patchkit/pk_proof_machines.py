@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""patchkit Phase 3 proof: core/machines on Digitakt II 1.17 (machines/xslice and a second clone).
+"""patchkit Phase 3 proof: core/machines on Digitakt II 1.17 (test/xslice and a second clone).
 
     uv run python -m tools.patchkit.pk_proof_machines [--fw 1.17] [--out DIR] [--only a,b,c] [--quick] [--jobs N]
 
@@ -62,8 +62,8 @@ SLICE_DOWNS = (
 XSLICE_DOWNS = 7
 XCLONE_DOWNS = 8
 FW = "1.17"  # --fw
-MODS_ONE = ["core/machines", "machines/xslice"]
-MODS_TWO = ["core/machines", "machines/xslice", "test/machine-clone"]
+MODS_ONE = ["core/machines", "test/xslice"]
+MODS_TWO = ["core/machines", "test/xslice", "test/machine-clone"]
 
 
 class Proof(K.Proof):
@@ -450,7 +450,7 @@ class Proof(K.Proof):
 
 
 PARTS = [
-    K.Part("a", "select (stock, then machines/xslice)", Proof.part_a, True, 90),
+    K.Part("a", "select (stock, then test/xslice)", Proof.part_a, True, 90),
     K.Part(
         "b",
         "persistence (patched save and load, then stock load)",

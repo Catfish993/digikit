@@ -46,7 +46,7 @@ real extents are ours: `pk_sharc` now takes the instruction rows from our decode
 listing against them (same length, or a shorter listing whose missing parcels are zero) and each relocation
 against our instruction starts.
 
-## fx/master-gain through patchkit **[D]**
+## digikit/master-gain through patchkit **[D]**
 
 Module `modules/fx/master-gain`: the spike 0.7 routine as Selache source, its gain word in its own data section,
 the CALL of the Q31 converter retargeted by `patchkit` (op `retarget`), placed first-fit in `dsp.l2` (DT2
@@ -94,7 +94,7 @@ module whenever an object is placed in `cf.expansion` and puts the `DKPR` record
 ## Browser **[D]**
 
 `apps/web/public/patchkit.wasm` (638 KB, gitignored, built by `tools/emulator/native_wasm.py`; it embeds no port and no
-firmware hash) applies `fx/master-gain` to DT2 1.17 and DN2 1.12 byte-identically to the command line, plan.json
+firmware hash) applies `digikit/master-gain` to DT2 1.17 and DN2 1.12 byte-identically to the command line, plan.json
 included, and refuses what the command line refuses (`apps/web/tests/patchkit.test.mjs`).
 
 ## Limits and open **[O]**

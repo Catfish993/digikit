@@ -68,7 +68,7 @@ def panel(page: int, encoder: int, events: int, detents: int) -> list[dict]:
     return ev
 
 
-# machines/pluck is a real machine now (core/machines gives it its type, core/params its knobs): its proof is
+# digikit/pluck is a real machine now (core/machines gives it its type, core/params its knobs): its proof is
 # tools/patchkit/pk_proof_pluck.py. `analyse_pluck` stays here for it.
 PLUCK_CASES: dict[str, int] = {}
 

@@ -545,7 +545,7 @@ addr = 0x401fa460
 len = 60
 sha256 = "e964b0124fc1521d4e117a685dad0d285160adc67c204c39ae68bc3e35eb87e7"
 mark = "D"
-rule = "fx/master-drive:cf_words"
+rule = "digikit/master-drive:cf_words"
 
 [[anchor]]
 name = "cf.params.bound.0"
@@ -1939,7 +1939,7 @@ src = 0x28385f1e
 len = 6
 sha256 = "e1448b7785185b63ba33eab08d216f7efca68e58eb194042c7c45df0f948d4f1"
 mark = "D"
-rule = "fx/master-drive:sharc_mem_addr"
+rule = "digikit/master-drive:sharc_mem_addr"
 
 [[anchor]]
 name = "dsp.master.float_buf"
@@ -1950,7 +1950,7 @@ src = 0x28393a9c
 len = 6
 sha256 = "49c14d830f1886f48c876c6240b992a3ed118205f79f162c2fd27a0b0c365086"
 mark = "D"
-rule = "fx/master-drive:sharc_literal"
+rule = "digikit/master-drive:sharc_literal"
 
 [[anchor]]
 name = "dsp.master.q31_call"
@@ -1961,7 +1961,7 @@ pm = 0x1c9fd2
 len = 6
 sha256 = "c2627c190c8073f09b2584daf95904b97de08d603a747c0ff3b38efbcf824de5"
 mark = "D"
-rule = "fx/master-drive:sharc_func"
+rule = "digikit/master-drive:sharc_func"
 
 [[anchor]]
 name = "dsp.master.q31_converter"
@@ -1972,7 +1972,7 @@ pm = 0x1c9d3f
 len = 6
 sha256 = "cfc6c05db50b7bdc5c7f98ab7f784044cba07bce6869dbef544f229902072dd2"
 mark = "D"
-rule = "fx/master-drive:sharc_func"
+rule = "digikit/master-drive:sharc_func"
 
 [[anchor]]
 name = "dsp.voice.frame_base"

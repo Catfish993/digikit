@@ -1,4 +1,4 @@
-# fx/master-gain: the gain word is 1.0 as built, so the master bus must still play and nothing may fault or halt.
+# digikit/master-gain: the gain word is 1.0 as built, so the master bus must still play and nothing may fault or halt.
 [test]
 name = "audible"
 devices = ["dt2", "dn2"]

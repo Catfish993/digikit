@@ -29,12 +29,12 @@ def test_ids_are_unique_and_every_manifest_is_found() -> None:
 def test_fixture_ids_stay_test_slash_name() -> None:
     d = modroots.module_dir("test/dyn-pluck")
     assert d == ROOT / "tests" / "fixtures" / "modules" / "dyn-pluck"
-    assert modroots.module_dir("machines/pluck") == ROOT / "modules/machines/pluck"
+    assert modroots.module_dir("digikit/pluck") == ROOT / "modules/machines/pluck"
 
 
 def test_module_id_of_a_path() -> None:
     assert (
-        modroots.module_id("modules/machines/pluck/src/dsp/pluck.s") == "machines/pluck"
+        modroots.module_id("modules/machines/pluck/src/dsp/pluck.s") == "digikit/pluck"
     )
     assert (
         modroots.module_id(ROOT / "tests/fixtures/modules/dyn-pluck/module.toml")
@@ -46,9 +46,9 @@ def test_module_id_of_a_path() -> None:
 def test_a_duplicate_id_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     d = tmp_path / "x"
     d.mkdir()
-    (d / "module.toml").write_text(TOML.format(id="machines/pluck"))
+    (d / "module.toml").write_text(TOML.format(id="digikit/pluck"))
     monkeypatch.setenv("PATCHKIT_MODULES", str(tmp_path))
-    with pytest.raises(SystemExit, match="duplicate module id machines/pluck"):
+    with pytest.raises(SystemExit, match="duplicate module id digikit/pluck"):
         modroots.manifests()
 
 

@@ -9,9 +9,9 @@
 
 Writes `modules/<category>/<name>/`: `module.toml`, `src/cf/<name>.c` and/or `src/dsp/<name>.s`, `tests/smoke.toml`
 (the quick tests `module:dev` and `patch:test` run), `README.md`, `gallery/icon.svg`; then builds the objects with
-tools/patchkit/pk_build.py, so the template is known to compile. The DSP stub reuses the anchor rules of fx/master-gain (rules
+tools/patchkit/pk_build.py, so the template is known to compile. The DSP stub reuses the anchor rules of digikit/master-gain (rules
 only: masked signatures and hashes, never firmware bytes). A new module claims `dsp.master.hook` when it has a DSP
-part, so it conflicts with fx/master-gain: pick one at a time until the master-fx framework (Phase 3) exists.
+part, so it conflicts with digikit/master-gain: pick one at a time until the master-fx framework (Phase 3) exists.
 
 A machine module (`--machine`) gets its permanent type number per device: the next free number in
 modules/core/machines/types.toml, which the script appends and prints. The file is committed with the module; a number

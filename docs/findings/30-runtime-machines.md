@@ -44,7 +44,7 @@ every input. **[C]** (finding 33) The unload with the track on the machine is no
   every proof run (a load, an unload and a reload); the cursor and heap use across many rebuilds were not examined.
 - **[C]** Finding 02 says a stored type that names a gap row "loads and plays as type 0 (SAMPLE or FM TONE)". That holds for the permission, per-type byte
   and DSP selector word. The SRC page is not SAMPLE's: the descriptor fields of a gap row are zero, so the page shows eight empty knob boxes (the frame above).
-- **[D]** `core/dynreg` keeps every existing image byte-identical: `machines/xslice` on DT2 1.16 is still `5c026883...` (finding 27's pin; the
+- **[D]** `core/dynreg` keeps every existing image byte-identical: `test/xslice` on DT2 1.16 is still `5c026883...` (finding 27's pin; the
   `typed` pins of `packages/patchkit/tests/typed.rs` run in the gate). Images with the runtime alone change only by the runtime's new code
   (`registry.rs`: about 6 KB, 2 KB of it state); with the optional link unresolved they are otherwise as before.
 - **[D]** A flush-check hit appeared on 1.17 only, at first: a variable of `core/dynreg` (the view pointer) shared a 16-byte line with a hook tail.

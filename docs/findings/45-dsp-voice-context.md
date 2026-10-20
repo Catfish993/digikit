@@ -6,7 +6,7 @@ and the coupled emulator. Marks as in AGENTS.md; nothing here is **[V]** yet: a 
 
 ## 1. What the report claims, and the first correction
 
-On the device the SHARC halts as soon as a machine dispatches through `core/dsp-voice` (also `machines/pluck`), though the image with
+On the device the SHARC halts as soon as a machine dispatches through `core/dsp-voice` (also `digikit/pluck`), though the image with
 only the hook, and the image with the machine/parameter framework, run with full stock functionality. The report names two causes,
 both "a register the firmware restores per DSP context was assumed to have a fixed value":
 
@@ -52,8 +52,8 @@ the value, restored when the routine returns. Files: `modules/core/dsp-voice/src
 
 Run-time machines use the same wrapper (the voice rows of `core/dyndsp` are rows of the same table), so `test/dyn-pluck` is covered;
 the voice ABI paragraph of docs/design/digikit-dkm.md names only the imports (`_dv_exp2`, `_dv_frame_hw/_sw`), which no longer depend on
-M5. Not changed and audited: `core/dsp-link`'s hook (now pins M5, M6, L2, L3 around its own code, section 6), `fx/master-gain` and
-`fx/master-drive` (M5 = 0, M6 = 1 at the converter call they replace; the stock converter itself uses the same registers there,
+M5. Not changed and audited: `core/dsp-link`'s hook (now pins M5, M6, L2, L3 around its own code, section 6), `digikit/master-gain` and
+`digikit/master-drive` (M5 = 0, M6 = 1 at the converter call they replace; the stock converter itself uses the same registers there,
 finding 06 on the Q31 converter, so the site is as safe as stock) **[O]**.
 
 The ABI is written where authors read it: the headers of both wrapper sources, `modules/core/dsp-voice/README.md` and the new section
@@ -106,7 +106,7 @@ the stock epilogue and every stack push use them), runs odd voices, and checks t
 
 ## 5. PCM equality, and a phase sensitivity of the DN2 proof
 
-**[D]** `equiv-dyn-pluck` (patched-in `machines/pluck` against the same machine loaded at run time), DT2 1.17 and DN2 1.12, quick tier,
+**[D]** `equiv-dyn-pluck` (patched-in `digikit/pluck` against the same machine loaded at run time), DT2 1.17 and DN2 1.12, quick tier,
 before (HEAD) and after, WAV sha256 of the 2 s captures:
 
 | | patched-in | run-time |

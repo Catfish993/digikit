@@ -30,7 +30,7 @@ Sources may sit in subfolders (`src/cf/dt2/`, `src/cf/dn2/`) when one module ser
 
 ## Conventions
 
-- **Module id**: `category/name`, lower case, hyphens (`fx/master-gain`). The id need not equal the directory; patchkit
+- **Module id**: `category/name`, lower case, hyphens (`digikit/master-gain`). The id need not equal the directory; patchkit
   refuses two modules with one id. Module roots: `modules/`, `tests/fixtures/modules/` (test fixtures, ids `test/NAME`) and the
   extra roots of `--modules-dir` and `PATCHKIT_MODULES`.
 - **Categories**: `core` (frameworks other modules require), `fx`, `machines`, `ui`, `tools`, `test` (fixtures and
@@ -81,7 +81,7 @@ Numbers can be written as TOML integers or as strings holding an *expression* (s
 
 ```toml
 [module]
-id = "fx/master-gain"
+id = "digikit/master-gain"
 version = "0.1.0"
 name = "Master gain"
 category = "fx"
@@ -279,7 +279,7 @@ on which other modules are selected. `core/machines` therefore ships `types.toml
 [dt2]
 last = 23                          # the highest number the framework supports on this device
 [dt2.alloc]
-"machines/pluck:pluck" = 9         # "<module id>:<entry id>" = number
+"digikit/pluck:pluck" = 9         # "<module id>:<entry id>" = number
 ```
 
 The numbers are allocated by hand (or by `mise run module:new -- machines/NAME --machine`, which takes the next free
@@ -332,7 +332,7 @@ A machine module is written in four small typed sections instead of `[[entry]]` 
 device into the rows of `core/machines`, `core/params` and `core/dsp-voice` (`packages/patchkit/src/typed.rs`;
 the lowering also runs in the browser). What a knob means on a device is device data: `[modules.knobs]` and
 `[modules.frame]` in `devices/<device>.toml`. A device file that has no `[modules]` section takes no typed
-sections, and a new device is a new TOML file. `machines/pluck` and `machines/xslice` are the examples.
+sections, and a new device is a new TOML file. `digikit/pluck` and `test/xslice` are the examples.
 
 ```toml
 [[voice]]                     # machine id -> the DSP routine's symbol (core/dsp-voice)
@@ -495,7 +495,7 @@ Workflow:
    setting). The proofs are `tools/patchkit/pk_proof_*.py`; write one the same way and report numbers in a finding.
 6. `mise run module:build -- --check` must pass (committed objects equal fresh builds).
 
-## Worked example 1: `fx/master-gain` (SHARC+ only, both devices)
+## Worked example 1: `digikit/master-gain` (SHARC+ only, both devices)
 
 `modules/fx/master-gain/` scales the 64 floats of the final stereo block by a gain word before the firmware converts
 them to the 24-bit output.
@@ -507,7 +507,7 @@ them to the 24-bit output.
   routine multiplies the block by the gain word and ends with a jump to the converter, so the converter's frame and
   arguments stay as the firmware expects. The header of the source lists the registers that are free at this site
   ([finding 06](../docs/findings/06-sharc-engine-and-startup.md), "Master hook").
-- **Claim.** `dsp.master.hook`, so that it cannot be combined with `fx/master-drive`, which uses the same call.
+- **Claim.** `dsp.master.hook`, so that it cannot be combined with `digikit/master-drive`, which uses the same call.
 - **Anchor rules.** Three `sharc_func`/`sharc_literal` rules, found by the relocation-insensitive hash of two DSP
   functions. These functions are identical on the Digitakt II and the Digitone II, so the same rules and the same
   object serve both.
@@ -517,19 +517,19 @@ them to the 24-bit output.
 
 ```sh
 mise run module:build -- modules/fx/master-gain --check
-mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
-mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain
-mise run module:dev -- --modules fx/master-gain
-mise run patch:test -- --cell "dt2-1.17:fx/master-gain,test/cf-demo"
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-gain -o out/patch/mg.syx
+mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-gain
+mise run module:dev -- --modules digikit/master-gain
+mise run patch:test -- --cell "dt2-1.17:digikit/master-gain,test/cf-demo"
 ```
 
-## Worked example 2: `machines/pluck` (both CPUs, built on frameworks)
+## Worked example 2: `digikit/pluck` (both CPUs, built on frameworks)
 
 `modules/machines/pluck/` adds a PLUCK machine (Karplus-Strong string) to the Digitakt II. It needs no ColdFire code
 of its own: three frameworks do the firmware work, and the module only declares data.
 
 - **`requires = ["core/dsp-voice", "core/machines", "core/params"]`** and `ports = ["dt2-1.16", "dt2-1.17"]`. Patch it
-  with all four modules: `--modules core/dsp-voice,core/machines,core/params,machines/pluck`.
+  with all four modules: `--modules core/dsp-voice,core/machines,core/params,digikit/pluck`.
 - **The DSP voice.** `[[object]]` places `src/dsp/pluck.s` in `dsp.l2` (`devices = ["dt2"]`). An `[[entry]]` in the
   `voices` registry of `core/dsp-voice` gives the machine type (`machines.pluck.index`) and the routine (`_pk_render`).
   The framework hooks the sample renderer once; a track whose type is registered renders with the routine, every

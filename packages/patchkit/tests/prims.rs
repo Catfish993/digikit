@@ -1243,7 +1243,7 @@ fn explain_lists_registries_sections_and_hooks() {
 #[test]
 fn old_plans_do_not_grow_new_keys() {
     need_image!(DT2);
-    let out = run(&library(vec![]), &["fx/master-gain"]).unwrap();
+    let out = run(&library(vec![]), &["digikit/master-gain"]).unwrap();
     let j = serde_json::to_value(&out.plan).unwrap();
     for k in ["registries", "sections", "hooks"] {
         assert!(j.get(k).is_none(), "{k}");

@@ -27,10 +27,10 @@ def test_button_and_encoder_names():
 
 
 def test_cell_names_and_keys():
-    c = h.parse_cell("dt2-1.17:test/cf-demo,fx/master-gain")
+    c = h.parse_cell("dt2-1.17:test/cf-demo,digikit/master-gain")
     assert (c.device, c.firmware) == ("dt2", "1.17")
-    assert c.modset == "fx/master-gain+test/cf-demo"
-    assert c.golden_prefix == "dt2-1.17/fx/master-gain+test/cf-demo"
+    assert c.modset == "digikit/master-gain+test/cf-demo"
+    assert c.golden_prefix == "dt2-1.17/digikit/master-gain+test/cf-demo"
     assert "/" not in c.slug
     stock = h.parse_cell("dn2-1.12")
     assert stock.modset == "stock" and stock.golden_prefix == "dn2-1.12/stock"
@@ -61,11 +61,11 @@ def test_the_default_matrix_and_tour_parse():
 
 def test_module_tests_are_found_by_device():
     found = dict(
-        h.module_tests(["fx/master-gain", "test/cf-demo"], "dt2", quick_only=True)
+        h.module_tests(["digikit/master-gain", "test/cf-demo"], "dt2", quick_only=True)
     )
     assert "fx.master-gain.audible" in found and "test.cf-demo.boots" in found
     assert all(isinstance(steps, list) and steps for steps in found.values())
-    assert dict(h.module_tests(["fx/master-gain"], "dn2", quick_only=False))
+    assert dict(h.module_tests(["digikit/master-gain"], "dn2", quick_only=False))
 
 
 def test_goldens_round_trip_and_only_hashes_are_committed(tmp_path):

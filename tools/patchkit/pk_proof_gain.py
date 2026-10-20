@@ -5,7 +5,7 @@
         [--run-dir DIR] [--out DIR] [--quick] [--jobs N]
 
 With no arguments: DT2 1.17 (DN2: 1.12), the stock firmware and ready state of tools/patchkit/pk_harness.py and the patch of
-fx/master-gain built on the fly (out/patch/).
+digikit/master-gain built on the fly (out/patch/).
 
 Starts a coupled daemon (tools/control/digi_client.py `Emu.spawn_coupled`) on the stock firmware, then in the same
 session and from the same ready state (`restart` each time):
@@ -78,7 +78,7 @@ class GainProof(K.Proof):
     def part_run(self) -> None:
         a = self.args
         device = a.device
-        cell = H.Cell(device, FW[device], ["fx/master-gain"])
+        cell = H.Cell(device, FW[device], ["digikit/master-gain"])
         base_syx, base_ready = H.firmware_inputs(cell)
         stock = pathlib.Path(a.stock or base_syx).resolve()
         patched = pathlib.Path(a.patched or H.patched_image(cell, stock)).resolve()
@@ -151,7 +151,7 @@ def main() -> int:
     ap.add_argument("device", nargs="?", default="dt2", choices=("dn2", "dt2"))
     ap.add_argument("--stock")
     ap.add_argument(
-        "--patched", help="default: the patch of fx/master-gain, built here"
+        "--patched", help="default: the patch of digikit/master-gain, built here"
     )
     ap.add_argument("--ready")
     ap.add_argument(

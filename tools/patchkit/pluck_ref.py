@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Float32 reference of machines/pluck (modules/machines/pluck/src/dsp/pluck.s) and its tuning analysis.
+"""Float32 reference of digikit/pluck (modules/machines/pluck/src/dsp/pluck.s) and its tuning analysis.
 
     uv run python -m tools.patchkit.pluck_ref tuning [--bright U] [--out FILE.csv]
     uv run python -m tools.patchkit.pluck_ref measure [NOTE ...]

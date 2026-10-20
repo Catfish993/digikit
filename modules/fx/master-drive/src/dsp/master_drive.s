@@ -1,6 +1,6 @@
-// fx/master-drive: a soft-clip saturator on the final stereo block, before the firmware converts it to Q31.
+// digikit/master-drive: a soft-clip saturator on the final stereo block, before the firmware converts it to Q31.
 //
-// Hook site and register contract are those of fx/master-gain (docs/findings/06, "Master hook"): the one CALL of
+// Hook site and register contract are those of digikit/master-gain (docs/findings/06, "Master hook"): the one CALL of
 // the Q31 converter is retargeted here, the 64 planar floats (32 left, then 32 right) are processed in place and
 // the routine tail-jumps to the converter, so the frame, the return address and the arguments in R4 and R8 are
 // untouched. M5 = 0 and M6 = 1 are the firmware's global modifier constants; SIMD is off and no DO loop is active.

@@ -17,7 +17,7 @@ conflicts = []
 "dn2-1.12" = "experimental"
 
 # Test fixture (docs/design/digikit-registry.md, finding 33): a machine of its own type (the permanent number is
-# modules/core/machines/types.toml, [dn2.dynamic] "test/dyn-dn2:dyn_pluck") with one parameter page, as machines/pluck has
+# modules/core/machines/types.toml, [dn2.dynamic] "test/dyn-dn2:dyn_pluck") with one parameter page, as digikit/pluck has
 # on the Digitone II, but loaded from the card. `own_dsp`: the DSP is told the machine's own type, which the FM engine renders as
 # nothing, so the machine is silent until a DSP routine for it is loaded (lane A of the plan, not this module).
 # `patchkit pack test/dyn-dn2 --device dn2 -o FILE.dkm` lowers it into MACHINE, PARAM and PAGE records.

@@ -442,7 +442,7 @@ def test_module_scenario_modules_select_their_scenarios() -> None:
     ):
         assert f"tests/digikit/{name}.py" in got, name
     assert "tests/patchkit/test_patchkit_dkrt_machine.py" in got
-    # machines/pluck is what test/dyn-pluck builds its DSP from: its scenarios follow
+    # digikit/pluck is what test/dyn-pluck builds its DSP from: its scenarios follow
     assert "tests/digikit/test_menu_dt2.py" in selected(
         "modules/machines/pluck/src/dsp/pluck.s"
     )
@@ -526,9 +526,9 @@ def test_module_change_drops_no_test_that_names_a_dependent() -> None:
 
 
 def test_dependents_follow_requires_and_shared_sources() -> None:
-    assert "machines/pluck" in verify_route.dependents({"core/machines"})
-    assert "test/dyn-pluck" in verify_route.dependents({"machines/pluck"})
-    assert verify_route.dependents({"fx/master-gain"}) == {"fx/master-gain"}
+    assert "digikit/pluck" in verify_route.dependents({"core/machines"})
+    assert "test/dyn-pluck" in verify_route.dependents({"digikit/pluck"})
+    assert verify_route.dependents({"digikit/master-gain"}) == {"digikit/master-gain"}
 
 
 def test_unknown_module_path_stays_broad() -> None:

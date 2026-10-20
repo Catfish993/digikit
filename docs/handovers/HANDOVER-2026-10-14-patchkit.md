@@ -20,7 +20,7 @@ collaborator readiness; section "Inputs from the patchkit milestone"), then `VER
   Safety rules: sections 2, 4 and 8 never change; container at most 0x300000 bytes; boot-ROM rules on section 7.
 - **Frameworks are modules**: `core/expansion` (ColdFire loader into 1.33 MiB DT2 / 24.8 MiB DN2 of free DDR),
   `core/machines`, `core/params`, `core/dsp-voice` (DT2 and DN2 assembly side by side).
-- **Content modules**: `fx/master-gain`, `fx/master-drive`, `machines/xslice`, `machines/pluck` (Karplus-Strong, DT2
+- **Content modules**: `digikit/master-gain`, `digikit/master-drive`, `test/xslice`, `digikit/pluck` (Karplus-Strong, DT2
   and DN2, own parameters; DN2 own pages), plus test modules.
 - **Machine type numbers are permanent**: `modules/core/machines/types.toml` (DT2 7..23, DN2 5..23); unselected numbers
   are gap rows; `mise run patch:new -- machines/X --machine` allocates the next number. The CLI adds `requires`.

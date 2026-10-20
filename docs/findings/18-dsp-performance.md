@@ -1945,7 +1945,7 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
 | image                              | CPU before | interp (of it appended code) | CPU after fix |
 |------------------------------------|-----------:|-----------------------------:|--------------:|
 | stock                              | 1.31       | 2.0 (0)                      | 1.31          |
-| fx/master-gain                     | 1.45       | 3.9                          | 1.46          |
+| digikit/master-gain                     | 1.45       | 3.9                          | 1.46          |
 | core/dsp-voice, no type            | 2.1        | 12.2 (1.1)                   | 2.0           |
 | + test/sine-voice, sine ringing    | 3.9        | 13.8 (3.0)                   | 2.1           |
 | PLUCK set, idle                    | 4.3        | 44.2 (1.4)                   | 4.3           |

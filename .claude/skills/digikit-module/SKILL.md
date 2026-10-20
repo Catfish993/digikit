@@ -1,6 +1,6 @@
 ---
 name: digikit-module
-description: Use when creating, building, patching, injecting, testing or explaining a patchkit firmware module (modules/<category>/<name>/) for the Digitakt II or Digitone II. Covers the mise tasks, the module layout, the rules (no firmware bytes, anchors by rules, claims) and one worked example (fx/master-gain).
+description: Use when creating, building, patching, injecting, testing or explaining a patchkit firmware module (modules/<category>/<name>/) for the Digitakt II or Digitone II. Covers the mise tasks, the module layout, the rules (no firmware bytes, anchors by rules, claims) and one worked example (digikit/master-gain).
 ---
 
 # patchkit modules
@@ -108,7 +108,7 @@ frames. Ready inputs must be fresh (`tools/emulator/ready.py`, SOURCE.json `intc
 
 Known emulator limit: none for the DSP halt in patterns 3 and 4 any more (conditional Type 7a is modelled; finding 05). The generated cores must be regenerated after a `tools/sharc_dev/sharc_core` change (`CORE_FINGERPRINT`).
 
-## Worked example: fx/master-gain (SHARC, both devices)
+## Worked example: digikit/master-gain (SHARC, both devices)
 
 `modules/fx/master-gain/module.toml` declares one object (`src/dsp/master_gain.s`, placed in `dsp.l2`), two externs
 (`_fw_q31_convert -> dsp.master.q31_converter`, `_fw_master_buf -> dsp.master.float_buf`), one op
@@ -120,13 +120,13 @@ The source scales the 64-float master block by a gain word and tail-jumps to the
 use is justified in the file header (docs/findings/06). Gain 1.0 is bit-identical to stock; 0.5 is -6.0206 dB.
 
     mise run module:build -- modules/fx/master-gain --check
-    mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
-    mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain
-    mise run module:dev -- --modules fx/master-gain            # edit the .s, watch the summary line
-    mise run patch:test -- --cell dt2-1.17:fx/master-gain,test/cf-demo
+    mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-gain -o out/patch/mg.syx
+    mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/master-gain
+    mise run module:dev -- --modules digikit/master-gain            # edit the .s, watch the summary line
+    mise run patch:test -- --cell dt2-1.17:digikit/master-gain,test/cf-demo
 
 To change the gain in a running emulator without rebuilding: `dsp.patch` (`DM <gain addr> 3f000000`), see finding 17.
 A new module starts from `mise run module:new -- fx/name --dsp`, which copies these anchor rules and a pass-through hook
-(it claims `dsp.master.hook`, so it cannot be combined with `fx/master-gain` or `fx/master-drive`).
+(it claims `dsp.master.hook`, so it cannot be combined with `digikit/master-gain` or `digikit/master-drive`).
 The gallery card shows `summary` (one short sentence) and `gallery/icon.svg` (48 grid, `currentColor` lines, one `var(--icon-accent)` highlight); the module notes are `README.md`.
 Document the result in `docs/findings/` (one file per topic) with marks, not in a handover.

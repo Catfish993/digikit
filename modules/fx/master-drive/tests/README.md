@@ -1,4 +1,4 @@
-# fx/master-drive tests
+# digikit/master-drive tests
 
 The Phase 2 harness step format has not landed in this tree, so the module's tests are pytest files under `tests/`:
 

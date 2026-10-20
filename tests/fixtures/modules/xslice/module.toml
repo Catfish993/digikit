@@ -1,8 +1,8 @@
 [module]
-id = "machines/xslice"
+id = "test/xslice"
 version = "0.1.0"
 name = "XSLICE"
-category = "machines"
+category = "test"
 type = "machine"
 author = "digikit"
 status = "experimental"
@@ -15,7 +15,7 @@ conflicts = []
 "dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
-# The machine's type number is permanent (modules/core/machines/types.toml, "machines/xslice:xslice"); it is exported as `machines.xslice.index`.
+# The machine's type number is permanent (modules/core/machines/types.toml, "test/xslice:xslice"); it is exported as `machines.xslice.index`.
 # The knobs are the nine descriptor ID fields of MANUAL SLICE (f0..f7, f8 the level 0x0a), with the empty box on the
 # SRC page (knob 2) set to 0xfa, SLICE's orphaned CFADE parameter row (finding 02, "XSLICE").
 [[machine]]

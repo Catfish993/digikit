@@ -22,7 +22,7 @@ runtime interface). Code: `packages/patchkit/src/{typed,modgen}.rs`, `devices/*.
 
 ## Oracle **[D]**
 
-`machines/pluck` and `machines/xslice` were re-expressed in the typed form. Patched images, hand-written rows (8606b7f) against typed
+`digikit/pluck` and `test/xslice` were re-expressed in the typed form. Patched images, hand-written rows (8606b7f) against typed
 form, SHA-256 and plan.json equal on every port the modules support:
 
 | Image | Modules | SHA-256 of the patched image |

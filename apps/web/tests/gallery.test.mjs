@@ -38,7 +38,7 @@ test('bundle lists the committed modules and ports', () => {
     bundle.modules.length,
     manifestFiles().length + manifestFiles(join(root, 'tests/fixtures/modules')).length,
   );
-  assert.ok(bundle.modules.some((m) => m.manifest.includes('id = "fx/master-gain"')));
+  assert.ok(bundle.modules.some((m) => m.manifest.includes('id = "digikit/master-gain"')));
   assert.equal(bundle.ports.length, readdirSync(join(root, 'devices/ports')).length);
   // committed content only: nothing generated under out/ and no firmware-sized blobs
   const json = JSON.stringify(bundle);
@@ -50,10 +50,10 @@ test('bundle carries the device knob models and the gallery JSON of typed module
   const { bundle } = buildModuleData(root);
   assert.equal(bundle.devices.length, 2);
   assert.ok(bundle.devices.every((t) => 'modules' in parse(t)));
-  const pluck = bundle.modules.find((m) => m.manifest.includes('id = "machines/pluck"'));
+  const pluck = bundle.modules.find((m) => m.manifest.includes('id = "digikit/pluck"'));
   assert.ok(pluck.manifest.includes('[[machine]]') && !pluck.manifest.includes('[[entry]]'));
   const g = JSON.parse(pluck.files['build/gen/gallery.json']);
-  assert.equal(g.module, 'machines/pluck');
+  assert.equal(g.module, 'digikit/pluck');
   const m = g.machines[0];
   assert.deepEqual(Object.keys(m.devices).sort(), ['dn2', 'dt2']);
   assert.equal(m.devices.dt2.knobs[1].param, 'pluck_decay');
@@ -104,10 +104,10 @@ test('selection: requires are added, dependents removed, clashes explained', () 
 });
 
 test('patched file names', () => {
-  assert.equal(patchedFileName('Digitakt II', '1.17', ['fx/master-gain']), 'Digitakt_II_OS1.17+fx-master-gain.syx');
+  assert.equal(patchedFileName('Digitakt II', '1.17', ['digikit/master-gain']), 'Digitakt_II_OS1.17+digikit-master-gain.syx');
 });
 
-test('worker core: check and apply equal the command line (fx/master-gain)', { skip: !have }, async () => {
+test('worker core: check and apply equal the command line (digikit/master-gain)', { skip: !have }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'gal-'));
   const { bundle } = buildModuleData(root);
   const kit = await PatchKit.create(readFileSync(wasmPath), JSON.stringify(bundle));
@@ -116,16 +116,16 @@ test('worker core: check and apply equal the command line (fx/master-gain)', { s
     const checked = kit.check(fw);
     assert.equal(checked.device, name);
     assert.ok(checked.port?.startsWith(name));
-    assert.equal(checked.modules.find((m) => m.id === 'fx/master-gain').ok, true);
+    assert.equal(checked.modules.find((m) => m.id === 'digikit/master-gain').ok, true);
     const out = join(work, `${name}.syx`);
-    py('tools.patchkit.patchkit', 'patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out);
-    const r = kit.apply(fw, ['fx/master-gain']);
+    py('tools.patchkit.patchkit', 'patch', '--firmware', path, '--modules', 'digikit/master-gain', '-o', out);
+    const r = kit.apply(fw, ['digikit/master-gain']);
     assert.ok(Buffer.from(r.syx).equals(readFileSync(out)), `${name}: output differs from the CLI`);
-    assert.equal(r.plan.record.modules[0].split('@')[0], 'fx/master-gain');
+    assert.equal(r.plan.record.modules[0].split('@')[0], 'digikit/master-gain');
     assert.ok(r.verify.checks.length > 0);
     assert.equal(r.sha256.length, 64);
     // always from stock: an already patched image is refused with patchkit's text
-    assert.throws(() => kit.apply(r.syx, ['fx/master-gain']), /./);
+    assert.throws(() => kit.apply(r.syx, ['digikit/master-gain']), /./);
   }
 });
 

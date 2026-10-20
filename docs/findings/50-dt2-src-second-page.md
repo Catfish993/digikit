@@ -7,7 +7,7 @@ parameter names.
 
 ## Cause **[D]**
 
-- **It is not a run-time registry problem.** The patched-in `machines/pluck` (type 9) draws the same two frames, byte for byte (PNG equal on every frame of
+- **It is not a run-time registry problem.** The patched-in `digikit/pluck` (type 9) draws the same two frames, byte for byte (PNG equal on every frame of
   the scenario `pages-dyn-pluck`, before the fix). The first page is right on both.
 - The SRC view `SourcePageView` has two pages for every machine of the sample family (SAMPLE, WERP, STRETCH, REPITCH, SLICED SMP, MANUAL SLICE; the
   page dots at the right edge). Page index 0 is the generic knob page (`ParameterPageView::vfunc_4`). **Page index 1 is the sample view**: a row of
@@ -34,14 +34,14 @@ Digitone II is untouched (its machines have their own SYN pages, finding 33; no 
 Tests kept:
 
 - Scenario `pages-dyn-pluck` (`tests/digikit/scenarios/pages-dyn-pluck.toml`, tool `tools/patchkit/pk_digikit_pages.py`, `uv run python -m tools.patchkit.pk_digikit_scen run
-  pages-dyn-pluck`): three boots (patched-in `machines/pluck` as the twin, the run-time `test/dyn-pluck`, and stock types listed by position). Checks: all nine
+  pages-dyn-pluck`): three boots (patched-in `digikit/pluck` as the twin, the run-time `test/dyn-pluck`, and stock types listed by position). Checks: all nine
   frames (select, SRC, three encoder turns, SRC again, three turns) of the run-time pluck equal the twin's; none of them is the sample view (a long
   line at pixel row 157); the stock SAMPLE, WERP and REPITCH second pages still are. PASS on dt2-1.16 and dt2-1.17 (about 150 s each); frames in
   `out/runs/lanes/r1-pages/`.
 - Unit test `test_src_page_hook_draws_the_knob_page_for_added_types_only` in `tests/patchkit/test_pk_machines_fw.py` (native core, a stand-in for `FUN_4005f6bc`): types 0, 3, 6 and -1 take the stock path, 7, 18 and 23
   the knob page, a true stock condition stays; the view register and the stack are as the stock test leaves them.
 - Moved by the hook (section 3 only): every Digitakt II image with `core/machines`; the six DT2 pins of `packages/patchkit/tests/typed.rs` are updated (the DN2 pin is
-  the same). Smoke cells `dt2-1.17:core/machines+machines/xslice` and `...+machines/pluck` pass with unchanged frame goldens (31 checks each); `equiv-dyn-pluck` on
+  the same). Smoke cells `dt2-1.17:core/machines+test/xslice` and `...+digikit/pluck` pass with unchanged frame goldens (31 checks each); `equiv-dyn-pluck` on
   dt2-1.17 passes (PCM equal after the onset alignment as before). Images built before this change (rung C) do not have the fix: rebuild.
 
 ## One SRC page for an added machine (lane srcpage, 2026-10-19) [C]
@@ -67,10 +67,10 @@ machine has one SRC page**, unless it has enough parameters to spill onto a seco
   that the DSP receives (the frame copies those blocks only, "What the ColdFire sends the DSP"). It would need: more engine slots (a larger sound array, the p-lock, project and DSP frame layouts: far more than a day),
   a page descriptor per page (the page vector's entries are page ids; `mf_dispatch` answers per machine, not per page) and the `typearg` mapping for the second page's slots. A `[[page]]` for a Digitakt II machine is therefore a
   build error with the message "a second SRC page for a Digitakt II machine is not supported yet" (`packages/patchkit/src/typed.rs`, test `mistakes_are_refused`).
-- **Tests**: scenario `pages-dyn-pluck` (`tools/patchkit/pk_digikit_pages.py`; frames in `out/runs/lanes/srcpage-pages/`): for the patched-in `machines/pluck` (type 9) and the run-time `test/dyn-pluck` (type 18): no page dots on
+- **Tests**: scenario `pages-dyn-pluck` (`tools/patchkit/pk_digikit_pages.py`; frames in `out/runs/lanes/srcpage-pages/`): for the patched-in `digikit/pluck` (type 9) and the run-time `test/dyn-pluck` (type 18): no page dots on
   any SRC frame, SRC again, DOWN and UP leave the frame below the header unchanged, the three encoders change the frame, the two machines draw identical frames; the stock SAMPLE, WERP and REPITCH keep the dots and the
   sample view on their other page, also on the same track after the added machine was on it. Unit test `test_src_page_hook_gives_added_types_one_page_and_stock_types_two`. PASS on dt2-1.16 and dt2-1.17.
-  Moved: the six DT2 pins of `packages/patchkit/tests/typed.rs`, section 3 only (checked by section extract, dt2-1.17 + `machines/pluck`: sections 2, 4, 5, 7, 8 equal); the DN2 pin is the same.
+  Moved: the six DT2 pins of `packages/patchkit/tests/typed.rs`, section 3 only (checked by section extract, dt2-1.17 + `digikit/pluck`: sections 2, 4, 5, 7, 8 equal); the DN2 pin is the same.
 - **[O]** The device: one page, no dots, UP/DOWN and SRC do not change the page, encoders name the machine's parameters.
 
 ## ColdFire tables indexed by machine type, and what covers types 16 to 23

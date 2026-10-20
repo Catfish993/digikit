@@ -1,4 +1,4 @@
-// fx/master-gain: scale the final stereo block before the firmware converts it to Q31.
+// digikit/master-gain: scale the final stereo block before the firmware converts it to Q31.
 //
 // The hook site is the one CALL of the Q31 converter (patchkit retargets it to _mg_hook). The converter reads
 // 64 planar floats (32 left, then 32 right) from the master work buffer, so the routine multiplies those 64

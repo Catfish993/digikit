@@ -1,4 +1,4 @@
-"""fx/master-drive: the DSP routine on the concrete SHARC+ core, against a float32 reference, and the patch itself.
+"""digikit/master-drive: the DSP routine on the concrete SHARC+ core, against a float32 reference, and the patch itself.
 
 The routine is assembled from the module source, linked at a test base with the buffer in normal-word L2 and the
 drive word at the byte address of a poked normal word, and run block by block with the module's own data words

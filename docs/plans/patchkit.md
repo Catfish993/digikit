@@ -78,7 +78,7 @@ Backlog for patchkit itself (the rest lives in the plans named above):
 |---|---|---|
 | Port | Per-firmware facts: named anchors with `expect` hashes, allocatable regions. Generated, keyed by `.syx` sha256. | `devices/ports/dt2-1.17.toml` |
 | Framework module | Hooks firmware sites once, exports a registry API, carries per-device differences. | `core.expansion`, `core.machines`, `core.master-fx`, `core.dsp-voice` |
-| Content module | Own code plus declarative registry entries. No addresses. | `fx/master-drive`, `machines/granular` |
+| Content module | Own code plus declarative registry entries. No addresses. | `digikit/master-drive`, `machines/granular` |
 
 A module is compatible with a firmware when its framework dependencies resolve on that firmware's port and its
 resources fit. `targets` in the manifest records only test status (`stable`, `experimental`, `untested`).
@@ -314,21 +314,21 @@ Slice first (one agent), then coverage:
 
 Details and numbers: `docs/findings/21-patchkit-core.md`. Built: `packages/patchkit` (lib, `patchkit` binary, wasm
 C ABI), `tools/patchkit/pk_build.py`, `tools/patchkit/port_resolve.py`, `tools/patchkit/patchkit.py`, ports for dt2-1.16, dt2-1.17,
-dn2-1.11 and dn2-1.12, modules `core/expansion`, `fx/master-gain`, `test/cf-demo`; the generated (uncommitted, `out/modules/`) oracle modules
+dn2-1.11 and dn2-1.12, modules `core/expansion`, `digikit/master-gain`, `test/cf-demo`; the generated (uncommitted, `out/modules/`) oracle modules
 `oracle/dn2-master-half` and `oracle/xslice-dt2-1-16`; mise tasks `patch`, `patch:build`, `patch:explain`, `port:resolve`,
 `inject`.
 
 - The codec rebuilds all four stock images byte for byte; the Rust aPLib packer equals the Python one on all 16
   packed sections (and is 25 times faster). Stock payloads start at container offset 0x90, not 0x80 as
   `tools/firmware/build.py` writes [C].
-- `fx/master-gain` on DT2 1.17 and DN2 1.12, injected through `firmware.load`: bit-identical at gain 1.0,
+- `digikit/master-gain` on DT2 1.17 and DN2 1.12, injected through `firmware.load`: bit-identical at gain 1.0,
   -6.0206 dB at 0.5, from the same ready state.
 - Oracles: DN2 master half (all decoded sections equal `dsp_patch.py syx`), XSLICE (section 3 sha256
   `cdbd7726...ecb86a`).
 - `core/expansion`: the loader (54 bytes) boots to ready on both devices with DSP audio (DN2 6.4 s, DT2 13.6 s,
   PCM equal to stock); a C module with code, data and bss runs in place.
 - Deviations from the spec, all small: `hmac` is a 20-line function over `sha2` instead of a crate; module ids
-  are paths (`core/expansion`, `fx/master-gain`), not dotted; the segment header is `[len][dest][bss]` (the loader
+  are paths (`core/expansion`, `digikit/master-gain`), not dotted; the segment header is `[len][dest][bss]` (the loader
   zeroes bss) with a `0xffffffff` terminator; `anchor` kinds `code`, `data` and `value` (a number read from an
   instruction, for the converter's buffer address); a manifest `ports = [...]` field pins a module to firmware
   (XSLICE); an `--no-record` switch exists for the oracles only; stock containers keep their own first payload
@@ -370,7 +370,7 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pat
   the readiness contract, track change, pattern change, audition (PCM), play/stop with the sequencer running,
   machine menu open and close, save project and reload, a seeded 40-input stress; every segment starts from `restart`.
   Matrix (device x firmware x module set), one PASS/FAIL line per cell, logs under `out/runs/patchkit/`.
-- Matrix result: DT2 1.17 and DN2 1.12, stock and `fx/master-gain` + `test/cf-demo`: 4 of 4 PASS against the
+- Matrix result: DT2 1.17 and DN2 1.12, stock and `digikit/master-gain` + `test/cf-demo`: 4 of 4 PASS against the
   recorded goldens, 28 to 35 checks and 28 to 52 s per cell. Frames are deterministic across runs, and the patched
   cells produce the same frame hashes as stock.
 - Dev loop: `patch:new` (template builds), `patch:dev`. Edit to running on DT2 1.17: DSP change 2.9 s (cached MAIN),
@@ -392,7 +392,7 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pat
       bit-identical, persists and loads on stock; own parameter pages not built. See "DN2 results" below.
 - [x] `core.machines` / `core.params` DN2 own parameter pages (lane `b`, 2026-10-14): a machine with page rows has its own SYN pages
       (names, titles, ranges, defaults), content proof `test/dn2-pages`; see "DN2 pages and PLUCK" below.
-- [x] PLUCK on DN2 (lane `b`, 2026-10-14): `machines/pluck` builds for the Digitone II (DN2 routine on the voice hook, own SYN page).
+- [x] PLUCK on DN2 (lane `b`, 2026-10-14): `digikit/pluck` builds for the Digitone II (DN2 routine on the voice hook, own SYN page).
 - [x] Persistence check: project saved on a patched image, loaded on stock (emulator): the track loads as SAMPLE.
 
 ### Phase 3 results (2026-10-13, lane `b`)
@@ -400,7 +400,7 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pat
 Details, evidence and the DSP binding contract: `docs/findings/02-machines-and-parameters.md` ("core.machines").
 Built: `a1cf1df^:native/patchkit/src/machines.rs` (the generator, removed in a1cf1df; 4 unit tests, `a1cf1df^:native/patchkit/tests/machines.rs` with 6 integration tests on the
 real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (24 ColdFire anchor rules of the new kind
-`cf_func`, one DSP rule), `modules/machines/xslice`, `tests/fixtures/modules/machine-clone`, `tools/patchkit/pk_machine_rules.py`,
+`cf_func`, one DSP rule), `tests/fixtures/modules/xslice`, `tests/fixtures/modules/machine-clone`, `tools/patchkit/pk_machine_rules.py`,
 `tools/patchkit/pk_proof_machines.py`, `tools/emulator/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
 and `expect_dsp`; two new matrix cells.
 
@@ -439,7 +439,7 @@ the same, but DN2's machines are FM engines, so new DN2 machines need the DSP vo
   declares with `[[table]]`); an unregistered type falls through, PCM bit-identical to stock, +1,120 DSP
   instructions per block. Spec and evidence: findings 06, "Per-voice render hook: built". Assembler facts: findings 20.
 - `test/sine-voice` (type 8 forced on the wire): 261.626 / 523.252 / 277.184 Hz for note 60 / 72 / tune +1, the
-  level, reverb-send and filter stages act on it. `machines/pluck` (type 9): Karplus-Strong, one string per track,
+  level, reverb-send and filter stages act on it. `digikit/pluck` (type 9): Karplus-Strong, one string per track,
   fundamental within 0.0003 cents at notes 60 and 72, T60 1.02 s for a requested 1.02 s; analytic tuning error
   under 0.01 cents from note 7 to 95, 0.13 at 104, 0.42 at 108.
 - **Contract with `core.machines` (lane b):** a machine module gives `core.dsp-voice` its type number and routine
@@ -479,7 +479,7 @@ Emulator only; nothing flashed; one agent.
 
 - **core.machines on DN2 1.12** (took about a day, not the assessed 3 to 4): `a1cf1df^:native/patchkit/src/machines/dn2.rs` is the
   Digitone part of the generator (the Digitakt-only parts are skipped on `dn2`; the Digitakt output is byte-identical to
-  before for `core/machines` + `machines/xslice` + `test/machine-clone` on 1.16 and 1.17); 31 DN2 anchors by function hash
+  before for `core/machines` + `test/xslice` + `test/machine-clone` on 1.16 and 1.17); 31 DN2 anchors by function hash
   (`tools/patchkit/pk_machine_rules_dn2.py`, 1.11 and 1.12 resolve). The parameter-page layer needs no table growth for a clone: three
   per-type table functions get the type mapped to `clone_of` on entry, and the type reader (41 callers) returns the clone's
   original except for the identity code. `test/dn2-clone` (type 5) passes `tools/patchkit/pk_proof_machines_dn2.py` (select, pages,
@@ -629,7 +629,7 @@ Problem: `core/machines` numbered machines `first + k` in module order, and a pr
   and 8 are gaps). `mise run patch:new -- machines/NAME --machine [--devices dt2,dn2]` appends the next free number and says so.
   Rule and table in modules/README.md; the [C] and the evidence in findings 02, "Stable machine type numbers".
 - **CLI requires.** `patchkit apply|check|explain` (and so `mise run patch`) add the requirements of the selection and print
-  `added by requires: ...`; `patchkit.wasm` does the same (byte-identical output to the CLI for `machines/pluck` alone on both
+  `added by requires: ...`; `patchkit.wasm` does the same (byte-identical output to the CLI for `digikit/pluck` alone on both
   devices); an unknown module, a missing requirement and a `requires` cycle are refused with the module names. `Library::with_requires`.
 - Small: the PLUCK gallery README uses lists (the gallery renders no tables); `fw:onboard` is marked not built (backlog).
 
@@ -768,7 +768,7 @@ sources under out/broken/, never committed):
 |---|---|---|
 | machines dt2, core/machines persistence immediate left at the stock value | FAIL, 43 s | project reload brings type 7 back: 0 |
 | pluck dt2, the same break | FAIL, 81 s | project reload brings type 7 back: 0 after 6.25 s |
-| pluck dt2, machines/pluck lists DECAY and PICK in each other's descriptor fields | FAIL, 82 s | descriptor names, engine defaults (slot 26 and 27 exchanged), TX frame, and dq1/dq2 cannot set DECAY (encoder 2 moves the PICK slot) |
+| pluck dt2, digikit/pluck lists DECAY and PICK in each other's descriptor fields | FAIL, 82 s | descriptor names, engine defaults (slot 26 and 27 exchanged), TX frame, and dq1/dq2 cannot set DECAY (encoder 2 moves the PICK slot) |
 
 The real images pass (the table above). Margins of the quick thresholds, measured on the real image:
 
@@ -808,11 +808,11 @@ browser DSP audio (separate sharc-jit plan) when chosen.
 
 ### Phase 4: proof-of-concept modules
 
-- [x] 4.1 `fx/master-drive` (or compressor), DT2 and DN2: a new parameter carried in a frame word the DSP
+- [x] 4.1 `digikit/master-drive` (or compressor), DT2 and DN2: a new parameter carried in a frame word the DSP
       discards today, DSP code at the master hook. First module that changes both CPUs. Done 2026-10-13 (lane
       fastweb), see "Phase 4.1 results".
 - [x] 4.2 Simple voice (sine or noise) on DT2 through `core.dsp-voice`. Done 2026-10-14 (lane fastweb), see
-      "Phase 4.2 results". The Pluck DSP side (`machines/pluck`) is done too; its ColdFire entry is in, see "Phase 3 results (wave 6)".
+      "Phase 4.2 results". The Pluck DSP side (`digikit/pluck`) is done too; its ColdFire entry is in, see "Phase 3 results (wave 6)".
 - [ ] 4.3 `machines/granular` DT2 (grains from sample memory), 3-5 days after 4.2.
 - [ ] 4.4 `machines/granular` DN2. **Open decision:** grain source (track oscillator or wavetable, audio input, or
       a resample buffer).
@@ -839,14 +839,14 @@ browser DSP audio (separate sharc-jit plan) when chosen.
   canonical order and verifies against the stock image; it fetches only the site's own wasm and bundle.
 - `/patch` (`src/components/PatchGallery.tsx`): drop zone, identification against the device profiles and ports,
   category filter, status and per-firmware badges, automatic `requires`, conflicts and shared claims explained,
-  patchkit's own error text for incompatibility, result panel, download (`Digitakt_II_OS1.17+fx-master-gain.syx`),
+  patchkit's own error text for incompatibility, result panel, download (`Digitakt_II_OS1.17+digikit-master-gain.syx`),
   "Boot in emulator" through IndexedDB (`src/patch/handoff.ts`, `/emulator/?handoff=1`), safety notes.
 - Emulator page: shared layout with a top nav and theme tokens (`styles/site.css`, light and dark); dev-only
   controls (device select, export diagnostics, DSP image/state/snapshot pickers, bench, `?leds=`) show on the dev
   server or with `?dev=1` (`src/dev.ts`); the device follows the firmware's hash. The one pre-existing oxlint
   error (early return in `Faceplate`) is fixed.
 - Checked with `tools/devtools/web_shots.mjs` (headless Chrome): on the dev server and on `astro preview` (no headers), DT2
-  1.17 and DN2 1.12 patched with `fx/master-gain` in the page are byte-identical to the command line, and "Boot in
+  1.17 and DN2 1.12 patched with `digikit/master-gain` in the page are byte-identical to the command line, and "Boot in
   emulator" boots the patched image in the plain core to the startup display.
 - Open: no DSP audio and no cold boot in the browser; the gallery has one real module; hardware untested; the
   emulator page's own `fetch('/emulator-core.wasm')` is root-absolute (breaks under a Pages sub-path, as before).
@@ -860,7 +860,7 @@ browser DSP audio (separate sharc-jit plan) when chosen.
   and XClone goldens on 1.17 and 1.16 are unchanged. One pre-existing failure of the proof (XClone MOD destination
   frames), finding 02.
 - `underrun` event and `status.heartbeat.underrun_count` (finding 17).
-- DT2 1.16 in the matrix (stock, `fx/master-gain` + `test/cf-demo`, `fx/master-drive`, `core/machines` + `machines/xslice`),
+- DT2 1.16 in the matrix (stock, `digikit/master-gain` + `test/cf-demo`, `digikit/master-drive`, `core/machines` + `test/xslice`),
   fresh ready inputs (`tools/emulator/ready.py dt2 --syx Digitakt_II_OS1.16.syx --out out/ready-pk-dt2-116 --force`), goldens
   recorded: 4 of 4 PASS (29 to 36 checks, 45 to 98 s per cell). This closes the pre-flash item 11 for the emulator side.
 
@@ -876,7 +876,7 @@ browser DSP audio (separate sharc-jit plan) when chosen.
 - [x] Rewrite `docs/PATCHING.md` (done 2026-10-14, lane `fastweb`): quick usage first (create, build, patch, inject, test, flash and recover), then
       how it works (ports, frameworks, linker, regions, conflicts, safety rules).
 - [x] `modules/README.md`: authoring guide and manifest reference (done 2026-10-14, lane `fastweb`; worked examples
-      `fx/master-gain` and `machines/pluck`). `README.md` has a "Patching" section; the old notes are in
+      `digikit/master-gain` and `digikit/pluck`). `README.md` has a "Patching" section; the old notes are in
       `docs/archive/PATCHING-pre-patchkit.md`; the `digikit-module` skill is current.
 - [ ] Findings for every [V]/[D] result from Phase 0.
 
@@ -891,7 +891,7 @@ browser DSP audio (separate sharc-jit plan) when chosen.
   61 oracles, DT2 tone, oracles and tier-quick pass against regenerated cores (`gen-next` dirs, coordinator swaps them
   in at merge).
 - Boot ROM rules (finding 06, "Boot ROM conformance"): `tools/sharc_dev/sharc_bootcheck.py`, `packages/patchkit/src/bootrom.rs`;
-  stock streams, `fx/master-gain`, `fx/master-drive` and the L2 canary pass. Two defects fixed: the FIRST block's
+  stock streams, `digikit/master-gain`, `digikit/master-drive` and the L2 canary pass. Two defects fixed: the FIRST block's
   next-application pointer was not grown by `append_block`, and the append window included the ROM's 8 KB workspace.
   The emulator now refuses such streams (`tools/emulator/ready.py`, `firmware.load`, `patchkit verify`).
 - selcc pointers: a normal-word access through a byte-address pointer matches the manual (finding 05).
@@ -903,8 +903,8 @@ best mitigation available. Ranked by what a failure costs.
 
 | # | Risk | Evidence now | Mitigation |
 |---|---|---|---|
-| 1 | The boot ROM rejects the patched DSP stream (it applies a rule the manual does not state) | All stated rules checked on stock, gain, drive and canary streams (finding 06). A rejected stream is a **boot hang**: the ColdFire polls the SHARC handshake with no timeout | First hardware step is the image that changes nothing (`tools/patchkit/patched_image.py`), then a DSP change with no appended block (`fx/master-gain` is a 3-byte in-place edit plus a 148-byte record block: take the smallest first), then the append. Keep the stock `.syx` and the STARTUP-menu recovery (0.2) at hand |
-| 2 | Cycle cost: the emulator counts instructions, silicon counts cycles (L2 fetch and data wait states, cache misses on first execution, bank conflicts, SIMD memory pairs) | `fx/master-drive`: 20 to 968 DSP instructions per block; idle share 50 % (DN2), 68 % (DT2) measured in instructions (finding 22, 0.7) | Budget a module at no more than a quarter of the measured idle instructions per block; keep the hot loop short enough to stay in the cache; the neutral setting bypasses the heavy path where the module allows it. Listen for clicks at the first run; the `underrun` event (finding 17) reports the host audio sink only, not the hardware's DSP load |
+| 1 | The boot ROM rejects the patched DSP stream (it applies a rule the manual does not state) | All stated rules checked on stock, gain, drive and canary streams (finding 06). A rejected stream is a **boot hang**: the ColdFire polls the SHARC handshake with no timeout | First hardware step is the image that changes nothing (`tools/patchkit/patched_image.py`), then a DSP change with no appended block (`digikit/master-gain` is a 3-byte in-place edit plus a 148-byte record block: take the smallest first), then the append. Keep the stock `.syx` and the STARTUP-menu recovery (0.2) at hand |
+| 2 | Cycle cost: the emulator counts instructions, silicon counts cycles (L2 fetch and data wait states, cache misses on first execution, bank conflicts, SIMD memory pairs) | `digikit/master-drive`: 20 to 968 DSP instructions per block; idle share 50 % (DN2), 68 % (DT2) measured in instructions (finding 22, 0.7) | Budget a module at no more than a quarter of the measured idle instructions per block; keep the hot loop short enough to stay in the cache; the neutral setting bypasses the heavy path where the module allows it. Listen for clicks at the first run; the `underrun` event (finding 17) reports the host audio sink only, not the hardware's DSP load |
 | 3 | Real DDR contents and timing: the emulator fills DDR from the stream's FILL blocks and skips the initcode's clock and DMC calibration | No patch writes DDR; sample RAM use is stock | None needed while modules stay out of DDR; keep it that way in v1 |
 | 4 | Boot time grows with the stream: the ColdFire sends one byte per DSPI frame and handshake poll; the canary doubles the section | Gain +148 B, drive +620 B on 321 KB; the transfer time per byte was not measured against hardware | Ship modules small; use the canary only on the emulator |
 | 5 | SPI slave boot expects multiples of 1024 bytes (HWR 40-21); the stock section is not | Stock boots with a short tail; patched tails differ (finding 06 (d)) | If the first appended image hangs while the in-place-only image boots, pad the appended block so that the section length keeps the stock value mod 1024 (505 including the command byte); a one-line change in `append_block` |
@@ -913,7 +913,7 @@ best mitigation available. Ranked by what a failure costs.
 | 8 | Float behaviour on silicon against the core: denormal flush, saturation mode, reciprocal approximation (`approx_recips`) in module code | Seven DN2 PCM pins and 61 oracles exact against the core; module code unit-run and PCM-proved in the emulator only | Prefer plain add, multiply and compare in module code; check a module's output against its emulator render by ear and by the harness PCM test before trusting a new operation |
 | 9 | Interrupts, DMA and ColdFire timing under real load (the DSPI frame cadence, SSI underruns, hot sample loading): the emulator is deterministic | Coupled runs and 35 s tours pass; 40-input stress in the harness | Hardware soak after the first success |
 | 10 | The MAIN OS image validator (`0x400d9e4c`) and the real flash writer were not run; flash cap 3 MiB and the HMAC trailer are checked by the emulated bootstrap | 0.2 [V] for the bootstrap; patched containers rebuild stock byte for byte | The harmless image first; the updater's own checks reject a bad container before it writes (the bootstrap runs from section 2, which patchkit never touches) |
-| 11 | Firmware version: the device runs 1.16; most proofs ran on 1.17 (and DN2 1.12). 1.16 has the same DSP section; its MAIN differs, `fx/master-drive` now passes the 1.16 smoke cell, and 36 of 135 DT2 FX oracles differ on 1.17 | Port files for 1.16 exist; 1.16 PLAY in patterns 3 and 4 passes | Done in the emulator for `fx/master-gain`, `fx/master-drive`, `core/machines` + `machines/xslice` on 1.16 (matrix cells, "Fidelity follow-ups"); flash the 1.16 port |
+| 11 | Firmware version: the device runs 1.16; most proofs ran on 1.17 (and DN2 1.12). 1.16 has the same DSP section; its MAIN differs, `digikit/master-drive` now passes the 1.16 smoke cell, and 36 of 135 DT2 FX oracles differ on 1.17 | Port files for 1.16 exist; 1.16 PLAY in patterns 3 and 4 passes | Done in the emulator for `digikit/master-gain`, `digikit/master-drive`, `core/machines` + `test/xslice` on 1.16 (matrix cells, "Fidelity follow-ups"); flash the 1.16 port |
 | 12 | DN2 patches cannot be tested on hardware at all (no device on the desk) | Emulator only | Say so on the gallery page: DN2 modules are emulator-tested only |
 | 13 | Saved projects and kits made on patched firmware read back on stock firmware (Phase 3 not done) | Not tested | Do not save over a stock project while testing; back up the card |
 | 14 | Analog level: a drive or gain module can raise the output above the converter's range | Q31 clip in the emulator, neutral default is bit-exact | Start at the neutral setting with the monitor volume low |

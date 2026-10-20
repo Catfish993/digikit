@@ -9,7 +9,7 @@ WAV files) and a blank module store. Then, in this order, what Em does:
      where Em types `--port Digitakt`); the sectors the upload wrote are all inside the store range;
   2. SETTINGS > DIGIKIT > MODULES, tick the module, APPLY & RESTART (two presses);
   3. after the restart: ABOUT and the log say the module loaded, RAM was kept, HEALTH is sane;
-  4. FUNC + SRC, choose the run-time pluck machine on track 1, hold TRIG 1: the note equals the patched-in `machines/pluck` sample for
+  4. FUNC + SRC, choose the run-time pluck machine on track 1, hold TRIG 1: the note equals the patched-in `digikit/pluck` sample for
      sample; the DSP's counters say that every dispatch to type 18 returned; no DSP_STOPPED.
 
 Screenshots of the OLED and the log files go to `out/runs/lanes/b-rungC/` (never committed).
@@ -165,11 +165,11 @@ def _run_rungc(
         __import__("hashlib").sha256(img.syx.read_bytes()).hexdigest()
     )
 
-    # ---- the twin: machines/pluck patched in, the PCM the run-time machine has to equal ----------------------------------------
+    # ---- the twin: digikit/pluck patched in, the PCM the run-time machine has to equal ----------------------------------------
     ref_img = (
         None
         if bisect or probe
-        else c.image_for(M.MODULES_STATIC + ",machines/pluck", "ref")
+        else c.image_for(M.MODULES_STATIC + ",digikit/pluck", "ref")
     )
     ref: dict[str, Any] = {}
 
