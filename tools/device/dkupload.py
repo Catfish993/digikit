@@ -81,6 +81,27 @@ def fmt_runtime(packed: int) -> str:
     return f"{packed >> 16}.{packed >> 8 & 255}.{packed & 255}"
 
 
+def fmt_caps(caps: int) -> str:
+    """The INFO `caps` word as the names of its features, in bit order ("LOG PEEK ..."); a bit this tool does not know prints as `bitN`."""
+    names = [n for n, b in sorted(CAP.items(), key=lambda x: x[1]) if caps >> b & 1]
+    known = sum(1 << b for b in CAP.values())
+    names += [f"bit{b}" for b in range(32) if caps >> b & 1 and not known >> b & 1]
+    return " ".join(names)
+
+
+def info_lines(info: dict[str, Any]) -> list[str]:
+    """The `info` command's lines: every field as `key: value`, the runtime as `0.2.0 (512)` (version and packed number), the caps as names.
+    The dict `Uploader.info` returns is unchanged."""
+    out = []
+    for k, v in info.items():
+        if k == "runtime" and isinstance(v, int):
+            v = f"{fmt_runtime(v)} ({v})"
+        elif k == "caps" and isinstance(v, int):
+            v = fmt_caps(v)
+        out.append(f"{k}: {v}")
+    return out
+
+
 def has_cap(info: dict[str, Any], name: str) -> bool:
     """Does the device have the feature `name` (a key of `CAP`)? From the INFO `caps` word; a runtime without one is judged by its version
     (`CAP_SINCE`), and a feature known by `caps` only (MODULES) is absent there."""
@@ -518,8 +539,8 @@ def main(argv: list[str] | None = None) -> int:
     up = Uploader(t)
     try:
         if args.cmd == "info":
-            for k, v in up.info().items():
-                print(f"{k}: {v}")
+            for line in info_lines(up.info()):
+                print(line)
         elif args.cmd == "ls":
             for path, size, sha in up.ls():
                 print(f"{path}\t{size}\t{sha}")

@@ -508,7 +508,7 @@ fn c(name: &'static str, value: u64, scope: Scope, note: &'static str) -> C {
 }
 
 /// The run-time machine type range of a device: `dynamic_first ..= last` of `core/machines` types.toml.
-fn dyn_range(lib: &Library, dev: &str) -> Result<(i64, i64)> {
+pub fn dyn_range(lib: &Library, dev: &str) -> Result<(i64, i64)> {
     let d = lib
         .get("core/machines")
         .and_then(|m| m.alloc.get("machines"))

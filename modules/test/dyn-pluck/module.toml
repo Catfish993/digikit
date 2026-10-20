@@ -39,7 +39,11 @@ clone_of = 0
 knobs = [0xca, "pluck_decay", "pluck_pick", 0, "pluck_bright", "pluck_color", 0, 0xd1]
 
 # Digitone II: a machine of its own type (own_dsp) with its own SYN page: DECAY, PICK, BRIGHT, COLOR on knobs A .. D.
+[machine.dt2]
+type_hint = 18   # the numbers these machines had before sticky ids (finding 52)
+
 [machine.dn2]
+type_hint = 17
 own_dsp = true
 knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
 

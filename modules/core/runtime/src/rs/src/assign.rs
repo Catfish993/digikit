@@ -1,7 +1,8 @@
 //! Sticky machine type numbers (docs/design/module-sdk.md 11.5 D7, docs/design/digikit-registry.md "Machine keys").
 //!
-//! A run-time machine has no fixed type number. Its `.dkm` carries a machine key, `hash24 << 8` (the hash is the low 24 bits of FNV-1a 32 of
-//! `<module id>:<machine id>`), and the runtime gives it a number in the run-time range when it loads the module. The card remembers the
+//! A run-time machine has no fixed type number. Its `.dkm` carries a machine key, `hash24 << 8 | hint` (the hash is the low 24 bits of FNV-1a 32 of
+//! `<module id>:<machine id>`, the hint is the manifest's `type_hint`, 0 = none), and the runtime gives it a number in the run-time range when it
+//! loads the module. A key with hash 0 is a pinned number (the low byte). The card remembers the
 //! numbers in a map of up to 8 entries in the selection record's reserved bytes (`sel::Record::map`, entry = `hash24 << 8 | type`, 0 = empty), so
 //! a machine keeps its number while it stays in the map, and a project that names the number keeps playing that machine.
 //!
@@ -11,10 +12,12 @@
 //! loads, and only when it changed (`dirty`).
 //!
 //! Rules of the assignment, per machine in load order:
-//! 1. the map has an entry for its hash and that number is not taken in this boot: use it (sticky);
-//! 2. else the lowest number that no map entry references and this boot has not given out; record the entry;
-//! 3. else drop the lowest-index entry whose hash is not among this boot's machines (logged), take its number, record the entry;
-//! 4. two machines with the same key in one boot: the second takes a fresh number and is not recorded.
+//! 1. the map has an entry for its hash and that number is not taken in this boot: use it (sticky; logged as rule 1);
+//! 2. else its hint, when it is nonzero, in range, not given out in this boot and not referenced by another machine's map entry: use it and
+//!    record the entry (rule 2). The hint is the number that projects saved before the map name (docs/findings/52-sticky-machine-ids.md);
+//! 3. else the lowest number that no map entry references and this boot has not given out; record the entry (rule 0);
+//! 4. else drop the lowest-index entry whose hash is not among this boot's machines (logged), take its number, record the entry (rule 0);
+//! 5. two machines with the same key in one boot: the second takes a fresh number and is not recorded.
 use crate::{dlog, loader};
 use core::ptr::addr_of_mut;
 use dkrt_sdk::device::{DYN_TYPE_FIRST, DYN_TYPE_LAST};
@@ -54,17 +57,22 @@ fn bit(t: u32) -> u32 {
     1 << (t - DYN_TYPE_FIRST)
 }
 
-/// Type numbers referenced by the map.
-fn referenced(map: &[u32; MAP_N]) -> u32 {
+/// Type numbers referenced by the map, leaving out the entry of hash `except` (0: none left out).
+fn referenced_but(map: &[u32; MAP_N], except: u32) -> u32 {
     let mut m = 0;
     let mut i = 0;
     while i < MAP_N {
-        if map[i] != 0 {
+        if map[i] != 0 && map[i] >> 8 != except {
             m |= bit(map[i] & 0xff);
         }
         i += 1;
     }
     m
+}
+
+/// Type numbers referenced by the map.
+fn referenced(map: &[u32; MAP_N]) -> u32 {
+    referenced_but(map, 0)
 }
 
 fn lowest_free(taken: u32) -> u32 {
@@ -138,10 +146,11 @@ pub unsafe fn plan(rec: &Record) {
     while e < a.n {
         let key = a.key[e];
         let h = key >> 8;
-        if key & 0xff != 0 || h == 0 {
+        if h == 0 {
             e += 1;
-            continue; // a pinned number or nothing to assign
+            continue; // a pinned number (key = type) or nothing to assign
         }
+        let hint = key & 0xff;
         let mut first = true;
         let mut j = 0;
         while j < e {
@@ -150,6 +159,7 @@ pub unsafe fn plan(rec: &Record) {
         }
         let mut t = 0;
         let mut sticky = 0;
+        let mut rule = 0; // 0 lowest free number, 1 the map, 2 the hint
         if first {
             let at = find_hash(&a.map, h);
             if let Some(i) = at {
@@ -157,10 +167,16 @@ pub unsafe fn plan(rec: &Record) {
                 if used & bit(old) == 0 {
                     t = old;
                     sticky = 1;
+                    rule = 1;
                 }
             }
             if t == 0 {
-                t = lowest_free(used | referenced(&a.map));
+                if hint != 0 && in_range(hint) && (used | referenced_but(&a.map, h)) & bit(hint) == 0 {
+                    t = hint;
+                    rule = 2;
+                } else {
+                    t = lowest_free(used | referenced(&a.map));
+                }
                 if t == 0 {
                     // no number is unreferenced: drop the lowest entry of a machine that is not in this boot
                     let mut victim = NONE;
@@ -185,7 +201,7 @@ pub unsafe fn plan(rec: &Record) {
                         None => first_empty(&a.map),
                     };
                     if slot < MAP_N {
-                        a.map[slot] = key | t;
+                        a.map[slot] = h << 8 | t;
                     }
                 }
             }
@@ -199,7 +215,7 @@ pub unsafe fn plan(rec: &Record) {
             used |= bit(t);
         }
         a.ty[e] = t;
-        dlog::ev(logk::MACHINE_TYPE_ASSIGNED, dlog::INFO, [h, t, sticky, 0, 0]);
+        dlog::ev(logk::MACHINE_TYPE_ASSIGNED, dlog::INFO, [h, t, sticky, rule, 0]);
         e += 1;
     }
     a.dirty = 0;
@@ -236,11 +252,8 @@ fn wanted(a: &State, h: u32) -> bool {
 /// The type number for machine key `key` of the module being loaded (selection index `loader::BOOT_IDX`): the number `plan` assigned, a pinned
 /// number as it is (when it is in the run-time range), 0 when there is none.
 pub unsafe fn resolve(key: u32) -> u32 {
-    if key & 0xff != 0 {
-        return if key >> 8 == 0 && in_range(key) { key } else { 0 };
-    }
-    if key == 0 {
-        return 0;
+    if key >> 8 == 0 {
+        return if in_range(key) { key } else { 0 }; // a pinned number (0: none)
     }
     let a = st();
     let at = core::ptr::read_volatile(addr_of_mut!(loader::BOOT_IDX));

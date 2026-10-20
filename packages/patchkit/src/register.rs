@@ -54,19 +54,35 @@ pub fn machine_hash(module: &str, machine: &str) -> u32 {
     h & 0x00ff_ffff
 }
 
-/// The machine key a `.dkm` carries where a stock machine has its type: the hash in the upper 24 bits and 0 in the low byte
-/// ("assign a type at load"). A page and a DSP voice name their machine by the same key.
-pub fn machine_key(module: &str, machine: &str) -> u32 {
-    machine_hash(module, machine) << 8
+/// The machine key a `.dkm` carries where a stock machine has its type: the hash in the upper 24 bits and the machine's `type_hint` in the
+/// low byte (0: no preference, "assign a type at load"). A page and a DSP voice name their machine by the same key.
+pub fn machine_key(module: &str, machine: &str, type_hint: u32) -> u32 {
+    machine_hash(module, machine) << 8 | (type_hint & 0xff)
 }
 
-/// A type field as `dkm-info` prints it: a machine key as `h<hash>` (six hex digits), a plain type number as decimal.
+/// A type field as `dkm-info` prints it: a machine key as `h<hash>` (six hex digits) with `+<hint>` when it has a type hint, a plain type
+/// number (hash 0) as decimal.
 pub fn fmt_type(t: u32) -> String {
-    if t & 0xff == 0 && t != 0 {
-        format!("h{:06x}", t >> 8)
-    } else {
-        t.to_string()
+    match (t >> 8, t & 0xff) {
+        (0, _) => t.to_string(),
+        (h, 0) => format!("h{h:06x}"),
+        (h, hint) => format!("h{h:06x}+{hint}"),
     }
+}
+
+/// The `type_hint` of every machine of `r` must lie in the device's run-time range `first ..= last` (0: none).
+pub fn check_type_hints(r: &DevResolved, module: &str, first: i64, last: i64) -> Result<()> {
+    for m in &r.machines {
+        let h = m.type_hint as i64;
+        if h != 0 && !(first..=last).contains(&h) {
+            return Err(err!(
+                "{module}: machine {}: type_hint {h} is outside the run-time range {first}..={last} of {}",
+                m.id,
+                r.dev
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The id digikit gives a device (`[digikit] id` of the device file).
@@ -142,7 +158,10 @@ impl Register {
     /// Lower one device's resolved typed sections of module `module`. A machine's `type_no` is its machine key (`machine_key`):
     /// the runtime assigns the type number at load.
     pub fn lower(r: &DevResolved, module: &str) -> Result<Register> {
-        let key = |machine: &str| machine_key(module, machine);
+        let key = |machine: &str| {
+            let hint = r.machines.iter().find(|m| m.id == machine).map_or(0, |m| m.type_hint);
+            machine_key(module, machine, hint)
+        };
         let mut reg = Register {
             device: device_id(&r.dev)?,
             ..Default::default()
@@ -457,8 +476,10 @@ mod tests {
         // low 24 bits of FNV-1a 32 of "<module id>:<machine id>" (docs/design/module-sdk.md 11.5 D7); the runtime and the test tools compute the same
         assert_eq!(machine_hash("a", "b"), 0xbd8540);
         assert_eq!(machine_hash("test/dyn-pluck", "pluck"), 0xe53b3a);
-        assert_eq!(machine_key("test/dyn-pluck", "pluck"), 0xe53b_3a00);
-        assert_eq!(fmt_type(machine_key("a", "b")), "hbd8540");
+        assert_eq!(machine_key("test/dyn-pluck", "pluck", 0), 0xe53b_3a00);
+        assert_eq!(machine_key("test/dyn-pluck", "pluck", 18), 0xe53b_3a12);
+        assert_eq!(fmt_type(machine_key("a", "b", 0)), "hbd8540");
+        assert_eq!(fmt_type(machine_key("a", "b", 18)), "hbd8540+18");
         assert_eq!(fmt_type(18), "18");
     }
 

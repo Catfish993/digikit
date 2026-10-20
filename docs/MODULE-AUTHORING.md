@@ -175,6 +175,8 @@ the DSP does not halt and the main loop keeps running.
   A machine of a run-time module (`dynamic = true`) has no entry in `types.toml`: its global id is `<module id>:<machine id>`, the runtime gives it a
   type number in 16 to 23 when it loads the module, and the card remembers the number (by a hash of that id) so the machine keeps it while it stays in the
   card's map of 8 machines. Read the number a boot assigned from `dkupload modules` (or the boot report), never write it into code or a test.
+  `type_hint` (optional, per machine and device, within 16 to 23) is the number the machine takes when the card has no entry for it and the number is free: it exists for the machines that
+  had a fixed number before sticky ids, so old projects still find them. **A new module leaves it out.**
 - **Parameters** (`core/params`): give a machine its own parameters (names, ranges, defaults) on its pages; they
   persist with the project and appear as modulation destinations (parameter locks on added parameters are not
   tested yet). On the Digitone II a machine gets its own parameter pages.
