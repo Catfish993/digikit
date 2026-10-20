@@ -1,12 +1,15 @@
 //! Typed module sections (`[[machine]]`, `[[param]]`, `[[page]]`, `[[voice]]`) over the real device models, ports and
 //! stock images (the image tests are skipped when the images are absent).
 //!
-//! The pins are the SHA-256 of the images that the hand-written `[[entry]]` rows of `machines/pluck` and
-//! `machines/xslice` produced before they were re-expressed in the typed form (commit 8606b7f); the typed form must
-//! lower to the same rows, so the patched images must stay byte-identical on every port the modules support.
+//! The pins are the SHA-256 of every section except 7 of the images that the hand-written `[[entry]]` rows of
+//! `machines/pluck` and `machines/xslice` produced before they were re-expressed in the typed form (commit 8606b7f);
+//! the typed form must lower to the same rows, so those sections must stay byte-identical on every port the modules
+//! support. Section 7 (the SHARC DSP stream) is left out: it moves with every DSP edit to pluck or core/dsp-voice, which
+//! the conformance, PCM and scenario tests guard (the whole-image pins moved seven times with section 7 only).
 
 use patchkit::apply;
 use patchkit::error::sha256_hex;
+use patchkit::firmware::Firmware;
 use patchkit::modgen;
 use patchkit::module::Library;
 use patchkit::port::Registry;
@@ -21,43 +24,39 @@ fn library() -> Library {
     Library::scan(&root().join("modules")).unwrap()
 }
 
-/// (stock image, modules, sha256 of the patched image)
+/// SHA-256 over the id, length and data of every section except 7 (the SHARC DSP stream), in container order.
+fn digest_without_dsp(syx: &[u8]) -> String {
+    let fw = Firmware::parse(syx).unwrap();
+    let mut buf = Vec::new();
+    for s in fw.sections.iter().filter(|s| s.id != 7) {
+        buf.extend_from_slice(&s.id.to_be_bytes());
+        buf.extend_from_slice(&(s.data.len() as u64).to_be_bytes());
+        buf.extend_from_slice(&s.data);
+    }
+    sha256_hex(&buf)
+}
+
+/// (stock image, modules, digest_without_dsp of the patched image)
 const PINS: &[(&str, &str, &str)] = &[
-    // All Digitakt II pins moved on 2026-10-18 (lane r1, finding 50) with the SRC-page hook of core/machines (section 3 only); the Digitone II pin did not.
-    // The pluck pins moved on 2026-10-18 with core/dsp-voice (findings 45 and 48, twice): section 7 only; section 3, which holds the typed rows, is
-    // byte-identical to the previous pins (checked), and the xslice pins did not move.
-    // The pluck pins moved again on 2026-10-19 (finding 49 section 10): core/dsp-voice stores the DAG1 registers through a data register on both
-    // devices; section 7 only (sections 2, 3, 4, 5, 8 of the old and new patched images compared equal).
-    // The six Digitakt II pins moved again on 2026-10-19 (lane srcpage, finding 50 section "One page"): the SRC-page hook is now the first test of
-    // SourcePageView::vfunc_4 and cuts the page vector; section 3 only (sections 2, 4, 5, 7, 8 of the old and new dt2-1.17 + machines/pluck images compared
-    // equal); the Digitone II pin did not move.
-    // The five pins with machines/pluck moved on 2026-10-19 (lane b, finding 51): the runtime guard of core/dsp-voice (voice rows of 16 words, the guard code, the
-    // wider diagnostic block, both devices) and the three clamps of pluck.s / pluck_dn2.s. Section 7 only: sections 1 to 6 and 8 of the old (a80274dc) and new patched
-    // images compared equal for each of the five (port_resolve.sections_of); the xslice-only pins did not move.
-    // The four Digitakt II pins with machines/pluck moved on 2026-10-19 (pluck.s clears its 4096-sample line at note-on): section 7 only (the other sections of the old and
-    // new patched images compared equal, port_resolve.sections_of); the Digitone II pin and the xslice-only pins did not move.
-    // The three pins with machines/pluck moved on 2026-10-20 (SDK P3b-1): core/dsp-voice has the machine adapter (24-word voice rows, the contract path on both devices, the
-    // Digitone II guard) and machines/pluck is one contract source (pluck.s; pluck_dn2.s is gone) with a patched-in state block. Section 7 only: all other sections of the old
-    // (0713be96) and new patched images compared equal for each of the three (port_resolve.sections_of); the xslice-only pin did not move.
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
-        "22ce1babd0c0f2319e8cf6304973435d7156caf52f110a5e3534312de26ce24d",
+        "21f5a4a255ee2270dafe2911ff01abd88bcfdbb93738ead533dbf181f592ef6e",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/xslice",
-        "0ab82cf272a9742d0bd6764bf741b0b1f340641235bb8c4a01b48f2611bd4a18",
+        "03aa7cd8635b5e6f503cb3e06947b4e77a87693b27063a247c8af93a59b79086",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck,machines/xslice",
-        "90fb69271d6bf317775fbde42cdc4524653fc8db6b22613ef380eff87e9e3702",
+        "34c513225dc0089d033a76d0fa7e6bc9c22abab33388f33011635b5188afac21",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "machines/pluck",
-        "846333968cccdfa3351e57e5c65cb2bf9f824b3d4dbb868d4fcb06c477005938",
+        "2adeb6dd469b95447311be3cda933f8c821ec055d32f4674d9df6ee06036ab56",
     ),
 ];
 
@@ -73,7 +72,11 @@ fn typed_form_patches_to_the_images_of_the_hand_written_rows() {
         let ids: Vec<String> = mods.split(',').map(String::from).collect();
         let (ids, _) = lib.with_requires(&ids).unwrap();
         let out = apply::apply(&raw, &reg, &lib, &ids).unwrap();
-        assert_eq!(&sha256_hex(&out.syx), want, "{file} + {mods}");
+        assert_eq!(
+            &digest_without_dsp(&out.syx),
+            want,
+            "{file} + {mods}: a section other than 7 changed; if intended, set the pin to the left value"
+        );
         ran += 1;
     }
     eprintln!("typed oracle: {ran} of {} pins ran", PINS.len());

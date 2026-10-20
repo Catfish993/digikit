@@ -5,8 +5,8 @@
 Runs, for the files changed since the merge base with BASE (default: the uncommitted changes), in order:
 ruff (check and format) on the changed Python files of tests/ and tools/, mypy on the changed files of
 the TYPED list (tests/devtools/test_types.py), the path check, `pk_build build-all --check` when
-modules, patchkit tools or ports changed, the changed test files (and the tests that import a changed
-tests/support module), and the Rust tests of the affected crates (verify.rust_scope). It runs no
+modules, patchkit tools or ports changed, the tests `mise run test:changed` selects
+(tools/devtools/changed_tests.py), and the Rust tests of the affected crates (verify.rust_scope). It runs no
 emulator, no PCM pin and no scenario. `mise run verify` is the merge gate. It runs at nice 10
 (--foreground: normal priority) and sets cargo's and libtest's pools from the verify CPU budget
 (tools/devtools/verify_budget.py), as `verify` does for its steps.
@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools import python_env  # noqa: E402
-from tools.devtools import verify, verify_budget  # noqa: E402
+from tools.devtools import changed_tests, verify, verify_budget  # noqa: E402
 from tools.emulator import digi_env  # noqa: E402
 
 PATCHKIT_PREFIXES = (
@@ -59,11 +59,7 @@ def plan(files: list[str], out_dir: Path) -> list[tuple[str, list[str] | None, s
     typed = [
         e for e in typed_files() if any(f == e or f.startswith(e + "/") for f in files)
     ]
-    tests = [
-        p
-        for p, source in verify.python_test_plan(files, False)
-        if source in ("changed", "support")
-    ]
+    tests = list(changed_tests.select(files).tests)
     scope = verify.rust_scope(files)
     rust = verify.rust_tests_command(scope)
     out: list[tuple[str, list[str] | None, str]] = [
@@ -93,13 +89,13 @@ def plan(files: list[str], out_dir: Path) -> list[tuple[str, list[str] | None, s
             "no module, patchkit tool or port changed",
         ),
         (
-            "changed-tests",
+            "tests",
             verify.python_tests_command(
                 out_dir, tests, verify.python_jobs(verify_budget.resolve_budget())
             )
             if tests
             else None,
-            "no changed test files",
+            "no test selected (`mise run test:changed --explain` shows why)",
         ),
     ]
     if scope == []:
@@ -139,9 +135,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         start = time.monotonic()
         # the checks run one after the other: each gets the whole budget of the gate
-        node = {"changed-tests": "python-tests", "rust-tests": "rust-tests"}.get(
-            name, ""
-        )
+        node = {"tests": "python-tests", "rust-tests": "rust-tests"}.get(name, "")
         env = verify_budget.bounded_env(node, verify_budget.resolve_budget())
         done = subprocess.run(
             cmd, cwd=ROOT, env=python_env(env), capture_output=True, text=True
