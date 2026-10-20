@@ -44,8 +44,8 @@ OUT_DN2 = (
 )  # DN2 voice buffers (low 7 bits of the address are 0x10: the wrapper checks)
 ROW_WORDS = 24  # words of a registry row of core/dsp-voice
 nw = dv.nw
-# The adapter lowers I7 by its frame before it calls the module (dsp-voice.s `MODIFY(I7, -40)`, dsp-voice-dn2.s `-18`); the module's
-# data stack lies below that.
+# I7 is the data stack pointer and grows downward; the adapter lowers it by its frame before the call (dsp-voice.s:176 `MODIFY(I7, -40)`, dsp-voice-dn2.s:269 `-18`),
+# so the module's stack is [I7 at entry - stack_bytes, I7 at entry).
 ADAPTER_FRAME_WORDS = {"dt2": 40, "dn2": 18}
 DEFAULT_STACK_BYTES = 256  # a raw routine (no dk_machine_desc) declares no stack
 
@@ -422,8 +422,7 @@ class MachineRig:
     # -- the write set -----------------------------------------------------------------------------------------------------
     def _allowed(self, out_addr: int) -> list[tuple[int, int, str]]:
         """The DM a routine of the module may store to in a call of the current voice (docs/design/module-sdk.md 11.5 D6, sdk/dk_machine.h):
-        the output block, the voice's own state block (base + stride * track, `state_bytes`), the module's own data and bss as linked, and
-        its data stack (`stack_bytes` words' worth, below the adapter's frame: the adapter lowers I7 by its frame before it calls the
+        the output block, the voice's own state block (base + stride * track, `state_bytes`), its data stack and its own data and bss (shared by all voices) (`stack_bytes` words' worth, below the adapter's frame: the adapter lowers I7 by its frame before it calls the
         module). A routine without a description (the raw form) has no state; it gets DEFAULT_STACK_BYTES of stack."""
         b = self.built
         out = [(out_addr, 4 * 32, "output block")]
@@ -435,7 +434,7 @@ class MachineRig:
                     f"voice {self.track} state",
                 )
             )
-        out += [(a, n, "module data") for a, n in b.module_data]
+        out += [(a, n, "module data") for a, n in b.module_data]  # shared by all voices
         frame = ADAPTER_FRAME_WORDS[self.device]
         stack = b.desc[9] if b.desc else DEFAULT_STACK_BYTES
         out.append((dv.STACK - 4 * frame - stack, stack, "module stack"))

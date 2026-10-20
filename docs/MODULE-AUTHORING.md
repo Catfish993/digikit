@@ -207,8 +207,8 @@ and M6 = 1 at the converter call they replace, where the stock code uses the sam
 some instructions can make the emulator read a different instruction than the silicon; the build refuses such code and says
 so (use distinct registers, finding 45).
 
-Memory a routine may write: the output block (`in->out`), its own voice's state block (`state_bytes` from `base + stride * track`), the
-data and bss of its own object, and its data stack (`stack_bytes`, below the adapter's frame). Nothing else: not another voice's
+Memory a routine may write: the output block (`in->out`), its own voice's state block (`state_bytes` from `base + stride * track`), its
+data stack (`stack_bytes`, below the adapter's frame) and the data and bss of its own object (shared by all voices: state that must differ per voice goes in `state`). Nothing else: not another voice's
 state, not the adapter's data, not the frame copy. `module:check` runs the conformance suite on the concrete SHARC+ core and records
 every store the module's code makes during `note_on` and `render`; a store outside these ranges fails with the module, device, call,
 PC, address, size and the nearest known region. The sweep covers notes from low to high, parameter changes between blocks, and two
