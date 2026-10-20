@@ -161,7 +161,7 @@ def main(argv: list[str]) -> int:
             return 0
         seen = watched(cell.modules)
         print(
-            "watching; edit a file under modules/<id>/src/ or module.toml (ctrl-c to stop)",
+            "watching; edit a file under the module's src/ or its module.toml (ctrl-c to stop)",
             flush=True,
         )
         while True:
