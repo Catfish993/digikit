@@ -54,6 +54,7 @@ Each task takes `-- --help`. After a change to `devices/*.toml` or `sdk/sdk.toml
 
 - `references/manifest.md`: the manifest fields, the machine, parameter and page sections, the folder layout.
 - `references/contract-voice.md`: the render / note_on / desc contract, registers, the guard, how the conformance suite judges a voice.
+- `references/contract-fx.md`: the effect contract (`process`, `dk_fx_in`, `dk_fx_desc`), the chain, the fade and the fault rules, the conformance checks (patched in today).
 - `references/params.md`: from "the user wants these knobs" to `[[param]]` and knob entries; what reaches the DSP (4 words today), what persists.
 - `references/dsp-recipes.md`: tested assembly from pluck and master-drive (parameter to float, block loop, noise, one-pole, all-pass, delay line, comb, silence, ramp).
 - `references/selas-pitfalls.md`: assembler forms that are wrong on the silicon and what to write instead.
