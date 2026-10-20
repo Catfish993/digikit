@@ -1,7 +1,7 @@
 # 30. Run-time machines and parameters (digikit runtime, Phase 5, ColdFire side)
 
 Plan: `docs/plans/digikit-runtime.md` (Phase 5). Design: `docs/design/digikit-registry.md`. Code: `modules/core/dynreg`,
-`modules/core/runtime/src/rs/src/registry.rs`, `packages/patchkit/src/register.rs`, `modules/test/dyn-xslice`, `modules/test/dyn-params`. Lane r2b,
+`modules/core/runtime/src/rs/src/registry.rs`, `packages/patchkit/src/register.rs`, `tests/fixtures/modules/dyn-xslice`, `tests/fixtures/modules/dyn-params`. Lane r2b,
 2026-10-16, one agent, native emulator, Digitakt II 1.16 and 1.17 (stock images; nothing ran on a device). Everything is **[D]** (measured here once; no
 second agent has checked it against the image bytes). Digitone II and the unload refusal: finding 33.
 

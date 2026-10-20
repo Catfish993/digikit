@@ -1,0 +1,93 @@
+[module]
+id = "test/registry-demo"
+version = "0.1.0"
+name = "Registry demo"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture for the generic primitives: a registry with two entries, a section copied from the image with appended rows, and a hook that counts calls of a stock setter and runs its displaced instructions"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "experimental"
+
+[[object]]
+path = "build/demo.dko.json"
+sources = ["src/cf/demo.s"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[object.externs]
+rd_tail = "hook.test.demo.kit_setter.tail"
+
+# P4: the first two instructions of a stock setter (`move.l 8(sp),d0; beq.b skip`, six bytes; the branch is
+# re-encoded in the tail as a 32-bit branch) are displaced; rd_hook counts the call and jumps to the tail.
+[[op]]
+op = "hook"
+anchor = "test.demo.kit_setter"
+to = "rd_hook"
+displaced = "run"
+devices = ["dt2"]
+
+# P2: a registry and its entries (a framework and a content module in one file, for the test)
+[[registry]]
+name = "rdemo"
+first = "image.u8(test.demo.kit_setter + 1) + 40"
+max = 4
+region = "cf.expansion"
+devices = ["dt2"]
+
+[[registry.field]]
+name = "value"
+kind = "u32"
+default = 0x1234
+
+[[registry.field]]
+name = "label"
+kind = "cstr"
+max_len = 12
+
+[[registry.field]]
+name = "fn"
+kind = "sym"
+
+[[entry]]
+registry = "rdemo"
+id = "one"
+label = "ONE"
+fn = "rd_hook"
+devices = ["dt2"]
+
+[[entry]]
+registry = "rdemo"
+id = "two"
+label = "TWO"
+value = 77
+fn = "rdemo.one.index"
+devices = ["dt2"]
+
+# P1: the setter's bytes copied from the image, then one row per entry: value (u32), index (u8), first (u16)
+[[section]]
+name = "rd_copy"
+region = "cf.expansion"
+devices = ["dt2"]
+from = { anchor = "test.demo.kit_setter" }
+append = { registry = "rdemo", row = ["$value", "u8:$index", "u16:rdemo.first"] }
+
+[[claim]]
+resource = "test.demo.kit_setter"
+
+# Kit::vfunc_12 on DT2 1.16 and 1.17 (the first function of its hash by address)
+[[anchor_rule]]
+name = "test.demo.kit_setter"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "de5ffecfc0d23b984befde7b3cbb97be"
+ordinal = 0
+offset = 0x0
+len = 14
+mark = "D"

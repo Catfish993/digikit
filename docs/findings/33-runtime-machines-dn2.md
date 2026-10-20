@@ -1,7 +1,7 @@
 # 33. Run-time machines on the Digitone II, and refusing to unload a machine a track uses (digikit runtime, Phase 5)
 
 Plan: `docs/plans/digikit-runtime.md` (Phase 5). Design: `docs/design/digikit-registry.md`. Earlier result (Digitakt II): finding 30. Code:
-`modules/core/dynreg` (`src/cf/dn2/dynreg.s`), `modules/core/runtime/src/rs/src/registry.rs`, `packages/patchkit/src/register.rs`, `modules/test/dyn-dn2`,
+`modules/core/dynreg` (`src/cf/dn2/dynreg.s`), `modules/core/runtime/src/rs/src/registry.rs`, `packages/patchkit/src/register.rs`, `tests/fixtures/modules/dyn-dn2`,
 `tools/patchkit/pk_registry.py`, `tools/patchkit/pk_dynreg_rules.py`. Lane r2b, 2026-10-17, one agent, native emulator, Digitone II 1.11 and 1.12, Digitakt II 1.16
 and 1.17 (stock images; nothing ran on a device). Everything is **[D]** (measured here once; no second agent has checked it against the image bytes).
 

@@ -21,7 +21,7 @@ fn opts() -> dkm::Options {
 /// the framing agree), and a changed byte in any of them is found.
 #[test]
 fn every_committed_coldfire_object_carries_a_matching_record() {
-    let lib = Library::scan(&root().join("modules")).unwrap();
+    let lib = Library::scan_repo(&root()).unwrap();
     let mut n = 0;
     for m in lib.modules.iter() {
         for o in m.objects.iter().filter(|o| o.arch == "cf") {
@@ -48,7 +48,7 @@ fn every_committed_coldfire_object_carries_a_matching_record() {
 /// The `size` line of `pack` is the header's own fields: file = header + slots + padding (under 32) + the listed sections.
 #[test]
 fn pack_size_summary_parts_sum_to_the_file() {
-    let lib = Library::scan(&root().join("modules")).unwrap();
+    let lib = Library::scan_repo(&root()).unwrap();
     let m = lib.get("test/dyn-fault").unwrap();
     let o = m.objects.iter().find(|o| o.arch == "cf").unwrap();
     let f = dkm::pack(o, &opts()).unwrap();
@@ -83,7 +83,7 @@ fn pack_size_summary_parts_sum_to_the_file() {
 /// A committed object packs; the same object with a byte of its code changed (no new record) is refused by `pack`.
 #[test]
 fn pack_refuses_a_tampered_object() {
-    let lib = Library::scan(&root().join("modules")).unwrap();
+    let lib = Library::scan_repo(&root()).unwrap();
     let m = lib.get("test/dyn-fault").unwrap();
     let o = m.objects.iter().find(|o| o.arch == "cf").unwrap();
     assert!(dkm::pack(o, &opts()).is_ok());

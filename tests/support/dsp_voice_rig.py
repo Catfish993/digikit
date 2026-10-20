@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 from tools.patchkit import pk_build, pk_sharc  # noqa: E402
 
 CORE = ROOT / "modules" / "core" / "dsp-voice" / "src" / "dsp" / "dsp-voice.s"
-SINE = ROOT / "modules" / "test" / "sine-voice" / "src" / "dsp" / "sine_voice.s"
+SINE = ROOT / "tests" / "fixtures" / "modules" / "sine-voice" / "src" / "dsp" / "sine_voice.s"
 CORE_BASE, SINE_BASE = 0xB90000, 0xB92000
 STOCK_BP = 0xB9F000  # stands in for the stock renderer's second instruction
 RETURN_SW = 0xB9F100  # the caller's return point

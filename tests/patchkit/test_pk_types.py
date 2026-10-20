@@ -9,15 +9,15 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.patchkit import pk_new  # noqa: E402
+from tools.patchkit import modroots, pk_new  # noqa: E402
 
 TYPES = ROOT / "modules" / "core" / "machines" / "types.toml"
 
 
 def machine_entries() -> list[tuple[str, str, list[str]]]:
     out = []
-    for m in sorted((ROOT / "modules").rglob("module.toml")):
-        d = tomllib.loads(m.read_text())
+    for m in sorted(modroots.manifests().values()):
+        d = tomllib.loads((m / "module.toml").read_text())
         # hand-written rows and the typed [[machine]] sections
         rows = [e for e in d.get("entry", []) if e["registry"] == "machines"]
         for e in [*rows, *d.get("machine", [])]:
@@ -30,7 +30,7 @@ def machine_entries() -> list[tuple[str, str, list[str]]]:
 def test_every_machine_entry_has_a_number_per_device() -> None:
     t = tomllib.loads(TYPES.read_text())
     for mod, eid, devs in machine_entries():
-        dynamic = tomllib.loads((ROOT / "modules" / mod / "module.toml").read_text())[
+        dynamic = tomllib.loads((modroots.module_dir(mod) / "module.toml").read_text())[
             "module"
         ].get("dynamic", False)
         for dev in devs:

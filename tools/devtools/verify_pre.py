@@ -28,6 +28,7 @@ from tools.emulator import digi_env  # noqa: E402
 
 PATCHKIT_PREFIXES = (
     "modules/",
+    "tests/fixtures/modules/",
     "tools/patchkit/",
     "devices/ports/",
     "packages/patchkit/",

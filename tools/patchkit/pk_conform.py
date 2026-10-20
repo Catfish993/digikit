@@ -33,7 +33,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from tools.patchkit import pk_device, pk_dsp_budget  # noqa: E402
+from tools.patchkit import modroots, pk_device, pk_dsp_budget  # noqa: E402
 
 DEVICES = ("dt2", "dn2")
 # Stock rows of the knob list that a DSP routine reads (a code in `knobs`, not a `[[param]]` id): name, min, max, default.
@@ -130,18 +130,6 @@ def _manifest(moddir: Path) -> dict:
     return tomllib.loads((moddir / "module.toml").read_text(encoding="utf-8"))
 
 
-def module_dirs() -> list[Path]:
-    return [p.parent for p in sorted((ROOT / "modules").glob("*/*/module.toml"))]
-
-
-def module_id(moddir: Path) -> str:
-    return moddir.relative_to(ROOT / "modules").as_posix()
-
-
-def moddir_of(mid: str) -> Path:
-    return ROOT / "modules" / mid
-
-
 def _entry_row(man: dict) -> tuple[str, str | None] | None:
     """(render symbol, literal type or None) of the module's voice."""
     for v in man.get("voice", []):
@@ -223,7 +211,7 @@ def spec(mid: str, device: str) -> MachineSpec | None:
     """The spec of module MID on DEVICE, or None when the module is no machine with a DSP object for that device."""
     if mid.split("/")[0] == "core":  # the framework renders no machine of its own
         return None
-    moddir = moddir_of(mid)
+    moddir = modroots.module_dir(mid)
     man = _manifest(moddir)
     row = _entry_row(man)
     if row is None:
@@ -250,11 +238,11 @@ def spec(mid: str, device: str) -> MachineSpec | None:
 def machine_specs(negative: bool = False) -> list[MachineSpec]:
     """Every (machine module, device) the suite runs (NEGATIVE fixtures only with `negative`)."""
     out = []
-    for d in module_dirs():
-        if (module_id(d) in NEGATIVE) != negative:
+    for mid in modroots.manifests():
+        if (mid in NEGATIVE) != negative:
             continue
         for dev in DEVICES:
-            s = spec(module_id(d), dev)
+            s = spec(mid, dev)
             if s is not None:
                 out.append(s)
     return out

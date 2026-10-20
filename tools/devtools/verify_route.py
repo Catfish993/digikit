@@ -7,7 +7,7 @@ functions read the working tree (module manifests, test files, scenario TOMLs); 
 
 Rules (docs/TESTING.md "What verify runs"):
 
-- a file of a module under modules/: python-tests and rust-tests; web only for the files the web
+- a file of a module under modules/ or tests/fixtures/modules/: python-tests and rust-tests; web only for the files the web
   gallery bundle reads (module.toml, build/, gallery/, registry tables, not src/, sdk/, tests/).
   Framework modules (FRAMEWORK: every patched image includes them) select all of tests/patchkit
   and tests/digikit. Any other module selects the test files that name it or a module that
@@ -34,7 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from tools.patchkit import pk_conform  # noqa: E402
+from tools.patchkit import modroots, pk_conform  # noqa: E402
 
 # Modules that every patched image or every runtime build includes: a change selects the whole
 # patchkit and digikit suites.
@@ -94,22 +94,17 @@ class Fine:
 
 @cache
 def manifests() -> dict[str, tuple[str, ...]]:
-    """Module id (its directory under modules/) -> the modules it depends on: those it
-    `requires` and those whose files its build sources name (`sources = ["../../x/y/..."]`)."""
-    root = ROOT / "modules"
+    """Module id -> the modules it depends on: those it `requires` and those whose files its
+    build sources name (`sources = ["../../x/y/..."]`). Modules and ids: tools/patchkit/modroots.py."""
     out: dict[str, tuple[str, ...]] = {}
-    for toml in sorted(root.glob("*/*/module.toml")):
-        data = tomllib.loads(toml.read_text(encoding="utf-8"))
-        mid = toml.parent.relative_to(root).as_posix()
+    for mid, moddir in modroots.manifests().items():
+        data = tomllib.loads((moddir / "module.toml").read_text(encoding="utf-8"))
         deps = list(data.get("module", {}).get("requires", []))
         for table in data.get("object", []):
             for source in table.get("sources", []):
-                target = (toml.parent / source).resolve()
-                if not target.is_relative_to(root.resolve()):
-                    continue
-                parts = target.relative_to(root.resolve()).parts
-                if len(parts) >= 2 and "/".join(parts[:2]) != mid:
-                    deps.append("/".join(parts[:2]))
+                other = modroots.module_id(moddir / source)
+                if other is not None and other != mid:
+                    deps.append(other)
         out[mid] = tuple(dict.fromkeys(deps))
     return out
 
@@ -279,13 +274,13 @@ def web_reads(rel: str) -> bool:
 
 
 def module_fine(path: str) -> Fine | None:
-    parts = path.split("/")
-    if len(parts) < 3 or parts[0] != "modules":
+    root = next((r for r in modroots.REPO_ROOTS if path.startswith(r + "/")), None)
+    if root is None or "/" not in path[len(root) + 1 :]:
         return None
     if path.endswith(".md"):
         return Fine("modules docs", (), ())
-    mid = "/".join(parts[1:3])
-    if len(parts) < 4 or mid not in manifests():
+    mid = modroots.module_id(path)
+    if mid is None:
         # a file outside any module, or a module that is gone: stay broad
         return Fine(
             "modules (unknown module)",
@@ -293,7 +288,7 @@ def module_fine(path: str) -> Fine | None:
             ALL_SUITES,
         )
     steps = ["python-tests", "rust-tests"]
-    if web_reads("/".join(parts[3:])):
+    if web_reads((ROOT / path).relative_to(modroots.module_dir(mid)).as_posix()):
         steps.append("web")
     label = f"module {mid}" + (" (framework)" if mid in FRAMEWORK else "")
     return Fine(label, tuple(steps), tuple(module_tests(mid)))

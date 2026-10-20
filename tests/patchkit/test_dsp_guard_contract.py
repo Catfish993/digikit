@@ -1,6 +1,6 @@
 """The output guard of core/dsp-voice for a machine of the SDK contract, on both devices (docs/design/module-sdk.md 5.4, docs/findings/51-pluck-tune-guard.md).
 
-The adapter runs the module through the MachineRig (tests/support/machine_rig.py): the NaN fixture of modules/test/dyn-guard-nan (the module's own
+The adapter runs the module through the MachineRig (tests/support/machine_rig.py): the NaN fixture of tests/fixtures/modules/dyn-guard-nan (the module's own
 source, one body for both devices) and `clamp.s`, a fixture beside it whose block is the first parameter word times 2^-12. The guard zeroes a block
 that is not finite or above 8.0 in magnitude, ends the voice, counts the fault in the row and, after 8 faults in 1500 blocks, disables the type. The
 adapter clamps the parameter words to the row's declared ranges (0: 0 .. 0x7f00) in a buffer of its own. Skips when Selache is not built."""
@@ -20,7 +20,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 MODULE = "test/dyn-guard-nan"
-FIX = pk_conform.ROOT / "modules" / "test" / "dyn-guard-nan" / "src" / "dsp"
+FIX = (
+    pk_conform.ROOT / "tests" / "fixtures" / "modules" / "dyn-guard-nan" / "src" / "dsp"
+)
 KNOB = {
     "dt2": 1,
     "dn2": 0,

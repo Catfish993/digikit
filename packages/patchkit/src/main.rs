@@ -59,10 +59,10 @@ fn registry(root: &Path) -> Result<Registry> {
     Registry::from_dir(&root.join("devices/ports"))
 }
 
-/// `modules/` of the repository, then the extra roots of `--modules-dir DIR` and the PATCHKIT_MODULES
+/// `modules/` and `tests/fixtures/modules/` of the repository, then the extra roots of `--modules-dir DIR` and the PATCHKIT_MODULES
 /// environment variable (a path list), in that order. Generated modules (derived from a firmware) live there.
 fn library(root: &Path, rest: &[String]) -> Result<Library> {
-    let mut lib = Library::scan(&root.join("modules"))?;
+    let mut lib = Library::scan_repo(root)?;
     let mut extra: Vec<PathBuf> = flag(rest, "--modules-dir")
         .into_iter()
         .map(PathBuf::from)
@@ -72,7 +72,7 @@ fn library(root: &Path, rest: &[String]) -> Result<Library> {
     }
     for d in extra {
         if d.is_dir() {
-            lib.modules.extend(Library::scan(&d)?.modules);
+            lib.extend_unique(Library::scan(&d)?.modules)?;
         }
     }
     lib.lower(&patchkit::typed::Models::from_dir(&root.join("devices"))?)?;
@@ -235,7 +235,7 @@ fn run(a: Args) -> Result<()> {
                 let mut files = patchkit::modgen::generate(&lib, &models, m.id())?;
                 files.extend(patchkit::devgen::generate(&lib, &facts, m.id())?);
                 for (rel, text) in files {
-                    let path = a.root.join("modules").join(m.id()).join(&rel);
+                    let path = m.dir.join(&rel);
                     let have = std::fs::read_to_string(&path).ok();
                     if have.as_deref() == Some(text.as_str()) {
                         continue;

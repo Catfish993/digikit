@@ -109,6 +109,11 @@ ICON = """<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-widt
 """
 
 
+def kind_of(id_: str, machine: bool) -> str:
+    """The manifest `type`: machine, fx (category fx) or raw. `framework` is for core modules and is never generated."""
+    return "machine" if machine else ("fx" if id_.startswith("fx/") else "raw")
+
+
 def manifest(id_: str, sym: str, name: str, cf: bool, dsp: bool) -> str:
     parts = [
         f"""[module]
@@ -116,6 +121,8 @@ id = "{id_}"
 version = "0.1.0"
 name = "{name.replace("-", " ").capitalize()}"
 category = "{id_.split("/")[0]}"
+type = "{kind_of(id_, False)}"
+author = "digikit"
 status = "experimental"
 summary = "One short sentence for players, 120 characters at most, ending with a full stop."
 requires = []
@@ -231,6 +238,8 @@ id = "{id_}"
 version = "0.1.0"
 name = "{title}"
 category = "{id_.split("/")[0]}"
+type = "{kind_of(id_, True)}"
+author = "digikit"
 status = "experimental"
 summary = "One short sentence for players, 120 characters at most, ending with a full stop."
 requires = ["core/machines"]
@@ -266,6 +275,8 @@ def create(
             f"module id is category/name (lowercase, digits, dashes): {id_!r}"
         )
     category, name = m.groups()
+    if category == "core":
+        raise SystemExit("core modules are internal: pick another category")
     if category not in TOP:
         print(
             f"note: category {category!r} is new (known: {', '.join(sorted(TOP))})",

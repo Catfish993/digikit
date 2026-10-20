@@ -20,13 +20,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from tools.patchkit import pk_conform  # noqa: E402
+from tools.patchkit import modroots, pk_conform  # noqa: E402
 
 CONFORMANCE = "tests/modules/test_machine_conformance.py"
 
 
 def resolve(name: str) -> str:
-    mods = [pk_conform.module_id(d) for d in pk_conform.module_dirs()]
+    mods = list(modroots.manifests())
     if name in mods:
         return name
     hit = [m for m in mods if m.split("/", 1)[1] == name]
@@ -39,7 +39,7 @@ def resolve(name: str) -> str:
 
 def own_tests(mid: str) -> list[str]:
     """Test files of the module: its tests/ directory, then the files under tests/ named after it."""
-    found = sorted((ROOT / "modules" / mid / "tests").glob("test_*.py"))
+    found = sorted((modroots.module_dir(mid) / "tests").glob("test_*.py"))
     stem = mid.split("/", 1)[1].replace("-", "_")
     found += [
         p

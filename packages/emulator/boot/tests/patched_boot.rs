@@ -12,7 +12,7 @@ fn root() -> PathBuf {
 fn patched(file: &str, modules: &[&str]) -> Option<Vec<u8>> {
     let raw = std::fs::read(root().join("firmware").join(file)).ok()?;
     let registry = Registry::from_dir(&root().join("devices/ports")).unwrap();
-    let library = Library::scan(&root().join("modules")).unwrap();
+    let library = Library::scan_repo(&root()).unwrap();
     let ids: Vec<String> = modules.iter().map(|m| m.to_string()).collect();
     Some(apply::apply(&raw, &registry, &library, &ids).unwrap().syx)
 }

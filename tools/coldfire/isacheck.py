@@ -20,6 +20,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from tools.patchkit import modroots
+
 ROOT = Path(__file__).resolve().parents[2]
 ALLOWED_UNITS = {"isa_a", "isa_b", "isa_c", "emac"}
 # Privileged forms a module may use: cache line push-and-invalidate (the digikit runtime flushes loaded code) and the status
@@ -180,7 +182,9 @@ def check_file(path: Path) -> dict[str, int]:
 
 
 def committed_objects(root: Path = ROOT) -> list[Path]:
-    return sorted((root / "modules").glob("**/build/*.dko.json"))
+    return sorted(
+        p for r in modroots.REPO_ROOTS for p in (root / r).glob("**/build/*.dko.json")
+    )
 
 
 def main() -> int:

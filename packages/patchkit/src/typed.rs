@@ -785,6 +785,8 @@ id = "machines/t"
 version = "0.1.0"
 name = "T"
 category = "machines"
+type = "machine"
+author = "digikit"
 status = "experimental"
 summary = "t."
 

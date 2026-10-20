@@ -253,6 +253,8 @@ id = "machines/t"
 version = "0.1.0"
 name = "T"
 category = "machines"
+type = "machine"
+author = "digikit"
 status = "experimental"
 summary = "t."
 [[param]]
@@ -307,7 +309,7 @@ knobs = ["t_a", "t_b"]
     #[test]
     fn a_module_without_typed_sections_generates_nothing() {
         let (lib, models) = lib_of(
-            "[module]\nid = \"machines/t\"\nversion = \"0.1.0\"\nname = \"T\"\ncategory = \"machines\"\nstatus = \"experimental\"\nsummary = \"t.\"\n",
+            "[module]\nid = \"machines/t\"\nversion = \"0.1.0\"\nname = \"T\"\ncategory = \"machines\"\ntype = \"machine\"\nauthor = \"digikit\"\nstatus = \"experimental\"\nsummary = \"t.\"\n",
         );
         assert!(generate(&lib, &models, "machines/t").unwrap().is_empty());
     }

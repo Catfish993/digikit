@@ -23,7 +23,7 @@ fn registry() -> Registry {
 }
 
 fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan(&root().join("modules")).unwrap();
+    let mut lib = Library::scan_repo(&root()).unwrap();
     lib.modules.extend(extra);
     lib
 }

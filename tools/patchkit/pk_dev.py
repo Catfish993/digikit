@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools import python_env  # noqa: E402
-from tools.patchkit import pk_build  # noqa: E402
+from tools.patchkit import modroots, pk_build  # noqa: E402
 from tools.patchkit import pk_harness as h  # noqa: E402
 
 POLL_S = 0.25
@@ -39,7 +39,7 @@ def watched(modules: list[str]) -> dict[Path, float]:
     """mtime of every file the loop reacts to: `src/**` and `module.toml` of the modules."""
     seen: dict[Path, float] = {}
     for mod in modules:
-        base = h.ROOT / "modules" / mod
+        base = modroots.module_dir(mod)
         files = [base / "module.toml", *sorted((base / "src").rglob("*"))]
         for f in files:
             if f.is_file():
@@ -68,7 +68,7 @@ class Dev:
     def build(self) -> float:
         started = time.monotonic()
         for mod in self.cell.modules:
-            pk_build.build_module(h.ROOT / "modules" / mod, check=False)
+            pk_build.build_module(modroots.module_dir(mod), check=False)
         return time.monotonic() - started
 
     def patch(self) -> float:
@@ -139,7 +139,7 @@ class Dev:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--modules", required=True, help="a,b (ids under modules/)")
+    ap.add_argument("--modules", required=True, help="a,b (module ids)")
     ap.add_argument("--device", default="dt2", choices=("dt2", "dn2"))
     ap.add_argument("--firmware", help="default: 1.17 (dt2), 1.12 (dn2)")
     ap.add_argument("--once", action="store_true")
@@ -148,8 +148,7 @@ def main(argv: list[str]) -> int:
     fw = a.firmware or {"dt2": "1.17", "dn2": "1.12"}[a.device]
     cell = h.Cell(a.device, fw, [m for m in a.modules.split(",") if m])
     for m in cell.modules:
-        if not (h.ROOT / "modules" / m / "module.toml").is_file():
-            raise SystemExit(f"no module {m!r} under modules/")
+        modroots.module_dir(m)
     dev = Dev(cell, tests=not a.no_tests)
     try:
         started = time.monotonic()

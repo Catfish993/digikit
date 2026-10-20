@@ -61,7 +61,7 @@ refused.
 
 ### Gate: `test/c-demo` **[D]**
 
-`modules/test/c-demo` (C, `src/c/c_demo.c`): `dkm_init` computes nine results from inputs the compiler cannot fold: `/`, `%`
+`tests/fixtures/modules/c-demo` (C, `src/c/c_demo.c`): `dkm_init` computes nine results from inputs the compiler cannot fold: `/`, `%`
 and `*` on `unsigned long long`, `/`, `%` and `*` on `long long` (negative operands), and `<<`, logical `>>`, arithmetic `>>`
 by a variable count. Each is a libgcc helper call (`__udivdi3`, `__umoddi3`, `__divdi3`, `__moddi3`, `__muldi3`, `__ashldi3`,
 `__lshrdi3`, `__ashrdi3`). The built object: 1831 instructions (4360 bytes of helper text, 398 bytes of module), no undefined

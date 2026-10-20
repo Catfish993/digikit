@@ -12,7 +12,7 @@ run-time machine and capture its PCM, then SECONDS of emulated idle time. The em
     fast-forwarded and is not in it), and the difference B - A as a share of A;
   - the HEALTH figures `dkrt_health` reports (CPU load in tenths of a percent, the idle-loop iterations of the last window) over the same time.
 
-A's runtime is built from `git archive GIT_REF modules/core/runtime` laid over a copy of `modules/` (patchkit's `--root`), so nothing in the
+A's runtime is built from `git archive GIT_REF modules/core/runtime` laid over a copy of the module roots (patchkit's `--root`), so nothing in the
 working tree changes.
 """
 
@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 import numpy as np  # noqa: E402
 
+from tools.patchkit import modroots  # noqa: E402
 from tools.patchkit import pk_dkrt_boot as B  # noqa: E402
 from tools.patchkit import pk_dkrt_machine as M  # noqa: E402
 
@@ -50,11 +51,12 @@ HEALTH_WORDS = {
 
 
 def old_root(ref: str, work: Path) -> Path:
-    """A patchkit root whose `core/runtime` is the one of GIT_REF: a copy of `modules/`, the old runtime laid over it, `devices/` linked."""
+    """A patchkit root whose `core/runtime` is the one of GIT_REF: a copy of the module roots, the old runtime laid over it, `devices/` linked."""
     root = work / f"root-{ref}"
     if root.exists():
         shutil.rmtree(root)
-    shutil.copytree(ROOT / "modules", root / "modules")
+    for r in modroots.REPO_ROOTS:
+        shutil.copytree(ROOT / r, root / r)
     shutil.rmtree(root / "modules/core/runtime")
     tar = subprocess.run(
         ["git", "archive", ref, "modules/core/runtime"],

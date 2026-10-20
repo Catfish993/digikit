@@ -14,7 +14,7 @@ fn root() -> PathBuf {
 }
 
 fn library() -> Library {
-    let mut lib = Library::scan(&root().join("modules")).unwrap();
+    let mut lib = Library::scan_repo(&root()).unwrap();
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     lib
@@ -169,7 +169,7 @@ fn a_type_hint_is_the_low_byte_of_the_machine_key_and_is_range_checked() {
     assert_eq!(key("dn2"), h | 17);
     assert_eq!(fmt_type(key("dt2")), format!("h{:06x}+18", h >> 8));
     // a machine without a hint keeps the low byte 0
-    let text = std::fs::read_to_string(root().join("modules/test/dyn-xslice/module.toml")).unwrap();
+    let text = std::fs::read_to_string(root().join("tests/fixtures/modules/dyn-xslice/module.toml")).unwrap();
     let none = text.replace("type_hint = 16", "");
     let mx: patchkit::module::Manifest = toml::from_str(&none).unwrap();
     let rx = resolve(&mx, &models).unwrap();
@@ -182,7 +182,7 @@ fn a_type_hint_is_the_low_byte_of_the_machine_key_and_is_range_checked() {
         assert!(e.contains("type_hint 18") && e.contains("pluck"), "{e}");
     }
     // a hint of 300 is not a type number
-    let bad = std::fs::read_to_string(root().join("modules/test/dyn-pluck/module.toml"))
+    let bad = std::fs::read_to_string(root().join("tests/fixtures/modules/dyn-pluck/module.toml"))
         .unwrap()
         .replace("type_hint = 18", "type_hint = 300");
     let mf: patchkit::module::Manifest = toml::from_str(&bad).unwrap();

@@ -5717,7 +5717,7 @@ is idle (the engine's envelope silences them).
 ## DN2 voice slots: slot to track, parameter words, the note-on edge (wave 7, lane fastweb) **[D]**
 
 Digitone II 1.12 (DSP blob shared with 1.11), emulator and static; one agent, not second-checked. Tools:
-`tools/coldfire/dn2_probe.py` (`edge`, `slotmap`, `knobs`, `dspblock`, `edgepcm`), module `modules/test/dn2-edge`. Output under
+`tools/coldfire/dn2_probe.py` (`edge`, `slotmap`, `knobs`, `dspblock`, `edgepcm`), module `tests/fixtures/modules/dn2-edge`. Output under
 `out/runs/` (never committed). **[C]** to "Per-voice hook on DN2 built" above in three points (marked).
 
 **Slots are voices, allocated by the ColdFire; a slot is not a track [C].** The Digitone II has 16-voice polyphony shared
@@ -5749,7 +5749,7 @@ copy: `t=2.10 DSP hw0x11: 0 -> 1, hw0x13: 0 -> 1` with pitch word `hw1: 0 -> 0x3
 `hw0x12, hw0x14: 0 -> 1` 6.65 ms after the key-up; the retrig of the same note goes to the next slot: masks `0x1, 0x2, 0x4,
 0x8, 0x10, 0x20` for six notes, while the pitch and velocity words of the earlier slots are never cleared). The two
 mask pairs were identical for plain trigs (the difference, probably retrig without envelope reset or legato, is **[O]**).
-**Proof with a routine** (`modules/test/dn2-edge`, a machine of type 5 whose routine keeps the previous bit per
+**Proof with a routine** (`tests/fixtures/modules/dn2-edge`, a machine of type 5 whose routine keeps the previous bit per
 (slot, mask) and writes a click of 0.5 at sample 8k of the voice buffer on a rising edge, no branch on the state):
 24 notes of one key at 100 ms (hold 40 ms) give **24 note-on clicks**, 100.0 ms apart; 40 notes at 16 ms (hold 6 ms)
 give 40 note-on clicks, 16.0 ms apart, also past the 16 slots (in the 40-note run the first 16 notes show no release

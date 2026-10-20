@@ -35,7 +35,7 @@ fn registry() -> Registry {
 }
 
 fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan(&root().join("modules")).unwrap();
+    let mut lib = Library::scan_repo(&root()).unwrap();
     lib.modules.extend(extra);
     lib
 }
@@ -47,7 +47,7 @@ fn try_module(
     dko: Option<serde_json::Value>,
 ) -> patchkit::Result<Module> {
     let text = format!(
-        "[module]\nid = \"{id}\"\nversion = \"1.0.0\"\nname = \"{id}\"\ncategory = \"test\"\nstatus = \"experimental\"\nsummary = \"synthetic\"\n{header_extra}\n{body}\n"
+        "[module]\nid = \"{id}\"\nversion = \"1.0.0\"\nname = \"{id}\"\ncategory = \"test\"\ntype = \"raw\"\nauthor = \"digikit\"\nstatus = \"experimental\"\nsummary = \"synthetic\"\n{header_extra}\n{body}\n"
     );
     let read = move |_p: &str| -> patchkit::Result<String> { Ok(dko.clone().unwrap().to_string()) };
     Module::from_parts(&text, &read)
@@ -1258,7 +1258,7 @@ fn nfw(table: &str) -> Module {
 
 fn try_nfw(table: &str) -> patchkit::Result<Module> {
     let text = format!(
-        "[module]\nid = \"n/fw\"\nversion = \"1.0.0\"\nname = \"n\"\ncategory = \"test\"\nstatus = \"experimental\"\nsummary = \"s\"\n{}",
+        "[module]\nid = \"n/fw\"\nversion = \"1.0.0\"\nname = \"n\"\ncategory = \"test\"\ntype = \"raw\"\nauthor = \"digikit\"\nstatus = \"experimental\"\nsummary = \"s\"\n{}",
         r#"
 [[registry]]
 name = "nums"

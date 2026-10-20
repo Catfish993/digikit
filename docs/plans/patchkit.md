@@ -400,7 +400,7 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pat
 Details, evidence and the DSP binding contract: `docs/findings/02-machines-and-parameters.md` ("core.machines").
 Built: `a1cf1df^:native/patchkit/src/machines.rs` (the generator, removed in a1cf1df; 4 unit tests, `a1cf1df^:native/patchkit/tests/machines.rs` with 6 integration tests on the
 real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (24 ColdFire anchor rules of the new kind
-`cf_func`, one DSP rule), `modules/machines/xslice`, `modules/test/machine-clone`, `tools/patchkit/pk_machine_rules.py`,
+`cf_func`, one DSP rule), `modules/machines/xslice`, `tests/fixtures/modules/machine-clone`, `tools/patchkit/pk_machine_rules.py`,
 `tools/patchkit/pk_proof_machines.py`, `tools/emulator/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
 and `expect_dsp`; two new matrix cells.
 
@@ -504,7 +504,7 @@ Emulator only; nothing flashed; one agent.
 
 Findings: 02 ("DN2 parameter pages") and 06 ("DN2 voice slots"). Static plus emulator, one agent, [D]. No framework code
 was touched; new: `tools/coldfire/dn2_probe.py`, `tools/coldfire/dn2_pages.py`, `tools/coldfire/cf_wordscan.py`, `tools/patchkit/pk_params_rules_dn2.py`,
-`modules/test/dn2-edge` (a research machine).
+`tests/fixtures/modules/dn2-edge` (a research machine).
 
 - **Own SYN pages for a DN2 machine** need no new builder hook: constant data plus shims at three existing sites. T1 has
   321 rows and the Digitakt's `cf_params_t1` / `cf_params_sites` rules resolve unchanged (56 refs + 55 bounds, 1.11 and
@@ -649,7 +649,7 @@ copied sections and hooks, `cf_params_refs` / `cf_params_bounds` in `tools/patch
 (`expr`, `prim`), `packages/patchkit/tests/prims.rs` (18 integration tests over the real ports and stock images: typed writes and their
 errors, multi-site writes, registry rows/symbols/strings, canonical order, entry errors, sections on ColdFire and SHARC,
 hook on ColdFire and SHARC, non-boundary, re-encoded PC-relative instructions, device filters, explain, plan.json),
-`tests/patchkit/test_pk_prims.py` and `modules/test/registry-demo` (DT2 1.17, 1.16 anchor resolves too): boots to ready on the
+`tests/patchkit/test_pk_prims.py` and `tests/fixtures/modules/registry-demo` (DT2 1.17, 1.16 anchor resolves too): boots to ready on the
 ColdFire core, the hooked stock setter `Kit::vfunc_12` is called three times and behaves as stock while the hook counts,
 the registry rows and the copied section read back, and `apps/web/tests/patchkit.test.mjs` (wasm = CLI, plan.json
 included). The old `[[machine]]`/`[[param]]`/`[[table]]`/`register` path is untouched; its tests still pass.

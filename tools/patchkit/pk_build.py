@@ -29,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools.patchkit import (  # noqa: E402
+    modroots,  # noqa: E402
     pk_link,  # noqa: E402
     pk_rust,  # noqa: E402
     pk_sharc,  # noqa: E402
@@ -376,7 +377,11 @@ def main() -> int:
     )
     c = sub.add_parser("build-all")
     c.add_argument("--check", action="store_true")
-    c.add_argument("--root", type=Path, default=ROOT / "modules")
+    c.add_argument(
+        "--root",
+        type=Path,
+        help="one module root (default: all roots, tools/patchkit/modroots.py)",
+    )
     argv = sys.argv[1:]
     # `mise run module:build [-- MODULE] [--check]`: no subcommand builds every module, a path builds that one
     if not argv or argv[0].startswith("-"):
@@ -387,7 +392,13 @@ def main() -> int:
     dirs = (
         [a.module]
         if a.cmd == "build"
-        else sorted(p.parent for p in a.root.rglob("module.toml"))
+        else sorted(
+            {
+                p.parent
+                for r in ([a.root] if a.root else modroots.roots())
+                for p in r.rglob("module.toml")
+            }
+        )
     )
     try:
         for d in dirs:

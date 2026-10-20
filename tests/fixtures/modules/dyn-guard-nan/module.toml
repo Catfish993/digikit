@@ -1,0 +1,68 @@
+[module]
+id = "test/dyn-guard-nan"
+version = "0.1.0"
+name = "NAN-D"
+category = "test"
+type = "machine"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: a run-time machine whose DSP routine outputs NaN while a voice is active, to see the runtime guard of core/dsp-voice."
+dynamic = true
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
+
+# Like test/dyn-dsp-hang, with a machine of the SDK contract whose render outputs NaN (src/dsp/nan.s: one body for both devices; the rig runs it on both,
+# the debug-guard scenario on both images). The other sources in src/dsp are fixtures of the guard's rig tests (clamp.s: tests/patchkit/test_dsp_guard_contract.py;
+# nan_legacy.s, loud.s, clean.s: tests/patchkit/test_dsp_guard.py, the old form of a voice row) and are not linked into this module. The machine
+# is harmless on a device: the guard zeroes the block and, after 8 faults in a second, switches the machine off until the next start
+# (docs/findings/51-pluck-tune-guard.md).
+[[object]]
+path = "build/dyn-guard-nan-dsp.dko.json"
+sources = ["src/dsp/nan.s"]
+place = "dsp.l2"
+
+[[voice]]
+machine = "guardnan"
+render = "_gn_render"
+note_on = "_gn_note_on"
+desc = "_gn_desc"
+
+[[machine]]
+id = "guardnan"
+name = "NaN fixture"
+short = "NAN"
+clone_of = 0
+knobs = [0xca, 0, 0, 0, 0, 0, 0, 0xd1]
+
+# Digitone II: a machine of its own type (own_dsp) with a SYN page of one knob (a machine without a page has nothing to show); the render is the same body.
+[machine.dt2]
+type_hint = 20   # the numbers these machines had before sticky ids (finding 52)
+
+[machine.dn2]
+type_hint = 18
+own_dsp = true
+knobs = ["nan_a"]
+
+[[param]]
+id = "nan_a"
+name = "Nan alpha"
+short = "ALPH"
+template = 0xd5
+min = 0
+max = 0x7f00
+default = 0x2000
+devices = ["dn2"]
+
+[[page]]
+id = "nan_syn"
+machine = "guardnan"
+name = "NAN"
+title = "NaN fixture"
+devices = ["dn2"]

@@ -1,7 +1,7 @@
 """The runtime guard of core/dsp-voice (docs/findings/51-pluck-tune-guard.md) on the concrete SHARC+ core.
 
 The wrapper and a fixture routine are assembled from the module sources and run the way the engine calls them
-(tests/support/dsp_voice_rig.py). Fixtures (modules/test/dyn-guard-nan/src/dsp): `clean` (a ramp, inside the bound), `nan_legacy` (NaN while
+(tests/support/dsp_voice_rig.py). Fixtures (tests/fixtures/modules/dyn-guard-nan/src/dsp): `clean` (a ramp, inside the bound), `nan_legacy` (NaN while
 the voice is active), `loud` (100.0 while active). The guard clamps the machine knob words to the row's declared ranges for the call,
 puts the engine's words back, checks the block (finite, at most 8.0 in magnitude), and on a fault zeroes the block, ends the voice,
 counts the fault in the row and the diagnostic words, and after 8 faults in 1500 blocks disables the type. Skips when Selache is not built."""
@@ -34,7 +34,7 @@ pytestmark = pytest.mark.skipif(
     reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
 
-FIX = ROOT / "modules" / "test" / "dyn-guard-nan" / "src" / "dsp"
+FIX = ROOT / "tests" / "fixtures" / "modules" / "dyn-guard-nan" / "src" / "dsp"
 BASE = 0xB93800
 CL_SEEN = STATE  # the clean fixture's copy of the knob words it saw
 RAMP = np.arange(32, dtype=np.float32) * np.float32(0.125)

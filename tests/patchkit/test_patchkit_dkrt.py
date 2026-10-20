@@ -18,7 +18,7 @@ from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_build, pk_dkrt, pk_toolchains  # noqa: E402
 
 RUNTIME = ROOT / "modules/core/runtime"
-DEMO = ROOT / "modules/test/dyn-demo"
+DEMO = ROOT / "tests/fixtures/modules/dyn-demo"
 
 
 def test_committed_objects_are_current_and_plain_coldfire():
