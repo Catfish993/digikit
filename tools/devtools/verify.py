@@ -146,6 +146,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "tools/devtools/verify_pre.py",
             "tools/devtools/changed_tests.py",
             "tools/devtools/agent_guard.py",
+            ".claude/settings.json",
             "tools/devtools/verify_budget.py",
             "tools/devtools/verify_build.py",
             "tools/devtools/rust_ws.py",
@@ -270,6 +271,8 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (SELF_BROAD, EVERYTHING),
     # GitHub settings files (templates, CODEOWNERS): only the path check reads them.
     ((".github/",), ("python-tests",)),
+    # the agent hook settings (tools/devtools/agent_guard.py); .claude/skills/ is markdown (docs)
+    ((".claude/",), ("python-tests",)),
     (
         (
             "tests/scenarios/dt2-",

@@ -31,6 +31,12 @@ def test_changed_pk_test_runs_itself_and_the_gate() -> None:
     assert set(verify.PY_GATE) <= set(tests)
 
 
+def test_claude_settings_run_the_agent_guard_test() -> None:
+    assert verify.steps_for([".claude/settings.json"]) == ("python-tests",)
+    plan = [p for p, _ in verify.python_test_plan([".claude/settings.json"], False)]
+    assert "tests/devtools/test_agent_guard.py" in plan
+
+
 def test_pk_harness_triggers_the_patchkit_suite() -> None:
     tests = verify.python_tests(["tools/patchkit/pk_harness.py"], False)
     assert "tests/patchkit" in tests
