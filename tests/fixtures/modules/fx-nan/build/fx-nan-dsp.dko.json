@@ -1,0 +1,55 @@
+{
+ "arch": "sharc",
+ "format": 1,
+ "relocs": [],
+ "sections": [
+  {
+   "align": 8,
+   "hex": "be703f090894000808948108000c00400600be5100000000be530080000008948108000fc07f000008930500800f00003f083f68",
+   "kind": "text",
+   "name": "seg_pmco",
+   "size": 52
+  },
+  {
+   "align": 8,
+   "hex": "58464b44010000000000000004000000d20000000000000000000000",
+   "kind": "data",
+   "name": "seg_dmda",
+   "size": 28
+  },
+  {
+   "align": 4,
+   "hex": "",
+   "kind": "bss",
+   "name": "pkbss__fn_state",
+   "size": 4
+  }
+ ],
+ "source_sha256": "fdad3b9e52a07024ce83a411b73661218b8b8cb12d5ae31f279167317399206c",
+ "symbols": [
+  {
+   "global": true,
+   "name": "_fn_process",
+   "section": "seg_pmco",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fn_desc",
+   "section": "seg_dmda",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fn_state",
+   "section": "pkbss__fn_state",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "instructions_redecoded": "11",
+  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
+  "selas_sha256": "042aa5aa52ddfc9e687f627580e413b259b18a29874c28e2f2bf0251429514c0",
+  "seldump_sha256": "527162a78a7b94377c310e31b025ba51dafe8b6194d71ee09a575b6a9eb78916"
+ }
+}

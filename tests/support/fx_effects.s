@@ -11,6 +11,7 @@
 .GLOBAL _te_neg;
 .GLOBAL _te_param;
 .GLOBAL _te_trash;
+.GLOBAL _te_stray;
 
 // out = 0.5 in; state word 0 counts the calls since the state was zeroed
 _te_half:
@@ -130,6 +131,19 @@ _te_tl: DM(I1, M6) = R0;
     M3 = R0;
     M4 = R0;
     B3 = R0;
+    R0 = DK_FX_OK;
+    JUMP (M13, I13);
+
+// out = in, and a store into the input block (the master, read only for an effect): the write-set check must see it
+_te_stray:
+    I2 = R8;
+    I0 = DM(DK_FX_IN_W_IN, I2);
+    I1 = DM(DK_FX_IN_W_OUT, I2);
+    LCNTR = DK_FX_BLOCK, DO _te_sl UNTIL LCE;
+        R0 = DM(I0, M6);
+_te_sl: DM(I1, M6) = R0;
+    I0 = DM(DK_FX_IN_W_IN, I2);
+    DM(3, I0) = R0;
     R0 = DK_FX_OK;
     JUMP (M13, I13);
 

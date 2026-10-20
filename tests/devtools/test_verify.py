@@ -519,6 +519,29 @@ def test_the_conformance_machinery_selects_the_conformance_suite(path: str) -> N
     assert verify_route.CONFORMANCE in selected(path)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s",
+        "tests/fixtures/modules/fx-gain/module.toml",
+        "modules/core/fx/src/dsp/fx.s",
+        "modules/core/fx/module.toml",
+        "tools/patchkit/pk_conform.py",
+        "tests/support/fx_rig.py",
+        "tests/support/fx_conform_worker.py",
+    ],
+)
+def test_an_effect_change_selects_the_fx_conformance_suite(path: str) -> None:
+    assert verify_route.FX_CONFORMANCE in selected(path)
+
+
+@pytest.mark.parametrize(
+    "path", ["modules/machines/pluck/module.toml", "modules/core/params/module.toml"]
+)
+def test_other_modules_do_not_select_the_fx_conformance_suite(path: str) -> None:
+    assert verify_route.FX_CONFORMANCE not in selected(path)
+
+
 @pytest.mark.parametrize("module", sorted(verify_route.FRAMEWORK))
 def test_framework_module_selects_both_suites(module: str) -> None:
     path = f"{mpath(module)}/module.toml"

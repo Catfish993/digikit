@@ -234,6 +234,8 @@ def framework_tests(mid: str) -> list[str]:
     tests = [t for t, ids in verify_route.test_refs().items() if mid in ids]
     if mid in verify_route.CONFORMANCE_WRAPPERS or pk_conform.is_machine_module(mid):
         tests.append(verify_route.CONFORMANCE)
+    if any(pk_conform.is_fx_module(m) for m in verify_route.dependents({mid})):
+        tests.append(verify_route.FX_CONFORMANCE)
     kinds = {
         kind for kind, ids in verify_route.scenario_refs().values() if mid in ids
     } | verify_route.runner_kinds({mid})

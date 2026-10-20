@@ -409,3 +409,119 @@ def cases(sp: MachineSpec) -> list[Case]:
             )
         )
     return out
+
+
+# ---- effects (the FX contract, sdk/dk_fx.h) -------------------------------------------------------------------------------
+# An effect module is a DSP object behind an `[[entry]] registry = "fx"` row. It is run on the concrete core through core/fx
+# (tests/support/fx_rig.py) one block at a time; the cases and checks are those of tests/modules/test_fx_conformance.py.
+FX_MAX = 4  # effects in the chain (sdk/dk_fx.h DK_FX_MAX)
+# Instructions of core/fx around one process call at most (a fade block: copy, output check, crossfade; measured 855 with an effect of 210).
+# The budget below is the effect's own.
+FX_ADAPTER_MAX = 900
+FX_PARAM_MAX = 0x7F00  # the range of a parameter word until the manifest declares one
+FX_NEGATIVE = {"test/fx-nan": "guard stepped in"}
+
+
+@dataclass(frozen=True)
+class FxSpec:
+    module: str
+    moddir: Path
+    sources: tuple[Path, ...]  # the DSP sources of the module
+    process: str
+    desc: str
+    state: str
+
+    @property
+    def label(self) -> str:
+        return f"{self.module}@fx"
+
+
+def fx_spec(mid: str) -> FxSpec | None:
+    """The spec of effect module MID, or None when it has no `[[entry]] registry = "fx"` row with a DSP object."""
+    if mid.split("/")[0] == "core":
+        return None
+    moddir = modroots.module_dir(mid)
+    man = _manifest(moddir)
+    for e in man.get("entry", []):
+        if e.get("registry") == "fx" and isinstance(e.get("pc"), str):
+            sources = tuple(s for d in DEVICES for s in _dsp_sources(man, moddir, d))
+            if not sources:
+                return None
+            return FxSpec(
+                mid,
+                moddir,
+                tuple(dict.fromkeys(sources)),
+                e["pc"],
+                e["desc"],
+                e["state"],
+            )
+    return None
+
+
+def fx_specs(negative: bool = False) -> list[FxSpec]:
+    """Every effect module the FX suite runs (FX_NEGATIVE fixtures only with `negative`)."""
+    out = []
+    for mid in modroots.manifests():
+        if (mid in FX_NEGATIVE) != negative:
+            continue
+        s = fx_spec(mid)
+        if s is not None:
+            out.append(s)
+    return out
+
+
+def is_fx_module(mid: str) -> bool:
+    return fx_spec(mid) is not None
+
+
+def fx_budget() -> int:
+    """Instructions of one process call: the headroom of the tighter device shared by FX_MAX effects (module.toml may not override yet)."""
+    return min(budget(d).headroom for d in DEVICES) // FX_MAX
+
+
+@dataclass(frozen=True)
+class FxCase:
+    """A run on a fresh rig: `blocks` blocks of `signal`, block k with the parameter words `words(k)`; `toggle`: the effect is switched off
+    and on every that many blocks (0: never)."""
+
+    group: str
+    name: str
+    signal: str
+    blocks: int
+    words: tuple[tuple[int, ...], ...]  # per block (a single entry: every block)
+    toggle: int = 0
+
+
+def fx_cases(n_params: int) -> list[FxCase]:
+    zero = (0,) * n_params
+    top = (FX_PARAM_MAX,) * n_params
+    mid = (FX_PARAM_MAX // 2 & ~0xFF,) * n_params
+    out: list[FxCase] = []
+    for sig in ("silence", "dc", "square", "noise", "impulse", "sine", "ramp"):
+        out.append(FxCase("signals", sig, sig, 24, (zero,)))
+    for tag, w in (("min", zero), ("max", top), ("mid", mid)):
+        for sig in ("noise", "square"):
+            out.append(FxCase("params", f"all-{tag}/{sig}", sig, 24, (w,)))
+    for j in range(n_params):
+        for tag, v in (("min", 0), ("max", FX_PARAM_MAX)):
+            w = tuple(
+                v if i == j else FX_PARAM_MAX // 2 & ~0xFF for i in range(n_params)
+            )
+            out.append(FxCase("params", f"p{j}={tag}/noise", "noise", 24, (w,)))
+    rng = random.Random(0xFEED)
+    walk = tuple(
+        tuple(rng.randrange(0, FX_PARAM_MAX + 1) for _ in range(n_params))
+        for _ in range(WALK_BLOCKS)
+    )
+    out.append(FxCase("modulation", "random-walk/noise", "noise", WALK_BLOCKS, walk))
+    square = tuple(
+        tuple(FX_PARAM_MAX if (k + i) % 2 else 0 for i in range(n_params))
+        for k in range(WALK_BLOCKS)
+    )
+    out.append(
+        FxCase("modulation", "square-every-block/noise", "noise", WALK_BLOCKS, square)
+    )
+    out.append(FxCase("switching", "toggle-every-7/noise", "noise", 300, (mid,), 7))
+    out.append(FxCase("switching", "toggle-every-1/square", "square", 60, (mid,), 1))
+    out.append(FxCase("long", "long/noise", "noise", LONG_BLOCKS, (mid,)))
+    return out

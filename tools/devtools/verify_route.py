@@ -15,6 +15,8 @@ Rules (docs/TESTING.md "What verify runs"):
 - a machine module (a DSP routine behind a `[[voice]]` or a voices `[[entry]]`, tools/patchkit/pk_conform.py), a module that one
   depends on or builds from, and core/dsp-voice (the wrapper every routine runs through) also select the machine conformance
   suite, CONFORMANCE (docs/TESTING.md "Machine conformance"). Its cases for every machine run in one file.
+- an effect module (an `[[entry]] registry = "fx"` with a DSP object) and core/fx, which every effect requires, select the FX conformance
+  suite, FX_CONFORMANCE (docs/TESTING.md "FX conformance").
 - a module of tools/device: the unit tests that import it (and the importers of those) plus the
   digikit test files of the scenario kinds whose runners call it (DEVICE_KINDS).
 - a scenario file of tests/digikit/scenarios: the test files that run the scenario's kind.
@@ -76,6 +78,7 @@ BROAD_TASK_GROUPS = ("verify", "build", "gen", "setup")
 ALL_SUITES = ("tests/patchkit", "tests/digikit")
 CONFORMANCE = "tests/modules/test_machine_conformance.py"
 CONFORMANCE_WRAPPERS = frozenset({"core/dsp-voice"})
+FX_CONFORMANCE = "tests/modules/test_fx_conformance.py"
 # a path built from parts: ROOT / "modules" / "machines" / "pluck"
 SPLIT_ID_RE = re.compile(
     r"""["'](core|digikit|fx|machines|test)["']\s*[/,]\s*["']([a-z0-9][a-z0-9-]*)["']"""
@@ -272,6 +275,8 @@ def module_tests(mid: str) -> list[str]:
     tests = [t for t, ids in test_refs().items() if ids & hit]
     if any(pk_conform.is_machine_module(m) for m in hit) and CONFORMANCE not in tests:
         tests.append(CONFORMANCE)
+    if any(pk_conform.is_fx_module(m) for m in hit) and FX_CONFORMANCE not in tests:
+        tests.append(FX_CONFORMANCE)
     kinds = {
         kind for kind, ids in scenario_refs().values() if ids & hit
     } | runner_kinds(hit)

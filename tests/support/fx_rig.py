@@ -110,13 +110,21 @@ class _Built:
     data: dict[str, int]
     inits: list[tuple[int, bytes, bool]]
     symbols: dict[str, int]
+    module_code: tuple[
+        tuple[int, int], ...
+    ] = ()  # (first pc, end pc) of each module object (not the adapter), short words
+    module_data: tuple[
+        tuple[int, int], ...
+    ] = ()  # (byte address, bytes) of the module's own data and bss
 
 
 _BUILT: dict[tuple, _Built] = {}
 
 
 def _assemble(path: Path) -> pk_sharc.SharcObject:
-    dirs = [ROOT / "sdk", path.parent]
+    """A DSP source the way tools/patchkit/pk_build.py reads it: `#include` from the SDK, the module's build/gen and the source's directory."""
+    gen = [p / "build" / "gen" for p in path.parents if (p / "module.toml").exists()]
+    dirs = [ROOT / "sdk", *gen, path.parent]
     return pk_sharc.assemble(pk_build.expand_includes(path.read_text(), dirs))
 
 
@@ -132,11 +140,14 @@ def _build(sources: tuple[Path, ...]) -> _Built:
     addr = DATA_BASE
     data: dict[str, int] = {}
     inits: list[tuple[int, bytes, bool]] = []
+    own: list[list[tuple[int, int]]] = []
     for o in objs:
         where: dict[str, int] = {}
+        own.append([])
         for sec, (raw, _al, is_bss) in o.data.items():
             where[sec] = addr
             inits.append((addr, raw, is_bss))
+            own[-1].append((addr, len(raw)))
             addr += (len(raw) + 3) & ~3
         for name, (sec, off, _g) in o.data_symbols.items():
             data[name] = where[sec] + off
@@ -159,7 +170,12 @@ def _build(sources: tuple[Path, ...]) -> _Built:
         syms.update({n: b + off for n, (off, _g) in o.symbols.items()})
     ext = {**externs, **syms}
     linked = [pk_sharc.link(o, b, ext) for o, b in zip(objs, bases, strict=True)]
-    return _Built(linked, data, inits, syms)
+    code = tuple(
+        (b, b + len(o.section) // 2) for o, b in zip(objs[1:], bases[1:], strict=True)
+    )
+    return _Built(
+        linked, data, inits, syms, code, tuple(r for rs in own[1:] for r in rs)
+    )
 
 
 class FxRig:
@@ -268,3 +284,57 @@ class FxRig:
             regs_bad if returned else [],
             res,
         )
+
+    # -- the module's view ------------------------------------------------------------------------------------------------
+    def desc_words(self, sym: str, n: int = 7) -> tuple[int, ...]:
+        """The words of a `dk_fx_desc` data symbol as built (before any call)."""
+        at = self.built.data[sym]
+        for a0, raw, _bss in self.built.inits:
+            if a0 <= at < a0 + len(raw):
+                return struct.unpack_from(f"<{n}I", raw, at - a0)
+        raise KeyError(sym)
+
+    def scratch(self) -> tuple[float, ...]:
+        """The effect's output block as it left it."""
+        at = nw(self.built.data["_fx_scratch"])
+        return tuple(w2f(self.sess.peek(at + k) or 0) for k in range(64))
+
+    def allowed(self, stack_bytes: int) -> list[tuple[int, int, str]]:
+        """The DM that the module's code may store to in a call (docs/design/module-sdk.md 11.5 D6, sdk/dk_fx.h): the output block, its own data
+        and bss (its state included) and `stack_bytes` of data stack below I7 (the adapter does not lower I7 before the call)."""
+        out = [(self.built.data["_fx_scratch"], 4 * 64, "output block")]
+        out += [(a, n, "module data") for a, n in self.built.module_data]
+        out.append((dv.STACK - stack_bytes, stack_bytes, "module stack"))
+        return out
+
+    def foreign_stores(self, stack_bytes: int) -> list[str]:
+        """Stores of the last call made by the module's code outside `allowed`, as text (at most 4). Needs `record_stores`."""
+        allowed = self.allowed(stack_bytes)
+        names = [
+            (self.built.data["_fx_save"], 128, "adapter save area"),
+            (self.built.data["_fx_in"], 16, "dk_fx_in"),
+            (MASTER, 256, "the master block (read only for an effect)"),
+            (TABLE, 5 * ROW_WORDS * 4, "the chain table"),
+        ]
+        found = []
+        for e in self.sess.stores:
+            if not any(lo <= e.pc_sw < hi for lo, hi in self.built.module_code):
+                continue
+            at = (
+                e.address - pk_sharc.SW_ALIAS_BASE
+                if e.address >= pk_sharc.SW_ALIAS_BASE
+                else e.address
+            )
+            lo, hi = at, at + e.width
+            if any(a <= lo and hi <= a + n for a, n, _ in allowed):
+                continue
+            near = next(
+                (f"inside {nm} +{at - a:#x}" for a, n, nm in names if a <= at < a + n),
+                "unknown memory",
+            )
+            found.append(
+                f"store of {e.width} bytes to {at:#x} at pc {e.pc_sw:#x}, {near}"
+            )
+            if len(found) == 4:
+                break
+        return found
