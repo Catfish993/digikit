@@ -81,9 +81,7 @@ def patch_code(plan: dict, arena_lo: int) -> list[tuple[str, int, int]]:
     return out
 
 
-def who(
-    pc: int, modules: list[dict], code: list[tuple[str, int, int]]
-) -> str:
+def who(pc: int, modules: list[dict], code: list[tuple[str, int, int]]) -> str:
     """The code a PC belongs to: a module's block, a patch object (the runtime included), else the stock firmware."""
     for m in modules:
         if m["cf_base"] <= pc < m["cf_base"] + m["cf_size"]:
@@ -122,7 +120,20 @@ def block_words(rig: Any, mods: list[dict]) -> dict[str, bytes]:
     return {m["name"]: L.peek_range(up, m["cf_base"], m["cf_size"]) for m in mods}
 
 
-def drive(c: Any, rig: Any, machines: list[dict]) -> None:
+def sweep(rig: Any, positions: int) -> None:
+    """Choose each of the first POSITIONS entries of the machine list on track 1 and turn the encoders of its page: the run-time machines of
+    a set without a known list position are among them (`module:audit`)."""
+    s = rig.s
+    for k in range(positions):
+        rig.select(k, ups=positions + 2)
+        s.do_tap("SRC" if rig.device == "dt2" else "SYN")
+        s.run_ms(200)
+        for enc, by in (("ENC A", 5), ("ENC B", -3), ("ENC C", 4)):
+            s.do_turn(enc, by)
+            s.run_ms(80)
+
+
+def drive(c: Any, rig: Any, machines: list[dict], positions: int = 0) -> None:
     """The UI for a bounded time: the DIGIKIT menu and its MODULES page (looked at, nothing ticked), the run-time machines on their tracks with
     parameter turns, a p-lock and a sound lock on step 1, one project save, an edit, a second save and a load."""
     from tools.patchkit import pk_digikit_project as P
@@ -133,7 +144,9 @@ def drive(c: Any, rig: Any, machines: list[dict]) -> None:
         s.do_tap(key)
         s.run_ms(ms)
 
-    tap("NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES, as in the menu scenarios
+    tap(
+        "NO", 400
+    )  # SETTINGS > DIGIKIT (the ninth row) > MODULES, as in the menu scenarios
     tap("SETTINGS", 600)
     for _ in range(8):
         tap("DOWN", 200)
@@ -151,6 +164,8 @@ def drive(c: Any, rig: Any, machines: list[dict]) -> None:
         ]
     }
     P.build_project(c, rig, spec)
+    if positions:
+        sweep(rig, positions)
     P.save_project(rig)
     P.load_project(rig)
     s.run_ms(1000)
@@ -199,7 +214,7 @@ def run_memaudit(c: Any) -> None:
         }
         before = block_words(rig, mods)
         arm(rig, prot, code)
-        drive(c, rig, t.get("machines", []))
+        drive(c, rig, t.get("machines", []), t.get("sweep", 0))
         rep = rig.emu.call("guard.report")
         after = block_words(rig, mods)
         hits = [
@@ -223,7 +238,8 @@ def run_memaudit(c: Any) -> None:
             c.report["memaudit"].setdefault("words_changed", {})[x["name"]] = [
                 (hex(o), a.hex(), b.hex())
                 for o in range(0, x["cf_size"] - 3, 4)
-                if (a := before[x["name"]][o : o + 4]) != (b := after[x["name"]][o : o + 4])
+                if (a := before[x["name"]][o : o + 4])
+                != (b := after[x["name"]][o : o + 4])
             ][:8]
         for name in t.get("must_run", []):
             c.check(

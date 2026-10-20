@@ -1,7 +1,7 @@
 # The ColdFire memory audit (tools/patchkit/pk_digikit_memaudit.py): the set below is loaded, the write guard is armed on the free ColdFire
 # regions outside each module's block, the UI is driven (DIGIKIT menu, a run-time machine, parameter turns, a p-lock, a project save and
 # load) and the guard must report no store. test/dyn-demo's slot function runs on every UI pass; test/c-demo is
-# loaded and not called (test/rust-demo has no run-time entry points, so it cannot be packed).
+# loaded and not called (the static Rust demo module has no run-time entry points, so it cannot be packed).
 [scenario]
 name = "memaudit-dt2"
 kind = "debug"

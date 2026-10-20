@@ -128,7 +128,7 @@ Each run writes `jobs.tsv` to its run directory (out/runs/verify/<run>/): one ro
 Tiers: `DIGIKIT_TIER=quick` (default; the scenarios marked `tier = "quick"`, the newest image of each device) is what `mise run verify` runs when
 a framework module (see the routing table), a scenario, a module a scenario names, the `.dkm` packer, `plusdrive`, the boot tools or `tests/digikit` changed (the
 suite `digikit-boot` in `tools/devtools/verify.py` and `verify_route.py`; one pytest file per group, so they run in parallel); `verify --full` sets `DIGIKIT_TIER=full`: every
-scenario, on the newest image of each device (DT2 1.17, DN2 1.12). The quick tier is the pluck equivalence (both devices), the DN2 set and the DT2 round trip (under a minute in parallel), and since sticky machine ids `sticky-types` (the type numbers, the map, eviction) and the MODULES part of `debug-log`; `debug-guard` (full tier) runs on both images;
+scenario, on the newest image of each device (DT2 1.17, DN2 1.12). The quick tier is the pluck equivalence (both devices), the DN2 set and the DT2 round trip (under a minute in parallel), and since sticky machine ids `sticky-types` (the type numbers, the map, eviction) and the MODULES part of `debug-log`; `debug-guard` (full tier) runs on both images; the four `memaudit-*` scenarios (ColdFire memory audit, below) are quick;
 safe mode and the power cut run in the full tier. Cards are cached by content in `out/cache/digikit/cards/` (read-only for the guest; its writes live in an overlay),
 so a repeated scenario reuses the daemon's boot cache; most of the time of a scenario is emulated panel time (a project save and load take about 10 s each), not the boots.
 A scenario file is `tests/digikit/scenarios/NAME.toml`: `[scenario] name, kind, devices, tier`, and a table named like the kind (the runner's docstring lists the keys).
@@ -138,6 +138,28 @@ DSP part of the modules. Independent boots of a scenario run in threads; the cas
 The `equiv` keys `trig_frame` (the frame the note starts at; the rigs must be before it) set it close to the end of the setup. Timing: `DIGIKIT_PROFILE=1` prints the phase table of a run,
 `DIGIKIT_RUN_SALT=x` forces cold boots, `DIGIKIT_SETTLE_MS` changes the 300 ms the rigs run after their boot. Measured on a quiet machine: the quick tier (three scenarios at once) 38 s with warm boot caches and 44 s cold;
 the full tier (five test files at once) 250 s.
+
+### ColdFire memory audit (`debug` part `memaudit`)
+
+`tools/patchkit/pk_digikit_memaudit.py` proves in the emulator that a loaded module set writes no ColdFire memory outside what each module owns
+while the UI is driven. The rig is ColdFire-only (about 0.3 s to boot from the snapshot). After the boot it reads MODULES and arms
+`guard.set` (docs/CONTROL.md):
+
+- Protected: the `cpu = "cf"` `[[region]]` blocks of `devices/ports/<image>.toml` (`cf.flash_cave`, `cf.expansion`, minus `excludes`; the
+  same source as `tests/regression`), minus each module's block `[cf_base, cf_base + cf_size)` from MODULES. The rest of the arena
+  (`DKRT_STATE` words 28 and 32) is labelled `arena`.
+- Allowed writers (`allow_pc`): the code of every object the patch placed (`plan.json` writes of kind `place`, and the hook tails). For the
+  runtime's object that is the part below the arena; the arena is the end of the object. A module's code may write its own block only.
+- Driven: the DIGIKIT menu and its MODULES page (nothing ticked), the machine list and a run-time machine on track 1 with parameter
+  turns, a p-lock and a sound lock, a project save, an edit, a second save and a load (`must_run` modules are checked to have changed their block while the guard was armed).
+- Result: `guard.report` total 0. A hit prints the PC, address, size and label, and which code the PC belongs to (`module NAME`, `patch OWNER` or `stock`).
+
+Not covered: DMA and host writes (the guard does not see them), the load and `dkm_init` of the modules (the guard is armed after the boot), and
+stores that the runtime makes for a module through the API (the writer is the runtime). `test/rust-demo` has no run-time entry points and cannot be loaded; `test/c-demo` loads and is not called.
+
+Scenarios (`tests/digikit/scenarios/`, quick): `memaudit-dt2` (c-demo, dyn-demo, dyn-pluck; about 16 s), `memaudit-dn2` (c-demo, dyn-demo, dyn-dn2; about 8 s),
+and the negative controls `memaudit-dt2-stray` and `memaudit-dn2-stray`: `test/dyn-demo-stray` stores one word in the arena outside its block on its 500th UI pass, and the scenario
+must report exactly that one hit, written by that module. `mise run module:audit NAME` runs the part for one module (docs/MODULE-AUTHORING.md).
 
 ## Machine conformance (`tests/modules`)
 

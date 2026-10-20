@@ -252,6 +252,10 @@ description = "Compile module sources to build/*.dko.json: mise run module:build
 run = "uv run python -m tools.patchkit.pk_modcheck"
 description = "Check one module: `module:check NAME [--device dt2|dn2]`. A machine module runs the conformance suite (tests/modules/test_machine_conformance.py: every parameter at its limits, notes, modulation, long notes, retriggers; finite, bounded, returns, within the instruction budget), then the module's own tests (modules/<group>/<name>/tests, tests/**/test_*<name>*.py). Prints the packed size by section per device (or why it is not packed)"
 
+[tasks."module:audit"]
+run = "uv run python -m tools.patchkit.pk_modaudit"
+description = "ColdFire memory audit of one run-time module in the emulator: `module:audit NAME [--device dt2|dn2]`. Loads the module (and the run-time modules it requires) on a ColdFire-only rig, drives the UI for a bounded time (DIGIKIT menu, machine list, parameter turns, project save and load) and reports every store into the free regions outside the module blocks by code that is not a patch object (pc, address, size, the code it belongs to). About 10 to 30 s per device"
+
 [tasks."module:pack"]
 run = "uv run python -m tools.patchkit.patchkit pack"
 description = "Pack a run-time module as a .dkm: mise run module:pack -- test/dyn-pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"

@@ -230,6 +230,12 @@ A module can also be packed as a `.dkm` and loaded by the digikit runtime at boo
 - Knob slots on a Digitakt II SAMPLE clone: slot 6 is usable. Slot 3 passes only the sample bits (`value & 0x3ff`): do not put a
   parameter there: the build refuses it (docs/findings/02-machines-and-parameters.md, last section).
 
+- `mise run module:audit -- NAME [--device dt2|dn2]` runs the ColdFire memory audit for one run-time module and the run-time modules it
+  requires (docs/TESTING.md, "ColdFire memory audit"). It loads them on a ColdFire-only emulator, drives the UI for a bounded time (DIGIKIT
+  menu, the machine list with parameter turns, a project save and load, 10 to 35 s per device) and fails when ColdFire code stores into
+  the free memory regions outside the module blocks. A hit gives the PC, the address, the size and the code it belongs to. The audit
+  does not see DMA or the stores a module asks the runtime to make, and it arms the guard after the boot. A patched-in module is skipped.
+
 ### Versions and compatibility
 
 - The runtime has a semantic version, now 0.1.0, packed as `major<<16|minor<<8|patch`. Runtimes 1 to 5 read as 0.0.1 to 0.0.5.
