@@ -880,6 +880,25 @@ mod tests {
         assert_eq!(&b[508..512], &0xce5a_5f11u32.to_be_bytes());
     }
 
+    /// The sticky type map: entry 0 is bytes 28 to 31, entries 1 to 7 are bytes 480 to 507 (docs/design/digikit-store.md); the same bytes as
+    /// `make_record(..., tmap=...)` in tests/patchkit/test_patchkit_dkrt_boot.py. The words before and after keep their places.
+    #[test]
+    fn the_sticky_map_is_in_the_reserved_bytes() {
+        let mut r = example();
+        r.map = [0xe53b_3a10, 0xcf31_7d11, 0, 0, 0, 0, 0, 0x17];
+        let mut b = [0u8; 512];
+        encode(&r, &mut b);
+        assert_eq!(&b[28..32], &0xe53b_3a10u32.to_be_bytes());
+        assert_eq!(&b[480..484], &0xcf31_7d11u32.to_be_bytes());
+        assert_eq!(&b[504..508], &0x17u32.to_be_bytes());
+        assert_eq!(&b[24..28], &[0, 0, 0, 0]); // stable_blocks stays where it was
+        assert_eq!(&b[32..45], b"modules/a.dkm");
+        assert_eq!(decode(&b).unwrap().map, r.map);
+        // a record without a map (the builder's, an older runtime's) has an empty one
+        encode(&example(), &mut b);
+        assert_eq!(decode(&b).unwrap().map, [0; MAP_N]);
+    }
+
     #[test]
     fn decode_takes_what_encode_made_and_refuses_damage() {
         let mut b = [0u8; 512];

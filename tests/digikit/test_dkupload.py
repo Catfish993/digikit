@@ -153,3 +153,56 @@ def test_info_short_and_long_replies_and_has_cap():
     new = _info_of(0x0002, log + struct.pack(">II", 0x000200, caps))
     assert new["runtime"] == 0x000200 and new["caps"] == caps
     assert D.has_cap(new, "MODULES") and not D.has_cap(new, "PEEK")
+
+
+def test_modules_pages_by_start_index_and_decodes_the_records():
+    """MODULES (protocol command 3): the host asks again from the last index + 1 until it has `total` records."""
+    import struct
+
+    from tools.firmware.build import encode_8in7
+
+    def record(index: int, name: str, types: list[int], faults: int, off: int) -> bytes:
+        return (
+            bytes([index])
+            + name.encode().ljust(32, b"\0")
+            + struct.pack(">I", 0x010203)
+            + bytes([1, 1, 1, 0, 0, 0, 1, 0])
+            + struct.pack(">IIIII", 0x1000 + index, 0x40, off, 0x100 if off else 0, 1 << index if off else 0)
+            + bytes([len(types), *types])
+            + struct.pack(">I", faults)
+            + bytes([1 if faults >= 8 else 0])
+        )
+
+    recs = [record(1, "a/one", [16], 0, 0x40), record(3, "b/two", [17, 18], 8, 0)]
+    starts: list[int] = []
+
+    class Fake:
+        def __init__(self):
+            self.queue: list[bytes] = []
+
+        def send(self, msg: bytes) -> None:
+            from tools.device.midisniff import unpack_8in7
+
+            cmd, seq = msg[5], msg[6]
+            assert cmd == D.CMD_MODULES
+            start = unpack_8in7(msg[7:-1])[0]
+            starts.append(start)
+            # one record a reply, so that the host has to page
+            mine = [r for r in recs if r[0] >= start][:1]
+            body = struct.pack(">IIII", 100, 90, 50, 40) + bytes([len(recs), len(mine)]) + b"".join(mine)
+            self.queue.append(
+                msg[:4] + bytes([1, cmd | 0x40, seq]) + encode_8in7(b"\x00" + body) + b"\xf7"
+            )
+
+        def recv(self) -> bytes:
+            return self.queue.pop(0)
+
+    m = D.Uploader(Fake()).modules()
+    assert starts == [0, 2]
+    assert (m["arena_free"], m["arena_largest"], m["dsp_free"], m["dsp_largest"], m["total"]) == (100, 90, 50, 40, 2)
+    a, b = m["modules"]
+    assert (a["index"], a["name"], a["version"], a["types"], a["faults"], a["guard_off"]) == (1, "a/one", 0x010203, [16], 0, False)
+    assert a["contracts"] == [(1, 1), (1, 0), (0, 0), (1, 0)] and a["dsp_off"] == 0x40 and a["rows"] == 2
+    assert (b["index"], b["types"], b["faults"], b["guard_off"], b["dsp_len"]) == (3, [17, 18], 8, True, 0)
+    lines = D.modules_lines(m)
+    assert lines[0].startswith("arena free 100") and "types 17,18" in lines[2] and "GUARD OFF" in lines[2]
