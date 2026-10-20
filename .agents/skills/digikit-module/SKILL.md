@@ -15,7 +15,8 @@ command from the repository root.
 1. Create: `mise run module:new -- AUTHOR/NAME --machine [--dir DIR]`. It copies `tests/fixtures/modules/sine` (a contract machine,
    one DSP body for both devices, one parameter), renames ids and symbols, and builds. Without `--dir` the module is
    `modules/machines/NAME`; with `--dir` it is `DIR/NAME` and `PATCHKIT_MODULES=DIR` makes every module task find it.
-2. Edit `module.toml` and `src/dsp/NAME.s` (`references/manifest.md`, `references/contract-voice.md`).
+2. Edit `module.toml` and `src/dsp/NAME.s` (`references/manifest.md`, `references/params.md`, `references/contract-voice.md`;
+   reuse `references/dsp-recipes.md`, avoid `references/selas-pitfalls.md`, size for `references/devices.md`).
 3. Build: `mise run module:build -- PATH` (PATH is the module folder; `--check` fails when `build/*.dko.json` is stale).
 4. Check, no emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]`. A machine runs the conformance suite (every
    parameter at its limits, many notes, modulation, long notes, retriggers) and its own tests, then prints the packed size per device.
@@ -53,5 +54,10 @@ Each task takes `-- --help`. After a change to `devices/*.toml` or `sdk/sdk.toml
 
 - `references/manifest.md`: the manifest fields, the machine, parameter and page sections, the folder layout.
 - `references/contract-voice.md`: the render / note_on / desc contract, registers, the guard, how the conformance suite judges a voice.
+- `references/params.md`: from "the user wants these knobs" to `[[param]]` and knob entries; what reaches the DSP (4 words today), what persists.
+- `references/dsp-recipes.md`: tested assembly from pluck and master-drive (parameter to float, block loop, noise, one-pole, all-pass, delay line, comb, silence, ramp).
+- `references/selas-pitfalls.md`: assembler forms that are wrong on the silicon and what to write instead.
+- `references/devices.md`: Digitakt II vs Digitone II (budget, voices, parameters, memory, stock patterns).
+- `docs/findings/54-module-cookbook.md`: what each reference module taught (costs, traps, patterns); add to it with every module.
 - `references/patched-in.md`: patched-in modules (anchors, claims, `patch`, `patch:inject`, `module:dev`, `patch:test`).
 - `docs/MODULE-AUTHORING.md`, `docs/design/module-sdk.md`, `modules/README.md`, `docs/PATCHING.md`.

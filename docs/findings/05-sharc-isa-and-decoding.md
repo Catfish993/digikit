@@ -1512,7 +1512,9 @@ silicon does with opcode 0x20 **[O]** (undefined; our core raises "unsupported S
 (assembly and selcc alike), so `LSHIFT ... BY -n` is allowed again. `ENCODE_HAZARDS` refuses the source forms Selache gets
 wrong (ASHIFT, OR LSHIFT and FDEP by an immediate, FEXT by an immediate with (SE)); selcc's assembly (`-S`) passes the same
 check. `verify` fails an object with an undefined ShiftImm opcode or a signed count without its sign extension. A shift count
-in a register (`R0 = ASHIFT R11 BY R1;`) assembles correctly; selcc uses that form. None of the 35 tracked assembly files uses a
+in a register assembles correctly: in the 16-bit compute (`2a_short`), selas writes the shiftop (compute bits 19-12) as
+0x00 LSHIFT, 0x04 ASHIFT, 0x08 ROT, 0x20 OR LSHIFT, 0x44 FDEP, the values of Table 17-9's shiftop column (2026-10-21);
+selcc uses that form. None of the 35 tracked assembly files uses a
 refused form or a negative count.
 
 **Open [O].** The other Selache forms with an immediate have not been compared byte for byte with stock. The external
