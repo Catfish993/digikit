@@ -29,7 +29,7 @@ pytestmark = pytest.mark.skipif(
     reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
 
-GROUPS = ("limits", "corners", "modulation", "long", "retrigger")
+GROUPS = ("limits", "corners", "modulation", "long", "retrigger", "writes")
 REPORTS = REPO_ROOT / "out" / "runs" / "conformance"
 WORKER_TIMEOUT = 900
 MAX_SHOWN = 6

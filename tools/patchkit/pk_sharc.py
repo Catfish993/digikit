@@ -677,6 +677,18 @@ class CallSession:
         for obj in linked:
             self.symbols.update(obj.symbols)
 
+    def record_stores(self) -> None:
+        """Log every DM store of the following calls (address, width, PC) in ``stores`` (canonical DM byte addresses). Pokes and
+        peeks between calls are not logged. Uses the driver's write watchpoints (tools/sharc_dev/sharc_run.py), so a store
+        has one semantics path."""
+        wp = self._run.Watchpoint(0, 1 << 40, on_read=False, stop=False, label="store")
+        self.runner.attach_watchpoints([wp])
+        self.runner.set_watch_active(False)
+        self._recording = True
+
+    stores: tuple = ()
+    _recording = False
+
     def poke(self, addr: int, word: int) -> None:
         if not self._st._dm_write(
             self.runner.state,
@@ -730,7 +742,15 @@ class CallSession:
             st._sync_status_stack(state)
         runner.state = state
         runner.instructions = 0
-        res = runner.run(max_steps)
+        if self._recording:
+            runner.clear_watch_log()
+            runner.set_watch_active(True)
+        try:
+            res = runner.run(max_steps)
+        finally:
+            if self._recording:
+                runner.set_watch_active(False)
+                self.stores = runner.watch_log
         names = (
             "R0",
             "R1",

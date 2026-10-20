@@ -44,6 +44,10 @@ OUT_DN2 = (
 )  # DN2 voice buffers (low 7 bits of the address are 0x10: the wrapper checks)
 ROW_WORDS = 24  # words of a registry row of core/dsp-voice
 nw = dv.nw
+# The adapter lowers I7 by its frame before it calls the module (dsp-voice.s `MODIFY(I7, -40)`, dsp-voice-dn2.s `-18`); the module's
+# data stack lies below that.
+ADAPTER_FRAME_WORDS = {"dt2": 40, "dn2": 18}
+DEFAULT_STACK_BYTES = 256  # a raw routine (no dk_machine_desc) declares no stack
 
 
 @dataclass
@@ -57,6 +61,9 @@ class Block:
     context_bad: list[str]  # context registers that did not come back as they went in
     out: dict = field(default_factory=dict)
     faults: int = 0  # the runtime guard's fault count of the type since the start (registry row word 13)
+    foreign: list[str] = field(
+        default_factory=list
+    )  # stores of the module's code outside the memory it may write (rig with record_stores), one text each
 
 
 @dataclass
@@ -73,6 +80,15 @@ class _Built:
     base: dict[int, int] = field(
         default_factory=dict
     )  # the core's memory after reset's static pokes (filled by the first rig)
+    module_code: tuple[
+        tuple[int, int], ...
+    ] = ()  # (first pc, end pc) of each module object (not the wrapper), short words
+    module_data: tuple[
+        tuple[int, int], ...
+    ] = ()  # (byte address, bytes) of the module's own data and bss
+    wrapper_data: tuple[
+        tuple[int, int], ...
+    ] = ()  # the same for the adapter (core/dsp-voice)
 
 
 def _assemble(path: Path, moddir: Path) -> pk_sharc.SharcObject:
@@ -119,11 +135,16 @@ def _build(sp: pk_conform.MachineSpec) -> _Built:
     addr = DATA_BASE
     data: dict[str, int] = {}
     inits: list[tuple[int, bytes, bool]] = []
+    own: list[
+        list[tuple[int, int]]
+    ] = []  # per object: (byte address, bytes) of its data sections
     for o in objs:
         where: dict[str, int] = {}
+        own.append([])
         for sec, (raw, _al, is_bss) in o.data.items():
             where[sec] = addr
             inits.append((addr, raw, is_bss))
+            own[-1].append((addr, len(raw)))
             addr += (len(raw) + 3) & ~3
         for name, (sec, off, _g) in o.data_symbols.items():
             data[name] = where[sec] + off
@@ -162,7 +183,23 @@ def _build(sp: pk_conform.MachineSpec) -> _Built:
         syms.update({n: b + off for n, (off, _g) in o.symbols.items()})
     ext = {**externs, **syms}
     linked = [pk_sharc.link(o, b, ext) for o, b in zip(objs, bases, strict=True)]
-    return _Built(objs, linked, data, inits, syms, state, stride, clear, desc)
+    code = tuple(
+        (b, b + len(o.section) // 2) for o, b in zip(objs[1:], bases[1:], strict=True)
+    )
+    return _Built(
+        objs,
+        linked,
+        data,
+        inits,
+        syms,
+        state,
+        stride,
+        clear,
+        desc,
+        module_code=code,
+        module_data=tuple(r for rs in own[1:] for r in rs),
+        wrapper_data=tuple(own[0]),
+    )
 
 
 class MachineRig:
@@ -174,6 +211,7 @@ class MachineRig:
         track: int = 0,
         step_limit: int = 400_000,
         spec: pk_conform.MachineSpec | None = None,
+        record_stores: bool = False,
     ) -> None:
         self.spec = spec or pk_conform.spec(module, device)
         if self.spec is None:
@@ -184,6 +222,7 @@ class MachineRig:
         self.track = track
         self.step_limit = step_limit
         self.built = build_spec(self.spec) if spec else build(module, device)
+        self.record_stores = record_stores
         self.ctx_rng = random.Random(seed)
         self.last_ctx: dict[str, int] = {}
         self.by_id = {p.id: p for p in self.spec.params}
@@ -227,6 +266,8 @@ class MachineRig:
                     )
                     poke(nw(addr) + k, w)
             b.base.update(self.sess.runner.state.overlay)
+        if self.record_stores:
+            self.sess.record_stores()
         self.voice = self.track if self.device == "dn2" else 2 * self.track
         t, v = self.track, self.voice
         if self.device == "dt2":
@@ -237,6 +278,24 @@ class MachineRig:
             self.set_param(p.id, p.default)
         self.set_note(60, 100)
         self._trig = False
+
+    def use(self, track: int) -> None:
+        """Make `track` the voice of the following calls (state and memory stay: several voices run on one core)."""
+        self.track = track
+        self.voice = track if self.device == "dn2" else 2 * track
+        self._trig = False
+
+    def select(self, track: int) -> None:
+        """`use` for a voice that has not run yet: it gets the machine type, its parameters at their defaults and a note, like a
+        fresh rig's voice."""
+        self.use(track)
+        if self.device == "dt2":
+            self._set_type_dt2(track, self.spec.machine_type)
+        else:
+            self.hw(74 + self.voice, self.spec.machine_type)
+        for p in self.spec.params:
+            self.set_param(p.id, p.default)
+        self.set_note(60, 100)
 
     def hw(self, k: int, value: int) -> None:
         addr = nw(dv.FRAME) + k // 2
@@ -348,6 +407,7 @@ class MachineRig:
             if (res["regs"][n] or 0) & 0xFFFFFFFF != ctx[n] & 0xFFFFFFFF
         ]
         faults = self.sess.peek(nw(dv.TABLE) + 13) or 0
+        foreign = self._foreign_stores(out_addr) if self.record_stores else []
         return Block(
             samples,
             res["instructions"],
@@ -356,7 +416,101 @@ class MachineRig:
             bad if returned else [],
             res,
             faults & 0xFFFF,
+            foreign,
         )
+
+    # -- the write set -----------------------------------------------------------------------------------------------------
+    def _allowed(self, out_addr: int) -> list[tuple[int, int, str]]:
+        """The DM a routine of the module may store to in a call of the current voice (docs/design/module-sdk.md 11.5 D6, sdk/dk_machine.h):
+        the output block, the voice's own state block (base + stride * track, `state_bytes`), the module's own data and bss as linked, and
+        its data stack (`stack_bytes` words' worth, below the adapter's frame: the adapter lowers I7 by its frame before it calls the
+        module). A routine without a description (the raw form) has no state; it gets DEFAULT_STACK_BYTES of stack."""
+        b = self.built
+        out = [(out_addr, 4 * 32, "output block")]
+        if b.desc:
+            out.append(
+                (
+                    b.state + b.stride * self.track,
+                    b.desc[4],
+                    f"voice {self.track} state",
+                )
+            )
+        out += [(a, n, "module data") for a, n in b.module_data]
+        frame = ADAPTER_FRAME_WORDS[self.device]
+        stack = b.desc[9] if b.desc else DEFAULT_STACK_BYTES
+        out.append((dv.STACK - 4 * frame - stack, stack, "module stack"))
+        return out
+
+    def _names(self) -> list[tuple[int, int, str]]:
+        """Regions to name a foreign address by: the other voices' states, the adapter's data and frame, the stand-ins."""
+        b = self.built
+        out = [(a, n, "adapter data") for a, n in b.wrapper_data]
+        if b.desc:
+            out += [
+                (b.state + b.stride * t, b.desc[4], f"voice {t} state")
+                for t in range(b.desc[3])
+            ]
+            out.append((b.state, b.stride * b.desc[3], "voice state array"))
+        out += [
+            (
+                dv.STACK - 4 * ADAPTER_FRAME_WORDS[self.device],
+                4 * ADAPTER_FRAME_WORDS[self.device],
+                "adapter frame",
+            ),
+            (dv.FRAME, 0x1000, "frame copy"),
+            (dv.RECORDS, 0x1000, "voice records"),
+            (dv.TYPE_CACHE, 0x1000, "type cache"),
+            (dv.TABLE, 0x1000, "registry"),
+            (dv.OUT, 0x1000, "output buffers"),
+            (dv.DIAG, 0x1000, "adapter diagnostics"),
+        ]
+        return out
+
+    def _foreign_stores(self, out_addr: int) -> list[str]:
+        """Stores of the last call made by the module's code outside `_allowed`, as text (at most 4)."""
+        b = self.built
+        allowed = self._allowed(out_addr)
+        found = []
+        for e in self.sess.stores:
+            if not any(lo <= e.pc_sw < hi for lo, hi in b.module_code):
+                continue
+            # the core keeps a store to a not yet mapped address at the loader alias (pk_sharc.SW_ALIAS_BASE + address)
+            at = (
+                e.address - pk_sharc.SW_ALIAS_BASE
+                if e.address >= pk_sharc.SW_ALIAS_BASE
+                else e.address
+            )
+            lo, hi = at, at + e.width
+            if any(a <= lo and hi <= a + n for a, n, _ in allowed):
+                continue
+            found.append(
+                f"in {self._call_of(e.pc_sw)}: store of {e.width} bytes to {at:#x} at pc {e.pc_sw:#x}, {self._near(lo, allowed)}"
+            )
+            if len(found) == 4:
+                break
+        return found
+
+    def _call_of(self, pc: int) -> str:
+        """`note_on` or `render`: the entry symbol at or below the pc (the routines they call are in the same object, after them)."""
+        sy = self.built.symbols
+        named = [(sy[self.spec.entry], "render")]
+        if self.spec.note_on is not None:
+            named.append((sy[self.spec.note_on], "note_on"))
+        below = [(a, n) for a, n in named if a <= pc]
+        return max(below)[1] if below else "render"
+
+    def _near(self, addr: int, allowed: list[tuple[int, int, str]]) -> str:
+        for a, n, name in self._names():
+            if a <= addr < a + n:
+                return f"inside {name} +{addr - a:#x}"
+        best = min(
+            allowed, key=lambda r: min(abs(addr - r[0]), abs(addr - (r[0] + r[1])))
+        )
+        a, n, name = best
+        gap = addr - (a + n) if addr >= a + n else a - addr
+        if gap <= 64:
+            return f"{gap} bytes {'past the end of' if addr >= a + n else 'before'} its own {name}"
+        return "unknown memory"
 
     def _hw_get(self, k: int) -> int:
         cur = self.sess.peek(nw(dv.FRAME) + k // 2) or 0

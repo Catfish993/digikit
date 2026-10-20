@@ -25,6 +25,7 @@ manifest does yet (the schema of module.toml does not know the table).
 
 from __future__ import annotations
 
+import dataclasses
 import random
 import tomllib
 from dataclasses import dataclass, field
@@ -59,6 +60,20 @@ NEGATIVE = {
     "test/dyn-dsp-hang": "did not return",
     "test/dyn-guard-nan": "guard stepped in",
 }
+
+
+# Negative fixtures that are a source file of a module, not a module of their own: id `module#name` -> (path under the module,
+# render symbol, note_on symbol, description symbol, expected message). The spec is the module's with these replaced.
+NEGATIVE_VARIANTS = {
+    "test/dyn-guard-nan#overrun": (
+        "src/dsp/overrun.s",
+        "_ov_render",
+        "_ov_note_on",
+        "_ov_desc",
+        "wrote memory it does not own",
+    ),
+}
+NEGATIVE.update({k: v[4] for k, v in NEGATIVE_VARIANTS.items()})
 
 
 class ConformError(RuntimeError):
@@ -211,6 +226,19 @@ def spec(mid: str, device: str) -> MachineSpec | None:
     """The spec of module MID on DEVICE, or None when the module is no machine with a DSP object for that device."""
     if mid.split("/")[0] == "core":  # the framework renders no machine of its own
         return None
+    if mid in NEGATIVE_VARIANTS:
+        base = spec(mid.split("#")[0], device)
+        if base is None:
+            return None
+        path, render, note_on, desc, _msg = NEGATIVE_VARIANTS[mid]
+        return dataclasses.replace(
+            base,
+            module=mid,
+            sources=((base.moddir / path).resolve(),),
+            entry=render,
+            note_on=note_on,
+            desc=desc,
+        )
     moddir = modroots.module_dir(mid)
     man = _manifest(moddir)
     row = _entry_row(man)
@@ -245,6 +273,8 @@ def machine_specs(negative: bool = False) -> list[MachineSpec]:
             s = spec(mid, dev)
             if s is not None:
                 out.append(s)
+    if negative:
+        out += [s for vid in NEGATIVE_VARIANTS for d in DEVICES if (s := spec(vid, d))]
     return out
 
 
