@@ -13,6 +13,8 @@ the invariants of every block:
   bound      |sample| <= LEVEL_BOUND
   guard      the runtime guard of core/dsp-voice did not step in (DT2: its fault count stays 0; a guarded block is zeroed, so
              finite and bound alone would pass a broken routine)
+  writes     the module's code stored only to the output block, its own voice state, its own data and its stack
+             (tests/support/machine_rig.py `_allowed`); the "writes" group also runs two voices at once
   budget     instructions of the block <= the voice-block budget; the block of a trigger (DN2: and the one after the edge)
              <= the note-on budget (pk_conform.budget)
 
@@ -44,7 +46,7 @@ def run_case(
     sp: pk_conform.MachineSpec, case: pk_conform.Case, bud: pk_conform.Budget, seed: int
 ) -> dict:
     t0 = time.time()
-    rig = MachineRig(sp.module, sp.device, seed=seed)
+    rig = MachineRig(sp.module, sp.device, seed=seed, record_stores=True)
     rig.set_note(case.note, case.vel)
     words: dict[str, int] = {}
     vel = case.vel
@@ -65,6 +67,8 @@ def run_case(
             failure = f"{where}: the call did not return to the caller within {rig.step_limit} steps (halt {h.get('reason')} at {b.out.get('final_pc_sw', 0):#x}, {b.instructions} instructions)"
         elif b.faults:
             failure = f"{where}: the runtime guard stepped in ({b.faults} fault(s) counted: the routine's output was not finite or above {pk_conform.LEVEL_BOUND}, and the guard zeroed the block)"
+        elif b.foreign:
+            failure = f"{where}: the module wrote memory it does not own ({'; '.join(b.foreign)})"
         elif b.context_bad:
             failure = f"{where}: the context registers {','.join(b.context_bad)} did not come back as they went in (in {', '.join(f'{n}={rig.last_ctx[n]:#x}' for n in b.context_bad)})"
         else:
@@ -106,6 +110,49 @@ def run_case(
     }
 
 
+POLY_BLOCKS = 12
+
+
+def run_poly(sp: pk_conform.MachineSpec, notes: tuple[int, int], seed: int) -> dict:
+    """Two voices on one core, notes `notes` (voice 1 starts four blocks late), all parameters at their defaults, then at their
+    maxima from block 6, then at their minima from block 9. A store of one voice into the other's state, or past either, fails."""
+    t0 = time.time()
+    rig = MachineRig(sp.module, sp.device, seed=seed, record_stores=True)
+    rig.select(0)
+    rig.select(1)
+    failure = None
+    k = 0
+    for k in range(POLY_BLOCKS):
+        level = "hi" if 6 <= k < 9 else "lo" if k >= 9 else None
+        for t in (0, 1):
+            rig.use(t)
+            if level:
+                rig.set_params(
+                    {p.id: p.hi if level == "hi" else p.lo for p in sp.params}
+                )
+            if k == 4 * t:
+                rig.set_note(notes[t], 100)
+                rig.trigger()
+            if k < 4 * t:
+                continue  # voice 1 has not started
+            b = rig.block()
+            if not b.returned or b.foreign:
+                why = "; ".join(b.foreign) or "the call did not return"
+                failure = f"{sp.label} case writes/two-voices/notes{notes[0]},{notes[1]} block {k} voice {t}: the module wrote memory it does not own ({why})"
+                break
+        if failure:
+            break
+    return {
+        "group": "writes",
+        "name": f"two-voices/notes{notes[0]},{notes[1]}",
+        "blocks": k + 1,
+        "steady": 0,
+        "noteon": 0,
+        "failure": failure,
+        "seconds": round(time.time() - t0, 2),
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("module")
@@ -130,6 +177,9 @@ def main() -> int:
         if a.group and case.group not in a.group:
             continue
         results.append(run_case(sp, case, bud, a.seed))
+    if not a.group or "writes" in a.group:
+        for notes in ((24, 60), (60, 100), (100, 127)):
+            results.append(run_poly(sp, notes, a.seed))
     out = {
         "label": sp.label,
         "python": sys.version.split()[0] + (" pypy" if "PyPy" in sys.version else ""),

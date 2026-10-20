@@ -1006,6 +1006,23 @@ class Runner:
         if self._watch is not None:
             _install_watch_tracker(self.state, self._watch, self.data)
 
+    def set_watch_active(self, active: bool) -> None:
+        """Switch the attached watchpoints on or off without detaching them (a detach copies the whole overlay). While off,
+        stores take the plain dict path and nothing is logged. The log is kept; read it with ``watch_log``."""
+        t = self._watch
+        if t is None:
+            return
+        t.read_watchpoints = (
+            tuple(w for w in t.watchpoints if w.on_read) if active else ()
+        )
+        t.write_watchpoints = (
+            tuple(w for w in t.watchpoints if w.on_write) if active else ()
+        )
+
+    def clear_watch_log(self) -> None:
+        if self._watch is not None:
+            self._watch.log.clear()
+
     def invalidate(self, pc_sw: int) -> None:
         """Evict pc_sw from the decode cache. See the class docstring for
         why nothing calls this automatically today."""

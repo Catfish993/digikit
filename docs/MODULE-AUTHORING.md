@@ -138,6 +138,12 @@ or MODE1. The adapter pins M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1 f
 `JUMP (M13, I13)` returns). A 16-bit `Rn = Rn op Rx` followed by some instructions can make the emulator read another instruction than the
 silicon; the build refuses it and says so (use distinct registers).
 
+Memory: your routine may write the output block (`in->out`), its own voice's state block, its data stack (`stack_bytes`, below the
+adapter's frame) and the data and bss of its own object. The data and bss are shared by all voices: state that must differ per voice goes
+in `state`. Nothing else: not another voice's state, not the adapter's data, not the frame copy. The conformance suite records every
+store your code makes during `note_on` and `render` (group `writes`: low to high notes, parameter changes between blocks, two voices at
+once). A store outside these ranges fails with the module, device, call, PC, address, size and the nearest known region.
+
 ## Build, check, run
 
 ```sh
