@@ -63,7 +63,7 @@ def test_module_tests_are_found_by_device():
     found = dict(
         h.module_tests(["digikit/master-gain", "test/cf-demo"], "dt2", quick_only=True)
     )
-    assert "fx.master-gain.audible" in found and "test.cf-demo.boots" in found
+    assert "digikit.master-gain.audible" in found and "test.cf-demo.boots" in found
     assert all(isinstance(steps, list) and steps for steps in found.values())
     assert dict(h.module_tests(["digikit/master-gain"], "dn2", quick_only=False))
 
