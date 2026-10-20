@@ -42,7 +42,7 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
-        "42099c54a053e55bea32072f220899153353e149ffe64f9dde86d4d884ec8eb8",
+        "22ce1babd0c0f2319e8cf6304973435d7156caf52f110a5e3534312de26ce24d",
     ),
     (
         "Digitakt_II_OS1.17.syx",
@@ -52,12 +52,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck,machines/xslice",
-        "a7ac4d502cee4a66e2fba9d25ec6a80b64e29bf16b2aff36907326750dac8724",
+        "90fb69271d6bf317775fbde42cdc4524653fc8db6b22613ef380eff87e9e3702",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "machines/pluck",
-        "9d61035da052cbe5b8dcb971d97dc1e46742ddec648f49d02f43de963e7f5d2e",
+        "846333968cccdfa3351e57e5c65cb2bf9f824b3d4dbb868d4fcb06c477005938",
     ),
 ];
 
