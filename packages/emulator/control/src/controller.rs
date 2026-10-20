@@ -380,6 +380,53 @@ impl Loaded {
             current_analysis: None,
         }
     }
+    /// A patched image loaded as stock (the daemon's command line) is its own base here. Its patch record names the real base:
+    /// take the stock image of that SHA-256 from `firmware/` (the ready inputs and the DSP at boot belong to the base).
+    fn find_base(&mut self) -> Result<(), String> {
+        if self.base.as_deref() != Some(self.current.as_slice()) {
+            return Ok(());
+        }
+        let Some(record) = patchkit::verify::patch_record(&self.current).ok().flatten() else {
+            return Ok(());
+        };
+        if record.base_sha256 == self.base_sha {
+            return Ok(());
+        }
+        let registry =
+            plusdrive_format::device_profile::Registry::load().map_err(|e| e.to_string())?;
+        let name = registry
+            .identify(&record.base_sha256)
+            .map_err(|e| format!("the patched image's base is not a known firmware: {e}"))?
+            .1
+            .filename
+            .clone()
+            .ok_or("the base firmware has no file name in its device file")?;
+        // `$DIGI_FIRMWARE_DIR`, else `firmware/` of the working directory or an ancestor of the executable (as `devices/`)
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        if let Some(dir) = std::env::var_os("DIGI_FIRMWARE_DIR") {
+            dirs.push(dir.into());
+        } else {
+            if let Ok(cwd) = std::env::current_dir() {
+                dirs.extend(cwd.ancestors().map(|a| a.join("firmware")));
+            }
+            if let Ok(exe) = std::env::current_exe() {
+                dirs.extend(exe.ancestors().skip(1).map(|a| a.join("firmware")));
+            }
+        }
+        let bytes = dirs
+            .iter()
+            .find_map(|dir| std::fs::read(dir.join(&name)).ok())
+            .ok_or_else(|| format!("the patched image's base firmware/{name} was not found"))?;
+        if firmware::sha256_hex(&bytes) != record.base_sha256 {
+            return Err(format!(
+                "firmware/{name} is not the base this image was patched from"
+            ));
+        }
+        self.base_sha = record.base_sha256;
+        self.base = Some(bytes);
+        self.base_analysis = None;
+        Ok(())
+    }
     fn ensure_analysis(&mut self) -> Result<(), String> {
         if self.current_analysis.is_none() {
             self.current_analysis = Some(Analysis::of(&self.current)?);
@@ -585,14 +632,23 @@ impl Actor {
     /// guest left it (its writes laid over the image), the DSP as a device boots it. Only a patched build with coupled audio can be
     /// restarted here; for anything else an event says so and the guest carries on (it spins after the write).
     fn soft_reset(&mut self) {
-        let Some(loaded) = self.loaded.as_ref() else { return };
+        // A firmware given on the command line is loaded as stock, without an analysis: make it here.
+        let analysed = match self.loaded.as_mut() {
+            Some(loaded) => loaded.find_base().and_then(|()| loaded.ensure_analysis()),
+            None => Err("no firmware loaded".into()),
+        };
+        if let Err(reason) = analysed {
+            self.emit("cpu.reset", json!({"restart": "unsupported", "reason": reason}));
+            return;
+        }
+        let loaded = self.loaded.as_ref().expect("checked above");
         let (bytes, card, base_sha, base_bytes) = (
             loaded.current.clone(),
             loaded.card.clone(),
             loaded.base_sha.clone(),
             loaded.base.clone(),
         );
-        let Some(new) = loaded.current_analysis.clone() else { return };
+        let new = loaded.current_analysis.clone().expect("ensure_analysis made it");
         self.reset_overlay = self.runtime.as_ref().map(|r| r.card_overlay());
         self.reset_ram = self.keep_ram_range().and_then(|(base, bytes)| {
             self.runtime.as_mut().map(|r| r.peek_ram(base, bytes))
@@ -601,10 +657,19 @@ impl Actor {
         let mut report = json!({});
         match self.load_patched_coupled(&bytes, &card, &new, &base_sha, &base_bytes, &mut report, "cold", &tx) {
             Ok(CoupledLoad::Started) => self.emit("cpu.reset", json!({"restart": "cold boot started"})),
-            Ok(_) | Err(_) => {
+            Ok(other) => {
                 self.reset_overlay = None;
                 self.reset_ram = None;
-                self.emit("cpu.reset", json!({"restart": "unsupported"}));
+                let reason = match other {
+                    CoupledLoad::Unavailable(why) => why,
+                    _ => "the boot was installed without a worker".into(),
+                };
+                self.emit("cpu.reset", json!({"restart": "unsupported", "reason": reason}));
+            }
+            Err(e) => {
+                self.reset_overlay = None;
+                self.reset_ram = None;
+                self.emit("cpu.reset", json!({"restart": "unsupported", "reason": e.message}));
             }
         }
     }
