@@ -9,7 +9,6 @@ pub mod dt2 {
     pub const DYNP_KNOB0_FRAME_OFF: u32 = 0x0;
     pub const DYNP_KNOB1_FRAME_OFF: u32 = 0x1;
     pub const DYNP_KNOB2_FRAME_OFF: u32 = 0x2;
-    pub const DYNP_KNOB3_FRAME_OFF: u32 = 0x3;
     pub const DYNP_KNOB4_FRAME_OFF: u32 = 0x6;
     pub const DYNP_KNOB5_FRAME_OFF: u32 = 0x7;
     pub const DYNP_KNOB6_FRAME_OFF: u32 = 0x8;
@@ -35,13 +34,6 @@ pub mod dt2 {
     pub const P2_MIN: u32 = 0x2;
     pub const P2_MAX: u32 = 0x7d00;
     pub const P2_DEFAULT: u32 = 0x1222;
-    pub const P3_KNOB: u32 = 0x3; // knob position
-    pub const P3_SLOT: u32 = 0x3; // engine or sound-array slot
-    pub const P3_FRAME_OFF: u32 = 0x3; // halfwords from knob 0 of the same track
-    pub const P3_MIRROR: u32 = 0x1c; // index in the parameter table
-    pub const P3_MIN: u32 = 0x3;
-    pub const P3_MAX: u32 = 0x7c00;
-    pub const P3_DEFAULT: u32 = 0x1333;
     pub const P4_KNOB: u32 = 0x4; // knob position
     pub const P4_SLOT: u32 = 0x4; // engine or sound-array slot
     pub const P4_FRAME_OFF: u32 = 0x6; // halfwords from knob 0 of the same track

@@ -17,10 +17,7 @@
               "param": "p2",
               "slot": 2
             },
-            {
-              "param": "p3",
-              "slot": 3
-            },
+            null,
             {
               "param": "p4",
               "slot": 4
@@ -83,16 +80,6 @@
         "name": "Param 2",
         "short": "P2",
         "slot": 2,
-        "template": 209
-      },
-      {
-        "default": 4915,
-        "id": "p3",
-        "max": 31744,
-        "min": 3,
-        "name": "Param 3",
-        "short": "P3",
-        "slot": 3,
         "template": 209
       },
       {

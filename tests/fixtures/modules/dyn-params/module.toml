@@ -6,7 +6,7 @@ category = "test"
 type = "machine"
 author = "digikit"
 status = "experimental"
-summary = "A run-time machine with eight parameters, one per knob, to check the parameter rows the registry writes."
+summary = "A run-time machine with seven parameters, one per knob but knob 3, to check the parameter rows the registry writes."
 dynamic = true
 ports = ["dt2-1.16", "dt2-1.17"]
 requires = []
@@ -16,7 +16,7 @@ conflicts = []
 "dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
-# Test fixture (docs/design/digikit-registry.md): a clone of SAMPLE (type 0) whose eight knobs are eight parameters of its own,
+# Test fixture (docs/design/digikit-registry.md): a clone of SAMPLE (type 0) whose knobs but knob 3 (the sample slot) are parameters of its own,
 # so that every slot's row formula is exercised.
 [[machine]]
 id = "dynp"
@@ -24,7 +24,7 @@ type_hint = 17   # the number this machine had before sticky ids (finding 52)
 name = "DynP"
 short = "DYP"
 clone_of = 0
-knobs = ["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]
+knobs = ["p0", "p1", "p2", 0, "p4", "p5", "p6", "p7"]   # knob 3 of a SAMPLE clone is the sample slot: no parameter there
 devices = ["dt2"]
 
 [[param]]
@@ -55,16 +55,6 @@ template = 0xd1
 min = 2
 max = 32000
 default = 4642
-devices = ["dt2"]
-
-[[param]]
-id = "p3"
-name = "Param 3"
-short = "P3"
-template = 0xd1
-min = 3
-max = 31744
-default = 4915
 devices = ["dt2"]
 
 [[param]]
