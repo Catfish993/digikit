@@ -12,8 +12,8 @@ Related: `docs/plans/digikit-runtime.md` (Phase 11), `docs/design/digikit-dkm.md
 | Kind | Example | What it is | Loaded how |
 | --- | --- | --- | --- |
 | framework | `core/runtime`, `core/dynreg`, `core/dyndsp`, `core/dsp-link`, `core/dsp-voice`, `core/machines`, `core/params` | has firmware hooks, anchor rules, patch ops | patched into the image (`modules/core/*/module.toml`) |
-| content, patched in | `digikit/pluck`, `test/xslice`, `digikit/master-gain` | machine rows and a DSP routine, placed by patchkit | patched into the image |
-| content, run time | `test/dyn-pluck`, `test/dyn-xslice` | the same machine as a `.dkm` (`dynamic = true`) | `dkrt_load` at boot (`docs/design/digikit-runtime.md:161-183`) |
+| content, patched in | `test/patched-pluck`, `test/xslice`, `digikit/master-gain` | machine rows and a DSP routine, placed by patchkit | patched into the image |
+| content, run time | `digikit/pluck`, `test/dyn-xslice` | the same machine as a `.dkm` (`dynamic = true`) | `dkrt_load` at boot (`docs/design/digikit-runtime.md:161-183`) |
 | ColdFire service | `test/c-demo`, `test/rust-demo` | `dkm_init`, `dkm_fini`, `dkm_slot_n` | `.dkm` (`docs/design/digikit-dkm.md:73-75`) |
 | fixture | `test/dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-crash`, `twin-*`, `dn2-*` | framework tests, today beside real modules | both ways |
 
@@ -28,14 +28,14 @@ decoders, `pk_build.py:1-17`) -> committed `build/*.dko.json` (our JSON object f
 (`digikit-runtime.md:161-183`). The browser runs `patchkit.wasm` over the committed objects, so it needs no toolchain (finding 27, `27-module-schema.md:16-19`).
 
 The manifest `module.toml` mixes three things: author data (name, params), device data (templates, knob codes, `clone_of`, `position`, `own_dsp`) and
-build data (`place = "dsp.l2"`, `devices`, `[object.externs]`). Example: `modules/machines/pluck/module.toml:28-49` has `knobs = [0xca, "pluck_decay", ..., 0xd1]`
+build data (`place = "dsp.l2"`, `devices`, `[object.externs]`). Example: `tests/fixtures/modules/patched-pluck/module.toml:28-49` has `knobs = [0xca, "pluck_decay", ..., 0xd1]`
 (stock codes), `:51-62` has `template = 0xd1` and `[param.dn2] template = 0xd5`, `:46-49` has `position = 4`, `own_dsp = true`.
 
 ### 1.3 Two copies, two routines
 
 | Item | Patched in | Run time |
 | --- | --- | --- |
-| module | `modules/machines/pluck` | `tests/fixtures/modules/dyn-pluck/module.toml:23-34` builds from `../../../../modules/machines/pluck/src/dsp/pluck.s` and `pluck_dn2.s` |
+| module | `tests/fixtures/modules/patched-pluck` (builds from `../../../../modules/machines/pluck/src/dsp/pluck.s`) | `modules/machines/pluck/module.toml:23-34` builds from `src/dsp/pluck.s` and `pluck_dn2.s` |
 | type number | 9 (`types.toml:27`, DN2 :54) | 18 on DT2 (`types.toml:41`), 17 on DN2 (`:67`) |
 | DSP routine | `pluck.s` (DT2, 432 lines), `pluck_dn2.s` (DN2, 419 lines) | the same two files |
 
@@ -538,7 +538,7 @@ The new guard test: a fixture that outputs NaN and one that leaves an out-of-ran
 
 ### 10.3 Retiring the patched-in content modules
 
-Patched-in `digikit/pluck` has type 9; the run-time one has 18 (DT2) and 17 (DN2) (`types.toml:27,41,54,67`). A project saved with type 9 would load as a gap row that plays as type 0
+Patched-in `test/patched-pluck` (before 2026-10-21: `digikit/pluck`) has type 9; the run-time one has 18 (DT2) and 17 (DN2) (`types.toml:27,41,54,67`). A project saved with type 9 would load as a gap row that plays as type 0
 (`digikit-registry.md:99`). Options: (a) accept, if no saved project uses type 9 (Em has the only device); (b) keep type 9 reserved as an alias that the loader maps to the run-time pluck (needs a
 firmware-side map; not built). Recommendation: (a), after Em confirms. **[O]**
 

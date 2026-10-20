@@ -22,12 +22,12 @@ Python API for the scenario suite (lane C builds on it; everything below is impo
     from tools.patchkit import pk_dkrt_boot as B
     env = B.Env("dt2-1.17", work_dir)                  # the files of one image: folder, cards, binaries
     img = env.build_image("core/runtime,core/dynreg,core/dyndsp")   # a patched firmware for the static module set S -> Img
-    env.pack("test/dyn-pluck", "pluck-d.dkm")           # a .dkm into the card folder (digikit/modules/)
+    env.pack("digikit/pluck", "pluck-d.dkm")           # a .dkm into the card folder (digikit/modules/)
     card = env.card(["modules/pluck-d.dkm"], counter=0, seq=1)      # a card image holding that selection record
     with env.boot(img, card, tag="a") as rig:           # a coupled daemon, cold-booted on that card: the boot hook has run
         rig.boot_info()        # dict: safe, reason, counter, seq, copy, count, loaded, results[], ui_reached, dsp_wait
         rig.voice_rows()       # [(type, pc)] of the DSP voice registry (type 0xffffffff: free)
-        rig.dyn_type("test/dyn-pluck", "pluck")   # the type the runtime assigned at this boot (from DKRT_ASSIGN)
+        rig.dyn_type("digikit/pluck", "pluck")   # the type the runtime assigned at this boot (from DKRT_ASSIGN)
         rig.machine_listed(16) # is the machine row of that type named
         rig.sel_records()      # the two record copies as the card holds them now: [dict|None, dict|None]
         rig.set_selection(["modules/x.dkm"])   # dkrt_selection_set through the mailbox (returns its result)
@@ -792,8 +792,8 @@ class Proof:
     def setup(self) -> None:
         e = self.env
         if self.dt2:
-            e.pack("test/dyn-pluck", "m1.dkm")
-            self.static = RT + ",digikit/pluck"
+            e.pack("digikit/pluck", "m1.dkm")
+            self.static = RT + ",test/patched-pluck"
             self.mods = ["modules/m1.dkm"]
         else:
             e.pack("test/dyn-dn2", "m0.dkm")
@@ -850,7 +850,7 @@ class Proof:
             used = [r for r in run.voice_rows() if r[0] != FREE_TYPE]
             # DT2: the pluck's machine type, assigned at load; DN2: the voice row is test/sine's (the other machine has none)
             mach = (
-                run.dyn_type("test/dyn-pluck", "pluck")
+                run.dyn_type("digikit/pluck", "pluck")
                 if self.dt2
                 else run.dyn_type("test/dyn-dn2", "dyn_pluck")
             )

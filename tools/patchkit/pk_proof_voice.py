@@ -10,7 +10,7 @@ forced on the wire: word 0x94 is the machine type of track 0) and renders TRIG 1
 
   stock             the stock firmware (reference)
   patched-type0     patched image, no poke: must be bit-identical to stock (a stock machine is untouched)
-  pluck60            type 9 (digikit/pluck) forced, note 60: a pluck at 261.63 Hz
+  pluck60            type 9 (test/patched-pluck) forced, note 60: a pluck at 261.63 Hz
   pluck72            type 8, pitch word 0x4800 (note 72): 523.25 Hz
   tune+1            type 9, tune word 0x4100 (+1 semitone): 277.18 Hz
   lev-half          type 9, the machine level word 0xec halved (0x6400 -> 0x3200): -6 dB if the engine's later
@@ -20,7 +20,7 @@ forced on the wire: word 0x94 is the machine type of track 0) and renders TRIG 1
 Parts (independent, in parallel processes with `--jobs`, tools/patchkit/pk_proofkit.py): basic = type0 (stock, patched-type0),
 pluck60, pluck72, tune (tune+1); level (lev-half, lev-full, stock, stock-lev-half); reverb (rev-dry, rev-send); filter
 (flt-open, flt-closed). `--quick` runs type0, pluck60, level and filter; the full tier runs every case.
-The patched image is built from core/dsp-voice and the digikit/pluck set unless
+The patched image is built from core/dsp-voice and the test/patched-pluck set unless
 `--patched` names one. Output stays under out/ (derived from firmware).
 """
 
@@ -42,7 +42,7 @@ from tools.patchkit import pk_proofkit as K  # noqa: E402
 # Type 9 forced on the wire plus pluck's defaults in the frame words of the knobs it reads (DECAY, PICK, BRIGHT, COLOR on knobs 1, 2, 4, 5;
 # byte offset 2 (0x6d + knob + 2 (knob >> 2))): the sample machine the track really has leaves other values there.
 PLUCK = "0x94=9,0xdc=0x4000,0xde=0x2000,0xe6=0x5000,0xe8=0x2800"
-PATCH_MODS = ["core/dsp-voice", "core/machines", "core/params", "digikit/pluck"]
+PATCH_MODS = ["core/dsp-voice", "core/machines", "core/params", "test/patched-pluck"]
 
 TRIG1 = 25
 NOTE_HZ = {60: 261.6256, 72: 523.2511}
@@ -71,7 +71,7 @@ def panel(page: int, encoder: int, events: int, detents: int) -> list[dict]:
     return ev
 
 
-# The machine is digikit/pluck, its type 9 forced on the wire (the machine menu is the other proof, tools/patchkit/pk_proof_pluck.py):
+# The machine is test/patched-pluck, its type 9 forced on the wire (the machine menu is the other proof, tools/patchkit/pk_proof_pluck.py):
 # the pitch cases measure its fundamental with `analyse_pluck` (case -> note).
 PLUCK_CASES: dict[str, int] = {"pluck60": 60, "pluck72": 72, "tune+1": 61}
 

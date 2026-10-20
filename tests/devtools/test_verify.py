@@ -458,7 +458,7 @@ def test_module_leaf_selects_the_tests_that_name_it() -> None:
 
 
 def test_module_scenario_modules_select_their_scenarios() -> None:
-    got = selected("tests/fixtures/modules/dyn-pluck/module.toml")
+    got = selected("modules/machines/pluck/module.toml")
     for name in (
         "test_equiv_dn2",
         "test_equiv_dt2",
@@ -472,7 +472,7 @@ def test_module_scenario_modules_select_their_scenarios() -> None:
     ):
         assert f"tests/digikit/{name}.py" in got, name
     assert "tests/patchkit/test_patchkit_dkrt_machine.py" in got
-    # digikit/pluck is what test/dyn-pluck builds its DSP from: its scenarios follow
+    # digikit/pluck is the source of test/patched-pluck's DSP: the patched-in twin's tests follow
     assert "tests/digikit/test_menu_dt2.py" in selected(
         "modules/machines/pluck/src/dsp/pluck.s"
     )
@@ -556,8 +556,8 @@ def test_module_change_drops_no_test_that_names_a_dependent() -> None:
 
 
 def test_dependents_follow_requires_and_shared_sources() -> None:
-    assert "digikit/pluck" in verify_route.dependents({"core/machines"})
-    assert "test/dyn-pluck" in verify_route.dependents({"digikit/pluck"})
+    assert "test/patched-pluck" in verify_route.dependents({"core/machines"})
+    assert "test/patched-pluck" in verify_route.dependents({"digikit/pluck"})
     assert verify_route.dependents({"digikit/master-gain"}) == {"digikit/master-gain"}
 
 

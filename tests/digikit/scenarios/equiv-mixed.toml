@@ -6,8 +6,8 @@ devices = ["dt2"]
 tier = "full"
 
 [equiv]
-modules = ["test/dyn-pluck", "test/dyn-xslice"]
-twin = "digikit/pluck,test/twin-xslice"
+modules = ["digikit/pluck", "test/dyn-xslice"]
+twin = "test/patched-pluck,test/twin-xslice"
 play = "pluck"
 static_type = 9
 hint = 7        # list position of the patched-in pluck (the xslice twin follows it)

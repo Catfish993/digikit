@@ -29,9 +29,9 @@
             "name": "PLUCK",
             "title": "Pluck"
           },
-          "position": 4,
+          "position": null,
           "short": "PLK",
-          "type": 9
+          "type": null
         },
         "dt2": {
           "clone_of": 0,
@@ -69,7 +69,7 @@
           "page": null,
           "position": null,
           "short": "PLK",
-          "type": 9
+          "type": null
         }
       },
       "id": "pluck",

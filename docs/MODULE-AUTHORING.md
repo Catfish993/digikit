@@ -198,8 +198,9 @@ unless you say so with `--dir`. After an import, run `module:check` before you t
 ## Patched-in modules
 
 A module without `dynamic = true` is applied to a firmware image by patchkit (`mise run patch -- --firmware FILE --modules a,b -o OUT.syx`,
-then `mise run patch:inject -- OUT.syx` into a running emulator). The project's own PLUCK machine (`digikit/pluck`) stays patched in:
-it is the public module of the browser page until the browser can deliver a `.dkm`. A patched-in machine has a permanent type number in
+then `mise run patch:inject -- OUT.syx` into a running emulator). The project's own PLUCK machine (`digikit/pluck`) is a run-time module; its patched-in twin `test/patched-pluck`
+(a test fixture, same DSP source) keeps the patched-in machine path under test. The browser patch page lists patched-in modules only; run-time modules go
+to the device through `/upload`. A patched-in machine has a permanent type number in
 `modules/core/machines/types.toml`. Use `module:dev -- --modules ID` to rebuild, patch, inject and run the quick tests on every save, and
 `patch:test` for the smoke tour. Anchors, ports and the rest: [PATCHING.md](PATCHING.md) and [modules/README.md](../modules/README.md).
 
@@ -215,7 +216,7 @@ it is the public module of the browser page until the browser can deliver a `.dk
 
 ## Where to look next
 
-- [modules/README.md](../modules/README.md): every manifest key, the typed sections, worked examples (`digikit/pluck`, `digikit/master-gain`).
+- [modules/README.md](../modules/README.md): every manifest key, the typed sections, worked examples (`test/patched-pluck`, `digikit/master-gain`).
 - [design/module-sdk.md](design/module-sdk.md): the SDK design and the decisions of 2026-10-20.
 - [PATCHING.md](PATCHING.md): patching, the emulator control socket, safety and recovery.
 - [DEVELOPMENT.md](DEVELOPMENT.md): the module loop, tests, repository layout.

@@ -9,18 +9,18 @@ tier = "quick"
 
 [roundtrip]
 order = ["A", "B"]
-types = ["test/dyn-pluck:pluck", "test/dyn-xslice:xslice_d"]   # read from the boot's assignment (D7)
+types = ["digikit/pluck:pluck", "test/dyn-xslice:xslice_d"]   # read from the boot's assignment (D7)
 lock_turn = 11
 sound_lock_turn = 2
 
 [roundtrip.sets]
-A = ["test/dyn-pluck", "test/dyn-xslice"]
+A = ["digikit/pluck", "test/dyn-xslice"]
 B = ["test/dyn-xslice"]
-A2 = ["test/dyn-xslice", "test/dyn-pluck"]
+A2 = ["test/dyn-xslice", "digikit/pluck"]
 
 [[roundtrip.machines]]
 track = 1
-machine = "test/dyn-pluck:pluck"
+machine = "digikit/pluck:pluck"
 hint = 7
 
 [[roundtrip.machines]]

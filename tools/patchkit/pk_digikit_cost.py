@@ -141,7 +141,7 @@ def run(base: str, image: str, seconds: int, keep: Path | None) -> int:
     work = keep or Path(tempfile.mkdtemp(prefix="digikit-cost-"))
     work.mkdir(parents=True, exist_ok=True)
     env = B.Env(image, work)
-    env.pack("test/dyn-pluck", "pluck.dkm")
+    env.pack("digikit/pluck", "pluck.dkm")
     card = env.card(["modules/pluck.dkm"], tag="cost")
     a_img = build(env, "A", old_root(base, work))
     b_img = build(env, "B", None)

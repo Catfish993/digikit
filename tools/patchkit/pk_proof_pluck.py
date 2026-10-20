@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """patchkit proof: the PLUCK machine end to end on Digitakt II (core/dsp-voice + core/machines + core/params +
-digikit/pluck), in the emulator, through the panel.
+test/patched-pluck), in the emulator, through the panel.
 
     uv run python -m tools.patchkit.pk_proof_pluck [--fw 1.17] [--out DIR] [--only a,b,c,d,e,f,g] [--quick] [--jobs N]
 
@@ -61,8 +61,8 @@ from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proof_machines as M  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
 
-PLUCK_TYPE = 9  # core/machines types.toml, "digikit/pluck:pluck" on dt2
-MODS = ["core/dsp-voice", "core/machines", "core/params", "digikit/pluck"]
+PLUCK_TYPE = 9  # core/machines types.toml, "test/patched-pluck:pluck" on dt2
+MODS = ["core/dsp-voice", "core/machines", "core/params", "test/patched-pluck"]
 PLUCK_DOWNS = (
     7  # presses of DOWN from the top of the machine list to PLUCK (the 8th entry)
 )
@@ -77,7 +77,7 @@ SLOTS = {
     6: (33, 7),
     7: (34, 8),
 }
-# module defaults of manifest modules/machines/pluck/module.toml
+# module defaults of manifest tests/fixtures/modules/patched-pluck/module.toml
 DEFAULTS = {25: 0x4000, 26: 0x4000, 27: 0x2000, 31: 0x5000, 32: 0x2800, 34: 0x6400}
 DECAY, PICK, BRIGHT, COLOR = 26, 27, 31, 32
 ENC = {DECAY: 2, PICK: 3, BRIGHT: 5, COLOR: 6}

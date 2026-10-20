@@ -25,7 +25,7 @@ before it goes near the device.
 | Module | What it does | Emulator | On a device |
 | --- | --- | --- | --- |
 | [digikit runtime](modules/core/runtime/README.md) | Menu, module loading, upload, debug log | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
-| [PLUCK](modules/machines/pluck/README.md) | Plucked-string synth: decay, pick position, brightness, colour | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
+| [PLUCK](modules/machines/pluck/README.md) | Plucked-string synth: decay, pick position, brightness, colour. A run-time module: load it with `mise run dk:run` | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
 | [Master gain](modules/fx/master-gain/README.md) | Scales the master output by a set gain | Digitakt II, Digitone II | not yet |
 | [Master drive](modules/fx/master-drive/README.md) | Soft-clip saturation on the master output | Digitakt II, Digitone II | not yet |
 | [XSLICE](tests/fixtures/modules/xslice/README.md) | A copy of MANUAL SLICE under its own name (a demonstration) | Digitakt II | not yet |
@@ -60,7 +60,7 @@ mise run patch:toolchains   # the compilers for module code
 With the runtime flashed and the Digitakt connected over USB:
 
 ```sh
-mise run dk:run -- test/dyn-pluck --port Digitakt --seconds 60
+mise run dk:run -- digikit/pluck --port Digitakt --seconds 60
 ```
 
 This builds the module, uploads it to the +Drive, selects it, restarts the Digitakt and shows the log. Then pick

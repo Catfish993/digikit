@@ -2,7 +2,7 @@
 //! stock images (the image tests are skipped when the images are absent).
 //!
 //! The pins are the SHA-256 of every section except 7 of the images that the hand-written `[[entry]]` rows of
-//! `digikit/pluck` and `test/xslice` produced before they were re-expressed in the typed form (commit 8606b7f);
+//! `test/patched-pluck` (then `digikit/pluck`) and `test/xslice` produced before they were re-expressed in the typed form (commit 8606b7f);
 //! the typed form must lower to the same rows, so those sections must stay byte-identical on every port the modules
 //! support. Section 7 (the SHARC DSP stream) is left out: it moves with every DSP edit to pluck or core/dsp-voice, which
 //! the conformance, PCM and scenario tests guard (the whole-image pins moved seven times with section 7 only).
@@ -36,12 +36,12 @@ fn digest_without_dsp(syx: &[u8]) -> String {
     sha256_hex(&buf)
 }
 
-/// (stock image, modules, digest_without_dsp of the patched image); moved 2026-10-20 with the id renames (P3c-3a): patch record only
+/// (stock image, modules, digest_without_dsp of the patched image); moved 2026-10-20 with the id renames (P3c-3a) and 2026-10-21 with digikit/pluck -> test/patched-pluck (P3e-1): patch record only
 const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
-        "digikit/pluck",
-        "9e096009c3eca7f7e985c0e3c1c08c64d9aa5d58a58c7e9dd95a580d4b90ecbc",
+        "test/patched-pluck",
+        "5c4a69710cc8ca3012e251c1c50380b11b4856bafe6597de75aa500b5c5e7c3e",
     ),
     (
         "Digitakt_II_OS1.17.syx",
@@ -50,13 +50,13 @@ const PINS: &[(&str, &str, &str)] = &[
     ),
     (
         "Digitakt_II_OS1.17.syx",
-        "digikit/pluck,test/xslice",
-        "23be92ac4bcb86267bce5a23b47f6cc62be04d5948baf87c07244317cb7d4d12",
+        "test/patched-pluck,test/xslice",
+        "e3ded375a517f7262e37f435f50ad1df1913da1b7f82d17fb4a389f054d9a0c1",
     ),
     (
         "Digitone_II_OS1.12.syx",
-        "digikit/pluck",
-        "1252cb1a24a61a1920ad890528b5deee53fa561ea4ee127365b542f6bdd333ef",
+        "test/patched-pluck",
+        "01e1d441c6e9bdfd5bb82eb5d3f2f39493d6ce4f16c61d121622dfc0da74ea40",
     ),
 ];
 
@@ -127,7 +127,7 @@ fn generated_files_are_current() {
 fn device_models_match_the_hard_coded_frame_layout_of_pluck() {
     let lib = library();
     let models = Models::from_dir(&root().join("devices")).unwrap();
-    let files = modgen::generate(&lib, &models, "digikit/pluck").unwrap();
+    let files = modgen::generate(&lib, &models, "test/patched-pluck").unwrap();
     let g: serde_json::Value = serde_json::from_str(
         &files
             .iter()
@@ -179,7 +179,7 @@ fn bundle_lowering_matches_the_scan() {
         texts.push(std::fs::read_to_string(root().join("devices").join(f)).unwrap());
     }
     let models = Models::from_texts(texts.iter().map(|s| s.as_str())).unwrap();
-    let dir = root().join("modules/machines/pluck");
+    let dir = root().join("tests/fixtures/modules/patched-pluck");
     let text = std::fs::read_to_string(dir.join("module.toml")).unwrap();
     let read =
         |p: &str| std::fs::read_to_string(dir.join(p)).map_err(|e| patchkit::Error(e.to_string()));
@@ -188,7 +188,7 @@ fn bundle_lowering_matches_the_scan() {
     lib.lower(&models).unwrap();
     let scanned = library();
     let a: Vec<_> = lib
-        .get("digikit/pluck")
+        .get("test/patched-pluck")
         .unwrap()
         .manifest
         .entry
@@ -196,7 +196,7 @@ fn bundle_lowering_matches_the_scan() {
         .map(|e| (&e.registry, &e.id, &e.devices, &e.fields))
         .collect();
     let b: Vec<_> = scanned
-        .get("digikit/pluck")
+        .get("test/patched-pluck")
         .unwrap()
         .manifest
         .entry

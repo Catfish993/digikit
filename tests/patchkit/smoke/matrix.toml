@@ -34,7 +34,7 @@ modules = ["core/machines", "test/machine-clone"]
 [[cell]]
 device = "dt2"
 firmware = "1.17"
-modules = ["core/dsp-voice", "core/machines", "core/params", "digikit/pluck"]
+modules = ["core/dsp-voice", "core/machines", "core/params", "test/patched-pluck"]
 
 # The device on the desk runs DT2 1.17.
 [[cell]]
@@ -57,7 +57,7 @@ modules = ["core/machines", "test/dn2-clone"]
 [[cell]]
 device = "dn2"
 firmware = "1.12"
-modules = ["core/machines", "core/params", "core/dsp-voice", "digikit/pluck"]
+modules = ["core/machines", "core/params", "core/dsp-voice", "test/patched-pluck"]
 
 [[cell]]
 device = "dn2"

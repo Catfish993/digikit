@@ -279,7 +279,7 @@ on which other modules are selected. `core/machines` therefore ships `types.toml
 [dt2]
 last = 23                          # the highest number the framework supports on this device
 [dt2.alloc]
-"digikit/pluck:pluck" = 9         # "<module id>:<entry id>" = number
+"test/patched-pluck:pluck" = 9         # "<module id>:<entry id>" = number
 ```
 
 The numbers are allocated by hand (or by `mise run module:new -- machines/NAME --machine`, which takes the next free
@@ -332,7 +332,7 @@ A machine module is written in four small typed sections instead of `[[entry]]` 
 device into the rows of `core/machines`, `core/params` and `core/dsp-voice` (`packages/patchkit/src/typed.rs`;
 the lowering also runs in the browser). What a knob means on a device is device data: `[modules.knobs]` and
 `[modules.frame]` in `devices/<device>.toml`. A device file that has no `[modules]` section takes no typed
-sections, and a new device is a new TOML file. `digikit/pluck` and `test/xslice` are the examples.
+sections, and a new device is a new TOML file. `digikit/pluck` (run time), `test/patched-pluck` and `test/xslice` (patched in) are the examples.
 
 ```toml
 [[voice]]                     # machine id -> the DSP routine's symbol (core/dsp-voice)
@@ -523,14 +523,15 @@ mise run module:dev -- --modules digikit/master-gain
 mise run patch:test -- --cell "dt2-1.17:digikit/master-gain,test/cf-demo"
 ```
 
-## Worked example 2: `digikit/pluck` (both CPUs, built on frameworks)
+## Worked example 2: `test/patched-pluck` (both CPUs, built on frameworks)
 
-`modules/machines/pluck/` adds a PLUCK machine (Karplus-Strong string) to the Digitakt II. It needs no ColdFire code
+`tests/fixtures/modules/patched-pluck/` adds a PLUCK machine (Karplus-Strong string) to the Digitakt II. It is the patched-in twin of the
+run-time module `digikit/pluck` (`modules/machines/pluck/`), which builds from the same DSP source. It needs no ColdFire code
 of its own: three frameworks do the firmware work, and the module only declares data.
 
 - **`requires = ["core/dsp-voice", "core/machines", "core/params"]`** and `ports = ["dt2-1.16", "dt2-1.17"]`. Patch it
-  with all four modules: `--modules core/dsp-voice,core/machines,core/params,digikit/pluck`.
-- **The DSP voice.** `[[object]]` places `src/dsp/pluck.s` in `dsp.l2` (`devices = ["dt2"]`). An `[[entry]]` in the
+  with all four modules: `--modules core/dsp-voice,core/machines,core/params,test/patched-pluck`.
+- **The DSP voice.** `[[object]]` places `../../../../modules/machines/pluck/src/dsp/pluck.s` in `dsp.l2` (`devices = ["dt2"]`). An `[[entry]]` in the
   `voices` registry of `core/dsp-voice` gives the machine type (`machines.pluck.index`) and the routine (`_pk_render`).
   The framework hooks the sample renderer once; a track whose type is registered renders with the routine, every
   other type renders as stock.
@@ -547,7 +548,7 @@ of its own: three frameworks do the firmware work, and the module only declares 
 - **Tests.** `tests/select.toml` opens the machine list, selects PLUCK, checks the committed type, the SRC page frame,
   that a trig sounds, that the DSP knows the type and that turning a knob changes the page. `tests/smoke.toml` checks
   that the module leaves the stock voice alone.
-- **Gallery.** `README.md` lists the knobs and what projects saved with PLUCK do on stock firmware.
+- **Gallery.** The README and the icon of the machine are in `modules/machines/pluck/` (the knobs, and what projects saved with PLUCK do on stock firmware).
 
 The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and
