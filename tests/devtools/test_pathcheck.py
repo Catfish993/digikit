@@ -303,6 +303,26 @@ def test_ignored_module_and_relative_paths_are_valid(tmp_path: Path) -> None:
     assert [r["token"] for r in rows] == ["dt2/rec", "dt2/missing", "tools/gen/x.txt"]
 
 
+def test_ignored_paths_below_a_symlinked_directory(tmp_path: Path) -> None:
+    # A lane links build directories from the main tree: git refuses a path "beyond a symbolic link" (here `a/dist/`)
+    # and used to drop the rest of the check-ignore batch, so every later ignored path counted as stale.
+    target = tmp_path / "main-dist"
+    target.mkdir()
+    root = make_repo(
+        tmp_path,
+        {
+            ".gitignore": "a/dist\nfirmware/*\n!firmware/README.md\n",
+            "a/x.ts": "x\n",
+            "firmware/README.md": "x\n",
+            "tools/a.py": "x\n",
+            "README.md": "a/dist/ firmware/X.syx tools/missing.py\n",
+        },
+    )
+    (root / "a" / "dist").symlink_to(target)
+    _, rows = run(root, {})
+    assert [r["token"] for r in rows] == ["tools/missing.py"]
+
+
 def test_unused_allow_entries_fail_a_full_scan(tmp_path: Path) -> None:
     root = make_repo(tmp_path, {"tools/a.py": "see tools/a.py and tools/b.py\n"})
     cfg: dict[str, Any] = {

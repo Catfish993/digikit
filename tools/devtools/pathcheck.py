@@ -398,21 +398,35 @@ class Git:
         return False
 
     def ignored(self, paths: list[str]) -> set[str]:
-        """Which of the paths a .gitignore rule matches (one check-ignore run)."""
+        """Which of the paths a .gitignore rule matches (one check-ignore run).
+
+        A path below a symlinked directory (a lane's `out/` links the main tree's) is asked as that directory: git
+        refuses a path "beyond a symbolic link" and drops the rest of the batch."""
         todo = sorted(set(paths) - set(self._ignored))
         if todo:
+            probe = {p: self._below_symlink(p) or p for p in todo}
+            asked = sorted(set(probe.values()))
             done = subprocess.run(
                 ["git", "-C", str(self.root), "check-ignore", "--no-index"]
                 + ["--stdin", "-z"],
-                input="".join(p + "\0" for p in todo),
+                input="".join(p + "\0" for p in asked),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
             )
             hit = {p for p in done.stdout.split("\0") if p}
             for p in todo:
-                self._ignored[p] = p in hit
+                self._ignored[p] = probe[p] in hit
         return {p for p in paths if self._ignored[p]}
+
+    def _below_symlink(self, path: str) -> str:
+        """The nearest symlinked ancestor directory of PATH ("" if none); `dir/` counts its own symlink too."""
+        parts = path.rstrip("/").split("/")
+        for i in range(1, len(parts) + path.endswith("/")):
+            head = "/".join(parts[:i])
+            if (self.root / head).is_symlink():
+                return head
+        return ""
 
     def deleted_by(self, path: str) -> str:
         """Full hash of the commit that last deleted the path ("" if none)."""
