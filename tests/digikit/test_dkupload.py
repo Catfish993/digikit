@@ -380,3 +380,32 @@ def test_read_errors_are_the_upload_statuses():
 
 def test_hex_lines():
     assert D.hex_lines(b"AB\x00", 0x10) == ["00000010  41 42 00" + " " * 39 + "  AB."]
+
+
+def test_verify_request_and_reply():
+    import hashlib
+
+    from tools.device.midisniff import unpack_8in7
+    from tools.firmware.build import encode_8in7
+
+    sha = hashlib.sha256(b"abc").digest()
+    seen = []
+
+    class Fake:
+        def send(self, msg):
+            self.msg = msg
+            seen.append((msg[5], unpack_8in7(msg[7:-1])))
+
+        def recv(self):
+            m = self.msg
+            gone = seen[-1][1].startswith(b"none")
+            out = bytes([0xC5]) if gone else b"\0" + sha
+            return m[:4] + bytes([1, m[5] | 0x40, m[6]]) + encode_8in7(out) + b"\xf7"
+
+    up = D.Uploader(Fake())
+    assert D.CMD_VERIFY == 0x17 and D.CAP["VERIFY"] == 8
+    assert up.verify("modules/a.dkm") == sha.hex()
+    assert seen[-1] == (0x17, b"modules/a.dkm\0")
+    with pytest.raises(D.UploadError) as e:
+        up.verify("none.dkm")
+    assert D.STATUS[e.value.status] == "E_NOFILE"

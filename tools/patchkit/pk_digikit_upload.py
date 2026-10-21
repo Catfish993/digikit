@@ -203,6 +203,16 @@ def read_checks(c: Any, up: D.Uploader, path: str, data: bytes) -> None:
     tail = up.read(path, len(data) - 10, 100)
     c.check("READ: a range past the end is cut at the end", tail[1] == data[-10:])
     c.check("READ: the whole file by 768-byte reads", up.read_file(path) == data)
+    c.check(
+        "VERIFY: the device's sha256 of the file on the card equals the local one",
+        up.verify(path) == hashlib.sha256(data).hexdigest(),
+    )
+    try:
+        up.verify("modules/none.dkm")
+        got_status = 0
+    except D.UploadError as e:
+        got_status = e.status
+    c.check("VERIFY: a missing file is refused", got_status == -59, str(got_status))
     for what, args, status in (
         ("a missing file", ("modules/none.dkm", 0, 4), -59),
         ("offset at the end", (path, len(data), 4), -54),

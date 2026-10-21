@@ -49,6 +49,7 @@ from tools.device.dkproto import (
     CMD_READ,
     CMD_RESTART,
     CMD_SELECT,
+    CMD_VERIFY,
     LOAD_STATUS,
     VERSION,
 )
@@ -477,6 +478,14 @@ class Uploader:
         if len(b) < 4:
             raise UploadError(-50, "read: malformed reply")
         return struct.unpack_from(">I", b, 0)[0], b[4:]
+
+    def verify(self, path: str) -> str:
+        """VERIFY (runtime 0.2.4, capability VERIFY): the sha256 (hex) of a store file, computed by the device from a fresh read of the card.
+        Raises `UploadError`: E_NOFILE, E_READ."""
+        b = self._ok(CMD_VERIFY, "verify", path.encode() + b"\0")
+        if len(b) != 32:
+            raise UploadError(-50, "verify: malformed reply")
+        return b.hex()
 
     def header(self, path: str) -> bytes:
         """The first 0xa0 bytes of a store file (a .dkm header; fewer for a shorter file)."""

@@ -351,3 +351,19 @@ fn read_ranges_and_errors() {
     assert_eq!(status(s.read("modules/empty.dkm", 0, 4)), Status::Offset);
     assert!(matches!(s.read("a//b", 0, 1), Err(Error::Request(_))));
 }
+
+#[test]
+fn verify_returns_the_files_sha256_and_refuses_a_missing_file() {
+    let mut s = session(1 << 20);
+    let d = data(1500, 9);
+    put(&mut s, "modules/a.dkm", d.clone()).unwrap();
+    assert_eq!(s.verify("modules/a.dkm").unwrap(), sha256(&d));
+    assert!(matches!(
+        s.verify("modules/none.dkm"),
+        Err(Error::Device {
+            status: Status::NoFile,
+            ..
+        })
+    ));
+    assert!(matches!(s.verify("a//b"), Err(Error::Request(_))));
+}

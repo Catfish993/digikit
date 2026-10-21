@@ -14,6 +14,7 @@ CMD: dict[str, int] = {
     "CLEAR": 0x14,
     "ABORT": 0x15,
     "READ": 0x16,
+    "VERIFY": 0x17,
     "LOG": 0x20,
     "PEEK": 0x21,
     "LOGCFG": 0x22,
@@ -31,6 +32,7 @@ CMD_DELETE = 0x13
 CMD_CLEAR = 0x14
 CMD_ABORT = 0x15
 CMD_READ = 0x16
+CMD_VERIFY = 0x17
 CMD_LOG = 0x20
 CMD_PEEK = 0x21
 CMD_LOGCFG = 0x22
@@ -105,6 +107,7 @@ CAP: dict[str, int] = {
     "MODULES": 5,
     "CAPACITY": 6,
     "READ": 7,
+    "VERIFY": 8,
 }
 
 CAPACITY_KINDS: dict[str, int] = {

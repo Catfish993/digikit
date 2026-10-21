@@ -184,7 +184,7 @@ unsafe fn reply(cmd: u8, seq: u32, status: i32, extra: usize) -> i32 {
     let n = pack(rb, 1 + extra, w.add(7));
     *w.add(7 + n) = 0xf7;
     DKRT_UPLOAD_LAST = status;
-    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG && cmd != CMD_MODULES && cmd != CMD_CAPACITY && cmd != CMD_READ {
+    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG && cmd != CMD_MODULES && cmd != CMD_CAPACITY && cmd != CMD_READ && cmd != CMD_VERIFY {
         dlog::ev(logk::UPLOAD, if status == 0 { dlog::INFO } else { logk::F_ERROR }, [cmd as u32, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
     }
     if !tx_room(8 + n) {
@@ -485,7 +485,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     wr32(rb.add(21), newest);
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
-    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ);
+    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY);
     reply(CMD_INFO, seq, OK, 33)
 }
 
@@ -875,6 +875,45 @@ unsafe fn cmd_read(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
     reply(CMD_READ, seq, OK, 4 + len as usize)
 }
 
+/// VERIFY: path NUL. Reads the file back from the card, in chunks, and replies its sha256 (32 bytes): what END checks for a staged file,
+/// asked for any file of the store. E_NOFILE: not in the store; E_READ: the card did not read.
+unsafe fn cmd_verify(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    match path_ok(body, blen) {
+        Some(n) if n + 1 == blen => {}
+        _ => return reply(CMD_VERIFY, seq, if blen < 2 { E_MSG } else { E_PATH }, 0),
+    }
+    let st = match state(buf) {
+        Ok(s) => s,
+        Err(e) => return reply(CMD_VERIFY, seq, e, 0),
+    };
+    let mut idx = 0u32;
+    while idx < st.count {
+        if cmp_path(body, buf.add(idx as usize * ENTRY)) == 0 {
+            break;
+        }
+        idx += 1;
+    }
+    if idx == st.count {
+        return reply(CMD_VERIFY, seq, E_NOFILE, 0);
+    }
+    let f = store::file(buf, idx as usize); // the table is overwritten by the reads below
+    let mut sha = Sha::new();
+    let mut left = f.size;
+    let mut sector = f.first;
+    while left > 0 {
+        let n = if left > MAX_CHUNK { MAX_CHUNK } else { left };
+        let secs = sectors_of(n);
+        if block_read(FIRST + sector, secs * 512, buf.add(16)) != 0 {
+            return reply(CMD_VERIFY, seq, E_READ, 0);
+        }
+        sha.update(buf.add(16), n);
+        left -= n;
+        sector += secs;
+    }
+    sha.finish((addr_of_mut!(RBODY) as *mut u8).add(1));
+    reply(CMD_VERIFY, seq, OK, 32)
+}
+
 unsafe fn cmd_clear(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     up().open = false;
     if !card::writable() {
@@ -1163,6 +1202,8 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
         cmd_delete(seq, buf, body, blen)
     } else if cmd == CMD_READ {
         cmd_read(seq, buf, body, blen)
+    } else if cmd == CMD_VERIFY {
+        cmd_verify(seq, buf, body, blen)
     } else if cmd == CMD_CLEAR {
         cmd_clear(seq, buf, body, blen)
     } else if cmd == CMD_ABORT {
