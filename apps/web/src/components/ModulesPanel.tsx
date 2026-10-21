@@ -190,13 +190,7 @@ export default function ModulesPanel(props: ModulesPanelProps): JSX.Element {
       <Show
         when={entries().length}
         fallback={
-          <p class="empty">
-            {info()
-              ? 'The store holds no files.'
-              : absent()
-                ? NO_RUNTIME
-                : 'No device answered.'}
-          </p>
+          <p class="empty">{info() ? 'The store holds no files.' : absent() ? NO_RUNTIME : 'No device answered.'}</p>
         }
       >
         <ul class="files">
