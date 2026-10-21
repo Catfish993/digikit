@@ -13,7 +13,7 @@ import {
   type RuntimeSnapshot,
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
-import TransferPanel from './TransferPanel';
+import TransferPage from './TransferPage';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 
 type Source = { path: string; name: string; bytes: number; modified_ms: number };
@@ -33,6 +33,23 @@ const readRuntimePref = () => {
 const writeRuntimePref = (on: boolean) => {
   try {
     localStorage.setItem(RUNTIME_KEY, on ? 'on' : 'off');
+  } catch {
+    /* the choice lasts until the window closes */
+  }
+};
+
+// The sidebar is open unless the user collapsed it; kept per browser profile of the app.
+const SIDEBAR_KEY = 'digikit.sidebar';
+const readSidebarPref = () => {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== 'closed';
+  } catch {
+    return true;
+  }
+};
+const writeSidebarPref = (open: boolean) => {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, open ? 'open' : 'closed');
   } catch {
     /* the choice lasts until the window closes */
   }
@@ -88,7 +105,8 @@ export default function Console() {
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
   const [rate, setRate] = createSignal<number>();
   const [drawer, setDrawer] = createSignal(false);
-  const [modulesOpen, setModulesOpen] = createSignal(false);
+  const [page, setPage] = createSignal<'emulator' | 'transfer'>('emulator');
+  const [sidebarOpen, setSidebarOpen] = createSignal(readSidebarPref());
   const [card, setCard] = createSignal<CardStatus>();
   const [cardBusy, setCardBusy] = createSignal(false);
   const [bootRuntime, setBootRuntime] = createSignal(readRuntimePref());
@@ -397,17 +415,6 @@ export default function Console() {
         </button>
         <button
           type="button"
-          class="tb"
-          disabled={!status()}
-          aria-pressed={modulesOpen()}
-          title="Choose the modules that run on the emulator and install them"
-          onClick={() => setModulesOpen(!modulesOpen())}
-        >
-          <Icon d={MODULES} />
-          Transfer
-        </button>
-        <button
-          type="button"
           class="tb icon"
           disabled={!status()}
           aria-label="Save diagnostics"
@@ -424,17 +431,57 @@ export default function Console() {
         </p>
       </Show>
 
-      <main class="stage" aria-label={`${panel().name} front panel`}>
-        <div class="surface">
-          <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
+      <div class="shell">
+        <nav class="sidebar" classList={{ closed: !sidebarOpen() }} aria-label="Pages">
+          <button
+            type="button"
+            class="side toggle"
+            aria-expanded={sidebarOpen()}
+            aria-label={sidebarOpen() ? 'Collapse the sidebar' : 'Expand the sidebar'}
+            title={sidebarOpen() ? 'Collapse the sidebar' : 'Expand the sidebar'}
+            onClick={() => {
+              setSidebarOpen(!sidebarOpen());
+              writeSidebarPref(sidebarOpen());
+            }}
+          >
+            <Icon d={sidebarOpen() ? 'M10 3L5 8L10 13' : 'M6 3L11 8L6 13'} />
+          </button>
+          <button
+            type="button"
+            class="side"
+            classList={{ on: page() === 'emulator' }}
+            aria-current={page() === 'emulator' ? 'page' : undefined}
+            title="The emulator"
+            onClick={() => setPage('emulator')}
+          >
+            <Icon d={PLAY} />
+            <span>Emulator</span>
+          </button>
+          <button
+            type="button"
+            class="side"
+            classList={{ on: page() === 'transfer' }}
+            aria-current={page() === 'transfer' ? 'page' : undefined}
+            disabled={!status()}
+            title="Choose the modules that run on the emulator and install them"
+            onClick={() => setPage('transfer')}
+          >
+            <Icon d={MODULES} />
+            <span>Transfer</span>
+          </button>
+        </nav>
+        <div class="content">
+          {/* The faceplate stays mounted behind the Transfer page: the emulator, its audio and the snapshot pump run on. */}
+          <main class="stage" hidden={page() !== 'emulator'} aria-label={`${panel().name} front panel`}>
+            <div class="surface">
+              <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
+            </div>
+          </main>
+          <Show when={page() === 'transfer'}>
+            <TransferPage />
+          </Show>
         </div>
-      </main>
-
-      <Show when={modulesOpen()}>
-        <div class="modules-sheet">
-          <TransferPanel />
-        </div>
-      </Show>
+      </div>
 
       <Show when={drawer()}>
         <section class="drawer" aria-label="Metrics">

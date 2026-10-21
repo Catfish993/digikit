@@ -1,10 +1,10 @@
-# Transfer tab v1 (W3): the thin route (2026-10-21)
+# Transfer tab v1 (W3): the thin route (2026-10-21, updated for W3c)
 
-Status: W3a (READ) and W3b (this route) are built on lane `tasks-images`; Em has not tried the GUI yet. This replaces the first plan (a new Rust crate with its own catalog, build and install code), which Em and the coordinator dropped: the Python tools already do all of it.
+Status: W3a (READ), W3b (this route) and W3c (VERIFY, install without reboot, the Transfer page) are built on lane `tasks-images`. This replaces the first plan (a new Rust crate with its own catalog, build and install code), which Em and the coordinator dropped: the Python tools already do all of it.
 
 ## Goal
 
-The desktop workbench's Modules popup becomes a Transfer popup: tick the run-time modules that should run on the emulator, press Install, and they are built, uploaded, selected and loaded without a manual APPLY & RESTART. Target: the running emulator only (a real device and samples come later: W5, W6, W7).
+The desktop workbench gets a sidebar (Emulator, Transfer) and a Transfer page: tick the run-time modules that should run on the emulator and press Install: they are built, uploaded, verified on the card and selected. Press Restart to load and the emulated device reboots and loads them. Target: the running emulator only (a real device and samples come later: W5, W6, W7).
 
 ## The route
 
@@ -17,25 +17,28 @@ TransferPanel (desktop-only TSX)  -->  3 Tauri commands (transfer.rs)  -->  pyth
 
 - **`tools/device/dktransfer.py`** (`mise run transfer`) has two commands, both with `--emu` (or `--socket PATH`, `--run-dir DIR`) or `--port NAME`, and `--json`:
   - `list`: the repo's run-time modules that pack for the target's device (INFO), merged with LIST (on card, same sha256), MODULES (loaded), CAPACITY (fit warning) and the build state. Never `core/*`; `test/` modules are marked. Group from the packed header's contracts at 0x38: machine is Machines, fx is Effects, service or api only is Tools. Card files with no repo match are grouped from their READ header (runtime 0.2.4).
-  - `install MOD... [--keep PATH...]`: builds only the modules whose objects changed, packs, uploads what the card lacks, SELECTs exactly the given set (plus `--keep`), RESTARTs, waits until MODULES lists them. One JSON line per step.
+  - `install MOD... [--keep PATH...] [--restart]`: per module in order: build if changed, pack, upload unless the card has the same sha256, VERIFY (the device hashes the file from a fresh card read; a mismatch is an error); then one SELECT of the given set (plus `--keep`). No restart unless `--restart` (scripts, scenarios). One JSON line per step.
+  - `restart [MOD...]`: RESTART, wait for the boot, report which modules MODULES lists (`loaded`, `missing`, and `not_on_card` when the card lost a file).
 - **`tools/device/dkrun.py`** gives `build_objects`, `pack_module`, `upload_if_changed` and `restart_and_wait`; `dk run` uses the same functions.
 - **`tools/patchkit/pk_build.py`** skips an object whose committed `source_sha256` equals the hash of its sources now ("unchanged"); `--force` rebuilds. The hash is the builders' own (`source_hash`), so `list` shows "needs build" without a toolchain.
 - **Packer** (`packages/patchkit/src/dkm.rs`): a module whose `register` records hold a machine record carries the machine contract in its header, so data-only machines (`test/dyn-params`, `test/dyn-xslice`, `test/dyn-dn2`) group as Machines. No file or hash in the repo pinned those headers.
 - **Desktop** (`apps/desktop/src-tauri/src/transfer.rs`): `xfer_list` runs `list` and returns its JSON; `xfer_install` starts `install` in the background; `xfer_events(since)` returns its JSON lines with a cursor. The tool is pointed at this app's own control socket (the app serves it by default; `Host.socket`). Python comes from the checkout's `.venv`, else `uv run`; the repository root is `digi_control::runtime_patch::find_root`.
-- **UI** (`apps/desktop/ui/src/TransferPanel.tsx`, logic in `transfer-core.ts`, node test `apps/web/tests/transfer.test.mjs`): groups Machines, Effects ("No run-time effects yet." when empty) and Tools; a "show test modules" toggle; a tick box per row (the first ticks are what is loaded); name, version, size, state and fit warning; Install with a progress log; "Add .dkm" and the drop zone, smaller; Delete for card files the repo does not know. The shared web `ModulesPanel` and the web upload page are unchanged.
+- **UI** (`apps/desktop/ui/src/TransferPage.tsx`, state in `transfer-state.ts`, logic in `transfer-core.ts`, node test `apps/web/tests/transfer.test.mjs`): a collapsible left sidebar (Emulator, Transfer); the Transfer page fills the content area while the faceplate stays mounted (hidden), so the emulator, its audio and the snapshot pump run on. "On device": card files with name, version, size, state (loaded, loads at restart, unloads at restart) and verified ok or failed; Delete only for files the repo does not know. "Available": the repo modules in Machines, Effects ("No run-time effects yet." when empty) and Tools, a "show test modules" toggle, a tick box per row (the first ticks are what is loaded), fit warnings. Install and "Restart to load" buttons; a progress bar along the bottom with one segment per module (upload, verify), then select and restart, each green or red. "Add .dkm" and the drop zone stay. The last list stays in module-level state and shows at once on the next open. The shared web `ModulesPanel` and the web upload page are unchanged.
 
 ## Behaviour to know
 
+- **Speed:** `pack_for_transfer` reuses `out/patch/transfer/<device>/<name>.dkm` when it is newer than everything a pack reads (the module directory, the patchkit sources, the device files, `sdk/sdk.toml`), and remembers a module that does not pack the same way. A warm `list` takes about 0.2 s (2.8 s before).
 - A running emulator is driven in real time. A **paused** emulator is refused with a message (nothing would run the transfer); `--step` lets the tool step a paused daemon (the test rigs).
 - The selection is replaced by the ticked set: unticking a loaded module removes it from the next boot. Loaded modules the repo does not know are kept only when ticked.
 - The store only appends; a rebuilt module leaves dead data until a CLEAR. The old panel's Repack is not in the Transfer panel; `mise run dk:store -- --emu clear` and a new install do the same.
 
 ## Tests
 
-`tests/digikit/test_dktransfer.py` (header groups, list merge, install plan and sequence with a mock uploader, the paused refusal, every committed object matches `source_hash`); `tests/digikit/scenarios/menu-transfer-pluck.toml` (quick, DT2 and DN2: `list`, `install` of `digikit/pluck` on a boot with no module, MODULES lists it, the machine plays like the patched-in twin, a second plan builds and uploads nothing, READ returns the packed header); the Rust tests of `transfer.rs`; `apps/web/tests/transfer.test.mjs`; `tsc` and `astro check`.
+`tests/digikit/test_dktransfer.py` (header groups, list merge, install plan, install without restart, with restart, verify mismatch, restart reports, pack cache, the paused refusal, every committed object matches `source_hash`); `tests/digikit/scenarios/menu-transfer-pluck.toml` (quick, DT2 and DN2: `list`, a plain `install` of `digikit/pluck` on a boot with no module (verified, selected, not loaded), then `restart_device`: MODULES lists it, the machine plays like the patched-in twin, a second plan builds and uploads nothing, READ returns the packed header); `tests/digikit/scenarios/transfer-live-dn2.toml` (the desktop app's setup: a free-running coupled daemon with no card file, `install --restart` and `restart` through the command line); the Rust tests of `transfer.rs`; `apps/web/tests/transfer.test.mjs`; `tsc` and `astro check`.
 
 ## Open
 
 - **[O]** The skip-if-unchanged hash does not cover ColdFire C headers or the compiler version: such a change needs `pk_build --force`.
-- **[O]** The GUI flow (a live emulator, real-time waits, the guest's soft reset) is tried only through the scenario rigs (stepped daemons); the live path is not run against the desktop app by the lane.
+- **[O]** The GUI itself (sidebar, page, progress bar) is built and type-checked but not tried by the lane; the live path (real-time waits, the guest's soft reset, no card file) is run through the command line against a free-running daemon (`transfer-live-dn2`).
+- **[O]** The selection is write-only (no SELECT readback): "loads at restart" and "unloads at restart" come from what the page selected last, kept until a restart or the next start of the window.
 - **[O]** The version of the loaded firmware is not read: the list uses the device (INFO) and the packer, not the manifest `ports` versions.

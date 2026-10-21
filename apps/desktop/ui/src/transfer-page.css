@@ -1,0 +1,235 @@
+/* The Transfer page (TransferPage.tsx): fills the content area next to the sidebar. Tokens from the site (apps/web/src/styles/site.css). */
+.transfer-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px 0;
+  overflow-y: auto;
+  background: #0f1012;
+  color: var(--ink, #eceae5);
+  font-size: 13px;
+}
+.transfer-page.over {
+  outline: 2px dashed var(--amber, #f3b52c);
+  outline-offset: -8px;
+}
+.transfer-page .head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.transfer-page h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.transfer-page h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2, #a9adb4);
+}
+.transfer-page h4 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--ink-2, #a9adb4);
+}
+.transfer-page .sp {
+  flex: 1;
+}
+.transfer-page .meta,
+.transfer-page .dim,
+.transfer-page .drop,
+.transfer-page .tests {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-3, #868b94);
+}
+.transfer-page .cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 20px;
+  align-items: start;
+}
+.transfer-page .colhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.transfer-page .colhead h3 {
+  margin: 0;
+}
+.transfer-page .empty {
+  margin: 0;
+  color: var(--ink-3, #868b94);
+}
+.transfer-page .rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-block: 1px solid var(--line, #24262b);
+}
+.transfer-page .rows li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line, #24262b);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.transfer-page .rows li:last-child {
+  border-bottom: 0;
+}
+.transfer-page .rows .name {
+  flex: 1 1 140px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transfer-page .rows .name em {
+  color: var(--ink-3, #868b94);
+  font-style: normal;
+  font-size: 11px;
+}
+.transfer-page .rows .state {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  color: var(--ink-3, #868b94);
+}
+.transfer-page .rows .fit {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  color: #f0b35a;
+}
+.transfer-page .check {
+  font-size: 11.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.transfer-page .check.ok {
+  color: #7be3a1;
+  background: #0f2418;
+}
+.transfer-page .check.bad {
+  color: #ffb4ab;
+  background: #2a1210;
+}
+.transfer-page .err {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #ffc1bc;
+  background: rgba(255, 139, 130, 0.12);
+}
+.transfer-page .act,
+.transfer-page .mini {
+  border: 1px solid #2c2f35;
+  background: #1a1c20;
+  color: var(--ink, #eceae5);
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.transfer-page .act {
+  height: 30px;
+  padding-inline: 12px;
+}
+.transfer-page .act.small {
+  height: 26px;
+  font-size: 12px;
+}
+.transfer-page .mini {
+  height: 24px;
+  padding-inline: 8px;
+  font-size: 12px;
+}
+.transfer-page .act.primary {
+  background: var(--amber, #f3b52c);
+  border-color: var(--amber, #f3b52c);
+  color: var(--amber-ink, #1d1403);
+}
+.transfer-page .act:hover:not(:disabled),
+.transfer-page .mini:hover:not(:disabled) {
+  background: #23262b;
+}
+.transfer-page .act.primary:hover:not(:disabled) {
+  background: var(--amber-hover, #ffc444);
+}
+.transfer-page button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* the progress bar along the bottom: one segment per module, then select and restart */
+.transfer-page .bar {
+  position: sticky;
+  bottom: 0;
+  margin: auto -20px 0;
+  padding: 10px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #121316;
+  border-top: 1px solid #222428;
+}
+.transfer-page .segs {
+  display: flex;
+  gap: 4px;
+}
+.transfer-page .seg {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  border-radius: 5px;
+  background: #1d1f23;
+  color: var(--ink-3, #868b94);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.transfer-page .seg span {
+  padding-inline: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transfer-page .seg[data-state='build'],
+.transfer-page .seg[data-state='upload'],
+.transfer-page .seg[data-state='verify'] {
+  background: #3a2d0d;
+  color: #f3c76a;
+}
+.transfer-page .seg[data-state='ok'] {
+  background: #123a22;
+  color: #7be3a1;
+}
+.transfer-page .seg[data-state='failed'] {
+  background: #4a1713;
+  color: #ffb4ab;
+}
+.transfer-page .msg {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2, #a9adb4);
+}
+.transfer-page .log {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 140px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: #101214;
+  color: var(--ink-2, #a9adb4);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+}

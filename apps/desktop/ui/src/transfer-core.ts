@@ -89,8 +89,13 @@ export function eventText(e: TransferEvent): string {
       return 'Restarting the device';
     case 'wait':
       return `Waiting for ${s(e.modules)} to load`;
+    case 'verify':
+      return e.ok ? `Verified ${e.path} on the card` : `Verify failed: ${e.path} differs on the card`;
     case 'done':
-      return `Loaded: ${s(e.loaded)}`;
+      if (e.restarted === false) return 'Selected; the modules load at the next restart';
+      return Array.isArray(e.missing) && e.missing.length
+        ? `Loaded: ${s(e.loaded)}; not loaded: ${s(e.missing)}`
+        : `Loaded: ${s(e.loaded)}`;
     case 'error':
       return `Error: ${e.message}`;
     default:
@@ -103,11 +108,107 @@ export function warningText(r: TransferRow): string {
   return r.warnings && r.warnings.length ? r.warnings.join('; ') : '';
 }
 
-/** The state words of a row. */
-export function stateText(r: TransferRow): string {
+/** What the last install selected (`undefined`: nothing since the app started: the loaded modules are the selection). */
+export type Selected = Set<string> | undefined;
+
+/** Per store path: what VERIFY said after the last install. */
+export type Verified = Record<string, 'ok' | 'failed'>;
+
+/** The state words of a row. After an install without a restart the selection differs from what is loaded: `selected` says which. */
+export function stateText(r: TransferRow, selected?: Selected): string {
   const out: string[] = [];
-  if (r.loaded) out.push('loaded');
-  out.push(r.on_card === 'yes' ? 'on card' : r.on_card === 'other version' ? 'other version on card' : 'not on card');
+  const key = rowKey(r);
+  if (r.loaded) out.push(selected && !selected.has(key) ? 'loaded, unloads at restart' : 'loaded');
+  else if (selected?.has(key) && r.on_card === 'yes') out.push('on card, loads at restart');
+  else
+    out.push(r.on_card === 'yes' ? 'on card' : r.on_card === 'other version' ? 'other version on card' : 'not on card');
   if (r.build === 'needs build') out.push('needs build');
   return out.join(', ');
+}
+
+/** The "On device" list: every file on the card (repo modules that are on it, then files the repo does not know), by path. */
+export function onDevice(view: TransferView): TransferRow[] {
+  const mine = view.modules.filter((r) => r.on_card !== 'no');
+  return [...mine, ...view.card_only].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** The "Available" list: the repo modules in the three groups (test modules behind the toggle). */
+export function available(view: TransferView, showTests: boolean): { group: Group; rows: TransferRow[] }[] {
+  return GROUPS.map((group) => ({
+    group,
+    rows: view.modules.filter((r) => r.group === group && (showTests || !r.test)),
+  }));
+}
+
+/** Does the card hold something the next boot will load differently from now? (A selection was written and differs from what is loaded.) */
+export function restartPending(view: TransferView, selected: Selected): boolean {
+  if (!selected) return false;
+  return differsFromLoaded(view, selected);
+}
+
+// ---- the progress bar of an install ------------------------------------------------------------------------------------------------
+
+export type StepState = 'wait' | 'build' | 'upload' | 'verify' | 'ok' | 'failed';
+export interface Progress {
+  /** One entry per module, in install order. */
+  modules: { id: string; state: StepState }[];
+  /** The last step after the modules: SELECT, then (with a restart) the restart. */
+  select: StepState;
+  restart: StepState | 'none';
+  message: string;
+}
+
+export function startProgress(ids: string[], restart: boolean): Progress {
+  return {
+    modules: ids.map((id) => ({ id, state: 'wait' })),
+    select: 'wait',
+    restart: restart ? 'wait' : 'none',
+    message: '',
+  };
+}
+
+/** The progress after one more event of `dktransfer` (a new object; `error` marks the active step failed). */
+export function applyEvent(p: Progress, e: TransferEvent): Progress {
+  const next: Progress = { ...p, modules: p.modules.map((m) => ({ ...m })), message: eventText(e) };
+  const mod = (id: unknown) => next.modules.find((m) => m.id === id);
+  switch (e.event) {
+    case 'build':
+    case 'upload':
+    case 'verify': {
+      const m = mod(e.id);
+      if (m) m.state = e.event === 'verify' ? (e.ok ? 'ok' : 'failed') : (e.event as StepState);
+      break;
+    }
+    case 'skip':
+      break; // the verify that follows ends the module
+    case 'select':
+      next.select = 'ok';
+      break;
+    case 'restart':
+      next.restart = 'build';
+      break;
+    case 'done':
+      if (next.restart !== 'none') next.restart = Array.isArray(e.missing) && e.missing.length ? 'failed' : 'ok';
+      break;
+    case 'error': {
+      const active = next.modules.find((m) => m.state === 'build' || m.state === 'upload' || m.state === 'verify');
+      if (active) active.state = 'failed';
+      else if (next.restart === 'build') next.restart = 'failed';
+      else if (next.select !== 'ok') next.select = 'failed';
+      break;
+    }
+  }
+  return next;
+}
+
+/** Done steps over all steps, 0 to 1. */
+export function progressFraction(p: Progress): number {
+  const steps = [...p.modules.map((m) => m.state), p.select, ...(p.restart === 'none' ? [] : [p.restart])];
+  return steps.filter((s) => s === 'ok').length / steps.length;
+}
+
+/** The verified map after more events: a `verify` event sets its path. */
+export function applyVerified(v: Verified, e: TransferEvent): Verified {
+  if (e.event !== 'verify' || typeof e.path !== 'string') return v;
+  return { ...v, [e.path]: e.ok ? 'ok' : 'failed' };
 }
