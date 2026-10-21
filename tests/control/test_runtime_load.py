@@ -14,7 +14,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.control.digi_client import Emu  # noqa: E402
+from tools.control.digi_client import Emu, EmuError  # noqa: E402
 from tools.device.dkupload import EmuTransport, Uploader  # noqa: E402
 from tools.emulator import card_check  # noqa: E402
 from tools.patchkit import pk_harness  # noqa: E402
@@ -60,3 +60,17 @@ def test_the_runtime_boots_and_answers_info(device, version):
         # The patched image has a patch record: a second runtime load takes it as it is.
         again = emu.call("firmware.load", **{**params, "syx": runtime["cache_file"]})
         assert again["runtime"]["patched"] is False
+        # What the desktop's Open... and Reset do: `replace` boots the file as the first firmware of a new session (the controller
+        # takes the token), `restart` resets it under the next token; the runtime answers again, and the stale token is refused.
+        reopened = emu.call(
+            "firmware.load", **{**params, "replace": True, "session": 5}
+        )
+        assert (
+            reopened["runtime"]["patched"] is True
+            and reopened["runtime"]["cache_hit"] is True
+        )
+        emu.call("restart", session=6, auto_no=True)
+        with pytest.raises(EmuError, match="stale emulator session"):
+            emu.call("status", session=5)
+        assert emu.call("status", session=6)["firmware"]["runtime"]["set"] == "emulator"
+        assert Uploader(EmuTransport(emu, limit=2_000_000_000)).info()["runtime"] > 0

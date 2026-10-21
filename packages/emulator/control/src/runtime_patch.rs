@@ -34,6 +34,14 @@ pub enum Outcome {
     AlreadyPatched,
 }
 
+/// The short device name (`dt2`, `dn2`) of a .syx, from the device byte of its framing message; no decoding. `None` for anything
+/// that is not a framed .syx of a known device.
+pub fn device_short(syx: &[u8]) -> Option<&'static str> {
+    let first = patchkit::syx::messages(syx).ok()?.into_iter().next()?;
+    let id = *first.get(1..first.len().checked_sub(1)?)?.get(3)?;
+    patchkit::syx::Device::from_id(id).ok().map(patchkit::syx::Device::short)
+}
+
 /// The repository root: `configured`, else `$DIGI_REPO_ROOT`, else the nearest directory from the working directory up that
 /// holds `devices/ports`.
 pub fn find_root(configured: Option<&Path>) -> Result<PathBuf, String> {
@@ -175,6 +183,18 @@ mod tests {
         let m = lib.modules.iter_mut().find(|m| m.id() == "core/health").unwrap();
         m.digest.push('x');
         assert_ne!(k, key(&lib, "aa", "emulator"), "module bytes");
+    }
+
+    #[test]
+    fn the_device_comes_from_the_framing_message() {
+        assert_eq!(device_short(b"not a syx"), None);
+        assert_eq!(device_short(&[]), None);
+        for (file, short) in [("Digitakt_II_OS1.17.syx", "dt2"), ("Digitone_II_OS1.12.syx", "dn2")] {
+            match stock(file) {
+                Some(syx) => assert_eq!(device_short(&syx), Some(short), "{file}"),
+                None => eprintln!("skipped: firmware/{file} is absent"),
+            }
+        }
     }
 
     #[test]

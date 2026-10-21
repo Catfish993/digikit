@@ -143,6 +143,23 @@ export interface CoupledStats {
   dsp_kernels?: { compiled: number; compileMs: number; wasmBytes: number; runs: number };
   dsp_fast?: unknown;
 }
+/** Native desktop only: `runtime` patches the digikit runtime into a stock image (the controller's `firmware.load {runtime}`). */
+export interface LoadOptions {
+  runtime?: boolean;
+}
+/** The controller's report of the runtime patch of the running image: `patched` with the set and whether the image came from the
+ * cache, or `patched: false` for an image that already had a patch record. `null`: stock, no runtime requested. */
+export interface RuntimePatch {
+  patched: boolean;
+  set?: string;
+  cache_hit?: boolean;
+  modules?: string[];
+  seconds?: number;
+  reason?: string;
+}
+export interface FirmwareInfo {
+  runtime: RuntimePatch | null;
+}
 export interface EmulatorRuntime {
   /** Browser worker only, and only with a core built with the `sharc` feature. */
   loadCoupled?(files: CoupledFiles, audioPort: MessagePort): Promise<RuntimeSnapshot>;
@@ -157,7 +174,12 @@ export interface EmulatorRuntime {
   saveDiagnostics?(name: string, json: string): Promise<string>;
   /** Native desktop only (Digitakt II): the controller builds a card from the files and boots with it. */
   cards?: CardBridge;
-  load(bytes: Uint8Array, name: string): Promise<RuntimeSnapshot>;
+  load(bytes: Uint8Array, name: string, options?: LoadOptions): Promise<RuntimeSnapshot>;
+  /** Native desktop only: load a firmware file the app can read itself (the startup file), as `load` does. */
+  loadPath?(path: string, options?: LoadOptions): Promise<RuntimeSnapshot>;
+  /** Native desktop only: what the running image got from the digikit runtime patch (`status.firmware.runtime`). */
+  firmwareInfo?(): Promise<FirmwareInfo | undefined>;
+  /** The emulator's own reset of the running firmware (the browser worker boots the file again). Not the device RESTART command. */
   restart(): Promise<RuntimeSnapshot>;
   pause(): void;
   resume(): void;
@@ -395,6 +417,40 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     loaded = false;
     onUpdate({ type: 'error', error: String(error) });
   };
+  // One protocol method of the controller (docs/CONTROL.md). With a session, the controller refuses the call when the webview's
+  // session is no longer the current one; `firmware.load` and `restart` start the session they carry.
+  const call = <T>(method: string, params: Record<string, unknown> = {}, session?: number) =>
+    api.invoke<T>('emu_call', { method, params, session: session ?? null });
+  // A new session: stop the pump, run the call that starts it (`firmware.load` or `restart`, with the new token), take the
+  // snapshot of what came up, and start pumping it. A newer session wins over an older one that is still starting.
+  const newSession = (starts: (token: number) => Promise<void>) => {
+    const token = ++generation;
+    clearPump();
+    loaded = false;
+    activeSession = undefined;
+    const work = lifecycle
+      .catch(() => {})
+      .then(async () => {
+        metrics.reset();
+        await starts(token);
+        const snapshot = await api.invoke<RuntimeSnapshot>('emu_startup');
+        if (disposed || token !== generation) return snapshot;
+        metrics.loaded();
+        activeSession = token;
+        loaded = true;
+        onUpdate({ type: 'snapshot', snapshot });
+        start(token);
+        return snapshot;
+      });
+    lifecycle = work.then(
+      () => {},
+      () => {},
+    );
+    return work.catch((error) => {
+      if (token === generation) fault(error);
+      throw error;
+    });
+  };
   const pump = async (token: number, run: number) => {
     if (disposed || paused || token !== generation || run !== epoch || activeSession !== token) return;
     await input.catch(() => {});
@@ -473,12 +529,12 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
       stage: (name, bytes) =>
         api.invoke<void>('emu_card_stage', bytes, { headers: { 'x-name': encodeURIComponent(name) } }),
       load: (name) => api.invoke<unknown>('emu_card_load', { name: name ?? null }),
-      status: () => api.invoke<CardStatus>('emu_card_status'),
+      status: () => call<CardStatus>('card.status'),
     },
     async diagnostics() {
       const session = activeSession;
       if (session === undefined) throw new Error('No firmware selected');
-      const report = await api.invoke<RuntimeDiagnostics>('emu_diagnostics', { sessionId: session });
+      const report = await call<RuntimeDiagnostics>('diagnostics', {}, session);
       if (disposed || activeSession !== session) throw new Error('Firmware session changed during diagnostic export');
       return { ...report, host: metrics.report() };
     },
@@ -499,62 +555,26 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
         }
       );
     },
-    async load(bytes, _name) {
-      const token = ++generation;
-      clearPump();
-      loaded = false;
-      activeSession = undefined;
-      const work = lifecycle
-        .catch(() => {})
-        .then(async () => {
-          metrics.reset();
-          const snapshot = await api.invoke<RuntimeSnapshot>('emu_load', bytes, {
-            headers: { 'x-session-id': String(token) },
-          });
-          if (disposed || token !== generation) return snapshot;
-          metrics.loaded();
-          activeSession = token;
-          loaded = true;
-          onUpdate({ type: 'snapshot', snapshot });
-          start(token);
-          return snapshot;
+    // Open...: the app puts the picked bytes in a file, then `firmware.load` reads it like any other.
+    load: (bytes, name, options) =>
+      newSession(async (token) => {
+        const syx = await api.invoke<string>('emu_stage_syx', bytes, {
+          headers: { 'x-name': encodeURIComponent(name) },
         });
-      lifecycle = work.then(
-        () => {},
-        () => {},
-      );
-      return work.catch((error) => {
-        if (token === generation) fault(error);
-        throw error;
-      });
+        await call('firmware.load', { syx, replace: true, runtime: !!options?.runtime }, token);
+      }),
+    loadPath: (syx, options) =>
+      newSession(async (token) => {
+        await call('firmware.load', { syx, replace: true, runtime: !!options?.runtime }, token);
+      }),
+    async firmwareInfo() {
+      const status = await call<{ firmware: { runtime?: RuntimePatch | null } | null }>('status');
+      return { runtime: status.firmware?.runtime ?? null };
     },
     async restart() {
-      const old = activeSession;
-      if (!loaded || old === undefined) throw new Error('No firmware selected');
-      const token = ++generation;
-      clearPump();
-      loaded = false;
-      activeSession = undefined;
-      const work = lifecycle
-        .catch(() => {})
-        .then(async () => {
-          metrics.reset();
-          const snapshot = await api.invoke<RuntimeSnapshot>('emu_restart', { sessionId: old, nextSessionId: token });
-          if (disposed || token !== generation) return snapshot;
-          metrics.loaded();
-          activeSession = token;
-          loaded = true;
-          onUpdate({ type: 'snapshot', snapshot });
-          start(token);
-          return snapshot;
-        });
-      lifecycle = work.then(
-        () => {},
-        () => {},
-      );
-      return work.catch((error) => {
-        if (token === generation) fault(error);
-        throw error;
+      if (!loaded || activeSession === undefined) throw new Error('No firmware selected');
+      return newSession(async (token) => {
+        await call('restart', {}, token);
       });
     },
     pause() {
@@ -563,11 +583,9 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     resume() {
       if (loaded && activeSession !== undefined && paused) start(activeSession);
     },
-    press: (code) => queueInput((session) => api.invoke<void>('emu_button', { sessionId: session, code, down: true })),
-    release: (code) =>
-      queueInput((session) => api.invoke<void>('emu_button', { sessionId: session, code, down: false })),
-    turn: (encoder, detents) =>
-      queueInput((session) => api.invoke<void>('emu_turn', { sessionId: session, encoder, detents })),
+    press: (code) => queueInput((session) => call<void>('input.button', { code, down: true }, session)),
+    release: (code) => queueInput((session) => call<void>('input.button', { code, down: false }, session)),
+    turn: (encoder, detents) => queueInput((session) => call<void>('input.turn', { encoder, detents }, session)),
     tap: (code, hold) => {
       const token = generation;
       return queueInput(async (session) => {

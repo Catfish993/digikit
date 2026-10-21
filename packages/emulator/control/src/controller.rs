@@ -529,6 +529,8 @@ struct Actor {
     /// Taken by the first load that mounts a card image.
     startup_card_folder: Option<CardSource>,
     repo_root: Option<PathBuf>,
+    /// What `firmware.load {runtime}` did to the image now running (`status.firmware.runtime`): the patch report, or null.
+    runtime_info: Option<Value>,
     quit: bool,
     /// Fault, DSP halt and main-loop stall detection (events `fault`, `halt`, `stall`).
     health: Health,
@@ -611,6 +613,7 @@ impl Actor {
             remember_card: config.remember_card,
             startup_card_folder: config.card_folder,
             repo_root: config.repo_root,
+            runtime_info: None,
             quit: false,
             health: Health::new(
                 std::env::var("DIGI_STALL_MS")
@@ -1108,6 +1111,21 @@ impl Actor {
         whole.then_some((last, paths))
     }
 
+    /// The card of an image loaded without a `card` parameter. A card is a DT2 SD card image: an image of another device never gets
+    /// one (opening a DN2 file in a DT2 session must not mount the DT2 card). A DT2 image gets the running DT2's card, else the card
+    /// remembered for this stock firmware (`stock`: the unpatched image when `bytes` is a patched one), else none.
+    fn default_card(&self, bytes: &[u8], stock: Option<&[u8]>) -> Option<PathBuf> {
+        if runtime_patch::device_short(bytes) != Some("dt2") {
+            return None;
+        }
+        let running = self
+            .loaded
+            .as_ref()
+            .filter(|l| runtime_patch::device_short(&l.current) == Some("dt2"))
+            .and_then(|l| l.card.clone());
+        running.or_else(|| self.remembered_card(stock.unwrap_or(bytes)).map(|(_, paths)| paths.image))
+    }
+
     fn ui_restart(&mut self, next_session: u64) -> Result<Snapshot, String> {
         let Some(loaded) = self.loaded.as_ref() else {
             return Err("No firmware selected".into());
@@ -1423,6 +1441,22 @@ impl Actor {
 
     fn rpc(&mut self, method: &str, params: &Value, reply: RpcReply) {
         let p = Params(params);
+        // `session`: the webview's session token (`emu_call`). `firmware.load` and `restart` start a new session with it (it must
+        // be newer than the current one, and is taken when the call succeeds); every other method must carry the current one.
+        let token = match p.opt_u64("session") {
+            Ok(token) => token,
+            Err(error) => {
+                let _ = reply.send(Err(error));
+                return;
+            }
+        };
+        let starts_session = matches!(method, "firmware.load" | "restart");
+        if let Some(token) = token
+            && if starts_session { token <= self.session } else { token != self.session }
+        {
+            let _ = reply.send(Err(RpcError::new(code::STALE_SESSION, "stale emulator session")));
+            return;
+        }
         let outcome: Result<Option<Value>, RpcError> = match method {
             "status" => self.rpc_status().map(Some),
             "run.mode" => self.rpc_run_mode(&p).map(Some),
@@ -1502,6 +1536,9 @@ impl Actor {
                 format!("unknown method {other}"),
             )),
         };
+        if let (Some(token), true, true) = (token, starts_session, outcome.is_ok()) {
+            self.session = token;
+        }
         match outcome {
             Ok(Some(value)) => {
                 let _ = reply.send(Ok(self.envelope(value)));
@@ -1599,6 +1636,7 @@ impl Actor {
                 "base_sha256": l.base_sha,
                 "syx_sha256": firmware::sha256_hex(&l.current),
                 "injected": l.base.as_ref() != Some(&l.current),
+                "runtime": self.runtime_info,
             })
         });
         let job = self
@@ -2155,7 +2193,7 @@ impl Actor {
             return no_firmware();
         };
         let params = json!({
-            "bytes": true, "force": true, "start": "auto",
+            "bytes": true, "force": true, "start": "auto", "restart": true,
             "auto_no": p.opt_bool("auto_no")?.unwrap_or(false),
             "card": loaded.card.as_ref().map(|c| c.display().to_string()),
         });
@@ -2205,13 +2243,17 @@ impl Actor {
         if patch_set.is_some() && !runtime_requested {
             return Err(RpcError::bad_params("patch_set needs runtime: true"));
         }
+        // `replace`: load as the first firmware (nothing of the running one is reused, and a different device is fine): the webview's
+        // Open and Reload. Without it the image is a variant of the running one (injection).
+        let replace = p.opt_bool("replace")?.unwrap_or(false);
         let mut stock_base: Option<Vec<u8>> = None;
         let mut runtime_report = None;
         if runtime_requested {
             let set = patch_set.unwrap_or("emulator");
             let started = Instant::now();
-            let root = runtime_patch::find_root(self.repo_root.as_deref()).map_err(&rejected)?;
-            match runtime_patch::prepare(&root, &bytes, set).map_err(&rejected)? {
+            let patch_error = |m: String| rejected(format!("runtime patch: {m}"));
+            let root = runtime_patch::find_root(self.repo_root.as_deref()).map_err(&patch_error)?;
+            match runtime_patch::prepare(&root, &bytes, set).map_err(&patch_error)? {
                 runtime_patch::Outcome::AlreadyPatched => {
                     runtime_report = Some(json!({"patched": false, "reason": "the input has a patch record"}));
                 }
@@ -2261,6 +2303,19 @@ impl Actor {
             let loaded = self.loaded.as_mut().expect("loaded");
             loaded.ensure_analysis().map_err(&rejected)?;
         }
+        if replace {
+            // As `ui_load` always did: forget the running firmware, its card job and its audio setup.
+            self.cancel_card();
+            self.audio = self.audio_default.clone();
+            self.card_last = json!({"state": "idle"});
+            self.read_error = None;
+            self.runtime = None;
+            self.loaded = None;
+        }
+        // Not an injection: the status keeps what the running image got, a restart keeps it.
+        if !p.opt_bool("restart")?.unwrap_or(false) {
+            self.runtime_info = report.get("runtime").cloned();
+        }
         let have_runtime = self.runtime.is_some() && self.loaded.is_some();
         if let (Some(base), Some(loaded)) = (&base_param, &self.loaded)
             && have_runtime
@@ -2276,7 +2331,7 @@ impl Actor {
             // First load: stock when the file is a known one (or base_sha256
             // names itself), otherwise a patched build of `base_sha256`.
             let base_sha = base_param.clone().unwrap_or_else(|| new.sha256.clone());
-            let card = card_param.clone();
+            let card = card_param.clone().or_else(|| self.default_card(&bytes, stock_base.as_deref()));
             if base_sha == new.sha256 {
                 self.load_stock(bytes, card, new, &mut report, start)?
             } else {
@@ -2285,7 +2340,7 @@ impl Actor {
         } else {
             let loaded = self.loaded.as_ref().expect("loaded");
             let running = loaded.current_analysis.clone().expect("analysis");
-            let card = card_param.or_else(|| loaded.card.clone());
+            let card = card_param.or_else(|| self.default_card(&bytes, loaded.base.as_deref()));
             let base_analysis = loaded.base_analysis.clone();
             let base_bytes = loaded.base.clone();
             let base_sha = loaded.base_sha.clone();

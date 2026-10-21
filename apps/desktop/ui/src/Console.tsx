@@ -8,6 +8,7 @@ import { panels } from '@web/data/faceplates';
 import {
   nativeRuntime,
   type EmulatorRuntime,
+  type FirmwareInfo,
   type NativeAudioStatus,
   type RuntimeSnapshot,
   type RuntimeUpdate,
@@ -20,6 +21,23 @@ type Source = { path: string; name: string; bytes: number; modified_ms: number }
 type Status = RuntimeSnapshot['status'];
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+// "Boot with digikit runtime": on unless the user turned it off; kept per browser profile of the app.
+const RUNTIME_KEY = 'digikit.bootRuntime';
+const readRuntimePref = () => {
+  try {
+    return localStorage.getItem(RUNTIME_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+};
+const writeRuntimePref = (on: boolean) => {
+  try {
+    localStorage.setItem(RUNTIME_KEY, on ? 'on' : 'off');
+  } catch {
+    /* the choice lasts until the window closes */
+  }
+};
 
 function Icon(props: { d: string }) {
   return (
@@ -74,6 +92,8 @@ export default function Console() {
   const [modulesOpen, setModulesOpen] = createSignal(false);
   const [card, setCard] = createSignal<CardStatus>();
   const [cardBusy, setCardBusy] = createSignal(false);
+  const [bootRuntime, setBootRuntime] = createSignal(readRuntimePref());
+  const [info, setInfo] = createSignal<FirmwareInfo>();
   let live: LivePanelApi | undefined;
   let fileInput: HTMLInputElement | undefined;
   let folderInput: HTMLInputElement | undefined;
@@ -98,27 +118,40 @@ export default function Console() {
     setError(event.snapshot.status.error ?? '');
   };
 
-  const load = async (bytes: Uint8Array, name: string) => {
+  /** What the running image got from the runtime patch, for the header. */
+  const refreshInfo = async () => {
+    try {
+      setInfo(await runtime()?.firmwareInfo?.());
+    } catch {
+      setInfo(undefined);
+    }
+  };
+  /** Start a new firmware session with `start` (every load goes through the controller's `firmware.load`). */
+  const boot = async (start: (r: EmulatorRuntime) => Promise<RuntimeSnapshot>) => {
     const r = runtime();
     if (!r) return;
     live?.releaseAll();
     live?.clear();
     setError('');
     try {
-      update({ type: 'snapshot', snapshot: await r.load(bytes, name) });
+      update({ type: 'snapshot', snapshot: await start(r) });
       setPaused(false);
+      await refreshInfo();
     } catch (e) {
       setError(message(e));
     }
   };
-  /** Read the startup file again and boot it. */
+  const load = (bytes: Uint8Array, name: string) => boot((r) => r.load(bytes, name, { runtime: bootRuntime() }));
+  /** Boot the startup file again: the controller reads it from its path. */
   const reload = async (why: string) => {
-    if (reloading || !source()) return;
+    const path = source()?.path;
+    if (reloading || !path) return;
     reloading = true;
     try {
-      const buffer = await invoke<ArrayBuffer>('emu_source_read');
       setOpened('');
-      await load(new Uint8Array(buffer), source()!.name);
+      await boot((r) =>
+        r.loadPath ? r.loadPath(path, { runtime: bootRuntime() }) : Promise.reject(new Error('no reload')),
+      );
       setReloadNote(`${why} ${new Date().toLocaleTimeString()}`);
     } catch (e) {
       setError(message(e));
@@ -128,11 +161,11 @@ export default function Console() {
   };
   const pollSource = async () => {
     try {
-      const info = await invoke<Source | null>('emu_source_info');
-      setSource(info ?? undefined);
-      if (!info) return;
-      const changed = lastModified !== undefined && info.modified_ms !== lastModified;
-      lastModified = info.modified_ms;
+      const file = await invoke<Source | null>('emu_source_info');
+      setSource(file ?? undefined);
+      if (!file) return;
+      const changed = lastModified !== undefined && file.modified_ms !== lastModified;
+      lastModified = file.modified_ms;
       if (changed && watching() && !opened()) await reload('Reloaded after a change at');
     } catch {
       /* the file may be mid-write; the next poll sees it */
@@ -167,7 +200,12 @@ export default function Console() {
         return;
       }
       setRuntime(r);
-      void pollSource();
+      void (async () => {
+        await pollSource();
+        await refreshInfo();
+        // The app starts with the runtime patched in; a user who turned that off gets the startup file as it is.
+        if (!bootRuntime() && info()?.runtime?.set) await reload('Started without the runtime at');
+      })();
       timers.push(window.setInterval(() => void pollSource(), 1000));
       timers.push(window.setInterval(() => void pollAudio(), 1000));
     });
@@ -192,6 +230,7 @@ export default function Console() {
       const s = await runtime()?.restart();
       if (s) update({ type: 'snapshot', snapshot: s });
       setPaused(false);
+      await refreshInfo();
     } catch (e) {
       setError(message(e));
     }
@@ -262,6 +301,27 @@ export default function Console() {
             {status()!.device} {status()!.version}
           </span>
         </Show>
+        <Show when={info()}>
+          {(i) => (
+            <span
+              class="tag runtime"
+              classList={{ on: !!i().runtime?.patched }}
+              title={
+                i().runtime?.patched
+                  ? `${i().runtime?.modules?.length ?? 0} modules of the "${i().runtime?.set}" set, ${i().runtime?.cache_hit ? 'from the image cache' : 'patched now'}`
+                  : i().runtime
+                    ? 'The image has a patch record: it is loaded as it is'
+                    : 'The image is loaded as it is'
+              }
+            >
+              {i().runtime?.patched
+                ? `runtime ${i().runtime?.set}${i().runtime?.cache_hit ? ' (cached)' : ''}`
+                : i().runtime
+                  ? 'patched image'
+                  : 'stock'}
+            </span>
+          )}
+        </Show>
         <Show when={source() && !opened()}>
           <button
             type="button"
@@ -281,6 +341,20 @@ export default function Console() {
           </span>
         </Show>
         <span class="sp" />
+        <label
+          class="tag opt"
+          title="Patch the digikit runtime into a stock firmware when it is opened or reloaded (the next Open or Reload)"
+        >
+          <input
+            type="checkbox"
+            checked={bootRuntime()}
+            onChange={(e) => {
+              setBootRuntime(e.currentTarget.checked);
+              writeRuntimePref(e.currentTarget.checked);
+            }}
+          />
+          Boot with digikit runtime
+        </label>
         <input
           ref={fileInput}
           type="file"
@@ -312,9 +386,15 @@ export default function Console() {
           <Icon d={paused() ? PLAY : PAUSE} />
           {paused() ? 'Resume' : 'Pause'}
         </button>
-        <button type="button" class="tb" disabled={!status()} onClick={() => void restart()}>
+        <button
+          type="button"
+          class="tb"
+          disabled={!status()}
+          title="Reset the running firmware to its ready state (the emulator's reset; not the device's RESTART command)"
+          onClick={() => void restart()}
+        >
           <Icon d={RESTART} />
-          Restart
+          Reset (emulator)
         </button>
         <button
           type="button"
