@@ -21,6 +21,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
   pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm
                                          (a `dynamic = true` module: its machine and param records for --device)
+  synth-dkm SPEC.toml --device SHORT -o OUT.dkm   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
+                                         the spec keys are in packages/patchkit/src/dkmsynth.rs)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
   dkm-dsp-image FILE BASE [NAME=VALUE..]  the relocated DSP image of a .dkm at the L2 byte address BASE (hex)
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
@@ -516,6 +518,13 @@ plan.json {}",
             let x = patchkit::dkmdsp::DspSection::parse(&d.dsp)?;
             let img = x.relocated(base, &|n| imports.get(n).copied())?;
             println!("{}", patchkit::error::hex(&img));
+        }
+        "synth-dkm" => {
+            let spec = patchkit::dkmsynth::Spec::parse(&String::from_utf8_lossy(&read(need(rest)?)?))?;
+            let dev = flag(rest, "--device").ok_or_else(|| Error(USAGE.into()))?;
+            let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
+            let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
+            write(&out, &patchkit::dkmsynth::synth(&spec, &dev, &models)?)?;
         }
         "dkm-info" => {
             let raw = read(need(rest)?)?;
