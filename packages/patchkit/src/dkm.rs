@@ -115,6 +115,26 @@ pub fn pack(obj: &Dko, o: &Options) -> Result<Vec<u8>> {
 /// The image of a data-only module: `dkm_init` is `moveq #0,d0; rts`. The `register` records do the work.
 const STUB_IMAGE: [u8; 4] = [0x70, 0x00, 0x4e, 0x75];
 
+/// Do the `register` records hold a machine record? (A data-only machine module has no DSP section but is a machine.) Walks the records
+/// by their kind and length words; a malformed table is not one (the loader refuses it with E_FORMAT).
+fn has_machine_record(reg: &[u8]) -> bool {
+    let w = |at: usize| -> Option<usize> {
+        let b = reg.get(at..at + 4)?;
+        Some(u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    let mut at = crate::register::HEADER;
+    while let (Some(kind), Some(len)) = (w(at), w(at + 4)) {
+        if kind == crate::register::KIND_MACHINE as usize {
+            return true;
+        }
+        if len < 8 {
+            return false;
+        }
+        at += len;
+    }
+    false
+}
+
 /// Pack an object (or none: a data-only module) with `register` records (see [`register`]).
 pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> {
     pack_full(obj, reg, &[], o)
@@ -296,13 +316,13 @@ pub fn pack_full_max(
         },
     );
     put(&mut f, H_VERSION, o.version);
-    // contracts: api always; machine with a DSP section; service with slot functions or a real `dkm_init`/`dkm_fini` (not the stub)
+    // contracts: api always; machine with a DSP section or a machine record; service with slot functions or a real `dkm_init`/`dkm_fini` (not the stub)
     let sdk = crate::sdkgen::embedded();
     let has_service = !slots.is_empty() || has_obj && (init.is_some() || fini.is_some());
     let none = (0, 0);
     let pairs = [
         sdk.api,
-        if dsp.is_empty() { none } else { sdk.machine },
+        if dsp.is_empty() && !has_machine_record(reg) { none } else { sdk.machine },
         none,
         if has_service { sdk.service } else { none },
     ];
@@ -629,6 +649,26 @@ mod tests {
         assert_eq!(c(&f), vec![1, 1, 1, 0, 0, 0, 0, 0]);
         // a data-only module without DSP code: api only
         let f = pack_with(None, &[], &opts()).unwrap();
+        assert_eq!(c(&f), vec![1, 1, 0, 0, 0, 0, 0, 0]);
+        // register records that hold a machine: machine too (a data-only machine module); param and page records alone: not
+        let rec = |kind: u32, len: usize| {
+            let mut r = kind.to_be_bytes().to_vec();
+            r.extend((len as u32).to_be_bytes());
+            r.resize(len, 0);
+            r
+        };
+        let table = |recs: &[Vec<u8>]| {
+            let mut t = vec![0u8; crate::register::HEADER];
+            for r in recs {
+                t.extend(r);
+            }
+            t
+        };
+        let param = rec(crate::register::KIND_PARAM, crate::register::LEN_PARAM);
+        let machine = rec(crate::register::KIND_MACHINE, crate::register::LEN_MACHINE);
+        let f = pack_with(None, &table(&[param.clone(), machine]), &opts()).unwrap();
+        assert_eq!(c(&f), vec![1, 1, 1, 0, 0, 0, 0, 0]);
+        let f = pack_with(None, &table(&[param]), &opts()).unwrap();
         assert_eq!(c(&f), vec![1, 1, 0, 0, 0, 0, 0, 0]);
     }
 

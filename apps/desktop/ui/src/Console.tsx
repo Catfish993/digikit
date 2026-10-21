@@ -13,8 +13,7 @@ import {
   type RuntimeSnapshot,
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
-import ModulesPanel from '@web/components/ModulesPanel';
-import { emulatorModules } from './modules-backend';
+import TransferPanel from './TransferPanel';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 
 type Source = { path: string; name: string; bytes: number; modified_ms: number };
@@ -401,11 +400,11 @@ export default function Console() {
           class="tb"
           disabled={!status()}
           aria-pressed={modulesOpen()}
-          title="List, upload and delete the modules in the module store"
+          title="Choose the modules that run on the emulator and install them"
           onClick={() => setModulesOpen(!modulesOpen())}
         >
           <Icon d={MODULES} />
-          Modules
+          Transfer
         </button>
         <button
           type="button"
@@ -433,10 +432,7 @@ export default function Console() {
 
       <Show when={modulesOpen()}>
         <div class="modules-sheet">
-          <ModulesPanel
-            backend={emulatorModules}
-            hint="Uploads go to the store of the running emulator; they load after APPLY & RESTART."
-          />
+          <TransferPanel />
         </div>
       </Show>
 

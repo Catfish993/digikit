@@ -43,22 +43,30 @@ def say(msg: str) -> None:
     print(f"dk run: {msg}", flush=True)
 
 
-def build_pack(module: str, device: str, build: bool = True) -> Path:
-    """Compile the module's objects (unless `build` is off) and pack the .dkm for DEVICE; returns its path."""
-    if build:
-        r = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "tools.patchkit.pk_build",
-                str(modroots.module_dir(module)),
-            ],
-            cwd=ROOT,
-            env=python_env(),
-        )
-        if r.returncode:
-            raise RunError(f"build of {module} failed")
-    out = ROOT / "out" / "patch" / f"{module.rsplit('/', 1)[-1]}-{device}.dkm"
+def build_objects(module: str) -> None:
+    """Compile the module's objects (`pk_build` skips an object whose source hash is unchanged)."""
+    r = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tools.patchkit.pk_build",
+            str(modroots.module_dir(module)),
+        ],
+        cwd=ROOT,
+        env=python_env(),
+        capture_output=True,
+        text=True,
+    )
+    sys.stdout.write(r.stdout)
+    if r.returncode:
+        sys.stderr.write(r.stderr)
+        raise RunError(f"build of {module} failed")
+
+
+def pack_module(module: str, device: str, out: Path | None = None) -> Path:
+    """Pack the .dkm of MODULE for DEVICE (`patchkit pack`); returns its path (default out/patch/<name>-<device>.dkm)."""
+    out = out or ROOT / "out" / "patch" / f"{module.rsplit('/', 1)[-1]}-{device}.dkm"
+    out.parent.mkdir(parents=True, exist_ok=True)
     r = subprocess.run(
         [
             sys.executable,
@@ -73,10 +81,70 @@ def build_pack(module: str, device: str, build: bool = True) -> Path:
         ],
         cwd=ROOT,
         env=python_env(),
+        capture_output=True,
+        text=True,
     )
     if r.returncode or not out.exists():
-        raise RunError(f"pack of {module} for {device} failed")
+        why = (r.stderr.strip().splitlines() or ["?"])[-1]
+        raise RunError(f"pack of {module} for {device} failed: {why}")
     return out
+
+
+def build_pack(module: str, device: str, build: bool = True) -> Path:
+    """Compile the module's objects (unless `build` is off) and pack the .dkm for DEVICE; returns its path."""
+    if build:
+        build_objects(module)
+    return pack_module(module, device)
+
+
+def module_path(module: str) -> str:
+    """The store path a module's .dkm is uploaded to."""
+    return f"modules/{module.rsplit('/', 1)[-1]}.dkm"
+
+
+def upload_if_changed(
+    up: D.Uploader,
+    path: str,
+    data: bytes,
+    have: dict[str, tuple[int, str]] | None = None,
+    log: Callable[[str], None] = say,
+) -> bool:
+    """PUT `data` at `path` unless LIST shows the same size and sha256 there (`have`: that listing, else asked for). True: uploaded."""
+    if have is None:
+        have = {p: (n, h) for p, n, h in up.ls()}
+    sha = hashlib.sha256(data).hexdigest()
+    if path in have and have[path] == (len(data), sha):
+        log(f"{path} is on the device ({len(data)} bytes, same sha256): not uploaded")
+        return False
+    t0 = time.monotonic()
+    up.put(path, data)
+    log(
+        f"uploaded {path}: {len(data)} bytes ({time.monotonic() - t0:.1f} s, sha256 checked on the device)"
+    )
+    return True
+
+
+def restart_and_wait(
+    up: D.Uploader,
+    connect: Callable[[], D.Uploader] | None,
+    wait_boot: Callable[[], None] | None,
+    sleep: Callable[[float], None],
+    now: Callable[[], float],
+    log: Callable[[str], None] = say,
+) -> D.Uploader:
+    """RESTART, wait for the guest to boot again and for its log to be a new boot's; returns the uploader to use after it."""
+    up.restart()
+    log("restart requested; waiting for the boot")
+    if wait_boot is not None:
+        wait_boot()
+    old = up
+    up = wait_new_boot(
+        connect or (lambda: old), sleep, now=now, connect_closes=connect is not None
+    )
+    if connect is not None:
+        _close(old)
+    log("the device booted")
+    return up
 
 
 def require_runtime(info: dict[str, Any]) -> None:
@@ -195,35 +263,14 @@ def run(
         dkm = build_pack(module, dev, build)
         say(f"packed {dkm.name} ({time.monotonic() - t0:.1f} s)")
     data = dkm.read_bytes()
-    path = f"modules/{module.rsplit('/', 1)[-1]}.dkm"
+    path = module_path(module)
     out["path"] = path
-    sha = hashlib.sha256(data).hexdigest()
-    have = {p: (n, h) for p, n, h in up.ls()}
-    if path in have and have[path][1] == sha and have[path][0] == len(data):
-        say(f"{path} is on the device ({len(data)} bytes, same sha256): not uploaded")
-        out["uploaded"] = False
-    else:
-        t0 = time.monotonic()
-        up.put(path, data)
-        say(
-            f"uploaded {path}: {len(data)} bytes ({time.monotonic() - t0:.1f} s, sha256 checked on the device)"
-        )
-        out["uploaded"] = True
+    out["uploaded"] = upload_if_changed(up, path, data)
     up.select([path])
     say(f"selected {path} (the only module of the next boot)")
     if not restart:
         return out
-    up.restart()
-    say("restart requested; waiting for the boot")
-    if wait_boot is not None:
-        wait_boot()
-    old = up
-    up = wait_new_boot(
-        connect or (lambda: old), sleep, now=now, connect_closes=connect is not None
-    )
-    if connect is not None:
-        _close(old)
-    say("the device booted")
+    up = restart_and_wait(up, connect, wait_boot, sleep, now)
     res = module_results(up, sleep, 60.0, now)
     out["results"] = res
     for d in res:

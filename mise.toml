@@ -332,6 +332,10 @@ description = "The digikit runtime's debug log over USB: mise run dk:log -- --po
 run = "uv run --with python-rtmidi python -m tools.device.dkscreen"
 description = "Screenshot of the device or emulator display as PNG: mise run dk:screen -- --port Digitakt out/runs/shots/screen.png [--every S --count N] (or --emu; the target is --emu or --port NAME)"
 
+[tasks.transfer]
+run = "uv run --with python-rtmidi python -m tools.device.dktransfer"
+description = "The repo's run-time modules on a target and their install: mise run transfer -- list --emu [--json] | install digikit/pluck [MOD ...] [--keep PATH ...] (or --port NAME; a paused emulator is refused, --step lets the tool step it)"
+
 [tasks."dk:store"]
 run = "uv run --with python-rtmidi python -m tools.device.dkupload"
 description = "The module store on the card: mise run dk:store -- --port Digitakt info | ls | modules | put FILE.dkm modules/NAME.dkm | rm PATH | clear (or --emu; the target is --emu or --port NAME)"

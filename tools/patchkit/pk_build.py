@@ -11,6 +11,10 @@ canonical object JSON (sorted keys, integers only; format in packages/patchkit/s
 object's `path`. Every instruction is re-decoded by our own decoders (SHARC: tools/patchkit/pk_sharc.py `verify`;
 ColdFire: tools/patchkit/pk_link.py `check_isa`), so a toolchain encoding bug cannot reach an image.
 
+An object whose committed `source_sha256` equals the hash of its sources now is not compiled ("unchanged"); `--force` rebuilds it.
+The hash is the builders' own (`source_hash`): C headers and the compiler version are not in the ColdFire C hash, so a change of
+only those needs `--force`.
+
 `--check` writes nothing and fails when a committed object differs from a fresh build (objects are
 committed; the check keeps them current with `src/`).
 """
@@ -18,6 +22,7 @@ committed; the check keeps them current with `src/`).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -317,11 +322,60 @@ def cf_object(sources: list[Path], include_dirs: list[Path] | None = None) -> di
     }
 
 
+def source_hash(moddir: Path, o: dict) -> str | None:
+    """The `source_sha256` a build of the manifest object `o` would write, computed the same way as the builders do and without
+    compiling: SHARC hashes the text after `#include` expansion and `#ifdef` selection, ColdFire C the listed files, Rust the crate
+    (pk_rust.source_sha256). None: the object lists no sources. C headers and the compiler version are not in the C hash (and the
+    toolchain version is in no hash but the Rust one), so a change of only those is not seen here: `--force` rebuilds."""
+    srcs = o.get("sources")
+    if not srcs:
+        return None
+    paths = [moddir / s for s in srcs]
+    if {p.suffix for p in paths} <= {".s"} and any(
+        "dsp" in Path(s).parts for s in srcs
+    ):
+        dirs = [moddir / "build" / "gen", ROOT / "sdk", *{p.parent for p in paths}]
+        text = apply_conditionals(
+            expand_includes("\n".join(p.read_text() for p in paths), dirs)
+        )
+        return hashlib.sha256(text.encode()).hexdigest()
+    if any(p.name == "Cargo.toml" for p in paths):
+        return pk_rust.source_sha256(paths[0])
+    return hashlib.sha256(b"".join(p.read_bytes() for p in paths)).hexdigest()
+
+
+def object_unchanged(moddir: Path, o: dict) -> bool:
+    """Does the committed object of `o` carry the source hash a build would give now?"""
+    out = moddir / o["path"]
+    want = source_hash(moddir, o)
+    if want is None or not out.exists():
+        return False
+    try:
+        return json.loads(out.read_text()).get("source_sha256") == want
+    except (ValueError, BuildError):
+        return False
+
+
+def module_status(moddir: Path) -> str:
+    """ "unchanged" when every object of the module that has sources carries the hash of its sources now, else "needs build"."""
+    manifest = tomllib.loads((moddir / "module.toml").read_text())
+    try:
+        ok = all(
+            object_unchanged(moddir, o)
+            for o in manifest.get("object", [])
+            if o.get("sources")
+        )
+    except BuildError:
+        ok = False
+    return "unchanged" if ok else "needs build"
+
+
 def build_module(
     moddir: Path,
     check: bool,
     defines: frozenset[str] = frozenset(),
     out_root: Path | None = None,
+    force: bool = False,
 ) -> list[str]:
     """Build every object of a module. With `defines` (build options for the DSP sources) the committed objects are not touched: the
     objects go under `out_root` at their `path` (tools/patchkit/pk_variant.py builds a module variant this way)."""
@@ -332,6 +386,9 @@ def build_module(
     for o in manifest.get("object", []):
         srcs = o.get("sources")
         if not srcs:
+            continue
+        if not check and not defines and not force and object_unchanged(moddir, o):
+            messages.append(f"{moddir / o['path']}: unchanged")
             continue
         paths = [moddir / s for s in srcs]
         kinds = {p.suffix for p in paths}
@@ -364,6 +421,11 @@ def main() -> int:
     b.add_argument("module", type=Path)
     b.add_argument("--check", action="store_true")
     b.add_argument(
+        "--force",
+        action="store_true",
+        help="rebuild objects whose source hash is unchanged",
+    )
+    b.add_argument(
         "--define",
         action="append",
         default=[],
@@ -377,6 +439,11 @@ def main() -> int:
     )
     c = sub.add_parser("build-all")
     c.add_argument("--check", action="store_true")
+    c.add_argument(
+        "--force",
+        action="store_true",
+        help="rebuild objects whose source hash is unchanged",
+    )
     c.add_argument(
         "--root",
         type=Path,
@@ -407,6 +474,7 @@ def main() -> int:
                 a.check,
                 frozenset(getattr(a, "define", [])),
                 getattr(a, "out", None),
+                a.force,
             ):
                 print(m)
     except (BuildError, pk_sharc.PkSharcError, pk_link.PkLinkError) as e:
