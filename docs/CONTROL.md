@@ -33,7 +33,7 @@ flags. `--scenario` needs a coupled-audio build.
 | Subcommand | Does |
 |---|---|
 | `status` | Print the `status` result |
-| `load SYX` / `inject SYX` | `firmware.load`; options `--base-sha256`, `--start auto\|snapshot\|cold`, `--dsp-patch` (`load` also `--card`) |
+| `load SYX` / `inject SYX` | `firmware.load`; options `--base-sha256`, `--start auto\|snapshot\|cold`, `--dsp-patch`, `--runtime [--patch-set NAME]` (`load` also `--card`) |
 | `restart` | Back to the ready state of the running firmware |
 | `step N` | Run N guest instructions |
 | `tap CODE [--hold N] [--at-instr N]` | Press and release a key (default hold 40000000 instructions) |
@@ -44,7 +44,8 @@ flags. `--scenario` needs a coupled-audio build.
 
 Global options: `--socket PATH` (default: discover), `--run-dir DIR` (where to look for `current.json`).
 
-`mise run patch:inject -- OUT.syx [--hot]` loads a patched image through `tools/patchkit/patchkit.py inject`.
+`mise run patch:inject -- OUT.syx [--hot]` loads a patched image through `tools/patchkit/patchkit.py inject`;
+`mise run patch:inject -- STOCK.syx --runtime` lets the emulator patch the stock image itself (`firmware.load {runtime}`, below).
 
 ## Methods
 
@@ -83,6 +84,17 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `guard.set`, `guard.report`, `guard.clear` | | `call` |
 | `events.subscribe` | `events`, `subscribe`, `drain_events` | `events` |
 | `quit` | `quit` | `quit` |
+
+`firmware.load {syx, runtime?, patch_set?, ...}`: with `runtime: true` the controller patches the stock image in-process with the
+device's patch set (`patch_set`, default `emulator`; the roots are in `devices/*.toml` `[patch_sets]`, the modules they require are added)
+and loads the result with the stock image as its base. A `syx` that already has a patch record is loaded as it is. The patched image is
+cached in `out/runtime-cache/<stock sha256>-<set>-<key>.syx`; the key hashes the set, the modules (manifest and object bytes), the device
+and port files and the patchkit sources, so any change to them patches again. The module library and the device files come from the
+repository root (`Config.repo_root`, else `$DIGI_REPO_ROOT`, else the repository of the working directory); a build outside a checkout
+answers `FIRMWARE_REJECTED` with that reason until a shipped bundle exists. The reply gets `runtime`:
+`{patched, set, modules, cache_hit, base_sha256, cache_file, seconds}` (`cache_hit` is the patched image; the snapshot cache keeps
+its own `cache_hit` at the top level), or `{patched: false, reason}` for an input with a record. `patch_set` without `runtime` is refused.
+Time (release build): the first patch of a 1.17 or 1.12 image takes about 1.3 s, a cached one about 0.08 s.
 
 `framebuffer.get {hash?, data?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
 (the bytes `data_b64` carries; the hash the patchkit smoke goldens use); `data: false` omits `data_b64`.

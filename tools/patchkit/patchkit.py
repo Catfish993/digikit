@@ -3,11 +3,13 @@
 
     uv run python -m tools.patchkit.patchkit bin                       print the path of the built binary
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx --modules a,b [-o OUT.syx]   apply; writes out/patch/
+    uv run python -m tools.patchkit.patchkit patch --firmware X.syx [--set NAME]   no --modules: the device's patch set (default `device`)
     uv run python -m tools.patchkit.patchkit explain --firmware X.syx --modules a,b              site-by-site account
     uv run python -m tools.patchkit.patchkit list|inspect|check|verify|preflight|gen ...                   passed through
     uv run python -m tools.patchkit.patchkit pack MODULE --device dt2|dn2 [-o OUT.dkm]  pack a run-time module (default out/patch/<name>-<device>.dkm)
     uv run python -m tools.patchkit.patchkit bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
     uv run python -m tools.patchkit.patchkit inject [OUT.syx] [--hot]  load a patched image into the running emulator
+    uv run python -m tools.patchkit.patchkit inject STOCK.syx --runtime [--patch-set NAME]  the emulator patches STOCK.syx itself
 
 `DIGI_PK_ROOT=DIR` runs the binary with another repository root (a module variant, tools/patchkit/pk_variant.py).
 
@@ -210,13 +212,17 @@ def cmd_explain(args: list[str]) -> int:
 
 def cmd_patch(args: list[str]) -> int:
     fw, mods = flag(args, "--firmware"), flag(args, "--modules")
-    if not fw or not mods:
-        raise SystemExit("patch needs --firmware X.syx and --modules a,b")
+    if not fw:
+        raise SystemExit(
+            "patch needs --firmware X.syx (and --modules a,b; without it the device's patch set, `--set NAME` for another)"
+        )
+    # no --modules: the device's patch set (devices/*.toml [patch_sets]); the file name carries the set's name
+    label = mods or f"set-{flag(args, '--set') or 'device'}"
     out = flag(args, "-o")
     if out is None:
         d = ROOT / "out" / "patch"
         d.mkdir(parents=True, exist_ok=True)
-        out = str(d / f"{Path(fw).stem}+{re.sub(r'[^A-Za-z0-9.-]+', '_', mods)}.syx")
+        out = str(d / f"{Path(fw).stem}+{re.sub(r'[^A-Za-z0-9.-]+', '_', label)}.syx")
     plan = flag(args, "--plan") or str(Path(out).with_suffix(".plan.json"))
     rest = [a for a in args if a not in ("-o", out, "--plan", plan)]
     r = run(["apply", *rest, "-o", out, "--plan", plan])
@@ -258,7 +264,18 @@ VALUE_FLAGS = ("-o", "--device", "--name", "--runtime-min")
 def cmd_inject(args: list[str]) -> int:
     from tools.control.digi_client import main as client_main
 
-    syx = next((a for a in args if not a.startswith("-")), None)
+    runtime = "--runtime" in args
+    set_name = flag(args, "--patch-set")
+    syx = next(
+        (
+            a
+            for i, a in enumerate(args)
+            if not a.startswith("-") and (i == 0 or args[i - 1] != "--patch-set")
+        ),
+        None,
+    )
+    if syx is None and runtime:
+        raise SystemExit("inject --runtime needs the stock .syx to patch")
     if syx is None:
         outs = sorted(
             (ROOT / "out" / "patch").glob("*.syx"), key=lambda p: p.stat().st_mtime
@@ -269,6 +286,8 @@ def cmd_inject(args: list[str]) -> int:
             )
         syx = str(outs[-1])
     rest = ["inject", syx]
+    if runtime:  # the emulator patches the stock image itself (firmware.load {runtime}); nothing is patched here
+        rest += ["--runtime"] + (["--patch-set", set_name] if set_name else [])
     if "--hot" in args:
         rest += ["--start", "snapshot"]
     return client_main(rest)

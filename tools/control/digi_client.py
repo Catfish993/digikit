@@ -343,8 +343,11 @@ class Emu:
         start: str = "auto",
         card: str | os.PathLike[str] | None = None,
         dsp_patch: str | os.PathLike[str] | None = None,
+        runtime: bool = False,
+        patch_set: str | None = None,
     ) -> dict[str, Any]:
-        """`firmware.load`: the report says how the firmware was brought in."""
+        """`firmware.load`: the report says how the firmware was brought in. `runtime=True`: the controller patches the stock
+        image with the device's patch set (`patch_set`, default `emulator`) and loads that; its report is `report["runtime"]`."""
         params: dict[str, Any] = {
             "syx": str(pathlib.Path(syx).resolve()),
             "start": start,
@@ -355,6 +358,12 @@ class Emu:
             params["card"] = str(pathlib.Path(card).resolve())
         if dsp_patch:
             params["dsp_patch"] = str(pathlib.Path(dsp_patch).resolve())
+        if runtime:
+            params["runtime"] = True
+            if patch_set:
+                params["patch_set"] = patch_set
+        elif patch_set:
+            raise ValueError("patch_set needs runtime=True")
         return self.call("firmware.load", **params)
 
     inject = load
@@ -536,6 +545,15 @@ def describe_load(report: dict[str, Any]) -> str:
             )
         else:
             lines.append(f"dsp            not applied: {dsp.get('reason')}")
+    rt = report.get("runtime")
+    if isinstance(rt, dict):
+        if rt.get("patched"):
+            lines.append(
+                f"runtime        patch set {rt.get('set')}, {len(rt.get('modules', []))} modules, "
+                f"{'cached image' if rt.get('cache_hit') else 'patched now'} ({rt.get('seconds', 0):.2f} s)"
+            )
+        else:
+            lines.append(f"runtime        not patched: {rt.get('reason')}")
     if report.get("cache_hit"):
         lines.append("cache          snapshot cache hit")
     lines.append(f"seconds        {report.get('seconds', 0):.3f}")
@@ -554,6 +572,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--start", default="auto", choices=["auto", "snapshot", "cold"])
     p.add_argument("--card")
     p.add_argument("--dsp-patch")
+    p.add_argument(
+        "--runtime",
+        action="store_true",
+        help="patch the stock .syx with the device's patch set here and load that (digikit runtime)",
+    )
+    p.add_argument(
+        "--patch-set", help="with --runtime: the patch set (default emulator)"
+    )
     p = sub.add_parser(
         "inject",
         help="load a patched .syx into the running emulator (hot DSP inject when only the DSP changed)",
@@ -562,6 +588,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--base-sha256")
     p.add_argument("--start", default="auto", choices=["auto", "snapshot", "cold"])
     p.add_argument("--dsp-patch")
+    p.add_argument(
+        "--runtime",
+        action="store_true",
+        help="patch the stock .syx with the device's patch set here and load that (digikit runtime)",
+    )
+    p.add_argument(
+        "--patch-set", help="with --runtime: the patch set (default emulator)"
+    )
     sub.add_parser("restart")
     p = sub.add_parser("step")
     p.add_argument("instructions", type=int)
@@ -591,6 +625,8 @@ def main(argv: list[str] | None = None) -> int:
                 start=args.start,
                 card=getattr(args, "card", None),
                 dsp_patch=args.dsp_patch,
+                runtime=args.runtime,
+                patch_set=args.patch_set,
             )
             print(describe_load(report))
         elif args.cmd == "frame":
