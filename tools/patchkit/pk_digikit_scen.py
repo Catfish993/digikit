@@ -1323,7 +1323,71 @@ def run_pages(c: Ctx) -> None:
     PG.run_pages(c)
 
 
+def run_live(c: Ctx) -> None:
+    """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
+    by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
+    guest's card writes are laid over a default blank card when the firmware was loaded without one."""
+    import subprocess
+
+    from tools import python_env
+    from tools.control.digi_client import Emu
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+    from tools.firmware import config
+
+    (module,) = c.table()["modules"]
+    dev, ver = c.image.split("-")
+    spec = H.FIRMWARE[(dev, ver)]
+    syx = config.stock(spec["syx"])
+    emu = Emu.spawn_coupled(
+        syx,
+        H.ROOT / spec["ready"],
+        timeout=300,
+        binary=H.daemon_binary(dev, syx),
+        run_dir=c.work / "live-run",
+    )
+    try:
+        emu.load(syx, runtime=True, start="auto")
+        emu.call("run.mode", mode="free")
+        time.sleep(float(c.table().get("settle_s", 12)))
+        c.check("the daemon runs free", emu.status().get("mode") == "free")
+        epoch0 = emu.status()["epoch"]
+
+        def tool(*args: str) -> tuple[int, list[dict[str, Any]], float]:
+            t0 = time.monotonic()
+            r = subprocess.run(
+                [sys.executable, "-m", "tools.device.dktransfer", "--emu"]
+                + ["--socket", emu.path, "--json", *args],
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
+                env=python_env(),
+                timeout=300,
+            )
+            ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+            return r.returncode, ev, time.monotonic() - t0
+
+        rc, ev, secs = tool("install", module, *c.table().get("flags", []))
+        res = next((e for e in ev if e["event"] == "result"), {})
+        c.check(
+            "dktransfer install: the restart kept the upload and the selection, MODULES lists the module",
+            rc == 0 and module in res.get("loaded", []),
+            f"rc {rc} {ev[-1:] if ev else ''}",
+        )
+        c.report["install_s"] = round(secs, 1)
+        c.check("the emulator booted again (epoch)", emu.status()["epoch"] > epoch0)
+        up = DK.Uploader(TR.LiveTransport(emu))
+        c.check(
+            "the file is on the card after the soft reset",
+            [p for p, _, _ in up.ls()] == [f"modules/{module.split('/')[-1]}.dkm"],
+            str(up.ls()),
+        )
+    finally:
+        emu.__exit__(None, None, None)
+
+
 KINDS = {
+    "live": run_live,
     "pages": run_pages,
     "card": run_card,
     "debug": run_debug,

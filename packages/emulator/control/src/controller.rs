@@ -2931,7 +2931,10 @@ impl Actor {
             .name("digi-patched-boot".into())
             .spawn(move || {
                 let result = card_for(worker_card).and_then(|(mut card_obj, _)| {
-                    if let (Some(card), Some(sectors)) = (card_obj.as_mut(), &reset_overlay) {
+                    if let Some(sectors) = &reset_overlay {
+                        // A guest with no card file still writes to the default blank card: lay its writes over a new one,
+                        // or a soft reset loses them (an upload then a RESTART booted on an empty store).
+                        let card = card_obj.get_or_insert_with(Card::default);
                         apply_overlay_sectors(card, sectors)?;
                     }
                     digi_coupled::cold::boot_patched_to_ready(

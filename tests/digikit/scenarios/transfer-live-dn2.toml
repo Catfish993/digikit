@@ -1,0 +1,11 @@
+# The desktop app's setup (docs/CONTROL.md, run.mode free): a coupled daemon free-running on a stock image with the runtime patched in
+# and no card file, driven by `dktransfer install` in real time. The upload and the RESTART must survive the guest's soft reset (the
+# controller lays the guest's card writes over a default blank card when the firmware was loaded without one) and MODULES lists the module.
+[scenario]
+name = "transfer-live-dn2"
+kind = "live"
+devices = ["dn2"]
+tier = "quick"
+
+[live]
+modules = ["digikit/pluck"]

@@ -60,7 +60,7 @@ DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "__init__": (),
     "dkupload": ("upload", "menu", "debug", "crash", "card"),
     "dkrun": ("menu",),
-    "dktransfer": ("menu",),
+    "dktransfer": ("menu", "live"),
     "dkscreen": ("upload",),
     "dklog": ("debug", "crash", "card"),
     "dklog_kinds": ("debug", "crash", "card"),  # the event kinds dklog reads

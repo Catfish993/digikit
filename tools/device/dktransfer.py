@@ -306,8 +306,11 @@ def wait_loaded(
     sleep: Callable[[float], None],
     now: Callable[[], float],
     timeout_s: float = 60.0,
+    paths: list[str] | None = None,
 ) -> list[str]:
-    """Poll MODULES until every name is listed; returns the loaded names. Raises TransferError at the timeout."""
+    """Poll MODULES until every name is listed; returns the loaded names. Raises TransferError at the timeout, saying what is
+    wrong when it can tell: files that are not on the card after the restart (the restart lost the card's writes), or on the card
+    but not loaded (see the log)."""
     end = now() + timeout_s
     got: list[str] = []
     while True:
@@ -319,8 +322,21 @@ def wait_loaded(
             return got
         if now() >= end:
             miss = [n for n in names if n not in got]
+            why = "see the log: dk:log"
+            try:
+                on_card = {p for p, _, _ in up.ls()}
+                lost = [p for p in paths or [] if p not in on_card]
+                if lost:
+                    why = (
+                        f"the card no longer holds {', '.join(lost)}: the restart lost the card's writes "
+                        "(an emulator started without a card file needs the soft-reset fix)"
+                    )
+                elif paths:
+                    why = "the files are on the card but did not load: see the log, dk:log"
+            except (TimeoutError, D.UploadError):
+                pass
             raise TransferError(
-                f"MODULES does not list {', '.join(miss)} after the restart (see the log: dk:log)"
+                f"MODULES does not list {', '.join(miss)} after the restart ({why})"
             )
         sleep(0.5)
 
@@ -369,7 +385,7 @@ def install(
     up = R.restart_and_wait(up, connect, wait_boot, sleep, now, quiet)
     names = [by_id[m]["name"] for m in wanted]
     emit({"event": "wait", "modules": names})
-    loaded = wait_loaded(up, names, sleep, now)
+    loaded = wait_loaded(up, names, sleep, now, paths=plan["select"])
     emit({"event": "done", "loaded": loaded})
     return {
         "built": plan["build"],
