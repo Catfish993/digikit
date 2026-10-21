@@ -987,6 +987,97 @@ def run_dkrun(
     c.check("dkrun: a second run uploads nothing (same sha256)", not out2["uploaded"])
 
 
+def run_transfer(
+    c: Ctx, rig: B.BootRig, D: Any, blobs: dict[str, bytes], files: dict[str, str]
+) -> None:
+    """`tools.device.dktransfer.install` against the emulator on a boot with no module: build only what changed (nothing: the committed
+    objects are current), pack, upload, SELECT, RESTART, wait for MODULES. A second install builds and uploads nothing."""
+    from tools.device import dkrun as R
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+    from tools.patchkit import pk_digikit_upload as U
+
+    (module,) = c.table()["modules"]
+    (path,) = blobs
+    steps = {"n": 0}
+
+    def sleep(s: float) -> None:
+        rig.emu.step(int(s * R.EMU_IPS))
+        steps["n"] += int(s * R.EMU_IPS)
+
+    def now() -> float:
+        return steps["n"] / R.EMU_IPS
+
+    up = DK.Uploader(U.transport(rig))
+    rows = TR.repo_rows(up.info()["port"])
+    before = TR.list_view(up, rows)
+    row = next(r for r in before["modules"] if r["id"] == module)
+    c.check(
+        "transfer list: the module is listed, in a group, not on the card, needs no build",
+        row["group"] == "Machines"
+        and row["on_card"] == "no"
+        and not row["loaded"]
+        and row["build"] == "unchanged"
+        and before["card_only"] == [],
+        str(row),
+    )
+    events: list[dict[str, Any]] = []
+    out = TR.install(up, [module], emit=events.append, rows=rows, select=True)
+    c.check(
+        "transfer install (no restart): nothing built (unchanged), uploaded, verified by the device, selected",
+        out["built"] == []
+        and out["uploaded"] == [module]
+        and out["selected"] == [path]
+        and not out["restarted"]
+        and [e["ok"] for e in events if e["event"] == "verify"] == [True],
+        str(events),
+    )
+    c.check(
+        "transfer install (no restart): the module is not loaded yet",
+        module not in [m["name"] for m in up.modules()["modules"]],
+    )
+    res = TR.restart_device(
+        up,
+        [module],
+        emit=events.append,
+        wait_boot=lambda: D._wait_restart(rig),
+        sleep=sleep,
+        now=now,
+        paths=[path],
+    )
+    c.check(
+        "transfer restart: MODULES lists the module after the boot",
+        res["loaded"] == [module] and res["missing"] == [],
+        str(res),
+    )
+    rec = B.current(rig.sel_records())
+    c.check(
+        "transfer install: SELECT wrote the module and nothing else",
+        rec is not None and rec["paths"] == [path],
+        str(rec),
+    )
+    up = DK.Uploader(U.transport(rig))
+    after = TR.list_view(up, rows)
+    row = next(r for r in after["modules"] if r["id"] == module)
+    c.check(
+        "transfer list after the install: on the card, loaded, fits",
+        row["on_card"] == "yes" and row["loaded"] and row["fits"] is True,
+        str(row),
+    )
+
+    plan = TR.plan_install(TR.repo_rows(up.info()["port"], [module]), [module], up.ls())
+    c.check(
+        "transfer install, second time: nothing to build or upload",
+        plan["build"] == [] and plan["upload"] == [] and plan["select"] == [path],
+        str(plan),
+    )
+    hdr = up.header(path)
+    c.check(
+        "READ: the file on the card has the .dkm header the repo packed",
+        hdr == Path(row["dkm"]).read_bytes()[: DK.HEADER_BYTES],
+    )
+
+
 def memory_rows(cap: dict[str, dict[str, int]]) -> list[str]:
     """The rows the MEMORY page shows for a CAPACITY reply (modules/core/digikit-menu `fill_mem`): label, ten-character bar, percent or used/limit."""
     out = []
@@ -1067,7 +1158,8 @@ def run_menu(c: Ctx) -> None:
     dkrun = bool(
         t.get("dkrun")
     )  # the selection and the restart come from `tools.device.dkrun` (SELECT, RESTART), not from the menu
-    upload = bool(t.get("upload")) or dkrun
+    transfer = bool(t.get("transfer"))  # dktransfer.install does what dkrun does
+    upload = bool(t.get("upload")) or dkrun or transfer
     blobs = {}
     if upload:  # the store is filled over USB SysEx, not by the card build: take the packed files out of the folder
         for path in files.values():
@@ -1111,7 +1203,7 @@ def run_menu(c: Ctx) -> None:
     with c.rig(menu_img, empty, "menu") as rig:
         b0 = rig.boot_info()
         c.check("the first boot has no module", b0["count"] == 0 and b0["loaded"] == 0)
-        if upload and not dkrun:
+        if upload and not dkrun and not transfer:
             from tools.device import dkupload as DK
             from tools.patchkit import pk_digikit_upload as U
 
@@ -1123,7 +1215,9 @@ def run_menu(c: Ctx) -> None:
                 sorted(p for p, _, _ in up.ls()) == sorted(blobs),
                 str(up.ls()),
             )
-        if dkrun:
+        if transfer:
+            run_transfer(c, rig, D, blobs, files)
+        elif dkrun:
             run_dkrun(c, rig, D, blobs, files)
         else:
             tap(rig, "NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES
@@ -1240,7 +1334,99 @@ def run_pages(c: Ctx) -> None:
     PG.run_pages(c)
 
 
+def run_live(c: Ctx) -> None:
+    """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
+    by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
+    guest's card writes are laid over a default blank card when the firmware was loaded without one."""
+    import subprocess
+
+    from tools import python_env
+    from tools.control.digi_client import Emu
+    from tools.device import dklog as L
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+    from tools.firmware import config
+
+    (module,) = c.table()["modules"]
+    dev, ver = c.image.split("-")
+    spec = H.FIRMWARE[(dev, ver)]
+    syx = config.stock(spec["syx"])
+    emu = Emu.spawn_coupled(
+        syx,
+        H.ROOT / spec["ready"],
+        timeout=300,
+        binary=H.daemon_binary(dev, syx),
+        run_dir=c.work / "live-run",
+    )
+    try:
+        emu.load(syx, runtime=True, start="auto")
+        emu.call("run.mode", mode="free")
+        time.sleep(float(c.table().get("settle_s", 12)))
+        c.check("the daemon runs free", emu.status().get("mode") == "free")
+        epoch0 = emu.status()["epoch"]
+
+        def tool(*args: str) -> tuple[int, list[dict[str, Any]], float]:
+            t0 = time.monotonic()
+            r = subprocess.run(
+                [sys.executable, "-m", "tools.device.dktransfer", "--emu"]
+                + ["--socket", emu.path, "--json", *args],
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
+                env=python_env(),
+                timeout=300,
+            )
+            ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+            return r.returncode, ev, time.monotonic() - t0
+
+        rc, ev, secs = tool("install", module, "--restart")
+        res = next((e for e in ev if e["event"] == "result"), {})
+        c.check(
+            "dktransfer install: the restart kept the upload and the selection, MODULES lists the module",
+            rc == 0 and module in res.get("loaded", []),
+            f"rc {rc} {ev[-1:] if ev else ''}",
+        )
+        c.report["install_s"] = round(secs, 1)
+        c.check("the emulator booted again (epoch)", emu.status()["epoch"] > epoch0)
+        up = DK.Uploader(TR.LiveTransport(emu))
+        c.check(
+            "the file is on the card after the soft reset",
+            [p for p, _, _ in up.ls()] == [f"modules/{module.split('/')[-1]}.dkm"],
+            str(up.ls()),
+        )
+        # delete the selected file: DELETE does not touch the selection, so the next boot finds a selected path whose file is gone and
+        # skips it with an error line (MOD_LOAD result -1) instead of failing the boot
+        # (the boot after `install --restart` is the second boot with a selection that has not run the stable period, 30 s of DSP blocks:
+        # one more such boot would be a safe boot, so the scenario restarts once more only)
+        path = f"modules/{module.split('/')[-1]}.dkm"
+        rc3, ev3, _ = tool("delete", path)
+        c.check(
+            "dktransfer delete: the file is gone from the card",
+            rc3 == 0 and any(e["event"] == "delete" for e in ev3) and up.ls() == [],
+            f"rc {rc3} {ev3[-1:] if ev3 else ''}",
+        )
+        rc4, ev4, _ = tool("restart")
+        up = DK.Uploader(TR.LiveTransport(emu))
+        _, _, evs = L.read_all(up)
+        c.check(
+            "the boot after the delete skips the selected path (MOD_LOAD E_NOT_FOUND) and reaches the UI",
+            rc4 == 0
+            and any(e[2] == L.K["MOD_LOAD"] and e[4][1] == 0xFFFFFFFF for e in evs)
+            and any(e[2] == L.K["UI_FIRST"] for e in evs)
+            and [m["name"] for m in up.modules()["modules"]] == [],
+            f"rc {rc4} {ev4[-2:]} "
+            + " | ".join(
+                L.text_of(L.event_dict(e)).strip()
+                for e in evs
+                if e[2] != L.K["DSP_DIAG"]
+            ),
+        )
+    finally:
+        emu.__exit__(None, None, None)
+
+
 KINDS = {
+    "live": run_live,
     "pages": run_pages,
     "card": run_card,
     "debug": run_debug,

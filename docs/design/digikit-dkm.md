@@ -29,7 +29,7 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x10 | 32 | sha256 of the whole file with these 32 bytes read as zeros |
 | 0x30 | 4 | `runtime_min`: informational, the runtime version the module was built for (packed semantic version; informational; `dkrt_sdk::RUNTIME_VERSION`, now 0.1.0); since runtime 0.1.0 the loader does not refuse on it (the contract bytes at 0x38 decide) |
 | 0x34 | 4 | module version, `major << 16 \| minor << 8 \| patch` |
-| 0x38 | 8 | contracts built against, a (major, minor) byte pair each: api, machine, fx, service. Major 0 = the module does not implement that contract (api is never 0). `pack` writes api always, machine when the file has a DSP section, service when it has slot functions or a real `dkm_init`/`dkm_fini`, fx 0 |
+| 0x38 | 8 | contracts built against, a (major, minor) byte pair each: api, machine, fx, service. Major 0 = the module does not implement that contract (api is never 0). `pack` writes api always, machine when the file has a DSP section or its `register` records hold a machine record (a data-only machine), service when it has slot functions or a real `dkm_init`/`dkm_fini`, fx 0 |
 | 0x40 | 32 | name, NUL padded |
 | 0x60 | 4 | `image_off` (multiple of 16) |
 | 0x64 | 4 | `image_size`: text and data, as the patch-time linker lays them out at base 0 |

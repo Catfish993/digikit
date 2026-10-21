@@ -1,0 +1,49 @@
+# Transfer tab v1 (W3): the thin route (2026-10-22: the app speaks the protocol itself)
+
+Status: W3a (READ), W3b (this route) and W3c (VERIFY, install without reboot, the Transfer page) are built on lane `tasks-images`. This replaces the first plan (a new Rust crate with its own catalog, build and install code), which Em and the coordinator dropped: the Python tools already do all of it.
+
+## Goal
+
+The desktop workbench gets a sidebar (Emulator, Transfer) and a Transfer page: tick the run-time modules to put on the card and press Install: they are built, uploaded and verified on the card. That is all: **the selection belongs to the device.** The user selects the module in SETTINGS > DIGIKIT > MODULES on the device and applies and restarts there. A Restart button on the page only restarts the emulated device and reports what loaded. Target: the running emulator only (a real device and samples come later: W5, W6, W7).
+
+## The route
+
+Rule: Python is for reverse engineering and dev tooling. The app starts no process and needs no venv and no repository checkout to speak to the device.
+
+```text
+TransferPage (desktop TSX)  -->  transfer-backend.ts  -->  DkSession (TypeScript protocol client)  -->  emu_call midi.usb.in / midi.usb.out
+                                        |                      apps/web/src/modules/dkupload-core.ts      (the controller's USB capture)
+                                        |                      dktransfer.ts: list, install, delete, restart
+                                        +--> lib_scan / lib_read (one small native command: the library folder out/modules/<device>/)
+
+dev only:  mise run module:pack-all  (tools/device/dkpackall.py: pk_build skip-unchanged + the pack cache)  -->  out/modules/<device>/<id>.dkm
+CLI/scenarios:  tools/device/dktransfer.py (the same operations, in Python)
+```
+
+- **TypeScript protocol client** (`apps/web/src/modules/dkupload-core.ts`, `DkSession`): pure TypeScript, no wasm. The framing (8-in-7) and every command: INFO, LIST, upload (BEGIN, DATA, END with a repeat after a timeout), DELETE, CLEAR, ABORT, MODULES, CAPACITY, READ (the 0xa0-byte header), VERIFY, SELECT, RESTART, LOG; and `waitForBoot` (the log of the new boot starts with BOOT_START and never saw the RESTART request; a silent port is a reason to wait and try again). The numbers, status texts, capability bits and log kinds come from `sdk/sdk.toml` through `patchkit gen` (`apps/web/src/modules/gen_proto.ts`). The wasm `DkClient` stays for the web upload page.
+- **Transfer logic** (`apps/web/src/modules/dktransfer.ts`, a port of `tools/device/dktransfer.py`, same event shapes): header fields (group from the contracts at 0x38: machine is Machines, fx is Effects, service or api only is Tools; version; arena and DSP sizes), the merged list (library, LIST on card with the same sha256, MODULES loaded, CAPACITY fit warnings, READ headers of card files the library does not have), `install` (per module: `upload`, `skip` for the same sha256 or `progress` events (at most about ten per file), `verify`; no SELECT, no RESTART), `deleteFiles` (one DELETE per path, LIST confirms; a path not on the card is an error before anything is sent) and `restartDevice` (RESTART, wait for the boot, report what MODULES lists).
+- **Modules come from a folder of built `.dkm` files.** `mise run module:pack-all` (`tools/device/dkpackall.py`; `mise run workbench` runs it first) builds every run-time module whose objects changed (`pk_build` skip-unchanged), packs it for each digikit device (the pack cache of `dktransfer.pack_for_transfer`) and writes `out/modules/<device>/<id>.dkm`, removing files of modules that no longer pack. With nothing changed it takes 0.1 s. The app reads the folder through `lib_scan` and `lib_read` (`apps/desktop/src-tauri/src/library.rs`; the folder is one constant there); TypeScript parses the header and hashes the bytes. Refresh reads the folder again, so a rebuild in a terminal shows up. A packaged app would bundle a folder and point the constant at it.
+- **Desktop transport** (`apps/desktop/ui/src/desktop-transport.ts`): the controller's `midi.usb.in` and `midi.usb.out` through the webview's `emu_call`, the path the Rust modules backend used before. A paused emulator (the controller's `run.mode`) is refused with a message: nothing would run the transfer.
+- **Packer** (`packages/patchkit/src/dkm.rs`): a module whose `register` records hold a machine record carries the machine contract in its header, so data-only machines (`test/dyn-params`, `test/dyn-xslice`, `test/dyn-dn2`) group as Machines.
+- **`tools/device/dktransfer.py`** (`mise run transfer`) stays as the command line for scripts and the scenarios: `list`, `install MOD... [--select [--keep PATH...]] [--restart]`, `delete PATH...`, `restart [MOD...]`, with `--emu` (or `--socket`, `--run-dir`) or `--port`, and `--json`. It builds and packs itself (`dkrun.py` gives `build_objects`, `pack_module`, `upload_if_changed`, `restart_and_wait`; `pk_build` skips unchanged objects). Its default `install` selects nothing; `--select` replaces the selection; `--restart` implies `--select`.
+- **UI** (`apps/desktop/ui/src/TransferPage.tsx`, state in `transfer-state.ts`, logic in `transfer-core.ts`): a collapsible left sidebar (Emulator, Transfer); the page fills the content area while the faceplate stays mounted (hidden), so the emulator, its audio and the snapshot pump run on. "Available" is the left pane and "On device" the right one. "On device": card files with name, version, size, state (loaded, on card) and verified ok or failed; each row has a tick; the header's Delete button ("Delete 2", then "Confirm delete 2" for about 3 s, no modal) deletes the ticked files; a deleted module that is loaded stays loaded until the restart ("deleted; unloads at restart"). "Available": the library modules in Machines, Effects ("No run-time effects yet." when empty) and Tools, a "show test modules" toggle, a tick box per row (ticks mean "install these" and start empty), fit warnings. Install (enabled when a module is ticked) and Restart buttons; one global progress bar along the bottom (uploads by bytes, build and verify as small fixed shares; one line of text: the current step and the percent; red when a step failed). While a file uploads, its row in On device (or a pending row) shows a byte bar; the verified or failed chip replaces it when VERIFY returns. After an install the page says: "On the card. Select it in MODULES on the device, then apply and restart." "Add .dkm" and the drop zone stay (the same TypeScript session). The last list stays in module-level state and shows at once on the next open. The shared web `ModulesPanel` and the web upload page are unchanged.
+- **Gone from the app:** `transfer.rs` (the Python spawn, the job thread and its tests), `modules.rs` (the Rust upload session and its commands) and the `dkupload` dependency of the desktop crate. The only native commands the page uses are `lib_scan` and `lib_read`; `src-tauri/src` starts no process.
+
+## Behaviour to know
+
+- **Speed:** `dktransfer.pack_for_transfer` (used by `module:pack-all` and the command line) reuses `out/patch/transfer/<device>/<name>.dkm` when it is newer than everything a pack reads (the module directory, the patchkit sources, the device files, `sdk/sdk.toml`), and remembers a module that does not pack the same way. A no-change `module:pack-all` takes 0.1 s; a list in the app reads the folder and asks the device (about 0.2 s).
+- A running emulator is driven in real time. A **paused** emulator is refused with a message (nothing would run the transfer); the command line's `--step` lets it step a paused daemon (the test rigs).
+- The page never changes the device's selection (no SELECT). The command line's `install --select` and `--restart` do, for scripts.
+- The store only appends; a rebuilt module leaves dead data until a CLEAR. The old panel's Repack is not in the Transfer panel; `mise run dk:store -- --emu clear` and a new install do the same.
+
+## Tests
+
+`apps/web/tests/dktransfer.test.mjs` (the TypeScript client and logic against a fake device that speaks the SysEx protocol byte for byte: framing vectors shared with the Python tests, INFO with caps, paged LIST, MODULES, CAPACITY, READ, VERIFY, SELECT, upload with a timeout and a hash error, list merge, install with skip and capped progress, a verify mismatch, delete, restart wait); `apps/web/tests/transfer.test.mjs` (the page logic); `tools/devtools/transfer_live.mjs` (a live check of the TypeScript client against a running emulator through its control socket: list, install, skip, SELECT, restart, delete; run by hand, DN2 with no card file passed); the Rust tests of `library.rs`; `tests/digikit/test_dktransfer.py` (the command line and `module:pack-all`); `tests/digikit/scenarios/menu-transfer-pluck.toml` and `transfer-live-dn2.toml` (the Python tool against the emulator, as before); `tsc` and `astro check`.
+
+## Open
+
+- **[O]** The skip-if-unchanged hash does not cover ColdFire C headers or the compiler version: such a change needs `pk_build --force`.
+- **[O]** The GUI itself is built and type-checked but not tried by the lane; the TypeScript path is run live through the control socket (`transfer_live.mjs`), not through the webview's `emu_call`.
+- **[O]** The library's labels are the last part of the module id (the header holds no display name); the fit and `needs build` state of the Python list are gone from the app (it does not build).
+- **[O]** The page cannot show what the device has selected (SELECT has no readback); that is the device's MODULES menu.
+- **[O]** The version of the loaded firmware is not read: the list uses the device (INFO) and the packer, not the manifest `ports` versions.

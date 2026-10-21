@@ -133,7 +133,7 @@ fn the_fx_header_matches_sdk_toml() {
 fn the_contract_files_are_current() {
     let text = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
     let files = sdkgen::render(&text).unwrap();
-    assert_eq!(files.len(), 6);
+    assert_eq!(files.len(), 7);
     for (rel, text) in files {
         let path = root().join(&rel);
         let have = std::fs::read_to_string(&path).unwrap_or_default();
@@ -172,6 +172,9 @@ fn the_capacity_kinds_are_generated_for_every_host() {
     assert!(get(sdkgen::PROTO_PY_OUT).contains("\"ARENA\": 3,"));
     assert!(get(sdkgen::PROTO_PY_OUT).contains("CMD_CAPACITY = 0x04"));
     assert!(get(sdkgen::PROTO_RS_OUT).contains("pub const CAPK_DSP_AREA: u8 = 5;"));
+    assert!(get(sdkgen::PROTO_TS_OUT).contains("  VERIFY: 0x17,"));
+    assert!(get(sdkgen::PROTO_TS_OUT).contains("  [-59, 'E_NOFILE', 'that path is not in the store'],"));
+    assert!(get(sdkgen::PROTO_TS_OUT).contains("  ARENA: 3,"));
     assert!(get(sdkgen::RUST_OUT).contains("pub const CAP_CAPACITY: u32 = 1 << 6;"));
     // two kinds with one number, or kind 0, are refused
     let dup = text.replace("ARENA = 3 ", "ARENA = 2 ");

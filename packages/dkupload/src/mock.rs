@@ -3,7 +3,7 @@
 //! `wasm.rs`) in node.
 
 use crate::codec::*;
-use crate::proto::Status;
+use crate::proto::{READ_MAX, Status};
 use crate::session::Transport;
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -232,6 +232,53 @@ impl MockDevice {
                     r(Status::NoFile)
                 } else {
                     r(Status::Ok)
+                }
+            }
+            CMD_READ => {
+                let Some(nul) = body.iter().position(|&b| b == 0) else {
+                    return r(Status::Msg);
+                };
+                if body.len() != nul + 1 + 8 {
+                    return r(Status::Msg);
+                }
+                let Ok(path) = std::str::from_utf8(&body[..nul]) else {
+                    return r(Status::Path);
+                };
+                if !path_ok(path) {
+                    return r(Status::Path);
+                }
+                let at = u32::from_be_bytes(body[nul + 1..nul + 5].try_into().unwrap()) as usize;
+                let len = u32::from_be_bytes(body[nul + 5..].try_into().unwrap()) as usize;
+                let Some((_, d)) = self.files.iter().find(|(p, _)| p == path) else {
+                    return r(Status::NoFile);
+                };
+                if len == 0 {
+                    return r(Status::Length);
+                }
+                if at >= d.len() {
+                    return r(Status::Offset);
+                }
+                let n = len.min(READ_MAX as usize).min(d.len() - at);
+                let mut b = (d.len() as u32).to_be_bytes().to_vec();
+                b.extend(&d[at..at + n]);
+                Self::reply(cmd, seq, Status::Ok, &b)
+            }
+            CMD_VERIFY => {
+                let Some(nul) = body.iter().position(|&b| b == 0) else {
+                    return r(Status::Msg);
+                };
+                if body.len() != nul + 1 {
+                    return r(Status::Msg);
+                }
+                let Ok(path) = std::str::from_utf8(&body[..nul]) else {
+                    return r(Status::Path);
+                };
+                if !path_ok(path) {
+                    return r(Status::Path);
+                }
+                match self.files.iter().find(|(p, _)| p == path) {
+                    Some((_, d)) => Self::reply(cmd, seq, Status::Ok, &sha256(d)),
+                    None => r(Status::NoFile),
                 }
             }
             CMD_ABORT => {

@@ -387,6 +387,8 @@ def test_device_tools_select_their_tests_only() -> None:
     }
     assert selected("tools/device/dkrun.py") == {
         "tests/digikit/test_dkrun.py",
+        "tests/digikit/test_dktransfer.py",  # dktransfer imports dkrun
+        "tests/digikit/test_live_dn2.py",  # and the live scenario runs dktransfer
         "tests/digikit/test_scenarios.py",
         "tests/digikit/test_menu_dn2.py",
         "tests/digikit/test_menu_dt2.py",

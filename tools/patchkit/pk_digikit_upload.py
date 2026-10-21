@@ -168,6 +168,7 @@ def run_ops(c: Any, quick: bool = False) -> None:
         files["modules/a.dkm"] = a
         c.check("put a 70,000-byte file", put_status(up, "modules/a.dkm", a) == 0)
         check("first upload")
+        read_checks(c, up, "modules/a.dkm", a)
         if quick:
             _ops_quick(c, up, files, check)
         else:
@@ -178,6 +179,51 @@ def run_ops(c: Any, quick: bool = False) -> None:
         c.done(rig)
     _selection_untouched(c)
     c.common_checks_upload()
+
+
+def read_checks(c: Any, up: D.Uploader, path: str, data: bytes) -> None:
+    """READ (runtime 0.2.4): the header, a range across a sector boundary, the 768-byte cap and the end of the file equal the bytes sent;
+    a missing file, offset past the end and length 0 are refused."""
+    c.check(
+        "READ: the first 0xa0 bytes equal the file sent",
+        up.header(path) == data[: D.HEADER_BYTES],
+    )
+    got = up.read(path, 500, 700)
+    c.check(
+        "READ: a range across a sector boundary, and the file size",
+        got == (len(data), data[500:1200]),
+        f"{got[0]} {len(got[1])}",
+    )
+    got = up.read(path, 1, 5000)
+    c.check(
+        "READ: a long request returns 768 bytes",
+        got[1] == data[1:769],
+        str(len(got[1])),
+    )
+    tail = up.read(path, len(data) - 10, 100)
+    c.check("READ: a range past the end is cut at the end", tail[1] == data[-10:])
+    c.check("READ: the whole file by 768-byte reads", up.read_file(path) == data)
+    c.check(
+        "VERIFY: the device's sha256 of the file on the card equals the local one",
+        up.verify(path) == hashlib.sha256(data).hexdigest(),
+    )
+    try:
+        up.verify("modules/none.dkm")
+        got_status = 0
+    except D.UploadError as e:
+        got_status = e.status
+    c.check("VERIFY: a missing file is refused", got_status == -59, str(got_status))
+    for what, args, status in (
+        ("a missing file", ("modules/none.dkm", 0, 4), -59),
+        ("offset at the end", (path, len(data), 4), -54),
+        ("length 0", (path, 0, 0), -55),
+    ):
+        try:
+            up.read(*args)
+            got_status = 0
+        except D.UploadError as e:
+            got_status = e.status
+        c.check(f"READ: {what} is refused", got_status == status, str(got_status))
 
 
 def _ops_quick(c: Any, up: D.Uploader, files: dict[str, bytes], check: Any) -> None:

@@ -326,3 +326,44 @@ fn no_store_and_clear() {
     s.clear().unwrap();
     assert!(s.list().unwrap().is_empty());
 }
+
+#[test]
+fn read_ranges_and_errors() {
+    let mut s = session(1 << 20);
+    let d = data(2560, 3);
+    put(&mut s, "modules/a.dkm", d.clone()).unwrap();
+    put(&mut s, "modules/empty.dkm", vec![]).unwrap();
+    assert_eq!(
+        s.read("modules/a.dkm", 5, 20).unwrap(),
+        (2560, d[5..25].to_vec())
+    );
+    assert_eq!(s.header("modules/a.dkm").unwrap(), d[..0xa0]);
+    // the device caps a reply at 768 bytes and stops at the end of the file
+    assert_eq!(s.read("modules/a.dkm", 0, 5000).unwrap().1, d[..768]);
+    assert_eq!(s.read("modules/a.dkm", 2500, 100).unwrap().1, d[2500..]);
+    let status = |r: Result<(u32, Vec<u8>), Error>| match r {
+        Err(Error::Device { status, .. }) => status,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(status(s.read("modules/none.dkm", 0, 4)), Status::NoFile);
+    assert_eq!(status(s.read("modules/a.dkm", 0, 0)), Status::Length);
+    assert_eq!(status(s.read("modules/a.dkm", 2560, 4)), Status::Offset);
+    assert_eq!(status(s.read("modules/empty.dkm", 0, 4)), Status::Offset);
+    assert!(matches!(s.read("a//b", 0, 1), Err(Error::Request(_))));
+}
+
+#[test]
+fn verify_returns_the_files_sha256_and_refuses_a_missing_file() {
+    let mut s = session(1 << 20);
+    let d = data(1500, 9);
+    put(&mut s, "modules/a.dkm", d.clone()).unwrap();
+    assert_eq!(s.verify("modules/a.dkm").unwrap(), sha256(&d));
+    assert!(matches!(
+        s.verify("modules/none.dkm"),
+        Err(Error::Device {
+            status: Status::NoFile,
+            ..
+        })
+    ));
+    assert!(matches!(s.verify("a//b"), Err(Error::Request(_))));
+}

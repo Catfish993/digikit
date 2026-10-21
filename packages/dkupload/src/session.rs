@@ -87,6 +87,26 @@ impl<T: Transport> Session<T> {
         }
     }
 
+    /// READ (runtime 0.2.4, capability `CAP_READ`): (file size, the bytes) of a store file from `offset`. The device returns at
+    /// most `READ_MAX` (768) bytes and none past the end, so the bytes may be fewer than `length`. Errors: `NoFile`,
+    /// `Offset` (at or past the end), `Length` (0).
+    pub fn read(&mut self, path: &str, offset: u32, length: u32) -> Result<(u32, Vec<u8>), Error> {
+        parse_read(&self.request(CMD_READ, &read_body(path, offset, length)?)?)
+    }
+
+    /// VERIFY (runtime 0.2.4, capability `CAP_VERIFY`): the sha256 the device computes from a fresh read of the file on the card.
+    /// Errors: `NoFile`, `Read`.
+    pub fn verify(&mut self, path: &str) -> Result<[u8; 32], Error> {
+        let body = self.request(CMD_VERIFY, &path_body(path)?)?;
+        body.try_into()
+            .map_err(|_| Error::Protocol("verify: the reply is not 32 bytes".into()))
+    }
+
+    /// The first 0xa0 bytes of a store file (a .dkm header; fewer for a shorter file).
+    pub fn header(&mut self, path: &str) -> Result<Vec<u8>, Error> {
+        self.read(path, 0, HEADER_BYTES).map(|(_, b)| b)
+    }
+
     pub fn delete(&mut self, path: &str) -> Result<(), Error> {
         self.request(CMD_DELETE, &path_body(path)?).map(drop)
     }
