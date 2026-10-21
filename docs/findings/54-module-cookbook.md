@@ -27,8 +27,15 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
     finding 49 section 10.7). The build now reports these stores.
   - Knob slot 3 of a Digitakt II SAMPLE clone is the sample word: a parameter there is refused (finding 02, P3c-4).
   - The Digitakt II gives an added machine one SRC page only (finding 50).
-- **Device [D]:** played on a Digitakt II 1.17 at rung C4 (finding 47), before the SDK v1 changes; the current
-  `digikit/pluck` on runtime 0.2.1 is being re-tested (2026-10-21).
+- **Device [D]:** played on a Digitakt II 1.17 at rung C4 (finding 47), before the SDK v1 changes. Re-tested by Em on
+  2026-10-21 with image rt021 (runtime 0.2.1) and `mise run dk:run -- digikit/pluck --port Digitakt`: MOD_LOAD 1, MOD_DSP 0,
+  plays, guard 0 faults, DSP 42-46 %, type 16 (the old PLUCK-D sticky entry holds 18).
+- **LFO on TUNE, device result [D]:** at large depth (worst with the random LFO) the sound crackles and is almost silent
+  at the extremes; no guard fault. This is the design, not a fault: the period N jumps once per block (no ramp inside the
+  block); when the pitch drops, the longer line holds samples that were never excited; when it rises, the shorter loop
+  decays fast. A machine that takes pitch modulation must ramp its pitch-dependent state inside the block and keep its
+  whole state excited. Fix planned as pluck v2 (fractional delay read ramped over the block, whole line excited at
+  note-on, optional TUNE modulation range).
 - **Patterns:** `references/dsp-recipes.md` quotes them (parameter word to float, the block loop, noise, damping, all-pass,
   delay line with a mask, pick comb, silence detection to `DK_DONE`).
 
