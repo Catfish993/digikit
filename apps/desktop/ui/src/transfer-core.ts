@@ -1,5 +1,8 @@
-// The pure logic of the Transfer panel (no DOM, no Tauri): grouping, the initial ticks, the install request and the progress text.
+// The pure logic of the Transfer page (no DOM, no Tauri): the two lists, the install request, the progress bar and the texts.
 // Written without TS-only runtime syntax so node can import it (apps/web/tests/transfer.test.mjs).
+//
+// The page only puts files on the card (upload and verify) and restarts the device. Which modules the device loads is its own
+// selection, made in SETTINGS > DIGIKIT > MODULES on the device and applied there.
 
 export type Group = 'Machines' | 'Effects' | 'Tools';
 export const GROUPS: Group[] = ['Machines', 'Effects', 'Tools'];
@@ -38,93 +41,8 @@ export interface TransferEvent {
   [k: string]: unknown;
 }
 
-export interface InstallRequest {
-  modules: string[];
-  keep: string[];
-}
-
 /** The key of a row in the tick set. */
 export const rowKey = (r: TransferRow): string => r.id ?? r.path;
-
-/** Rows per group, in the tool's order; test modules only when `showTests`; card files join the group of their header. */
-export function groupRows(view: TransferView, showTests: boolean): { group: Group; rows: TransferRow[] }[] {
-  const all = [...view.modules, ...view.card_only].filter((r) => showTests || !r.test);
-  return GROUPS.map((group) => ({ group, rows: all.filter((r) => r.group === group) }));
-}
-
-/** The ticks a fresh list starts with: what is loaded now. */
-export function initialTicks(view: TransferView): Set<string> {
-  return new Set([...view.modules, ...view.card_only].filter((r) => r.loaded).map(rowKey));
-}
-
-/** Install the ticked repo modules; keep the ticked card files (loaded modules the repo does not know). */
-export function installRequest(view: TransferView, ticks: Set<string>): InstallRequest {
-  return {
-    modules: view.modules.filter((r) => r.id && ticks.has(rowKey(r))).map((r) => r.id as string),
-    keep: view.card_only.filter((r) => ticks.has(rowKey(r))).map((r) => r.path),
-  };
-}
-
-/** Does the install change anything? (The ticks equal what is loaded: nothing to do.) */
-export function differsFromLoaded(view: TransferView, ticks: Set<string>): boolean {
-  const now = initialTicks(view);
-  return now.size !== ticks.size || [...ticks].some((k) => !now.has(k));
-}
-
-/** A readable line for a progress event of `dktransfer install --json`. */
-export function eventText(e: TransferEvent): string {
-  const s = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
-  switch (e.event) {
-    case 'start':
-      return `Installing ${s(e.modules)} on ${e.device}`;
-    case 'build':
-      return `Building ${e.id}`;
-    case 'upload':
-      return `Uploading ${e.path} (${e.bytes} bytes)`;
-    case 'skip':
-      return `${e.id}: already on the card, not uploaded`;
-    case 'select':
-      return `Selecting ${s(e.paths)}`;
-    case 'restart':
-      return 'Restarting the device';
-    case 'wait':
-      return `Waiting for ${s(e.modules)} to load`;
-    case 'verify':
-      return e.ok ? `Verified ${e.path} on the card` : `Verify failed: ${e.path} differs on the card`;
-    case 'done':
-      if (e.restarted === false) return 'Selected; the modules load at the next restart';
-      return Array.isArray(e.missing) && e.missing.length
-        ? `Loaded: ${s(e.loaded)}; not loaded: ${s(e.missing)}`
-        : `Loaded: ${s(e.loaded)}`;
-    case 'error':
-      return `Error: ${e.message}`;
-    default:
-      return e.event;
-  }
-}
-
-/** The fit warning of a row, or ''. */
-export function warningText(r: TransferRow): string {
-  return r.warnings && r.warnings.length ? r.warnings.join('; ') : '';
-}
-
-/** What the last install selected (`undefined`: nothing since the app started: the loaded modules are the selection). */
-export type Selected = Set<string> | undefined;
-
-/** Per store path: what VERIFY said after the last install. */
-export type Verified = Record<string, 'ok' | 'failed'>;
-
-/** The state words of a row. After an install without a restart the selection differs from what is loaded: `selected` says which. */
-export function stateText(r: TransferRow, selected?: Selected): string {
-  const out: string[] = [];
-  const key = rowKey(r);
-  if (r.loaded) out.push(selected && !selected.has(key) ? 'loaded, unloads at restart' : 'loaded');
-  else if (selected?.has(key) && r.on_card === 'yes') out.push('on card, loads at restart');
-  else
-    out.push(r.on_card === 'yes' ? 'on card' : r.on_card === 'other version' ? 'other version on card' : 'not on card');
-  if (r.build === 'needs build') out.push('needs build');
-  return out.join(', ');
-}
 
 /** The "On device" list: every file on the card (repo modules that are on it, then files the repo does not know), by path. */
 export function onDevice(view: TransferView): TransferRow[] {
@@ -140,31 +58,75 @@ export function available(view: TransferView, showTests: boolean): { group: Grou
   }));
 }
 
-/** Does the card hold something the next boot will load differently from now? (A selection was written and differs from what is loaded.) */
-export function restartPending(view: TransferView, selected: Selected): boolean {
-  if (!selected) return false;
-  return differsFromLoaded(view, selected);
+/** The module ids to install: the ticked repo modules, in list order. (Ticks mean "install these"; nothing else.) */
+export function installModules(view: TransferView, ticks: Set<string>): string[] {
+  return view.modules.filter((r) => r.id && ticks.has(rowKey(r))).map((r) => r.id as string);
 }
 
-// ---- the progress bar of an install ------------------------------------------------------------------------------------------------
+/** A readable line for a progress event of `dktransfer` (`install`, `restart`). */
+export function eventText(e: TransferEvent): string {
+  const s = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
+  switch (e.event) {
+    case 'start':
+      return `Installing ${s(e.modules)} on ${e.device}`;
+    case 'build':
+      return `Building ${e.id}`;
+    case 'upload':
+      return `Uploading ${e.path} (${e.bytes} bytes)`;
+    case 'skip':
+      return `${e.id}: already on the card, not uploaded`;
+    case 'verify':
+      return e.ok ? `Verified ${e.path} on the card` : `Verify failed: ${e.path} differs on the card`;
+    case 'restart':
+      return 'Restarting the device';
+    case 'wait':
+      return 'Waiting for the device to boot';
+    case 'done':
+      if (e.restarted === false) return DONE_ON_CARD;
+      return Array.isArray(e.loaded) && e.loaded.length
+        ? `Restarted. Loaded: ${s(e.loaded)}`
+        : 'Restarted. No module is loaded.';
+    case 'error':
+      return `Error: ${e.message}`;
+    default:
+      return e.event;
+  }
+}
+
+/** The text after a successful install. */
+export const DONE_ON_CARD = 'On the card. Select it in MODULES on the device, then apply and restart.';
+
+/** The fit warning of a row, or ''. */
+export function warningText(r: TransferRow): string {
+  return r.warnings && r.warnings.length ? r.warnings.join('; ') : '';
+}
+
+/** The state words of a row: loaded or on the card, and the build state. */
+export function stateText(r: TransferRow): string {
+  const out: string[] = [];
+  if (r.loaded) out.push('loaded');
+  else
+    out.push(r.on_card === 'yes' ? 'on card' : r.on_card === 'other version' ? 'other version on card' : 'not on card');
+  if (r.build === 'needs build') out.push('needs build');
+  return out.join(', ');
+}
+
+/** Per store path: what VERIFY said after the last install. */
+export type Verified = Record<string, 'ok' | 'failed'>;
+
+// ---- the progress bar ---------------------------------------------------------------------------------------------------------
 
 export type StepState = 'wait' | 'build' | 'upload' | 'verify' | 'ok' | 'failed';
 export interface Progress {
-  /** One entry per module, in install order. */
+  /** One entry per module of an install, in order (none for a restart). */
   modules: { id: string; state: StepState }[];
-  /** The last step after the modules: SELECT, then (with a restart) the restart. */
-  select: StepState;
+  /** A restart has one step; an install has none. */
   restart: StepState | 'none';
   message: string;
 }
 
 export function startProgress(ids: string[], restart: boolean): Progress {
-  return {
-    modules: ids.map((id) => ({ id, state: 'wait' })),
-    select: 'wait',
-    restart: restart ? 'wait' : 'none',
-    message: '',
-  };
+  return { modules: ids.map((id) => ({ id, state: 'wait' })), restart: restart ? 'wait' : 'none', message: '' };
 }
 
 /** The progress after one more event of `dktransfer` (a new object; `error` marks the active step failed). */
@@ -179,22 +141,16 @@ export function applyEvent(p: Progress, e: TransferEvent): Progress {
       if (m) m.state = e.event === 'verify' ? (e.ok ? 'ok' : 'failed') : (e.event as StepState);
       break;
     }
-    case 'skip':
-      break; // the verify that follows ends the module
-    case 'select':
-      next.select = 'ok';
-      break;
     case 'restart':
       next.restart = 'build';
       break;
     case 'done':
-      if (next.restart !== 'none') next.restart = Array.isArray(e.missing) && e.missing.length ? 'failed' : 'ok';
+      if (next.restart !== 'none') next.restart = 'ok';
       break;
     case 'error': {
       const active = next.modules.find((m) => m.state === 'build' || m.state === 'upload' || m.state === 'verify');
       if (active) active.state = 'failed';
       else if (next.restart === 'build') next.restart = 'failed';
-      else if (next.select !== 'ok') next.select = 'failed';
       break;
     }
   }
@@ -203,8 +159,8 @@ export function applyEvent(p: Progress, e: TransferEvent): Progress {
 
 /** Done steps over all steps, 0 to 1. */
 export function progressFraction(p: Progress): number {
-  const steps = [...p.modules.map((m) => m.state), p.select, ...(p.restart === 'none' ? [] : [p.restart])];
-  return steps.filter((s) => s === 'ok').length / steps.length;
+  const steps = [...p.modules.map((m) => m.state), ...(p.restart === 'none' ? [] : [p.restart])];
+  return steps.length ? steps.filter((s) => s === 'ok').length / steps.length : 0;
 }
 
 /** The verified map after more events: a `verify` event sets its path. */

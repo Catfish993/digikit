@@ -2,7 +2,8 @@
 """Transfer: the repo's run-time modules on a target (emulator or device), and install of a chosen set.
 
     uv run python -m tools.device.dktransfer list --emu [--json]
-    uv run python -m tools.device.dktransfer install digikit/pluck [MOD ...] --emu [--keep PATH ...] [--json]
+    uv run python -m tools.device.dktransfer install digikit/pluck [MOD ...] --emu [--select [--keep PATH ...]] [--restart] [--json]
+    uv run python -m tools.device.dktransfer restart --emu [--json]
     mise run transfer -- list --emu --json
     mise run transfer -- install digikit/pluck --port Digitakt
 
@@ -13,10 +14,12 @@ whether it is loaded (MODULES), and whether it fits (CAPACITY; a warning only). 
 their group, read from the 0xa0-byte header (READ, runtime 0.2.4).
 
 `install MOD...` builds only the modules whose objects changed, packs them, uploads the files the card does not have (same sha256),
-VERIFYs each file on the card (the device hashes it from a fresh read), then SELECTs exactly these modules plus the `--keep` paths.
-It does not restart: the modules load at the next restart. `restart [MOD...]` sends RESTART, waits for the boot and reports which
-modules MODULES lists; `install --restart` does both (scripts, the scenarios). `--json` prints one JSON object per line
-(`{"event": ...}`); `list --json` prints one JSON document.
+VERIFYs each file on the card (the device hashes it from a fresh read). That is all: the device's selection is not touched, because
+the selection belongs to the device (the user ticks the module in SETTINGS > DIGIKIT > MODULES and applies and restarts there).
+`--select` also sends SELECT, which replaces the selection by exactly these modules plus the `--keep` paths; `--restart` implies `--select`,
+sends RESTART, waits for the boot and checks that MODULES lists the modules (scripts, the scenarios). `restart [MOD...]` sends RESTART,
+waits for the boot and reports which modules MODULES lists. `--json` prints one JSON object per line (`{"event": ...}`); `list --json`
+prints one JSON document.
 
 Target: `--emu` (the running emulator; `--run-dir DIR` or `--socket PATH` pick another one) or `--port NAME` (python-rtmidi). A running
 emulator is driven in real time. A paused emulator is refused (nothing would step it): resume it, or pass `--step` to let this tool step it
@@ -304,6 +307,7 @@ def plan_install(
     wanted: list[str],
     card: list[tuple[str, int, str]],
     keep: list[str] | None = None,
+    selecting: bool = True,
 ) -> dict[str, Any]:
     """What an install does: `build` (ids whose objects need a build), `upload` (ids whose packed file the card lacks, by sha256 -- decided after
     the pack: here by the rows' own hash, which a build can change), `select` (the paths: the wanted modules, then `keep`)."""
@@ -320,7 +324,7 @@ def plan_install(
     for p in keep or []:
         if p not in select:
             select.append(p)
-    if len(select) > SELECTION_MAX:
+    if selecting and len(select) > SELECTION_MAX:
         raise TransferError(
             f"a selection holds at most {SELECTION_MAX} modules, this one has {len(select)}"
         )
@@ -439,11 +443,13 @@ def install(
     build: Callable[[str], None] = R.build_objects,
     pack: Callable[[str, str], Path] = pack_for_transfer,
     restart: bool = False,
+    select: bool = False,
 ) -> dict[str, Any]:
     """For each of WANTED, in order: build when its objects changed, pack, upload unless the card has the same sha256, VERIFY (the device
-    reads the file back from the card and hashes it; a mismatch is an error). Then one SELECT of the wanted modules and the `keep` paths
-    (the selection is replaced). No RESTART unless `restart`: the modules load at the next restart (`restart_device`). EMIT gets one
-    dict per step; a module's steps end with `verify` (ok true or false)."""
+    reads the file back from the card and hashes it; a mismatch is an error). That is all by default: the device's selection is left as it
+    is. With `select` (implied by `restart`) one SELECT of the wanted modules and the `keep` paths follows (it replaces the selection);
+    with `restart` a RESTART and the wait for MODULES (`restart_device`). `selected` in the result and in the `done` event is the list of
+    paths selected (empty when nothing was). EMIT gets one dict per step; a module's steps end with `verify` (ok true or false)."""
     quiet = lambda _m: None  # noqa: E731
     info = up.info()
     R.require_runtime(info)
@@ -451,7 +457,7 @@ def install(
     emit({"event": "start", "device": device, "modules": wanted})
     if rows is None:
         rows = repo_rows(device, pack=pack, ids=wanted)
-    plan = plan_install(rows, wanted, up.ls(), keep)
+    plan = plan_install(rows, wanted, up.ls(), keep, select or restart)
     by_id = {r["id"]: r for r in rows}
     have = {p: (n, h) for p, n, h in up.ls()}
     can_verify = D.has_cap(info, "VERIFY")
@@ -477,21 +483,22 @@ def install(
                 raise TransferError(
                     f"{r['path']}: the device reads back sha256 {got[:12]}, expected {sha[:12]}: the card did not keep the file"
                 )
-    emit({"event": "select", "paths": plan["select"]})
-    up.select(plan["select"])
+    selected: list[str] = []
+    if select or restart:
+        selected = plan["select"]
+        emit({"event": "select", "paths": selected})
+        up.select(selected)
     out: dict[str, Any] = {
         "built": plan["build"],
         "uploaded": uploaded,
-        "selected": plan["select"],
+        "selected": selected,
         "restarted": False,
     }
     if not restart:
-        emit({"event": "done", "restarted": False, "selected": plan["select"]})
+        emit({"event": "done", "restarted": False, "selected": selected})
         return out
     names = [by_id[m]["name"] for m in wanted]
-    res = restart_device(
-        up, names, emit, connect, wait_boot, sleep, now, plan["select"]
-    )
+    res = restart_device(up, names, emit, connect, wait_boot, sleep, now, selected)
     if res["missing"]:
         lost = res.get("not_on_card")
         why = (
@@ -621,16 +628,21 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("install")
     p.add_argument("modules", nargs="+", help="module ids, e.g. digikit/pluck")
     p.add_argument(
+        "--select",
+        action="store_true",
+        help="also SELECT these modules (replaces the device's selection; default: the selection is left alone)",
+    )
+    p.add_argument(
         "--restart",
         action="store_true",
-        help="also RESTART and wait until MODULES lists the modules (default: they load at the next restart; see `restart`)",
+        help="implies --select; then RESTART and wait until MODULES lists the modules",
     )
     p.add_argument(
         "--keep",
         nargs="*",
         default=[],
         metavar="PATH",
-        help="store paths of loaded modules to keep selected",
+        help="with --select: store paths of loaded modules to keep selected",
     )
     p = sub.add_parser(
         "restart", help="RESTART, wait for the boot, report which modules loaded"
@@ -670,7 +682,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps({"event": "result", **out}), flush=True)
         else:
             out = install(
-                up, args.modules, args.keep, emit, restart=args.restart, **wiring
+                up,
+                args.modules,
+                args.keep,
+                emit,
+                restart=args.restart,
+                select=args.select,
+                **wiring,
             )
             if args.json:
                 print(json.dumps({"event": "result", **out}), flush=True)

@@ -1022,7 +1022,7 @@ def run_transfer(
         str(row),
     )
     events: list[dict[str, Any]] = []
-    out = TR.install(up, [module], emit=events.append, rows=rows)
+    out = TR.install(up, [module], emit=events.append, rows=rows, select=True)
     c.check(
         "transfer install (no restart): nothing built (unchanged), uploaded, verified by the device, selected",
         out["built"] == []

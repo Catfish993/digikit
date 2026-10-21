@@ -189,7 +189,9 @@ def _two_rows(tmp_path):
     return rows, fresh, card
 
 
-def test_install_without_restart_builds_uploads_verifies_selects(tmp_path, monkeypatch):
+def test_install_uploads_and_verifies_and_leaves_the_selection_alone(
+    tmp_path, monkeypatch
+):
     rows, fresh, card = _two_rows(tmp_path)
     monkeypatch.setattr(T, "repo_rows", fresh)
     built, events = [], []
@@ -197,7 +199,7 @@ def test_install_without_restart_builds_uploads_verifies_selects(tmp_path, monke
     out = T.install(
         up,
         ["digikit/pluck", "test/sine"],
-        ["modules/loaded.dkm"],
+        None,
         events.append,
         rows=rows,
         build=built.append,
@@ -205,25 +207,53 @@ def test_install_without_restart_builds_uploads_verifies_selects(tmp_path, monke
     assert built == ["test/sine"]  # only the changed one is built
     assert (
         up.calls
-        == [  # per module in order: upload (pluck is on the card: skipped), verify; then one SELECT; no RESTART
+        == [  # per module in order: upload (pluck is on the card: skipped), verify; no SELECT, no RESTART
             ("verify", "modules/pluck.dkm"),
             ("put", "modules/sine.dkm"),
             ("verify", "modules/sine.dkm"),
-            ("select", ["modules/pluck.dkm", "modules/sine.dkm", "modules/loaded.dkm"]),
         ]
     )
     assert out["uploaded"] == ["test/sine"] and out["restarted"] is False
-    assert "loaded" not in out
+    assert out["selected"] == [] and "loaded" not in out
     kinds = [e["event"] for e in events]
     assert kinds == [
-        "start", "upload", "skip", "verify", "build", "upload", "verify", "select", "done",
+        "start", "upload", "skip", "verify", "build", "upload", "verify", "done",
     ]  # fmt: skip
     assert [e["ok"] for e in events if e["event"] == "verify"] == [True, True]
-    assert events[-1] == {
-        "event": "done",
-        "restarted": False,
-        "selected": out["selected"],
-    }
+    assert events[-1] == {"event": "done", "restarted": False, "selected": []}
+
+
+def test_install_with_select_sends_one_select_and_no_restart(tmp_path, monkeypatch):
+    rows, fresh, card = _two_rows(tmp_path)
+    monkeypatch.setattr(T, "repo_rows", fresh)
+    events = []
+    up = MockUp(card, [])
+    out = T.install(
+        up,
+        ["digikit/pluck", "test/sine"],
+        ["modules/loaded.dkm"],
+        events.append,
+        rows=rows,
+        build=lambda m: None,
+        select=True,
+    )
+    want = ["modules/pluck.dkm", "modules/sine.dkm", "modules/loaded.dkm"]
+    assert up.calls[-1] == ("select", want) and ("restart",) not in up.calls
+    assert out["selected"] == want and out["restarted"] is False
+    assert [e["event"] for e in events][-2:] == ["select", "done"]
+    assert events[-1]["selected"] == want
+
+
+def test_install_without_select_does_not_limit_the_count(tmp_path, monkeypatch):
+    # the selection holds 8 paths; an install that selects nothing may carry more modules
+    rows, fresh, card = _two_rows(tmp_path)
+    many = [
+        dict(rows[0], id=f"digikit/m{i}", path=f"modules/m{i}.dkm") for i in range(9)
+    ]
+    plan = T.plan_install(many, [r["id"] for r in many], card, selecting=False)
+    assert len(plan["select"]) == 9
+    with pytest.raises(T.TransferError, match="at most 8"):
+        T.plan_install(many, [r["id"] for r in many], card)
 
 
 def test_install_with_restart_waits_for_modules(tmp_path, monkeypatch):

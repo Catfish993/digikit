@@ -1,7 +1,8 @@
-//! The Transfer panel's backend: two thin commands that run the Python tool `tools/device/dktransfer.py` against this workbench's own
-//! control socket (`list --emu --json`, `install ... --emu --json`). The tool owns the logic (which modules pack for the target, build,
-//! pack, upload, SELECT, RESTART, wait); this file only starts it and hands its output lines to the panel. An install runs in the
-//! background; its JSON lines are polled with a cursor, like `mod_progress`.
+//! The Transfer panel's backend: thin commands that run the Python tool `tools/device/dktransfer.py` against this workbench's own
+//! control socket (`list`, `install ...`, `restart`, each `--emu --json`). The tool owns the logic (which modules pack for the target, build,
+//! pack, upload, verify, RESTART, wait); this file only starts it and hands its output lines to the page. An install or a restart runs in
+//! the background; its JSON lines are polled with a cursor, like `mod_progress`. Nothing here selects modules: the selection belongs to the
+//! device.
 use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -129,32 +130,22 @@ fn start_job(host: &crate::Host, xfer: &Transfer, sub: Vec<String>) -> Result<()
     Ok(())
 }
 
-/// Start `dktransfer install MODULES --keep KEEP`: build, upload, verify and select (no restart).
+/// Start `dktransfer install MODULES`: build, upload and verify. The device's selection is not touched: the user selects the module in
+/// MODULES on the device, then applies and restarts there.
 #[tauri::command]
-pub fn xfer_install(
-    host: State<'_, crate::Host>,
-    xfer: State<'_, Transfer>,
-    modules: Vec<String>,
-    keep: Vec<String>,
-) -> Result<(), String> {
+pub fn xfer_install(host: State<'_, crate::Host>, xfer: State<'_, Transfer>, modules: Vec<String>) -> Result<(), String> {
     if modules.is_empty() {
         return Err("tick at least one module".into());
     }
     let mut sub: Vec<String> = vec!["install".into()];
     sub.extend(modules);
-    if !keep.is_empty() {
-        sub.push("--keep".into());
-        sub.extend(keep);
-    }
     start_job(&host, &xfer, sub)
 }
 
-/// Start `dktransfer restart MODULES`: RESTART, wait for the boot, report which modules loaded.
+/// Start `dktransfer restart`: RESTART, wait for the boot, report what loaded (the tool is given no modules: nothing is expected).
 #[tauri::command]
-pub fn xfer_restart(host: State<'_, crate::Host>, xfer: State<'_, Transfer>, modules: Vec<String>) -> Result<(), String> {
-    let mut sub: Vec<String> = vec!["restart".into()];
-    sub.extend(modules);
-    start_job(&host, &xfer, sub)
+pub fn xfer_restart(host: State<'_, crate::Host>, xfer: State<'_, Transfer>) -> Result<(), String> {
+    start_job(&host, &xfer, vec!["restart".into()])
 }
 
 /// The install's events from index `since` on, the next index and whether it still runs.
@@ -171,10 +162,10 @@ mod tests {
 
     #[test]
     fn the_tool_is_told_this_workbenchs_socket_and_json() {
-        let a = tool_args(Path::new("/r/out/native/run/7.sock"), &["install".into(), "digikit/pluck".into(), "--keep".into(), "modules/a.dkm".into()]);
+        let a = tool_args(Path::new("/r/out/native/run/7.sock"), &["install".into(), "digikit/pluck".into(), "test/sine".into()]);
         assert_eq!(
             a,
-            ["--emu", "--socket", "/r/out/native/run/7.sock", "--json", "install", "digikit/pluck", "--keep", "modules/a.dkm"]
+            ["--emu", "--socket", "/r/out/native/run/7.sock", "--json", "install", "digikit/pluck", "test/sine"]
         );
     }
 

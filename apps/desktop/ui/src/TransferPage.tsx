@@ -1,6 +1,7 @@
 // The Transfer page (desktop only): what is on the emulated device, and the repo's run-time modules that could be (tools/device/dktransfer.py
-// through the native commands). Install builds what changed, uploads, verifies each file on the card and selects the ticked set; the modules
-// load at "Restart to load". "Add .dkm" and the drop zone put a module from outside the repo on the card.
+// through the native commands). Install builds what changed, uploads and verifies each file on the card; that is all. The device's selection
+// is the device's own: the user selects the module in MODULES on the device, then applies and restarts there. Restart only restarts the
+// device and reports what loaded. "Add .dkm" and the drop zone put a module from outside the repo on the card.
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { hexSha256, storePath } from '@web/modules/dkupload-core';
 import { errorLine, formatBytes } from '@web/modules/backend';
@@ -10,13 +11,11 @@ import {
   applyEvent,
   applyVerified,
   available,
-  differsFromLoaded,
+  DONE_ON_CARD,
   eventText,
-  initialTicks,
-  installRequest,
+  installModules,
   onDevice,
   progressFraction,
-  restartPending,
   rowKey,
   startProgress,
   stateText,
@@ -28,11 +27,9 @@ import {
   lastView,
   log,
   progress,
-  selected,
   setLastView,
   setLog,
   setProgress,
-  setSelected,
   setShowTests,
   setTicks,
   setVerified,
@@ -48,14 +45,12 @@ export default function TransferPage(): JSX.Element {
   const [over, setOver] = createSignal(false);
   let input: HTMLInputElement | undefined;
 
-  /** Read the list again. The ticks start as what is loaded (the first list, and after a restart); an install keeps them. */
-  const refresh = async (resetTicks: boolean) => {
-    const v = await transferBackend.list();
-    setLastView(v);
-    if (resetTicks) setTicks(initialTicks(v));
+  /** Read the list again. */
+  const refresh = async () => {
+    setLastView(await transferBackend.list());
   };
   /** Run `f` as the page's one busy action; an error shows, the list is read again either way (a failed refresh does not hide it). */
-  const run = async (what: string, f: () => Promise<void>, resetTicks = false) => {
+  const run = async (what: string, f: () => Promise<void>) => {
     if (busy()) return;
     setBusy(what);
     setError('');
@@ -65,17 +60,14 @@ export default function TransferPage(): JSX.Element {
       setError(errorLine(e));
     } finally {
       try {
-        await refresh(resetTicks);
+        await refresh();
       } catch (e) {
         if (!error()) setError(errorLine(e));
       }
       setBusy('');
     }
   };
-  onMount(() => {
-    const first = !lastView();
-    void run('Reading', async () => {}, first);
-  });
+  onMount(() => void run('Reading', async () => {}));
 
   const onEvent = (e: TransferEvent) => {
     const p = progress();
@@ -87,43 +79,33 @@ export default function TransferPage(): JSX.Element {
     run('Installing', async () => {
       const v = lastView();
       if (!v) return;
-      const req = installRequest(v, ticks());
-      setProgress(startProgress(req.modules, false));
+      const modules = installModules(v, ticks());
+      setProgress(startProgress(modules, false));
       setLog([]);
       try {
-        await transferBackend.install(req, onEvent);
+        await transferBackend.install(modules, onEvent);
       } catch (e) {
         const p = progress();
         if (p) setProgress({ ...p, message: errorLine(e) });
         throw e;
       }
-      setSelected(new Set(ticks()));
+      const p = progress();
+      if (p) setProgress({ ...p, message: DONE_ON_CARD });
+      setTicks(new Set<string>());
     });
   const restart = () =>
-    run(
-      'Restarting',
-      async () => {
-        const v = lastView();
-        if (!v) return;
-        const want = installRequest(v, selected() ?? ticks()).modules;
-        setProgress({ ...startProgress([], true), select: 'ok' });
-        setLog([]);
-        try {
-          const events = await transferBackend.restart(want, onEvent);
-          const done = events.find((e) => e.event === 'done');
-          if (Array.isArray(done?.missing) && done.missing.length) {
-            setError(`Not loaded after the restart: ${done.missing.join(', ')}. See dk:log.`);
-          }
-        } catch (e) {
-          const p = progress();
-          if (p) setProgress({ ...p, message: errorLine(e) });
-          throw e;
-        }
-        setSelected(undefined);
-        setVerified({});
-      },
-      true,
-    );
+    run('Restarting', async () => {
+      setProgress(startProgress([], true));
+      setLog([]);
+      try {
+        await transferBackend.restart(onEvent);
+      } catch (e) {
+        const p = progress();
+        if (p) setProgress({ ...p, message: errorLine(e) });
+        throw e;
+      }
+      setVerified({});
+    });
 
   const addFiles = (files: File[]) =>
     run('Uploading', async () => {
@@ -159,13 +141,9 @@ export default function TransferPage(): JSX.Element {
   };
 
   const label = (r: TransferRow) => r.label ?? r.name;
-  const pending = () => {
+  const ticked = () => {
     const v = lastView();
-    return !!v && differsFromLoaded(v, ticks());
-  };
-  const needsRestart = () => {
-    const v = lastView();
-    return !!v && restartPending(v, selected());
+    return v ? installModules(v, ticks()).length : 0;
   };
   const verifiedMark = (r: TransferRow) => verified()[r.path];
   const pct = () => Math.round(100 * progressFraction(progress()!));
@@ -221,12 +199,11 @@ export default function TransferPage(): JSX.Element {
         <button
           type="button"
           class="act"
-          classList={{ primary: needsRestart() }}
           disabled={!!busy() || !lastView()}
-          title="RESTART the emulated device so that it loads the selected modules"
+          title="RESTART the emulated device (it loads what its MODULES menu has selected)"
           onClick={() => void restart()}
         >
-          {busy() === 'Restarting' ? 'Restarting…' : 'Restart to load'}
+          {busy() === 'Restarting' ? 'Restarting…' : 'Restart'}
         </button>
       </header>
 
@@ -254,7 +231,7 @@ export default function TransferPage(): JSX.Element {
                         </span>
                         <span class="dim">{r.version ?? ''}</span>
                         <span class="dim">{formatBytes(r.file_size)}</span>
-                        <span class="state">{stateText(r, selected())}</span>
+                        <span class="state">{stateText(r)}</span>
                         <Show when={verifiedMark(r)}>
                           <span
                             class="check"
@@ -296,15 +273,15 @@ export default function TransferPage(): JSX.Element {
                 <button
                   type="button"
                   class="act primary"
-                  disabled={!!busy() || !pending()}
+                  disabled={!!busy() || ticked() === 0}
                   title={
-                    pending()
-                      ? 'Build, upload and verify the ticked modules, then select them'
-                      : 'The ticks equal what is loaded'
+                    ticked()
+                      ? 'Build, upload and verify the ticked modules on the card; select them in MODULES on the device'
+                      : 'Tick a module to install'
                   }
                   onClick={() => void install()}
                 >
-                  {busy() === 'Installing' ? 'Installing…' : 'Install'}
+                  {busy() === 'Installing' ? 'Installing…' : ticked() ? `Install ${ticked()}` : 'Install'}
                 </button>
               </div>
               <For each={available(v(), showTests())}>
@@ -339,7 +316,7 @@ export default function TransferPage(): JSX.Element {
                               >
                                 {formatBytes(r.file_size)}
                               </span>
-                              <span class="state">{stateText(r, selected())}</span>
+                              <span class="state">{stateText(r)}</span>
                               <Show when={warningText(r)}>
                                 <span class="fit">{warningText(r)}</span>
                               </Show>
@@ -367,9 +344,6 @@ export default function TransferPage(): JSX.Element {
                   </div>
                 )}
               </For>
-              <div class="seg" data-state={p().select} title="select">
-                <span>select</span>
-              </div>
               <Show when={p().restart !== 'none'}>
                 <div class="seg" data-state={p().restart} title="restart">
                   <span>restart</span>
