@@ -264,6 +264,7 @@ pub struct Card {
     selected: bool,
     overlay: BTreeMap<u64, Box<OverlaySector>>,
     overlay_bytes: usize,
+    writes: u64,
     cid: [u32; 4],
     csd: [u32; 4],
 }
@@ -305,6 +306,7 @@ impl Card {
             selected: false,
             overlay: BTreeMap::new(),
             overlay_bytes: 0,
+            writes: 0,
             cid: identity.cid(),
             csd: [0, CSD_RSP1, CSD_RSP2, 0],
         })
@@ -350,6 +352,12 @@ impl Card {
                 }
             })
             .collect()
+    }
+
+    /// How many write commands the card took since it was made (a host that mirrors the card's contents watches it for changes: the
+    /// overlay's size does not move when a sector is written again).
+    pub const fn write_count(&self) -> u64 {
+        self.writes
     }
 
     /// Number of bytes retained in the sparse write overlay.
@@ -608,6 +616,7 @@ impl Card {
         if idx != 25 {
             return Ok(());
         }
+        self.writes = self.writes.wrapping_add(1);
         let start = u64::from(arg) * SECTOR_SIZE as u64;
         let mut consumed = 0;
         while consumed < payload.len() {

@@ -118,16 +118,19 @@ def pgo_trained_core(device: str) -> pathlib.Path | None:
     return path
 
 
+# Launcher options that take a value: the value is not the firmware file (the first positional argument).
+VALUE_OPTIONS = {"--card-image", "--card-folder", "--audio-buffer", "--mirror-dir"}
+
+
 def default_audio_args(args: list[str] | None = None) -> list[str]:
     """Add local ready audio inputs to a normal launcher command line."""
     args = [] if args is None else list(args)
-    value_options = {"--card-image", "--card-folder", "--audio-buffer"}
     positional = next(
         (
             value
             for index, value in enumerate(args)
             if not value.startswith("--")
-            and (index == 0 or args[index - 1] not in value_options)
+            and (index == 0 or args[index - 1] not in VALUE_OPTIONS)
         ),
         None,
     )
@@ -621,12 +624,11 @@ def take_option(args: list[str], name: str) -> tuple[str | None, list[str]]:
 def syx_from_args(args: list[str]) -> pathlib.Path:
     """The firmware file the launcher will run: the first positional argument,
     else the default."""
-    value_options = {"--card-image", "--card-folder", "--audio-buffer"}
     syx_arg = next(
         (
             v
             for j, v in enumerate(args)
-            if not v.startswith("--") and (j == 0 or args[j - 1] not in value_options)
+            if not v.startswith("--") and (j == 0 or args[j - 1] not in VALUE_OPTIONS)
         ),
         None,
     )
@@ -666,12 +668,7 @@ def main(args: list[str] | None = None) -> None:
         # A patched image gets the card of its stock base (the same card as `inject` keeps).
         card = plusdrive_card(folder, digi_env.base_firmware(syx), env, device)
         first_positional = any(
-            not v.startswith("--")
-            and (
-                j == 0
-                or args[j - 1]
-                not in ("--card-image", "--card-folder", "--audio-buffer")
-            )
+            not v.startswith("--") and (j == 0 or args[j - 1] not in VALUE_OPTIONS)
             for j, v in enumerate(args)
         )
         args = [
@@ -690,6 +687,12 @@ def main(args: list[str] | None = None) -> None:
                 f"+Drive: changes on the card are exported to {folder} on exit (--no-sync turns it off)",
                 file=sys.stderr,
             )
+    # The module store is mirrored to a folder while the emulator runs (the Card panel: files, "Sync now"): the +Drive folder of a
+    # DT2 card, else plus_drive/<device>/ (the DN2 has no card built from a folder). --no-sync turns it off.
+    if known and not no_sync and "--mirror-dir" not in args:
+        mirror = folder if folder is not None else plus_drive_root() / device
+        mirror.mkdir(parents=True, exist_ok=True)
+        args = [*args, "--mirror-dir", str(mirror.resolve())]
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:

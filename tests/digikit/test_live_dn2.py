@@ -1,4 +1,4 @@
-"""Free-running (desktop-like) daemon scenarios, Digitone II (tests/digikit/scenarios/transfer-live-*.toml, runner `run_live` of tools/patchkit/pk_digikit_scen.py): one test per scenario and image, tier DIGIKIT_TIER."""
+"""Free-running (desktop-like) daemon scenarios, Digitone II (tests/digikit/scenarios/transfer-live.toml, runner `run_live` of tools/patchkit/pk_digikit_scen.py): one test per scenario and image, tier DIGIKIT_TIER."""
 
 import pytest
 from scen_cases import cases, run

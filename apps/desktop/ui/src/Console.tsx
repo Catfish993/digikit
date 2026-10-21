@@ -13,6 +13,7 @@ import {
   type RuntimeSnapshot,
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
+import CardPanel from './CardPanel';
 import TransferPage from './TransferPage';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 
@@ -472,11 +473,14 @@ export default function Console() {
         </nav>
         <div class="content">
           {/* The faceplate stays mounted behind the Transfer page: the emulator, its audio and the snapshot pump run on. */}
-          <main class="stage" hidden={page() !== 'emulator'} aria-label={`${panel().name} front panel`}>
-            <div class="surface">
-              <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
-            </div>
-          </main>
+          <div class="emu-row" hidden={page() !== 'emulator'}>
+            <main class="stage" aria-label={`${panel().name} front panel`}>
+              <div class="surface">
+                <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
+              </div>
+            </main>
+            <CardPanel visible={page() === 'emulator' && !!status()} />
+          </div>
           <Show when={page() === 'transfer'}>
             <TransferPage />
           </Show>

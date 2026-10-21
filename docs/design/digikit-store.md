@@ -136,6 +136,15 @@ copy only: the one that is not the current record, with `seq + 1`.
 **+Drive round trip.** The exporter reads both copies and writes the winner back as `plus_drive/<device>/digikit/selection.txt`
 (one store path per line, load order); the builder turns that file into both copies (`seq` 1, counter 0); lines may be blank or start with `#`, the exporter keeps the user's file when it holds the same list, and the counter and flags are not exported (finding 40).
 
+## The folder mirror (while the emulator runs)
+
+The exporter above runs at the end of a session (and on `card.export`). Since 2026-10-22 the emulator also mirrors the store while it runs
+(`plusdrive_format::mirror`, `docs/plans/card-folder.md`): about 2 s after the guest's last card write the files of the store go to
+`plus_drive/<device>/digikit/<path>` (the DN2 too: it has no path filesystem, so only these files), `card.sync` does it at once, and a file the
+card no longer has is removed from the folder (to the backup), so a DT2 card built from the folder at the next start does not bring it back. One way
+only: nothing is read from the folder except by the DT2 startup build. The mirror removes only paths it has seen on the card in the session, so a session
+that starts on an empty card (the DN2 has none at boot) leaves the files an earlier session mirrored. The selection record is not a store file and is not mirrored.
+
 ## Open
 
 - The range is a choice with 0x2000 sectors of margin on each side, not a measurement. That nothing in the firmware writes

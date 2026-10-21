@@ -40,6 +40,7 @@ fn main() {
     let mut config = Config::new(startup.audio.clone());
     config.mode = if free { Mode::Free } else { Mode::Paused };
     config.run_dir = run_dir.clone();
+    config.mirror_dir = startup.mirror_dir.clone();
     config.card_folder = startup.card_folder.clone().map(|dir| digi_control::CardSource {
         dir,
         sync: startup.card_sync,

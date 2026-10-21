@@ -98,6 +98,14 @@ def test_default_no_audio_keeps_coupling_but_mutes_playback(monkeypatch, tmp_pat
     assert scope["default_audio_args"](["--no-audio"])[-1] == "0.3"
 
 
+def test_the_mirror_folder_is_not_taken_for_the_firmware(monkeypatch, tmp_path):
+    scope = launcher()
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.12.syx")
+    syx_from_args = scope["syx_from_args"]
+    assert syx_from_args(["--mirror-dir", "/m"]) == tmp_path / "Digitone_II_OS1.12.syx"
+    assert syx_from_args(["--mirror-dir", "/m", "a.syx"]) == Path("a.syx")
+
+
 def test_selected_firmware_keeps_its_path_but_profile_stays_known(
     monkeypatch, tmp_path
 ):
@@ -739,6 +747,9 @@ def test_plus_drive_folder_is_the_default_card(monkeypatch, tmp_path):
         str(tmp_path / "card.img"),
         "--card-folder",
         str(folder.resolve()),
+        # and the module store is mirrored to the same folder while the emulator runs
+        "--mirror-dir",
+        str(folder.resolve()),
     ]
 
 
@@ -757,7 +768,9 @@ def test_patched_image_gets_the_card_of_its_stock_base(monkeypatch, tmp_path):
     assert calls[-1][1] == str(syx)
 
 
-def test_no_sync_keeps_the_folder_but_turns_the_exit_export_off(monkeypatch, tmp_path):
+def test_no_sync_keeps_the_folder_but_turns_the_exit_export_and_the_mirror_off(
+    monkeypatch, tmp_path
+):
     scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
     root = tmp_path / "pd"
     monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
@@ -788,6 +801,8 @@ def test_launcher_without_syx_argument_gets_the_firmware_and_card(
         str(tmp_path / "card.img"),
         "--card-folder",
         str(folder.resolve()),
+        "--mirror-dir",
+        str(folder.resolve()),
     ]
 
 
@@ -799,7 +814,8 @@ def test_other_devices_folder_and_empty_folders_are_ignored(monkeypatch, tmp_pat
     (root / "dt2").mkdir()
     scope["main"]([str(syx), "--cf-only"])
     assert built == []
-    assert calls[-1][1:] == [str(syx)]
+    # no card is built from it, but the module store is still mirrored to plus_drive/<device>/
+    assert calls[-1][1:] == [str(syx), "--mirror-dir", str((root / "dt2").resolve())]
 
 
 def test_dn2_takes_only_mmcfs_and_digikit(monkeypatch, tmp_path):

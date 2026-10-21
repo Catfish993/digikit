@@ -7,6 +7,7 @@
 // outside the library on the card.
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { errorLine, formatBytes } from '@web/modules/backend';
+import { bumpCardRefresh } from './card-state';
 import { transferBackend } from './transfer-backend';
 import {
   applyEvent,
@@ -74,6 +75,9 @@ export default function TransferPage(): JSX.Element {
         if (!error()) setError(errorLine(e));
       }
       setBusy('');
+      // the Card panel reads the folder now and again after the emulator's quiet period (the folder follows the card about 2 s later)
+      bumpCardRefresh();
+      window.setTimeout(bumpCardRefresh, 2500);
     }
   };
   onMount(() => void run('Reading', async () => {}));

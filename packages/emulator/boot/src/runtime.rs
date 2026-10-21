@@ -1003,6 +1003,11 @@ impl Emulator {
         true
     }
 
+    /// How many write commands the guest has sent to the eMMC card since this runtime started.
+    pub fn card_write_count(&self) -> u64 {
+        self.bus.board.card_write_count()
+    }
+
     /// The guest's writes to the eMMC card, per touched sector (for `card.overlay`).
     pub fn card_overlay(&self) -> Vec<emmc_card::CardOverlaySector> {
         self.bus.board.card_overlay_sectors()

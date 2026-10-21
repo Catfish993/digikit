@@ -1351,15 +1351,28 @@ def run_live(c: Ctx) -> None:
     dev, ver = c.image.split("-")
     spec = H.FIRMWARE[(dev, ver)]
     syx = config.stock(spec["syx"])
+    mirror = (
+        c.work / "mirror" / dev
+    )  # the plus_drive/<device>/ folder the module store is mirrored to
     emu = Emu.spawn_coupled(
         syx,
         H.ROOT / spec["ready"],
+        "--mirror-dir",
+        str(mirror),
         timeout=300,
         binary=H.daemon_binary(dev, syx),
         run_dir=c.work / "live-run",
     )
     try:
-        emu.load(syx, runtime=True, start="auto")
+        if dev == "dt2":  # the DT2 boots on a card built from a folder; the DN2 on none
+            from tools.emulator import card_check
+
+            samples = H.OUT / "samples"
+            card_check.make_samples(samples)
+            card = emu.call("card.load", dir=str(samples))["card"]
+            emu.load(syx, runtime=True, start="auto", card=card)
+        else:
+            emu.load(syx, runtime=True, start="auto")
         emu.call("run.mode", mode="free")
         time.sleep(float(c.table().get("settle_s", 12)))
         c.check("the daemon runs free", emu.status().get("mode") == "free")
@@ -1394,16 +1407,46 @@ def run_live(c: Ctx) -> None:
             [p for p, _, _ in up.ls()] == [f"modules/{module.split('/')[-1]}.dkm"],
             str(up.ls()),
         )
+        # the module store follows into the folder about 2 s after the guest's last card write, with the same sha256
+        path = f"modules/{module.split('/')[-1]}.dkm"
+        want = dict((p, h) for p, _, h in up.ls())[path]
+        mirrored = mirror / "digikit" / path
+
+        def sha_of(f: Path) -> str | None:
+            return hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
+
+        end = time.monotonic() + 30
+        while time.monotonic() < end and sha_of(mirrored) != want:
+            time.sleep(0.5)
+        c.check(
+            "the folder holds the module with the card's sha256 (the emulator mirrors the store after its quiet period)",
+            sha_of(mirrored) == want,
+            str(mirrored),
+        )
+        fold = emu.call("card.folder")
+        c.check(
+            "card.folder lists it with size and sha256",
+            fold["folder"] == str(mirror)
+            and fold["continuous"]
+            and [(f["path"], f["sha256"]) for f in fold["files"]] == [(path, want)],
+            str(fold),
+        )
         # delete the selected file: DELETE does not touch the selection, so the next boot finds a selected path whose file is gone and
         # skips it with an error line (MOD_LOAD result -1) instead of failing the boot
         # (the boot after `install --restart` is the second boot with a selection that has not run the stable period, 30 s of DSP blocks:
         # one more such boot would be a safe boot, so the scenario restarts once more only)
-        path = f"modules/{module.split('/')[-1]}.dkm"
         rc3, ev3, _ = tool("delete", path)
         c.check(
             "dktransfer delete: the file is gone from the card",
             rc3 == 0 and any(e["event"] == "delete" for e in ev3) and up.ls() == [],
             f"rc {rc3} {ev3[-1:] if ev3 else ''}",
+        )
+        # ... and the folder follows the card: the file is removed (card.sync does not wait for the quiet period)
+        synced = emu.call("card.sync")
+        c.check(
+            "card.sync removes the deleted file from the folder",
+            not mirrored.exists() and synced["files"] == [],
+            str(synced),
         )
         rc4, ev4, _ = tool("restart")
         up = DK.Uploader(TR.LiveTransport(emu))
