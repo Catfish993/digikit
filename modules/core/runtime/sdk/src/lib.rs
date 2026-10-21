@@ -97,6 +97,19 @@ pub const STATE_UNLOADING: u32 = 2; // archived with hot reload; never reported 
 pub const MOD_LOADED: u32 = 0;
 pub const MOD_LOADING: u32 = 1;
 
+/// One entry of `dkrt_capacity` (the CAPACITY command's entries; `kind` is a `proto::CAPK_*` number). `largest` is 0 where a largest piece has no
+/// meaning. The layout only grows at the end.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DkrtCap {
+    pub kind: u32,
+    pub limit: u32,
+    pub used: u32,
+    pub largest: u32,
+}
+/// Room for the entries a caller of `dkrt_capacity` gives (the runtime has 11 kinds; new kinds are appended).
+pub const CAP_MAX: usize = 16;
+
 /// `dkrt_health` result (finding 41). The caller owns the memory; the layout only grows at the end. A figure is valid when its flag is
 /// set; the others are 0. Loads are in tenths of a percent (0 to 1000).
 #[repr(C)]
