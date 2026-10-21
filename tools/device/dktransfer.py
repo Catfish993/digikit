@@ -13,7 +13,7 @@ marked), with group (machine, fx or service contract in the packed header: Machi
 whether it is loaded (MODULES), and whether it fits (CAPACITY; a warning only). Card files that match no repo module are listed with
 their group, read from the 0xa0-byte header (READ, runtime 0.2.4).
 
-`install MOD...` builds only the modules whose objects changed, packs them, uploads the files the card does not have (same sha256),
+`install MOD...` (it emits `progress` events with the bytes sent of each upload, at most about ten per file) builds only the modules whose objects changed, packs them, uploads the files the card does not have (same sha256),
 VERIFYs each file on the card (the device hashes it from a fresh read). That is all: the device's selection is not touched, because
 the selection belongs to the device (the user ticks the module in SETTINGS > DIGIKIT > MODULES and applies and restarts there).
 `--select` also sends SELECT, which replaces the selection by exactly these modules plus the `--keep` paths; `--restart` implies `--select`,
@@ -430,6 +430,28 @@ def restart_device(
     return out
 
 
+PROGRESS_EVENTS = (
+    10  # `progress` events per uploaded file, at most (plus the last one at 100 %)
+)
+
+
+def upload_progress(
+    emit: Callable[[dict[str, Any]], None], mid: str, total: int
+) -> Callable[[int, int], None]:
+    """The `progress` callback of one file's upload: emits `{"event": "progress", "id", "sent", "bytes"}` when at least a tenth of the file
+    went since the last one, and at 100 %; not once per DATA chunk (a 64 KiB file is two chunks, but a slow link must not flood the page)."""
+    last = 0
+    step = max(1, total // PROGRESS_EVENTS)
+
+    def cb(sent: int, size: int) -> None:
+        nonlocal last
+        if sent >= size or sent - last >= step:
+            last = sent
+            emit({"event": "progress", "id": mid, "sent": sent, "bytes": size})
+
+    return cb
+
+
 def install(
     up: D.Uploader,
     wanted: list[str],
@@ -471,7 +493,9 @@ def install(
         data = Path(r["dkm"]).read_bytes()
         sha = hashlib.sha256(data).hexdigest()
         emit({"event": "upload", "id": mid, "path": r["path"], "bytes": len(data)})
-        if R.upload_if_changed(up, r["path"], data, have, quiet):
+        if R.upload_if_changed(
+            up, r["path"], data, have, quiet, upload_progress(emit, mid, len(data))
+        ):
             uploaded.append(mid)
         else:
             emit({"event": "skip", "id": mid, "reason": "same sha256 on the card"})

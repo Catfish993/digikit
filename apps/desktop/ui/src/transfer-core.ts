@@ -75,6 +75,8 @@ export function eventText(e: TransferEvent): string {
       return `Uploading ${e.path} (${e.bytes} bytes)`;
     case 'skip':
       return `${e.id}: already on the card, not uploaded`;
+    case 'progress':
+      return `Uploading ${e.id}`;
     case 'verify':
       return e.ok ? `Verified ${e.path} on the card` : `Verify failed: ${e.path} differs on the card`;
     case 'restart':
@@ -114,31 +116,71 @@ export function stateText(r: TransferRow): string {
 /** Per store path: what VERIFY said after the last install. */
 export type Verified = Record<string, 'ok' | 'failed'>;
 
-// ---- the progress bar ---------------------------------------------------------------------------------------------------------
+// ---- the progress of an install or a restart -----------------------------------------------------------------------------------
 
 export type StepState = 'wait' | 'build' | 'upload' | 'verify' | 'ok' | 'failed';
+export interface ModuleStep {
+  id: string;
+  state: StepState;
+  /** The store path and the file size, known from the `upload` event (the size of the list's row before). */
+  path?: string;
+  bytes: number;
+  /** Bytes the device acknowledged. */
+  sent: number;
+}
 export interface Progress {
   /** One entry per module of an install, in order (none for a restart). */
-  modules: { id: string; state: StepState }[];
+  modules: ModuleStep[];
   /** A restart has one step; an install has none. */
   restart: StepState | 'none';
   message: string;
 }
 
-export function startProgress(ids: string[], restart: boolean): Progress {
-  return { modules: ids.map((id) => ({ id, state: 'wait' })), restart: restart ? 'wait' : 'none', message: '' };
+/** `sizes`: the file size of each module from the list, so that the bar has its weights before the uploads start. */
+export function startProgress(ids: string[], restart: boolean, sizes: Record<string, number> = {}): Progress {
+  return {
+    modules: ids.map((id) => ({ id, state: 'wait', bytes: sizes[id] ?? 0, sent: 0 })),
+    restart: restart ? 'wait' : 'none',
+    message: '',
+  };
 }
 
-/** The progress after one more event of `dktransfer` (a new object; `error` marks the active step failed). */
+const percent = (sent: number, bytes: number) => (bytes ? Math.min(100, Math.round((100 * sent) / bytes)) : 0);
+
+/** The progress after one more event of `dktransfer` (a new object; `error` marks the active step failed). `result` and `progress`
+ * lines are not steps: the text stays that of the last step (a `progress` line only updates the percent). */
 export function applyEvent(p: Progress, e: TransferEvent): Progress {
-  const next: Progress = { ...p, modules: p.modules.map((m) => ({ ...m })), message: eventText(e) };
+  const next: Progress = { ...p, modules: p.modules.map((m) => ({ ...m })) };
+  if (e.event !== 'result') next.message = eventText(e);
   const mod = (id: unknown) => next.modules.find((m) => m.id === id);
   switch (e.event) {
-    case 'build':
-    case 'upload':
+    case 'build': {
+      const m = mod(e.id);
+      if (m) m.state = 'build';
+      break;
+    }
+    case 'upload': {
+      const m = mod(e.id);
+      if (m) Object.assign(m, { state: 'upload', path: String(e.path), bytes: Number(e.bytes), sent: 0 });
+      break;
+    }
+    case 'progress': {
+      const m = mod(e.id);
+      if (m) {
+        m.bytes = Number(e.bytes);
+        m.sent = Number(e.sent);
+        next.message = `Uploading ${m.path ?? m.id}: ${percent(m.sent, m.bytes)}%`;
+      }
+      break;
+    }
+    case 'skip': {
+      const m = mod(e.id); // the upload is not needed: straight to the verify
+      if (m) m.sent = m.bytes;
+      break;
+    }
     case 'verify': {
       const m = mod(e.id);
-      if (m) m.state = e.event === 'verify' ? (e.ok ? 'ok' : 'failed') : (e.event as StepState);
+      if (m) Object.assign(m, { state: e.ok ? 'ok' : 'failed', sent: m.bytes });
       break;
     }
     case 'restart':
@@ -148,7 +190,7 @@ export function applyEvent(p: Progress, e: TransferEvent): Progress {
       if (next.restart !== 'none') next.restart = 'ok';
       break;
     case 'error': {
-      const active = next.modules.find((m) => m.state === 'build' || m.state === 'upload' || m.state === 'verify');
+      const active = next.modules.find((m) => m.state === 'build' || m.state === 'upload');
       if (active) active.state = 'failed';
       else if (next.restart === 'build') next.restart = 'failed';
       break;
@@ -157,10 +199,63 @@ export function applyEvent(p: Progress, e: TransferEvent): Progress {
   return next;
 }
 
-/** Done steps over all steps, 0 to 1. */
+/** The build and verify steps of a module count as this many bytes each; the uploads count by their bytes. */
+export const FIXED_SHARE = 2048;
+
+/** The overall fraction, 0 to 1: per module a fixed share for the build, its bytes sent, and a fixed share for the verify. */
 export function progressFraction(p: Progress): number {
-  const steps = [...p.modules.map((m) => m.state), ...(p.restart === 'none' ? [] : [p.restart])];
-  return steps.length ? steps.filter((s) => s === 'ok').length / steps.length : 0;
+  if (p.restart !== 'none' && p.modules.length === 0) return p.restart === 'ok' ? 1 : 0;
+  let total = 0;
+  let done = 0;
+  for (const m of p.modules) {
+    total += 2 * FIXED_SHARE + m.bytes;
+    if (m.state === 'upload' || m.state === 'verify' || m.state === 'ok') done += FIXED_SHARE + m.sent; // the build is over
+    if (m.state === 'ok') done += FIXED_SHARE;
+  }
+  return total ? Math.min(1, done / total) : 0;
+}
+
+/** Did a step fail? (the bar turns red) */
+export function progressFailed(p: Progress): boolean {
+  return p.restart === 'failed' || p.modules.some((m) => m.state === 'failed');
+}
+
+/** What one file's row shows while an install runs: its upload bar, "verifying", or the result. */
+export type RowStatus =
+  { kind: 'uploading'; sent: number; bytes: number } | { kind: 'verifying' } | { kind: 'ok' } | { kind: 'failed' };
+
+/** The status of the file at `path`: from the install's step when it has one, else from the last VERIFY. */
+export function rowStatus(p: Progress | undefined, verified: Verified, path: string): RowStatus | undefined {
+  const m = p?.modules.find((x) => x.path === path);
+  if (m) {
+    if (m.state === 'upload')
+      return m.sent < m.bytes ? { kind: 'uploading', sent: m.sent, bytes: m.bytes } : { kind: 'verifying' };
+    if (m.state === 'ok') return { kind: 'ok' };
+    if (m.state === 'failed') return { kind: 'failed' };
+  }
+  const v = verified[path];
+  return v ? { kind: v } : undefined;
+}
+
+/** The "On device" rows plus, for each module of the running install whose file is not on the card yet, a pending row (the file is going
+ * there: the upload bar sits in it). */
+export function onDeviceWithPending(view: TransferView, p: Progress | undefined): TransferRow[] {
+  const rows = onDevice(view);
+  const have = new Set(rows.map((r) => r.path));
+  for (const m of p?.modules ?? []) {
+    if (!m.path || have.has(m.path)) continue;
+    const repo = view.modules.find((r) => r.id === m.id);
+    rows.push({
+      ...(repo ?? { group: 'Tools', test: false, name: m.id, version: null }),
+      id: m.id,
+      path: m.path,
+      file_size: m.bytes,
+      on_card: 'no',
+      loaded: false,
+    } as TransferRow);
+    have.add(m.path);
+  }
+  return rows.sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /** The verified map after more events: a `verify` event sets its path. */

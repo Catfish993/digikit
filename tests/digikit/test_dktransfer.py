@@ -146,8 +146,13 @@ class MockUp:
     def ls(self):
         return list(self.card)
 
-    def put(self, path, data):
+    chunk = 32768
+
+    def put(self, path, data, progress=None):
         self.calls.append(("put", path))
+        if progress:  # as Uploader.put: after each acknowledged chunk
+            for at in range(0, len(data), self.chunk):
+                progress(min(len(data), at + self.chunk), len(data))
         self.data[path] = data
         self.card = [c for c in self.card if c[0] != path] + [
             (path, len(data), hashlib.sha256(data).hexdigest())
@@ -217,7 +222,7 @@ def test_install_uploads_and_verifies_and_leaves_the_selection_alone(
     assert out["selected"] == [] and "loaded" not in out
     kinds = [e["event"] for e in events]
     assert kinds == [
-        "start", "upload", "skip", "verify", "build", "upload", "verify", "done",
+        "start", "upload", "skip", "verify", "build", "upload", "progress", "verify", "done",
     ]  # fmt: skip
     assert [e["ok"] for e in events if e["event"] == "verify"] == [True, True]
     assert events[-1] == {"event": "done", "restarted": False, "selected": []}
@@ -402,3 +407,53 @@ def test_pk_build_hash_matches_the_committed_objects():
         if pk_build.module_status(d) != "unchanged"
     ]
     assert stale == []
+
+
+def test_upload_progress_events_are_capped_and_end_at_the_file_size(
+    tmp_path, monkeypatch
+):
+    big = tmp_path / "big.dkm"
+    big.write_bytes(b"B" * 20_000)
+    row_big = {
+        **row("test/big", sha=hashlib.sha256(b"B" * 20_000).hexdigest(), size=20_000),
+        "dkm": str(big),
+    }
+    row_big["path"] = "modules/big.dkm"
+    small, _, card = _two_rows(tmp_path)
+    up = MockUp(card, [])
+    up.chunk = 512  # 40 chunks: far more than the cap
+    events = []
+    T.install(
+        up,
+        ["test/big", "digikit/pluck"],
+        None,
+        events.append,
+        rows=[row_big, small[0]],
+        build=lambda m: None,
+    )
+    prog = [e for e in events if e["event"] == "progress"]
+    assert all(
+        e["id"] == "test/big" for e in prog
+    )  # pluck was on the card: skipped, no progress
+    assert 1 < len(prog) <= T.PROGRESS_EVENTS + 1, len(prog)
+    sent = [e["sent"] for e in prog]
+    assert sent == sorted(sent) and len(set(sent)) == len(sent)
+    assert prog[-1]["sent"] == prog[-1]["bytes"] == 20_000
+    # order: the module's upload, its progress, then its verify
+    kinds = [e["event"] for e in events if e.get("id") == "test/big"]
+    assert (
+        kinds[0] == "upload"
+        and kinds[-1] == "verify"
+        and set(kinds[1:-1]) == {"progress"}
+    )
+    # a file of one chunk reports once, at 100 %
+    cb_events = []
+    cb = T.upload_progress(cb_events.append, "a/b", 700)
+    cb(700, 700)
+    assert cb_events == [{"event": "progress", "id": "a/b", "sent": 700, "bytes": 700}]
+    # a tiny file with many chunk calls does not emit per call: at most `step` bytes apart
+    cb_events.clear()
+    cb = T.upload_progress(cb_events.append, "a/c", 5)
+    for n in range(1, 6):
+        cb(n, 5)
+    assert cb_events[-1]["sent"] == 5 and len(cb_events) <= T.PROGRESS_EVENTS + 1

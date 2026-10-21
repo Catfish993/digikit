@@ -14,7 +14,10 @@ import {
   DONE_ON_CARD,
   eventText,
   installModules,
-  onDevice,
+  onDeviceWithPending,
+  progressFailed,
+  rowStatus,
+  type RowStatus,
   progressFraction,
   rowKey,
   startProgress,
@@ -73,14 +76,20 @@ export default function TransferPage(): JSX.Element {
     const p = progress();
     if (p) setProgress(applyEvent(p, e));
     setVerified(applyVerified(verified(), e));
-    setLog((l) => [...l, eventText(e)]);
+    if (e.event !== 'result' && e.event !== 'progress') setLog((l) => [...l, eventText(e)]);
   };
   const install = () =>
     run('Installing', async () => {
       const v = lastView();
       if (!v) return;
       const modules = installModules(v, ticks());
-      setProgress(startProgress(modules, false));
+      setProgress(
+        startProgress(
+          modules,
+          false,
+          Object.fromEntries(v.modules.filter((r) => r.id).map((r) => [r.id as string, r.file_size])),
+        ),
+      );
       setLog([]);
       try {
         await transferBackend.install(modules, onEvent);
@@ -145,7 +154,10 @@ export default function TransferPage(): JSX.Element {
     const v = lastView();
     return v ? installModules(v, ticks()).length : 0;
   };
-  const verifiedMark = (r: TransferRow) => verified()[r.path];
+  const status = (r: TransferRow) => rowStatus(progress(), verified(), r.path);
+  const upBytes = (st: RowStatus) => (st.kind === 'uploading' ? st.bytes : 0);
+  const upSent = (st: RowStatus) => (st.kind === 'uploading' ? st.sent : 0);
+  const upPct = (st: RowStatus) => (st.kind === 'uploading' && st.bytes ? Math.round((100 * st.sent) / st.bytes) : 0);
   const pct = () => Math.round(100 * progressFraction(progress()!));
 
   return (
@@ -216,48 +228,6 @@ export default function TransferPage(): JSX.Element {
       <Show when={lastView()} fallback={<p class="empty">{busy() ? `${busy()}…` : 'No module list yet.'}</p>}>
         {(v) => (
           <div class="cols">
-            <section class="col" aria-label="On device">
-              <h3>On device</h3>
-              <Show when={onDevice(v()).length} fallback={<p class="empty">The card holds no modules.</p>}>
-                <ul class="rows">
-                  <For each={onDevice(v())}>
-                    {(r) => (
-                      <li>
-                        <span class="name" title={r.path}>
-                          {label(r)}
-                          <Show when={!r.id}>
-                            <em> not from this repo</em>
-                          </Show>
-                        </span>
-                        <span class="dim">{r.version ?? ''}</span>
-                        <span class="dim">{formatBytes(r.file_size)}</span>
-                        <span class="state">{stateText(r)}</span>
-                        <Show when={verifiedMark(r)}>
-                          <span
-                            class="check"
-                            classList={{ ok: verifiedMark(r) === 'ok', bad: verifiedMark(r) === 'failed' }}
-                          >
-                            {verifiedMark(r) === 'ok' ? 'verified' : 'verify failed'}
-                          </span>
-                        </Show>
-                        <Show when={!r.id}>
-                          <button
-                            type="button"
-                            class="mini"
-                            disabled={!!busy()}
-                            aria-label={`Delete ${r.path}`}
-                            onClick={() => void remove(r)}
-                          >
-                            Delete
-                          </button>
-                        </Show>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-            </section>
-
             <section class="col" aria-label="Available">
               <div class="colhead">
                 <h3>Available</h3>
@@ -329,6 +299,66 @@ export default function TransferPage(): JSX.Element {
                 )}
               </For>
             </section>
+
+            <section class="col" aria-label="On device">
+              <h3>On device</h3>
+              <Show
+                when={onDeviceWithPending(v(), progress()).length}
+                fallback={<p class="empty">The card holds no modules.</p>}
+              >
+                <ul class="rows">
+                  <For each={onDeviceWithPending(v(), progress())}>
+                    {(r) => (
+                      <li>
+                        <span class="name" title={r.path}>
+                          {label(r)}
+                          <Show when={!r.id}>
+                            <em> not from this repo</em>
+                          </Show>
+                        </span>
+                        <span class="dim">{r.version ?? ''}</span>
+                        <span class="dim">{formatBytes(r.file_size)}</span>
+                        <Show when={status(r)?.kind !== 'uploading'}>
+                          <span class="state">{stateText(r)}</span>
+                        </Show>
+                        <Show when={status(r)}>
+                          {(st) => (
+                            <>
+                              <Show when={st().kind === 'uploading'}>
+                                <span class="up">
+                                  <progress max={upBytes(st())} value={upSent(st())} />
+                                  <span class="dim">{upPct(st())}%</span>
+                                </span>
+                              </Show>
+                              <Show when={st().kind === 'verifying'}>
+                                <span class="check wait">verifying…</span>
+                              </Show>
+                              <Show when={st().kind === 'ok'}>
+                                <span class="check ok">verified</span>
+                              </Show>
+                              <Show when={st().kind === 'failed'}>
+                                <span class="check bad">failed</span>
+                              </Show>
+                            </>
+                          )}
+                        </Show>
+                        <Show when={!r.id}>
+                          <button
+                            type="button"
+                            class="mini"
+                            disabled={!!busy()}
+                            aria-label={`Delete ${r.path}`}
+                            onClick={() => void remove(r)}
+                          >
+                            Delete
+                          </button>
+                        </Show>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </section>
           </div>
         )}
       </Show>
@@ -336,22 +366,9 @@ export default function TransferPage(): JSX.Element {
       <Show when={progress()}>
         {(p) => (
           <footer class="bar" role="status" aria-label="Transfer progress">
-            <div class="segs">
-              <For each={p().modules}>
-                {(m) => (
-                  <div class="seg" data-state={m.state} title={`${m.id}: ${m.state}`}>
-                    <span>{m.id.split('/').pop()}</span>
-                  </div>
-                )}
-              </For>
-              <Show when={p().restart !== 'none'}>
-                <div class="seg" data-state={p().restart} title="restart">
-                  <span>restart</span>
-                </div>
-              </Show>
-            </div>
+            <progress class="global" classList={{ failed: progressFailed(p()) }} max="100" value={pct()} />
             <span class="msg">
-              {pct()}% · {p().message}
+              {p().message || 'Starting…'} · {pct()}%
             </span>
           </footer>
         )}

@@ -50,7 +50,7 @@
 }
 .transfer-page .cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -167,7 +167,7 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
-/* the progress bar along the bottom: one segment per module, then select and restart */
+/* the progress bar along the bottom: one global bar and one line of text */
 .transfer-page .bar {
   position: sticky;
   bottom: 0;
@@ -179,47 +179,49 @@
   background: #121316;
   border-top: 1px solid #222428;
 }
-.transfer-page .segs {
-  display: flex;
-  gap: 4px;
-}
-.transfer-page .seg {
-  flex: 1;
-  min-width: 0;
-  height: 22px;
-  border-radius: 5px;
+.transfer-page progress {
+  appearance: none;
+  border: 0;
   background: #1d1f23;
-  color: var(--ink-3, #868b94);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  display: grid;
-  place-items: center;
+  border-radius: 5px;
   overflow: hidden;
 }
-.transfer-page .seg span {
-  padding-inline: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.transfer-page progress::-webkit-progress-bar {
+  background: #1d1f23;
 }
-.transfer-page .seg[data-state='build'],
-.transfer-page .seg[data-state='upload'],
-.transfer-page .seg[data-state='verify'] {
-  background: #3a2d0d;
-  color: #f3c76a;
+.transfer-page progress::-webkit-progress-value {
+  background: var(--amber, #f3b52c);
+  transition: width 0.15s ease;
 }
-.transfer-page .seg[data-state='ok'] {
-  background: #123a22;
-  color: #7be3a1;
+.transfer-page progress.global {
+  width: 100%;
+  height: 10px;
 }
-.transfer-page .seg[data-state='failed'] {
-  background: #4a1713;
-  color: #ffb4ab;
+.transfer-page progress.global::-webkit-progress-value {
+  background: #35c47a;
+}
+.transfer-page progress.global.failed::-webkit-progress-value {
+  background: #e5594d;
 }
 .transfer-page .msg {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--ink-2, #a9adb4);
+}
+/* a file's upload bar in its row of the On device list */
+.transfer-page .up {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.transfer-page .up progress {
+  flex: 1;
+  height: 6px;
+}
+.transfer-page .check.wait {
+  color: var(--ink-2, #a9adb4);
+  background: #1d1f23;
 }
 .transfer-page .log {
   margin: 0;

@@ -108,8 +108,10 @@ def upload_if_changed(
     data: bytes,
     have: dict[str, tuple[int, str]] | None = None,
     log: Callable[[str], None] = say,
+    progress: Callable[[int, int], None] | None = None,
 ) -> bool:
-    """PUT `data` at `path` unless LIST shows the same size and sha256 there (`have`: that listing, else asked for). True: uploaded."""
+    """PUT `data` at `path` unless LIST shows the same size and sha256 there (`have`: that listing, else asked for). True: uploaded.
+    `progress(sent, total)` is called after each DATA chunk the device acknowledged (not for a skipped upload)."""
     if have is None:
         have = {p: (n, h) for p, n, h in up.ls()}
     sha = hashlib.sha256(data).hexdigest()
@@ -117,7 +119,7 @@ def upload_if_changed(
         log(f"{path} is on the device ({len(data)} bytes, same sha256): not uploaded")
         return False
     t0 = time.monotonic()
-    up.put(path, data)
+    up.put(path, data, progress)
     log(
         f"uploaded {path}: {len(data)} bytes ({time.monotonic() - t0:.1f} s, sha256 checked on the device)"
     )

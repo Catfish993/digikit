@@ -9,6 +9,9 @@ import {
   eventText,
   installModules,
   onDevice,
+  onDeviceWithPending,
+  progressFailed,
+  rowStatus,
   progressFraction,
   startProgress,
   stateText,
@@ -87,37 +90,80 @@ test('texts', () => {
   assert.equal(warningText(view.modules[0]), '');
 });
 
-test('the install progress bar: one step per module, no select, green or red', () => {
-  let p = startProgress(['a/x', 'a/y'], false);
+test('the install progress: bytes by upload, small fixed shares, no select, no result step', () => {
+  let p = startProgress(['a/x', 'a/y'], false, { 'a/x': 10000, 'a/y': 10000 });
   assert.equal(p.restart, 'none');
   assert.equal('select' in p, false);
+  assert.equal(progressFraction(p), 0);
   const ev = (e) => (p = applyEvent(p, e));
-  ev({ event: 'upload', id: 'a/x', path: 'modules/x.dkm', bytes: 5 });
-  assert.equal(p.modules[0].state, 'upload');
+  ev({ event: 'upload', id: 'a/x', path: 'modules/x.dkm', bytes: 10000 });
+  // the build share of x is over; its bytes have not started
+  const base = progressFraction(p);
+  assert.ok(base > 0 && base < 0.1, String(base));
+  ev({ event: 'progress', id: 'a/x', sent: 5000, bytes: 10000 });
+  assert.equal(p.message, 'Uploading modules/x.dkm: 50%');
+  assert.ok(progressFraction(p) > base);
+  ev({ event: 'progress', id: 'a/x', sent: 10000, bytes: 10000 });
+  const full = progressFraction(p);
   ev({ event: 'verify', id: 'a/x', path: 'modules/x.dkm', ok: true });
+  assert.ok(progressFraction(p) > full);
   assert.deepEqual(
     p.modules.map((m) => m.state),
     ['ok', 'wait'],
   );
-  ev({ event: 'build', id: 'a/y' });
-  ev({ event: 'verify', id: 'a/y', path: 'modules/y.dkm', ok: false });
-  assert.deepEqual(
-    p.modules.map((m) => m.state),
-    ['ok', 'failed'],
-  );
-  assert.equal(progressFraction(p), 1 / 2);
-  // a clean run ends with done (not restarted): every module green
-  p = startProgress(['a/x'], false);
-  ev({ event: 'upload', id: 'a/x', path: 'p', bytes: 1 });
-  ev({ event: 'verify', id: 'a/x', path: 'p', ok: true });
-  ev({ event: 'done', restarted: false, selected: [] });
+  // a skipped upload jumps straight to the verify: all its bytes count at once
+  ev({ event: 'upload', id: 'a/y', path: 'modules/y.dkm', bytes: 10000 });
+  const before = progressFraction(p);
+  ev({ event: 'skip', id: 'a/y' });
+  assert.ok(progressFraction(p) > before);
+  assert.equal(p.modules[1].sent, 10000);
+  ev({ event: 'verify', id: 'a/y', path: 'modules/y.dkm', ok: true });
   assert.equal(progressFraction(p), 1);
+  assert.equal(progressFailed(p), false);
+  // the done text is the last text; the `result` line does not replace it
+  ev({ event: 'done', restarted: false, selected: [] });
   assert.equal(p.message, DONE_ON_CARD);
-  // an error marks the active step red
+  ev({ event: 'result', built: [], uploaded: [], selected: [], restarted: false });
+  assert.equal(p.message, DONE_ON_CARD);
+  // a failed verify is red and not counted
+  p = startProgress(['a/x'], false, { 'a/x': 100 });
+  ev({ event: 'upload', id: 'a/x', path: 'p', bytes: 100 });
+  ev({ event: 'verify', id: 'a/x', path: 'p', ok: false });
+  assert.equal(p.modules[0].state, 'failed');
+  assert.ok(progressFraction(p) < 1);
+  assert.equal(progressFailed(p), true);
+  // an error mid-upload marks the module failed
   p = startProgress(['a/x'], false);
-  ev({ event: 'upload', id: 'a/x', path: 'p', bytes: 1 });
+  ev({ event: 'upload', id: 'a/x', path: 'p', bytes: 100 });
   ev({ event: 'error', message: 'full' });
   assert.equal(p.modules[0].state, 'failed');
+});
+
+test('a file row: upload bar, verifying, then verified or failed; a pending row while it uploads', () => {
+  let p = startProgress(['test/sine'], false, { 'test/sine': 700 });
+  assert.equal(rowStatus(p, {}, 'modules/sine.dkm'), undefined);
+  p = applyEvent(p, { event: 'upload', id: 'test/sine', path: 'modules/sine.dkm', bytes: 700 });
+  assert.deepEqual(rowStatus(p, {}, 'modules/sine.dkm'), { kind: 'uploading', sent: 0, bytes: 700 });
+  // the file is not on the card yet: the On device list gets a pending row for it
+  const rows = onDeviceWithPending(view, p);
+  const pending = rows.find((r) => r.path === 'modules/sine.dkm');
+  assert.ok(pending);
+  assert.equal(pending.id, 'test/sine');
+  assert.equal(pending.file_size, 700);
+  assert.equal(rows.filter((r) => r.path === 'modules/pluck.dkm').length, 1); // no double rows
+  p = applyEvent(p, { event: 'progress', id: 'test/sine', sent: 350, bytes: 700 });
+  assert.deepEqual(rowStatus(p, {}, 'modules/sine.dkm'), { kind: 'uploading', sent: 350, bytes: 700 });
+  p = applyEvent(p, { event: 'progress', id: 'test/sine', sent: 700, bytes: 700 });
+  assert.deepEqual(rowStatus(p, {}, 'modules/sine.dkm'), { kind: 'verifying' });
+  p = applyEvent(p, { event: 'verify', id: 'test/sine', path: 'modules/sine.dkm', ok: true });
+  assert.deepEqual(rowStatus(p, {}, 'modules/sine.dkm'), { kind: 'ok' });
+  // the file that is already on the card gets its bar in its own row (no pending row)
+  p = startProgress(['digikit/pluck'], false);
+  p = applyEvent(p, { event: 'upload', id: 'digikit/pluck', path: 'modules/pluck.dkm', bytes: 100 });
+  assert.equal(onDeviceWithPending(view, p).length, onDevice(view).length);
+  assert.equal(rowStatus(p, {}, 'modules/pluck.dkm').kind, 'uploading');
+  // without an install: the last VERIFY
+  assert.deepEqual(rowStatus(undefined, { 'modules/x.dkm': 'failed' }, 'modules/x.dkm'), { kind: 'failed' });
 });
 
 test('the restart progress: one step, green after the boot, red on an error', () => {
@@ -133,6 +179,7 @@ test('the restart progress: one step, green after the boot, red on an error', ()
   ev({ event: 'restart' });
   ev({ event: 'error', message: 'no new boot' });
   assert.equal(p.restart, 'failed');
+  assert.equal(progressFailed(p), true);
 });
 
 test('verify results are kept by path', () => {
