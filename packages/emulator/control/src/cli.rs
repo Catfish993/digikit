@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use digi_coupled::{AudioMode, AudioOptions};
 
-pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--control|--no-control] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
+pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--control|--no-control] [--runtime|--no-runtime] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
 
 #[derive(Clone, Debug, Default)]
 pub struct StartupArgs {
@@ -24,6 +24,9 @@ pub struct StartupArgs {
     pub paused: bool,
     /// Directory for sockets and the discovery file (default `out/native/run`).
     pub run_dir: Option<PathBuf>,
+    /// `--runtime` / `--no-runtime`: load the startup .syx with the digikit runtime patched in (`firmware.load {runtime}`);
+    /// None leaves the host's default.
+    pub runtime: Option<bool>,
 }
 
 pub fn parse_values(
@@ -48,6 +51,7 @@ pub fn parse_values(
     let mut run_dir = None;
     let mut card_folder = None;
     let mut card_sync = true;
+    let mut runtime = None;
     while let Some(value) = values.next() {
         let mut path = |label: &str| -> Result<PathBuf, String> {
             values
@@ -65,6 +69,10 @@ pub fn parse_values(
             control = Some(true);
         } else if value == "--no-control" {
             control = Some(false);
+        } else if value == "--runtime" {
+            runtime = Some(true);
+        } else if value == "--no-runtime" {
+            runtime = Some(false);
         } else if value == "--paused" {
             paused = true;
         } else if value == "--run-dir" {
@@ -193,6 +201,7 @@ pub fn parse_values(
         control,
         paused,
         run_dir,
+        runtime,
     })
 }
 
@@ -212,6 +221,9 @@ mod tests {
         assert_eq!(a.run_dir, Some("d".into()));
         assert_eq!(parse(&["--no-control"]).unwrap().control, Some(false));
         assert_eq!(parse(&[]).unwrap().control, None);
+        assert_eq!(parse(&["--runtime"]).unwrap().runtime, Some(true));
+        assert_eq!(parse(&["--no-runtime"]).unwrap().runtime, Some(false));
+        assert_eq!(parse(&[]).unwrap().runtime, None);
     }
 
     #[test]

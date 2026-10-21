@@ -58,6 +58,9 @@ fn main() {
         if let Some(card) = &startup.card_image {
             params["card"] = card.display().to_string().into();
         }
+        if startup.runtime == Some(true) {
+            params["runtime"] = true.into();
+        }
         if let Err(error) = handle.call("firmware.load", params) {
             eprintln!("digi-emud: {error}");
             std::process::exit(2);

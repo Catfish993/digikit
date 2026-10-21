@@ -94,6 +94,16 @@ repository root (`Config.repo_root`, else `$DIGI_REPO_ROOT`, else the repository
 answers `FIRMWARE_REJECTED` with that reason until a shipped bundle exists. The reply gets `runtime`:
 `{patched, set, modules, cache_hit, base_sha256, cache_file, seconds}` (`cache_hit` is the patched image; the snapshot cache keeps
 its own `cache_hit` at the top level), or `{patched: false, reason}` for an input with a record. `patch_set` without `runtime` is refused.
+`status.firmware.runtime` keeps that report for the running image (null when no runtime was requested; a `restart` keeps it).
+
+`firmware.load {replace: true}` loads the file as the first firmware of the controller: nothing of the running one is reused, and the file
+may be another device or version (without `replace` an image is a variant of the running one and is injected). The desktop console's Open
+and Reload use it. A load without `card` gets the running DT2's card when the image is a DT2 image, else the card remembered for that
+exact stock firmware (desktop only), else none; an image of another device never gets a card.
+
+`session` (any method, an integer): the webview's session token (the desktop's `emu_call`). `firmware.load` and `restart` start the session
+they carry (it must be newer than the current one; it is taken when the call succeeds); every other method must carry the current one,
+else the answer is `STALE_SESSION` ("stale emulator session") and nothing runs. Without `session` nothing is checked (the socket's clients).
 Time (release build): the first patch of a 1.17 or 1.12 image takes about 1.3 s, a cached one about 0.08 s.
 
 `framebuffer.get {hash?, data?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
