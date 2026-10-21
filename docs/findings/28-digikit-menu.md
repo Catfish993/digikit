@@ -157,6 +157,8 @@ Lane r1, 2026-10-16, native emulator, all four images. Everything below is **[D]
 - **Smoke harness.** The cells `dt2-1.16`, `dt2-1.17`, `dn2-1.12` with `[core/digikit-menu]` now install the runtime too (requires);
   the harness card has no store, so MODULES still shows NO STORE; only the ABOUT frame of the `menu` test changed.
 
+- **Later pages.** HEALTH (finding 41) and MEMORY (finding 57, the runtime's CAPACITY entries as text rows and bars) were added after this finding; DEBUG toggles the debug log (finding 46).
+
 ### Still open
 - **[O]** Not on hardware. The staging buffer, the arena and the menu's heap block are the only memory the load touches; the flush
   check is strong on DT2, weak on DN2 (finding 25).
