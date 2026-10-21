@@ -89,6 +89,6 @@ Existing scenarios `equiv-dyn-pluck`, `menu-dkrun-pluck`, `rung-c` pass (see the
 
 ## 6. Open
 
-- **[O]** On a device the guard has not run. The first runtime-5 flash should check INFO (`runtime: 5`), then the log on a pluck with an LFO on TUNE: expect no `MACHINE_FAULT` (the clamp prevents it); a `MACHINE_FAULT` would be a new routine bug.
+- **[C]** The guard has run on a device: rt021 (runtime 0.2.1) with `digikit/pluck` and an LFO on TUNE at large depth on a Digitakt II, 2026-10-21: 0 faults, no `MACHINE_FAULT` (the clamp prevents it). The guard has not yet fired on a device. Sound result: finding 54.
 - **[O]** The new reply-record words are in rows 10 to 12 (entries 11 and 12). The same argument as for rows 1 to 9 (finding 31); not read by any firmware path found.
 - **[O]** The clamp loop could be about 100 instructions cheaper if the frame position of a track's knobs were computed once instead of per knob.
