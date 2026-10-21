@@ -45,34 +45,37 @@ def _ranges_ok(mods: list[dict], key_off: str, key_len: str, lo: int, hi: int) -
     )
 
 
-def verify(c: Any, rig: Any, g: P.Geometry, case: P.Case) -> dict[str, Any]:
-    """The checks every case shares, and those of the case. Returns MODULES."""
+def boot_checks(
+    c: Any,
+    rig: Any,
+    g: P.Geometry,
+    tag: str,
+    names: list[str],
+    wants: list[int | str],
+    what: str,
+) -> dict[str, Any]:
+    """The checks every boot of a set shares: the results WANTS of the boot report, MODULES lists exactly the loaded modules, ranges inside
+    their areas and disjoint, the table check never failed. Returns MODULES."""
     up = D.uploader(rig)
     info = rig.boot_info()
     got = list(info["results"])
-    want = [m.want for m in case.mods]
     c.check(
-        f"{case.name}: results of the boot report: {case.what}",
-        info["count"] == len(want)
-        and len(got) == len(want)
-        and all(_result_ok(a, b) for a, b in zip(got, want, strict=True)),
-        f"got {got}, want {want}",
+        f"{tag}: results of the boot report: {what}",
+        info["count"] == len(wants)
+        and len(got) == len(wants)
+        and all(_result_ok(a, b) for a, b in zip(got, wants, strict=True)),
+        f"got {got}, want {wants}",
     )
     m = up.modules()
-    loaded = [
-        mod.name
-        for mod, r in zip(case.mods, got, strict=True)
-        if _result_ok(r, P.LOADED) and mod.want == P.LOADED
-    ]
-    names = [x["name"] for x in m["modules"]]
-    c.check(
-        f"{case.name}: MODULES lists exactly the loaded modules, in order",
-        names == loaded and m["total"] == len(loaded),
-        f"{names} vs {loaded}",
-    )
     mods = m["modules"]
+    loaded = [n for n, w in zip(names, wants, strict=True) if w == P.LOADED]
     c.check(
-        f"{case.name}: ColdFire blocks lie in the arena and do not overlap; DSP ranges lie in the area and do not overlap",
+        f"{tag}: MODULES lists exactly the loaded modules, in order",
+        [x["name"] for x in mods] == loaded and m["total"] == len(loaded),
+        f"{[x['name'] for x in mods]} vs {loaded}",
+    )
+    c.check(
+        f"{tag}: ColdFire blocks lie in the arena and do not overlap; DSP ranges lie in the area and do not overlap",
         _ranges_ok(mods, "cf_base", "cf_size", g.arena_lo, g.arena_hi)
         and _ranges_ok(mods, "dsp_off", "dsp_len", 0, g.dsp_area),
         str(
@@ -84,11 +87,24 @@ def verify(c: Any, rig: Any, g: P.Geometry, case: P.Case) -> dict[str, Any]:
     )
     bad = up.peek(M.sym(rig.plan, "core/runtime", "DKRT_TABLE_BAD"), 1)[0]
     c.check(
-        f"{case.name}: the runtime's table check never failed (a refused module left nothing behind)",
+        f"{tag}: the runtime's table check never failed (a refused module left nothing behind)",
         bad == 0 and not D.events(rig, "TABLE_BAD"),
         f"DKRT_TABLE_BAD {bad}",
     )
     return m
+
+
+def verify(c: Any, rig: Any, g: P.Geometry, case: P.Case) -> dict[str, Any]:
+    """The checks every case shares. Returns MODULES."""
+    return boot_checks(
+        c,
+        rig,
+        g,
+        case.name,
+        [m.name for m in case.mods],
+        [m.want for m in case.mods],
+        case.what,
+    )
 
 
 def _by_name(m: dict, name: str) -> dict:
@@ -254,11 +270,6 @@ def run_capacity(c: Any) -> None:
 # ---- the full set: every limit used at once, behind a reference module ---------------------------------------------------------
 
 
-def full_wants(refs: int, fill: list[P.Mod]) -> list[int | str]:
-    """The results of a boot with REFS reference modules (all loaded) and the full set behind them."""
-    return [P.LOADED] * refs + [m.want for m in fill]
-
-
 def check_full(
     c: Any,
     rig: Any,
@@ -268,33 +279,25 @@ def check_full(
     names: list[str],
     exact_arena: bool = True,
 ) -> dict:
-    """The boot of a full set: every module has its result, MODULES lists the loaded ones, every resource is used up (no free arena byte, no
-    whole free DSP granule, every voice row and machine type owned) and the table check never failed. Returns MODULES."""
-    up = D.uploader(rig)
-    info = rig.boot_info()
-    got = list(info["results"])
-    c.check(
-        f"{tag}: results of the boot report: every module of the full set loaded, the three behind it refused (E_NOMEM, E_DSP_ROWS, E_DSP_NOSPACE)",
-        info["count"] == len(wants)
-        and all(_result_ok(a, b) for a, b in zip(got, wants, strict=True)),
-        f"got {got}, want {wants}",
+    """The boot of a full set: the shared checks, then every resource is used up (no whole free DSP granule, every voice row and machine
+    type owned, and with EXACT_ARENA no free arena byte: a coupled boot frees the DSP images' arena copies after the transfers)."""
+    m = boot_checks(
+        c,
+        rig,
+        g,
+        tag,
+        names,
+        wants,
+        "every module of the full set loaded, the three behind it refused (E_NOMEM, E_DSP_ROWS, E_DSP_NOSPACE)",
     )
-    m = up.modules()
-    loaded = [n for n, w in zip(names, wants, strict=True) if w == P.LOADED]
     mods = m["modules"]
-    c.check(
-        f"{tag}: MODULES lists exactly the loaded modules",
-        [x["name"] for x in mods] == loaded,
-        str([x["name"] for x in mods]),
-    )
-    full_rows = (1 << g.machine_rows) - 1
     owned = 0
     for x in mods:
         owned |= x["rows"]
     types = sorted({t for x in mods for t in x["types"]})
     c.check(
         f"{tag}: every voice row has an owner and every machine type is in use",
-        owned == full_rows
+        owned == (1 << g.machine_rows) - 1
         and types == list(range(g.type_first, g.type_first + g.machine_rows)),
         f"rows {owned:#x}, types {types}",
     )
@@ -304,18 +307,6 @@ def check_full(
         m["dsp_largest"] < P.DSP_GRANULE
         and (not exact_arena or (m["arena_free"] == 0 and m["arena_largest"] == 0)),
         f"dsp free {m['dsp_free']} largest {m['dsp_largest']}, arena free {m['arena_free']}",
-    )
-    c.check(
-        f"{tag}: ColdFire blocks and DSP ranges lie in their areas and do not overlap",
-        _ranges_ok(mods, "cf_base", "cf_size", g.arena_lo, g.arena_hi)
-        and _ranges_ok(mods, "dsp_off", "dsp_len", 0, g.dsp_area),
-        "",
-    )
-    bad = up.peek(M.sym(rig.plan, "core/runtime", "DKRT_TABLE_BAD"), 1)[0]
-    c.check(
-        f"{tag}: the runtime's table check never failed",
-        bad == 0 and not D.events(rig, "TABLE_BAD"),
-        f"DKRT_TABLE_BAD {bad}",
     )
     return m
 
@@ -345,7 +336,7 @@ def run_isolation(c: Any) -> None:
     cards = {"alone": c.card([ref_path]), "full": c.card([ref_path, *fill_paths])}
     wants: dict[str, list[int | str]] = {
         "alone": [P.LOADED],
-        "full": full_wants(1, fill),
+        "full": [P.LOADED, *(m.want for m in fill)],
     }
     trig = t.get("trig_frame", M.TRIG_FRAME if c.dt2 else M.TRIG_FRAME_DN2)
     hint = t.get("hint", 7 if c.dt2 else 5)
@@ -357,13 +348,9 @@ def run_isolation(c: Any) -> None:
             if key == "full":
                 m = check_full(c, rig, g, "full", wants[key], names, exact_arena=False)
             else:
-                info = rig.boot_info()
-                c.check(
-                    "alone: the reference loaded",
-                    info["count"] == 1 and _result_ok(info["results"][0], P.LOADED),
-                    str(info["results"]),
+                m = boot_checks(
+                    c, rig, g, key, [ref], wants[key], "the reference alone"
                 )
-                m = D.uploader(rig).modules()
             rec = _by_name(m, ref)
             base = M.sym(plan, "core/dsp-link", "_dl_area") + rec["dsp_off"]
             imports = M.run_imports(rig, plan)
