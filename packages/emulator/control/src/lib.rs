@@ -21,6 +21,7 @@ pub mod firmware;
 pub mod health;
 pub mod load;
 pub mod proto;
+pub mod runtime_patch;
 #[cfg(all(feature = "server", unix))]
 pub mod server;
 

@@ -4,6 +4,9 @@
 //! `.syx` decode and encode, aPLib pack, HMAC seal, port lockfiles, linking, apply, verify. Toolchains
 //! and firmware databases are used only when modules and ports are built (Python, `tools/patchkit/pk_*.py`).
 
+/// A hash of this crate's sources (build.rs): a cache of patched images keys on it.
+pub const SRC_ID: &str = env!("PATCHKIT_SRC_ID");
+
 #[macro_use]
 pub mod error;
 pub mod aplib;

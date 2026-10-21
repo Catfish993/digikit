@@ -37,6 +37,7 @@ use crate::{
     health::{self, Alert, Health},
     load,
     proto::{Params, RpcError, RpcResult, base64, code},
+    runtime_patch,
 };
 
 pub const MAX_SYX: usize = 32 * 1024 * 1024;
@@ -287,6 +288,9 @@ pub struct Config {
     /// The +Drive folder the startup card (`firmware.load`'s `card`) was built from: `card.export` writes
     /// there, and with `sync` a quit does so too.
     pub card_folder: Option<CardSource>,
+    /// The repository root that `firmware.load {runtime: true}` reads the module library and device files from
+    /// (default: `$DIGI_REPO_ROOT`, else the working directory's repository; see `runtime_patch::find_root`).
+    pub repo_root: Option<PathBuf>,
 }
 
 /// A +Drive folder and what to do with the firmware's changes to its card.
@@ -310,6 +314,7 @@ impl Config {
             on_quit: None,
             remember_card: false,
             card_folder: None,
+            repo_root: None,
         }
     }
 }
@@ -523,6 +528,7 @@ struct Actor {
     remember_card: bool,
     /// Taken by the first load that mounts a card image.
     startup_card_folder: Option<CardSource>,
+    repo_root: Option<PathBuf>,
     quit: bool,
     /// Fault, DSP halt and main-loop stall detection (events `fault`, `halt`, `stall`).
     health: Health,
@@ -604,6 +610,7 @@ impl Actor {
             want_auto_no: false,
             remember_card: config.remember_card,
             startup_card_folder: config.card_folder,
+            repo_root: config.repo_root,
             quit: false,
             health: Health::new(
                 std::env::var("DIGI_STALL_MS")
@@ -2171,7 +2178,7 @@ impl Actor {
     fn firmware_load(
         &mut self,
         p: &Params,
-        bytes: Vec<u8>,
+        mut bytes: Vec<u8>,
         reply: &RpcReply,
     ) -> Result<Option<Value>, RpcError> {
         let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, m);
@@ -2191,7 +2198,35 @@ impl Actor {
         }
         let force = p.opt_bool("force")?.unwrap_or(false);
         self.want_auto_no = p.opt_bool("auto_no")?.unwrap_or(false);
-        let base_param = p.opt_str("base_sha256")?.map(str::to_ascii_lowercase);
+        let mut base_param = p.opt_str("base_sha256")?.map(str::to_ascii_lowercase);
+        // `runtime`: patch the stock image with the device's patch set here (cached); a patched input is left as it is.
+        let runtime_requested = p.opt_bool("runtime")?.unwrap_or(false);
+        let patch_set = p.opt_str("patch_set")?;
+        if patch_set.is_some() && !runtime_requested {
+            return Err(RpcError::bad_params("patch_set needs runtime: true"));
+        }
+        let mut stock_base: Option<Vec<u8>> = None;
+        let mut runtime_report = None;
+        if runtime_requested {
+            let set = patch_set.unwrap_or("emulator");
+            let started = Instant::now();
+            let root = runtime_patch::find_root(self.repo_root.as_deref()).map_err(&rejected)?;
+            match runtime_patch::prepare(&root, &bytes, set).map_err(&rejected)? {
+                runtime_patch::Outcome::AlreadyPatched => {
+                    runtime_report = Some(json!({"patched": false, "reason": "the input has a patch record"}));
+                }
+                runtime_patch::Outcome::Patched(patched) => {
+                    runtime_report = Some(json!({
+                        "patched": true, "set": patched.set, "cache_hit": patched.cache_hit,
+                        "modules": patched.modules, "base_sha256": patched.base_sha256,
+                        "cache_file": patched.cache_file.display().to_string(),
+                        "seconds": started.elapsed().as_secs_f64(),
+                    }));
+                    base_param.get_or_insert_with(|| patched.base_sha256.clone());
+                    stock_base = Some(std::mem::replace(&mut bytes, patched.syx));
+                }
+            }
+        }
         let card_param = p.opt_str("card")?.map(PathBuf::from);
         let patch = match p.opt_str("dsp_patch")? {
             Some(file) => {
@@ -2217,6 +2252,9 @@ impl Actor {
             "main_changed": false, "sections_changed": [],
             "dsp": null, "audio": false, "cache_hit": false, "snapshot_ok": false,
         });
+        if let Some(r) = runtime_report {
+            report["runtime"] = r;
+        }
 
         // Running firmware to compare with.
         if self.loaded.is_some() {
@@ -2242,7 +2280,7 @@ impl Actor {
             if base_sha == new.sha256 {
                 self.load_stock(bytes, card, new, &mut report, start)?
             } else {
-                self.load_patched(bytes, card, new, base_sha, None, &mut report, start, reply)?
+                self.load_patched(bytes, card, new, base_sha, stock_base, &mut report, start, reply)?
             }
         } else {
             let loaded = self.loaded.as_ref().expect("loaded");

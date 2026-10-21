@@ -7,6 +7,7 @@ use std::fmt::Write;
 use std::path::PathBuf;
 
 fn main() {
+    src_id();
     let dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../devices");
     println!("cargo:rerun-if-changed={}", dir.display());
     let mut names: Vec<String> = std::fs::read_dir(&dir)
@@ -52,4 +53,32 @@ fn without_firmware(text: &str) -> String {
         }
     }
     out
+}
+
+/// `PATCHKIT_SRC_ID`: a hash of the crate's sources (FNV-1a over the files in name order). A cache of patched images keys on it
+/// (`patchkit::SRC_ID`), so a change to the linker or the apply code never serves an image made before it.
+fn src_id() {
+    let src = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src");
+    println!("cargo:rerun-if-changed={}", src.display());
+    let mut files = vec![];
+    let mut dirs = vec![src];
+    while let Some(d) = dirs.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                dirs.push(p);
+            } else {
+                println!("cargo:rerun-if-changed={}", p.display());
+                files.push(p);
+            }
+        }
+    }
+    files.sort();
+    let mut h: u64 = 0xcbf29ce484222325;
+    for f in files {
+        for b in std::fs::read(&f).unwrap_or_default() {
+            h = (h ^ u64::from(b)).wrapping_mul(0x100000001b3);
+        }
+    }
+    println!("cargo:rustc-env=PATCHKIT_SRC_ID={h:016x}");
 }

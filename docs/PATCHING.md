@@ -45,6 +45,10 @@ mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules digikit/m
 This writes `out/patch/mg.syx` and `out/patch/mg.plan.json` (every write with its owner, diffable). Without `-o` the
 name is `out/patch/<firmware>+<modules>.syx`. The command verifies the result before it reports success. Notes:
 
+- Without `--modules` the device's patch set is applied: `device` by default, `--set NAME` for another (`devices/*.toml`
+  `[patch_sets]`, roots only). `device` and `emulator` are both the flash-image modules of the rt021 images for now
+  (dynreg, dyndsp, digikit-menu and health, plus what they require); `emulator` is what the emulator patches in itself
+  (below), and will gain modules that a device does not take.
 - `--modules` is a comma-separated list of module ids (their path under `modules/`). The command line adds the
   modules they `requires`, like the web gallery, and says so (`added by requires: core/machines, ...`). A module that
   is not in the library, a missing requirement and a `requires` cycle are refused.
@@ -101,6 +105,11 @@ argument it takes the newest image under `out/patch/`. The report says how the i
 
 `--hot` passes `--start snapshot`: it never cold boots and fails when no saved state fits.
 
+`mise run patch:inject -- firmware/Digitakt_II_OS1.17.syx --runtime` (or `mise run emu:ctl -- load STOCK.syx --runtime`) lets the
+emulator patch the stock image itself: `firmware.load {runtime: true}` applies the `emulator` patch set in-process and caches the
+image in `out/runtime-cache/` (about 1.3 s the first time, 0.08 s after). `--patch-set NAME` picks another set. An image that already
+has a patch record is loaded as it is. Details: docs/CONTROL.md.
+
 Headless daemon with DSP audio (the flags `tools/control/digi_client.py` uses for its own daemons):
 
 ```sh
@@ -123,7 +132,7 @@ in the firmware and a card.
 
 ```sh
 uv run python -m tools.patchkit.patchkit patch --firmware firmware/Digitakt_II_OS1.17.syx \
-  --modules core/dynreg,core/dyndsp,core/digikit-menu,core/health -o out/patch/rt-dt2.syx
+  --set emulator -o out/patch/rt-dt2.syx          # the same as --modules core/dynreg,core/dyndsp,core/digikit-menu,core/health
 mise run module:pack -- digikit/pluck --device dt2       # out/patch/pluck-dt2.dkm (--device dn2 for the Digitone II)
 mkdir -p plus_drive/dt2 && cp notes.txt plus_drive/dt2/    # any file: the card is built only when the folder has content
 mise run workbench -- out/patch/rt-dt2.syx

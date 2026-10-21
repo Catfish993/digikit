@@ -12,7 +12,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
 
   inspect X.syx                          device, version, port, patch record
   check   --firmware X.syx [--modules a,b]  which modules fit, and why not
-  apply   --firmware X.syx --modules a,b [-o OUT.syx] [--plan plan.json] [--no-record (oracles only)]
+  apply   --firmware X.syx [--modules a,b | --set NAME] [-o OUT.syx] [--plan plan.json] [--no-record (oracles only)]
+                                         without --modules: the device's patch set (devices/*.toml [patch_sets]), `device` by default
   (any command that reads modules: [--modules-dir DIR], PATCHKIT_MODULES=dir:dir for extra module roots)
   explain --firmware X.syx (--modules a,b | --plan plan.json)   what a patch does, site by site
   verify  OUT.syx [--base X.syx]         re-decode and check an image
@@ -165,13 +166,23 @@ fn run(a: Args) -> Result<()> {
         }
         "check" | "apply" => {
             let fwp = flag(rest, "--firmware").ok_or_else(|| Error(USAGE.into()))?;
-            let ids: Vec<String> = flag(rest, "--modules")
-                .unwrap_or_default()
-                .split(',')
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .collect();
             let raw = read(&fwp)?;
+            let ids: Vec<String> = match flag(rest, "--modules") {
+                Some(m) => m
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect(),
+                // no --modules: the named set of the firmware's device (`device` unless --set says another)
+                None if cmd == "apply" || flag(rest, "--set").is_some() => {
+                    let short = Firmware::parse(&raw)?.device.short();
+                    let set = flag(rest, "--set").unwrap_or_else(|| "device".into());
+                    let info = patchkit::devdata::by_short(short)
+                        .ok_or_else(|| Error(format!("no device file for {short}")))?;
+                    info.patch_set(&set)?.to_vec()
+                }
+                None => vec![],
+            };
             let reg = registry(&a.root)?;
             let lib = library(&a.root, rest)?;
             let ids = with_requires(&lib, ids)?;

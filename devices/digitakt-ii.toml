@@ -128,6 +128,14 @@ dsp_l2_hi = 0x20100000
 # Free L2 that two DT2 functions load as literals: kept out until a path that uses it is found (finding 06).
 dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 
+# Named module sets, as roots (the modules they require are added). `patchkit apply` without --modules applies `device`
+# (`--set NAME` picks another); `firmware.load {runtime: true}` patches the stock image with `emulator` (`patch_set` picks
+# another). Both are the flash-image roots of the rt021 images for now; `emulator` will gain modules that a device does not
+# take (core/input, digikit/remote).
+[patch_sets]
+emulator = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health"]
+device = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health"]
+
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.
 # Channels 0..5 are linear -- code = channel * 8 + bit + 1, codes 1..48 --

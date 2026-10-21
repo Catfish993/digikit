@@ -4,6 +4,7 @@
 
 use crate::error::*;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 include!(concat!(env!("OUT_DIR"), "/device_files.rs"));
@@ -24,9 +25,19 @@ pub struct DeviceInfo {
     pub main_staged_max: u64,
     /// `[limits] fx_slots`: effects the device's chain takes (at most the contract's `DK_FX_MAX`).
     pub fx_slots: Option<u64>,
+    /// `[patch_sets]`: named module sets as roots (the modules they require are added), e.g. `emulator` and `device`.
+    pub patch_sets: BTreeMap<String, Vec<String>>,
 }
 
 impl DeviceInfo {
+    /// The roots of a named set (`device`, `emulator`).
+    pub fn patch_set(&self, name: &str) -> Result<&[String]> {
+        self.patch_sets.get(name).map(Vec::as_slice).ok_or_else(|| {
+            let known: Vec<&str> = self.patch_sets.keys().map(String::as_str).collect();
+            err!("{} has no patch set {name:?} (known: {})", self.short, known.join(", "))
+        })
+    }
+
     /// A device limit by the name a registry's `limit` key uses; `None` for an unknown name or a device file without it.
     pub fn limit(&self, name: &str) -> Option<u64> {
         match name {
@@ -45,6 +56,8 @@ struct File {
     digikit: Option<Digikit>,
     patch: Option<Patch>,
     limits: Option<LimitsDoc>,
+    #[serde(default)]
+    patch_sets: BTreeMap<String, Vec<String>>,
 }
 #[derive(Deserialize)]
 struct LimitsDoc {
@@ -99,6 +112,7 @@ fn parse(files: &[(&str, &str)]) -> Result<Vec<DeviceInfo>> {
             dsp_depacked_max: p.dsp_depacked_max,
             main_staged_max: p.main_staged_max,
             fx_slots: f.limits.and_then(|l| l.fx_slots),
+            patch_sets: f.patch_sets,
         });
     }
     Ok(out)

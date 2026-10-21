@@ -1,0 +1,224 @@
+//! `firmware.load {runtime: true}`: the stock image, patched in this process with a named module set of the device profile
+//! (`devices/*.toml` `[patch_sets]`, default `emulator`), so the emulator boots with the digikit runtime.
+//!
+//! The patched image is cached in `<root>/out/runtime-cache/<stock sha256>-<set>-<key>.syx`. The key hashes everything that
+//! decides the output: the modules of the set (manifest and object bytes), the device and port files, and the patchkit sources
+//! ([`patchkit::SRC_ID`]). An input that already has a patch record is used as it is.
+//!
+//! The module library and the device files are read from a repository root (a dev build: the checkout). A shipped app needs
+//! a bundle instead; until then a missing root is an error that says so.
+
+use std::path::{Path, PathBuf};
+
+use patchkit::{apply, devdata, firmware::Firmware, module::Library, port::Registry, verify};
+use sha2::{Digest, Sha256};
+
+/// What `firmware.load` reports about the runtime patch.
+#[derive(Debug)]
+pub struct Patched {
+    /// The image to load.
+    pub syx: Vec<u8>,
+    /// The stock image's SHA-256 (the base of the patched one).
+    pub base_sha256: String,
+    pub set: String,
+    /// The modules applied, requirements included, in apply order.
+    pub modules: Vec<String>,
+    pub cache_hit: bool,
+    pub cache_file: PathBuf,
+}
+
+/// The input as it goes on: patched here, or left alone because it carries a patch record.
+#[derive(Debug)]
+pub enum Outcome {
+    Patched(Patched),
+    AlreadyPatched,
+}
+
+/// The repository root: `configured`, else `$DIGI_REPO_ROOT`, else the nearest directory from the working directory up that
+/// holds `devices/ports`.
+pub fn find_root(configured: Option<&Path>) -> Result<PathBuf, String> {
+    let ok = |d: &Path| d.join("devices/ports").is_dir() && d.join("modules").is_dir();
+    if let Some(d) = configured {
+        return if ok(d) { Ok(d.to_path_buf()) } else { Err(no_root(&d.display().to_string())) };
+    }
+    if let Some(d) = std::env::var_os("DIGI_REPO_ROOT").map(PathBuf::from) {
+        return if ok(&d) { Ok(d) } else { Err(no_root(&format!("DIGI_REPO_ROOT={}", d.display()))) };
+    }
+    let mut d = std::env::current_dir().unwrap_or_default();
+    loop {
+        if ok(&d) {
+            return Ok(d);
+        }
+        if !d.pop() {
+            return Err(no_root("the working directory and its parents"));
+        }
+    }
+}
+
+fn no_root(looked: &str) -> String {
+    format!(
+        "runtime: no module library: {looked} has no modules/ and devices/ports/. A build outside the repository cannot \
+         patch the runtime in yet; start from the checkout or set DIGI_REPO_ROOT"
+    )
+}
+
+/// The cache key: a hash over everything that decides the patched image (see the module comment).
+pub fn cache_key(
+    root: &Path,
+    lib: &Library,
+    modules: &[String],
+    stock_sha256: &str,
+    set: &str,
+) -> Result<String, String> {
+    let mut h = Sha256::new();
+    let mut part = |label: &str, bytes: &[u8]| {
+        h.update((label.len() as u64).to_le_bytes());
+        h.update(label.as_bytes());
+        h.update((bytes.len() as u64).to_le_bytes());
+        h.update(bytes);
+    };
+    part("patchkit", patchkit::SRC_ID.as_bytes());
+    part("stock", stock_sha256.as_bytes());
+    part("set", set.as_bytes());
+    for id in modules {
+        let m = lib.get(id).ok_or_else(|| format!("runtime: unknown module {id}"))?;
+        part(id, m.digest.as_bytes());
+    }
+    // The device files and the ports lower the modules' typed sections and place them.
+    for dir in [root.join("devices"), root.join("devices/ports")] {
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .map_err(|e| format!("runtime: {}: {e}", dir.display()))?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|e| e == "toml"))
+            .collect();
+        files.sort();
+        for f in files {
+            let text = std::fs::read(&f).map_err(|e| format!("runtime: {}: {e}", f.display()))?;
+            part(&f.to_string_lossy(), &text);
+        }
+    }
+    Ok(format!("{:x}", h.finalize())[..16].to_string())
+}
+
+fn cache_file(root: &Path, stock_sha256: &str, set: &str, key: &str) -> PathBuf {
+    root.join("out/runtime-cache").join(format!("{stock_sha256}-{set}-{key}.syx"))
+}
+
+/// Patch `stock` with the device's `set` (or take the cached result). The cache is written whole or not at all.
+pub fn prepare(root: &Path, stock: &[u8], set: &str) -> Result<Outcome, String> {
+    let e = |x: patchkit::Error| x.to_string();
+    if verify::patch_record(stock).map_err(e)?.is_some() {
+        return Ok(Outcome::AlreadyPatched);
+    }
+    let fw = Firmware::parse(stock).map_err(e)?;
+    let device = devdata::by_short(fw.device.short())
+        .ok_or_else(|| format!("runtime: no device file for {}", fw.device.short()))?;
+    let roots = device.patch_set(set).map_err(e)?;
+    let lib = Library::scan_repo(root).map_err(e)?;
+    let (modules, _) = lib.with_requires(roots).map_err(e)?;
+    let key = cache_key(root, &lib, &modules, &fw.syx_sha256, set)?;
+    let file = cache_file(root, &fw.syx_sha256, set, &key);
+    let base_sha256 = fw.syx_sha256.clone();
+    let patched = |syx: Vec<u8>, modules: Vec<String>, cache_hit: bool| {
+        Ok(Outcome::Patched(Patched {
+            syx,
+            base_sha256: base_sha256.clone(),
+            set: set.to_string(),
+            modules,
+            cache_hit,
+            cache_file: file.clone(),
+        }))
+    };
+    if let Ok(syx) = std::fs::read(&file)
+        && verify::patch_record(&syx).ok().flatten().is_some_and(|r| r.base_sha256 == base_sha256)
+    {
+        return patched(syx, modules, true);
+    }
+    let reg = Registry::from_dir(&root.join("devices/ports")).map_err(e)?;
+    let out = apply::apply(stock, &reg, &lib, &modules).map_err(e)?;
+    write_whole(&file, &out.syx)?;
+    patched(out.syx, out.plan.modules, false)
+}
+
+fn write_whole(file: &Path, data: &[u8]) -> Result<(), String> {
+    let dir = file.parent().ok_or("runtime: bad cache path")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("runtime: {}: {e}", dir.display()))?;
+    let tmp = file.with_extension(format!("part{}", std::process::id()));
+    std::fs::write(&tmp, data).map_err(|e| format!("runtime: {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, file).map_err(|e| format!("runtime: {}: {e}", file.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+    }
+
+    fn lib_and_modules() -> (Library, Vec<String>) {
+        let lib = Library::scan_repo(&root()).unwrap();
+        let roots = devdata::by_short("dt2").unwrap().patch_set("emulator").unwrap();
+        let (modules, _) = lib.with_requires(roots).unwrap();
+        (lib, modules)
+    }
+
+    #[test]
+    fn the_key_follows_the_stock_image_the_set_and_the_modules() {
+        let (mut lib, modules) = lib_and_modules();
+        let key = |lib: &Library, stock: &str, set: &str| cache_key(&root(), lib, &modules, stock, set).unwrap();
+        let k = key(&lib, "aa", "emulator");
+        assert_eq!(k, key(&lib, "aa", "emulator"));
+        assert_ne!(k, key(&lib, "bb", "emulator"), "stock image");
+        assert_ne!(k, key(&lib, "aa", "device"), "set name");
+        // One changed byte of a module (its digest covers manifest and objects) is another key.
+        let m = lib.modules.iter_mut().find(|m| m.id() == "core/health").unwrap();
+        m.digest.push('x');
+        assert_ne!(k, key(&lib, "aa", "emulator"), "module bytes");
+    }
+
+    #[test]
+    fn a_missing_root_says_what_to_do() {
+        let err = find_root(Some(Path::new("/nonexistent-digikit-root"))).unwrap_err();
+        assert!(err.contains("DIGI_REPO_ROOT") && err.contains("no module library"), "{err}");
+    }
+
+    /// A stock image of the repository's firmware directory, or `None` (the test is skipped without firmware).
+    fn stock(name: &str) -> Option<Vec<u8>> {
+        std::fs::read(root().join("firmware").join(name)).ok()
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stock_is_patched_once_then_served_from_the_cache() {
+        let Some(stock) = stock("Digitakt_II_OS1.17.syx") else {
+            eprintln!("skipped: firmware/Digitakt_II_OS1.17.syx is absent");
+            return;
+        };
+        // A scratch root with the repository's modules and devices linked in, so the cache lands in a temp directory.
+        let dir = std::env::temp_dir().join(format!("digikit-runtime-patch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for d in ["modules", "devices", "tests"] {
+            std::os::unix::fs::symlink(root().join(d), dir.join(d)).unwrap();
+        }
+        let first = match prepare(&dir, &stock, "emulator").unwrap() {
+            Outcome::Patched(p) => p,
+            Outcome::AlreadyPatched => panic!("stock has no patch record"),
+        };
+        assert!(!first.cache_hit);
+        assert_eq!(first.modules.len(), 10);
+        assert!(first.cache_file.is_file());
+        let record = verify::patch_record(&first.syx).unwrap().unwrap();
+        assert_eq!(record.base_sha256, first.base_sha256);
+        let again = match prepare(&dir, &stock, "emulator").unwrap() {
+            Outcome::Patched(p) => p,
+            Outcome::AlreadyPatched => panic!("stock has no patch record"),
+        };
+        assert!(again.cache_hit);
+        assert_eq!(again.syx, first.syx);
+        // The patched image goes on as it is.
+        assert!(matches!(prepare(&dir, &first.syx, "emulator").unwrap(), Outcome::AlreadyPatched));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

@@ -284,7 +284,7 @@ description = "Build the pinned m68k-elf binutils/gcc (about 15 min) and Selache
 
 [tasks."patch"]
 run = "uv run python -m tools.patchkit.patchkit patch"
-description = "Apply modules to a stock firmware: mise run patch -- --firmware X.syx --modules a,b [-o OUT.syx] (writes out/patch/ and plan.json)"
+description = "Apply modules to a stock firmware: mise run patch -- --firmware X.syx [--modules a,b | --set NAME] [-o OUT.syx] (writes out/patch/ and plan.json; without --modules the device patch set, devices/*.toml [patch_sets])"
 
 [tasks."patch:preflight"]
 run = "uv run python -m tools.patchkit.patchkit preflight"
@@ -292,7 +292,7 @@ description = "Before flashing: mise run patch:preflight -- out/patch/X.syx (kno
 
 [tasks."patch:inject"]
 run = "uv run python -m tools.patchkit.patchkit inject"
-description = "Load a patched image into the running emulator (emu:ctl inject): mise run patch:inject [-- OUT.syx] [--hot]"
+description = "Load a patched image into the running emulator (emu:ctl inject): mise run patch:inject [-- OUT.syx] [--hot]; `-- STOCK.syx --runtime [--patch-set NAME]` lets the emulator patch the stock image itself"
 
 [tasks."patch:explain"]
 run = "uv run python -m tools.patchkit.patchkit explain"
