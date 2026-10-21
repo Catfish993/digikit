@@ -109,6 +109,9 @@ modules = 8
 machine_rows = 8
 arena_bytes = 524288
 stage_bytes = 65536
+fx_slots = 4
+param_rows = 16
+page_rows = 0
 
 # What patchkit needs of this device: the container and section limits of a port (written into devices/ports/*.toml by
 # tools/patchkit/port_resolve.py; docs/findings/01 "NOR flash map") and the DSP L2 range the free-region search runs in.

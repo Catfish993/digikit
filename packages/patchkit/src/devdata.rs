@@ -22,13 +22,33 @@ pub struct DeviceInfo {
     pub dsp_stored_max: u64,
     pub dsp_depacked_max: u64,
     pub main_staged_max: u64,
+    /// `[limits] fx_slots`: effects the device's chain takes (at most the contract's `DK_FX_MAX`).
+    pub fx_slots: Option<u64>,
 }
+
+impl DeviceInfo {
+    /// A device limit by the name a registry's `limit` key uses; `None` for an unknown name or a device file without it.
+    pub fn limit(&self, name: &str) -> Option<u64> {
+        match name {
+            "fx_slots" => self.fx_slots,
+            _ => None,
+        }
+    }
+}
+
+/// Names a registry's `limit` may use.
+pub const LIMIT_NAMES: [&str; 1] = ["fx_slots"];
 
 #[derive(Deserialize)]
 struct File {
     device: Option<Dev>,
     digikit: Option<Digikit>,
     patch: Option<Patch>,
+    limits: Option<LimitsDoc>,
+}
+#[derive(Deserialize)]
+struct LimitsDoc {
+    fx_slots: Option<u64>,
 }
 #[derive(Deserialize)]
 struct Dev {
@@ -78,6 +98,7 @@ fn parse(files: &[(&str, &str)]) -> Result<Vec<DeviceInfo>> {
             dsp_stored_max: p.dsp_stored_max,
             dsp_depacked_max: p.dsp_depacked_max,
             main_staged_max: p.main_staged_max,
+            fx_slots: f.limits.and_then(|l| l.fx_slots),
         });
     }
     Ok(out)

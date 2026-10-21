@@ -163,6 +163,15 @@ pub fn validate_manifest(m: &Manifest) -> Result<()> {
         if r.max == 0 {
             return Err(err!("{id}: registry {}: max is 0", r.name));
         }
+        if let Some(l) = &r.limit
+            && !crate::devdata::LIMIT_NAMES.contains(&l.as_str())
+        {
+            return Err(err!(
+                "{id}: registry {}: limit {l:?} is not a device limit ({})",
+                r.name,
+                crate::devdata::LIMIT_NAMES.join(", ")
+            ));
+        }
         expr::parse(&r.first.text()).map_err(|e| err!("{id}: registry {} first: {e}", r.name))?;
         if r.gap.is_some() && r.index_table.is_none() {
             return Err(err!(
@@ -425,6 +434,17 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
                 r.def.name,
                 r.entries.len(),
                 r.def.max
+            ));
+        }
+        // a device limit below the framework's maximum (`[limits]` of the device file)
+        if let Some(l) = &r.def.limit
+            && let Some(cap) = crate::devdata::by_short(dev).and_then(|d| d.limit(l))
+            && r.entries.len() as u64 > cap
+        {
+            return Err(err!(
+                "registry {} is full on {dev}: {} entries, the device file's [limits] {l} is {cap}",
+                r.def.name,
+                r.entries.len()
             ));
         }
         // fields without a value anywhere are an error here, so the sizes below cannot fail later

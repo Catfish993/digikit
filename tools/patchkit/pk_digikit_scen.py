@@ -231,6 +231,11 @@ class Ctx:
         self.env.pack(module, file)
         return f"modules/{file}"
 
+    def pack_synth(self, spec: str, file: str) -> str:
+        """A synthetic module (`patchkit synth-dkm`) in the store folder; returns its store path."""
+        self.env.synth(spec, file)
+        return f"modules/{file}"
+
     def card(
         self,
         selection: list[str] | None,

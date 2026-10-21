@@ -42,6 +42,24 @@ Plan a machine for 16 voices at once: 16 x your `max_cycles_block` must fit with
 Large buffers (delay lines, resonator banks) are the first limit on the Digitone II. Size them per voice and say the total
 in the module README.
 
+## Limits of the loader
+
+The runtime refuses a module that does not fit, with its own code (docs/findings/57-capacity-isolation.md). Limits come from `[limits]` of `devices/*.toml`.
+
+| | Digitakt II | Digitone II | Refusal |
+| --- | --- | --- | --- |
+| modules at once (selection) | 8 | 8 | SELECT of a ninth: `E_SEL_COUNT` |
+| module file | 64 KiB | 64 KiB | `E_TOO_BIG` |
+| ColdFire memory (image + bss, all modules) | 512 KiB | 512 KiB | `E_NOMEM` |
+| DSP area (all modules; 64-byte granules, 60 bytes unusable) | 512 KiB | 320 KiB | `E_DSP_NOSPACE` |
+| machine types, voice rows | 8 | 8 | a ninth machine `E_TYPE_RANGE`, a ninth voice `E_DSP_ROWS` |
+| parameter rows | 16 | 16 | `E_PARAM_FULL` |
+| page rows | none | 8 | `E_PAGE_FULL` |
+| effects in the chain (patched in) | 4 | 4 | patchkit refuses at build time |
+
+`bss` is not stored in the file: a large work buffer costs arena or DSP area, not file size.
+
+
 ## Stock patterns worth copying
 
 - Many stock machines render 64 samples at 96 kHz and decimate to 32 (DT2 sample machines, DN2 FM TONE): it lowers

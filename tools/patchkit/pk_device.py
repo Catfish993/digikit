@@ -81,6 +81,62 @@ def store() -> Store:
     return first
 
 
+@dataclass(frozen=True)
+class Limits:
+    """A device's capacity limits (`[limits]` and `[digikit] dsp_area_bytes` of its file); see docs/plans/capacity-isolation.md."""
+
+    modules: int  # module records (the selection record holds `sel_max` paths)
+    machine_rows: int  # run-time machine types = machine rows = DSP voice rows
+    arena_bytes: int  # the ColdFire module arena
+    stage_bytes: int  # the staging buffer: the largest .dkm file
+    fx_slots: int  # effects in the chain
+    param_rows: int  # parameter rows core/dynreg reserves
+    page_rows: int  # page rows core/dynreg reserves (0 on a device without)
+    dsp_area_bytes: int  # the DSP run-time area
+
+
+@cache
+def contract_max() -> dict[str, int]:
+    """`[limits.max]` of `sdk/sdk.toml`: the contract maxima the device limits may not pass. `sel_max` is the selection record's path count
+    (the same number as `modules`: the record format)."""
+    m = tomllib.loads((ROOT / "sdk" / "sdk.toml").read_text())["limits"]["max"]
+    return {**m, "sel_max": m["modules"]}
+
+
+def limits(short: str) -> Limits:
+    """The capacity limits of device SHORT, read from its device file (generated into the runtime by `patchkit gen`)."""
+    d = load(short)
+    return Limits(
+        **{
+            k: d["limits"][k]
+            for k in Limits.__dataclass_fields__
+            if k != "dsp_area_bytes"
+        },
+        dsp_area_bytes=d["digikit"]["dsp_area_bytes"],
+    )
+
+
+def shared_limits() -> Limits:
+    """The limits every digikit device agrees on, except the per-device ones (`dsp_area_bytes`, `fx_slots`, `page_rows`), which are
+    taken from the first device. Raises when a shared limit differs: the runtime is one image for all devices."""
+    devs = digikit_devices()
+    first = limits(devs[0])
+    for d in devs[1:]:
+        o = limits(d)
+        for k in (
+            "modules",
+            "machine_rows",
+            "arena_bytes",
+            "stage_bytes",
+            "param_rows",
+        ):
+            if getattr(o, k) != getattr(first, k):
+                raise RuntimeError(
+                    f"[limits] {k} differs between {devs[0]} and {d}; the runtime is one image for all devices"
+                )
+    return first
+
+
 def peek_ranges(short: str) -> list[tuple[int, int]]:
     """RAM ranges `[lo, hi)` the PEEK command of the upload protocol may read (`[digikit] peek`)."""
     return [(lo, hi) for lo, hi in load(short)["digikit"]["peek"]]

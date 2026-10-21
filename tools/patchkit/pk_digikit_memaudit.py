@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.device import dklog as L
+from tools.patchkit import pk_capacity as P
 from tools.patchkit import pk_dkrt_boot as B
 from tools.patchkit import pk_dkrt_machine as M
 
@@ -222,16 +223,36 @@ def run_memaudit(c: Any) -> None:
     names = list(t["modules"])
     files = {m: c.pack(m, m.split("/")[-1] + ".dkm") for m in names}
     img = c.image_for(f"{B.RT},core/digikit-menu", "menu")
+    # `full = true`: behind the real modules, the full set of the capacity tests (pk_capacity.full_set): every limit used at once and three
+    # modules refused, so the audit covers a loader that has just refused modules and an arena with no free byte
+    wants: list[int | str] = [P.LOADED] * len(names)
+    if t.get("full"):
+        g = P.Geometry.of(
+            c.device,
+            M.sym(img.plan, "core/runtime", "DKRT_ARENA"),
+            M.sym(img.plan, "core/dsp-link", "_dl_area"),
+        )
+        folder = c.env.folder / "digikit" / "modules"
+        uses = [P.usage((folder / Path(files[m]).name).read_bytes()) for m in names]
+        fill = P.full_set(g, uses)
+        for i, mod in enumerate(fill):
+            files[mod.name] = c.pack_synth(mod.spec, f"full-{i}.dkm")
+            names.append(mod.name)
+            wants.append(mod.want)
     card = c.card(list(files.values()))
     expect = t.get("expect", [])  # hits the scenario must produce: [{module = ...}]
+    loaded_names = [n for n, w in zip(names, wants, strict=True) if w == P.LOADED]
     with c.rig(img, card, "memaudit", cf_only=True) as rig:
         info = rig.boot_info()
         c.check(
-            "every module of the set loaded (ColdFire part)",
+            "every module of the set loaded (ColdFire part), the refused ones with their code",
             info["count"] == len(names)
             and info["safe"] == 0
-            and all(r in (0, B.E_LOADING) for r in info["results"]),
-            str(info["results"]),
+            and all(
+                (r in (0, B.E_LOADING)) if w == P.LOADED else r == w
+                for r, w in zip(info["results"], wants, strict=True)
+            ),
+            f"{info['results']} for {wants}",
         )
         up = DBG.uploader(rig)
         m = up.modules()
@@ -239,14 +260,22 @@ def run_memaudit(c: Any) -> None:
         st = M.sym(rig.plan, "core/runtime", "DKRT_STATE")
         arena = (rig.w(st + 28), rig.w(st + 32))
         c.check(
-            "MODULES lists the set and every block lies inside the arena",
-            sorted(x["name"] for x in mods) == sorted(names)
+            "MODULES lists the loaded modules and every block lies inside the arena",
+            sorted(x["name"] for x in mods) == sorted(loaded_names)
             and all(
                 arena[0] <= x["cf_base"] and x["cf_base"] + x["cf_size"] <= arena[1]
                 for x in mods
             ),
             f"arena {arena[0]:#x}..{arena[1]:#x}, {[(x['name'], hex(x['cf_base']), x['cf_size']) for x in mods]}",
         )
+        if t.get("full"):
+            c.check(
+                "the full set uses the arena to its last byte and the DSP area to its last whole granule",
+                m["arena_free"] == 0
+                and m["arena_largest"] == 0
+                and m["dsp_largest"] < P.DSP_GRANULE,
+                f"arena free {m['arena_free']}, dsp free {m['dsp_free']} largest {m['dsp_largest']}",
+            )
         prot, code = plan_guard(c.image, rig.plan, mods, arena)
         c.report["memaudit"] = {
             "protected": [(n, hex(a), hex(b)) for n, a, b in prot],

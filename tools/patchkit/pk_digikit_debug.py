@@ -361,6 +361,14 @@ def run_debug(c: Any) -> None:
         return run_guard(c)
     if c.table().get("part") == "sticky":
         return run_sticky(c)
+    if c.table().get("part") == "capacity":
+        from tools.patchkit import pk_digikit_capacity as CAP
+
+        return CAP.run_capacity(c)
+    if c.table().get("part") == "isolation":
+        from tools.patchkit import pk_digikit_capacity as CAP
+
+        return CAP.run_isolation(c)
     if c.table().get("part") == "memaudit":
         from tools.patchkit import pk_digikit_memaudit as MA
 

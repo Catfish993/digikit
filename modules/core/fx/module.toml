@@ -53,6 +53,7 @@ displaced = "run"
 name = "fx"
 first = "0"
 max = 4
+limit = "fx_slots"
 region = "dsp.l2"
 terminator = true
 

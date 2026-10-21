@@ -74,6 +74,9 @@ struct Limits {
     machine_rows: u64,
     arena_bytes: u64,
     stage_bytes: u64,
+    fx_slots: u64,
+    param_rows: u64,
+    page_rows: u64,
 }
 #[derive(Deserialize)]
 struct Dev {
@@ -150,6 +153,13 @@ struct LimitsF {
     machine_rows: u64,
     arena_bytes: u64,
     stage_bytes: u64,
+    // Not written into the generated files yet (nothing consumes them): checked against the contract maxima only.
+    #[allow(dead_code)]
+    fx_slots: u64,
+    #[allow(dead_code)]
+    param_rows: u64,
+    #[allow(dead_code)]
+    page_rows: u64,
 }
 #[derive(Debug)]
 struct BoardF {
@@ -218,6 +228,7 @@ impl Facts {
                     "{short}: [digikit] name must be 1 to 3 ASCII characters"
                 ));
             }
+            check_limits(&short, &l, k.dsp_area_bytes, &crate::sdkgen::limits_max())?;
             let adapter = adapter_facts(
                 &short,
                 d.adapter.and_then(|a| a.machine),
@@ -259,6 +270,9 @@ impl Facts {
                             machine_rows: l.machine_rows,
                             arena_bytes: l.arena_bytes,
                             stage_bytes: l.stage_bytes,
+                            fx_slots: l.fx_slots,
+                            param_rows: l.param_rows,
+                            page_rows: l.page_rows,
                         },
                         adapter,
                     },
@@ -287,6 +301,37 @@ impl Facts {
         }
         Facts::from_texts(texts.iter().map(|s| s.as_str()))
     }
+}
+
+/// A device's capacity limits against the contract maxima of `sdk/sdk.toml` `[limits.max]`: a value above its maximum is refused, and no
+/// limit is 0 where the runtime needs at least one (a device without page rows says `page_rows = 0`).
+fn check_limits(
+    short: &str,
+    l: &Limits,
+    dsp_area_bytes: u64,
+    max: &crate::sdkgen::LimitsMax,
+) -> Result<()> {
+    for (name, v, m) in [
+        ("modules", l.modules, max.modules),
+        ("fx_slots", l.fx_slots, max.fx_slots),
+        ("param_rows", l.param_rows, max.param_rows),
+        ("page_rows", l.page_rows, max.page_rows),
+        (
+            "[digikit] dsp_area_bytes",
+            dsp_area_bytes,
+            max.dsp_area_bytes,
+        ),
+    ] {
+        if v > m {
+            return Err(err!(
+                "{short}: [limits] {name} is {v}, above the contract maximum {m} of sdk/sdk.toml [limits.max]"
+            ));
+        }
+    }
+    if l.modules == 0 {
+        return Err(err!("{short}: [limits] modules must be at least 1"));
+    }
+    Ok(())
 }
 
 /// Parameter slots a machine can have (the contract's `DK_MAX_PARAMS`).
@@ -538,6 +583,12 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
     let b = &e.board;
     let k = &e.digikit;
     let n = (last - first + 1) as u64;
+    if e.limits.machine_rows != n {
+        return Err(err!(
+            "{dev}: [limits] machine_rows is {}, but core/machines types.toml reserves {n} run-time machine types (dynamic_first ..= last)",
+            e.limits.machine_rows
+        ));
+    }
     let name_word = k
         .name
         .bytes()

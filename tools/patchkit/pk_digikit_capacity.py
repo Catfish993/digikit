@@ -1,0 +1,407 @@
+#!/usr/bin/env python3
+"""The `debug` part `capacity` of the digikit scenarios: every capacity limit of the runtime is filled and the next module refused with its
+code (docs/plans/capacity-isolation.md; the sets are `pk_capacity.py`, the modules `patchkit synth-dkm`).
+
+Each case is one boot on a ColdFire-only rig (about 6 s cold): a card with the case's modules in the store and a selection naming them in
+order. A refusal is decided on the ColdFire before any DSP transfer, so no DSP is needed. After the boot the part checks, for each case:
+
+- the boot report: every module has the result the set says (a loaded module: 0, or `LOADING` while its DSP part is still to come);
+- MODULES: exactly the loaded modules are listed, their ColdFire blocks lie in the arena and do not overlap, their DSP ranges lie in the
+  area and do not overlap, their voice rows are the ones the set takes;
+- the runtime's table check never failed (`DKRT_TABLE_BAD` is 0, no `TABLE_BAD` event): a refused module left no range, row or owner behind;
+- the figures of the full resource: the arena has no free byte, the DSP area no free granule, every voice row has an owner.
+
+Not covered: a DSP transfer that fails (`E_DSP_XFER`) and anything that needs the DSP to run (the isolation scenarios do that).
+"""
+
+from __future__ import annotations
+
+import functools
+from pathlib import Path
+from typing import Any
+
+from tools.device import dkupload as DK
+from tools.patchkit import pk_capacity as P
+from tools.patchkit import pk_digikit_debug as D
+from tools.patchkit import pk_dkrt_boot as B
+from tools.patchkit import pk_dkrt_machine as M
+
+DK_SEL_MAX = (
+    B.SEL_MAX
+)  # the selection record's paths (sdk/sdk.toml [limits.max] modules)
+
+
+def _result_ok(got: int, want: int | str) -> bool:
+    if want == P.LOADED:
+        return got in (0, B.E_LOADING)
+    return got == want
+
+
+def _ranges_ok(mods: list[dict], key_off: str, key_len: str, lo: int, hi: int) -> bool:
+    """Every nonzero range [off, off + len) of MODULES lies in [lo, hi) and no two overlap."""
+    rs = sorted((m[key_off], m[key_off] + m[key_len]) for m in mods if m[key_len])
+    return all(lo <= a and b <= hi for a, b in rs) and all(
+        rs[i][1] <= rs[i + 1][0] for i in range(len(rs) - 1)
+    )
+
+
+def boot_checks(
+    c: Any,
+    rig: Any,
+    g: P.Geometry,
+    tag: str,
+    names: list[str],
+    wants: list[int | str],
+    what: str,
+) -> dict[str, Any]:
+    """The checks every boot of a set shares: the results WANTS of the boot report, MODULES lists exactly the loaded modules, ranges inside
+    their areas and disjoint, the table check never failed. Returns MODULES."""
+    up = D.uploader(rig)
+    info = rig.boot_info()
+    got = list(info["results"])
+    c.check(
+        f"{tag}: results of the boot report: {what}",
+        info["count"] == len(wants)
+        and len(got) == len(wants)
+        and all(_result_ok(a, b) for a, b in zip(got, wants, strict=True)),
+        f"got {got}, want {wants}",
+    )
+    m = up.modules()
+    mods = m["modules"]
+    loaded = [n for n, w in zip(names, wants, strict=True) if w == P.LOADED]
+    c.check(
+        f"{tag}: MODULES lists exactly the loaded modules, in order",
+        [x["name"] for x in mods] == loaded and m["total"] == len(loaded),
+        f"{[x['name'] for x in mods]} vs {loaded}",
+    )
+    c.check(
+        f"{tag}: ColdFire blocks lie in the arena and do not overlap; DSP ranges lie in the area and do not overlap",
+        _ranges_ok(mods, "cf_base", "cf_size", g.arena_lo, g.arena_hi)
+        and _ranges_ok(mods, "dsp_off", "dsp_len", 0, g.dsp_area),
+        str(
+            [
+                (x["name"], hex(x["cf_base"]), x["cf_size"], x["dsp_off"], x["dsp_len"])
+                for x in mods
+            ]
+        ),
+    )
+    bad = up.peek(M.sym(rig.plan, "core/runtime", "DKRT_TABLE_BAD"), 1)[0]
+    c.check(
+        f"{tag}: the runtime's table check never failed (a refused module left nothing behind)",
+        bad == 0 and not D.events(rig, "TABLE_BAD"),
+        f"DKRT_TABLE_BAD {bad}",
+    )
+    return m
+
+
+def verify(c: Any, rig: Any, g: P.Geometry, case: P.Case) -> dict[str, Any]:
+    """The checks every case shares. Returns MODULES."""
+    return boot_checks(
+        c,
+        rig,
+        g,
+        case.name,
+        [m.name for m in case.mods],
+        [m.want for m in case.mods],
+        case.what,
+    )
+
+
+def _by_name(m: dict, name: str) -> dict:
+    return next(x for x in m["modules"] if x["name"] == name)
+
+
+def check_case(c: Any, rig: Any, g: P.Geometry, case: P.Case, m: dict) -> None:
+    """What only this case shows."""
+    n = case.name
+    mods = m["modules"]
+    raw_blocks = sum(P.block(x["cf_size"]) for x in mods)
+    if n == "modules":
+        c.check(
+            f"modules: all {g.modules} module records are in use",
+            m["total"] == g.modules == len(mods)
+            and sorted(x["index"] for x in mods) == list(range(g.modules)),
+            str([x["index"] for x in mods]),
+        )
+        up = D.uploader(rig)
+        # a ninth path is refused by SELECT (E_SEL_COUNT), so a ninth module never reaches the loader and E_TABLE_FULL stays a defence
+        paths = [f"modules/n{i}.dkm" for i in range(DK_SEL_MAX + 1)]
+        try:
+            up._ok(
+                DK.CMD_SELECT,
+                "select",
+                bytes((len(paths),)) + b"".join(p.encode() + b"\0" for p in paths),
+            )
+            status = 0
+        except DK.UploadError as e:
+            status = e.status
+        c.check(
+            f"modules: SELECT of {DK_SEL_MAX + 1} paths is E_SEL_COUNT (-41), so E_TABLE_FULL is unreachable",
+            status == P.E_SEL_COUNT,
+            str(status),
+        )
+        c.check(
+            "modules: the module table is no larger than the selection record (the invariant that makes E_TABLE_FULL a defence)",
+            g.modules <= DK_SEL_MAX,
+            f"{g.modules} <= {DK_SEL_MAX}",
+        )
+        mailbox = rig.set_selection([chr(ord("a") + i) for i in range(DK_SEL_MAX + 1)])
+        c.check(
+            "modules: the mailbox select of a ninth path is E_SEL_PATH (-40: another code than SELECT's, test hook only)",
+            mailbox == P.E_SEL_PATH,
+            str(mailbox),
+        )
+    elif n == "files":
+        exact = _by_name(m, "cap/f-exact")
+        c.check(
+            "files: the module whose file is the staging buffer's size is in the arena with its whole image",
+            exact["cf_size"] == g.stage_bytes - P.DKM_HEADER,
+            str(exact["cf_size"]),
+        )
+        c.check(
+            "files: the arena holds the two loaded blocks and nothing of the refused files",
+            m["arena_free"] + raw_blocks == g.arena_free,
+            f"{m['arena_free']} + {raw_blocks} vs {g.arena_free}",
+        )
+    elif n == "arena":
+        c.check(
+            "arena: every byte of the arena is in use (nothing free, no free block)",
+            m["arena_free"] == 0
+            and m["arena_largest"] == 0
+            and raw_blocks == g.arena_free,
+            f"free {m['arena_free']}, largest {m['arena_largest']}, blocks {raw_blocks} of {g.arena_free}",
+        )
+        c.check(
+            "arena: the refused DSP module left no range in the DSP area and no row",
+            m["dsp_free"] == g.dsp_area
+            and m["dsp_largest"] == g.dsp_area
+            and all(x["rows"] == 0 for x in mods),
+            f"dsp free {m['dsp_free']} of {g.dsp_area}",
+        )
+    elif n == "dsp-area":
+        r, a = _by_name(m, "cap/d-r"), _by_name(m, "cap/d-a")
+        c.check(
+            "dsp-area: the two modules lie back to back from the first 8-aligned byte of the area to its last whole granule; less than a granule is left",
+            (r["dsp_off"], r["dsp_len"]) == (g.dsp_first, P.DSP_GRANULE)
+            and (a["dsp_off"], a["dsp_len"])
+            == (g.dsp_first + P.DSP_GRANULE, g.dsp_tail)
+            and m["dsp_largest"] < P.DSP_GRANULE
+            and m["dsp_free"] == g.dsp_area - P.DSP_GRANULE - g.dsp_tail,
+            f"{r['dsp_off']}+{r['dsp_len']}, {a['dsp_off']}+{a['dsp_len']}, free {m['dsp_free']}, largest {m['dsp_largest']}",
+        )
+    elif n == "rows-all":
+        mask = (1 << g.machine_rows) - 1
+        x = _by_name(m, "cap/r-all")
+        c.check(
+            "rows-all: the module owns every voice row, with the run-time types in order",
+            x["rows"] == mask
+            and x["types"] == list(range(g.type_first, g.type_first + g.machine_rows)),
+            f"rows {x['rows']:#x}, types {x['types']}",
+        )
+    elif n == "rows-split":
+        mask = (1 << g.machine_rows) - 1
+        a, b = _by_name(m, "cap/s-a"), _by_name(m, "cap/s-b")
+        c.check(
+            "rows-split: the two modules own every voice row between them, each its own",
+            a["rows"] | b["rows"] == mask
+            and a["rows"] & b["rows"] == 0
+            and a["rows"]
+            and b["rows"],
+            f"{a['rows']:#x} {b['rows']:#x}",
+        )
+    elif n == "rows-types":
+        p = _by_name(m, "cap/t-p")
+        c.check(
+            "rows-types: the one loaded module owns one row; the refused ones took none",
+            bin(p["rows"]).count("1") == 1 and m["total"] == 1,
+            f"{p['rows']:#x}",
+        )
+    elif n == "machines":
+        a = _by_name(m, "cap/m-a")
+        c.check(
+            "machines: the module holds every run-time machine type and every parameter row",
+            sorted(a["types"])
+            == list(range(g.type_first, g.type_first + g.machine_rows)),
+            str(a["types"]),
+        )
+
+
+def run_capacity(c: Any) -> None:
+    """The capacity cases of this scenario's device: pack every set, boot each on its own card in a thread, check."""
+    img = c.image_for(B.RT, "run")
+    g = P.Geometry.of(
+        c.device,
+        M.sym(img.plan, "core/runtime", "DKRT_ARENA"),
+        M.sym(img.plan, "core/dsp-link", "_dl_area"),
+    )
+    cases = P.cases(g)
+    packed: dict[str, list[str]] = {}
+    for case in cases:
+        packed[case.name] = [
+            c.pack_synth(m.spec, f"{case.name}-{i}.dkm")
+            for i, m in enumerate(case.mods)
+        ]
+    exact = Path(c.env.folder / "digikit" / "modules" / "files-2.dkm").stat().st_size
+    c.check(
+        "the 'files' fixture is exactly the staging buffer's size, the next one 4 bytes over",
+        exact == g.stage_bytes
+        and Path(c.env.folder / "digikit" / "modules" / "files-3.dkm").stat().st_size
+        == g.stage_bytes + 4,
+        str(exact),
+    )
+    c.report["geometry"] = vars(g)
+
+    def one(case: P.Case) -> None:
+        card = c.card(packed[case.name])
+        with c.rig(img, card, case.name, cf_only=True) as rig:
+            m = verify(c, rig, g, case)
+            check_case(c, rig, g, case, m)
+            c.report.setdefault("cases", {})[case.name] = {
+                "results": rig.boot_info()["results"],
+                "arena_free": m["arena_free"],
+                "dsp_free": m["dsp_free"],
+            }
+            c.done(rig)
+
+    c.parallel(*[functools.partial(one, case) for case in cases])
+    c.common_checks_upload(project_writes_ok=True)
+
+
+# ---- the full set: every limit used at once, behind a reference module ---------------------------------------------------------
+
+
+def check_full(
+    c: Any,
+    rig: Any,
+    g: P.Geometry,
+    tag: str,
+    wants: list[int | str],
+    names: list[str],
+    exact_arena: bool = True,
+) -> dict:
+    """The boot of a full set: the shared checks, then every resource is used up (no whole free DSP granule, every voice row and machine
+    type owned, and with EXACT_ARENA no free arena byte: a coupled boot frees the DSP images' arena copies after the transfers)."""
+    m = boot_checks(
+        c,
+        rig,
+        g,
+        tag,
+        names,
+        wants,
+        "every module of the full set loaded, the three behind it refused (E_NOMEM, E_DSP_ROWS, E_DSP_NOSPACE)",
+    )
+    mods = m["modules"]
+    owned = 0
+    for x in mods:
+        owned |= x["rows"]
+    types = sorted({t for x in mods for t in x["types"]})
+    c.check(
+        f"{tag}: every voice row has an owner and every machine type is in use",
+        owned == (1 << g.machine_rows) - 1
+        and types == list(range(g.type_first, g.type_first + g.machine_rows)),
+        f"rows {owned:#x}, types {types}",
+    )
+    c.check(
+        f"{tag}: the DSP area has no whole granule left"
+        + (" and the arena no byte" if exact_arena else ""),
+        m["dsp_largest"] < P.DSP_GRANULE
+        and (not exact_arena or (m["arena_free"] == 0 and m["arena_largest"] == 0)),
+        f"dsp free {m['dsp_free']} largest {m['dsp_largest']}, arena free {m['arena_free']}",
+    )
+    return m
+
+
+def run_isolation(c: Any) -> None:
+    """A reference module (`[isolation] module`, a sound) loaded first keeps its sound, its ranges and its DSP bytes when the full set is
+    loaded behind it and three modules are refused: boot 1 has the reference alone, boot 2 the reference and the full set. Both are
+    coupled boots (the DSP runs); each plays the reference machine on track 1. Checked: the reference's MODULES record equal in both boots;
+    its relocated DSP image read back from L2 equals the packed image (relocated at its range) in both boots, after the note; the note's PCM
+    equal from the onset (a pairing: the one thing that differs between the boots is what is loaded behind the reference)."""
+    import numpy as np
+
+    t = c.table()
+    ref, machine = t["module"], t["machine"]
+    img = c.image_for(B.RT, "run")
+    plan = img.plan
+    g = P.Geometry.of(
+        c.device,
+        M.sym(plan, "core/runtime", "DKRT_ARENA"),
+        M.sym(plan, "core/dsp-link", "_dl_area"),
+    )
+    ref_path = c.pack(ref, "ref.dkm")
+    ref_bytes = (c.env.folder / "digikit" / "modules" / "ref.dkm").read_bytes()
+    fill = P.full_set(g, [P.usage(ref_bytes)])
+    fill_paths = [c.pack_synth(m.spec, f"fill-{i}.dkm") for i, m in enumerate(fill)]
+    names = [ref] + [m.name for m in fill]
+    cards = {"alone": c.card([ref_path]), "full": c.card([ref_path, *fill_paths])}
+    wants: dict[str, list[int | str]] = {
+        "alone": [P.LOADED],
+        "full": [P.LOADED, *(m.want for m in fill)],
+    }
+    trig = t.get("trig_frame", M.TRIG_FRAME if c.dt2 else M.TRIG_FRAME_DN2)
+    hint = t.get("hint", 7 if c.dt2 else 5)
+    sec = M.parse_dsp_section(ref_bytes)
+    out: dict[str, Any] = {}
+
+    def boot(key: str) -> None:
+        with c.rig(img, cards[key], key) as rig:
+            if key == "full":
+                m = check_full(c, rig, g, "full", wants[key], names, exact_arena=False)
+            else:
+                m = boot_checks(
+                    c, rig, g, key, [ref], wants[key], "the reference alone"
+                )
+            rec = _by_name(m, ref)
+            base = M.sym(plan, "core/dsp-link", "_dl_area") + rec["dsp_off"]
+            imports = M.run_imports(rig, plan)
+            want = M.relocate(sec, base, imports)
+            before = rig.dsp_bytes(base, len(want))
+            if c.dt2:
+                rig.select_type(rig.dyn_type(ref, machine), hint)
+            else:
+                rig.select(hint)
+            pcm = rig.note(c.work / f"{key}.wav", trig)
+            after = rig.dsp_bytes(base, len(want))
+            c.check(
+                f"{key}: the reference's DSP bytes in L2 equal its packed image relocated at its range, before and after the note",
+                before == want and after == want,
+                f"range {rec['dsp_off']:#x}+{rec['dsp_len']:#x}, {sum(a != b for a, b in zip(before, want, strict=True))} and {sum(a != b for a, b in zip(after, want, strict=True))} bytes differ",
+            )
+            c.check(
+                f"{key}: the reference note is audible",
+                float(abs(pcm).max()) > 0.01,
+                f"peak {float(abs(pcm).max()):.3f}",
+            )
+            out[key] = {
+                "pcm": pcm,
+                "record": {
+                    k: rec[k]
+                    for k in ("cf_size", "dsp_off", "dsp_len", "rows", "types")
+                },
+                "rig": rig,
+            }
+            c.done(rig)
+
+    c.parallel(functools.partial(boot, "alone"), functools.partial(boot, "full"))
+    c.check(
+        "the reference's record (size, DSP range, rows, types) is the same with and without the full set behind it",
+        out["alone"]["record"] == out["full"]["record"],
+        f"{out['alone']['record']} vs {out['full']['record']}",
+    )
+    rr = out["full"]["rig"]
+    # the onset may differ by a few blocks: the full boot has loaded more modules before the key reaches the sequencer (128 samples measured on
+    # the Digitone II, 64 on the Digitakt II); from the onset on, not one sample may differ
+    M.pcm_check(
+        rr,
+        out["alone"]["pcm"],
+        out["full"]["pcm"],
+        c.report,
+        "reference note with the full set loaded",
+        max_shift=256,
+    )
+    c.checks += rr.checks
+    c.report["isolation"] = {
+        "modules": names,
+        "peak": float(np.abs(out["full"]["pcm"]).max()),
+    }
+    c.common_checks()

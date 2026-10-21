@@ -123,6 +123,18 @@ pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> 
 /// Pack an object (or none), `register` records and a DSP section (see [`crate::dkmdsp`]; empty: none). A file with a DSP section
 /// needs a runtime of version [`RUNTIME_DSP`] or later.
 pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Result<Vec<u8>> {
+    pack_full_max(obj, reg, dsp, o, MAX_FILE)
+}
+
+/// [`pack_full`] with another file size limit: `dkm_synth` makes files over the staging buffer on purpose (the capacity tests of the
+/// runtime's `E_TOO_BIG`).
+pub fn pack_full_max(
+    obj: Option<&Dko>,
+    reg: &[u8],
+    dsp: &[u8],
+    o: &Options,
+    max_file: usize,
+) -> Result<Vec<u8>> {
     if let Some(obj) = obj {
         obj.require_isa_checked()?;
     }
@@ -264,9 +276,9 @@ pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Resu
     let dsp_off = align_up(reg_off + reg_size, 16);
     let image_off = align_up(dsp_off + dsp.len(), 16);
     let total = image_off + image.len();
-    if total > MAX_FILE {
+    if total > max_file {
         return Err(err!(
-            "the module file is {total} bytes; the v0 runtime stages {MAX_FILE}"
+            "the module file is {total} bytes; the runtime stages {max_file}"
         ));
     }
     let mut f = vec![0u8; total];

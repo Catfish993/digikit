@@ -366,6 +366,9 @@ Today the limits are constants in several places: `MAX_MODULES` 8, `ARENA_BYTES`
 The runtime is one image for all devices (`device-data.md:46-49`); a limit that differs by device must be read from the device object, as `dkrt_device_id` is. `gen` already
 refuses a shared constant that differs, which tells the author what to do.
 
+Built (docs/findings/57-capacity-isolation.md): `[limits]` also has `fx_slots`, `param_rows` and `page_rows`; `sdk/sdk.toml` `[limits.max]` holds the contract maxima and `patchkit gen` refuses a device value above
+them. The runtime still reads `modules`, `machine_rows`, `arena_bytes` and `stage_bytes` as shared constants; `modules` can be lower than the selection record's 8 paths only if `E_TABLE_FULL` is reachable (it is not today).
+
 ### 6.3 DSP memory allocated by the runtime at load: feasible today
 
 It is already how run-time DSP modules work. The code holds no address; it is linked at the nominal base `0x20000000` and relocated by the ColdFire runtime before the
