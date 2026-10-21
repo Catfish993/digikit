@@ -5,7 +5,7 @@
 name = "isolation-dt2"
 kind = "debug"
 devices = ["dt2"]
-tier = "quick"
+tier = "full"
 
 [debug]
 part = "isolation"

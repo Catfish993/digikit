@@ -28,7 +28,7 @@ Codes per device cell:
 - **[D]** Raw ColdFire code modules (asm, C, Rust) load at run time on both devices, but most of their scenarios are Gf,
   so the per-PR gate rarely runs them.
 - **[D]** No smoke cell loads a run-time module; every smoke cell is patched in. DN2 has no core/fx smoke cell.
-- **[D]** The loader has capacity limits and refusal codes, but no test fills any limit (section 6).
+- **[D]** The loader has capacity limits and refusal codes; every one is filled and refused with its code by `capacity-*` (finding 57; **[C]** this row said no test filled a limit).
 
 ## 2. Module types x device: can a run-time .dkm of this type load?
 
@@ -65,13 +65,13 @@ Codes per device cell:
 | --- | --- | --- | --- |
 | upload over USB (`dk:run`) | Gq, Gf, H | Gf | upload-quick is DT2 only (finding 43) |
 | load from the store at boot | Gr, H | Gr | tests/patchkit/test_patchkit_dkrt.py |
-| several modules at once | Gq, Gf | Gq | memaudit (3 modules), equiv-mixed (Gf), equiv-dn2-set (2) |
+| several modules at once | Gq, Gf | Gq | memaudit (3 modules), equiv-mixed (Gf), equiv-dn2-set (2); `capacity-*` (8 modules), `memaudit-*-full`, `isolation-*` (finding 57) |
 | unload or replace while running | N | N | the module set is fixed per boot; replace a store file: upload-ops (Gf) |
 | same-hash collision rule | U | U | implemented, no test (finding 52) |
 | contract version refusal (E_CONTRACT) | Gr | Gr | test_patchkit_dkrt.py boot results |
 | `runtime_min` check | N | N | not checked by the loader |
 | DSP write-set check (P4a) | Gr | Gr | rig only (Python SHARC core), machines and effects |
-| ColdFire memory audit (P4b) | Gq | Gq | memaudit-* and the -stray negative controls; DMA, host writes and runtime-API stores are not seen |
+| ColdFire memory audit (P4b) | Gq | Gq | memaudit-* and the -stray negative controls (the DN2 ones were not run by any pytest file until finding 57 added `test_debug_dn2.py` **[C]**); DMA, host writes and runtime-API stores are not seen |
 | guard (non-finite or above 8.0; 8 faults switch a type off) | Gf, H (present, 0 faults; never fired on a device) | Gf | debug-guard |
 | sticky machine ids | Gq, H (type 16 assigned on rt020 and rt021) | Gq | sticky-types; finding 52 |
 | 16-voice polyphony | U | U | conformance uses 16 only to divide the budget |
@@ -97,24 +97,25 @@ What stops a module from writing outside its own memory, and what checks it.
 | fx (run-time) | N | N | the FX rig has a write-set check (`FxRig.foreign_stores`), used for patched-in effects |
 | raw ColdFire code | arena block | arena bounds, relocations and imports checked (modules/core/runtime/src/rs/src/loader.rs) | P4b memory audit; not seen: DMA, host writes, runtime-API stores |
 
-Gap **[O]**: no test loads modules up to a limit and then checks that the modules already loaded still behave the
-same (PCM equal, no audit hit). The memory audit and the write-set check look at one module set at a time.
+Gap closed **[C]** by finding 57: `memaudit-*-full` runs the audit with every limit used and three modules refused, and `isolation-*` checks that a reference sound keeps its PCM, ranges and DSP bytes behind the full set.
+The write-set check (P4a) still looks at one module at a time.
 
 ## 6. Capacity per module type
 
 | Resource | DT2 1.17 | DN2 1.12 | Defined in | Refusal when full | Tested |
 | --- | --- | --- | --- | --- | --- |
-| modules loaded | 8 | 8 | device profile `[limits] modules` | E_TABLE_FULL | no |
-| ColdFire arena | 512 KiB | 512 KiB | `[limits] arena_bytes` | E_NOMEM | no |
-| upload stage buffer | 64 KiB | 64 KiB | `[limits] stage_bytes` | not checked here | no |
-| machine types and DSP voice rows | 8 (types 0x10-0x17) | 8 | `[limits] machine_rows`, core/machines types.toml (tied by an assert) | E_DSP_ROWS, E_DSP_TYPE | no |
-| sticky id map entries | 8 | 8 | constant `MAP_N` in the runtime SDK | | no |
-| DSP run-time area | 512 KiB | 320 KiB | device profile `[digikit] dsp_area_bytes` | E_DSP_NOSPACE | no |
-| effects in the chain | 4 | 4 | `DK_FX_MAX` in core/fx | patched in: build time | no |
-| parameter rows, pages | U | U | not found | | |
+| modules loaded | 8 | 8 | device profile `[limits] modules` (at most `[limits.max]` of sdk.toml = `SEL_MAX`) | SELECT of a ninth path `E_SEL_COUNT`; `E_TABLE_FULL` is unreachable while `modules` is `SEL_MAX` | capacity-* (Gq) |
+| ColdFire arena | 512 KiB | 512 KiB | `[limits] arena_bytes` | `E_NOMEM`; a bss above the arena is `E_FORMAT` | capacity-*, memaudit-*-full |
+| upload stage buffer | 64 KiB | 64 KiB | `[limits] stage_bytes` | `E_TOO_BIG` (a file of the exact size loads) | capacity-* |
+| machine types and DSP voice rows | 8 (types 0x10-0x17) | 8 | `[limits] machine_rows`, tied to types.toml by a gen check | a hashed machine `E_TYPE_RANGE`; a pinned voice `E_DSP_ROWS` (rows) or `E_DSP_TYPE` (type) | capacity-*, isolation-* |
+| parameter rows | 16 | 16 | `[limits] param_rows` (tied to the core/dynreg manifest by a cargo test) | `E_PARAM_FULL` | capacity-* |
+| page rows | 0 | 8 | `[limits] page_rows` (tied to the core/dynreg manifest) | `E_PAGE_FULL` (DN2) | capacity-dn2 |
+| sticky id map entries | 8 | 8 | `MAP_N` in the runtime SDK (`[limits.max] map_entries`, a cargo test ties them) | eviction (`MACHINE_TYPE_EVICTED`) | sticky-types |
+| DSP run-time area | 512 KiB | 320 KiB | device profile `[digikit] dsp_area_bytes` | `E_DSP_NOSPACE`; granules of 64 bytes, the first range starts at offset 4, 60 bytes unusable | capacity-*, memaudit-*-full |
+| effects in the chain | 4 | 4 | `[limits] fx_slots` (at most `DK_FX_MAX`) | patched in: build time (`apply` refuses more than `fx_slots`) | prims test |
 
-Duplicates: `MAX_MODULES = 8` again in tools/patchkit/pk_dkrt.py. Pluck takes 256 KiB of the DSP area, so on DN2 a
-second module with a delay line does not fit.
+The numbers `MAX_MODULES`, `ARENA_BYTES`, `SEL_MAX` and `FX_MAX` that tools/patchkit repeated are now read from the profile; a test fails when a literal returns.
+Pluck takes 256 KiB of the DSP area, so on DN2 a second module with a delay line does not fit.
 
 ## 7. Memory use reporting
 
@@ -122,7 +123,7 @@ second module with a delay line does not fit.
   and the store; `DkrtModule` gives each module's arena `size` and `dsp_size` (modules/core/runtime/sdk/src/lib.rs).
 - The MODULES page prints the free DSP area; the health log record carries `arena_free` and `heap_free_kb`.
 - Not reported: use per module type, rows used and free per type (machine rows, effect slots), DSP state bytes per
-  module.
+  module (the plan's CAPACITY command, PR 2 of docs/plans/capacity-isolation.md).
 
 ## 8. Device log
 
@@ -138,7 +139,7 @@ Digitone II: no run on a device. Its long-word clear stores and its module store
 ## 9. Gaps, largest first
 
 1. Run-time effects: no fx record, no run-time effect on either device (P3d-1b).
-2. Capacity: no test fills a limit; no test checks that loaded modules stay intact when another is loaded or refused.
+2. ~~Capacity: no test fills a limit; no test checks that loaded modules stay intact when another is loaded or refused.~~ Closed by finding 57 **[C]**.
 3. Most raw-code and safety scenarios (guard, safe mode, crash capture, uploads, Rust) are Gf and rarely run.
 4. Digitone II: nothing on a device; no smoke cell for core/fx or health.
 5. Parameter paths: enum, other display templates, LFO on a module parameter, the p-lock value at the DSP.
@@ -147,6 +148,8 @@ Digitone II: no run on a device. Its long-word clear stores and its module store
 
 ## 10. Stale statements corrected
 
+- Section 6 said no test fills any limit: finding 57 fills them all. The DSP area's first range starts at offset 4 and 60 bytes stay unusable.
+- The four `memaudit-*` scenarios were called quick, but the two for the Digitone II had no pytest file; `tests/digikit/test_debug_dn2.py` runs them now.
 - Finding 51 said the guard has not run on a device: corrected there (rt021, 0 faults; it has not fired on a device).
 - Finding 54 said the pluck device result was being re-tested: the result of 2026-10-21 is now in its entry.
 - The plan's "Gaps to close before the public site" said the Digitone II has no runtime guard: P3b-1 added it

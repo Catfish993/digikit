@@ -3,6 +3,8 @@
 Status: plan only, no code. Lane `tasks-images`, base main 3ff156f9. Facts below were read from the code on 2026-10-21 and are **[D]** (read once, nothing was run).
 Paths of files that do not exist yet are written without their directory prefix on purpose (pathcheck).
 
+Status 2026-10-21: PR 1 (steps 1 to 5) built on lane/tasks-images; results and corrections in docs/findings/57-capacity-isolation.md (the DSP area's first range starts at offset 4 and 60 bytes stay unusable, so it cannot be filled byte-exactly; the full set has 5 loaded modules; `SEL_MAX` and `MAP_N` are tied to `[limits.max]` by a cargo test, generation moves to PR 2). PR 2 (step 6) is not started.
+
 ## Goal (agreed with Em)
 
 Prove, on both devices (DT2 1.17, DN2 1.12), that:

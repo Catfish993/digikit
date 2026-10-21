@@ -160,8 +160,24 @@ Not covered: DMA and host writes (the guard does not see them) and
 stores that the runtime makes for a module through the API (the writer is the runtime). `test/rust-demo` has no run-time entry points and cannot be loaded; `test/c-demo` loads and is not called.
 
 Scenarios (`tests/digikit/scenarios/`, quick): `memaudit-dt2` (c-demo, dyn-demo, digikit/pluck; about 16 s), `memaudit-dn2` (c-demo, dyn-demo, dyn-dn2; about 8 s),
-and the negative controls `memaudit-dt2-stray` and `memaudit-dn2-stray`: `test/dyn-demo-stray` stores one word in the arena outside its block on its 500th UI pass, and the scenario
+and the negative controls `memaudit-dt2-stray` and `memaudit-dn2-stray` (the Digitone II ones run in `test_debug_dn2.py`): `test/dyn-demo-stray` stores one word in the arena outside its block on its 500th UI pass, and the scenario
 must report exactly that one hit, written by that module. `mise run module:audit NAME` runs the part for one module (docs/MODULE-AUTHORING.md).
+
+### Capacity and isolation (`debug` parts `capacity` and `isolation`, finding 57)
+
+Every capacity limit of the runtime is filled and the next module refused with its code. The modules are synthetic (`patchkit synth-dkm SPEC.toml --device dt2 -o FILE`; the spec keys
+are in `packages/patchkit/src/dkmsynth.rs`): no fixture folder, and `tools/patchkit/pk_capacity.py` computes each set from the device file (`pk_device.limits`), `types.toml` and the
+plan's addresses, so a profile with other limits gets its own sets. The limits are in `[limits]` of `devices/*.toml`; `sdk/sdk.toml` `[limits.max]` is the contract maximum and
+`patchkit gen` refuses a device value above it.
+
+| Scenario | Checks |
+| --- | --- |
+| `capacity-dt2`, `capacity-dn2` | one ColdFire-only boot per case: module table (SELECT of a ninth path), staging buffer, repeated name, arena, DSP area, voice rows, machine types, parameter rows, page rows (DN2): each limit filled, then the refusal with its code; MODULES, the ranges and `DKRT_TABLE_BAD` after each |
+| `memaudit-dt2-full`, `memaudit-dn2-full` | the memory audit over `test/dyn-demo` plus the full set (every limit used, three modules refused) |
+| `isolation-dn2` (quick), `isolation-dt2` (full: 78 s cold, over the 60 s rule) | coupled: `test/sine` alone against `test/sine` with the full set behind it: MODULES record, DSP bytes read back from L2, PCM from the onset |
+
+`tests/patchkit/test_capacity_sets.py` packs every set for both devices and checks that the sizes add up to the limits (no emulator); `tests/patchkit/test_limits.py` keeps the tools
+from repeating a limit as a number. The scenarios of the kind `debug` run in `tests/digikit/test_debug_dt2.py` and `test_debug_dn2.py`.
 
 ## Machine conformance (`tests/modules`)
 
