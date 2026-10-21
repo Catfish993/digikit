@@ -13,7 +13,9 @@ whether it is loaded (MODULES), and whether it fits (CAPACITY; a warning only). 
 their group, read from the 0xa0-byte header (READ, runtime 0.2.4).
 
 `install MOD...` builds only the modules whose objects changed, packs them, uploads the files the card does not have (same sha256),
-SELECTs exactly these modules plus the `--keep` paths, RESTARTs and waits until MODULES lists them. `--json` prints one JSON object per line
+VERIFYs each file on the card (the device hashes it from a fresh read), then SELECTs exactly these modules plus the `--keep` paths.
+It does not restart: the modules load at the next restart. `restart [MOD...]` sends RESTART, waits for the boot and reports which
+modules MODULES lists; `install --restart` does both (scripts, the scenarios). `--json` prints one JSON object per line
 (`{"event": ...}`); `list --json` prints one JSON document.
 
 Target: `--emu` (the running emulator; `--run-dir DIR` or `--socket PATH` pick another one) or `--port NAME` (python-rtmidi). A running
@@ -97,12 +99,46 @@ def candidates() -> list[str]:
     return out
 
 
+def inputs_mtime(moddir: Path) -> float:
+    """The newest modification time among everything a pack of the module reads: its directory, the patchkit sources, the device files
+    and the SDK numbers."""
+    newest = 0.0
+    roots = [
+        (moddir, "*"),
+        (R.ROOT / "packages" / "patchkit" / "src", "*.rs"),
+        (R.ROOT / "devices", "*.toml"),
+    ]
+    for root, pat in roots:
+        for f in root.rglob(pat):
+            if f.is_file() and "__pycache__" not in f.parts:
+                newest = max(newest, f.stat().st_mtime)
+    return max(newest, (R.ROOT / "sdk" / "sdk.toml").stat().st_mtime)
+
+
 def pack_for_transfer(module: str, device: str) -> Path:
-    """Pack into out/patch/transfer/<device>/, so a list or install does not rewrite the files `dk run` leaves in out/patch."""
+    """Pack into out/patch/transfer/<device>/, so a list or install does not rewrite the files `dk run` leaves in out/patch. A packed file
+    newer than everything the pack reads is reused (a pack costs about 0.25 s; a list packs every candidate). A module that did not pack
+    is remembered the same way (`_failed.json`), so a list does not try it again until something it reads changes."""
     name = module.rsplit("/", 1)[-1]
-    return R.pack_module(
-        module, device, R.ROOT / "out" / "patch" / "transfer" / device / f"{name}.dkm"
-    )
+    folder = R.ROOT / "out" / "patch" / "transfer" / device
+    out = folder / f"{name}.dkm"
+    newest = inputs_mtime(modroots.module_dir(module))
+    failed_file = folder / "_failed.json"
+    try:
+        failed = json.loads(failed_file.read_text())
+    except (OSError, ValueError):
+        failed = {}
+    if out.is_file() and out.stat().st_mtime > newest:
+        return out
+    if failed.get(module, [0, ""])[0] > newest:
+        raise R.RunError(failed[module][1])
+    try:
+        return R.pack_module(module, device, out)
+    except R.RunError as e:
+        failed[module] = [time.time(), str(e)]
+        folder.mkdir(parents=True, exist_ok=True)
+        failed_file.write_text(json.dumps(failed))
+        raise
 
 
 def repo_rows(
@@ -341,6 +377,55 @@ def wait_loaded(
         sleep(0.5)
 
 
+def poll_loaded(
+    up: D.Uploader,
+    names: list[str],
+    sleep: Callable[[float], None],
+    now: Callable[[], float],
+    timeout_s: float = 20.0,
+) -> list[str]:
+    """MODULES' names after a restart: polled until every name is listed or the timeout; returns what is listed (no error)."""
+    end = now() + timeout_s
+    got: list[str] = []
+    while True:
+        try:
+            got = [m["name"] for m in up.modules()["modules"]]
+        except (TimeoutError, D.UploadError):
+            got = []
+        if all(n in got for n in names) or now() >= end:
+            return got
+        sleep(0.5)
+
+
+def restart_device(
+    up: D.Uploader,
+    names: list[str],
+    emit: Callable[[dict[str, Any]], None] = lambda e: None,
+    connect: Callable[[], D.Uploader] | None = None,
+    wait_boot: Callable[[], None] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.monotonic,
+    paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """RESTART, wait for the new boot, then report which of NAMES MODULES lists. `missing` names the others, with the reason when the
+    store can tell (the file is not on the card)."""
+    quiet = lambda _m: None  # noqa: E731
+    emit({"event": "restart"})
+    up = R.restart_and_wait(up, connect, wait_boot, sleep, now, quiet)
+    emit({"event": "wait", "modules": names})
+    got = poll_loaded(up, names, sleep, now)
+    missing = [n for n in names if n not in got]
+    out: dict[str, Any] = {"loaded": got, "missing": missing}
+    if missing:
+        try:
+            on_card = {p for p, _, _ in up.ls()}
+            out["not_on_card"] = [p for p in paths or [] if p not in on_card]
+        except (TimeoutError, D.UploadError):
+            pass
+    emit({"event": "done", "restarted": True, **out})
+    return out
+
+
 def install(
     up: D.Uploader,
     wanted: list[str],
@@ -353,9 +438,12 @@ def install(
     rows: list[dict[str, Any]] | None = None,
     build: Callable[[str], None] = R.build_objects,
     pack: Callable[[str, str], Path] = pack_for_transfer,
+    restart: bool = False,
 ) -> dict[str, Any]:
-    """Build the changed modules of WANTED, pack, upload what the card lacks, SELECT the wanted modules and the `keep` paths (nothing else:
-    the selection is replaced), RESTART and wait until MODULES lists the wanted modules. EMIT gets one dict per step."""
+    """For each of WANTED, in order: build when its objects changed, pack, upload unless the card has the same sha256, VERIFY (the device
+    reads the file back from the card and hashes it; a mismatch is an error). Then one SELECT of the wanted modules and the `keep` paths
+    (the selection is replaced). No RESTART unless `restart`: the modules load at the next restart (`restart_device`). EMIT gets one
+    dict per step; a module's steps end with `verify` (ok true or false)."""
     quiet = lambda _m: None  # noqa: E731
     info = up.info()
     R.require_runtime(info)
@@ -365,34 +453,57 @@ def install(
         rows = repo_rows(device, pack=pack, ids=wanted)
     plan = plan_install(rows, wanted, up.ls(), keep)
     by_id = {r["id"]: r for r in rows}
-    for mid in plan["build"]:
-        emit({"event": "build", "id": mid})
-        build(mid)
-        by_id[mid] = repo_rows(device, [mid], pack)[0]  # the packed file changed
     have = {p: (n, h) for p, n, h in up.ls()}
+    can_verify = D.has_cap(info, "VERIFY")
     uploaded = []
     for mid in wanted:
+        if mid in plan["build"]:
+            emit({"event": "build", "id": mid})
+            build(mid)
+            by_id[mid] = repo_rows(device, [mid], pack)[0]  # the packed file changed
         r = by_id[mid]
         data = Path(r["dkm"]).read_bytes()
+        sha = hashlib.sha256(data).hexdigest()
         emit({"event": "upload", "id": mid, "path": r["path"], "bytes": len(data)})
         if R.upload_if_changed(up, r["path"], data, have, quiet):
             uploaded.append(mid)
         else:
             emit({"event": "skip", "id": mid, "reason": "same sha256 on the card"})
+        if can_verify:
+            got = up.verify(r["path"])
+            ok = got == sha
+            emit({"event": "verify", "id": mid, "path": r["path"], "ok": ok})
+            if not ok:
+                raise TransferError(
+                    f"{r['path']}: the device reads back sha256 {got[:12]}, expected {sha[:12]}: the card did not keep the file"
+                )
     emit({"event": "select", "paths": plan["select"]})
     up.select(plan["select"])
-    emit({"event": "restart"})
-    up = R.restart_and_wait(up, connect, wait_boot, sleep, now, quiet)
-    names = [by_id[m]["name"] for m in wanted]
-    emit({"event": "wait", "modules": names})
-    loaded = wait_loaded(up, names, sleep, now, paths=plan["select"])
-    emit({"event": "done", "loaded": loaded})
-    return {
+    out: dict[str, Any] = {
         "built": plan["build"],
         "uploaded": uploaded,
         "selected": plan["select"],
-        "loaded": loaded,
+        "restarted": False,
     }
+    if not restart:
+        emit({"event": "done", "restarted": False, "selected": plan["select"]})
+        return out
+    names = [by_id[m]["name"] for m in wanted]
+    res = restart_device(
+        up, names, emit, connect, wait_boot, sleep, now, plan["select"]
+    )
+    if res["missing"]:
+        lost = res.get("not_on_card")
+        why = (
+            f"the card no longer holds {', '.join(lost)}: the restart lost the card's writes "
+            "(an emulator started without a card file needs the soft-reset fix)"
+            if lost
+            else "the files are on the card but did not load: see the log, dk:log"
+        )
+        raise TransferError(
+            f"MODULES does not list {', '.join(res['missing'])} after the restart ({why})"
+        )
+    return {**out, "restarted": True, "loaded": res["loaded"]}
 
 
 # ---- the command line ---------------------------------------------------------------------------------------------------------
@@ -510,11 +621,22 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("install")
     p.add_argument("modules", nargs="+", help="module ids, e.g. digikit/pluck")
     p.add_argument(
+        "--restart",
+        action="store_true",
+        help="also RESTART and wait until MODULES lists the modules (default: they load at the next restart; see `restart`)",
+    )
+    p.add_argument(
         "--keep",
         nargs="*",
         default=[],
         metavar="PATH",
         help="store paths of loaded modules to keep selected",
+    )
+    p = sub.add_parser(
+        "restart", help="RESTART, wait for the boot, report which modules loaded"
+    )
+    p.add_argument(
+        "modules", nargs="*", help="module ids that should be listed after the boot"
     )
     args = ap.parse_args(argv)
 
@@ -536,8 +658,20 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(v))
             else:
                 print_list(v)
+        elif args.cmd == "restart":
+            out = restart_device(
+                up,
+                args.modules,
+                emit,
+                paths=[R.module_path(m) for m in args.modules],
+                **wiring,
+            )
+            if args.json:
+                print(json.dumps({"event": "result", **out}), flush=True)
         else:
-            out = install(up, args.modules, args.keep, emit, **wiring)
+            out = install(
+                up, args.modules, args.keep, emit, restart=args.restart, **wiring
+            )
             if args.json:
                 print(json.dumps({"event": "result", **out}), flush=True)
     except (TransferError, R.RunError, D.UploadError, TimeoutError, OSError) as e:

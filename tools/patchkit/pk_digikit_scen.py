@@ -1022,22 +1022,33 @@ def run_transfer(
         str(row),
     )
     events: list[dict[str, Any]] = []
-    out = TR.install(
+    out = TR.install(up, [module], emit=events.append, rows=rows)
+    c.check(
+        "transfer install (no restart): nothing built (unchanged), uploaded, verified by the device, selected",
+        out["built"] == []
+        and out["uploaded"] == [module]
+        and out["selected"] == [path]
+        and not out["restarted"]
+        and [e["ok"] for e in events if e["event"] == "verify"] == [True],
+        str(events),
+    )
+    c.check(
+        "transfer install (no restart): the module is not loaded yet",
+        module not in [m["name"] for m in up.modules()["modules"]],
+    )
+    res = TR.restart_device(
         up,
         [module],
         emit=events.append,
         wait_boot=lambda: D._wait_restart(rig),
         sleep=sleep,
         now=now,
-        rows=rows,
+        paths=[path],
     )
     c.check(
-        "transfer install: no build (unchanged), the file uploaded, selected, MODULES lists it",
-        out["built"] == []
-        and out["uploaded"] == [module]
-        and out["selected"] == [path]
-        and module in out["loaded"],
-        str(out),
+        "transfer restart: MODULES lists the module after the boot",
+        res["loaded"] == [module] and res["missing"] == [],
+        str(res),
     )
     rec = B.current(rig.sel_records())
     c.check(
@@ -1367,7 +1378,7 @@ def run_live(c: Ctx) -> None:
             ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
             return r.returncode, ev, time.monotonic() - t0
 
-        rc, ev, secs = tool("install", module, *c.table().get("flags", []))
+        rc, ev, secs = tool("install", module, "--restart")
         res = next((e for e in ev if e["event"] == "result"), {})
         c.check(
             "dktransfer install: the restart kept the upload and the selection, MODULES lists the module",
@@ -1377,6 +1388,13 @@ def run_live(c: Ctx) -> None:
         c.report["install_s"] = round(secs, 1)
         c.check("the emulator booted again (epoch)", emu.status()["epoch"] > epoch0)
         up = DK.Uploader(TR.LiveTransport(emu))
+        rc2, ev2, secs2 = tool("restart", module)
+        res2 = next((e for e in ev2 if e["event"] == "result"), {})
+        c.check(
+            "dktransfer restart: a second restart reports the module loaded",
+            rc2 == 0 and res2.get("loaded") == [module] and not res2.get("missing"),
+            f"rc {rc2} {ev2[-1:] if ev2 else ''}",
+        )
         c.check(
             "the file is on the card after the soft reset",
             [p for p, _, _ in up.ls()] == [f"modules/{module.split('/')[-1]}.dkm"],

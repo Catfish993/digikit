@@ -2,7 +2,6 @@
 
 import hashlib
 import struct
-from pathlib import Path
 
 import pytest
 
@@ -131,9 +130,9 @@ def test_plan_build_upload_select():
 class MockUp:
     """An uploader that records what an install asks of it; `modules()` lists the selection after `restart()`."""
 
-    def __init__(self, card, loaded_after, runtime=0x000204):
+    def __init__(self, card, loaded_after, runtime=0x000204, corrupt=False):
         self.card, self.loaded_after, self.runtime = list(card), loaded_after, runtime
-        self.calls, self.restarted, self.files = [], False, {}
+        self.calls, self.restarted, self.data, self.corrupt = [], False, {}, corrupt
 
     def info(self):
         return {
@@ -141,7 +140,7 @@ class MockUp:
             "card_read_only": False,
             "port": "dt2",
             "free_bytes": 1 << 20,
-            "caps": 0xFF,
+            "caps": 0x1FF,
         }
 
     def ls(self):
@@ -149,9 +148,17 @@ class MockUp:
 
     def put(self, path, data):
         self.calls.append(("put", path))
+        self.data[path] = data
         self.card = [c for c in self.card if c[0] != path] + [
             (path, len(data), hashlib.sha256(data).hexdigest())
         ]
+
+    def verify(self, path):
+        self.calls.append(("verify", path))
+        got = self.data.get(path)
+        if got is None:  # on the card from before: its listed hash
+            return next(h for p, _, h in self.card if p == path)
+        return hashlib.sha256(got + (b"!" if self.corrupt else b"")).hexdigest()
 
     def select(self, paths):
         self.calls.append(("select", list(paths)))
@@ -165,9 +172,7 @@ class MockUp:
         return {"modules": [{"name": n} for n in names]}
 
 
-def test_install_sequence_and_skips(tmp_path, monkeypatch):
-    from tools.device import dkrun as R
-
+def _two_rows(tmp_path):
     pl = tmp_path / "pluck.dkm"
     pl.write_bytes(b"P" * 600)
     sn = tmp_path / "sine.dkm"
@@ -177,16 +182,18 @@ def test_install_sequence_and_skips(tmp_path, monkeypatch):
         {**row("digikit/pluck", sha=sha(b"P" * 600), size=600), "dkm": str(pl)},
         {**row("test/sine", build="needs build", sha="stale", size=1), "dkm": str(sn)},
     ]
-    built = []
     fresh = lambda device, ids, pack: [  # noqa: E731
         {**row(ids[0], sha=sha(b"S" * 700), size=700), "dkm": str(sn)}
     ]
+    card = [("modules/pluck.dkm", 600, sha(b"P" * 600))]
+    return rows, fresh, card
+
+
+def test_install_without_restart_builds_uploads_verifies_selects(tmp_path, monkeypatch):
+    rows, fresh, card = _two_rows(tmp_path)
     monkeypatch.setattr(T, "repo_rows", fresh)
-    events = []
-    up = MockUp(
-        [("modules/pluck.dkm", 600, sha(b"P" * 600))], ["digikit/pluck", "test/sine"]
-    )
-    monkeypatch.setattr(R, "restart_and_wait", lambda up, *a: (up.restart(), up)[1])
+    built, events = [], []
+    up = MockUp(card, ["digikit/pluck", "test/sine"])
     out = T.install(
         up,
         ["digikit/pluck", "test/sine"],
@@ -196,49 +203,146 @@ def test_install_sequence_and_skips(tmp_path, monkeypatch):
         build=built.append,
     )
     assert built == ["test/sine"]  # only the changed one is built
-    assert [c for c in up.calls if c[0] == "put"] == [
-        ("put", "modules/sine.dkm")
-    ]  # pluck is on the card: skipped
-    assert up.calls[-2:] == [
-        ("select", ["modules/pluck.dkm", "modules/sine.dkm", "modules/loaded.dkm"]),
-        ("restart",),
-    ]
-    assert out["uploaded"] == ["test/sine"] and out["loaded"] == [
-        "digikit/pluck",
-        "test/sine",
-    ]
-    kinds = [e["event"] for e in events]
     assert (
-        kinds[0] == "start"
-        and kinds[-1] == "done"
-        and "skip" in kinds
-        and kinds.count("upload") == 2
+        up.calls
+        == [  # per module in order: upload (pluck is on the card: skipped), verify; then one SELECT; no RESTART
+            ("verify", "modules/pluck.dkm"),
+            ("put", "modules/sine.dkm"),
+            ("verify", "modules/sine.dkm"),
+            ("select", ["modules/pluck.dkm", "modules/sine.dkm", "modules/loaded.dkm"]),
+        ]
     )
+    assert out["uploaded"] == ["test/sine"] and out["restarted"] is False
+    assert "loaded" not in out
+    kinds = [e["event"] for e in events]
+    assert kinds == [
+        "start", "upload", "skip", "verify", "build", "upload", "verify", "select", "done",
+    ]  # fmt: skip
+    assert [e["ok"] for e in events if e["event"] == "verify"] == [True, True]
+    assert events[-1] == {
+        "event": "done",
+        "restarted": False,
+        "selected": out["selected"],
+    }
 
 
-def test_install_fails_when_modules_does_not_list_the_module(monkeypatch):
+def test_install_with_restart_waits_for_modules(tmp_path, monkeypatch):
     from tools.device import dkrun as R
 
-    f = Path(__file__)
-    rows = [
-        {
-            **row("digikit/pluck"),
-            "dkm": str(f),
-            "sha256": hashlib.sha256(f.read_bytes()).hexdigest(),
-            "file_size": f.stat().st_size,
-        }
-    ]
-    up = MockUp([], [])  # nothing loads after the restart
+    rows, fresh, card = _two_rows(tmp_path)
+    monkeypatch.setattr(T, "repo_rows", fresh)
     monkeypatch.setattr(R, "restart_and_wait", lambda up, *a: (up.restart(), up)[1])
-    t = {"v": 0.0}
-    with pytest.raises(T.TransferError, match="does not list digikit/pluck"):
+    events = []
+    up = MockUp(card, ["digikit/pluck", "test/sine"])
+    out = T.install(
+        up, ["digikit/pluck", "test/sine"], None, events.append, rows=rows,
+        build=lambda m: None, restart=True,
+    )  # fmt: skip
+    assert up.calls[-2:] == [
+        ("select", ["modules/pluck.dkm", "modules/sine.dkm"]),
+        ("restart",),
+    ]
+    assert out["restarted"] and out["loaded"] == ["digikit/pluck", "test/sine"]
+    assert [e["event"] for e in events][-3:] == ["restart", "wait", "done"]
+
+
+def test_a_verify_mismatch_is_an_error_and_nothing_is_selected(tmp_path, monkeypatch):
+    rows, fresh, card = _two_rows(tmp_path)
+    monkeypatch.setattr(T, "repo_rows", fresh)
+    events = []
+    up = MockUp(card, [], corrupt=True)
+    with pytest.raises(T.TransferError, match="did not keep the file"):
         T.install(
-            up,
-            ["digikit/pluck"],
-            rows=rows,
-            sleep=lambda s: t.__setitem__("v", t["v"] + s),
-            now=lambda: t["v"],
+            up, ["test/sine"], None, events.append, rows=rows, build=lambda m: None
         )
+    assert not [c for c in up.calls if c[0] == "select"]
+    assert events[-1] == {
+        "event": "verify", "id": "test/sine", "path": "modules/sine.dkm", "ok": False,
+    }  # fmt: skip
+
+
+def test_restart_reports_loaded_and_missing_with_the_reason(monkeypatch):
+    from tools.device import dkrun as R
+
+    monkeypatch.setattr(R, "restart_and_wait", lambda up, *a: (up.restart(), up)[1])
+    up = MockUp([], ["digikit/pluck"])
+    t = {"v": 0.0}
+    events = []
+    out = T.restart_device(
+        up, ["digikit/pluck", "test/sine"], events.append,
+        sleep=lambda s: t.__setitem__("v", t["v"] + s), now=lambda: t["v"],
+        paths=["modules/pluck.dkm", "modules/sine.dkm"],
+    )  # fmt: skip
+    assert out["loaded"] == ["digikit/pluck"] and out["missing"] == ["test/sine"]
+    # the store is empty after the restart: the reason is said
+    assert out["not_on_card"] == ["modules/pluck.dkm", "modules/sine.dkm"]
+    assert events[-1]["event"] == "done" and events[-1]["missing"] == ["test/sine"]
+
+
+def test_install_with_restart_says_when_the_restart_lost_the_files(
+    tmp_path, monkeypatch
+):
+    from tools.device import dkrun as R
+
+    rows, fresh, card = _two_rows(tmp_path)
+    monkeypatch.setattr(T, "repo_rows", fresh)
+    up = MockUp(card, [])
+
+    def lose(up, *a):
+        up.restart()
+        up.card = []  # a soft reset without the overlay
+        return up
+
+    monkeypatch.setattr(R, "restart_and_wait", lose)
+    t = {"v": 0.0}
+    with pytest.raises(T.TransferError, match="restart lost the card's writes"):
+        T.install(
+            up, ["digikit/pluck"], None, rows=rows, build=lambda m: None, restart=True,
+            sleep=lambda s: t.__setitem__("v", t["v"] + s), now=lambda: t["v"],
+        )  # fmt: skip
+
+
+def test_the_packed_file_is_reused_until_an_input_changes(tmp_path, monkeypatch):
+    import os
+
+    from tools.device import dkrun as R
+
+    mod = tmp_path / "mod"
+    mod.mkdir()
+    (mod / "module.toml").write_text("x")
+    monkeypatch.setattr(R, "ROOT", tmp_path)
+    monkeypatch.setattr(T.modroots, "module_dir", lambda m: mod)
+    monkeypatch.setattr(
+        T, "inputs_mtime", lambda d: max(f.stat().st_mtime for f in d.iterdir())
+    )
+    packs = []
+
+    def pack(module, device, out):
+        packs.append(module)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"dkm")
+        return out
+
+    monkeypatch.setattr(R, "pack_module", pack)
+    a = T.pack_for_transfer("test/m", "dt2")
+    assert T.pack_for_transfer("test/m", "dt2") == a and packs == ["test/m"]  # reused
+    later = a.stat().st_mtime + 10
+    os.utime(mod / "module.toml", (later, later))  # a source changed
+    T.pack_for_transfer("test/m", "dt2")
+    assert packs == ["test/m", "test/m"]
+
+    # a module that does not pack is remembered until its inputs change
+    def refuse(module, device, out):
+        packs.append("refused")
+        raise R.RunError("nothing for device dt2")
+
+    monkeypatch.setattr(R, "pack_module", refuse)
+    (tmp_path / "out/patch/transfer/dt2/m.dkm").unlink()
+    os.utime(mod / "module.toml", (1_000_000, 1_000_000))
+    for _ in range(2):
+        with pytest.raises(R.RunError, match="nothing for device"):
+            T.pack_for_transfer("test/m", "dt2")
+    assert packs.count("refused") == 1
 
 
 def test_a_paused_emulator_is_refused():

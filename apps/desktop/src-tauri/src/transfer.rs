@@ -113,7 +113,23 @@ pub async fn xfer_list(host: State<'_, crate::Host>, xfer: State<'_, Transfer>) 
     .map_err(|e| e.to_string())?
 }
 
-/// Start `dktransfer install MODULES --keep KEEP` in the background; its progress is read with `xfer_events`.
+/// Start a background `dktransfer` job (`install ...`, `restart ...`); its progress is read with `xfer_events`.
+fn start_job(host: &crate::Host, xfer: &Transfer, sub: Vec<String>) -> Result<(), String> {
+    let (socket, root) = socket_and_root(host)?;
+    {
+        let mut j = xfer.job.lock().unwrap_or_else(|e| e.into_inner());
+        if j.running {
+            return Err("a transfer is already running".into());
+        }
+        *j = Job { running: true, events: vec![] };
+    }
+    let cmd = tool_command(&root, &tool_args(&socket, &sub));
+    let job = xfer.job.clone();
+    std::thread::spawn(move || run_job(cmd, job));
+    Ok(())
+}
+
+/// Start `dktransfer install MODULES --keep KEEP`: build, upload, verify and select (no restart).
 #[tauri::command]
 pub fn xfer_install(
     host: State<'_, crate::Host>,
@@ -121,16 +137,8 @@ pub fn xfer_install(
     modules: Vec<String>,
     keep: Vec<String>,
 ) -> Result<(), String> {
-    let (socket, root) = socket_and_root(&host)?;
     if modules.is_empty() {
         return Err("tick at least one module".into());
-    }
-    {
-        let mut j = xfer.job.lock().unwrap_or_else(|e| e.into_inner());
-        if j.running {
-            return Err("an install is already running".into());
-        }
-        *j = Job { running: true, events: vec![] };
     }
     let mut sub: Vec<String> = vec!["install".into()];
     sub.extend(modules);
@@ -138,10 +146,15 @@ pub fn xfer_install(
         sub.push("--keep".into());
         sub.extend(keep);
     }
-    let cmd = tool_command(&root, &tool_args(&socket, &sub));
-    let job = xfer.job.clone();
-    std::thread::spawn(move || run_job(cmd, job));
-    Ok(())
+    start_job(&host, &xfer, sub)
+}
+
+/// Start `dktransfer restart MODULES`: RESTART, wait for the boot, report which modules loaded.
+#[tauri::command]
+pub fn xfer_restart(host: State<'_, crate::Host>, xfer: State<'_, Transfer>, modules: Vec<String>) -> Result<(), String> {
+    let mut sub: Vec<String> = vec!["restart".into()];
+    sub.extend(modules);
+    start_job(&host, &xfer, sub)
 }
 
 /// The install's events from index `since` on, the next index and whether it still runs.

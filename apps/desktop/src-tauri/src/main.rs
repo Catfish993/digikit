@@ -509,6 +509,7 @@ fn main() {
             modules::mod_cancel,
             transfer::xfer_list,
             transfer::xfer_install,
+            transfer::xfer_restart,
             transfer::xfer_events
         ])
         .run(tauri::generate_context!())
