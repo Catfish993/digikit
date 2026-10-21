@@ -34,6 +34,21 @@ return `-3` when the device profile names no backend this module has. Backend an
 **[D]** Proof: scenario `input-adapter` (both devices, full tier): the same key, turn and second key on two free-running daemons, once through the emulator's panel path and once through
 `test/input-probe` (SysEx commands calling `input_key` and `input_turn`); the screens (OLED hash) match after every step.
 
+## Above the adapter: digikit/remote, the guard, the screen
+
+- **[D]** `digikit/remote` (a run-time module, one `.dkm` for both devices) registers KEY, TURN, RELEASE (guarded range `0x38..0x3d`) and STATE (`0x3e`) and calls `input_key` / `input_turn`. A TURN takes at most
+  30 detents per request (the firmware's flush clamp); the reply says how many it took, and the clients send the rest again. Scenario `remote-control` (both devices, device patch set): REMOTE is off at the boot, STATE says
+  so, KEY / TURN / RELEASE answer `E_DISABLED` (-65), the DIGIKIT > REMOTE row turns the switch on (the commands work, a TURN of 100 is taken as 30 and then 0), and off again.
+- **[D]** Scenario `remote-keys` (both devices, emulator patch set, REMOTE on at the boot): KEY presses open SETTINGS > DIGIKIT > ABOUT and the rows the menu keeps (`DK_ABOUT`) hold the runtime version
+  (`expect_text`). On the main screen a TURN of 20 detents on encoder 1 (TUNE of the SRC page) and then one of -20 each change the screen. A turn reaches the screen through the firmware's own flush tick; the scenario waits
+  8 s of wall time (the emulator runs below real time).
+- **[O]** The value is not understood yet: after +20 the screen showed the value label `0.00` and no title bar (touch only); after -20 it showed `Tune=-0.07`; a third turn of +20 left `-0.07`. The emulator's own
+  `input.turn(1, d)` for d = 20, -20, 20, 5, 5, -5, 40 left the screen at the `0.00` label every time. So the detent-to-value mapping (acceleration? a first turn that only touches?) is open; the proof above says
+  that a turn reaches the firmware and changes the screen, not what value it sets.
+- **[D]** An encoder does not scroll the DIGIKIT menu (one detent on each of the nine encoders left the screen as it was, DT2 1.17, emulator's own `input.turn`): menus move with the arrow keys.
+- **[D]** The stock Screenshot (MidiRpc 0x04) answers on DN2 1.12 in the emulator as on DT2 (`upload-screenshot`, both devices): the 1024 bytes equal the frame capture.
+- **[O]** None of this has run on a real device: not the key and turn calls, not the screenshot on a DN2, not the MIDI port path of the app.
+
 ## Open
 
 - **[O]** On a real device the panel's next packet for a channel carries the whole mask and overrides a bit set here; the emulator has no panel MCU. Whether the decoders are safe to call from the MIDI task while
