@@ -20,6 +20,9 @@ use tauri::State;
 const USB_CHUNK: u32 = 384;
 const USB_PERIOD: u32 = 16_500;
 
+/// The wait of the INFO probe that finds out whether a runtime answers at all.
+const QUICK_TIMEOUT: Duration = Duration::from_secs(1);
+
 pub struct EmuTransport {
     handle: Handle,
     rx: Vec<u8>,
@@ -114,6 +117,14 @@ fn session(handle: &Handle) -> Session<EmuTransport> {
     s
 }
 
+/// Run `f` after the conversations that hold `busy` before it: requests queue, they are not refused. (The panel
+/// asks for INFO and LIST at once; a refused second call showed "another transfer is running".) `mod_cancel` does not
+/// take this lock, so it still reaches a running put.
+fn one_at_a_time<T>(busy: &Mutex<()>, f: impl FnOnce() -> T) -> T {
+    let _guard = busy.lock().unwrap_or_else(|e| e.into_inner());
+    f()
+}
+
 /// Run `f` on a blocking thread with a session, one at a time.
 async fn with_session<T: Send + 'static>(
     handle: Handle,
@@ -122,11 +133,10 @@ async fn with_session<T: Send + 'static>(
 ) -> Result<T, String> {
     let busy = modules.busy.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let Ok(_guard) = busy.try_lock() else {
-            return Err(json!({"error": "another transfer is running", "kind": "busy"}).to_string());
-        };
-        let mut s = session(&handle);
-        f(&mut s).map_err(|e| error_json(&e))
+        one_at_a_time(&busy, || {
+            let mut s = session(&handle);
+            f(&mut s).map_err(|e| error_json(&e))
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -139,8 +149,17 @@ fn entries_json(list: Vec<proto::Entry>) -> Value {
 }
 
 #[tauri::command]
-pub async fn mod_info(host: State<'_, crate::Host>, modules: State<'_, Modules>) -> Result<Value, String> {
-    with_session(host.handle.clone(), &modules, |s| {
+pub async fn mod_info(
+    host: State<'_, crate::Host>,
+    modules: State<'_, Modules>,
+    quick: Option<bool>,
+) -> Result<Value, String> {
+    let quick = quick.unwrap_or(false);
+    with_session(host.handle.clone(), &modules, move |s| {
+        if quick {
+            // A probe for a device without the runtime (stock firmware never answers): one short try.
+            (s.timeout, s.retries) = (QUICK_TIMEOUT, 0);
+        }
         let i = s.info()?;
         Ok(json!({
             "protocol": i.protocol, "runtime_version": i.runtime_version, "port": i.port,
@@ -230,6 +249,25 @@ mod tests {
         assert_eq!(t.take_message(), None);
         assert!(t.rx.is_empty());
         assert_eq!(from_hex("f07d"), vec![0xF0, 0x7D]);
+    }
+
+    #[test]
+    fn overlapping_calls_both_succeed_one_after_the_other() {
+        let busy = Arc::new(Mutex::new(()));
+        let inside = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let run = || {
+            let (busy, inside) = (busy.clone(), inside.clone());
+            std::thread::spawn(move || {
+                one_at_a_time(&busy, || {
+                    assert_eq!(inside.fetch_add(1, Ordering::SeqCst), 0, "two calls at once");
+                    std::thread::sleep(Duration::from_millis(50));
+                    inside.fetch_sub(1, Ordering::SeqCst);
+                    Ok::<_, String>(())
+                })
+            })
+        };
+        let (a, b) = (run(), run());
+        assert_eq!((a.join().unwrap(), b.join().unwrap()), (Ok(()), Ok(())));
     }
 
     #[test]

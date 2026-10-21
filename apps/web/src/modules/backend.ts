@@ -6,7 +6,8 @@ import type { DkEntry, DkInfo, DkProgress } from './dkupload-core.ts';
 export interface ModuleBackend {
   /** "Emulator", "Digitakt II (USB)". */
   label: string;
-  info(): Promise<DkInfo>;
+  /** `quick`: one short INFO, no retries (is a runtime there?); it fails with kind "timeout" when nothing answers. */
+  info(quick?: boolean): Promise<DkInfo>;
   list(): Promise<DkEntry[]>;
   /** Upload one file; `onProgress` returns false to cancel. */
   put(path: string, data: Uint8Array, onProgress: (p: DkProgress) => boolean | void): Promise<void>;
@@ -30,6 +31,12 @@ export function errorLine(e: unknown): string {
 export function isCancelled(e: unknown): boolean {
   const raw = e instanceof Error ? e.message : String(e);
   return (e as { kind?: string })?.kind === 'cancelled' || /"kind":"cancelled"/.test(raw);
+}
+
+/** Whether an error is "no reply" (the device never answered). */
+export function isTimeout(e: unknown): boolean {
+  const raw = e instanceof Error ? e.message : String(e);
+  return (e as { kind?: string })?.kind === 'timeout' || /"kind":\s*"timeout"/.test(raw);
 }
 
 export function formatBytes(n: number): string {

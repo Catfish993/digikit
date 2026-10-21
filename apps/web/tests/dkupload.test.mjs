@@ -44,6 +44,21 @@ test('info, put, list, delete', { skip }, async () => {
   await assert.rejects(c.delete('modules/f1.dkm'), (e) => e instanceof DkError && e.status === 'E_NOFILE');
 });
 
+test('overlapping requests both succeed; a quick INFO to a silent device fails at once', { skip }, async () => {
+  const { c } = await setup();
+  const [info, list] = await Promise.all([c.info(), c.list()]);
+  assert.equal(info.protocol, 1);
+  assert.deepEqual(list, []);
+  const dk = await Dk.create(readFileSync(wasm));
+  let sends = 0;
+  const silent = { send: () => void sends++, recv: (ms) => new Promise((r) => setTimeout(() => r(null), ms)) };
+  const quiet = new DkClient(dk, silent, { timeoutMs: 5000, retries: 2 });
+  const t0 = Date.now();
+  await assert.rejects(quiet.info(true), (e) => e instanceof DkError && e.kind === 'timeout');
+  assert.equal(sends, 1, 'no retries');
+  assert.ok(Date.now() - t0 < 1500, 'about 1 s, not 15 s');
+});
+
 test('lost reply and lost request are retried', { skip }, async () => {
   const { dk, t, c } = await setup();
   const d = data(5 * 32768 + 7, 9);

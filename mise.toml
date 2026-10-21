@@ -1,6 +1,6 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
 # Task groups: setup, workbench and emu:*, web:*, scenario:*, verify:*, test:*, lint:*/fmt:*, perf:*, gen:*,
-# dev:*, module:*, patch:*, dk:*. One name per task, no aliases. `mise run TASK -- --help` prints a tool's options.
+# dev:*, module:*, patch:*, dk:*. `mise run TASK -- --help` prints a tool's options.
 
 [settings]
 activate_aggressive = true
@@ -26,6 +26,7 @@ description = "Install the Python and web dependencies"
 # --- desktop emulator ---
 
 [tasks.workbench]
+alias = "wb"
 run = "uv run python -m tools.emulator.native_emu"
 description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready); `-- --build-only` builds without launching. The +Drive is plus_drive/<device>/ when it exists (`-- --plus-drive DIR` picks another folder, `--samples DIR` is the same option; the firmware's changes are exported back to the folder on exit, `-- --no-sync` turns that off)"
 
