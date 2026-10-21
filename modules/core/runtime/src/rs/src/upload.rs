@@ -184,7 +184,7 @@ unsafe fn reply(cmd: u8, seq: u32, status: i32, extra: usize) -> i32 {
     let n = pack(rb, 1 + extra, w.add(7));
     *w.add(7 + n) = 0xf7;
     DKRT_UPLOAD_LAST = status;
-    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG && cmd != CMD_MODULES && cmd != CMD_CAPACITY && cmd != CMD_READ && cmd != CMD_VERIFY {
+    if logged(cmd, status) {
         dlog::ev(logk::UPLOAD, if status == 0 { dlog::INFO } else { logk::F_ERROR }, [cmd as u32, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
     }
     if !tx_room(8 + n) {
@@ -485,7 +485,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     wr32(rb.add(21), newest);
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
-    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY);
+    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS);
     reply(CMD_INFO, seq, OK, 33)
 }
 
@@ -1173,54 +1173,227 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
     }
     let buf = buffer();
     let blen = unpack(msg.add(7), wire as usize, buf.add(BODY_AT));
+    let ent = find(cmd);
+    let big = ent.is_some_and(|e| e.flags & BIG != 0);
     // Every command but DATA and SELECT has a small body. Copy it out: the commands read the table into the front of the buffer.
-    // (SELECT reads its paths in place: up to 8 paths of 56 bytes, and it never touches the table.)
+    // (DATA and SELECT read theirs in place: SELECT's is up to 8 paths of 56 bytes and it never touches the table; DATA's is a chunk.)
     let mut req = [0u8; 160];
-    if cmd != CMD_DATA && cmd != CMD_SELECT {
+    if !big {
         if blen > req.len() {
             return reply(cmd, seq, E_MSG, 0);
         }
         copy(req.as_mut_ptr(), buf.add(BODY_AT), blen);
     }
-    let body = if cmd == CMD_SELECT { buf.add(BODY_AT) as *const u8 } else { req.as_ptr() };
-    // an if chain, not a `match` (a jump table is not ColdFire code)
-    if cmd == CMD_INFO {
-        cmd_info(seq, buf)
-    } else if cmd == CMD_LIST {
-        cmd_list(seq, buf, body, blen)
-    } else if cmd == CMD_MODULES {
-        cmd_modules(seq, body, blen)
-    } else if cmd == CMD_CAPACITY {
-        cmd_capacity(seq)
-    } else if cmd == CMD_BEGIN {
-        cmd_begin(seq, buf, body, blen)
-    } else if cmd == CMD_DATA {
-        cmd_data(seq, buf, blen)
-    } else if cmd == CMD_END {
-        cmd_end(seq, buf)
-    } else if cmd == CMD_DELETE {
-        cmd_delete(seq, buf, body, blen)
-    } else if cmd == CMD_READ {
-        cmd_read(seq, buf, body, blen)
-    } else if cmd == CMD_VERIFY {
-        cmd_verify(seq, buf, body, blen)
-    } else if cmd == CMD_CLEAR {
-        cmd_clear(seq, buf, body, blen)
-    } else if cmd == CMD_ABORT {
-        up().open = false;
-        reply(CMD_ABORT, seq, OK, 0)
-    } else if cmd == CMD_LOG {
-        cmd_log(seq, body, blen)
-    } else if cmd == CMD_PEEK {
-        cmd_peek(seq, body, blen)
-    } else if cmd == CMD_LOGCFG {
-        cmd_logcfg(seq, body, blen)
-    } else if cmd == CMD_SELECT {
-        cmd_select(seq, body, blen)
-    } else if cmd == CMD_RESTART {
-        cmd_restart(seq)
-    } else {
-        reply(cmd, seq, E_PROTO, 0)
+    let body = if big { buf.add(BODY_AT) as *const u8 } else { req.as_ptr() };
+    if let Some(e) = ent {
+        return (e.h)(seq, buf, body, blen);
+    }
+    // a command a module registered
+    match service(cmd) {
+        Some(h) => {
+            let out = (addr_of_mut!(RBODY) as *mut u8).add(1);
+            let r = h(cmd as u32, seq, body, blen as u32, out);
+            if r < 0 {
+                reply(cmd, seq, r, 0)
+            } else if r as usize > REPLY_BODY_MAX - 1 {
+                reply(cmd, seq, E_LENGTH, 0)
+            } else {
+                reply(cmd, seq, OK, r as usize)
+            }
+        }
+        None => reply(cmd, seq, E_PROTO, 0),
+    }
+}
+
+// ---- the command table ---------------------------------------------------------------------------------------------------
+
+/// A built-in command: its handler takes the request number, the buffer (table scratch), the body and its length, and sends the reply.
+type Handler = unsafe fn(u32, *mut u8, *const u8, usize) -> i32;
+
+/// The reply of this command is not logged as an UPLOAD event (it is read-only and frequent).
+const NOLOG: u8 = 1;
+/// The body is read in place (`buf + BODY_AT`, up to a chunk), not copied into the small request buffer.
+const BIG: u8 = 2;
+
+struct Cmd {
+    cmd: u8,
+    flags: u8,
+    h: Handler,
+}
+
+unsafe fn h_info(seq: u32, buf: *mut u8, _body: *const u8, _blen: usize) -> i32 {
+    cmd_info(seq, buf)
+}
+unsafe fn h_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_list(seq, buf, body, blen)
+}
+unsafe fn h_modules(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_modules(seq, body, blen)
+}
+unsafe fn h_capacity(seq: u32, _buf: *mut u8, _body: *const u8, _blen: usize) -> i32 {
+    cmd_capacity(seq)
+}
+unsafe fn h_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_begin(seq, buf, body, blen)
+}
+unsafe fn h_data(seq: u32, buf: *mut u8, _body: *const u8, blen: usize) -> i32 {
+    cmd_data(seq, buf, blen)
+}
+unsafe fn h_end(seq: u32, buf: *mut u8, _body: *const u8, _blen: usize) -> i32 {
+    cmd_end(seq, buf)
+}
+unsafe fn h_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_delete(seq, buf, body, blen)
+}
+unsafe fn h_read(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_read(seq, buf, body, blen)
+}
+unsafe fn h_verify(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_verify(seq, buf, body, blen)
+}
+unsafe fn h_clear(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_clear(seq, buf, body, blen)
+}
+unsafe fn h_abort(seq: u32, _buf: *mut u8, _body: *const u8, _blen: usize) -> i32 {
+    up().open = false;
+    reply(CMD_ABORT, seq, OK, 0)
+}
+unsafe fn h_log(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_log(seq, body, blen)
+}
+unsafe fn h_peek(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_peek(seq, body, blen)
+}
+unsafe fn h_logcfg(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_logcfg(seq, body, blen)
+}
+unsafe fn h_select(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_select(seq, body, blen)
+}
+unsafe fn h_restart(seq: u32, _buf: *mut u8, _body: *const u8, _blen: usize) -> i32 {
+    cmd_restart(seq)
+}
+
+/// The built-in commands, looked up one after the other (a jump table is not ColdFire code).
+static CMDS: [Cmd; 17] = [
+    Cmd { cmd: CMD_INFO, flags: NOLOG, h: h_info },
+    Cmd { cmd: CMD_LIST, flags: 0, h: h_list },
+    Cmd { cmd: CMD_MODULES, flags: NOLOG, h: h_modules },
+    Cmd { cmd: CMD_CAPACITY, flags: NOLOG, h: h_capacity },
+    Cmd { cmd: CMD_BEGIN, flags: 0, h: h_begin },
+    Cmd { cmd: CMD_DATA, flags: BIG, h: h_data },
+    Cmd { cmd: CMD_END, flags: 0, h: h_end },
+    Cmd { cmd: CMD_DELETE, flags: 0, h: h_delete },
+    Cmd { cmd: CMD_READ, flags: NOLOG, h: h_read },
+    Cmd { cmd: CMD_VERIFY, flags: NOLOG, h: h_verify },
+    Cmd { cmd: CMD_CLEAR, flags: 0, h: h_clear },
+    Cmd { cmd: CMD_ABORT, flags: 0, h: h_abort },
+    Cmd { cmd: CMD_LOG, flags: NOLOG, h: h_log },
+    Cmd { cmd: CMD_PEEK, flags: NOLOG, h: h_peek },
+    Cmd { cmd: CMD_LOGCFG, flags: NOLOG, h: h_logcfg },
+    Cmd { cmd: CMD_SELECT, flags: BIG, h: h_select },
+    Cmd { cmd: CMD_RESTART, flags: 0, h: h_restart },
+];
+
+fn find(cmd: u8) -> Option<&'static Cmd> {
+    let mut i = 0;
+    while i < CMDS.len() {
+        if CMDS[i].cmd == cmd {
+            return Some(&CMDS[i]);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Is the reply to `cmd` with `status` logged as an UPLOAD event? Not a read-only built-in (flag), and a service command only when it failed
+/// (a key press must not fill the ring).
+fn logged(cmd: u8, status: i32) -> bool {
+    match find(cmd) {
+        Some(e) => e.flags & NOLOG == 0,
+        None => status != 0 || service(cmd).is_none(),
+    }
+}
+
+// ---- commands that modules register (Api::register_cmds) ------------------------------------------------------------------
+
+const SVC_MAX: usize = 4;
+
+#[derive(Clone, Copy)]
+struct Svc {
+    first: u8,
+    last: u8,
+    /// `dlog::current_source()` of the registering module (record index + 1); 0: the slot is free.
+    owner: u8,
+    h: Option<dkrt_sdk::ServiceCmd>,
+}
+
+static mut SVC: [Svc; SVC_MAX] = [Svc { first: 0, last: 0, owner: 0, h: None }; SVC_MAX];
+
+fn svc() -> &'static mut [Svc; SVC_MAX] {
+    unsafe { &mut *addr_of_mut!(SVC) }
+}
+
+/// The handler of a registered command.
+fn service(cmd: u8) -> Option<dkrt_sdk::ServiceCmd> {
+    let t = svc();
+    let mut i = 0;
+    while i < SVC_MAX {
+        if t[i].owner != 0 && cmd >= t[i].first && cmd <= t[i].last {
+            return t[i].h;
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `Api::register_cmds`: `E_CMD_RANGE` when the range is empty, outside every reserved range, over a registered one, or there is no free
+/// slot; else 0.
+pub unsafe fn register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::ServiceCmd>) -> i32 {
+    if handler.is_none() || count == 0 || first == 0 || first > 0xff || count > 0xff || first + count - 1 > 0xff {
+        return E_CMD_RANGE as i32;
+    }
+    let (lo, hi) = (first as u8, (first + count - 1) as u8);
+    let mut reserved = false;
+    let mut i = 0;
+    while i < RANGES.len() {
+        if lo >= RANGES[i].0 && hi <= RANGES[i].1 {
+            reserved = true;
+        }
+        i += 1;
+    }
+    if !reserved {
+        return E_CMD_RANGE as i32;
+    }
+    let t = svc();
+    let mut free = SVC_MAX;
+    i = 0;
+    while i < SVC_MAX {
+        if t[i].owner == 0 {
+            free = i;
+        } else if lo <= t[i].last && t[i].first <= hi {
+            return E_CMD_RANGE as i32;
+        }
+        i += 1;
+    }
+    if free == SVC_MAX {
+        return E_CMD_RANGE as i32;
+    }
+    // a registration outside a module's init (owner 0) is kept under owner 255: nothing releases it
+    let owner = dlog::current_source();
+    t[free] = Svc { first: lo, last: hi, owner: if owner == 0 { 255 } else { owner }, h: handler };
+    OK
+}
+
+/// The module whose source index is `owner` was taken down: release its ranges.
+pub unsafe fn release_cmds(owner: u8) {
+    let t = svc();
+    let mut i = 0;
+    while i < SVC_MAX {
+        if t[i].owner == owner {
+            t[i] = Svc { first: 0, last: 0, owner: 0, h: None };
+        }
+        i += 1;
     }
 }
 

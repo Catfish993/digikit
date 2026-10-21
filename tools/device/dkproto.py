@@ -54,6 +54,7 @@ STATUS: dict[int, tuple[str, str]] = {
     -61: ("E_NOSTORE", "the store header is unreadable (CLEAR still works)"),
     -62: ("E_INUSE", "the card's store area is not ours and not blank"),
     -63: ("E_PEEK", "PEEK range not allowed, or length 0 or over 512"),
+    -64: ("E_CMD_RANGE", "command range not reserved, taken, or empty"),
 }
 
 LOAD_STATUS: dict[int, tuple[str, str]] = {
@@ -108,6 +109,11 @@ CAP: dict[str, int] = {
     "CAPACITY": 6,
     "READ": 7,
     "VERIFY": 8,
+    "SERVICE_CMDS": 9,
+}
+
+RANGES: dict[str, tuple[int, int]] = {
+    "remote": (0x38, 0x3F),
 }
 
 CAPACITY_KINDS: dict[str, int] = {

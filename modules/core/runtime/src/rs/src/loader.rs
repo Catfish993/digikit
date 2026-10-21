@@ -506,6 +506,8 @@ unsafe fn unload_rec_inner(rec: usize) -> i32 {
         let call: unsafe extern "C" fn(*const Api) = core::mem::transmute(m.fini as usize);
         crate::dlog::call_fini(rec as usize, call, addr_of!(dkrt_api));
     }
+    // the SysEx commands it registered are released with it
+    crate::upload::release_cmds(rec as u8 + 1);
     // the machine row first, then the DSP voice rows, then the range in the DSP area
     crate::registry::remove(rec as u8 + 1);
     dsp::release(rec);

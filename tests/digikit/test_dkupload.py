@@ -409,3 +409,15 @@ def test_verify_request_and_reply():
     with pytest.raises(D.UploadError) as e:
         up.verify("none.dkm")
     assert D.STATUS[e.value.status] == "E_NOFILE"
+
+
+def test_service_command_ranges_and_capability_are_generated():
+    from tools.device import dkproto
+
+    # a request number is 6 bits (bit 6 of the command byte marks a reply): a range lies in 0x01..0x3f and holds no command
+    for first, last in dkproto.RANGES.values():
+        assert 1 <= first <= last <= 0x3F
+        assert not any(first <= v <= last for v in dkproto.CMD.values())
+    assert dkproto.RANGES["remote"] == (0x38, 0x3F)
+    assert D.CAP["SERVICE_CMDS"] == 9
+    assert D.STATUS[-64] == "E_CMD_RANGE"

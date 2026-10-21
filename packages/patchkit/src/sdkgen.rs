@@ -49,6 +49,10 @@ struct Protocol {
     commands: BTreeMap<String, u8>,
     status: BTreeMap<String, Status>,
     caps: BTreeMap<String, u32>,
+    /// Command numbers a run-time module may register (`Api::register_cmds`): name -> [first, last]. Request numbers are 6 bits (bit 6 of the
+    /// command byte marks a reply), so a range lies in 0x01..=0x3f and overlaps no command and no other range.
+    #[serde(default)]
+    ranges: BTreeMap<String, [u8; 2]>,
 }
 /// `[capacity]`: the kinds of a CAPACITY entry.
 #[derive(Deserialize)]
@@ -263,6 +267,18 @@ fn parse(text: &str) -> Result<Sdk> {
             return Err(err!("{SOURCE}: protocol command number {v:#04x} ({n}) twice"));
         }
     }
+    for (i, (n, [first, last])) in p.ranges.iter().enumerate() {
+        if *first == 0 || first > last || *last > 0x3f {
+            return Err(err!("{SOURCE}: protocol range {n}: [{first:#04x}, {last:#04x}] is not inside 0x01..=0x3f"));
+        }
+        let hit = |v: u8| v >= *first && v <= *last;
+        if let Some((c, _)) = p.commands.iter().find(|(_, v)| hit(**v)) {
+            return Err(err!("{SOURCE}: protocol range {n} holds the command {c}"));
+        }
+        if let Some((o, _)) = p.ranges.iter().skip(i + 1).find(|(_, [f, l])| f <= last && first <= l) {
+            return Err(err!("{SOURCE}: protocol ranges {n} and {o} overlap"));
+        }
+    }
     for (i, (n, v)) in p.caps.iter().enumerate() {
         if *v > 31 {
             return Err(err!("{SOURCE}: protocol cap {n}: bit {v} is not below 32"));
@@ -319,6 +335,15 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
     }
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "{indent}pub const CAPK_{n}: u8 = {k};");
+    }
+    let _ = writeln!(s, "{indent}/// The command ranges a module may register, as (first, last).");
+    let _ = writeln!(s, "{indent}pub const RANGES: [(u8, u8); {}] = [", p.ranges.len());
+    for ([first, last], n) in p.ranges.values().zip(p.ranges.keys()) {
+        let _ = writeln!(s, "{indent}    ({first:#04x}, {last:#04x}), // {n}");
+    }
+    let _ = writeln!(s, "{indent}];");
+    for (n, [first, last]) in &p.ranges {
+        let _ = writeln!(s, "{indent}pub const RANGE_{}: (u8, u8) = ({first:#04x}, {last:#04x});", n.to_uppercase());
     }
     s
 }
@@ -430,6 +455,10 @@ fn python_proto(sdk: &Sdk) -> String {
     for (n, bit) in by_value(&p.caps) {
         let _ = writeln!(s, "    {n:?}: {bit},");
     }
+    s.push_str("}\n\nRANGES: dict[str, tuple[int, int]] = {\n");
+    for (n, [first, last]) in &p.ranges {
+        let _ = writeln!(s, "    {n:?}: (0x{first:02X}, 0x{last:02X}),");
+    }
     s.push_str("}\n\nCAPACITY_KINDS: dict[str, int] = {\n");
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "    {n:?}: {k},");
@@ -465,6 +494,10 @@ fn ts_proto(sdk: &Sdk) -> String {
     s.push_str("export const CAP = {\n");
     for (n, bit) in by_value(&p.caps) {
         let _ = writeln!(s, "  {n}: {bit},");
+    }
+    s.push_str("} as const;\n\n/** The command numbers a module may register: [first, last]. */\nexport const RANGES = {\n");
+    for (n, [first, last]) in &p.ranges {
+        let _ = writeln!(s, "  {n}: [{first:#04x}, {last:#04x}],");
     }
     s.push_str("} as const;\n\nexport const CAPACITY_KINDS = {\n");
     for (n, k) in by_value(&sdk.capacity.kinds) {

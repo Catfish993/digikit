@@ -1334,20 +1334,12 @@ def run_pages(c: Ctx) -> None:
     PG.run_pages(c)
 
 
-def run_live(c: Ctx) -> None:
-    """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
-    by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
-    guest's card writes are laid over a default blank card when the firmware was loaded without one."""
-    import subprocess
-
-    from tools import python_env
+def live_boot(c: Ctx) -> tuple[Any, Path]:
+    """A coupled daemon free-running on a stock image with the runtime patched in (the DT2 on a card built from a folder, the DN2 on none),
+    started with `--mirror-dir`; returns it and the mirror folder. The caller closes it."""
     from tools.control.digi_client import Emu
-    from tools.device import dklog as L
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
     from tools.firmware import config
 
-    (module,) = c.table()["modules"]
     dev, ver = c.image.split("-")
     spec = H.FIRMWARE[(dev, ver)]
     syx = config.stock(spec["syx"])
@@ -1376,21 +1368,117 @@ def run_live(c: Ctx) -> None:
         emu.call("run.mode", mode="free")
         time.sleep(float(c.table().get("settle_s", 12)))
         c.check("the daemon runs free", emu.status().get("mode") == "free")
-        epoch0 = emu.status()["epoch"]
+    except BaseException:
+        emu.__exit__(None, None, None)
+        raise
+    return emu, mirror
 
-        def tool(*args: str) -> tuple[int, list[dict[str, Any]], float]:
-            t0 = time.monotonic()
-            r = subprocess.run(
-                [sys.executable, "-m", "tools.device.dktransfer", "--emu"]
-                + ["--socket", emu.path, "--json", *args],
-                capture_output=True,
-                text=True,
-                cwd=ROOT,
-                env=python_env(),
-                timeout=300,
-            )
-            ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
-            return r.returncode, ev, time.monotonic() - t0
+
+def live_tool(emu: Any) -> Callable[..., tuple[int, list[dict[str, Any]], float]]:
+    """`tools.device.dktransfer` as a command line against the daemon: (return code, JSON events, seconds)."""
+    import subprocess
+
+    from tools import python_env
+
+    def tool(*args: str) -> tuple[int, list[dict[str, Any]], float]:
+        t0 = time.monotonic()
+        r = subprocess.run(
+            [sys.executable, "-m", "tools.device.dktransfer", "--emu"]
+            + ["--socket", emu.path, "--json", *args],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            env=python_env(),
+            timeout=300,
+        )
+        ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        return r.returncode, ev, time.monotonic() - t0
+
+    return tool
+
+
+def run_live_svc(c: Ctx) -> None:
+    """A module that registers SysEx commands (Api.register_cmds): `test/svc-echo` is installed and loaded by the runtime, then its commands
+    answer over SysEx (an echo, a status of its own), the refusals it provoked at init are the ones the runtime must give, an unregistered
+    command is E_PROTO, and INFO says the runtime has the capability."""
+    from tools.device import dkproto
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+
+    (module,) = c.table()["modules"]
+    emu, _mirror = live_boot(c)
+    try:
+        tool = live_tool(emu)
+        rc, ev, _ = tool("install", module, "--restart")
+        res = next((e for e in ev if e["event"] == "result"), {})
+        c.check(
+            "install --restart: the module that registers commands loaded",
+            rc == 0 and module in res.get("loaded", []),
+            f"rc {rc} {ev[-1:] if ev else ''}",
+        )
+        up = DK.Uploader(TR.LiveTransport(emu))
+        info = up.info()
+        c.check(
+            "INFO: the capability for service commands",
+            DK.has_cap(info, "SERVICE_CMDS"),
+            str(info["caps"]),
+        )
+        lo, hi = dkproto.RANGES["remote"]
+        c.check("the remote range is reserved", (lo, hi) == (0x38, 0x3F), str((lo, hi)))
+        echo, refusals = 0x3E, 0x3F
+        status, body = up.request(echo, b"hello \x80\xff")
+        c.check(
+            "an echo command: the reply body is the request body (8-bit bytes too)",
+            status == 0 and body == b"hello \x80\xff",
+            f"{status} {body!r}",
+        )
+        status, body = up.request(echo, b"")
+        c.check("an echo of nothing", status == 0 and body == b"", f"{status} {body!r}")
+        status, body = up.request(echo, b"\xee")
+        c.check(
+            "a status of the module's own, no body",
+            status == -77 and body == b"",
+            f"{status} {body!r}",
+        )
+        status, body = up.request(echo, bytes(range(150)))
+        c.check(
+            "a 150-byte body", status == 0 and body == bytes(range(150)), f"{status}"
+        )
+        status, body = up.request(echo, bytes(200))
+        c.check(
+            "a body over 160 bytes is refused (E_MSG)",
+            status == -50,
+            f"{status}",
+        )
+        status, body = up.request(refusals)
+        e_range = 0xC0  # E_CMD_RANGE = -64, its low byte
+        c.check(
+            "the runtime refused what it had to: outside a reserved range, over a registered one, an empty range",
+            status == 0 and list(body) == [e_range] * 3,
+            f"{status} {list(body)}",
+        )
+        status, _ = up.request(0x3D)
+        c.check("a command nobody registered is E_PROTO", status == -60, str(status))
+    finally:
+        emu.__exit__(None, None, None)
+
+
+def run_live(c: Ctx) -> None:
+    """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
+    by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
+    guest's card writes are laid over a default blank card when the firmware was loaded without one."""
+    from tools.device import dklog as L
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+
+    if c.table().get("part") == "svc":
+        return run_live_svc(c)
+    (module,) = c.table()["modules"]
+    dev, _ = c.image.split("-")
+    emu, mirror = live_boot(c)
+    try:
+        epoch0 = emu.status()["epoch"]
+        tool = live_tool(emu)
 
         rc, ev, secs = tool("install", module, "--restart")
         res = next((e for e in ev if e["event"] == "result"), {})

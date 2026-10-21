@@ -175,6 +175,15 @@ fn the_capacity_kinds_are_generated_for_every_host() {
     assert!(get(sdkgen::PROTO_TS_OUT).contains("  VERIFY: 0x17,"));
     assert!(get(sdkgen::PROTO_TS_OUT).contains("  [-59, 'E_NOFILE', 'that path is not in the store'],"));
     assert!(get(sdkgen::PROTO_TS_OUT).contains("  ARENA: 3,"));
+    // the command ranges a module may register: in every host's numbers, and a bad one is refused
+    assert!(get(sdkgen::PROTO_TS_OUT).contains("  remote: [0x38, 0x3f],"));
+    assert!(get(sdkgen::PROTO_PY_OUT).contains("\"remote\": (0x38, 0x3F),"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3f);"));
+    for bad in ["remote = [0x38, 0x40]", "remote = [0x10, 0x18]", "remote = [0x3f, 0x38]", "remote = [0, 0x08]"] {
+        let broken = text.replace("remote = [0x38, 0x3f]", bad);
+        assert_ne!(broken, text);
+        assert!(sdkgen::render(&broken).is_err(), "{bad}");
+    }
     assert!(get(sdkgen::RUST_OUT).contains("pub const CAP_CAPACITY: u32 = 1 << 6;"));
     // two kinds with one number, or kind 0, are refused
     let dup = text.replace("ARENA = 3 ", "ARENA = 2 ");

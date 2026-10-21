@@ -369,6 +369,9 @@ unsafe extern "C" fn api_log(msg: *const u8, value: u32) {
 unsafe extern "C" fn api_log_lv(level: u32, msg: *const u8, value: u32) {
     log_at(level, msg, value);
 }
+unsafe extern "C" fn api_register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::ServiceCmd>) -> i32 {
+    upload::register_cmds(first, count, handler)
+}
 
 /// The table is built at first use: pointers to the helpers are not constants.
 #[no_mangle]
@@ -389,6 +392,7 @@ pub static mut dkrt_api: Api = Api {
     udivdi3: 0,
     umoddi3: 0,
     log_lv: api_log_lv,
+    register_cmds: api_register_cmds,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {

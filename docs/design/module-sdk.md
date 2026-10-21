@@ -640,6 +640,14 @@ These supersede earlier text where they conflict; the passages they change point
 - **D12. Raw path and public module.** The old-form voice row (a row with no `note_on`) stays as the path of a `raw` module (D2): no contract, no guard clamp. The patched-in pluck stays the public browser module until the web flow delivers a `.dkm`.
 - **Estimate.** With D4 (DSP relocation, one pluck body) and the steps merged into three PRs, about 30 to 45 agent hours. Most of the risk is in the DN2 adapter. The table in 11.3 is the earlier per-step upper bound.
 
+### 11.6 Service commands (api 1.2, runtime 0.2.5)
+
+A module that needs a SysEx command of its own (the first is `digikit/remote`: key, turn and state of the panel) calls `Api.register_cmds(first, count, handler)` from `init`.
+The handler is `int handler(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)`: it returns the number of reply bytes written to `out`, or a negative status. It runs in the firmware's
+MIDI task, so it is short and never waits. The ranges a module may take are reserved in `sdk/sdk.toml` `[protocol.ranges]`; a request outside them, over another module's, or empty
+returns `E_CMD_RANGE` (-64). The ranges are released when the module's `fini` has run. `docs/design/digikit-upload.md` ("Service commands") has the wire side; the fixture
+`test/svc-echo` and the scenario `service-cmds` show the round trip.
+
 ## 12. Hot reload as a later goal
 
 Not in SDK v1. The aim is that v1 does not make it harder.

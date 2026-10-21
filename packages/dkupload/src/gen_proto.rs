@@ -34,6 +34,7 @@ pub const E_PROTO: i8 = -60;
 pub const E_NOSTORE: i8 = -61;
 pub const E_INUSE: i8 = -62;
 pub const E_PEEK: i8 = -63;
+pub const E_CMD_RANGE: i8 = -64;
 pub const CAP_LOG: u32 = 1 << 0;
 pub const CAP_PEEK: u32 = 1 << 1;
 pub const CAP_LOGCFG: u32 = 1 << 2;
@@ -43,6 +44,7 @@ pub const CAP_MODULES: u32 = 1 << 5;
 pub const CAP_CAPACITY: u32 = 1 << 6;
 pub const CAP_READ: u32 = 1 << 7;
 pub const CAP_VERIFY: u32 = 1 << 8;
+pub const CAP_SERVICE_CMDS: u32 = 1 << 9;
 pub const CAPK_MODULES: u8 = 1;
 pub const CAPK_SELECTION: u8 = 2;
 pub const CAPK_ARENA: u8 = 3;
@@ -54,3 +56,8 @@ pub const CAPK_PARAM_ROWS: u8 = 8;
 pub const CAPK_PAGE_ROWS: u8 = 9;
 pub const CAPK_FX_SLOTS: u8 = 10;
 pub const CAPK_MAP_ENTRIES: u8 = 11;
+/// The command ranges a module may register, as (first, last).
+pub const RANGES: [(u8, u8); 1] = [
+    (0x38, 0x3f), // remote
+];
+pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3f);
