@@ -172,7 +172,7 @@ plan's addresses, so a profile with other limits gets its own sets. The limits a
 
 | Scenario | Checks |
 | --- | --- |
-| `capacity-dt2`, `capacity-dn2` | one ColdFire-only boot per case: module table (SELECT of a ninth path), staging buffer, repeated name, arena, DSP area, voice rows, machine types, parameter rows, page rows (DN2): each limit filled, then the refusal with its code; MODULES, the ranges and `DKRT_TABLE_BAD` after each |
+| `capacity-dt2`, `capacity-dn2` | one ColdFire-only boot per case: module table (SELECT of a ninth path), staging buffer, repeated name, arena, DSP area, voice rows, machine types, parameter rows, page rows (DN2): each limit filled, then the refusal with its code; MODULES, the ranges, `DKRT_TABLE_BAD` and the CAPACITY reply (against MODULES, the device file and what the case filled) after each |
 | `memaudit-dt2-full`, `memaudit-dn2-full` | the memory audit over `test/dyn-demo` plus the full set (every limit used, three modules refused) |
 | `isolation-dn2` (quick), `isolation-dt2` (full: 78 s cold, over the 60 s rule) | coupled: `test/sine` alone against `test/sine` with the full set behind it: MODULES record, DSP bytes read back from L2, PCM from the onset |
 
