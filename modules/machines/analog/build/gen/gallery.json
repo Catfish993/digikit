@@ -1,0 +1,148 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 25,
+              "stock": 202
+            },
+            {
+              "param": "analog_detune",
+              "slot": 26
+            },
+            null,
+            null,
+            {
+              "param": "analog_wave",
+              "slot": 29
+            },
+            null,
+            {
+              "param": "analog_sub",
+              "slot": 31
+            },
+            {
+              "slot": 32,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Analog",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "ANA",
+          "type": 12
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "analog_detune",
+              "slot": 1
+            },
+            null,
+            null,
+            {
+              "param": "analog_wave",
+              "slot": 4
+            },
+            null,
+            {
+              "param": "analog_sub",
+              "slot": 6
+            },
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Analog",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "ANA",
+          "type": 12
+        }
+      },
+      "id": "analog",
+      "name": "Analog",
+      "short": "ANA"
+    }
+  ],
+  "module": "fadedlimes/analog",
+  "params": {
+    "dn2": [
+      {
+        "default": 10240,
+        "id": "analog_detune",
+        "max": 32512,
+        "min": 0,
+        "name": "Detune",
+        "short": "DET",
+        "slot": 26,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "analog_wave",
+        "max": 32512,
+        "min": 0,
+        "name": "Wave",
+        "short": "WAVE",
+        "slot": 29,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "analog_sub",
+        "max": 32512,
+        "min": 0,
+        "name": "Sub / Fold",
+        "short": "SUB",
+        "slot": 31,
+        "template": 209
+      }
+    ],
+    "dt2": [
+      {
+        "default": 10240,
+        "id": "analog_detune",
+        "max": 32512,
+        "min": 0,
+        "name": "Detune",
+        "short": "DET",
+        "slot": 1,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "analog_wave",
+        "max": 32512,
+        "min": 0,
+        "name": "Wave",
+        "short": "WAVE",
+        "slot": 4,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "analog_sub",
+        "max": 32512,
+        "min": 0,
+        "name": "Sub / Fold",
+        "short": "SUB",
+        "slot": 6,
+        "template": 209
+      }
+    ]
+  }
+}
