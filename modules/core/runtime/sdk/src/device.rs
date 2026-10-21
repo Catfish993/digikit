@@ -41,5 +41,7 @@ pub const LIMIT_MODULES: u32 = 0x8;
 pub const LIMIT_MACHINE_ROWS: u32 = 0x8;
 /// [limits] arena_bytes (the module arena)
 pub const LIMIT_ARENA_BYTES: u32 = 0x80000;
+/// [limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY)
+pub const LIMIT_FX_SLOTS: u32 = 0x4;
 /// [limits] stage_bytes (the staging buffer of a .dkm file)
 pub const LIMIT_STAGE_BYTES: u32 = 0x10000;

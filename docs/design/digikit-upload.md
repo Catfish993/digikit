@@ -61,6 +61,7 @@ SELECT also answers the selection record's own codes (runtime codes -40 to -49):
 | 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION (4 since SELECT and RESTART, 5 since the DSP guard: voice rows of 16 words, DSP sections of version 2, 24 DSP diagnostic words, log events 27 and 28; the commands are unchanged), device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags, u32 log_oldest, u32 log_newest` (flags: bit 0 safe mode, bit 1 upload open, bit 2 card read-only, bit 3 debug log ON, bit 4 a crash record was found at this boot; the two sequence numbers are those of the oldest and newest event in the log ring, 0 and 0 when empty; runtime 2 stops after the flags) |
 | 0x02 | LIST | `u32 first` | `u32 total, u8 n`, then n entries `path NUL, u32 size, sha256[32]` from index `first`, as many as fit the reply |
 | 0x03 | MODULES (runtime 0.2.0, capability bit 5) | `u8 start` (a module record index) | `u32 arena_free, u32 arena_largest, u32 dsp_free, u32 dsp_largest, u8 total, u8 n`, then `n` records (below). The loaded modules and what they hold; see "MODULES". |
+| 0x04 | CAPACITY (runtime 0.2.2, capability bit 6) | (none) | `u8 version 1, u8 n`, then `n` entries `u8 kind, u32 limit, u32 used, u32 largest`. Per resource of the runtime; see "CAPACITY". |
 | 0x10 | BEGIN | `path NUL, u32 size, sha256[32]` | (none). Opens an upload; a BEGIN while one is open drops the old one. |
 | 0x11 | DATA | `u32 offset, bytes` | (none). |
 | 0x12 | END | (none) | (none). Verifies, then commits (below). |
@@ -92,6 +93,29 @@ Behaviour the first draft left open (lane r4, built and tested):
 DATA rules: `offset` equals the next expected byte, or the offset of the previous chunk with the same length (a retry; the
 reply is ok and nothing is written again). The length is 1 to 32768 and a multiple of 512, except for the chunk that ends the
 file. The host may keep at most 2 DATA requests in flight; replies come in order.
+
+## CAPACITY
+
+A read-only command like MODULES (every state, no card read, not logged as an UPLOAD event); INFO's `caps` bit 6 (`CAP_CAPACITY`) says the runtime has it. The reply is `u8 version` (1), `u8 n`, then `n` entries of
+`u8 kind, u32 limit, u32 used, u32 largest` (big endian, 13 bytes). The kinds are `[capacity.kinds]` of `sdk/sdk.toml` (generated: `dkproto.CAPACITY_KINDS`, `CAPK_*` in `gen_proto.rs`); a host skips a kind it does not know, and a
+kind is appended, never renumbered. `used` and `largest` come from the same tables as MODULES; `largest` is 0 where a largest free piece has no meaning.
+
+| kind | name | limit | used | largest |
+|---|---|---|---|---|
+| 1 | MODULES | module records (`[limits] modules`) | loaded | 0 |
+| 2 | SELECTION | paths of the selection record (`SEL_MAX`) | paths this boot loaded | 0 |
+| 3 | ARENA | ColdFire arena bytes | taken, headers included | payload of the largest free block |
+| 4 | STAGE | staging buffer: the largest .dkm file | 0 | the limit |
+| 5 | DSP_AREA | DSP run-time area bytes (0 without a DSP loader) | taken; alignment gaps count as free | the largest free range |
+| 6 | MACHINE_ROWS | run-time machine types the registry reserves | in use | 0 |
+| 7 | VOICE_ROWS | DSP voice rows | in use | 0 |
+| 8 | PARAM_ROWS | parameter rows core/dynreg reserves | in use | 0 |
+| 9 | PAGE_ROWS | page rows core/dynreg reserves (0 on the Digitakt II) | in use | 0 |
+| 10 | FX_SLOTS | effects in the chain (`[limits] fx_slots`) | 0 (run-time effects do not exist) | 0 |
+| 11 | MAP_ENTRIES | sticky machine-type map entries (`MAP_N`) | in use | 0 |
+
+`Uploader.capacity()` returns `{name: {limit, used, largest}}`; `mise run dk:store -- --emu info` prints one line per kind (and says "not reported" for a runtime without the bit). The Rust client (`packages/dkupload`) has no MODULES
+or CAPACITY request yet; it gets the generated numbers only (P5).
 
 ## MODULES
 

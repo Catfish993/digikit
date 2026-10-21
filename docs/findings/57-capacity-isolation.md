@@ -1,6 +1,6 @@
 # 57. Capacity and isolation of run-time modules (DT2 1.17, DN2 1.12)
 
-Plan: `docs/plans/capacity-isolation.md` (PR 1: steps 1 to 5; PR 2, the CAPACITY command, is not built). Marks as in AGENTS.md: **[D]** measured or read once here,
+Plan: `docs/plans/capacity-isolation.md` (PR 1: steps 1 to 5, merged; PR 2, step 6: the CAPACITY command, runtime 0.2.2, built). Marks as in AGENTS.md: **[D]** measured or read once here,
 **[O]** open, **[C]** corrects an earlier claim; nothing is **[V]** (a second agent has not checked the sets against the image bytes). Emulator only; the device has
 not run any of it. Pieces: `tools/patchkit/pk_capacity.py` (the sets), `tools/patchkit/pk_digikit_capacity.py` (the runner), `packages/patchkit/src/dkmsynth.rs`
 (`patchkit synth-dkm`), scenarios `capacity-*`, `memaudit-*-full`, `isolation-*` in `tests/digikit/scenarios/`, `tests/patchkit/test_capacity_sets.py`,
@@ -32,7 +32,7 @@ the DSP ranges in the area, and all ranges are disjoint. A refused module left n
 ### Which code a limit gives, and why **[D]**
 
 - `E_TABLE_FULL` (-14) cannot be reached: the selection holds `SEL_MAX` = 8 paths and there are 8 module records. SELECT refuses a ninth path (`E_SEL_COUNT`), and the
-  mailbox hook answers `E_SEL_PATH` (-40) for the same case (another code; it is a test hook). `E_TABLE_FULL` stays a defence; a device that sets `modules` below 8 would
+  mailbox hook answered `E_SEL_PATH` (-40) for the same case until runtime 0.2.1 (a test hook); since 0.2.2 it answers `E_SEL_COUNT` too. `E_TABLE_FULL` stays a defence; a device that sets `modules` below 8 would
   reach it. The runner asserts `modules <= SEL_MAX`.
 - Eight machine types, eight machine rows and eight voice rows are one number. The type assignment gives out numbers before the DSP checks run, so a ninth hashed machine is
   `E_TYPE_RANGE`, not `E_DSP_ROWS`. `E_DSP_ROWS` and `E_DSP_TYPE` are reached by voices with a pinned type number (a DSP-only module).
@@ -71,7 +71,7 @@ full set does not fill the module table (the `modules` case does).
 holds the device's numbers, now with `fx_slots` (4), `param_rows` (16) and `page_rows` (0 on the DT2, 8 on the DN2). `patchkit gen` refuses a value above its maximum and a
 `machine_rows` that is not the run-time type range of `types.toml`; a registry may name a device limit (`core/fx`: `limit = "fx_slots"`), and `apply` refuses more effects than
 the device allows. `pk_device.limits()` and `contract_max()` replace the copies in `pk_dkrt.py`, `pk_dkrt_boot.py` and `pk_conform.py` (a test fails when a literal copy
-returns). The new keys are not emitted into the runtime yet, so no framework module changed.
+returns). In PR 1 the new keys were not emitted into the runtime, so no framework module changed; PR 2 emits `LIMIT_FX_SLOTS` (below).
 
 ## A gate gap closed **[C]**
 
@@ -110,6 +110,21 @@ The cases of one scenario boot in threads (`Ctx.parallel`). In `test:changed` (c
 - A DSP transfer that fails (`E_DSP_XFER`) and a DSP that runs a module's code are not covered by `capacity-*` (ColdFire-only boots); the isolation scenarios run the transfers
   and play the reference only.
 - The DN2 sender of `core/dsp-link` accepts offsets up to 0x80000 bytes while the DN2 area is 0x50000: the C constant is the protocol's 17-bit width (shared by both devices). The
-  runtime's `alloc_range` and the DSP check the real size; the plan's PR 2 turns the constant into a generated shared value.
-- PR 2: the CAPACITY command (rows used and free per type), runtime 0.2.2, `SEL_MAX` and `MAP_N` generated from `sdk.toml`, the mailbox answering `E_SEL_COUNT`.
+  runtime's `alloc_range` and the DSP check the real size. PR 2 made the constant a generated shared value (below); the gap itself is unchanged.
+- The Rust host client (`packages/dkupload`) has no MODULES or CAPACITY request, so it only gets the generated numbers: a CAPACITY request there is **[O]** (P5).
+- `fx_slots` is a shared constant in the runtime (one image for both devices), so the two device files must give it the same value; a device that wants another number needs it in a device object. The runtime reports no run-time effects (used 0).
 - Machine-name hash collisions, `enum` parameters and 16-voice polyphony are still untested (finding 56 section 9).
+
+## Reporting and generation (PR 2, runtime 0.2.2) **[D]**
+
+- **CAPACITY** (command 0x04, capability bit 6; `docs/design/digikit-upload.md`): `u8 version, u8 n`, then per resource `u8 kind, u32 limit, u32 used, u32 largest`. Eleven kinds: modules, selection paths, arena, staging buffer, DSP area, machine
+  rows, voice rows, parameter rows, page rows, effect slots, sticky map entries. The numbers are in `sdk/sdk.toml` (`[protocol]`, `[capacity.kinds]`) and generated for the Python and Rust hosts. MODULES, `DkrtHealth` and the on-device page are
+  unchanged. `Uploader.capacity()` and `mise run dk:store -- --emu info` print it (`capacity arena: 64/524288  largest free 522816`); a runtime without the bit prints "not reported".
+- Example, DT2 with pluck and xslice loaded (`debug-log`): modules 2/8, selection 2/8, arena 64 of 524 288 (largest free 522 816), DSP area 265 600 of 524 288 (largest 258 684), machine rows 2/8, voice rows 1/8, parameter rows 5/16, page rows 0/0,
+  map entries 2/8.
+- **Checks.** `part_modules` (debug-log, no extra boot) asserts the capability, every limit against the device file, and the use against MODULES. Every `capacity-*` case compares the reply with MODULES, the profile and what the case filled (arena
+  and DSP area used up, every voice, machine, parameter and page row counted).
+- **Version.** Runtime 0.2.1 to 0.2.2 (additive: no contract, store or MODULES change; `.dkm` files need no rebuild). Old devices keep working with every host; the host asks only when the capability bit is set. No flash image was built.
+- **Generation.** `SEL_MAX` and `MAP_N` now come from `[limits.max]` (`gen_sdk.rs`), so the cargo tie test is replaced by one that checks the generated file; `LIMIT_FX_SLOTS` is emitted into the runtime. `dsp-link.c` takes the link's word-offset
+  width from a generated header (`c-shared` gen kind, `build/gen/dl-limits.h`: 0x80000 bytes, 0x20000 words, the contract's maximum, shared by both devices); the committed objects of the runtime, dsp-link, digikit-menu and two fixtures were rebuilt
+  (their bytes changed only through the SDK constants).

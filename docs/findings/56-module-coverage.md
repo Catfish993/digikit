@@ -123,7 +123,7 @@ Pluck takes 256 KiB of the DSP area, so on DN2 a second module with a delay line
   and the store; `DkrtModule` gives each module's arena `size` and `dsp_size` (modules/core/runtime/sdk/src/lib.rs).
 - The MODULES page prints the free DSP area; the health log record carries `arena_free` and `heap_free_kb`.
 - Not reported: use per module type, rows used and free per type (machine rows, effect slots), DSP state bytes per
-  module (the plan's CAPACITY command, PR 2 of docs/plans/capacity-isolation.md).
+  module. **[C]** Rows used and free per type are reported by the CAPACITY command since runtime 0.2.2 (finding 57); DSP state bytes per module still are not.
 
 ## 8. Device log
 

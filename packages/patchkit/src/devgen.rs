@@ -153,9 +153,8 @@ struct LimitsF {
     machine_rows: u64,
     arena_bytes: u64,
     stage_bytes: u64,
-    // Not written into the generated files yet (nothing consumes them): checked against the contract maxima only.
-    #[allow(dead_code)]
     fx_slots: u64,
+    // Not written into the generated files (the runtime reads the rows from core/dynreg's device object): checked against the maxima only.
     #[allow(dead_code)]
     param_rows: u64,
     #[allow(dead_code)]
@@ -728,6 +727,12 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "[limits] arena_bytes (the module arena)",
         ),
         c(
+            "LIMIT_FX_SLOTS",
+            e.limits.fx_slots,
+            Shared,
+            "[limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY)",
+        ),
+        c(
             "LIMIT_STAGE_BYTES",
             e.limits.stage_bytes,
             Shared,
@@ -802,6 +807,19 @@ fn rust(module: &str, per_dev: &[(String, Vec<C>)]) -> Result<String> {
     Ok(s)
 }
 
+/// A C header of the contract maxima of `sdk/sdk.toml` `[limits.max]` that a ColdFire object shared by all devices checks against: the
+/// DSP area's size is a device value, but the link's word offset (17 bits) is the contract's.
+fn c_shared(module: &str) -> String {
+    let max = crate::sdkgen::limits_max();
+    format!(
+        "/* {module}: {NOTE}. Contract maxima of sdk/sdk.toml [limits.max]. */\n\
+         #define DL_AREA_MAX_BYTES {:#x}u /* [limits.max] dsp_area_bytes: the largest area the 17-bit word offset of a chunk reaches */\n\
+         #define DL_AREA_MAX_WORDS {:#x}u /* the same in words */\n",
+        max.dsp_area_bytes,
+        max.dsp_area_bytes / 4
+    )
+}
+
 fn gas_shared(module: &str, per_dev: &[(String, Vec<C>)]) -> Result<String> {
     let mut s = format!("/* {module}: {NOTE}. Constants that every device file agrees on. */\n");
     for k in shared(module, per_dev)? {
@@ -867,6 +885,14 @@ pub fn generate(lib: &Library, facts: &Facts, module: &str) -> Result<Vec<GenFil
                     return Err(err!("{module}: a `rust` gen is one file for all devices"));
                 }
                 out.push((g.path.clone(), rust(module, &per_dev)?));
+            }
+            "c-shared" => {
+                if g.path.contains("{dev}") {
+                    return Err(err!(
+                        "{module}: a `c-shared` gen is one file for all devices"
+                    ));
+                }
+                out.push((g.path.clone(), c_shared(module)));
             }
             "gas-shared" => {
                 if g.path.contains("{dev}") {

@@ -35,6 +35,7 @@ from tools.device.dkproto import (
     CAP,
     CMD_ABORT,
     CMD_BEGIN,
+    CMD_CAPACITY,
     CMD_CLEAR,
     CMD_DATA,
     CMD_DELETE,
@@ -384,6 +385,22 @@ class Uploader:
             if len(out["modules"]) >= total or n == 0:
                 return out
 
+    def capacity(self) -> dict[str, dict[str, int]]:
+        """CAPACITY (runtime 0.2.2, capability CAPACITY): per resource `{limit, used, largest}`, keyed by the kind's name (`MODULES`, `ARENA`,
+        `DSP_AREA`, `MACHINE_ROWS`, `VOICE_ROWS` ..., sdk/sdk.toml `[capacity.kinds]`); a kind this tool does not know is `kind<N>`.
+        Arena and DSP figures are bytes; `largest` is 0 where it has no meaning. Raises `UploadError` on a runtime without the command."""
+        b = self._ok(CMD_CAPACITY, "capacity")
+        names = {v: k for k, v in dkproto.CAPACITY_KINDS.items()}
+        out: dict[str, dict[str, int]] = {}
+        for i in range(b[1]):
+            kind, limit, used, largest = struct.unpack_from(">BIII", b, 2 + 13 * i)
+            out[names.get(kind, f"kind{kind}")] = {
+                "limit": limit,
+                "used": used,
+                "largest": largest,
+            }
+        return out
+
     def log_page(
         self, from_seq: int
     ) -> tuple[int, int, list[tuple[int, int, int, int, tuple[int, ...]]]]:
@@ -482,6 +499,15 @@ class Uploader:
         self.end()
 
 
+def capacity_lines(cap: dict[str, dict[str, int]]) -> list[str]:
+    """The `info` command's capacity lines: `KIND used/limit` (and the largest free piece where there is one)."""
+    out = []
+    for k, v in cap.items():
+        tail = f"  largest free {v['largest']}" if v["largest"] else ""
+        out.append(f"capacity {k.lower()}: {v['used']}/{v['limit']}{tail}")
+    return out
+
+
 def modules_lines(m: dict[str, Any]) -> list[str]:
     """The `modules` subcommand's output: a header with the free space, then one line per loaded module."""
     out = [
@@ -539,8 +565,14 @@ def main(argv: list[str] | None = None) -> int:
     up = Uploader(t)
     try:
         if args.cmd == "info":
-            for line in info_lines(up.info()):
+            info = up.info()
+            for line in info_lines(info):
                 print(line)
+            if has_cap(info, "CAPACITY"):
+                for line in capacity_lines(up.capacity()):
+                    print(line)
+            else:
+                print("capacity: not reported by this runtime (needs 0.2.2)")
         elif args.cmd == "ls":
             for path, size, sha in up.ls():
                 print(f"{path}\t{size}\t{sha}")

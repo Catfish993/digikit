@@ -146,29 +146,14 @@ fn the_contract_files_are_current() {
     }
 }
 
-/// `NAME: usize = N;` of a Rust source text.
-fn rust_usize(src: &str, name: &str) -> usize {
-    let key = format!("const {name}: usize = ");
-    let at = src.find(&key).unwrap_or_else(|| panic!("{name} not found")) + key.len();
-    src[at..].split(';').next().unwrap().trim().parse().unwrap()
-}
-
 #[test]
-fn the_record_format_constants_are_the_contract_maxima() {
-    // SEL_MAX and MAP_N are the selection record's layout (512 bytes: 8 paths, 8 map entries): the device limits may not pass them
+fn the_record_format_constants_come_from_the_contract_maxima() {
+    // SEL_MAX and MAP_N are generated from `[limits.max]` (the selection record's 8 paths and 8 map entries); the generated file is current
+    // (`the_contract_files_are_current`), so the constants are the maxima. The effect chain cap is the contract's DK_FX_MAX.
     let max = sdkgen::limits_max();
-    let sdk = std::fs::read_to_string(root().join("modules/core/runtime/sdk/src/lib.rs")).unwrap();
-    assert_eq!(
-        rust_usize(&sdk, "SEL_MAX") as u64,
-        max.modules,
-        "SEL_MAX against [limits.max] modules"
-    );
-    assert_eq!(
-        rust_usize(&sdk, "MAP_N") as u64,
-        max.map_entries,
-        "MAP_N against [limits.max] map_entries"
-    );
-    // the effect chain cap is the contract's DK_FX_MAX
+    let gen_sdk = std::fs::read_to_string(root().join(sdkgen::RUST_OUT)).unwrap();
+    assert!(gen_sdk.contains(&format!("pub const SEL_MAX: usize = {};", max.modules)));
+    assert!(gen_sdk.contains(&format!("pub const MAP_N: usize = {};", max.map_entries)));
     let fx = sdkgen::fx(&std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap()).unwrap();
     let dk_fx_max = fx
         .consts
@@ -177,4 +162,24 @@ fn the_record_format_constants_are_the_contract_maxima() {
         .unwrap()
         .value;
     assert_eq!(dk_fx_max as u64, max.fx_slots);
+}
+
+#[test]
+fn the_capacity_kinds_are_generated_for_every_host() {
+    let text = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
+    let files = sdkgen::render(&text).unwrap();
+    let get = |p: &str| &files.iter().find(|f| f.0 == p).unwrap().1;
+    assert!(get(sdkgen::PROTO_PY_OUT).contains("\"ARENA\": 3,"));
+    assert!(get(sdkgen::PROTO_PY_OUT).contains("CMD_CAPACITY = 0x04"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("pub const CAPK_DSP_AREA: u8 = 5;"));
+    assert!(get(sdkgen::RUST_OUT).contains("pub const CAP_CAPACITY: u32 = 1 << 6;"));
+    // two kinds with one number, or kind 0, are refused
+    let dup = text.replace("ARENA = 3 ", "ARENA = 2 ");
+    assert_ne!(dup, text);
+    assert!(
+        sdkgen::render(&dup)
+            .unwrap_err()
+            .0
+            .contains("capacity kind")
+    );
 }

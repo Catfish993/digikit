@@ -233,7 +233,7 @@ pub const CMD_DEBUG: u32 = 8;
 
 /// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
 /// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
-pub const SEL_MAX: usize = 8;
+pub const SEL_MAX: usize = gen_sdk::limits::SEL_MAX; // `[limits.max] modules` of sdk/sdk.toml (the record's format)
 pub const SEL_PATH: usize = 56;
 #[repr(C)]
 pub struct DkrtSelection {
@@ -316,7 +316,7 @@ pub mod sel {
     }
 
     /// Entries of the sticky type map.
-    pub const MAP_N: usize = 8;
+    pub const MAP_N: usize = crate::gen_sdk::limits::MAP_N; // `[limits.max] map_entries` of sdk/sdk.toml
 
     /// Byte offset of map entry `i`.
     pub const fn map_at(i: usize) -> usize {

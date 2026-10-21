@@ -861,7 +861,10 @@ unsafe fn mailbox_select(arg: *const u8, copy: u32) -> i32 {
         if len == 0 {
             break;
         }
-        if n == SEL_MAX || len >= SEL_PATH {
+        if n == SEL_MAX {
+            return E_SEL_COUNT;
+        }
+        if len >= SEL_PATH {
             return E_SEL_PATH;
         }
         let mut i = 0;

@@ -57,7 +57,9 @@ The runtime refuses a module that does not fit, with its own code (docs/findings
 | page rows | none | 8 | `E_PAGE_FULL` |
 | effects in the chain (patched in) | 4 | 4 | patchkit refuses at build time |
 
-`bss` is not stored in the file: a large work buffer costs arena or DSP area, not file size.
+`bss` is not stored in the file: a large work buffer costs arena or DSP area, not file size. Size per-voice state for the lowest musical note, not for the arithmetic limit.
+
+What is used and what is left: `mise run dk:store -- --emu info` (or `--port NAME`) prints one `capacity` line per resource (runtime 0.2.2 and later): modules, arena and DSP area bytes with the largest free piece, machine, voice, parameter and page rows. `modules` lists each module's share.
 
 
 ## Stock patterns worth copying

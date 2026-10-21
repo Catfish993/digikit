@@ -595,6 +595,31 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
     OK
 }
 
+/// The reserved machine, parameter and page rows as (rows the registry has, rows in use); (0, 0) without a registry (for CAPACITY).
+pub unsafe fn counts() -> [(u32, u32); 3] {
+    let inf = info();
+    if inf.is_null() {
+        return [(0, 0); 3];
+    }
+    let s = rs();
+    let used = |o: &[u8]| {
+        let mut n = 0;
+        let mut k = 0;
+        while k < o.len() {
+            if o[k] != 0 {
+                n += 1;
+            }
+            k += 1;
+        }
+        n
+    };
+    [
+        (iw(inf, w::M_DYN_N), used(&s.mach_owner)),
+        (iw(inf, w::P_DYN_N), used(&s.param_owner)),
+        (iw(inf, w::PG_DYN_N), used(&s.page_owner)),
+    ]
+}
+
 /// The machine type numbers of the machine rows `owner` filled (at most 8), in type order; returns how many.
 pub fn types_of(owner: u8, out: &mut [u8; MAX_MACH]) -> usize {
     let s = rs();

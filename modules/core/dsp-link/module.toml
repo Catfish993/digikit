@@ -22,6 +22,11 @@ conflicts = []
 kind = "sharc"
 path = "build/gen/device-{dev}.inc"
 
+# The contract's maximum area (the link's 17-bit word offset), a C header for the ColdFire object that both devices share.
+[[gen]]
+kind = "c-shared"
+path = "build/gen/dl-limits.h"
+
 # ColdFire: the hook on the frame sender and the sender's state (both devices; the anchors differ per device).
 [[object]]
 path = "build/dsp-link-cf.dko.json"

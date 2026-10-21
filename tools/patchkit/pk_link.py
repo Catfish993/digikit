@@ -358,13 +358,16 @@ def load_symmap(module: str | None, pairs: list[str]) -> dict[str, int]:
 
 
 def build(
-    sources: list[Path], base: int, symmap: dict[str, int]
+    sources: list[Path],
+    base: int,
+    symmap: dict[str, int],
+    include_dirs: list[Path] | None = None,
 ) -> tuple[dict, Linked, dict[str, int]]:
     with tempfile.TemporaryDirectory(prefix="pk-link-") as d:
         objs = []
         for i, src in enumerate(sources):
             o = Path(d) / f"{i}_{src.stem}.o"
-            compile_source(src, o)
+            compile_source(src, o, include_dirs)
             objs.append(o)
         if len(objs) == 1:
             merged = objs[0]

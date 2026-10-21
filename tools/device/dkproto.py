@@ -6,6 +6,7 @@ CMD: dict[str, int] = {
     "INFO": 0x01,
     "LIST": 0x02,
     "MODULES": 0x03,
+    "CAPACITY": 0x04,
     "BEGIN": 0x10,
     "DATA": 0x11,
     "END": 0x12,
@@ -21,6 +22,7 @@ CMD: dict[str, int] = {
 CMD_INFO = 0x01
 CMD_LIST = 0x02
 CMD_MODULES = 0x03
+CMD_CAPACITY = 0x04
 CMD_BEGIN = 0x10
 CMD_DATA = 0x11
 CMD_END = 0x12
@@ -99,4 +101,19 @@ CAP: dict[str, int] = {
     "SELECT": 3,
     "RESTART": 4,
     "MODULES": 5,
+    "CAPACITY": 6,
+}
+
+CAPACITY_KINDS: dict[str, int] = {
+    "MODULES": 1,
+    "SELECTION": 2,
+    "ARENA": 3,
+    "STAGE": 4,
+    "DSP_AREA": 5,
+    "MACHINE_ROWS": 6,
+    "VOICE_ROWS": 7,
+    "PARAM_ROWS": 8,
+    "PAGE_ROWS": 9,
+    "FX_SLOTS": 10,
+    "MAP_ENTRIES": 11,
 }

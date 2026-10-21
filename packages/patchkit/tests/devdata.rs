@@ -61,6 +61,7 @@ fn the_runtime_constants_are_the_device_files_numbers() {
         "DSP_BLOCK_CYCLES: u32 = 0xa2c2b;",
         "KEEP_BASE: u32 = 0x47fe0000;",
         "KEEP_BYTES: u32 = 0x1000;",
+        "LIMIT_FX_SLOTS: u32 = 0x4;",
     ] {
         assert!(rs.contains(want), "{want}");
     }
@@ -259,4 +260,21 @@ fn the_reserved_parameter_and_page_rows_are_the_profile_limits() {
             "{dev} machine rows of core/dynreg"
         );
     }
+}
+
+#[test]
+fn the_link_width_is_a_shared_c_header_from_the_contract_maximum() {
+    let mut lib = Library::scan_repo(&root()).unwrap();
+    lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
+        .unwrap();
+    let facts = Facts::from_dir(&root().join("devices")).unwrap();
+    let files = devgen::generate(&lib, &facts, "core/dsp-link").unwrap();
+    let h = &files
+        .iter()
+        .find(|f| f.0 == "build/gen/dl-limits.h")
+        .expect("a c-shared file")
+        .1;
+    // 2^17 words of 4 bytes: the offset field of a chunk; not a device's area (DN2 has 0x50000)
+    assert!(h.contains("#define DL_AREA_MAX_BYTES 0x80000u"), "{h}");
+    assert!(h.contains("#define DL_AREA_MAX_WORDS 0x20000u"), "{h}");
 }

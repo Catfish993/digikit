@@ -62,6 +62,11 @@ extern "C" {
     static dkrt_ui_queue_lit: u32;
 }
 
+/// Paths of the selection this boot loaded (for CAPACITY).
+pub fn selected() -> u32 {
+    info().count
+}
+
 pub fn info() -> &'static mut DkrtBootInfo {
     unsafe { &mut *addr_of_mut!(DKRT_BOOT) }
 }

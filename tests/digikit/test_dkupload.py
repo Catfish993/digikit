@@ -264,3 +264,52 @@ def test_modules_pages_by_start_index_and_decodes_the_records():
         and "types 17,18" in lines[2]
         and "GUARD OFF" in lines[2]
     )
+
+
+def test_capacity_decodes_the_entries_by_kind_name_and_prints_them():
+    """CAPACITY (protocol command 4): `u8 version, u8 n`, then n entries of u8 kind, u32 limit, u32 used, u32 largest; a kind the tool does not
+    know is `kind<N>`; the `info` command prints one line each."""
+    import struct
+
+    from tools.device.midisniff import unpack_8in7
+    from tools.firmware.build import encode_8in7
+
+    k = D.dkproto.CAPACITY_KINDS
+    entries = [
+        (k["MODULES"], 8, 3, 0),
+        (k["ARENA"], 524288, 4096, 520000),
+        (99, 1, 2, 3),
+    ]
+
+    class Fake:
+        def __init__(self):
+            self.queue: list[bytes] = []
+
+        def send(self, msg: bytes) -> None:
+            cmd, seq = msg[5], msg[6]
+            assert cmd == D.CMD_CAPACITY == 0x04 and unpack_8in7(msg[7:-1]) == b""
+            body = bytes([1, len(entries)]) + b"".join(
+                struct.pack(">BIII", *e) for e in entries
+            )
+            self.queue.append(
+                msg[:4]
+                + bytes([1, cmd | 0x40, seq])
+                + encode_8in7(b"\x00" + body)
+                + b"\xf7"
+            )
+
+        def recv(self) -> bytes:
+            return self.queue.pop(0)
+
+    cap = D.Uploader(Fake()).capacity()
+    assert cap == {
+        "MODULES": {"limit": 8, "used": 3, "largest": 0},
+        "ARENA": {"limit": 524288, "used": 4096, "largest": 520000},
+        "kind99": {"limit": 1, "used": 2, "largest": 3},
+    }
+    assert D.capacity_lines(cap) == [
+        "capacity modules: 3/8",
+        "capacity arena: 4096/524288  largest free 520000",
+        "capacity kind99: 2/1  largest free 3",
+    ]
+    assert D.CAP["CAPACITY"] == 6

@@ -270,6 +270,23 @@ pub unsafe fn area_stats() -> (u32, u32) {
     (total - used, largest)
 }
 
+/// (voice rows the area's table reserves, rows in use); (0, 0) without a DSP loader (for CAPACITY).
+pub unsafe fn rows_counts() -> (u32, u32) {
+    if info().is_null() {
+        return (0, 0);
+    }
+    let d = ds();
+    let mut used = 0;
+    let mut k = 0;
+    while k < MAX_ROWS {
+        if d.row_owner[k] != 0 {
+            used += 1;
+        }
+        k += 1;
+    }
+    (iw(I_VFREE).min(MAX_ROWS as u32), used)
+}
+
 /// First fit: the lowest offset whose byte address is `align`-aligned and whose `len` bytes touch no other range.
 unsafe fn alloc_range(len: u32, align: u32) -> Option<u32> {
     let total = iw(I_AREA_BYTES);

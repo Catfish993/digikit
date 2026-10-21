@@ -184,7 +184,7 @@ unsafe fn reply(cmd: u8, seq: u32, status: i32, extra: usize) -> i32 {
     let n = pack(rb, 1 + extra, w.add(7));
     *w.add(7 + n) = 0xf7;
     DKRT_UPLOAD_LAST = status;
-    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG && cmd != CMD_MODULES {
+    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG && cmd != CMD_MODULES && cmd != CMD_CAPACITY {
         dlog::ev(logk::UPLOAD, if status == 0 { dlog::INFO } else { logk::F_ERROR }, [cmd as u32, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
     }
     if !tx_room(8 + n) {
@@ -485,7 +485,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     wr32(rb.add(21), newest);
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
-    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES);
+    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY);
     reply(CMD_INFO, seq, OK, 33)
 }
 
@@ -576,6 +576,56 @@ unsafe fn cmd_modules(seq: u32, body: *const u8, blen: usize) -> i32 {
     }
     *rb.add(17) = n;
     reply(CMD_MODULES, seq, OK, at)
+}
+
+/// CAPACITY: per resource of the runtime, its limit, what is used and the largest free piece. Body: none. Reply: `u8 version` (1), `u8 n`, then
+/// `n` entries of `u8 kind` (`CAPK_*`, sdk/sdk.toml `[capacity.kinds]`), `u32 limit`, `u32 used`, `u32 largest` (0 where a largest piece has
+/// no meaning). A host skips a kind it does not know; new kinds are appended.
+unsafe fn cmd_capacity(seq: u32) -> i32 {
+    let s = crate::st();
+    let (af, al) = crate::arena::stats();
+    let (df, dl) = crate::dsp::area_stats();
+    let area = crate::dsp::area_bytes();
+    let arena = s.arena_hi - s.arena_lo;
+    let mut mods = 0;
+    let mut i = 0;
+    while i < crate::MAX_MODULES {
+        if s.modules[i].used != 0 {
+            mods += 1;
+        }
+        i += 1;
+    }
+    let (vrows, vused) = crate::dsp::rows_counts();
+    let [mach, param, page] = crate::registry::counts();
+    let stage = crate::STAGE_BYTES as u32;
+    let entries: [(u8, u32, u32, u32); 11] = [
+        (CAPK_MODULES, crate::MAX_MODULES as u32, mods, 0),
+        (CAPK_SELECTION, dkrt_sdk::SEL_MAX as u32, boot::selected(), 0),
+        (CAPK_ARENA, arena, arena - af, al),
+        (CAPK_STAGE, stage, 0, stage),
+        (CAPK_DSP_AREA, area, area - df, dl),
+        (CAPK_MACHINE_ROWS, mach.0, mach.1, 0),
+        (CAPK_VOICE_ROWS, vrows, vused, 0),
+        (CAPK_PARAM_ROWS, param.0, param.1, 0),
+        (CAPK_PAGE_ROWS, page.0, page.1, 0),
+        (CAPK_FX_SLOTS, dkrt_sdk::device::LIMIT_FX_SLOTS, 0, 0),
+        (CAPK_MAP_ENTRIES, dkrt_sdk::sel::MAP_N as u32, crate::assign::map_used(), 0),
+    ];
+    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
+    *rb = 1;
+    *rb.add(1) = entries.len() as u8;
+    let mut at = 2usize;
+    let mut k = 0;
+    while k < entries.len() {
+        let (kind, limit, used, largest) = entries[k];
+        *rb.add(at) = kind;
+        wr32(rb.add(at + 1), limit);
+        wr32(rb.add(at + 5), used);
+        wr32(rb.add(at + 9), largest);
+        at += 13;
+        k += 1;
+    }
+    reply(CMD_CAPACITY, seq, OK, at)
 }
 
 unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
@@ -1076,6 +1126,8 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
         cmd_list(seq, buf, body, blen)
     } else if cmd == CMD_MODULES {
         cmd_modules(seq, body, blen)
+    } else if cmd == CMD_CAPACITY {
+        cmd_capacity(seq)
     } else if cmd == CMD_BEGIN {
         cmd_begin(seq, buf, body, blen)
     } else if cmd == CMD_DATA {
