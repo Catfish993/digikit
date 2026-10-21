@@ -170,7 +170,7 @@ Route A takes a stock function away for each parameter. Route B on the free slot
 
 ## Open **[O]**
 
-- ~~Is stage 8 the USB output (decides H0 against H1)?~~ **[C]** Yes, the master pair is the first channel pair of ring C, and H0 is not in it: finding 55.
+- ~~Is stage 8 the USB output (decides H0 against H1)?~~ **[C]** Yes, the master pair is the first channel pair of ring C, and H0 is not in it: finding 55 (which hooks `FUN_1c80f2` on the DT2 and H1 on the DN2).
 - The roles of the five filter types and of the fixed chain functions.
 - DN2: the origin of R8 in the engine calls; the role of `0x1c244d`.
 - The stop and kit-change behaviour of the FX units.

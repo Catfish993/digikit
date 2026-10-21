@@ -1,11 +1,12 @@
 // core/fx: the effects adapter of the SHARC engine (docs/findings/55, sdk/dk_fx.h).
 //
-// The hook is the first instruction of the function the block orchestrator calls once per block after the master mix and before the USB
-// pack and the DAC converter (H1 of finding 53: Digitakt II FUN_1c14e7, Digitone II FUN_1c244d, which also packs the USB stream). patchkit
-// overwrites that 48-bit instruction (`I7 = MODIFY(I7, imm)`) with `JUMP _fx_entry`; the displaced instruction runs in the hook's tail
-// (`_fx_back`), which jumps to the second instruction of the stock function. At the entry nothing of the stock frame exists yet, so every
-// register the adapter or an effect touches is saved in `_fx_save` (static: the hook is not re-entered) and restored before the tail.
-// Argument registers (R4, R8, R12 on the Digitone II) and the callee-saved registers are therefore intact when the stock code starts.
+// The hook is the first instruction of a function that the block orchestrator calls once per block after the master mix and before the USB
+// pack: Digitakt II FUN_1c80f2 (called at 0x1c311f, after the pack's earlier siblings and before the pack at 0x1c3160), Digitone II FUN_1c244d (H1 of
+// finding 53, which also holds the pack). The site is chosen for the emulator's AOT core, not for the firmware: a patched code range bars the generated
+// regions of that range (finding 55). patchkit overwrites the 48-bit first instruction (`I7 = MODIFY(I7, imm)`) with `JUMP _fx_entry`; the displaced
+// instruction runs in the hook's tail (`_fx_back`), which jumps to the second instruction of the stock function. At the entry nothing of the stock frame
+// exists yet, so every register the adapter or an effect touches is saved in `_fx_save` (static: the hook is not re-entered) and restored before the
+// tail. Argument registers (R4, R8, R12) and the callee-saved registers are therefore intact when the stock code starts.
 //
 // An empty chain (the table's first row has pc 0) costs the save of R0, I4 and L4, one load and the restore: the audio is the stock audio.
 //

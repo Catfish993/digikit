@@ -125,15 +125,19 @@ default = 0
 [[claim]]
 resource = "dsp.fx.hook"
 
-# H1: the first instruction of the function the block orchestrator calls after the master mix (Digitakt II FUN_1c14e7 at 0x1c30a0; Digitone II
-# FUN_1c244d at 0x1c307b, which also packs the USB stream). 48 bits, `I7 = MODIFY(I7, imm)`, one caller each. The rules hold on the older versions:
-# the DSP blobs of 1.16/1.17 and of 1.11/1.12 are byte-identical.
+# The hook: the first instruction of a function that the block orchestrator calls once per block after the master mix and before the USB pack
+# (48 bits, `I7 = MODIFY(I7, imm)`, one caller). The rules hold on the older versions: the DSP blobs of 1.16/1.17 and of 1.11/1.12 are byte-identical.
+# The site decides what the emulator's AOT core loses (a patched code range bars the generated regions of that range; finding 55):
+#   Digitakt II FUN_1c80f2 (called at 0x1c311f, a block copy of 25 words' range): x1.02 DSP CPU. The first choice, H1 (FUN_1c14e7 at 0x1c30a0,
+#   range 334 words) cost x1.47.
+#   Digitone II FUN_1c244d (H1, called at 0x1c307b, also packs the USB stream; range 3482 words with the block orchestrator): x3.09. No cheaper
+#   site is between the master and the pack (the master function's own range of 1221 words costs x1.62 and its end is not a 48-bit site).
 [[anchor_rule]]
 name = "dsp.fx.entry"
 devices = ["dt2"]
 cpu = "sharc"
 kind = "sharc_func"
-reloc_hash = "06bffd968e77307e81a2dafe2b0cff6bcec4f84c01e60a827306fd6b92b9d783"
+reloc_hash = "7a928b18c09b0bf52532b537d848258a23ae185e83113d920b592fd6ad4569df"
 offset = 0x0
 len = 6
 mark = "D"

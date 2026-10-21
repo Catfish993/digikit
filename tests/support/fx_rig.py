@@ -1,4 +1,4 @@
-"""A rig for the FX adapter core/fx: its chain on the concrete SHARC+ core, one block per call, as the hook at H1 makes it.
+"""A rig for the FX adapter core/fx: its chain on the concrete SHARC+ core, one block per call, as the hook makes it.
 
     rig = FxRig([Row("_te_half", "_te_state_a")])      # rows of the chain: process symbol, state symbol, enabled, parameter words
     b = rig.block(master)                                # master: 64 floats (32 left, 32 right) before the hook

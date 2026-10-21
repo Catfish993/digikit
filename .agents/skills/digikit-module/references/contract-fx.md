@@ -1,7 +1,7 @@
 # The FX contract (`sdk/dk_fx.h`)
 
 An effect processes the final stereo block of the device: the master, after the master mix and before the USB pack and the DAC converter
-(site H1, `docs/findings/53-stock-dsp-shape.md`, `docs/findings/55-fx-adapter.md`). Today effects are patched in (v1, `test/fx-gain` is the
+(`docs/findings/53-stock-dsp-shape.md` H1, `docs/findings/55-fx-adapter.md` for the sites). Today effects are patched in (v1, `test/fx-gain` is the
 example); run-time (`.dkm`) effects, parameters and `tail_blocks` come with P3d-1b. `[contract] fx` stays [0, 0] until then.
 
 Entry: the adapter `core/fx` enters your routine with `I13 = return address; JUMP (M13, I12)`; you return with `JUMP (M13, I13)`.

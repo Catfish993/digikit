@@ -34,7 +34,7 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
 
 ## core/fx and test/fx-gain (effects adapter and its fixture; both devices)
 
-- **What:** the FX contract (`sdk/dk_fx.h`) is run by `core/fx`, which hooks the first instruction of the post-master function (H1) on both devices and
+- **What:** the FX contract (`sdk/dk_fx.h`) is run by `core/fx`, which hooks the first instruction of a post-master function on both devices and
   walks a chain of up to 4 effects. `test/fx-gain` is the smallest effect (0.5 gain). Details and evidence: finding 55.
 - **Cost [D]:** an empty chain is 16 instructions per block on the rig (+18 busy instructions in the smoke cell); a chain whose rows are all off 174; one
   effect steady 732 (the 0.5 test effect itself about 210; the adapter's copy, output check and bookkeeping are about 520); a fade block 1065.
@@ -44,6 +44,7 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
   - The context registers (M5-M7, M13-M15, L0-L5, MODE1) belong to the DSP context: save and pin them for the chain, restore before the stock code.
   - `.PKBSS` memory is not loaded; the adapter zeroes an effect's state when it switches on, the rig poisons it to prove that.
   - A master hook at the DAC converter (H0, master-gain / master-drive) is after the USB pack: the USB audio does not carry it (finding 55).
-  - Patching a callee entry bars that function's AOT region; on the DN2 the pack is in the hooked function (finding 55 for the measured cost).
+  - Patching a function bars the emulator's AOT regions of its whole hashed code range: the same adapter costs x1.03 on the DT2 at `FUN_1c80f2` and x3.09 on the DN2 at
+    `FUN_1c244d` (finding 55). Choose a hook site by its range before anything else.
 - **Patterns:** `references/contract-fx.md`; the rig (`tests/support/fx_rig.py`) and the effects for tests (`tests/support/fx_effects.s`) are templates for
   an effect's unit test.

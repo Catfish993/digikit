@@ -1,4 +1,4 @@
-"""core/fx (modules/core/fx): the effects adapter at H1, on the concrete SHARC+ core (tests/support/fx_rig.py) and through patchkit.
+"""core/fx (modules/core/fx): the effects adapter, on the concrete SHARC+ core (tests/support/fx_rig.py) and through patchkit.
 
 The first group needs only the assembler; the last one patches the stock images (skipped when they are not in the repository)."""
 
@@ -309,10 +309,10 @@ def patchkit():
 @needs_images
 @pytest.mark.parametrize(
     ("fw", "second"),
-    [(DT2_117, 0x1C14EA), (DN2_112, 0x1C2450)],
+    [(DT2_117, 0x1C80F5), (DN2_112, 0x1C2450)],
     ids=["dt2-1.17", "dn2-1.12"],
 )
-def test_the_hook_takes_the_first_instruction_of_the_post_master_function(
+def test_the_hook_takes_the_first_instruction_of_a_function_between_master_and_pack(
     patchkit, tmp_path: Path, fw, second
 ):
     out = tmp_path / "fx.syx"
@@ -391,7 +391,7 @@ def test_the_dsp_diff_of_the_patched_image_is_the_hook_and_the_placed_code(
     text = pk_dsp_diff.patch_text(DT2_117, out)
     lines = [ln.split() for ln in text.splitlines() if ln.startswith("BYTES")]
     assert (
-        lines[0][1] == f"{0x28000000 + 2 * 0x1C14E7:x}"
+        lines[0][1] == f"{0x28000000 + 2 * 0x1C80F2:x}"
     )  # the hook at the alias of the first instruction
     assert len(lines[0][2]) == 12  # one 48-bit jump
     assert all(
