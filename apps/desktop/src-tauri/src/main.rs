@@ -21,6 +21,8 @@ struct Host {
     handle: Handle,
     /// Where the webview's chosen sample files are staged before the card is built.
     staging: PathBuf,
+    /// Where firmware files picked with Open... are put for `firmware.load` (`<run dir>/open`).
+    open_dir: PathBuf,
     /// The .syx the app was started with (`mise run workbench -- FILE`); the console shows it and reloads it
     /// when it changes. The page can read only this file.
     source: Option<PathBuf>,
@@ -64,15 +66,6 @@ async fn send_json(
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn emu_diagnostics(host: State<'_, Host>, session_id: u64) -> Result<Value, String> {
-    send_json(host, move |reply| Command::Diagnostics {
-        session: session_id,
-        reply,
-    })
-    .await
 }
 
 /// Writes an exported diagnostics report to `out/native/diagnostics/` under
@@ -122,15 +115,64 @@ fn emu_source_info(host: State<'_, Host>) -> Result<Option<Value>, String> {
     })))
 }
 
-/// The startup .syx's current bytes, for the console's Reload and its reload on change.
+/// One protocol method of the controller (docs/CONTROL.md: the same table as the control socket), for the webview. `session` is the
+/// webview's session token: `firmware.load` and `restart` start the session it names, every other method must carry the current
+/// one, else the answer is "stale emulator session" and nothing runs. Not offered: `quit` (the app owns its lifetime).
 #[tauri::command]
-fn emu_source_read(host: State<'_, Host>) -> Result<tauri::ipc::Response, String> {
-    let path = host
-        .source
-        .as_ref()
-        .ok_or("the app was started without a firmware file")?;
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(tauri::ipc::Response::new(bytes))
+async fn emu_call(
+    host: State<'_, Host>,
+    method: String,
+    params: Option<Value>,
+    session: Option<u64>,
+) -> Result<Value, String> {
+    let handle = host.handle.clone();
+    tauri::async_runtime::spawn_blocking(move || call_method(&handle, &method, params, session))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn call_method(handle: &Handle, method: &str, params: Option<Value>, session: Option<u64>) -> Result<Value, String> {
+    if method == "quit" {
+        return Err("quit is not available to the webview".into());
+    }
+    let mut params = params.unwrap_or_else(|| serde_json::json!({}));
+    let Some(fields) = params.as_object_mut() else {
+        return Err("params must be an object".into());
+    };
+    if let Some(session) = session {
+        fields.insert("session".into(), session.into());
+    }
+    handle.call(method, params).map_err(|e| e.message)
+}
+
+/// Put the bytes of a firmware file the webview picked (Open...) where the controller can read them: `<run dir>/open/<name>`
+/// (the name is the percent-encoded `x-name`). Returns the path for `firmware.load {syx}`.
+#[tauri::command]
+async fn emu_stage_syx(host: State<'_, Host>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let name = request
+        .headers()
+        .get("x-name")
+        .and_then(|value| value.to_str().ok())
+        .and_then(percent_decode)
+        .unwrap_or_default();
+    let safe: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .collect();
+    let safe = if safe.is_empty() { "opened.syx".to_string() } else { safe };
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        _ => return Err("firmware must use a raw byte body".into()),
+    };
+    let dir = host.open_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(safe);
+        std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(path.display().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -143,81 +185,14 @@ async fn emu_audio_status(host: State<'_, Host>, session_id: u64) -> Result<Valu
 }
 
 #[tauri::command]
-async fn emu_load(
-    host: State<'_, Host>,
-    request: tauri::ipc::Request<'_>,
-) -> Result<Snapshot, String> {
-    let session_id = request
-        .headers()
-        .get("x-session-id")
-        .and_then(|value| value.to_str().ok())
-        .ok_or("missing x-session-id")?
-        .parse::<u64>()
-        .map_err(|_| "invalid x-session-id")?;
-    let bytes = match request.body() {
-        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
-        _ => return Err("firmware must use a raw byte body".into()),
-    };
-    send(host, move |reply| Command::Load {
-        session: session_id,
-        bytes,
-        card: None,
-        reply,
-    })
-    .await
-}
-#[tauri::command]
 async fn emu_startup(host: State<'_, Host>) -> Result<Snapshot, String> {
     send(host, |reply| Command::Startup { reply }).await
-}
-#[tauri::command]
-async fn emu_restart(
-    host: State<'_, Host>,
-    session_id: u64,
-    next_session_id: u64,
-) -> Result<Snapshot, String> {
-    send(host, move |reply| Command::Restart {
-        session: session_id,
-        next_session: next_session_id,
-        reply,
-    })
-    .await
 }
 #[tauri::command]
 async fn emu_step(host: State<'_, Host>, session_id: u64, budget: u32) -> Result<Snapshot, String> {
     send(host, move |reply| Command::Step {
         session: session_id,
         budget,
-        reply,
-    })
-    .await
-}
-#[tauri::command]
-async fn emu_button(
-    host: State<'_, Host>,
-    session_id: u64,
-    code: u8,
-    down: bool,
-) -> Result<Snapshot, String> {
-    send(host, move |reply| Command::Button {
-        session: session_id,
-        code,
-        down,
-        reply,
-    })
-    .await
-}
-#[tauri::command]
-async fn emu_turn(
-    host: State<'_, Host>,
-    session_id: u64,
-    encoder: u8,
-    detents: i32,
-) -> Result<Snapshot, String> {
-    send(host, move |reply| Command::Turn {
-        session: session_id,
-        encoder,
-        detents,
         reply,
     })
     .await
@@ -324,7 +299,7 @@ async fn emu_card_stage(
 }
 
 /// Build the card of the staged files and restart the DT2 on it; progress is
-/// read with `emu_card_status`.
+/// read with `emu_call("card.status")`.
 #[tauri::command]
 async fn emu_card_load(host: State<'_, Host>, name: Option<String>) -> Result<Value, String> {
     let (handle, dir) = (host.handle.clone(), host.staging.clone());
@@ -336,18 +311,6 @@ async fn emu_card_load(host: State<'_, Host>, name: Option<String>) -> Result<Va
                     "dir": dir.display().to_string(), "wait": false, "name": name,
                 }),
             )
-            .map_err(|e| e.message)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn emu_card_status(host: State<'_, Host>) -> Result<Value, String> {
-    let handle = host.handle.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        handle
-            .call("card.status", serde_json::json!({}))
             .map_err(|e| e.message)
     })
     .await
@@ -384,6 +347,26 @@ fn exit_on_scenario_done(handle: &Handle, report: Option<PathBuf>) {
         }
         process::exit(0)
     });
+}
+
+/// `firmware.load` of the startup .syx as session 1. Without a usable module library or port for the runtime patch (a build outside
+/// the repository, a firmware that has no port) the image loads as it is, with a note on stderr.
+fn load_startup(handle: &Handle, syx: &std::path::Path, card: Option<&std::path::Path>, runtime: bool) -> Result<(), String> {
+    let mut params = serde_json::json!({"syx": syx.display().to_string(), "session": 1});
+    if let Some(card) = card {
+        params["card"] = card.display().to_string().into();
+    }
+    if runtime {
+        params["runtime"] = true.into();
+    }
+    match handle.call("firmware.load", params.clone()) {
+        Err(error) if runtime && error.message.starts_with("runtime patch:") => {
+            eprintln!("{}; loading the image without the digikit runtime", error.message);
+            params["runtime"] = false.into();
+            handle.call("firmware.load", params).map(drop).map_err(|e| e.message)
+        }
+        other => other.map(drop).map_err(|e| e.message),
+    }
 }
 
 fn main() {
@@ -449,27 +432,10 @@ fn main() {
         exit_on_scenario_done(&handle, startup.report.clone());
     }
     if let Some(path) = startup.syx.clone() {
-        let bytes = std::fs::read(&path).unwrap_or_else(|error| {
-            eprintln!("firmware input: {error}");
-            process::exit(2)
-        });
-        let (reply, response) = mpsc::channel();
-        handle
-            .sender()
-            .send(Command::Load {
-                session: 1,
-                bytes,
-                card: startup.card_image.clone(),
-                reply,
-            })
-            .unwrap_or_else(|error| {
-                eprintln!("emulator startup: {error}");
-                process::exit(2)
-            });
-        if let Err(error) = response
-            .recv()
-            .unwrap_or_else(|error| Err(error.to_string()))
-        {
+        // The first session is 1 (`emu_startup` and the webview's pump use it). The digikit runtime is patched in unless
+        // `--no-runtime` or a scenario run (scenarios are stock).
+        let runtime = startup.runtime.unwrap_or(!has_scenario);
+        if let Err(error) = load_startup(&handle, &path, startup.card_image.as_deref(), runtime) {
             eprintln!("emulator startup: {error}");
             process::exit(2);
         }
@@ -500,6 +466,7 @@ fn main() {
     let host = Host {
         handle,
         staging: run_dir_for_staging.join("cards").join("staging"),
+        open_dir: run_dir_for_staging.join("open"),
         source: startup
             .syx
             .clone()
@@ -509,23 +476,18 @@ fn main() {
         .manage(host)
         .manage(modules::Modules::default())
         .invoke_handler(tauri::generate_handler![
-            emu_diagnostics,
+            emu_call,
+            emu_stage_syx,
             emu_save_diagnostics,
             emu_source_info,
-            emu_source_read,
             emu_audio_status,
             emu_startup,
-            emu_load,
-            emu_restart,
             emu_step,
-            emu_button,
-            emu_turn,
             emu_tap,
             emu_stop,
             emu_card_reset,
             emu_card_stage,
             emu_card_load,
-            emu_card_status,
             modules::mod_info,
             modules::mod_list,
             modules::mod_delete,
@@ -767,5 +729,30 @@ mod cli_tests {
         assert!(second_response.recv().unwrap().unwrap().frame.is_none());
         drop((sender, handle));
         controller.join().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod emu_call_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn methods_round_trip_and_the_session_token_is_checked_first() {
+        let (handle, _controller) = spawn(Config::new(None));
+        // A method round trip: no firmware yet.
+        assert!(call_method(&handle, "status", None, None).unwrap()["firmware"].is_null());
+        // The current session (0 before the first load) passes; another one is stale and nothing runs.
+        assert!(call_method(&handle, "status", None, Some(0)).is_ok());
+        assert_eq!(call_method(&handle, "diagnostics", None, Some(4)).unwrap_err(), "stale emulator session");
+        // `firmware.load` and `restart` start a session: the token must be newer than the current one.
+        assert_eq!(call_method(&handle, "restart", None, Some(0)).unwrap_err(), "stale emulator session");
+        // A start that fails does not take the token.
+        let missing = json!({"syx": "/nonexistent/none.syx"});
+        assert!(call_method(&handle, "firmware.load", Some(missing), Some(7)).is_err());
+        assert!(call_method(&handle, "status", None, Some(0)).is_ok());
+        // What the webview may not do, and bad params.
+        assert!(call_method(&handle, "quit", None, None).is_err());
+        assert!(call_method(&handle, "status", Some(json!([1])), None).is_err());
     }
 }

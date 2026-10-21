@@ -66,6 +66,21 @@ body {
   border-color: var(--accent);
   color: #0b0c0e;
 }
+.tag.runtime.on {
+  color: var(--ok);
+  border-color: #22402f;
+  background: #0f1d15;
+}
+.tag.opt {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+}
+.tag.opt input {
+  margin: 0;
+  accent-color: var(--accent);
+}
 .tag.watch {
   display: inline-flex;
   gap: 6px;
