@@ -36,6 +36,7 @@ struct Sdk {
     log: Log,
     protocol: Protocol,
     limits: LimitsSection,
+    capacity: Capacity,
     load: Load,
 }
 /// The SysEx protocol's numbers: `[protocol]` of `sdk/sdk.toml`.
@@ -46,6 +47,12 @@ struct Protocol {
     commands: BTreeMap<String, u8>,
     status: BTreeMap<String, Status>,
     caps: BTreeMap<String, u32>,
+}
+/// `[capacity]`: the kinds of a CAPACITY entry.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Capacity {
+    kinds: BTreeMap<String, u8>,
 }
 /// `[limits]` of `sdk/sdk.toml`: only the contract maxima, `[limits.max]`.
 #[derive(Deserialize)]
@@ -262,6 +269,11 @@ fn parse(text: &str) -> Result<Sdk> {
             return Err(err!("{SOURCE}: protocol cap bit {v} ({n}) twice"));
         }
     }
+    for (i, (n, v)) in sdk.capacity.kinds.iter().enumerate() {
+        if *v == 0 || sdk.capacity.kinds.iter().skip(i + 1).any(|(_, w)| w == v) {
+            return Err(err!("{SOURCE}: capacity kind {v} ({n}) is 0 or twice"));
+        }
+    }
     for (what, table) in [("protocol", &p.status), ("load", &sdk.load.status)] {
         for (i, (n, s)) in table.iter().enumerate() {
             if s.code >= 0 || (what == "protocol" && s.code < -128) {
@@ -302,6 +314,9 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
     }
     for (n, bit) in by_value(&p.caps) {
         let _ = writeln!(s, "{indent}pub const CAP_{n}: u32 = 1 << {bit};");
+    }
+    for (n, k) in by_value(&sdk.capacity.kinds) {
+        let _ = writeln!(s, "{indent}pub const CAPK_{n}: u8 = {k};");
     }
     s
 }
@@ -359,6 +374,10 @@ fn rust(sdk: &Sdk) -> String {
     for (i, n) in LEVELS.iter().enumerate() {
         let _ = writeln!(s, "    pub const L_{}: u16 = {i};", n.to_uppercase());
     }
+    s.push_str("}\n\n/// The selection record's format limits (`[limits.max]`): paths and sticky map entries.\npub mod limits {\n");
+    let m = &sdk.limits.max;
+    let _ = writeln!(s, "    pub const SEL_MAX: usize = {};", m.modules);
+    let _ = writeln!(s, "    pub const MAP_N: usize = {};", m.map_entries);
     s.push_str("}\n\npub mod proto {\n");
     s.push_str(&proto_consts(sdk, "    ", "i32"));
     s.push_str("}\n\npub mod load {\n");
@@ -408,6 +427,10 @@ fn python_proto(sdk: &Sdk) -> String {
     s.push_str("}\n\nCAP: dict[str, int] = {\n");
     for (n, bit) in by_value(&p.caps) {
         let _ = writeln!(s, "    {n:?}: {bit},");
+    }
+    s.push_str("}\n\nCAPACITY_KINDS: dict[str, int] = {\n");
+    for (n, k) in by_value(&sdk.capacity.kinds) {
+        let _ = writeln!(s, "    {n:?}: {k},");
     }
     s.push_str("}\n");
     s
