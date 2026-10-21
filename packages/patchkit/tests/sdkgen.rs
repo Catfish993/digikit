@@ -145,3 +145,36 @@ fn the_contract_files_are_current() {
         );
     }
 }
+
+/// `NAME: usize = N;` of a Rust source text.
+fn rust_usize(src: &str, name: &str) -> usize {
+    let key = format!("const {name}: usize = ");
+    let at = src.find(&key).unwrap_or_else(|| panic!("{name} not found")) + key.len();
+    src[at..].split(';').next().unwrap().trim().parse().unwrap()
+}
+
+#[test]
+fn the_record_format_constants_are_the_contract_maxima() {
+    // SEL_MAX and MAP_N are the selection record's layout (512 bytes: 8 paths, 8 map entries): the device limits may not pass them
+    let max = sdkgen::limits_max();
+    let sdk = std::fs::read_to_string(root().join("modules/core/runtime/sdk/src/lib.rs")).unwrap();
+    assert_eq!(
+        rust_usize(&sdk, "SEL_MAX") as u64,
+        max.modules,
+        "SEL_MAX against [limits.max] modules"
+    );
+    assert_eq!(
+        rust_usize(&sdk, "MAP_N") as u64,
+        max.map_entries,
+        "MAP_N against [limits.max] map_entries"
+    );
+    // the effect chain cap is the contract's DK_FX_MAX
+    let fx = sdkgen::fx(&std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap()).unwrap();
+    let dk_fx_max = fx
+        .consts
+        .iter()
+        .find(|c| c.name == "DK_FX_MAX")
+        .unwrap()
+        .value;
+    assert_eq!(dk_fx_max as u64, max.fx_slots);
+}

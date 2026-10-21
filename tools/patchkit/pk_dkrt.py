@@ -51,12 +51,15 @@ OK, E_NOT_FOUND, E_BAD_STORE, E_READ, E_SHA, E_FORMAT, E_RUNTIME, E_IMPORT = (
 )
 E_NOMEM, E_INIT, E_LOADED, E_SLOT = -8, -9, -10, -11
 E_FORMAT_CMD, E_BOOT_ONLY, E_CONTRACT = -5, -45, -48
-SEL_MAGIC, SEL_VERSION, SEL_PATH, SEL_MAX = 0x444B534C, 1, 56, 8
+SEL_MAGIC, SEL_VERSION, SEL_PATH = 0x444B534C, 1, 56
+# the selection record's paths (sdk/sdk.toml [limits.max])
+SEL_MAX = pk_device.contract_max()["sel_max"]
 _STORE = pk_device.store()  # devices/*.toml [card.store]
 SECTOR_A, SECTOR_B = _STORE.sel_a, _STORE.sel_b
 BOOT_FIELDS = 10  # DkrtBootInfo words before `results`
-ARENA_BYTES = 512 * 1024
-SLOTS, MAX_MODULES, LOG_ENTRIES = 8, 8, 16
+ARENA_BYTES = pk_device.shared_limits().arena_bytes  # devices/*.toml [limits]
+MAX_MODULES = pk_device.shared_limits().modules
+SLOTS, LOG_ENTRIES = 8, 16
 # offsets in State (repr(C); sizes in the comments of lib.rs)
 ST_TICKS, ST_LAST, ST_LOADS, ST_SLOT_CALLS, ST_FREE = 8, 12, 16, 20, 24
 ST_ARENA_LO, ST_ARENA_HI, ST_LOG_NEXT = 28, 32, 36

@@ -75,7 +75,7 @@ RUNTIME_VERSION = (
     RUNTIME_PACKED  # packed major << 16 | minor << 8 | patch (sdk/sdk.toml, generated)
 )
 SEL_MAGIC, SEL_VERSION = 0x444B534C, 1
-SEL_MAX, SEL_PATH = 8, 56
+SEL_MAX, SEL_PATH = pk_device.contract_max()["sel_max"], 56
 _STORE = pk_device.store()  # devices/*.toml [card.store], the same on every device
 STORE_FIRST, STORE_SECTORS = _STORE.first, _STORE.sectors
 SECTOR_A, SECTOR_B = _STORE.sel_a, _STORE.sel_b

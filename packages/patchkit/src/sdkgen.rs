@@ -35,6 +35,7 @@ struct Sdk {
     fx: Fx,
     log: Log,
     protocol: Protocol,
+    limits: LimitsSection,
     load: Load,
 }
 /// The SysEx protocol's numbers: `[protocol]` of `sdk/sdk.toml`.
@@ -46,6 +47,38 @@ struct Protocol {
     status: BTreeMap<String, Status>,
     caps: BTreeMap<String, u32>,
 }
+/// `[limits]` of `sdk/sdk.toml`: only the contract maxima, `[limits.max]`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LimitsSection {
+    max: LimitsMax,
+}
+/// The contract maxima of the capacity limits: `[limits.max]` of `sdk/sdk.toml`. A device's `[limits]` value (and its `[digikit]`
+/// `dsp_area_bytes`) may not exceed them; `patchkit gen` refuses it (`devgen`).
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LimitsMax {
+    pub modules: u64,
+    pub map_entries: u64,
+    pub fx_slots: u64,
+    pub dsp_area_bytes: u64,
+    pub param_rows: u64,
+    pub page_rows: u64,
+}
+
+/// The contract maxima of the `sdk/sdk.toml` this crate was built with.
+pub fn limits_max() -> LimitsMax {
+    parse(include_str!("../../../sdk/sdk.toml"))
+        .expect("sdk/sdk.toml parses")
+        .limits
+        .max
+}
+
+/// `[limits.max]` of a `sdk/sdk.toml` text (for the tests).
+pub fn limits_max_of(text: &str) -> Result<LimitsMax> {
+    Ok(parse(text)?.limits.max)
+}
+
 /// `[load]`: the load-result codes.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -218,7 +251,9 @@ fn parse(text: &str) -> Result<Sdk> {
     let p = &sdk.protocol;
     for (i, (n, v)) in p.commands.iter().enumerate() {
         if p.commands.iter().skip(i + 1).any(|(_, w)| w == v) {
-            return Err(err!("{SOURCE}: protocol command number {v:#04x} ({n}) twice"));
+            return Err(err!(
+                "{SOURCE}: protocol command number {v:#04x} ({n}) twice"
+            ));
         }
     }
     for (i, (n, v)) in p.caps.iter().enumerate() {
@@ -232,7 +267,10 @@ fn parse(text: &str) -> Result<Sdk> {
     for (what, table) in [("protocol", &p.status), ("load", &sdk.load.status)] {
         for (i, (n, s)) in table.iter().enumerate() {
             if s.code >= 0 || (what == "protocol" && s.code < -128) {
-                return Err(err!("{SOURCE}: {what} status {n}: code {} out of range", s.code));
+                return Err(err!(
+                    "{SOURCE}: {what} status {n}: code {} out of range",
+                    s.code
+                ));
             }
             if table.iter().skip(i + 1).any(|(_, t)| t.code == s.code) {
                 return Err(err!("{SOURCE}: {what} status code {} ({n}) twice", s.code));

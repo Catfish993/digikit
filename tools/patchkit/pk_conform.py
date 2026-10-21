@@ -414,7 +414,9 @@ def cases(sp: MachineSpec) -> list[Case]:
 # ---- effects (the FX contract, sdk/dk_fx.h) -------------------------------------------------------------------------------
 # An effect module is a DSP object behind an `[[entry]] registry = "fx"` row. It is run on the concrete core through core/fx
 # (tests/support/fx_rig.py) one block at a time; the cases and checks are those of tests/modules/test_fx_conformance.py.
-FX_MAX = 4  # effects in the chain (sdk/dk_fx.h DK_FX_MAX)
+FX_MAX = max(
+    pk_device.limits(d).fx_slots for d in pk_device.digikit_devices()
+)  # effects in the chain (devices/*.toml [limits] fx_slots, at most sdk/dk_fx.h DK_FX_MAX)
 # Instructions of core/fx around one process call at most (a fade block: copy, output check, crossfade; measured 855 with an effect of 210).
 # The budget below is the effect's own.
 FX_ADAPTER_MAX = 900

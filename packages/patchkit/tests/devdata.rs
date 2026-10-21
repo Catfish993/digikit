@@ -151,3 +151,112 @@ fn the_code_knows_the_devices_of_the_device_files() {
         }
     }
 }
+
+fn device_texts() -> (String, String) {
+    (
+        std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap(),
+        std::fs::read_to_string(root().join("devices/digitone-ii.toml")).unwrap(),
+    )
+}
+
+#[test]
+fn a_limit_above_the_contract_maximum_is_refused() {
+    let max = patchkit::sdkgen::limits_max();
+    let (dt2, dn2) = device_texts();
+    // the committed files are within the maxima (and the maxima are the ones this test knows)
+    assert_eq!(
+        (
+            max.modules,
+            max.map_entries,
+            max.fx_slots,
+            max.param_rows,
+            max.page_rows
+        ),
+        (8, 8, 4, 16, 8)
+    );
+    Facts::from_texts([dt2.as_str(), dn2.as_str()]).unwrap();
+    for (what, from, to) in [
+        ("modules", "modules = 8", "modules = 9"),
+        ("fx_slots", "fx_slots = 4", "fx_slots = 5"),
+        ("param_rows", "param_rows = 16", "param_rows = 17"),
+        (
+            "dsp_area_bytes",
+            "dsp_area_bytes = 524288",
+            "dsp_area_bytes = 524292",
+        ),
+    ] {
+        let bad = dt2.replace(from, to);
+        assert_ne!(bad, dt2, "{what}: the test text did not change");
+        let e = Facts::from_texts([bad.as_str(), dn2.as_str()])
+            .unwrap_err()
+            .0;
+        assert!(
+            e.contains(what) && e.contains("contract maximum"),
+            "{what}: {e}"
+        );
+    }
+    let bad = dn2.replace("page_rows = 8", "page_rows = 9");
+    assert!(Facts::from_texts([dt2.as_str(), bad.as_str()]).is_err());
+    // a value below the maximum is a device choice and is accepted
+    let less = dt2.replace("fx_slots = 4", "fx_slots = 2");
+    Facts::from_texts([less.as_str(), dn2.as_str()]).unwrap();
+}
+
+#[test]
+fn machine_rows_are_the_run_time_machine_types_of_types_toml() {
+    let mut lib = Library::scan_repo(&root()).unwrap();
+    lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
+        .unwrap();
+    let (dt2, dn2) = device_texts();
+    let bad = dt2.replace("machine_rows = 8", "machine_rows = 7");
+    assert_ne!(bad, dt2);
+    let facts = Facts::from_texts([bad.as_str(), dn2.as_str()]).unwrap();
+    let e = devgen::generate(&lib, &facts, "core/runtime")
+        .unwrap_err()
+        .0;
+    assert!(
+        e.contains("machine_rows") && e.contains("types.toml"),
+        "{e}"
+    );
+}
+
+#[test]
+fn the_reserved_parameter_and_page_rows_are_the_profile_limits() {
+    let mut lib = Library::scan_repo(&root()).unwrap();
+    lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
+        .unwrap();
+    let dynreg = lib.get("core/dynreg").unwrap();
+    let count = |registry: &str, dev: &str| {
+        dynreg
+            .manifest
+            .entry
+            .iter()
+            .filter(|e| {
+                e.registry == registry
+                    && (e.devices.is_empty() || e.devices.iter().any(|d| d == dev))
+            })
+            .count() as u64
+    };
+    for (file, dev) in [("digitakt-ii", "dt2"), ("digitone-ii", "dn2")] {
+        let t: toml::Value = toml::from_str(
+            &std::fs::read_to_string(root().join(format!("devices/{file}.toml"))).unwrap(),
+        )
+        .unwrap();
+        let l = &t["limits"];
+        assert_eq!(
+            count("params", dev),
+            l["param_rows"].as_integer().unwrap() as u64,
+            "{dev} parameter rows of core/dynreg"
+        );
+        assert_eq!(
+            count("pages", dev),
+            l["page_rows"].as_integer().unwrap() as u64,
+            "{dev} page rows of core/dynreg"
+        );
+        assert_eq!(
+            count("machines", dev),
+            l["machine_rows"].as_integer().unwrap() as u64,
+            "{dev} machine rows of core/dynreg"
+        );
+    }
+}

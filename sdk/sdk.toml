@@ -273,6 +273,15 @@ SELECT = 3
 RESTART = 4
 MODULES = 5
 
+[limits.max]        # contract maxima (capacity plan, docs/plans/capacity-isolation.md): a device's `[limits]` value in devices/*.toml may not exceed them
+                    # (`patchkit gen` refuses it). Names are the keys of `[limits]` and, for dsp_area_bytes, of `[digikit]`.
+modules = 8         # module records: the selection record holds SEL_MAX = 8 paths (record format, modules/core/runtime/sdk/src/lib.rs)
+map_entries = 8     # sticky machine-type map entries: MAP_N = 8 (record format: bytes 28-31 and 480-507)
+fx_slots = 4        # effects in the chain: DK_FX_MAX of [fx] (kept equal by packages/patchkit/tests/sdkgen.rs)
+dsp_area_bytes = 524288  # the 17-bit word offset of a core/dsp-link chunk reaches 2^17 words
+param_rows = 16     # parameter rows core/dynreg reserves (tied to its manifest by packages/patchkit/tests/devdata.rs)
+page_rows = 8       # page rows core/dynreg reserves (Digitone II)
+
 [load.status]       # result codes of `dkrt_load` and the boot-time selection (also the status of SELECT); never renumber
 E_NOT_FOUND = { code = -1, text = "no store, or no such file or module" }
 E_BAD_STORE = { code = -2, text = "store header or table check failed" }
