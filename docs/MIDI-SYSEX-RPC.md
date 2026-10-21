@@ -177,7 +177,8 @@ rename/get-info/hash variants. ✝ = `FsRaw*`, see §6.)
   column and the top 8 rows in byte 7 of the column). `tools/device/dkscreen.py` decodes it and writes a PNG (`--screenshot` for the device is that tool:
   `python -m tools.device.dkscreen --port Digitakt out.png`). The scenario `upload-screenshot` sends the request over `midi.usb.in`, reads `midi.usb.out`
   and compares the 1024 bytes with the emulator's own frame capture of the same moment: equal on the main screen and after a key press. Not yet run on the
-  device itself **[O]**.
+  device itself **[O]**. **DN2 1.12 in the emulator (2026-10-22, lane tasks-images) [D]:** the same request over `midi.usb.in` is answered with the same 9-byte header and 1024 bytes, equal to
+  the frame capture on the main screen and after a key press (scenario `upload-screenshot`, now on both devices). The handler is the same stock command; no DN2-specific change was needed. A real DN2 is not checked **[O]**.
 - **StorageSpace (`0x05`)**, **Query (`0x09`)** — read-only, layouts not
   decoded.
 

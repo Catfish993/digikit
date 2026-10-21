@@ -11,6 +11,6 @@ no device literals in code. A third device must be a profile, anchors and at mos
    range cannot start at 0x40 as first sketched). Wire side: `docs/design/digikit-upload.md` ("Service commands"); API: `docs/design/module-sdk.md` 11.6.
 2. `core/input`: the input adapter (anchors for the panel decoders, `input_key(code, down)`, `input_turn(enc, delta)` as imports, a profile-chosen backend).
 3. `digikit/remote` (`modules/tools/remote`): a `.dkm` service with KEY, TURN, RELEASE and STATE behind a REMOTE switch in the DIGIKIT menu. The runtime guards the range (`E_DISABLED`); the switch starts on when `core/remote-open` is in the patch set (the emulator's), off otherwise (the device's, which now has `core/input`). Done.
-4. The DN2 screenshot (stock MidiRpc 0x04).
+4. The DN2 screenshot (stock MidiRpc 0x04). Done in the emulator: the scenario `upload-screenshot` passes on DN2 1.12 as on DT2 (no trace was needed there; a real DN2 is still unchecked).
 5. Host side: the commands in the TypeScript and Python clients, a target selector (Emulator or MIDI port through Rust midir), and a Remote page.
 6. Proof scenarios on both devices and `docs/findings/58-panel-input-path.md`.
