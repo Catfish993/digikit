@@ -177,7 +177,12 @@ runs the smoke tour (boot, track and pattern change, audition, play and stop, ma
 a seeded 40-input stress) plus the `tests/*.toml` files of the modules in the set. After every input it asserts no
 fault, no DSP halt and no main-loop stall. Frames are compared by SHA-256 against
 `tests/patchkit/smoke/goldens.json`, keyed by device, firmware and module set (hashes only). A module set with no
-recorded goldens fails with "no golden"; record them with `--update`. Details: the docstring of `tools/patchkit/pk_harness.py`
+recorded goldens fails with "no golden"; record them with `--update`. A frame that differs saves `got.png`, `want.png`
+and `diff.png` under `out/runs/patchkit/frames/<cell>/mismatch/` and prints the changed box and pixel count; `want.png` comes
+from the last passing frame of that golden, kept locally in `out/cache/smoke-frames/` (filled by a passing run or `--update`,
+never committed). `run --goldens FILE` compares against a copy of the goldens. Our own screens are better checked by the state they
+are drawn from: `expect_text` (rows a module keeps in RAM) and `expect_mem` with `symbol` (a symbol of the image's plan), see
+`modules/core/digikit-menu/tests/menu.toml`. Details: the docstring of `tools/patchkit/pk_harness.py`
 and [finding 17](findings/17-emulator-control.md). The proof tools `tools/patchkit/pk_proof_*.py` (PCM and behaviour proofs per
 module family) are slower and are run before a merge, not in the loop.
 
