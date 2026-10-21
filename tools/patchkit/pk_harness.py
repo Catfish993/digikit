@@ -32,7 +32,12 @@ Step format (TOML `[[segment.step]]` / `[[step]]`, exactly one action key each; 
     expect_frame = "name"          hash of the OLED frame against the golden (PNG to out/); `differs_from = "other"`
     expect_pcm_db = {min = -60, max = -3}   peak 100 ms-window RMS (dBFS) since the last input started
     expect_no_fault = true         assert the health now (it is also asserted after every input)
-    expect_mem = {addr = 0x4265338c, mask = 0xff00, eq = 0x0700}   a ColdFire word (mem.cf.peek) under a mask
+    expect_mem = {addr = 0x4265338c, mask = 0xff00, eq = 0x0700}   a ColdFire word (mem.cf.peek) under a mask;
+                                   `symbol = "STORE", module = "core/digikit-menu"` instead of `addr`: a symbol of the
+                                   image's plan (the module's static; `module` is optional)
+    expect_text = {rows = "DK_ABOUT", count = "DK_ABOUT_N", stride = 24, has = ["RUNTIME {runtime}"]}
+                                   the text rows a module keeps in RAM (NUL-terminated, STRIDE bytes each, COUNT rows) must
+                                   have every `has` string as a row; `{runtime}` is the runtime version of sdk/sdk.toml
     expect_dsp = {addr = 0x255970, hex = "07"}                     DSP memory bytes (dsp.peek) from addr
     stress = {seed = 1, actions = 40}       seeded random inputs, health after each
 
@@ -57,7 +62,7 @@ import subprocess
 import sys
 import time
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -80,6 +85,9 @@ DEFAULT_STALL_MS = 1000
 SHARED_CACHE = (
     ROOT / "out" / "runs" / ".cache"
 )  # boot pairs and cards shared by the daemons of all proof runs
+# The last passing OLED frame of each golden, kept locally (never committed: it is firmware output): `<cell>/<segment>/<name>.<sha256>.oled`,
+# the raw 1024 bytes. A mismatch is explained against it (`frame_diff`).
+SMOKE_FRAMES = ROOT / "out" / "cache" / "smoke-frames"
 MAX_JOBS = 6
 MIN_JOBS = 4
 
@@ -441,6 +449,132 @@ def boot_lock(cache_dir: Path | None, image: Path) -> Iterator[None]:
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
+# ----- frame diagnostics ------------------------------------------------------------------------------------------
+
+
+def oled_pixel(frame: bytes, x: int, y: int) -> int:
+    """Pixel (x, y) of a raw 128x64 OLED frame: byte (7 - y / 8) + 8 x, bit y % 8 (`digi_client.oled_png`)."""
+    return frame[(7 - y // 8) + 8 * x] >> (y % 8) & 1
+
+
+def frame_diff(
+    got: bytes, want: bytes
+) -> tuple[int, tuple[int, int, int, int] | None, bytes]:
+    """(pixels that differ, their bounding box (x0, y0, x1, y1) inclusive in OLED pixels, a raw frame with just those pixels set)."""
+    changed = bytearray(len(got))
+    n = 0
+    box: list[int] | None = None
+    for x in range(128):
+        for y in range(64):
+            if oled_pixel(got, x, y) != oled_pixel(want, x, y):
+                changed[(7 - y // 8) + 8 * x] |= 1 << (y % 8)
+                n += 1
+                box = (
+                    [x, y, x, y]
+                    if box is None
+                    else [
+                        min(box[0], x),
+                        min(box[1], y),
+                        max(box[2], x),
+                        max(box[3], y),
+                    ]
+                )
+    return n, (tuple(box) if box else None), bytes(changed)  # type: ignore[return-value]
+
+
+def _frame_file(cell: str, segment: str, name: str, digest: str) -> Path:
+    return SMOKE_FRAMES / cell / segment.replace("/", "_") / f"{name}.{digest}.oled"
+
+
+def remember_frame(cell: str, segment: str, name: str, digest: str, raw: bytes) -> None:
+    """Keep RAW as the frame of the golden DIGEST (the last one that matched or was recorded; an older frame of the same checkpoint goes)."""
+    path = _frame_file(cell, segment, name, digest)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for old in path.parent.glob(f"{name}.*.oled"):
+        if old != path:
+            old.unlink(missing_ok=True)
+    path.write_bytes(raw)
+
+
+def explain_mismatch(
+    cell: str,
+    segment: str,
+    name: str,
+    got: bytes,
+    got_digest: str,
+    want_digest: str,
+    out_dir: Path,
+) -> tuple[str, dict[str, Any]]:
+    """The detail text and the record of a frame that is not the golden: got.png always; want.png and diff.png and the changed box
+    and pixel count when the frame of the golden is in the local cache (`remember_frame`)."""
+    from tools.control.digi_client import oled_png
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "got.png").write_bytes(oled_png(got))
+    head = f"got {got_digest[:8]} want {want_digest[:8]}"
+    cached = _frame_file(cell, segment, name, want_digest)
+    if not cached.exists():
+        return (
+            f"{head}; no local frame for the golden (run once on main to fill the cache); got.png in {out_dir}",
+            {"frames": str(out_dir), "want_cached": False},
+        )
+    want = cached.read_bytes()
+    n, box, changed = frame_diff(got, want)
+    (out_dir / "want.png").write_bytes(oled_png(want))
+    (out_dir / "diff.png").write_bytes(oled_png(changed))
+    where = f"x {box[0]}..{box[2]}, y {box[1]}..{box[3]}" if box else "nowhere"
+    return (
+        f"{n} px differ in {where} (OLED pixels; the PNGs are 4x) ({head}); frames: {out_dir}",
+        {"frames": str(out_dir), "want_cached": True, "px": n, "box": box},
+    )
+
+
+# ----- state checks -----------------------------------------------------------------------------------------------
+
+
+def plan_symbol(plan: dict[str, Any], name: str, module: str | None = None) -> int:
+    """The address of a module symbol in the symbols of a patch plan: the exact name (`DK_ABOUT`) or, for a Rust static, the end of
+    its mangled name (`..._15pk_digikit_menu5STORE`). MODULE (`core/digikit-menu`) limits the search to that module's symbols."""
+    found = {
+        v
+        for k, v in plan["symbols"].items()
+        if (module is None or k.startswith(f"{module}@"))
+        and (k.endswith(":" + name) or re.search(r"\d%s$" % re.escape(name), k))
+    }
+    if len(found) != 1:
+        raise HarnessError(
+            f"symbol {name} ({module or 'any module'}): {len(found)} addresses in the plan"
+        )
+    return found.pop()
+
+
+def runtime_text() -> str:
+    """The runtime version as the menu prints it (`major.minor.patch` of the packed value generated from sdk/sdk.toml)."""
+    from tools.device.dklog_kinds import RUNTIME_PACKED as v
+
+    return f"{v >> 16}.{v >> 8 & 255}.{v & 255}"
+
+
+def text_rows(
+    word: Callable[[int], int], base: int, count: int, stride: int
+) -> list[str]:
+    """COUNT NUL-terminated rows of STRIDE bytes at BASE, read by big-endian words (WORD(addr))."""
+    rows = []
+    for i in range(count):
+        raw = b"".join(
+            word(base + stride * i + 4 * k).to_bytes(4, "big")
+            for k in range(stride // 4)
+        )
+        rows.append(raw.split(b"\0")[0].decode("latin-1"))
+    return rows
+
+
+def missing_rows(rows: list[str], has: list[str]) -> list[str]:
+    """The strings of HAS (`{runtime}` expanded) that no row equals."""
+    want = [h.replace("{runtime}", runtime_text()) for h in has]
+    return [w for w in want if w not in rows]
+
+
 # ----- goldens --------------------------------------------------------------------------------------------------
 
 
@@ -696,11 +830,11 @@ class Session:
             time.sleep(0.05)
         return any(e["kind"] == kind for e in self.events)
 
-    def check(self, name: str, ok: bool, detail: str = "") -> None:
+    def check(self, name: str, ok: bool, detail: str = "", **extra: Any) -> None:
         self.checks.append(
             Check(f"{self.segment}/{name}" if self.segment else name, ok, detail)
         )
-        self.log(check=name, segment=self.segment, ok=ok, detail=detail)
+        self.log(check=name, segment=self.segment, ok=ok, detail=detail, **extra)
 
     # -- actions
     def mark_pcm(self) -> None:
@@ -818,6 +952,7 @@ class Session:
             )
         if self.update:
             self.goldens.set(key, digest)
+            remember_frame(self.cell.golden_prefix, self.segment, name, digest, raw)
             self.check(f"frame {name}", True, f"golden recorded {digest[:12]}")
             return
         want = self.goldens.get(key)
@@ -825,10 +960,20 @@ class Session:
             self.check(
                 f"frame {name}", False, f"no golden for {key} (run with --update)"
             )
+        elif want == digest:
+            remember_frame(self.cell.golden_prefix, self.segment, name, digest, raw)
+            self.check(f"frame {name}", True, f"got {digest[:12]} want {want[:12]}")
         else:
-            self.check(
-                f"frame {name}", want == digest, f"got {digest[:12]} want {want[:12]}"
+            detail, extra = explain_mismatch(
+                self.cell.golden_prefix,
+                self.segment,
+                name,
+                raw,
+                digest,
+                want,
+                png_dir / "mismatch" / f"{self.segment.replace('/', '_')}-{name}",
             )
+            self.check(f"frame {name}", False, detail, **extra)
 
     def expect_pcm_db(self, lo: float | None, hi: float | None) -> None:
         emu = self.emu
@@ -846,13 +991,37 @@ class Session:
     def expect_mem(self, want: dict[str, Any]) -> None:
         emu = self.emu
         assert emu is not None
-        addr, mask = int(want["addr"]), int(want.get("mask", 0xFFFFFFFF))
+        label = want.get("symbol")
+        addr = self.symbol(label, want.get("module")) if label else int(want["addr"])
+        mask = int(want.get("mask", 0xFFFFFFFF))
         got = emu.peek32(addr)
         ok = got is not None and got & mask == int(want["eq"])
         self.check(
-            f"mem {addr:#x}",
+            f"mem {label or f'{addr:#x}'}",
             ok,
             f"got {'unmapped' if got is None else f'{got & mask:#x}'} want {int(want['eq']):#x} (mask {mask:#x})",
+        )
+
+    def symbol(self, name: str, module: str | None = None) -> int:
+        """The address of a symbol of the image's patch plan (`patchkit patch` wrote it next to the image)."""
+        plan = self.image.with_suffix(".plan.json") if self.image else None
+        if plan is None or not plan.is_file():
+            raise HarnessError(f"symbol {name}: the image has no plan")
+        return plan_symbol(json.loads(plan.read_text()), name, module)
+
+    def expect_text(self, want: dict[str, Any]) -> None:
+        emu = self.emu
+        assert emu is not None
+        base = self.symbol(want["rows"])
+        count = emu.peek32(self.symbol(want["count"])) or 0
+        rows = text_rows(
+            lambda a: emu.peek32(a) or 0, base, count, int(want.get("stride", 24))
+        )
+        lost = missing_rows(rows, list(want["has"]))
+        self.check(
+            f"text {want['rows']}",
+            not lost,
+            f"rows {rows}" if not lost else f"no row {lost} in {rows}",
         )
 
     def expect_dsp(self, want: dict[str, Any]) -> None:
@@ -929,6 +1098,8 @@ class Session:
                 self.expect_pcm_db(want.get("min"), want.get("max"))
             elif "expect_mem" in step:
                 self.expect_mem(step["expect_mem"])
+            elif "expect_text" in step:
+                self.expect_text(step["expect_text"])
             elif "expect_dsp" in step:
                 self.expect_dsp(step["expect_dsp"])
             elif "expect_no_fault" in step:
@@ -1270,6 +1441,12 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="record the frame goldens instead of comparing",
     )
+    r.add_argument(
+        "--goldens",
+        type=Path,
+        default=GOLDENS,
+        help="the golden hash file (default tests/patchkit/smoke/goldens.json; a copy lets you see a mismatch without touching the real one)",
+    )
     r.add_argument("--tests", choices=("smoke", "quick", "all"), default="all")
     r.add_argument("--seed", type=int)
     r.add_argument("--stress-actions", type=int)
@@ -1305,7 +1482,7 @@ def main(argv: list[str]) -> int:
     if (
         a.result is not None
     ):  # a child of a parallel run: one cell, the record goes to a file
-        ok, line, bad = _run_one(cells[a.index], Goldens(), a)
+        ok, line, bad = _run_one(cells[a.index], Goldens(a.goldens), a)
         print(line, flush=True)
         a.result.write_text(json.dumps({"ok": ok, "line": line, "bad": bad}))
         return 0 if ok else 1
@@ -1313,7 +1490,7 @@ def main(argv: list[str]) -> int:
     if jobs > 1 and len(cells) > 1:
         results = _run_cells_parallel(cells, a, argv, jobs)
     else:
-        goldens = Goldens()
+        goldens = Goldens(a.goldens)
         results = []
         for cell in cells:
             res = _run_one(cell, goldens, a)
