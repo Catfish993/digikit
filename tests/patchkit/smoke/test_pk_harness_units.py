@@ -193,3 +193,93 @@ def test_proofkit_runs_parts_and_reports(tmp_path, capsys):
     )
     q = ap.parse_args(["--out", str(tmp_path / "q"), "--jobs", "1", "--quick"])
     assert k.run_tool("x.py", k.Proof, parts, q, argv=[]) == 0
+
+
+def _frame(*pixels: tuple[int, int]) -> bytes:
+    """A raw 128x64 OLED frame with the given (x, y) pixels on (byte (7 - y / 8) + 8 x, bit y % 8)."""
+    raw = bytearray(1024)
+    for x, y in pixels:
+        raw[(7 - y // 8) + 8 * x] |= 1 << (y % 8)
+    return bytes(raw)
+
+
+def test_frame_diff_counts_pixels_and_gives_the_box():
+    base = _frame((3, 4), (50, 20), (127, 63))
+    moved = _frame((3, 4), (50, 20), (126, 62), (10, 9))
+    n, box, changed = h.frame_diff(moved, base)
+    # (127, 63) went off, (126, 62) and (10, 9) came on
+    assert n == 3 and box == (10, 9, 127, 63)
+    assert changed == _frame((127, 63), (126, 62), (10, 9))
+    assert h.frame_diff(base, base) == (0, None, bytes(1024))
+
+
+def test_a_mismatch_is_explained_against_the_remembered_frame(tmp_path, monkeypatch):
+    from tools.control.digi_client import oled_png
+
+    monkeypatch.setattr(h, "SMOKE_FRAMES", tmp_path / "cache")
+    want, got = _frame((3, 4), (50, 20)), _frame((3, 4), (50, 21), (51, 22))
+    wd, gd = (hashlib.sha256(x).hexdigest() for x in (want, got))
+    out = tmp_path / "run"
+    # no frame of the golden yet: got.png, and a text that says what to do
+    text, rec = h.explain_mismatch("dt2-1.17/m", "seg/x", "about", got, gd, wd, out)
+    assert (
+        "no local frame for the golden" in text
+        and f"got {gd[:8]} want {wd[:8]}" in text
+    )
+    assert rec["want_cached"] is False and (out / "got.png").read_bytes() == oled_png(
+        got
+    )
+    assert not (out / "want.png").exists()
+    # after a pass or an update it is in the cache; an older frame of the checkpoint is dropped
+    h.remember_frame(
+        "dt2-1.17/m", "seg/x", "about", hashlib.sha256(b"old").hexdigest(), b"old"
+    )
+    h.remember_frame("dt2-1.17/m", "seg/x", "about", wd, want)
+    assert (
+        len(list((tmp_path / "cache" / "dt2-1.17/m" / "seg_x").glob("about.*.oled")))
+        == 1
+    )
+    text, rec = h.explain_mismatch("dt2-1.17/m", "seg/x", "about", got, gd, wd, out)
+    assert (
+        text.startswith("3 px differ in x 50..51, y 20..22 (OLED pixels")
+        and str(out) in text
+    )
+    assert (
+        rec["px"] == 3 and rec["box"] == (50, 20, 51, 22) and rec["want_cached"] is True
+    )
+    assert (out / "want.png").read_bytes() == oled_png(want)
+    assert (out / "diff.png").read_bytes() == oled_png(
+        _frame((50, 20), (50, 21), (51, 22))
+    )
+
+
+def test_plan_symbol_finds_a_mangled_static_in_its_module():
+    plan = {
+        "symbols": {
+            "core/a@0.1.0:DK_ABOUT": 0x100,
+            "core/a@0.1.0:.sec..bss._RNvCs1_15pk_digikit_menu5STORE": 0x200,
+            "core/b@0.1.0:.sec..bss._RNvCs2_4dkrt5store10STORE_SEEN": 0x300,
+            "core/b@0.1.0:.sec..bss._RNvCs2_4dkrt5STORE": 0x400,
+        }
+    }
+    assert h.plan_symbol(plan, "DK_ABOUT") == 0x100
+    assert h.plan_symbol(plan, "STORE", "core/a") == 0x200
+    with pytest.raises(h.HarnessError):
+        h.plan_symbol(plan, "STORE")  # two modules
+    with pytest.raises(h.HarnessError):
+        h.plan_symbol(plan, "NOPE")
+
+
+def test_text_rows_and_the_runtime_version():
+    from tools.device.dklog_kinds import RUNTIME_PACKED as v
+
+    mem = {}
+    for i, t in enumerate([b"DIGIKIT 0.1.0", b"RUNTIME " + h.runtime_text().encode()]):
+        for k, c in enumerate(t.ljust(24, b"\0")):
+            mem[0x1000 + 24 * i + k] = c
+    word = lambda a: int.from_bytes(bytes(mem.get(a + j, 0) for j in range(4)), "big")  # noqa: E731
+    rows = h.text_rows(word, 0x1000, 2, 24)
+    assert rows == ["DIGIKIT 0.1.0", f"RUNTIME {h.runtime_text()}"]
+    assert h.runtime_text() == f"{v >> 16}.{v >> 8 & 255}.{v & 255}"
+    assert h.missing_rows(rows, ["DIGIKIT 0.1.0", "RUNTIME {runtime}"]) == []
+    assert h.missing_rows(rows, ["FREE 1 KB"]) == ["FREE 1 KB"]
