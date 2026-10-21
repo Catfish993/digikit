@@ -1,0 +1,65 @@
+[module]
+id = "fadedlimes/analog"
+version = "0.1.0"
+name = "Analog"
+category = "machines"
+type = "machine"
+author = "fadedlimes"
+status = "experimental"
+summary = "A virtual-analog voice: two detuned oscillators running a saw/triangle/pulse morph and a reflection wave folder, shaped by the track filter and amp."
+dynamic = false
+ports = ["dt2-1.16", "dt2-1.17"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "unsupported"
+"dn2-1.12" = "unsupported"
+
+[[object]]
+path = "build/analog-dsp.dko.json"
+sources = ["src/dsp/analog.s"]
+place = "dsp.l2"
+
+[[voice]]
+machine = "analog"
+render = "_va_render"
+note_on = "_va_note_on"
+desc = "_va_desc"
+
+# SAMPLE's TUNE (0xca) and LEV (0xd1) rows; the voice's own knobs on 1, 2, 4 and 5.
+[[machine]]
+id = "analog"
+name = "Analog"
+short = "ANA"
+clone_of = 0
+knobs = [0xca, "analog_detune", 0, 0, "analog_wave", 0, "analog_sub", 0xd1]
+
+[[param]]
+id = "analog_detune"
+name = "Detune"
+short = "DET"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x2800
+
+[[param]]
+id = "analog_wave"
+name = "Wave"
+short = "WAVE"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x0000
+
+[[param]]
+id = "analog_sub"
+name = "Sub / Fold"
+short = "SUB"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x0000
