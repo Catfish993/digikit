@@ -56,3 +56,13 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
     `FUN_1c244d` (finding 55). Choose a hook site by its range before anything else.
 - **Patterns:** `references/contract-fx.md`; the rig (`tests/support/fx_rig.py`) and the effects for tests (`tests/support/fx_effects.s`) are templates for
   an effect's unit test.
+
+## digikit/remote (a service module: SysEx commands of its own; both devices)
+
+- **What:** a run-time module that registers commands with `Api.register_cmds` (api 1.2) and calls the runtime's imports `input_key` / `input_turn` (core/input). One C file, `modules/tools/remote/src/c/remote.c`; the packed `.dkm` is identical for both devices (1032 bytes).
+- **Shape:** `dkm_init(api)` registers one range per `register_cmds` call; a handler is `int h(cmd, seq, body, len, out)` and returns the reply length or a negative status; it runs in the MIDI task, so it is short and never waits.
+  Use a range that `sdk/sdk.toml` `[protocol.ranges]` reserves; a new service adds its range there first (`mise run gen:modules`).
+- **Guard:** put commands that act on the instrument in a `[protocol] guarded` range: the runtime answers `E_DISABLED` while the owner has the REMOTE switch off, the module needs no check of its own.
+- **Traps [D]:** a request number is 6 bits (bit 6 marks a reply), so a range cannot start at 0x40; an import that the image does not have (core/input missing) fails the load with `E_IMPORT`;
+  the firmware clamps a flushed turn to 30 detents, so the module keeps a pending estimate and returns the delta it took.
+- **Test:** scenario `remote-control` (live, both devices), fixtures `test/svc-echo` and `test/input-probe` are smaller templates.

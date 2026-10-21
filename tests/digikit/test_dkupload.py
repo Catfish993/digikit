@@ -418,6 +418,8 @@ def test_service_command_ranges_and_capability_are_generated():
     for first, last in dkproto.RANGES.values():
         assert 1 <= first <= last <= 0x3F
         assert not any(first <= v <= last for v in dkproto.CMD.values())
-    assert dkproto.RANGES["remote"] == (0x38, 0x3F)
+    assert dkproto.RANGES["remote"] == (0x38, 0x3D)
+    assert dkproto.RANGES["remote_state"] == (0x3E, 0x3F)
+    assert dkproto.GUARDED == ("remote",)
     assert D.CAP["SERVICE_CMDS"] == 9
     assert D.STATUS[-64] == "E_CMD_RANGE"

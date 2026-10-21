@@ -213,7 +213,12 @@ fn a_patched_image_has_no_port() {
     need_image!();
     let out = run(&library(vec![]), &["digikit/master-gain"]).unwrap();
     let lib = library(vec![]);
-    let again = apply::apply(&out.syx, &registry(), &lib, &["digikit/master-gain".to_string()]);
+    let again = apply::apply(
+        &out.syx,
+        &registry(),
+        &lib,
+        &["digikit/master-gain".to_string()],
+    );
     expect_err(again, "no port for firmware");
 }
 

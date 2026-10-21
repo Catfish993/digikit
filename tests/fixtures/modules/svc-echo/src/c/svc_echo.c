@@ -1,6 +1,6 @@
 /* test/svc-echo: a module with SysEx commands of its own (docs/design/module-sdk.md, "Service commands").
  *
- * dkm_init registers 0x3e and 0x3f, which the remote range [0x38, 0x3f] of sdk/sdk.toml reserves, and checks that the runtime refuses what it must:
+ * dkm_init registers 0x3e and 0x3f, which the remote_state range [0x3e, 0x3f] of sdk/sdk.toml reserves, and checks that the runtime refuses what it must:
  * a range outside every reserved range, one that overlaps its own, and an empty one (each result is kept in `svc_refused`).
  *
  *   0x3e  echo: the reply body is the request body; a body that starts with 0xee answers the status -77 (a status of the module's own, no body)

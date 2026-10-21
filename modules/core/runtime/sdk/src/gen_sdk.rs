@@ -97,6 +97,7 @@ pub mod proto {
     pub const E_INUSE: i32 = -62;
     pub const E_PEEK: i32 = -63;
     pub const E_CMD_RANGE: i32 = -64;
+    pub const E_DISABLED: i32 = -65;
     pub const CAP_LOG: u32 = 1 << 0;
     pub const CAP_PEEK: u32 = 1 << 1;
     pub const CAP_LOGCFG: u32 = 1 << 2;
@@ -118,11 +119,14 @@ pub mod proto {
     pub const CAPK_PAGE_ROWS: u8 = 9;
     pub const CAPK_FX_SLOTS: u8 = 10;
     pub const CAPK_MAP_ENTRIES: u8 = 11;
-    /// The command ranges a module may register, as (first, last).
-    pub const RANGES: [(u8, u8); 1] = [
-        (0x38, 0x3f), // remote
+    /// The command ranges a module may register, as (first, last, guarded).
+    /// The third field: the runtime refuses the range's commands while the REMOTE switch is off.
+    pub const RANGES: [(u8, u8, bool); 2] = [
+        (0x38, 0x3d, true), // remote
+        (0x3e, 0x3f, false), // remote_state
     ];
-    pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3f);
+    pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
+    pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);
 }
 
 pub mod load {

@@ -159,7 +159,11 @@ impl Register {
     /// the runtime assigns the type number at load.
     pub fn lower(r: &DevResolved, module: &str) -> Result<Register> {
         let key = |machine: &str| {
-            let hint = r.machines.iter().find(|m| m.id == machine).map_or(0, |m| m.type_hint);
+            let hint = r
+                .machines
+                .iter()
+                .find(|m| m.id == machine)
+                .map_or(0, |m| m.type_hint);
             machine_key(module, machine, hint)
         };
         let mut reg = Register {

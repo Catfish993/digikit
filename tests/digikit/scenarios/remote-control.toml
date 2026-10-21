@@ -1,0 +1,20 @@
+# digikit/remote and the REMOTE switch (docs/plans/remote-control.md). On a free-running daemon booted with the `device` patch set (core/input, no core/remote-open: REMOTE
+# is off at the boot): STATE answers and says off, the guarded commands are refused (E_DISABLED), the menu's REMOTE row turns the switch on, KEY and TURN work
+# (TURN paced to the firmware's clamp of 30), the menu turns it off again.
+[scenario]
+name = "remote-control"
+kind = "live"
+devices = ["dn2", "dt2"]
+tier = "full"
+
+[live]
+part = "remote"
+modules = ["digikit/remote"]
+patch_set = "device"
+key = 2
+encoder = 1
+settle = 10
+pace_wait = 3
+
+[live.dn2]
+settle_s = 45

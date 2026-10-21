@@ -656,6 +656,13 @@ queue is full), `-3` (the device profile names no backend `core/input` has). Cod
 firmware's own panel decoders (`docs/findings/58-panel-input-path.md`) and are for the MIDI task; the first user is `digikit/remote`, the proof is `test/input-probe` and the scenario `input-adapter`.
 A device that reaches its events another way adds a backend to `core/input` and names it in its profile; modules and hosts keep calling the same two functions.
 
+### 11.8 digikit/remote and the REMOTE switch
+
+`digikit/remote` (`modules/tools/remote`, a run-time `.dkm`, the same file for both devices) registers KEY 0x38 (`code`, `down`), TURN 0x39 (`encoder`, signed `delta`; the reply is the delta
+taken, at most 30 either way, and the host sends the rest again), RELEASE 0x3a (lets go of every key the module holds) in the guarded `remote` range, and STATE 0x3e (`enabled`, format, turn
+limit) in the `remote_state` range. The module knows no device: codes and encoders are the device file's `[panel]` (the host lays the keys out from them). The switch, the guard and its
+defaults are in `docs/design/digikit-upload.md` ("Service commands"). A module can read the switch with the runtime import `int remote_enabled(void)`. Proof: scenario `remote-control`.
+
 ## 12. Hot reload as a later goal
 
 Not in SDK v1. The aim is that v1 does not make it harder.

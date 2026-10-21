@@ -232,6 +232,7 @@ args = ["hash", "type", "-", "-", "-"]
 
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO
+guarded = ["remote"]   # ranges ([protocol.ranges]) whose commands the runtime refuses with E_DISABLED while the REMOTE switch of the DIGIKIT menu is off
 
 [protocol.commands] # command numbers; never reuse or renumber (additive only)
 INFO = 0x01
@@ -253,7 +254,8 @@ SELECT = 0x30
 RESTART = 0x31
 
 [protocol.ranges]   # command numbers a run-time module may register with Api.register_cmds (a request number is 6 bits: bit 6 of the command byte marks a reply)
-remote = [0x38, 0x3f]   # digikit/remote: key, turn and state of the panel (docs/plans/remote-control.md)
+remote = [0x38, 0x3d]   # digikit/remote: key and turn of the panel (docs/plans/remote-control.md); guarded: refused while DIGIKIT > REMOTE is off
+remote_state = [0x3e, 0x3f]   # digikit/remote: the state (enabled or not), always answered
 
 [protocol.status]   # reply status codes of the upload commands (0 = ok); never renumber
 E_MSG = { code = -50, text = "body too short or malformed" }
@@ -271,6 +273,7 @@ E_NOSTORE = { code = -61, text = "the store header is unreadable (CLEAR still wo
 E_INUSE = { code = -62, text = "the card's store area is not ours and not blank" }
 E_PEEK = { code = -63, text = "PEEK range not allowed, or length 0 or over 512" }
 E_CMD_RANGE = { code = -64, text = "command range not reserved, taken, or empty" }
+E_DISABLED = { code = -65, text = "a guarded command range is switched off (DIGIKIT > REMOTE)" }
 
 [protocol.caps]     # INFO capability bits (bit numbers of the `caps` word)
 LOG = 0

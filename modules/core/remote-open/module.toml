@@ -1,0 +1,24 @@
+[module]
+id = "core/remote-open"
+version = "0.1.0"
+name = "Remote open"
+category = "core"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "A marker: the REMOTE switch of the DIGIKIT menu starts on at every boot when this module is in the patch set (the emulator's), off otherwise (a device's)"
+requires = ["core/runtime", "core/input"]
+conflicts = []
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
+
+# One function the runtime looks for by name (`optional = ["remote_open"]`); no firmware site, no anchor, no device fact.
+[[object]]
+path = "build/remote-open.dko.json"
+sources = ["src/cf/remote_open.c"]
+place = "cf.expansion"

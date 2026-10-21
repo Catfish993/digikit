@@ -39,6 +39,7 @@ export const STATUS: [number, string, string][] = [
   [-62, 'E_INUSE', "the card's store area is not ours and not blank"],
   [-63, 'E_PEEK', 'PEEK range not allowed, or length 0 or over 512'],
   [-64, 'E_CMD_RANGE', 'command range not reserved, taken, or empty'],
+  [-65, 'E_DISABLED', 'a guarded command range is switched off (DIGIKIT > REMOTE)'],
 ];
 
 /** [code, name, text] */
@@ -99,8 +100,12 @@ export const CAP = {
 
 /** The command numbers a module may register: [first, last]. */
 export const RANGES = {
-  remote: [0x38, 0x3f],
+  remote: [0x38, 0x3d],
+  remote_state: [0x3e, 0x3f],
 } as const;
+
+/** The ranges the runtime refuses while the REMOTE switch is off. */
+export const GUARDED: string[] = ['remote'];
 
 export const CAPACITY_KINDS = {
   MODULES: 1,

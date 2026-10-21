@@ -46,6 +46,9 @@ struct Sdk {
 #[serde(deny_unknown_fields)]
 struct Protocol {
     version: u8,
+    /// Ranges whose commands the runtime refuses (`E_DISABLED`) while the REMOTE switch of the DIGIKIT menu is off.
+    #[serde(default)]
+    guarded: Vec<String>,
     commands: BTreeMap<String, u8>,
     status: BTreeMap<String, Status>,
     caps: BTreeMap<String, u32>,
@@ -264,19 +267,35 @@ fn parse(text: &str) -> Result<Sdk> {
     let p = &sdk.protocol;
     for (i, (n, v)) in p.commands.iter().enumerate() {
         if p.commands.iter().skip(i + 1).any(|(_, w)| w == v) {
-            return Err(err!("{SOURCE}: protocol command number {v:#04x} ({n}) twice"));
+            return Err(err!(
+                "{SOURCE}: protocol command number {v:#04x} ({n}) twice"
+            ));
         }
     }
     for (i, (n, [first, last])) in p.ranges.iter().enumerate() {
         if *first == 0 || first > last || *last > 0x3f {
-            return Err(err!("{SOURCE}: protocol range {n}: [{first:#04x}, {last:#04x}] is not inside 0x01..=0x3f"));
+            return Err(err!(
+                "{SOURCE}: protocol range {n}: [{first:#04x}, {last:#04x}] is not inside 0x01..=0x3f"
+            ));
         }
         let hit = |v: u8| v >= *first && v <= *last;
         if let Some((c, _)) = p.commands.iter().find(|(_, v)| hit(**v)) {
             return Err(err!("{SOURCE}: protocol range {n} holds the command {c}"));
         }
-        if let Some((o, _)) = p.ranges.iter().skip(i + 1).find(|(_, [f, l])| f <= last && first <= l) {
+        if let Some((o, _)) = p
+            .ranges
+            .iter()
+            .skip(i + 1)
+            .find(|(_, [f, l])| f <= last && first <= l)
+        {
             return Err(err!("{SOURCE}: protocol ranges {n} and {o} overlap"));
+        }
+    }
+    for g in &p.guarded {
+        if !p.ranges.contains_key(g) {
+            return Err(err!(
+                "{SOURCE}: protocol guarded range {g} is not in [protocol.ranges]"
+            ));
         }
     }
     for (i, (n, v)) in p.caps.iter().enumerate() {
@@ -295,7 +314,10 @@ fn parse(text: &str) -> Result<Sdk> {
     for (what, table) in [("protocol", &p.status), ("load", &sdk.load.status)] {
         for (i, (n, s)) in table.iter().enumerate() {
             if s.code >= 0 || (what == "protocol" && s.code < -128) {
-                return Err(err!("{SOURCE}: {what} status {n}: code {} out of range", s.code));
+                return Err(err!(
+                    "{SOURCE}: {what} status {n}: code {} out of range",
+                    s.code
+                ));
             }
             if table.iter().skip(i + 1).any(|(_, t)| t.code == s.code) {
                 return Err(err!("{SOURCE}: {what} status code {} ({n}) twice", s.code));
@@ -336,14 +358,33 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "{indent}pub const CAPK_{n}: u8 = {k};");
     }
-    let _ = writeln!(s, "{indent}/// The command ranges a module may register, as (first, last).");
-    let _ = writeln!(s, "{indent}pub const RANGES: [(u8, u8); {}] = [", p.ranges.len());
-    for ([first, last], n) in p.ranges.values().zip(p.ranges.keys()) {
-        let _ = writeln!(s, "{indent}    ({first:#04x}, {last:#04x}), // {n}");
+    let _ = writeln!(
+        s,
+        "{indent}/// The command ranges a module may register, as (first, last, guarded)."
+    );
+    let _ = writeln!(
+        s,
+        "{indent}/// The third field: the runtime refuses the range's commands while the REMOTE switch is off."
+    );
+    let _ = writeln!(
+        s,
+        "{indent}pub const RANGES: [(u8, u8, bool); {}] = [",
+        p.ranges.len()
+    );
+    for (n, [first, last]) in &p.ranges {
+        let _ = writeln!(
+            s,
+            "{indent}    ({first:#04x}, {last:#04x}, {}), // {n}",
+            p.guarded.contains(n)
+        );
     }
     let _ = writeln!(s, "{indent}];");
     for (n, [first, last]) in &p.ranges {
-        let _ = writeln!(s, "{indent}pub const RANGE_{}: (u8, u8) = ({first:#04x}, {last:#04x});", n.to_uppercase());
+        let _ = writeln!(
+            s,
+            "{indent}pub const RANGE_{}: (u8, u8) = ({first:#04x}, {last:#04x});",
+            n.to_uppercase()
+        );
     }
     s
 }
@@ -459,7 +500,14 @@ fn python_proto(sdk: &Sdk) -> String {
     for (n, [first, last]) in &p.ranges {
         let _ = writeln!(s, "    {n:?}: (0x{first:02X}, 0x{last:02X}),");
     }
-    s.push_str("}\n\nCAPACITY_KINDS: dict[str, int] = {\n");
+    let guarded: Vec<String> = p.guarded.iter().map(|g| format!("{g:?}")).collect();
+    let _ = write!(
+        s,
+        "}}\n\nGUARDED: tuple[str, ...] = ({}{})\n",
+        guarded.join(", "),
+        if guarded.len() == 1 { "," } else { "" }
+    );
+    s.push_str("\nCAPACITY_KINDS: dict[str, int] = {\n");
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "    {n:?}: {k},");
     }
@@ -478,14 +526,20 @@ fn rust_proto(sdk: &Sdk) -> String {
 /// (the web workspace is checked with `prettier --check`).
 fn ts_proto(sdk: &Sdk) -> String {
     let p = &sdk.protocol;
-    let mut s = format!("// {HEADER}\n\nexport const PROTO_VERSION = {};\n\n", p.version);
+    let mut s = format!(
+        "// {HEADER}\n\nexport const PROTO_VERSION = {};\n\n",
+        p.version
+    );
     s.push_str("export const CMD = {\n");
     for (n, v) in by_value(&p.commands) {
         let _ = writeln!(s, "  {n}: {v:#04x},");
     }
     s.push_str("} as const;\n\n");
     for (name, table) in [("STATUS", &p.status), ("LOAD_STATUS", &sdk.load.status)] {
-        let _ = writeln!(s, "/** [code, name, text] */\nexport const {name}: [number, string, string][] = [");
+        let _ = writeln!(
+            s,
+            "/** [code, name, text] */\nexport const {name}: [number, string, string][] = ["
+        );
         for (n, st) in by_code(table) {
             let _ = writeln!(s, "  [{}, '{n}', {}],", st.code, ts_str(&st.text));
         }
@@ -499,7 +553,12 @@ fn ts_proto(sdk: &Sdk) -> String {
     for (n, [first, last]) in &p.ranges {
         let _ = writeln!(s, "  {n}: [{first:#04x}, {last:#04x}],");
     }
-    s.push_str("} as const;\n\nexport const CAPACITY_KINDS = {\n");
+    let guarded: Vec<String> = p.guarded.iter().map(|g| format!("'{g}'")).collect();
+    let _ = write!(
+        s,
+        "}} as const;\n\n/** The ranges the runtime refuses while the REMOTE switch is off. */\nexport const GUARDED: string[] = [{}];\n\nexport const CAPACITY_KINDS = {{\n",
+        guarded.join(", ")
+    );
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "  {n}: {k},");
     }

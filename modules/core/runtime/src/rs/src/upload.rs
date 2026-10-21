@@ -1188,7 +1188,10 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
     if let Some(e) = ent {
         return (e.h)(seq, buf, body, blen);
     }
-    // a command a module registered
+    // a command a module registered; a guarded range answers only while the REMOTE switch is on
+    if service_of(cmd).is_some_and(|s| s.guarded && crate::dkrt_remote_get() != 1) {
+        return reply(cmd, seq, E_DISABLED, 0);
+    }
     match service(cmd) {
         Some(h) => {
             let out = (addr_of_mut!(RBODY) as *mut u8).add(1);
@@ -1325,10 +1328,12 @@ struct Svc {
     last: u8,
     /// `dlog::current_source()` of the registering module (record index + 1); 0: the slot is free.
     owner: u8,
+    /// The range is one `[protocol] guarded` names: refused (`E_DISABLED`) while the REMOTE switch is off.
+    guarded: bool,
     h: Option<dkrt_sdk::ServiceCmd>,
 }
 
-static mut SVC: [Svc; SVC_MAX] = [Svc { first: 0, last: 0, owner: 0, h: None }; SVC_MAX];
+static mut SVC: [Svc; SVC_MAX] = [Svc { first: 0, last: 0, owner: 0, guarded: false, h: None }; SVC_MAX];
 
 fn svc() -> &'static mut [Svc; SVC_MAX] {
     unsafe { &mut *addr_of_mut!(SVC) }
@@ -1336,11 +1341,15 @@ fn svc() -> &'static mut [Svc; SVC_MAX] {
 
 /// The handler of a registered command.
 fn service(cmd: u8) -> Option<dkrt_sdk::ServiceCmd> {
+    service_of(cmd).and_then(|s| s.h)
+}
+
+fn service_of(cmd: u8) -> Option<&'static Svc> {
     let t = svc();
     let mut i = 0;
     while i < SVC_MAX {
         if t[i].owner != 0 && cmd >= t[i].first && cmd <= t[i].last {
-            return t[i].h;
+            return Some(&t[i]);
         }
         i += 1;
     }
@@ -1355,10 +1364,12 @@ pub unsafe fn register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::Se
     }
     let (lo, hi) = (first as u8, (first + count - 1) as u8);
     let mut reserved = false;
+    let mut guarded = false;
     let mut i = 0;
     while i < RANGES.len() {
         if lo >= RANGES[i].0 && hi <= RANGES[i].1 {
             reserved = true;
+            guarded = RANGES[i].2;
         }
         i += 1;
     }
@@ -1381,7 +1392,7 @@ pub unsafe fn register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::Se
     }
     // a registration outside a module's init (owner 0) is kept under owner 255: nothing releases it
     let owner = dlog::current_source();
-    t[free] = Svc { first: lo, last: hi, owner: if owner == 0 { 255 } else { owner }, h: handler };
+    t[free] = Svc { first: lo, last: hi, owner: if owner == 0 { 255 } else { owner }, guarded, h: handler };
     OK
 }
 
@@ -1391,7 +1402,7 @@ pub unsafe fn release_cmds(owner: u8) {
     let mut i = 0;
     while i < SVC_MAX {
         if t[i].owner == owner {
-            t[i] = Svc { first: 0, last: 0, owner: 0, h: None };
+            t[i] = Svc { first: 0, last: 0, owner: 0, guarded: false, h: None };
         }
         i += 1;
     }

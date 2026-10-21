@@ -531,7 +531,8 @@ plan.json {}",
             println!("{}", patchkit::error::hex(&img));
         }
         "synth-dkm" => {
-            let spec = patchkit::dkmsynth::Spec::parse(&String::from_utf8_lossy(&read(need(rest)?)?))?;
+            let spec =
+                patchkit::dkmsynth::Spec::parse(&String::from_utf8_lossy(&read(need(rest)?)?))?;
             let dev = flag(rest, "--device").ok_or_else(|| Error(USAGE.into()))?;
             let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
             let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
@@ -605,13 +606,23 @@ plan.json {}",
                 for m in &r.machines {
                     println!(
                         "  machine type {} {:?} {:?} clone_of {} level {} own_dsp {} knobs {:x?}",
-                        patchkit::register::fmt_type(m.type_no), m.name, m.short, m.clone_of, m.level, m.own_dsp, m.knobs
+                        patchkit::register::fmt_type(m.type_no),
+                        m.name,
+                        m.short,
+                        m.clone_of,
+                        m.level,
+                        m.own_dsp,
+                        m.knobs
                     );
                 }
                 for g in &r.pages {
                     println!(
                         "  page of type {} {:?} {:?} level {} knobs {:x?}",
-                        patchkit::register::fmt_type(g.type_no), g.name, g.title, g.level, g.knobs
+                        patchkit::register::fmt_type(g.type_no),
+                        g.name,
+                        g.title,
+                        g.level,
+                        g.knobs
                     );
                 }
             }

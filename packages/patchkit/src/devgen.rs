@@ -386,7 +386,9 @@ fn input_facts(short: &str, i: Option<InputDoc>, p: Option<PanelDoc>) -> Result<
         return Err(err!("{short}: [input] needs a [panel] (the key codes)"));
     };
     if p.exceptions.len() > PANEL_EXC_MAX {
-        return Err(err!("{short}: [panel.exceptions] lists at most {PANEL_EXC_MAX} codes"));
+        return Err(err!(
+            "{short}: [panel.exceptions] lists at most {PANEL_EXC_MAX} codes"
+        ));
     }
     let mut exceptions = vec![];
     for (code, [ch, bit]) in &p.exceptions {
@@ -435,7 +437,9 @@ fn adapter_facts(
         if v.is_some() {
             Ok(())
         } else {
-            Err(err!("{short}: [adapter.machine] {what} is needed for {when}"))
+            Err(err!(
+                "{short}: [adapter.machine] {what} is needed for {when}"
+            ))
         }
     };
     if m.note_on == "record" {
@@ -816,15 +820,50 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
         ),
     ];
     let inp = &e.input;
-    v.push(c("INPUT_BACKEND", inp.backend, PerDevice, "[input] backend (1 panel-uart; 0 none)"));
-    v.push(c("PANEL_LINEAR", inp.linear_channels, PerDevice, "[panel] linear_channels (code = channel * 8 + bit + 1)"));
-    v.push(c("PANEL_ENCODERS", inp.encoders, PerDevice, "[panel] encoders"));
-    v.push(c("PANEL_EXC_N", inp.exceptions.len() as u64, PerDevice, "[panel.exceptions]: number of codes"));
+    v.push(c(
+        "INPUT_BACKEND",
+        inp.backend,
+        PerDevice,
+        "[input] backend (1 panel-uart; 0 none)",
+    ));
+    v.push(c(
+        "PANEL_LINEAR",
+        inp.linear_channels,
+        PerDevice,
+        "[panel] linear_channels (code = channel * 8 + bit + 1)",
+    ));
+    v.push(c(
+        "PANEL_ENCODERS",
+        inp.encoders,
+        PerDevice,
+        "[panel] encoders",
+    ));
+    v.push(c(
+        "PANEL_EXC_N",
+        inp.exceptions.len() as u64,
+        PerDevice,
+        "[panel.exceptions]: number of codes",
+    ));
     for k in 0..PANEL_EXC_MAX {
         let [code, ch, bit] = inp.exceptions.get(k).copied().unwrap_or([0, 0, 0]);
-        v.push(C { name: PANEL_EXC_CODE[k], value: code as i64, scope: PerDevice, note: "[panel.exceptions] code" });
-        v.push(C { name: PANEL_EXC_CH[k], value: ch as i64, scope: PerDevice, note: "[panel.exceptions] channel of the code" });
-        v.push(C { name: PANEL_EXC_BIT[k], value: bit as i64, scope: PerDevice, note: "[panel.exceptions] bit of the code" });
+        v.push(C {
+            name: PANEL_EXC_CODE[k],
+            value: code as i64,
+            scope: PerDevice,
+            note: "[panel.exceptions] code",
+        });
+        v.push(C {
+            name: PANEL_EXC_CH[k],
+            value: ch as i64,
+            scope: PerDevice,
+            note: "[panel.exceptions] channel of the code",
+        });
+        v.push(C {
+            name: PANEL_EXC_BIT[k],
+            value: bit as i64,
+            scope: PerDevice,
+            note: "[panel.exceptions] bit of the code",
+        });
     }
     for i in 0..PEEK_MAX {
         let r = k.peek.get(i).copied().unwrap_or([0, 0]);
@@ -845,16 +884,34 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
 }
 
 const PANEL_EXC_CODE: [&str; PANEL_EXC_MAX] = [
-    "PANEL_EXC_CODE_0", "PANEL_EXC_CODE_1", "PANEL_EXC_CODE_2", "PANEL_EXC_CODE_3",
-    "PANEL_EXC_CODE_4", "PANEL_EXC_CODE_5", "PANEL_EXC_CODE_6", "PANEL_EXC_CODE_7",
+    "PANEL_EXC_CODE_0",
+    "PANEL_EXC_CODE_1",
+    "PANEL_EXC_CODE_2",
+    "PANEL_EXC_CODE_3",
+    "PANEL_EXC_CODE_4",
+    "PANEL_EXC_CODE_5",
+    "PANEL_EXC_CODE_6",
+    "PANEL_EXC_CODE_7",
 ];
 const PANEL_EXC_CH: [&str; PANEL_EXC_MAX] = [
-    "PANEL_EXC_CH_0", "PANEL_EXC_CH_1", "PANEL_EXC_CH_2", "PANEL_EXC_CH_3",
-    "PANEL_EXC_CH_4", "PANEL_EXC_CH_5", "PANEL_EXC_CH_6", "PANEL_EXC_CH_7",
+    "PANEL_EXC_CH_0",
+    "PANEL_EXC_CH_1",
+    "PANEL_EXC_CH_2",
+    "PANEL_EXC_CH_3",
+    "PANEL_EXC_CH_4",
+    "PANEL_EXC_CH_5",
+    "PANEL_EXC_CH_6",
+    "PANEL_EXC_CH_7",
 ];
 const PANEL_EXC_BIT: [&str; PANEL_EXC_MAX] = [
-    "PANEL_EXC_BIT_0", "PANEL_EXC_BIT_1", "PANEL_EXC_BIT_2", "PANEL_EXC_BIT_3",
-    "PANEL_EXC_BIT_4", "PANEL_EXC_BIT_5", "PANEL_EXC_BIT_6", "PANEL_EXC_BIT_7",
+    "PANEL_EXC_BIT_0",
+    "PANEL_EXC_BIT_1",
+    "PANEL_EXC_BIT_2",
+    "PANEL_EXC_BIT_3",
+    "PANEL_EXC_BIT_4",
+    "PANEL_EXC_BIT_5",
+    "PANEL_EXC_BIT_6",
+    "PANEL_EXC_BIT_7",
 ];
 const PEEK_LO: [&str; PEEK_MAX] = ["PEEK_LO_0", "PEEK_LO_1", "PEEK_LO_2", "PEEK_LO_3"];
 const PEEK_HI: [&str; PEEK_MAX] = ["PEEK_HI_0", "PEEK_HI_1", "PEEK_HI_2", "PEEK_HI_3"];

@@ -55,6 +55,7 @@ STATUS: dict[int, tuple[str, str]] = {
     -62: ("E_INUSE", "the card's store area is not ours and not blank"),
     -63: ("E_PEEK", "PEEK range not allowed, or length 0 or over 512"),
     -64: ("E_CMD_RANGE", "command range not reserved, taken, or empty"),
+    -65: ("E_DISABLED", "a guarded command range is switched off (DIGIKIT > REMOTE)"),
 }
 
 LOAD_STATUS: dict[int, tuple[str, str]] = {
@@ -113,8 +114,11 @@ CAP: dict[str, int] = {
 }
 
 RANGES: dict[str, tuple[int, int]] = {
-    "remote": (0x38, 0x3F),
+    "remote": (0x38, 0x3D),
+    "remote_state": (0x3E, 0x3F),
 }
+
+GUARDED: tuple[str, ...] = ("remote",)
 
 CAPACITY_KINDS: dict[str, int] = {
     "MODULES": 1,
