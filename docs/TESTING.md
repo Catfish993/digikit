@@ -220,6 +220,28 @@ blocks, `pk_sharc.CallSession`). One worker process per machine and device (`tes
 The verify route: a change in a machine module, a module it depends on or builds from, `core/dsp-voice`, or in the rig and `pk_conform.py` selects the suite
 (`tools/devtools/verify_route.py`, suite `machine-conformance` in `verify.py`).
 
+## FX conformance (`tests/modules/test_fx_conformance.py`)
+
+The same idea for effect modules (the FX contract, `sdk/dk_fx.h`): the suite finds a module with an `[[entry]] registry = "fx"` row and a DSP object
+(`pk_conform.fx_spec`; `core/*` never is) and runs the effect behind `core/fx` on the concrete core (`tests/support/fx_rig.py`, a hostile context per call,
+the registers of the stock function marked), one block at a time. `mise run module:check NAME` runs it. The adapter is one source for both devices, so the
+suite runs once per module.
+
+| Check | Rule |
+| --- | --- |
+| returns | the hook comes back to the stock function's second instruction within 200,000 instructions |
+| context | M5 to MODE1 and the registers the stock function expects back (R0 to R15, I0 to I5, I8 to I15, M1 to M4, M8 to M12, B3) are as they went in |
+| guard | core/fx did not have to refuse the block: the row's fault count stays 0 (a refused block plays dry, so the master alone would pass a broken effect) |
+| writes | the module's code stored only to the output block, its own data and bss (its state included) and `stack_bytes` of data stack below I7 (the P4a write-set check, `FxRig.foreign_stores`); a store into the input block is foreign |
+| bound | the master after the hook is finite and within 8.0 |
+| budget | at most `min(headroom of the devices) / 4` instructions for the effect (`pk_conform.fx_budget`: about 23,000) plus 900 for core/fx (`FX_ADAPTER_MAX`; a fade block costs 855 around an effect of 210) |
+
+Cases (`pk_conform.fx_cases`): `signals` (silence, DC, square, noise, impulse, sine, ramp, all within +-1.0 like the clipped master), `params` (all words at min,
+max and mid; each word at its limits), `modulation` (500 blocks, a random walk and a square wave over the full range), `switching` (the effect switched off and
+on every 7 and every block), `long` (2000 blocks). A failure message names module, case, block, parameter words and the first bad sample. `test/fx-nan` is the
+negative fixture (`pk_conform.FX_NEGATIVE`); `test_the_write_set_check_finds_a_store_into_the_input_block` tests the write-set check itself.
+The verify route: a change in an effect module, in `core/fx`, in `pk_conform.py` or in the rig files selects the suite (`verify_route.FX_CONFORMANCE`).
+
 ## DSP budget gate (patchkit smoke)
 
 `pk_harness run` ends every cell with a DSP measurement: TRIG 1 held (the default voice) for 1 s of audio after the

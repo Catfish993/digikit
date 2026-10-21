@@ -18,9 +18,9 @@ def test_every_tool_script_exists() -> None:
         assert (ROOT / "tools" / "patchkit" / script).is_file(), label
 
 
-def test_gain_and_drive_name_a_device() -> None:
+def test_gain_drive_and_fx_name_a_device() -> None:
     for label, script, extra in pk_proofs.TOOLS:
-        if script in ("pk_proof_gain.py", "pk_proof_drive.py"):
+        if script in ("pk_proof_gain.py", "pk_proof_drive.py", "pk_proof_fx.py"):
             assert extra[:1] in (["dt2"], ["dn2"]), label
 
 

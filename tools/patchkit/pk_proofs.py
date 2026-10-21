@@ -27,6 +27,8 @@ TOOLS = [
     ("gain dt2", "pk_proof_gain.py", ["dt2"]),
     ("gain dn2", "pk_proof_gain.py", ["dn2"]),
     ("drive dt2", "pk_proof_drive.py", ["dt2"]),
+    ("fx dt2", "pk_proof_fx.py", ["dt2"]),
+    ("fx dn2", "pk_proof_fx.py", ["dn2"]),
     ("voice dt2", "pk_proof_voice.py", []),
     ("machines dt2", "pk_proof_machines.py", []),
     ("pluck dt2", "pk_proof_pluck.py", []),

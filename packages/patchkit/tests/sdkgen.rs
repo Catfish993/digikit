@@ -91,10 +91,49 @@ fn the_machine_header_matches_sdk_toml() {
 }
 
 #[test]
+fn the_fx_header_matches_sdk_toml() {
+    let toml = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
+    let f = sdkgen::fx(&toml).unwrap();
+    let h = std::fs::read_to_string(root().join("sdk/dk_fx.h")).unwrap();
+    let (defs, enums) = header_facts(&h);
+    for c in &f.consts {
+        let from_header = match c.name.as_str() {
+            "DK_LEVEL_BOUND_BITS" => {
+                let d = defs.iter().find(|(n, _)| n == "DK_LEVEL_BOUND").unwrap();
+                let v: f32 = d.1.trim_end_matches('f').parse().unwrap();
+                Some(v.to_bits())
+            }
+            n => defs
+                .iter()
+                .find(|(d, _)| d == n)
+                .and_then(|(_, v)| c_number(v))
+                .or_else(|| enums.iter().find(|(e, _)| e == n).map(|(_, v)| *v)),
+        };
+        assert_eq!(from_header, Some(c.value), "{} in sdk/dk_fx.h", c.name);
+    }
+    for (name, fields) in [("dk_fx_in", &f.fx_in), ("dk_fx_desc", &f.desc)] {
+        assert_eq!(
+            &struct_fields(&h, name),
+            fields,
+            "fields of {name} in sdk/dk_fx.h"
+        );
+    }
+    // the chain cap of the registry in core/fx is the header's
+    let max = f.consts.iter().find(|c| c.name == "DK_FX_MAX").unwrap().value;
+    let man = std::fs::read_to_string(root().join("modules/core/fx/module.toml")).unwrap_or_default();
+    if !man.is_empty() {
+        assert!(
+            man.contains(&format!("max = {max}")),
+            "modules/core/fx/module.toml: the fx registry has max = {max}"
+        );
+    }
+}
+
+#[test]
 fn the_contract_files_are_current() {
     let text = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
     let files = sdkgen::render(&text).unwrap();
-    assert_eq!(files.len(), 5);
+    assert_eq!(files.len(), 6);
     for (rel, text) in files {
         let path = root().join(&rel);
         let have = std::fs::read_to_string(&path).unwrap_or_default();

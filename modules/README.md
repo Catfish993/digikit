@@ -550,6 +550,23 @@ of its own: three frameworks do the firmware work, and the module only declares 
   that the module leaves the stock voice alone.
 - **Gallery.** The README and the icon of the machine are in `modules/machines/pluck/` (the knobs, and what projects saved with PLUCK do on stock firmware).
 
+### An effect: `[[entry]] registry = "fx"`
+
+An effect module requires `core/fx` (the effects adapter, `modules/core/fx/`) and adds one row to its registry `fx`; the chain runs in module order, at most
+`DK_FX_MAX` (4) effects. The routine, its `dk_fx_desc` and its state block are symbols of the module's DSP object (`sdk/dk_fx.h`,
+`.agents/skills/digikit-module/references/contract-fx.md`):
+
+```toml
+[[entry]]
+registry = "fx"
+id = "gain"
+pc = "_fg_process"       # process(R4 = state, R8 = dk_fx_in, R12 = parameter words)
+desc = "_fg_desc"        # dk_fx_desc
+state = "_fg_state"      # .PKBSS _fg_state, <state_bytes>;
+```
+
+`tests/fixtures/modules/fx-gain` (0.5 gain) is the example and the fixture of `core/fx`'s tests; `fx-nan` is the negative one. An empty chain plays the stock audio.
+
 The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and
 `modules/core/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,

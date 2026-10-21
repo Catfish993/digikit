@@ -15,6 +15,8 @@ pub const RUST_OUT: &str = "modules/core/runtime/sdk/src/gen_sdk.rs";
 pub const PY_OUT: &str = "tools/device/dklog_kinds.py";
 /// The generated SHARC+ include of the machine contract, relative to the repository root.
 pub const INC_OUT: &str = "sdk/dk_machine.inc";
+/// The generated SHARC+ include of the FX contract, relative to the repository root.
+pub const FX_INC_OUT: &str = "sdk/dk_fx.inc";
 /// The generated Python protocol numbers, relative to the repository root.
 pub const PROTO_PY_OUT: &str = "tools/device/dkproto.py";
 /// The generated Rust protocol numbers of the host client, relative to the repository root.
@@ -30,6 +32,7 @@ struct Sdk {
     runtime: Runtime,
     contract: Contract,
     machine: Machine,
+    fx: Fx,
     log: Log,
     protocol: Protocol,
     load: Load,
@@ -70,6 +73,22 @@ pub struct Machine {
 pub struct MachineConst {
     pub name: String,
     pub value: u32,
+}
+
+/// The FX contract's numbers: `[fx]` of `sdk/sdk.toml`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Fx {
+    pub consts: Vec<MachineConst>,
+    /// Field names of `struct dk_fx_in` in order (each field is 4 bytes).
+    pub fx_in: Vec<String>,
+    /// Field names of `struct dk_fx_desc` in order (each field is 4 bytes).
+    pub desc: Vec<String>,
+}
+
+/// `[fx]` of a `sdk/sdk.toml` text (for the header test).
+pub fn fx(text: &str) -> Result<Fx> {
+    Ok(parse(text)?.fx)
 }
 
 /// `[machine]` of a `sdk/sdk.toml` text (for the header test).
@@ -454,6 +473,28 @@ fn machine_inc(sdk: &Sdk) -> String {
     s
 }
 
+/// `sdk/dk_fx.inc`: the same form as `dk_machine.inc` (`DK_FX_IN_*`, `DK_FX_DESC_*`).
+fn fx_inc(sdk: &Sdk) -> String {
+    let m = &sdk.fx;
+    let mut s = format!(
+        "// {HEADER}\n// Decimal values: the assembler upper-cases macro text, which breaks `0x` literals after `+`.\n// The C view is sdk/dk_fx.h. Do not include it together with dk_machine.inc (DK_BLOCK is in both).\n"
+    );
+    for c in &m.consts {
+        let _ = writeln!(s, "#define {} {}", c.name, c.value);
+    }
+    for (prefix, fields) in [("IN", &m.fx_in), ("DESC", &m.desc)] {
+        for (i, f) in fields.iter().enumerate() {
+            let _ = writeln!(s, "#define DK_FX_{prefix}_{} {}", f.to_uppercase(), i * 4);
+        }
+        let _ = writeln!(s, "#define DK_FX_{prefix}_BYTES {}", fields.len() * 4);
+        for (i, f) in fields.iter().enumerate() {
+            let _ = writeln!(s, "#define DK_FX_{prefix}_W_{} {i}", f.to_uppercase());
+        }
+        let _ = writeln!(s, "#define DK_FX_{prefix}_WORDS {}", fields.len());
+    }
+    s
+}
+
 /// The outputs from the text of `sdk/sdk.toml`: (path relative to the repository root, text).
 pub fn render(text: &str) -> Result<Vec<(String, String)>> {
     let sdk = parse(text)?;
@@ -461,6 +502,7 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
         (RUST_OUT.to_string(), rust(&sdk)),
         (PY_OUT.to_string(), python(&sdk)?),
         (INC_OUT.to_string(), machine_inc(&sdk)),
+        (FX_INC_OUT.to_string(), fx_inc(&sdk)),
         (PROTO_PY_OUT.to_string(), python_proto(&sdk)),
         (PROTO_RS_OUT.to_string(), rust_proto(&sdk)),
     ])

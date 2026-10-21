@@ -31,3 +31,20 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
   `digikit/pluck` on runtime 0.2.1 is being re-tested (2026-10-21).
 - **Patterns:** `references/dsp-recipes.md` quotes them (parameter word to float, the block loop, noise, damping, all-pass,
   delay line with a mask, pick comb, silence detection to `DK_DONE`).
+
+## core/fx and test/fx-gain (effects adapter and its fixture; both devices)
+
+- **What:** the FX contract (`sdk/dk_fx.h`) is run by `core/fx`, which hooks the first instruction of a post-master function on both devices and
+  walks a chain of up to 4 effects. `test/fx-gain` is the smallest effect (0.5 gain). Details and evidence: finding 55.
+- **Cost [D]:** an empty chain is 16 instructions per block on the rig (+18 busy instructions in the smoke cell); a chain whose rows are all off 174; one
+  effect steady 732 (the 0.5 test effect itself about 210; the adapter's copy, output check and bookkeeping are about 520); a fade block 1065.
+- **Traps found [D]:**
+  - An entry hook has no stock frame yet: save every register in a static area, as `dsp-voice-dn2.s` does; the DT2 stock function saves its own
+    I2, I3 and I5 only, the DN2 one reads R4, R8, R12 and M3 as arguments and the caller needs R14 and R15 back.
+  - The context registers (M5-M7, M13-M15, L0-L5, MODE1) belong to the DSP context: save and pin them for the chain, restore before the stock code.
+  - `.PKBSS` memory is not loaded; the adapter zeroes an effect's state when it switches on, the rig poisons it to prove that.
+  - A master hook at the DAC converter (H0, master-gain / master-drive) is after the USB pack: the USB audio does not carry it (finding 55).
+  - Patching a function bars the emulator's AOT regions of its whole hashed code range: the same adapter costs x1.03 on the DT2 at `FUN_1c80f2` and x3.09 on the DN2 at
+    `FUN_1c244d` (finding 55). Choose a hook site by its range before anything else.
+- **Patterns:** `references/contract-fx.md`; the rig (`tests/support/fx_rig.py`) and the effects for tests (`tests/support/fx_effects.s`) are templates for
+  an effect's unit test.

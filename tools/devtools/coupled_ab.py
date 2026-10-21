@@ -10,6 +10,7 @@ scenario's PCM hash against the file's pin (or against the first run).
     uv run python -m tools.devtools.coupled_ab A=BIN_A B=BIN_B -s trig1-taps -s tf-br-127 \\
         [--pairs 6] [--scenarios tests/scenarios/dn2-trackfx.json] [--out OUT.json]
     uv run python -m tools.devtools.coupled_ab A=BIN --pairs 5 -s trig1-taps     # one binary: N runs
+    uv run python -m tools.devtools.coupled_ab A=BIN B=BIN --patch B=X.patch ...  # one binary, image B patched
 
 The report prints, per scenario and binary, the median DSP CPU per audio s
 (IQR), the CF thread CPU, the real-time factor and the PCM hash; with two
@@ -37,17 +38,27 @@ from tools.emulator import coupled  # noqa: E402
 CARD: tuple[dict[str, pathlib.Path], list[str]] | None = None
 # Set by --seconds: cut every run to this many audio seconds.
 SECONDS: str | None = None
+# Set by --patch LABEL=FILE: a DSP patch file (coupled-run --dsp-patch) for the runs of that label, so one binary can run two images.
+PATCHES: dict[str, str] = {}
 # Set by --env: extra environment for the runs (interpreter-only: SHARC_AOT=0 ...).
 ENV: dict[str, str] = {}
 
 
-def one_run(binary: str, scenario: str, scenarios: str | None, device: str) -> dict:
+def one_run(
+    binary: str,
+    scenario: str,
+    scenarios: str | None,
+    device: str,
+    patch: str | None = None,
+) -> dict:
     """One headless run; the scenario's numbers from its report."""
     with tempfile.TemporaryDirectory() as tmp:
         out = pathlib.Path(tmp) / "report.json"
         extra = ["--scenario", scenario, "--out", str(out)]
         if SECONDS:
             extra += ["--seconds", SECONDS]
+        if patch:
+            extra += ["--dsp-patch", patch]
         if scenarios:
             extra = ["--scenarios", str(pathlib.Path(scenarios).resolve())] + extra
         ins, card = CARD or (coupled.inputs(device), [])
@@ -100,6 +111,13 @@ def main() -> None:
     ap.add_argument("--pairs", type=int, default=6)
     ap.add_argument("--seconds", help="audio seconds per run (default: the scenario's)")
     ap.add_argument(
+        "--patch",
+        action="append",
+        default=[],
+        metavar="LABEL=FILE",
+        help="a DSP patch file for the runs of LABEL (tools/patchkit/pk_dsp_diff.py writes one from two images)",
+    )
+    ap.add_argument(
         "--env", action="append", default=[], metavar="K=V", help="run environment"
     )
     ap.add_argument("--out")
@@ -107,6 +125,11 @@ def main() -> None:
     global SECONDS
     SECONDS = args.seconds
     ENV.update(e.partition("=")[::2] for e in args.env)
+    for item in args.patch:
+        label, _, path = item.partition("=")
+        if not pathlib.Path(path).is_file():
+            sys.exit("expected LABEL=FILE, got %r" % item)
+        PATCHES[label] = str(pathlib.Path(path).resolve())
     if args.dt2_card:
         from tools.emulator import dt2_sample_check
 
@@ -124,7 +147,9 @@ def main() -> None:
             for i in range(args.pairs):
                 order = bins if i % 2 == 0 else list(reversed(bins))
                 for label, path in order:
-                    r = one_run(path, scenario, args.scenarios, args.device)
+                    r = one_run(
+                        path, scenario, args.scenarios, args.device, PATCHES.get(label)
+                    )
                     r["pair"] = i
                     runs.setdefault((scenario, label), []).append(r)
                     print(

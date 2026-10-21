@@ -3,7 +3,7 @@
 
     uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2]      (mise run module:check NAME)
 
-NAME is a module id (`digikit/pluck`) or its last part (`pluck`). A machine module (tools/patchkit/pk_conform.py) runs the conformance
+NAME is a module id (`digikit/pluck`) or its last part (`pluck`). An effect module runs tests/modules/test_fx_conformance.py. A machine module (tools/patchkit/pk_conform.py) runs the conformance
 suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). Then the module's own tests
 run: `modules/<group>/<name>/tests/test_*.py`, and until the tests move there, the test files under tests/ whose file name carries the
 module's name (`pluck` -> tests/patchkit/test_pluck*.py). One pytest process runs all of them; the exit code is pytest's.
@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 from tools.patchkit import modroots, pk_conform  # noqa: E402
 
 CONFORMANCE = "tests/modules/test_machine_conformance.py"
+FX_CONFORMANCE = "tests/modules/test_fx_conformance.py"
 
 
 def resolve(name: str) -> str:
@@ -58,6 +59,9 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
         env["DIGI_CONFORM_MODULES"] = mid
         if device:
             env["DIGI_CONFORM_DEVICE"] = device
+    if pk_conform.is_fx_module(mid):
+        paths.append(FX_CONFORMANCE)
+        env["DIGI_CONFORM_MODULES"] = mid
     paths += own_tests(mid)
     return paths, env
 
@@ -98,7 +102,9 @@ def main() -> int:
     kind = (
         "machine module"
         if CONFORMANCE in paths
-        else "module (no machine DSP: no conformance suite)"
+        else "effect module"
+        if FX_CONFORMANCE in paths
+        else "module (no machine or effect DSP: no conformance suite)"
     )
     print(f"{mid}: {kind}; pytest {' '.join(paths) or '(nothing to run)'}", flush=True)
     if not paths:

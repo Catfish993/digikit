@@ -79,3 +79,42 @@ def test_the_cases_cover_the_groups_and_are_deterministic():
         for row in x.words:
             for pid, w in row:
                 assert rng[pid][0] <= w <= rng[pid][1], (x.name, pid, w)
+
+
+def test_fx_specs_find_the_fixtures_and_keep_the_negative_apart():
+    gain = c.fx_spec("test/fx-gain")
+    assert gain is not None
+    assert (gain.process, gain.desc, gain.state) == (
+        "_fg_process",
+        "_fg_desc",
+        "_fg_state",
+    )
+    assert [s.module for s in c.fx_specs(negative=True)] == ["test/fx-nan"]
+    assert "test/fx-nan" not in [s.module for s in c.fx_specs()]
+    assert c.fx_spec("core/fx") is None  # a framework renders no effect of its own
+    assert c.fx_spec("digikit/pluck") is None  # a machine is no effect
+    assert not c.is_machine_module("test/fx-gain")
+
+
+def test_the_fx_budget_is_the_tighter_headroom_over_the_chain():
+    assert c.fx_budget() == min(c.budget(d).headroom for d in c.DEVICES) // c.FX_MAX
+    assert c.fx_budget() > 5000
+
+
+def test_fx_cases_cover_every_group_and_stay_inside_the_parameter_range():
+    for n in (0, 1, 4):
+        cases = c.fx_cases(n)
+        assert {x.group for x in cases} == {
+            "signals",
+            "params",
+            "modulation",
+            "switching",
+            "long",
+        }
+        assert {x.name for x in cases if x.group == "signals"} == {
+            "silence", "dc", "square", "noise", "impulse", "sine", "ramp"
+        }  # fmt: skip
+        for x in cases:
+            for row in x.words:
+                assert len(row) == n and all(0 <= w <= c.FX_PARAM_MAX for w in row)
+    assert max(x.blocks for x in c.fx_cases(1)) == c.LONG_BLOCKS
