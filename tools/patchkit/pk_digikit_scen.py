@@ -987,6 +987,73 @@ def run_dkrun(
     c.check("dkrun: a second run uploads nothing (same sha256)", not out2["uploaded"])
 
 
+def memory_rows(cap: dict[str, dict[str, int]]) -> list[str]:
+    """The rows the MEMORY page shows for a CAPACITY reply (modules/core/digikit-menu `fill_mem`): label, ten-character bar, percent or used/limit."""
+    out = []
+    for kind, label, pct in (
+        ("DSP_AREA", "DSP   ", True),
+        ("ARENA", "ARENA ", True),
+        ("MODULES", "MODS  ", False),
+        ("MACHINE_ROWS", "MACH  ", False),
+        ("VOICE_ROWS", "VOICE ", False),
+        ("PARAM_ROWS", "PARAM ", False),
+        ("PAGE_ROWS", "PAGE  ", False),
+    ):
+        e = cap.get(kind)
+        if e is None or e["limit"] == 0:
+            continue
+        used = min(e["used"], e["limit"])
+        full = used * 10 // e["limit"]
+        bar = "|" * full + "." * (10 - full)
+        tail = f"{used * 100 // e['limit']}%" if pct else f"{e['used']}/{e['limit']}"
+        out.append(f"{label}{bar} {tail}")
+    return out
+
+
+def check_memory_page(c: Ctx, rig: B.BootRig, plan: Any) -> None:
+    """SETTINGS > DIGIKIT > MEMORY on a boot that loaded a machine: the rows the menu kept in `DK_MEM` equal the rows computed from the
+    CAPACITY reply of the same boot (so the DSP percent is the same figure rounded the same way), and MACH and PARAM show the machine (a page row only where the device has page rows: the equality covers it)."""
+    from tools.device import dkupload as DK
+    from tools.patchkit import pk_digikit_upload as U
+
+    def tap(key: str, gap_ms: int = 350) -> None:
+        rig.s.do_tap(key)
+        rig.s.run_ms(gap_ms)
+
+    tap("NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MEMORY (the fourth row)
+    tap("SETTINGS", 600)
+    for _ in range(8):
+        tap("DOWN", 200)
+    tap("YES", 700)
+    for _ in range(3):
+        tap("DOWN", 200)
+    tap("YES", 700)
+    base, n = plan.addr("DK_MEM"), rig.w(plan.addr("DK_MEM_N"))
+    got = []
+    for i in range(n):
+        raw = b"".join(
+            rig.w(base + 24 * i + 4 * k).to_bytes(4, "big") for k in range(6)
+        )
+        got.append(raw.split(b"\0")[0].decode("latin-1"))
+    cap = DK.Uploader(U.transport(rig)).capacity()
+    want = memory_rows(cap)
+    c.check(
+        "MEMORY page: the rows equal the CAPACITY reply of the same boot, DSP row included",
+        got == want and any(r.startswith("DSP   ") for r in got),
+        f"page {got}; want {want}",
+    )
+    used = {k: cap[k]["used"] for k in ("MACHINE_ROWS", "PARAM_ROWS")}
+    c.check(
+        "MEMORY page: MACH and PARAM show the loaded machine",
+        all(v >= 1 for v in used.values())
+        and all(
+            any(r.startswith(f"{k} ") and f" {cap[kk]['used']}/" in r for r in got)
+            for k, kk in (("MACH", "MACHINE_ROWS"), ("PARAM", "PARAM_ROWS"))
+        ),
+        f"{used}; {got}",
+    )
+
+
 def run_menu(c: Ctx) -> None:
     """Through the menu: boot with an empty selection, SETTINGS > DIGIKIT > MODULES, tick the set, APPLY & RESTART (two presses), and
     after the boot compare with the patched-in set as `equiv` does (rows, machine in the list, PCM of a note). The set may hold a
@@ -1131,6 +1198,7 @@ def run_menu(c: Ctx) -> None:
         # the DSP block count runs on through the panel script and the restart: the note starts a little after the setup
         pcm = rig.note(c.work / "run.wav", max(trig, rig.frames() + 300))
         M.pcm_check(rig, ref_pcm, pcm, c.report, "machine" if c.dt2 else "voice")
+        check_memory_page(c, rig, plan)
         c.checks += rig.checks
         c.done(rig)
     c.common_checks_upload() if upload else c.common_checks()
