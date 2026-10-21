@@ -6,6 +6,7 @@ pub mod folder;
 pub mod format;
 pub mod image;
 pub mod list;
+pub mod mirror;
 pub mod project;
 pub mod reader;
 pub mod seed;

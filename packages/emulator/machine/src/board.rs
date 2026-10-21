@@ -501,6 +501,11 @@ impl Board {
         self.esdhc.card_ref()
     }
 
+    /// How many write commands the guest has sent to the eMMC card (`Card::write_count`).
+    pub fn card_write_count(&self) -> u64 {
+        self.esdhc.card_ref().write_count()
+    }
+
     /// The guest's writes to the eMMC card (see `Card::overlay_sectors`).
     pub fn card_overlay_sectors(&self) -> Vec<emmc_card::CardOverlaySector> {
         self.esdhc.card_ref().overlay_sectors()

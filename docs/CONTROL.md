@@ -68,7 +68,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `framebuffer.get` | `frame`, `frame_png`, `frame_hash` | `frame` |
 | `leds.get` | `leds` | `call` |
 | `mem.cf.peek`, `mem.cf.poke` | `peek32`, `poke32` | `call` |
-| `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel` | | `call` |
+| `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel`, `card.folder`, `card.sync` | | `call` |
 | `midi.in`, `midi.out` | `midi_in`, `midi_out` | `call` |
 | `midi.usb.in`, `midi.usb.out` | `usb_in`, `usb_out` | `call` |
 | `watchdog.config` | `watchdog` | `call` |
@@ -197,12 +197,18 @@ same numbers). Each closed window is blended 50/50 into the shown value; a resto
 | 2 | stale session | 9 | timeout |
 | 3 | busy | | |
 
+`card.folder` and `card.sync`: the module store as a folder (`--mirror-dir DIR`; the launcher gives `plus_drive/<device>/`). While the emulator runs it
+mirrors the store files the guest wrote to the card into `DIR/digikit/` about 2 s after the guest's last card write (one way, card to folder; a file
+the card no longer has is removed from the folder, moved to `<out>/backup/mirror-<stamp>/`; a session removes only files it saw on the card). `card.folder` returns
+`{folder, continuous, files: [{path, bytes, sha256}], last_sync (ms), last, behind, error}` (`folder` null and `continuous` false without `--mirror-dir`);
+`card.sync` mirrors now and returns the same. Details: docs/plans/card-folder.md.
+
 `card.load {dir, sync?, export_out?}` builds a card from `dir` (a `plus_drive/dt2/`-style folder: docs/SAMPLES.md) and also records `dir` as the card's +Drive folder. The same holds for a card given at start with `--card-image` and `--card-folder` (`mise run workbench` passes both; `sync` is on unless `--no-card-sync`). `card.export` and the quit export use the running device's `[card]` layout (found by the base firmware's hash). `card.export {dir?, out?, prune?}` brings
 that folder (or `dir`) up to date with what the firmware wrote to the card: files of the path filesystem by name in the
 native format, `.mmcfs/{projects,sounds,kits}/NNNN.bin` slots and `.mmcfs/boot/SSSSSS.bin` regions (finding 24). The tree goes
 to `<out>/export/<stamp>/` first, each replaced file to `<out>/backup/<stamp>/` (`out` default `$DIGI_PLUSDRIVE_OUT` or
 `out/plusdrive`); files the firmware deleted are listed and kept unless `prune`. With `sync: true` a `quit` (or the controller
-stopping) saves `overlay.bin` next to the card image and runs the same export, and logs `card: exported N changed files to <dir> (...)`. The module store (`digikit/`) is not exported. From the shell:
+stopping) saves `overlay.bin` next to the card image and runs the same export, and logs `card: exported N changed files to <dir> (...)`. The module store files (`digikit/`) are exported too (three-way against the card as built: a new or changed file is added or replaces the folder's; a file the card no longer has is listed in `deleted_by_firmware` and kept unless `prune`); during a session `card.folder` and `card.sync` keep them current (below). From the shell:
 `plusdrive export IMAGE [--overlay overlay.bin] -o FOLDER [--out DIR] [--prune]`.
 
 ## Examples

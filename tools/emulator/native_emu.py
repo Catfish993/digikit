@@ -690,6 +690,12 @@ def main(args: list[str] | None = None) -> None:
                 f"+Drive: changes on the card are exported to {folder} on exit (--no-sync turns it off)",
                 file=sys.stderr,
             )
+    # The module store is mirrored to a folder while the emulator runs (the Card panel: files, "Sync now"): the +Drive folder of a
+    # DT2 card, else plus_drive/<device>/ (the DN2 has no card built from a folder). --no-sync turns it off.
+    if known and not no_sync and "--mirror-dir" not in args:
+        mirror = folder if folder is not None else plus_drive_root() / device
+        mirror.mkdir(parents=True, exist_ok=True)
+        args = [*args, "--mirror-dir", str(mirror.resolve())]
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:

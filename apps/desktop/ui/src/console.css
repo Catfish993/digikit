@@ -358,6 +358,15 @@ body {
   display: flex;
   flex-direction: column;
 }
-.content > .stage[hidden] {
+.emu-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.emu-row[hidden] {
   display: none;
+}
+.emu-row > .stage {
+  flex: 1;
+  min-width: 0;
 }

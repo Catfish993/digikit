@@ -31,6 +31,7 @@ use emmc_card::{Card, CardIdentity, RandomAccessRead};
 use serde_json::{Value, json};
 
 use crate::{
+    cardmirror::Mirror,
     cards::{self, CardPaths},
     events::Events,
     firmware::{self, Analysis},
@@ -288,6 +289,9 @@ pub struct Config {
     /// The +Drive folder the startup card (`firmware.load`'s `card`) was built from: `card.export` writes
     /// there, and with `sync` a quit does so too.
     pub card_folder: Option<CardSource>,
+    /// The folder the module store is mirrored to while the emulator runs (`card.folder`, `card.sync`): `plus_drive/<device>/`, given by
+    /// the launcher. None: no mirror.
+    pub mirror_dir: Option<PathBuf>,
     /// The repository root that `firmware.load {runtime: true}` reads the module library and device files from
     /// (default: `$DIGI_REPO_ROOT`, else the working directory's repository; see `runtime_patch::find_root`).
     pub repo_root: Option<PathBuf>,
@@ -314,6 +318,7 @@ impl Config {
             on_quit: None,
             remember_card: false,
             card_folder: None,
+            mirror_dir: None,
             repo_root: None,
         }
     }
@@ -521,6 +526,8 @@ struct Actor {
     /// The +Drive folder the loaded card was built from, with the card image it belongs to:
     /// `card.export` without a `dir` writes there, and a quit does so when `sync` was set.
     card_folder: Option<CardFolder>,
+    /// The module store mirrored to a folder (`--mirror-dir`; `card.folder`, `card.sync`).
+    mirror: Option<Mirror>,
     /// Press NO once the runtime is ready (closes DT2's FILE SYSTEM OK modal).
     auto_no: bool,
     /// `firmware.load {auto_no}`: press NO once the runtime it installs is ready.
@@ -608,6 +615,7 @@ impl Actor {
             patch_job: None,
             card_last: json!({"state": "idle"}),
             card_folder: None,
+            mirror: config.mirror_dir.map(Mirror::new),
             auto_no: false,
             want_auto_no: false,
             remember_card: config.remember_card,
@@ -688,6 +696,7 @@ impl Actor {
         while !self.quit {
             self.poll_card();
             self.poll_patch();
+            self.mirror_tick();
             if self.reset_pending && self.job.is_none() && self.patch_job.is_none() {
                 self.reset_pending = false;
                 self.soft_reset();
@@ -715,6 +724,13 @@ impl Actor {
                 }
             } else if carding {
                 match self.rx.recv_timeout(Duration::from_millis(50)) {
+                    Ok(command) => Some(command),
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            } else if self.mirror.as_ref().is_some_and(Mirror::pending) {
+                // a card write waits for its quiet period: wake up to mirror the store
+                match self.rx.recv_timeout(Duration::from_millis(100)) {
                     Ok(command) => Some(command),
                     Err(mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -881,6 +897,7 @@ impl Actor {
         self.held_leds = None;
         self.epoch += 1;
         self.load_meter.reset();
+        self.mirror_reset();
     }
 
     // ----- webview commands (the pre-existing protocol) --------------------
@@ -1524,6 +1541,8 @@ impl Actor {
             "dsp.patch" => self.rpc_dsp_patch(&p).map(Some),
             "card.load" => self.rpc_card_load(&p, &reply),
             "card.status" => Ok(Some(self.card_status())),
+            "card.folder" => self.rpc_card_folder().map(Some),
+            "card.sync" => self.rpc_card_sync().map(Some),
             "card.cancel" => Ok(Some(json!({"cancelled": self.cancel_card()}))),
             "quit" => {
                 self.quit = true;
@@ -1779,6 +1798,7 @@ impl Actor {
     /// session that did not start from it loses nothing), then, for a synced card, export them to its folder.
     /// Failures are printed: the quit goes on.
     fn finish_card(&mut self) {
+        self.mirror_flush();
         let Some(folder) = self.card_folder.as_ref().filter(|f| f.sync) else { return };
         let (image, dir, out) = (folder.image.clone(), folder.dir.clone(), folder.out.clone());
         if self.loaded.as_ref().and_then(|l| l.card.as_ref()) != Some(&image) {
@@ -1809,6 +1829,110 @@ impl Actor {
             ),
             Err(error) => eprintln!("card: export failed: {error}"),
         }
+    }
+
+    // ----- the module store as a folder (cardmirror.rs, plusdrive mirror.rs) -------------------------------------------
+
+    /// What the mirror reads: the card as built (its image file, or nothing), the guest's writes over it, and the store's place on the
+    /// card (the device profile).
+    fn mirror_view(&mut self) -> Result<(Box<dyn RandomAccessRead>, Vec<emmc_card::CardOverlaySector>, plusdrive_format::device_profile::StoreLayout), String> {
+        let range = self
+            .card_layout()?
+            .store
+            .ok_or("this device has no module store on its card")?;
+        let base: Box<dyn RandomAccessRead> = match self.loaded.as_ref().and_then(|l| l.card.clone()) {
+            Some(image) => Box::new(plusdrive_format::export::FileImage::open(&image)?),
+            None => Box::new(plusdrive_format::mirror::EmptyImage),
+        };
+        let overlay = self.runtime.as_ref().map(|r| r.card_overlay()).ok_or("no runtime")?;
+        Ok((base, overlay, range))
+    }
+
+    /// A new runtime: the mirror starts from the store the card holds now (an image's, and what a soft reset carried over), and from the
+    /// runtime's own write count.
+    fn mirror_reset(&mut self) {
+        if self.mirror.is_none() {
+            return;
+        }
+        let seen = match self.mirror_view() {
+            Ok((base, overlay, range)) => {
+                let view = plusdrive_format::OverlayImage::new(base.as_ref(), &overlay);
+                plusdrive_format::mirror::store_files(&view, &range).map(|f| f.into_keys().collect()).unwrap_or_default()
+            }
+            Err(_) => Default::default(),
+        };
+        let writes = self.runtime.as_ref().map_or(0, |r| r.card_write_count());
+        if let Some(m) = self.mirror.as_mut() {
+            m.reset(seen, writes);
+        }
+    }
+
+    /// Once per pass of the run loop: the card's write count, and the pass itself when the quiet period has run out.
+    fn mirror_tick(&mut self) {
+        let Some(writes) = self.runtime.as_ref().map(|r| r.card_write_count()) else { return };
+        let now = Instant::now();
+        let due = match self.mirror.as_mut() {
+            Some(m) => {
+                m.note_writes(writes, now);
+                m.due(now)
+            }
+            None => false,
+        };
+        if due {
+            let _ = self.mirror_pass();
+        }
+    }
+
+    /// Mirror the store now. The outcome is kept for `card.folder`.
+    fn mirror_pass(&mut self) -> Result<(), String> {
+        let now = Instant::now();
+        let Some(dir) = self.mirror.as_ref().map(|m| m.dir.clone()) else {
+            return Err("no folder is set for the module store (--mirror-dir)".into());
+        };
+        let outcome = (|| {
+            let (base, overlay, range) = self.mirror_view()?;
+            let view = plusdrive_format::OverlayImage::new(base.as_ref(), &overlay);
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            let out = std::env::var_os("DIGI_PLUSDRIVE_OUT").map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from);
+            let backup = out.join("backup").join(format!("mirror-{stamp}"));
+            let mut seen = self.mirror.as_mut().map(|m| std::mem::take(&mut m.seen)).unwrap_or_default();
+            let report = plusdrive_format::mirror::mirror_store(&view, &range, &dir, &backup, &mut seen);
+            if let Some(m) = self.mirror.as_mut() {
+                m.seen = seen;
+            }
+            report
+        })();
+        let result = outcome.as_ref().map(|_| ()).map_err(Clone::clone);
+        if let Some(m) = self.mirror.as_mut() {
+            m.done(outcome, now);
+        }
+        result
+    }
+
+    /// At the end of the session: mirror what the quiet period had not reached yet.
+    fn mirror_flush(&mut self) {
+        if self.mirror.as_ref().is_some_and(|m| m.pending() || m.behind()) && self.runtime.is_some() {
+            if let Err(e) = self.mirror_pass() {
+                eprintln!("card: the module store was not mirrored: {e}");
+            }
+        }
+    }
+
+    /// `card.folder`: the module store's folder: its path, the files under `digikit/` with size and sha256, the time of the last pass
+    /// (ms since the epoch) and what it did, and whether the card has writes the folder does not hold yet.
+    fn rpc_card_folder(&mut self) -> RpcResult {
+        match &self.mirror {
+            Some(m) => Ok(m.status(plusdrive_format::mirror::folder_files(&m.dir))),
+            None => Ok(json!({"folder": null, "continuous": false, "files": [], "last_sync": null, "error": null})),
+        }
+    }
+
+    /// `card.sync`: mirror the store now (no wait for the quiet period); the answer is `card.folder`'s.
+    fn rpc_card_sync(&mut self) -> RpcResult {
+        self.mirror_pass().map_err(RpcError::io)?;
+        self.rpc_card_folder()
     }
 
     /// `card.overlay {path}`: write the guest's writes to the card as a sparse file: per touched sector

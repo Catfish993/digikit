@@ -404,6 +404,7 @@ fn main() {
         Mode::Free
     };
     config.run_dir = run_dir.clone();
+    config.mirror_dir = startup.mirror_dir.clone();
     config.card_folder = startup
         .card_folder
         .clone()
@@ -466,6 +467,7 @@ fn main() {
     };
     #[cfg(not(unix))]
     let _ = (&run_dir, Dispatcher::new);
+    let exit_handle = handle.clone();
     let host = Host {
         handle,
         staging: run_dir_for_staging.join("cards").join("staging"),
@@ -475,7 +477,8 @@ fn main() {
             .clone()
             .map(|path| std::fs::canonicalize(&path).unwrap_or(path)),
     };
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(host)
         .invoke_handler(tauri::generate_handler![
             emu_call,
@@ -490,11 +493,35 @@ fn main() {
             emu_card_reset,
             emu_card_stage,
             emu_card_load,
+            card_open_folder,
             library::lib_scan,
             library::lib_read
         ])
-        .run(tauri::generate_context!())
-        .expect("tauri runtime error");
+        .build(tauri::generate_context!())
+        .expect("tauri build error");
+    // The window closed: let the controller end the session (`quit`: the module store is mirrored once more and the card's changes
+    // are exported to the +Drive folder) before the process goes. Without it the controller thread is cut off mid-export.
+    app.run(move |_app, event| {
+        if let tauri::RunEvent::Exit = event {
+            let _ = exit_handle.call("quit", serde_json::json!({}));
+        }
+    });
+}
+
+/// Open the module store's folder (`card.folder`: `plus_drive/<device>/`) in the system's file manager, through the official opener plugin.
+/// Only that folder can be opened: the path comes from the controller, not from the page.
+#[tauri::command]
+async fn card_open_folder(app: tauri::AppHandle, host: State<'_, Host>) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let handle = host.handle.clone();
+    let folder = tauri::async_runtime::spawn_blocking(move || {
+        let v = handle.call("card.folder", serde_json::json!({})).map_err(|e| e.message)?;
+        v["folder"].as_str().map(PathBuf::from).ok_or_else(|| "no folder is set for the module store".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    std::fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+    app.opener().open_path(folder.display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

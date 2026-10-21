@@ -86,8 +86,9 @@ pub async fn lib_read(device: String, path: String) -> Result<tauri::ipc::Respon
 mod tests {
     use super::*;
 
-    fn library() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("digi-library-test-{}", std::process::id()));
+    fn library(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("digi-library-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
         let dir = root.join(LIBRARY_DIR).join("dt2");
         std::fs::create_dir_all(dir.join("digikit")).unwrap();
         std::fs::create_dir_all(dir.join("test")).unwrap();
@@ -99,7 +100,7 @@ mod tests {
 
     #[test]
     fn the_scan_lists_dkm_files_by_path_and_a_missing_folder_is_empty() {
-        let root = library();
+        let root = library("scan");
         assert_eq!(
             scan(&root, "dt2").unwrap(),
             vec![
@@ -115,7 +116,7 @@ mod tests {
 
     #[test]
     fn a_read_stays_inside_the_device_folder() {
-        let root = library();
+        let root = library("read");
         for bad in ["../dn2/x.dkm", "digikit/../../x.dkm", "/etc/passwd", "notes.txt", "", "a//b.dkm"] {
             assert!(read(&root, "dt2", bad).is_err(), "{bad}");
         }

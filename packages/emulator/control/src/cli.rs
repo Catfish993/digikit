@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use digi_coupled::{AudioMode, AudioOptions};
 
-pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--control|--no-control] [--runtime|--no-runtime] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
+pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--mirror-dir DIR] [--control|--no-control] [--runtime|--no-runtime] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
 
 #[derive(Clone, Debug, Default)]
 pub struct StartupArgs {
@@ -15,6 +15,8 @@ pub struct StartupArgs {
     pub card_folder: Option<PathBuf>,
     /// False with `--no-card-sync`.
     pub card_sync: bool,
+    /// The folder the module store is mirrored to while the emulator runs (`--mirror-dir`, `plus_drive/<device>/`).
+    pub mirror_dir: Option<PathBuf>,
     pub audio: Option<AudioOptions>,
     pub scenario: Option<String>,
     pub report: Option<PathBuf>,
@@ -51,6 +53,7 @@ pub fn parse_values(
     let mut run_dir = None;
     let mut card_folder = None;
     let mut card_sync = true;
+    let mut mirror_dir = None;
     let mut runtime = None;
     while let Some(value) = values.next() {
         let mut path = |label: &str| -> Result<PathBuf, String> {
@@ -65,6 +68,8 @@ pub fn parse_values(
             card_folder = Some(path("--card-folder")?);
         } else if value == "--no-card-sync" {
             card_sync = false;
+        } else if value == "--mirror-dir" {
+            mirror_dir = Some(path("--mirror-dir")?);
         } else if value == "--control" {
             control = Some(true);
         } else if value == "--no-control" {
@@ -195,6 +200,7 @@ pub fn parse_values(
         card_image,
         card_folder,
         card_sync,
+        mirror_dir,
         audio,
         scenario,
         report,
