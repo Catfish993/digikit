@@ -268,6 +268,16 @@ class Env:
         self.tools.patchkit_run("pack", module, "--device", self.device, "-o", out)
         return out
 
+    def synth(self, spec: str, file: str) -> Path:
+        """Pack the synthetic module SPEC (TOML text, keys in packages/patchkit/src/dkmsynth.rs) for this device into the store folder."""
+        specs = self.work / "synth-specs"
+        specs.mkdir(parents=True, exist_ok=True)
+        src = specs / f"{file}.toml"
+        src.write_text(spec)
+        out = self.folder / "digikit" / "modules" / file
+        self.tools.patchkit_run("synth-dkm", src, "--device", self.device, "-o", out)
+        return out
+
     def card(
         self,
         selection: list[str] | None,

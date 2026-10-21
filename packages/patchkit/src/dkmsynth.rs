@@ -13,7 +13,7 @@
 //! bss = 0               # ColdFire bss bytes (a multiple of 4)
 //! machines = 0          # machine records, ids m0, m1 ... (hashed keys), data only
 //! params = 0            # parameter records (the device's slots)
-//! pages = 0             # page records, page i for machine i (Digitone II)
+//! pages = 0             # page records, page i for machine i mod `machines` (Digitone II)
 //! oversize = false      # allow a file over the staging buffer
 //! [dsp]                 # a DSP section (optional)
 //! image = 64            # bytes (a multiple of 4)
@@ -179,17 +179,15 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
             short: format!("S{i}"),
         });
     }
-    if spec.pages > spec.machines {
+    if spec.pages > 0 && spec.machines == 0 {
         return Err(err!(
-            "{}: {} pages need as many machines (page i belongs to machine i), the spec has {}",
-            spec.name,
-            spec.pages,
-            spec.machines
+            "{}: a page belongs to a machine of the file, the spec has none",
+            spec.name
         ));
     }
     for i in 0..spec.pages {
         reg.pages.push(Page {
-            type_no: key(&machine_id(i)),
+            type_no: key(&machine_id(i % spec.machines)),
             knobs: [0; KNOBS],
             level: model.knobs.level_default as u32,
             name: format!("PG{i}"),
@@ -322,12 +320,12 @@ mod tests {
             r.check().unwrap();
         }
         let e = synth(
-            &Spec::parse("name = \"x\"\nmachines = 1\npages = 2\n").unwrap(),
+            &Spec::parse("name = \"x\"\npages = 2\n").unwrap(),
             "dn2",
             &models(),
         )
         .unwrap_err();
-        assert!(e.0.contains("pages need as many machines"), "{}", e.0);
+        assert!(e.0.contains("page belongs to a machine"), "{}", e.0);
     }
 
     #[test]
