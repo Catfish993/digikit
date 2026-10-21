@@ -232,6 +232,54 @@ unsafe fn ensure_view(v: *mut View, name: &'static [u8], title: &'static [u8], p
     dk_make_sp((*v).sp, parent, obj.add(0x38));
 }
 
+// ---- text pages: no highlighted row ------------------------------------------------------------------------------------
+//
+// ABOUT, HEALTH and MEMORY show text, not choices. The stock paint (`VerticalMenuView::vfunc_31`) inverts the row at the Menu's
+// cursor (`this+0x18`, a row index in the visible window) and nothing else decides it. The View sub-object (+0x38) reaches the paint
+// through slot 4 of its vtable, a thunk that subtracts 0x38 and branches to it. These pages get a copy of that vtable (17 slots,
+// held in module RAM) whose slot 4 sets the cursor out of range around the stock paint: no row matches, the cursor and the
+// selection themselves are untouched, so the keys scroll a long page as before.
+
+/// The View vtable of a stock `VerticalMenuView`: 17 slots, preceded by the two words the C++ runtime reads at negative offsets
+/// (`offset_to_top`, the type info: the view manager casts through them), so the copy has 19 words and the pointer is at word 2.
+const VIEW_VT_SLOTS: usize = 17;
+static mut TEXT_VT: [usize; VIEW_VT_SLOTS + 2] = [0; VIEW_VT_SLOTS + 2];
+/// The stock slot 4 (the thunk to the paint).
+static mut TEXT_PAINT: usize = 0;
+
+unsafe extern "C" fn text_paint(view: *mut u8, canvas: *mut u8) {
+    let cursor = view.sub(0x38).add(0x18) as *mut u32;
+    let saved = *cursor;
+    *cursor = 0x7fff_ffff;
+    let paint: unsafe extern "C" fn(*mut u8, *mut u8) = transmute(TEXT_PAINT);
+    paint(view, canvas);
+    *cursor = saved;
+}
+
+/// Give the page `obj` (a `VerticalMenuView` built by `ensure_view`) the text paint. It leaves the page as it is when the stock slot is
+/// not the expected thunk (`moveq #-0x38,d0` is 0x70c8): rows with the cursor bar, as before.
+unsafe fn text_page(obj: *mut u8) {
+    let vptr = obj.add(0x38) as *mut usize;
+    let new = addr_of_mut!(TEXT_VT[2]) as usize;
+    if *vptr == new {
+        return;
+    }
+    let old = *vptr as *const usize;
+    if TEXT_PAINT == 0 {
+        if *(*old.add(4) as *const u16) != 0x70c8 {
+            return;
+        }
+        let mut i = 0;
+        while i < VIEW_VT_SLOTS + 2 {
+            TEXT_VT[i] = *old.sub(2).add(i);
+            i += 1;
+        }
+        TEXT_PAINT = TEXT_VT[2 + 4];
+        TEXT_VT[2 + 4] = text_paint as usize;
+    }
+    *vptr = new;
+}
+
 unsafe fn push(from: *mut u8, v: *mut View) {
     fw_push(from, (*v).sp);
 }
@@ -1182,10 +1230,12 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         push(MAIN.obj, addr_of_mut!(LOADV));
     } else if act == A_OPEN_ABOUT {
         ensure_view(addr_of_mut!(ABOUTV), NAME_ABOUT, b"ABOUT\0", MAIN.obj);
+        text_page(ABOUTV.obj);
         fill_about();
         push(MAIN.obj, addr_of_mut!(ABOUTV));
     } else if act == A_OPEN_HEALTH {
         ensure_view(addr_of_mut!(HEALTHV), NAME_HEALTH, b"HEALTH\0", MAIN.obj);
+        text_page(HEALTHV.obj);
         refresh_health();
         push(MAIN.obj, addr_of_mut!(HEALTHV));
         H_SEEN = 0;
@@ -1194,6 +1244,7 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         dkrt_poll_set(dk_poll as usize);
     } else if act == A_OPEN_MEM {
         ensure_view(addr_of_mut!(MEMV), NAME_MEM, b"MEMORY\0", MAIN.obj);
+        text_page(MEMV.obj);
         fill_mem();
         push(MAIN.obj, addr_of_mut!(MEMV));
     } else if act == A_APPLY {

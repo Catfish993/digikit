@@ -16,6 +16,8 @@ Adds **SETTINGS > DIGIKIT** (the ninth row, after SYSTEM). Emulator only: nothin
 - **MEMORY** shows the runtime's capacity (the CAPACITY command's entries, `dkrt_capacity`) as text rows with a ten-character bar: DSP area and arena as a percent, modules, machine, voice, parameter and page rows as used/limit. Finding 57.
 - **ABOUT** shows the version, the runtime's ABI, safe mode and why, this boot's modules with each result text, and the free arena in KB.
 
+The DIGIKIT rows and pages draw no glyph (the SETTINGS row keeps its own), and the ABOUT, HEALTH and MEMORY pages show no highlighted row (finding 28, "Glyphs and text pages"). MODULES keeps its cursor bar.
+
 Firmware: DT2 1.16 and 1.17, DN2 1.11 and 1.12 (the same sites and helpers, found by function hash).
 
 ## The interface to the runtime
