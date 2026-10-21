@@ -249,3 +249,172 @@ def run_capacity(c: Any) -> None:
 
     c.parallel(*[functools.partial(one, case) for case in cases])
     c.common_checks_upload(project_writes_ok=True)
+
+
+# ---- the full set: every limit used at once, behind a reference module ---------------------------------------------------------
+
+
+def full_wants(refs: int, fill: list[P.Mod]) -> list[int | str]:
+    """The results of a boot with REFS reference modules (all loaded) and the full set behind them."""
+    return [P.LOADED] * refs + [m.want for m in fill]
+
+
+def check_full(
+    c: Any,
+    rig: Any,
+    g: P.Geometry,
+    tag: str,
+    wants: list[int | str],
+    names: list[str],
+    exact_arena: bool = True,
+) -> dict:
+    """The boot of a full set: every module has its result, MODULES lists the loaded ones, every resource is used up (no free arena byte, no
+    whole free DSP granule, every voice row and machine type owned) and the table check never failed. Returns MODULES."""
+    up = D.uploader(rig)
+    info = rig.boot_info()
+    got = list(info["results"])
+    c.check(
+        f"{tag}: results of the boot report: every module of the full set loaded, the three behind it refused (E_NOMEM, E_DSP_ROWS, E_DSP_NOSPACE)",
+        info["count"] == len(wants)
+        and all(_result_ok(a, b) for a, b in zip(got, wants, strict=True)),
+        f"got {got}, want {wants}",
+    )
+    m = up.modules()
+    loaded = [n for n, w in zip(names, wants, strict=True) if w == P.LOADED]
+    mods = m["modules"]
+    c.check(
+        f"{tag}: MODULES lists exactly the loaded modules",
+        [x["name"] for x in mods] == loaded,
+        str([x["name"] for x in mods]),
+    )
+    full_rows = (1 << g.machine_rows) - 1
+    owned = 0
+    for x in mods:
+        owned |= x["rows"]
+    types = sorted({t for x in mods for t in x["types"]})
+    c.check(
+        f"{tag}: every voice row has an owner and every machine type is in use",
+        owned == full_rows
+        and types == list(range(g.type_first, g.type_first + g.machine_rows)),
+        f"rows {owned:#x}, types {types}",
+    )
+    c.check(
+        f"{tag}: the DSP area has no whole granule left"
+        + (" and the arena no byte" if exact_arena else ""),
+        m["dsp_largest"] < P.DSP_GRANULE
+        and (not exact_arena or (m["arena_free"] == 0 and m["arena_largest"] == 0)),
+        f"dsp free {m['dsp_free']} largest {m['dsp_largest']}, arena free {m['arena_free']}",
+    )
+    c.check(
+        f"{tag}: ColdFire blocks and DSP ranges lie in their areas and do not overlap",
+        _ranges_ok(mods, "cf_base", "cf_size", g.arena_lo, g.arena_hi)
+        and _ranges_ok(mods, "dsp_off", "dsp_len", 0, g.dsp_area),
+        "",
+    )
+    bad = up.peek(M.sym(rig.plan, "core/runtime", "DKRT_TABLE_BAD"), 1)[0]
+    c.check(
+        f"{tag}: the runtime's table check never failed",
+        bad == 0 and not D.events(rig, "TABLE_BAD"),
+        f"DKRT_TABLE_BAD {bad}",
+    )
+    return m
+
+
+def run_isolation(c: Any) -> None:
+    """A reference module (`[isolation] module`, a sound) loaded first keeps its sound, its ranges and its DSP bytes when the full set is
+    loaded behind it and three modules are refused: boot 1 has the reference alone, boot 2 the reference and the full set. Both are
+    coupled boots (the DSP runs); each plays the reference machine on track 1. Checked: the reference's MODULES record equal in both boots;
+    its relocated DSP image read back from L2 equals the packed image (relocated at its range) in both boots, after the note; the note's PCM
+    equal from the onset (a pairing: the one thing that differs between the boots is what is loaded behind the reference)."""
+    import numpy as np
+
+    t = c.table()
+    ref, machine = t["module"], t["machine"]
+    img = c.image_for(B.RT, "run")
+    plan = img.plan
+    g = P.Geometry.of(
+        c.device,
+        M.sym(plan, "core/runtime", "DKRT_ARENA"),
+        M.sym(plan, "core/dsp-link", "_dl_area"),
+    )
+    ref_path = c.pack(ref, "ref.dkm")
+    ref_bytes = (c.env.folder / "digikit" / "modules" / "ref.dkm").read_bytes()
+    fill = P.full_set(g, [P.usage(ref_bytes)])
+    fill_paths = [c.pack_synth(m.spec, f"fill-{i}.dkm") for i, m in enumerate(fill)]
+    names = [ref] + [m.name for m in fill]
+    cards = {"alone": c.card([ref_path]), "full": c.card([ref_path, *fill_paths])}
+    wants: dict[str, list[int | str]] = {
+        "alone": [P.LOADED],
+        "full": full_wants(1, fill),
+    }
+    trig = t.get("trig_frame", M.TRIG_FRAME if c.dt2 else M.TRIG_FRAME_DN2)
+    hint = t.get("hint", 7 if c.dt2 else 5)
+    sec = M.parse_dsp_section(ref_bytes)
+    out: dict[str, Any] = {}
+
+    def boot(key: str) -> None:
+        with c.rig(img, cards[key], key) as rig:
+            if key == "full":
+                m = check_full(c, rig, g, "full", wants[key], names, exact_arena=False)
+            else:
+                info = rig.boot_info()
+                c.check(
+                    "alone: the reference loaded",
+                    info["count"] == 1 and _result_ok(info["results"][0], P.LOADED),
+                    str(info["results"]),
+                )
+                m = D.uploader(rig).modules()
+            rec = _by_name(m, ref)
+            base = M.sym(plan, "core/dsp-link", "_dl_area") + rec["dsp_off"]
+            imports = M.run_imports(rig, plan)
+            want = M.relocate(sec, base, imports)
+            before = rig.dsp_bytes(base, len(want))
+            if c.dt2:
+                rig.select_type(rig.dyn_type(ref, machine), hint)
+            else:
+                rig.select(hint)
+            pcm = rig.note(c.work / f"{key}.wav", trig)
+            after = rig.dsp_bytes(base, len(want))
+            c.check(
+                f"{key}: the reference's DSP bytes in L2 equal its packed image relocated at its range, before and after the note",
+                before == want and after == want,
+                f"range {rec['dsp_off']:#x}+{rec['dsp_len']:#x}, {sum(a != b for a, b in zip(before, want, strict=True))} and {sum(a != b for a, b in zip(after, want, strict=True))} bytes differ",
+            )
+            c.check(
+                f"{key}: the reference note is audible",
+                float(abs(pcm).max()) > 0.01,
+                f"peak {float(abs(pcm).max()):.3f}",
+            )
+            out[key] = {
+                "pcm": pcm,
+                "record": {
+                    k: rec[k]
+                    for k in ("cf_size", "dsp_off", "dsp_len", "rows", "types")
+                },
+                "rig": rig,
+            }
+            c.done(rig)
+
+    c.parallel(functools.partial(boot, "alone"), functools.partial(boot, "full"))
+    c.check(
+        "the reference's record (size, DSP range, rows, types) is the same with and without the full set behind it",
+        out["alone"]["record"] == out["full"]["record"],
+        f"{out['alone']['record']} vs {out['full']['record']}",
+    )
+    rr = out["full"]["rig"]
+    # the onset may differ by a few blocks: the full boot has loaded more modules before the key reaches the sequencer (128 samples measured on
+    # the Digitone II, 64 on the Digitakt II); from the onset on, not one sample may differ
+    M.pcm_check(
+        rr,
+        out["alone"]["pcm"],
+        out["full"]["pcm"],
+        c.report,
+        "reference note with the full set loaded",
+        max_shift=256,
+    )
+    c.checks += rr.checks
+    c.report["isolation"] = {
+        "modules": names,
+        "peak": float(np.abs(out["full"]["pcm"]).max()),
+    }
+    c.common_checks()

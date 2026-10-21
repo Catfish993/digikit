@@ -365,6 +365,10 @@ def run_debug(c: Any) -> None:
         from tools.patchkit import pk_digikit_capacity as CAP
 
         return CAP.run_capacity(c)
+    if c.table().get("part") == "isolation":
+        from tools.patchkit import pk_digikit_capacity as CAP
+
+        return CAP.run_isolation(c)
     if c.table().get("part") == "memaudit":
         from tools.patchkit import pk_digikit_memaudit as MA
 

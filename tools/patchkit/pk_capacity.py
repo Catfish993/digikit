@@ -361,3 +361,150 @@ def cases(g: Geometry) -> list[Case]:
         *rows_cases(g),
         *registry_cases(g),
     ]
+
+
+# ---- the full set: every limit used at once, behind a reference module --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Usage:
+    """What a packed module takes of each resource, read from its file (the loader's own arithmetic)."""
+
+    name: str
+    cf_total: int  # image + bss: the arena block is `block(cf_total)`
+    dsp_image: int  # bytes of the DSP image (its relocated copy is an arena block until the transfer ends); 0: no DSP section
+    dsp_len: (
+        int  # bytes of the DSP range: image + bss + voice states, rounded to a granule
+    )
+    dsp_align: int
+    rows: int  # DSP voice rows
+    machines: int
+    params: int
+    pages: int
+
+
+def usage(dkm: bytes) -> Usage:
+    """The resources a packed module takes (`dsp.rs extent`, `registry.rs`)."""
+
+    def be(o: int, b: bytes = dkm) -> int:
+        return int.from_bytes(b[o : o + 4], "big")
+
+    name = dkm[0x40:0x60].split(b"\0")[0].decode()
+    counts = {1: 0, 2: 0, 3: 0}  # KIND_PARAM, KIND_MACHINE, KIND_PAGE
+    reg_off, reg_size = be(0x90), be(0x94)
+    if reg_size:
+        at = 16
+        for _ in range(be(reg_off + 12)):
+            kind, length = be(reg_off + at), be(reg_off + at + 4)
+            counts[kind] += 1
+            at += length
+    dsp_off, dsp_size = be(0x98), be(0x9C)
+    image = align = length = rows = 0
+    if dsp_size:
+        s = dkm[dsp_off : dsp_off + dsp_size]
+        image, bss, align, rows = be(0x0C, s), be(0x10, s), be(0x14, s), be(0x30, s)
+        stride = {1: 16, 2: 48, 3: 64}[be(4, s)]
+        extent = (image + bss + 7) & ~7
+        if stride == 64:
+            for i in range(rows):
+                v = be(0x2C, s) + stride * i
+                extent += be(v + 52, s) * ((be(v + 12, s) + 7) & ~7)
+        length = (extent + DSP_GRANULE - 1) & ~(DSP_GRANULE - 1)
+    return Usage(
+        name,
+        be(0x64) + be(0x68),
+        image,
+        length,
+        align,
+        rows,
+        counts[2],
+        counts[1],
+        counts[3],
+    )
+
+
+def full_set(g: Geometry, refs: list[Usage]) -> list[Mod]:
+    """The modules that, behind the reference modules REFS (loaded first), use every limit at once and are followed by three that do not fit:
+
+    M takes the machine types, parameter rows and page rows the references leave; V the voice rows (pinned types, behind the references'
+    hashed ones); D the DSP area, to its last whole granule; F the arena, to the last byte (the references' and V's and D's blocks and
+    the arena copies of their DSP images counted: a ColdFire-only rig keeps those until a transfer that never comes). Then X (a raw module:
+    `E_NOMEM`), Y (a voice: `E_DSP_ROWS`) and Z (a DSP module: `E_DSP_NOSPACE`)."""
+    n_total = len(refs) + 7
+    if n_total > g.modules:
+        raise ValueError(
+            f"the full set needs {n_total} modules, the device has {g.modules}"
+        )
+    types_left = g.machine_rows - sum(r.machines for r in refs)
+    rows_left = g.machine_rows - sum(r.rows for r in refs)
+    params_left = g.param_rows - sum(r.params for r in refs)
+    pages_left = g.page_rows - sum(r.pages for r in refs)
+    if rows_left > MAX_VOICES or rows_left < 1 or types_left < 1:
+        raise ValueError(
+            f"the references leave {rows_left} rows and {types_left} types"
+        )
+    if pages_left > types_left:
+        raise ValueError(
+            f"{pages_left} page rows left, but only {types_left} machines to put them on"
+        )
+    first_pinned = g.type_first + sum(r.rows for r in refs)
+    mods = [
+        Mod(
+            "cap/full-m",
+            spec(
+                "cap/full-m", machines=types_left, params=params_left, pages=pages_left
+            ),
+            LOADED,
+        ),
+        Mod(
+            "cap/full-v",
+            spec(
+                "cap/full-v",
+                dsp={
+                    "image": 64,
+                    "voices": pinned(
+                        list(range(first_pinned, first_pinned + rows_left))
+                    ),
+                },
+            ),
+            LOADED,
+        ),
+    ]
+    # the DSP area: references, then V (one granule), then D takes every whole granule left (first fit from the area's start, each range
+    # at the first address its alignment allows)
+    cursor = 0
+    for length, align in [(r.dsp_len, r.dsp_align) for r in refs if r.dsp_len] + [
+        (DSP_GRANULE, 8)
+    ]:
+        start = (g.dsp_base + cursor + align - 1) // align * align - g.dsp_base
+        cursor = start + length
+    d_start = (g.dsp_base + cursor + 7) // 8 * 8 - g.dsp_base
+    d_len = (g.dsp_area - d_start) // DSP_GRANULE * DSP_GRANULE
+    if d_len < DSP_GRANULE:
+        raise ValueError("the references leave no DSP area for D")
+    mods.append(
+        Mod(
+            "cap/full-d",
+            spec("cap/full-d", dsp={"image": 64, "bss": d_len - 64}),
+            LOADED,
+        )
+    )
+    # every raw block is `block(CODE)`; V's and D's DSP images keep an arena copy of `block(64)` each (as does every reference's)
+    used = sum(
+        block(r.cf_total) + (block(r.dsp_image) if r.dsp_image else 0) for r in refs
+    )
+    used += 3 * block(CODE) + 2 * block(64)
+    f_total = g.arena_free - used - HDR
+    if f_total < CODE:
+        raise ValueError("the references leave no arena for F")
+    mods += [
+        Mod("cap/full-f", spec("cap/full-f", bss=f_total - CODE), LOADED),
+        Mod("cap/full-x", spec("cap/full-x"), E_NOMEM),
+        Mod(
+            "cap/full-y",
+            spec("cap/full-y", dsp={"image": 64, "voices": pinned([first_pinned])}),
+            E_DSP_ROWS,
+        ),
+        Mod("cap/full-z", spec("cap/full-z", dsp={"image": 64}), E_DSP_NOSPACE),
+    ]
+    return mods
