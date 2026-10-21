@@ -278,3 +278,31 @@ fn the_link_width_is_a_shared_c_header_from_the_contract_maximum() {
     assert!(h.contains("#define DL_AREA_MAX_BYTES 0x80000u"), "{h}");
     assert!(h.contains("#define DL_AREA_MAX_WORDS 0x20000u"), "{h}");
 }
+
+/// The modules of the rt021 flash images (`out/patch/rt021-dt2-1.17.plan.json`, `modules`), by id.
+const RT021_MODULES: [&str; 10] = [
+    "core/digikit-menu",
+    "core/dsp-link",
+    "core/dsp-voice",
+    "core/dyndsp",
+    "core/dynreg",
+    "core/expansion",
+    "core/health",
+    "core/machines",
+    "core/params",
+    "core/runtime",
+];
+
+#[test]
+fn the_patch_sets_are_the_rt021_flash_modules() {
+    let lib = Library::scan_repo(&root()).unwrap();
+    for dev in devdata::all() {
+        for set in ["emulator", "device"] {
+            let roots = dev.patch_set(set).unwrap();
+            let (mut all, _) = lib.with_requires(roots).unwrap();
+            all.sort();
+            assert_eq!(all, RT021_MODULES, "{} set {set}", dev.short);
+        }
+        assert!(dev.patch_set("nope").is_err());
+    }
+}
