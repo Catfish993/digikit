@@ -22,6 +22,7 @@ from typing import Any
 
 from tools.device import dkupload as DK
 from tools.patchkit import pk_capacity as P
+from tools.patchkit import pk_device
 from tools.patchkit import pk_digikit_debug as D
 from tools.patchkit import pk_dkrt_boot as B
 from tools.patchkit import pk_dkrt_machine as M
@@ -42,6 +43,31 @@ def _ranges_ok(mods: list[dict], key_off: str, key_len: str, lo: int, hi: int) -
     rs = sorted((m[key_off], m[key_off] + m[key_len]) for m in mods if m[key_len])
     return all(lo <= a and b <= hi for a, b in rs) and all(
         rs[i][1] <= rs[i + 1][0] for i in range(len(rs) - 1)
+    )
+
+
+def _cap_ok(
+    cap: dict, m: dict, g: P.Geometry, lim: Any, rows: int, selected: int
+) -> bool:
+    """The CAPACITY reply against MODULES (what is used) and the device file (what the limits are)."""
+    arena = g.arena_hi - g.arena_lo
+    want = {
+        "MODULES": (g.modules, m["total"], 0),
+        "SELECTION": (DK_SEL_MAX, selected, 0),
+        "ARENA": (arena, arena - m["arena_free"], m["arena_largest"]),
+        "STAGE": (g.stage_bytes, 0, g.stage_bytes),
+        "DSP_AREA": (g.dsp_area, g.dsp_area - m["dsp_free"], m["dsp_largest"]),
+        "VOICE_ROWS": (g.machine_rows, bin(rows).count("1"), 0),
+        "MACHINE_ROWS": (g.machine_rows, None, 0),
+        "PARAM_ROWS": (lim.param_rows, None, 0),
+        "PAGE_ROWS": (lim.page_rows, None, 0),
+        "FX_SLOTS": (lim.fx_slots, 0, 0),
+        "MAP_ENTRIES": (pk_device.contract_max()["map_entries"], None, 0),
+    }
+    return set(cap) == set(want) and all(
+        (cap[k]["limit"], cap[k]["largest"]) == (v[0], v[2])
+        and (v[1] is None or cap[k]["used"] == v[1])
+        for k, v in want.items()
     )
 
 
@@ -84,6 +110,17 @@ def boot_checks(
                 for x in mods
             ]
         ),
+    )
+    cap = up.capacity()
+    m["cap"] = cap
+    lim = pk_device.limits(c.device)
+    rows = 0
+    for x in mods:
+        rows |= x["rows"]
+    c.check(
+        f"{tag}: CAPACITY agrees with MODULES (modules, arena, DSP area, voice rows, selection) and with the profile (every limit)",
+        _cap_ok(cap, m, g, lim, rows, len(names)),
+        str(cap),
     )
     bad = up.peek(M.sym(rig.plan, "core/runtime", "DKRT_TABLE_BAD"), 1)[0]
     c.check(
@@ -147,8 +184,8 @@ def check_case(c: Any, rig: Any, g: P.Geometry, case: P.Case, m: dict) -> None:
         )
         mailbox = rig.set_selection([chr(ord("a") + i) for i in range(DK_SEL_MAX + 1)])
         c.check(
-            "modules: the mailbox select of a ninth path is E_SEL_PATH (-40: another code than SELECT's, test hook only)",
-            mailbox == P.E_SEL_PATH,
+            "modules: the mailbox select of a ninth path is E_SEL_COUNT (-41), as SELECT's",
+            mailbox == P.E_SEL_COUNT,
             str(mailbox),
         )
     elif n == "files":
@@ -223,6 +260,31 @@ def check_case(c: Any, rig: Any, g: P.Geometry, case: P.Case, m: dict) -> None:
             sorted(a["types"])
             == list(range(g.type_first, g.type_first + g.machine_rows)),
             str(a["types"]),
+        )
+        used = {k: m["cap"][k]["used"] for k in ("MACHINE_ROWS", "PARAM_ROWS")}
+        c.check(
+            "machines: CAPACITY counts every machine type and parameter row as used",
+            used == {"MACHINE_ROWS": g.machine_rows, "PARAM_ROWS": g.param_rows},
+            str(used),
+        )
+    elif n == "pages":
+        c.check(
+            "pages: CAPACITY counts every page row as used",
+            m["cap"]["PAGE_ROWS"]["used"] == g.page_rows,
+            str(m["cap"]["PAGE_ROWS"]),
+        )
+    if n in ("rows-all", "rows-split"):
+        c.check(
+            "rows: CAPACITY counts every voice row as used",
+            m["cap"]["VOICE_ROWS"]["used"] == g.machine_rows,
+            str(m["cap"]["VOICE_ROWS"]),
+        )
+    if n == "arena":
+        c.check(
+            "arena: CAPACITY says the arena is used up",
+            m["cap"]["ARENA"]["used"] == m["cap"]["ARENA"]["limit"]
+            and m["cap"]["ARENA"]["largest"] == 0,
+            str(m["cap"]["ARENA"]),
         )
 
 
@@ -300,6 +362,17 @@ def check_full(
         owned == (1 << g.machine_rows) - 1
         and types == list(range(g.type_first, g.type_first + g.machine_rows)),
         f"rows {owned:#x}, types {types}",
+    )
+    full = {
+        "MACHINE_ROWS": g.machine_rows,
+        "VOICE_ROWS": g.machine_rows,
+        "PARAM_ROWS": g.param_rows,
+        "PAGE_ROWS": g.page_rows,
+    }
+    c.check(
+        f"{tag}: CAPACITY counts every machine, voice, parameter and page row as used",
+        all(m["cap"][k]["used"] == v for k, v in full.items()),
+        str({k: m["cap"][k] for k in full}),
     )
     c.check(
         f"{tag}: the DSP area has no whole granule left"

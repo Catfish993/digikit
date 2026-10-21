@@ -668,6 +668,43 @@ def part_modules(c: Any, img: Any) -> None:
             and not xs["guard_off"],
             "",
         )
+        # CAPACITY (runtime 0.2.2): limits from the device file, use from the same tables as MODULES
+        lim = pk_device.limits(c.device)
+        cap = up.capacity()
+        arena_total = arena_hi - arena_lo
+        want_limits = {
+            "MODULES": lim.modules,
+            "SELECTION": pk_device.contract_max()["sel_max"],
+            "ARENA": arena_total,
+            "STAGE": lim.stage_bytes,
+            "DSP_AREA": lim.dsp_area_bytes,
+            "MACHINE_ROWS": lim.machine_rows,
+            "VOICE_ROWS": lim.machine_rows,
+            "PARAM_ROWS": lim.param_rows,
+            "PAGE_ROWS": lim.page_rows,
+            "FX_SLOTS": lim.fx_slots,
+            "MAP_ENTRIES": pk_device.contract_max()["map_entries"],
+        }
+        c.check(
+            "INFO sets the CAPACITY capability, and CAPACITY lists every kind with the device file's limit",
+            DK.has_cap(info, "CAPACITY")
+            and {k: v["limit"] for k, v in cap.items()} == want_limits,
+            str(cap),
+        )
+        c.check(
+            "CAPACITY use agrees with MODULES: two modules, one voice row, two machine types, the arena and DSP figures equal",
+            cap["MODULES"]["used"] == 2
+            and cap["SELECTION"]["used"] == 2
+            and cap["VOICE_ROWS"]["used"] == 1
+            and cap["MACHINE_ROWS"]["used"] == 2
+            and cap["MAP_ENTRIES"]["used"] == 2
+            and cap["PARAM_ROWS"]["used"] > 0
+            and cap["ARENA"]["used"] == arena_total - m["arena_free"]
+            and cap["ARENA"]["largest"] == m["arena_largest"]
+            and cap["DSP_AREA"]["used"] == lim.dsp_area_bytes - m["dsp_free"]
+            and cap["DSP_AREA"]["largest"] == m["dsp_largest"],
+            str(cap),
+        )
         # paging: from record index 1 only xslice; past the end nothing
         b1 = up._ok(DK.CMD_MODULES, "modules", bytes((1,)))
         b9 = up._ok(DK.CMD_MODULES, "modules", bytes((9,)))

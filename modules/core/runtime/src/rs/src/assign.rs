@@ -49,6 +49,19 @@ fn st() -> &'static mut State {
     unsafe { &mut *addr_of_mut!(DKRT_ASSIGN) }
 }
 
+/// Entries of the sticky map in use now (for CAPACITY).
+pub fn map_used() -> u32 {
+    let mut n = 0;
+    let mut i = 0;
+    while i < MAP_N {
+        if st().map[i] != 0 {
+            n += 1;
+        }
+        i += 1;
+    }
+    n
+}
+
 fn in_range(t: u32) -> bool {
     t >= DYN_TYPE_FIRST && t <= DYN_TYPE_LAST
 }

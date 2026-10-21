@@ -25,6 +25,8 @@
  * buf must stay valid until the state is DL_DONE or DL_ERROR. DL_DONE means the DSP has taken every chunk, has the bytes
  * in L2 and has invalidated its instruction caches. */
 
+#include "dl-limits.h"
+
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
@@ -34,7 +36,7 @@ typedef unsigned char u8;
 #define DL_ACK_OFF 0x60u
 #define DL_DG_MAGIC 0xD1A6u /* low half of diagnostic word 0; the high half is the word count */
 #define DL_DG_WORDS 24u
-#define DL_AREA_BYTES 0x80000u /* the largest area the 17-bit offset reaches; the DSP knows the real size (status 3) */
+#define DL_AREA_BYTES DL_AREA_MAX_BYTES /* the largest area the 17-bit offset reaches (generated, sdk.toml); the DSP knows the real size (status 3) */
 #define DL_WINDOW 12u
 #define DL_STALL_FRAMES 900u /* 0.6 s without progress */
 #define DL_END_FRAMES 6u
@@ -132,7 +134,7 @@ int dl_send_win(u32 win, u32 dst_word, const void *buf, u32 len)
     u32 st = l->state;
     if (st == DL_BUSY || st == DL_START || l->ending)
         return -1;
-    if (win == 0u || win > 1u || (len & 3u) || len == 0u || dst_word >= 0x20000u || buf == 0)
+    if (win == 0u || win > 1u || (len & 3u) || len == 0u || dst_word >= DL_AREA_MAX_WORDS || buf == 0)
         return -2;
     l->win = win;
     l->buf = (u32)buf;
