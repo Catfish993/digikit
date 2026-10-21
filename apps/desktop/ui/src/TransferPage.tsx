@@ -1,7 +1,8 @@
 // The Transfer page (desktop only): what is on the emulated device, and the repo's run-time modules that could be (tools/device/dktransfer.py
 // through the native commands). Install builds what changed, uploads and verifies each file on the card; that is all. The device's selection
 // is the device's own: the user selects the module in MODULES on the device, then applies and restarts there. Restart only restarts the
-// device and reports what loaded. "Add .dkm" and the drop zone put a module from outside the repo on the card.
+// device and reports what loaded. Delete (in the On device header) removes the ticked files from the card; a loaded module stays loaded
+// until the restart. "Add .dkm" and the drop zone put a module from outside the repo on the card.
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { hexSha256, storePath } from '@web/modules/dkupload-core';
 import { errorLine, formatBytes } from '@web/modules/backend';
@@ -12,6 +13,9 @@ import {
   applyVerified,
   available,
   DONE_ON_CARD,
+  deleteDoneText,
+  deleteLabel,
+  deletePaths,
   eventText,
   installModules,
   onDeviceWithPending,
@@ -27,10 +31,12 @@ import {
   type TransferRow,
 } from './transfer-core';
 import {
+  delTicks,
   lastView,
   log,
   progress,
   setLastView,
+  setDelTicks,
   setLog,
   setProgress,
   setShowTests,
@@ -137,10 +143,52 @@ export default function TransferPage(): JSX.Element {
       }
       setLog(lines);
     });
-  const remove = (r: TransferRow) =>
+  // Delete: the first click asks for a confirmation for about 3 s, the second runs it (no modal).
+  const [confirming, setConfirming] = createSignal(false);
+  let confirmTimer: number | undefined;
+  const stopConfirm = () => {
+    window.clearTimeout(confirmTimer);
+    setConfirming(false);
+  };
+  const nDelete = () => {
+    const v = lastView();
+    return v ? deletePaths(v, delTicks()).length : 0;
+  };
+  const removeSelected = () =>
     run('Deleting', async () => {
-      await emulatorModules.remove(r.path);
+      const v = lastView();
+      if (!v) return;
+      const paths = deletePaths(v, delTicks());
+      setProgress(startProgress(paths, false));
+      setLog([]);
+      try {
+        await transferBackend.remove(paths, onEvent);
+      } catch (e) {
+        const p = progress();
+        if (p) setProgress({ ...p, message: errorLine(e) });
+        throw e;
+      }
+      const p = progress();
+      if (p) setProgress({ ...p, message: deleteDoneText(v, paths) });
+      setDelTicks(new Set<string>());
     });
+  const clickDelete = () => {
+    if (!nDelete() || busy()) return;
+    if (!confirming()) {
+      setConfirming(true);
+      confirmTimer = window.setTimeout(() => setConfirming(false), 3000);
+      return;
+    }
+    stopConfirm();
+    void removeSelected();
+  };
+  const toggleDelete = (r: TransferRow) => {
+    const next = new Set(delTicks());
+    if (next.has(r.path)) next.delete(r.path);
+    else next.add(r.path);
+    setDelTicks(next);
+    stopConfirm();
+  };
   const toggle = (r: TransferRow) => {
     const k = rowKey(r);
     const next = new Set(ticks());
@@ -301,7 +349,24 @@ export default function TransferPage(): JSX.Element {
             </section>
 
             <section class="col" aria-label="On device">
-              <h3>On device</h3>
+              <div class="colhead">
+                <h3>On device</h3>
+                <span class="sp" />
+                <button
+                  type="button"
+                  class="act"
+                  classList={{ danger: confirming() }}
+                  disabled={!!busy() || nDelete() === 0}
+                  title={
+                    nDelete()
+                      ? 'Delete the ticked files from the card (a loaded module stays loaded until the next restart)'
+                      : 'Tick the files to delete'
+                  }
+                  onClick={clickDelete}
+                >
+                  {busy() === 'Deleting' ? 'Deleting…' : deleteLabel(nDelete(), confirming())}
+                </button>
+              </div>
               <Show
                 when={onDeviceWithPending(v(), progress()).length}
                 fallback={<p class="empty">The card holds no modules.</p>}
@@ -310,6 +375,15 @@ export default function TransferPage(): JSX.Element {
                   <For each={onDeviceWithPending(v(), progress())}>
                     {(r) => (
                       <li>
+                        <Show when={r.on_card !== 'no'}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Delete ${label(r)}`}
+                            checked={delTicks().has(r.path)}
+                            disabled={!!busy()}
+                            onChange={() => toggleDelete(r)}
+                          />
+                        </Show>
                         <span class="name" title={r.path}>
                           {label(r)}
                           <Show when={!r.id}>
@@ -341,17 +415,6 @@ export default function TransferPage(): JSX.Element {
                               </Show>
                             </>
                           )}
-                        </Show>
-                        <Show when={!r.id}>
-                          <button
-                            type="button"
-                            class="mini"
-                            disabled={!!busy()}
-                            aria-label={`Delete ${r.path}`}
-                            onClick={() => void remove(r)}
-                          >
-                            Delete
-                          </button>
                         </Show>
                       </li>
                     )}

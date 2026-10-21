@@ -4,6 +4,7 @@
     uv run python -m tools.device.dktransfer list --emu [--json]
     uv run python -m tools.device.dktransfer install digikit/pluck [MOD ...] --emu [--select [--keep PATH ...]] [--restart] [--json]
     uv run python -m tools.device.dktransfer restart --emu [--json]
+    uv run python -m tools.device.dktransfer delete modules/pluck.dkm [PATH ...] --emu [--json]
     mise run transfer -- list --emu --json
     mise run transfer -- install digikit/pluck --port Digitakt
 
@@ -18,8 +19,8 @@ VERIFYs each file on the card (the device hashes it from a fresh read). That is 
 the selection belongs to the device (the user ticks the module in SETTINGS > DIGIKIT > MODULES and applies and restarts there).
 `--select` also sends SELECT, which replaces the selection by exactly these modules plus the `--keep` paths; `--restart` implies `--select`,
 sends RESTART, waits for the boot and checks that MODULES lists the modules (scripts, the scenarios). `restart [MOD...]` sends RESTART,
-waits for the boot and reports which modules MODULES lists. `--json` prints one JSON object per line (`{"event": ...}`); `list --json`
-prints one JSON document.
+waits for the boot and reports which modules MODULES lists. `delete PATH...` sends one DELETE per path and confirms with LIST that each is gone (a path that is not on the card is an error before anything
+is sent); the device's selection is not touched. `--json` prints one JSON object per line (`{"event": ...}`); `list --json` prints one JSON document.
 
 Target: `--emu` (the running emulator; `--run-dir DIR` or `--socket PATH` pick another one) or `--port NAME` (python-rtmidi). A running
 emulator is driven in real time. A paused emulator is refused (nothing would step it): resume it, or pass `--step` to let this tool step it
@@ -537,6 +538,33 @@ def install(
     return {**out, "restarted": True, "loaded": res["loaded"]}
 
 
+def delete(
+    up: D.Uploader,
+    paths: list[str],
+    emit: Callable[[dict[str, Any]], None] = lambda e: None,
+) -> dict[str, Any]:
+    """DELETE each path from the card (one request each: the messages are tiny), then LIST to confirm that each is gone. A path that is
+    not on the card is an error, reported before anything is sent. The device's selection is not touched: a deleted file that was
+    selected or loaded is skipped by the next boot (a MOD_LOAD error line, E_NOT_FOUND), and a loaded module stays loaded until then."""
+    info = up.info()
+    R.require_runtime(info)
+    paths = list(dict.fromkeys(paths))
+    on_card = {p for p, _, _ in up.ls()}
+    missing = [p for p in paths if p not in on_card]
+    if missing:
+        raise TransferError(f"not on the card: {', '.join(missing)}")
+    emit({"event": "start", "device": info["port"], "paths": paths})
+    for path in paths:
+        emit({"event": "delete", "path": path})
+        up.rm(path)
+    left = {p for p, _, _ in up.ls()}
+    still = [p for p in paths if p in left]
+    if still:
+        raise TransferError(f"still on the card after DELETE: {', '.join(still)}")
+    emit({"event": "done", "deleted": paths})
+    return {"deleted": paths}
+
+
 # ---- the command line ---------------------------------------------------------------------------------------------------------
 
 
@@ -669,6 +697,10 @@ def main(argv: list[str] | None = None) -> int:
         help="with --select: store paths of loaded modules to keep selected",
     )
     p = sub.add_parser(
+        "delete", help="delete files from the card (the selection is not touched)"
+    )
+    p.add_argument("paths", nargs="+", help="store paths, e.g. modules/pluck.dkm")
+    p = sub.add_parser(
         "restart", help="RESTART, wait for the boot, report which modules loaded"
     )
     p.add_argument(
@@ -694,6 +726,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(v))
             else:
                 print_list(v)
+        elif args.cmd == "delete":
+            out = delete(up, args.paths, emit)
+            if args.json:
+                print(json.dumps({"event": "result", **out}), flush=True)
         elif args.cmd == "restart":
             out = restart_device(
                 up,

@@ -1,6 +1,6 @@
 //! The Transfer panel's backend: thin commands that run the Python tool `tools/device/dktransfer.py` against this workbench's own
-//! control socket (`list`, `install ...`, `restart`, each `--emu --json`). The tool owns the logic (which modules pack for the target, build,
-//! pack, upload, verify, RESTART, wait); this file only starts it and hands its output lines to the page. An install or a restart runs in
+//! control socket (`list`, `install ...`, `delete ...`, `restart`, each `--emu --json`). The tool owns the logic (which modules pack for the target, build,
+//! pack, upload, verify, RESTART, wait); this file only starts it and hands its output lines to the page. An install, a delete or a restart runs in
 //! the background; its JSON lines are polled with a cursor, like `mod_progress`. Nothing here selects modules: the selection belongs to the
 //! device.
 use std::{
@@ -142,6 +142,17 @@ pub fn xfer_install(host: State<'_, crate::Host>, xfer: State<'_, Transfer>, mod
     start_job(&host, &xfer, sub)
 }
 
+/// Start `dktransfer delete PATHS`: one DELETE per file, confirmed with LIST. The device's selection is not touched.
+#[tauri::command]
+pub fn xfer_delete(host: State<'_, crate::Host>, xfer: State<'_, Transfer>, paths: Vec<String>) -> Result<(), String> {
+    if paths.is_empty() {
+        return Err("tick at least one file".into());
+    }
+    let mut sub: Vec<String> = vec!["delete".into()];
+    sub.extend(paths);
+    start_job(&host, &xfer, sub)
+}
+
 /// Start `dktransfer restart`: RESTART, wait for the boot, report what loaded (the tool is given no modules: nothing is expected).
 #[tauri::command]
 pub fn xfer_restart(host: State<'_, crate::Host>, xfer: State<'_, Transfer>) -> Result<(), String> {
@@ -167,6 +178,12 @@ mod tests {
             a,
             ["--emu", "--socket", "/r/out/native/run/7.sock", "--json", "install", "digikit/pluck", "test/sine"]
         );
+    }
+
+    #[test]
+    fn delete_paths_follow_the_subcommand() {
+        let a = tool_args(Path::new("/s"), &["delete".into(), "modules/a.dkm".into(), "modules/b.dkm".into()]);
+        assert_eq!(a, ["--emu", "--socket", "/s", "--json", "delete", "modules/a.dkm", "modules/b.dkm"]);
     }
 
     fn job_of(script: &str) -> Vec<Value> {

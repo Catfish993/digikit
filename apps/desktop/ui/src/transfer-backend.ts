@@ -38,6 +38,11 @@ export const transferBackend = {
     await invoke('xfer_install', { modules });
     return follow(onEvent);
   },
+  /** DELETE the files from the card (one request each, confirmed with LIST). The device's selection is not touched. */
+  async remove(paths: string[], onEvent: (e: TransferEvent) => void): Promise<TransferEvent[]> {
+    await invoke('xfer_delete', { paths });
+    return follow(onEvent);
+  },
   /** RESTART the emulated device, wait for the boot and report what loaded. */
   async restart(onEvent: (e: TransferEvent) => void): Promise<TransferEvent[]> {
     await invoke('xfer_restart');

@@ -77,6 +77,8 @@ export function eventText(e: TransferEvent): string {
       return `${e.id}: already on the card, not uploaded`;
     case 'progress':
       return `Uploading ${e.id}`;
+    case 'delete':
+      return `Deleting ${e.path}`;
     case 'verify':
       return e.ok ? `Verified ${e.path} on the card` : `Verify failed: ${e.path} differs on the card`;
     case 'restart':
@@ -84,6 +86,7 @@ export function eventText(e: TransferEvent): string {
     case 'wait':
       return 'Waiting for the device to boot';
     case 'done':
+      if (Array.isArray(e.deleted)) return `Deleted ${e.deleted.length} file${e.deleted.length === 1 ? '' : 's'}`;
       if (e.restarted === false) return DONE_ON_CARD;
       return Array.isArray(e.loaded) && e.loaded.length
         ? `Restarted. Loaded: ${s(e.loaded)}`
@@ -183,14 +186,22 @@ export function applyEvent(p: Progress, e: TransferEvent): Progress {
       if (m) Object.assign(m, { state: e.ok ? 'ok' : 'failed', sent: m.bytes });
       break;
     }
+    case 'delete': {
+      // a delete job has one step per path (the module list holds the paths): the one being deleted is active, the earlier ones are done
+      for (const m of next.modules) if (m.state === 'verify') m.state = 'ok';
+      const m = mod(e.path);
+      if (m) m.state = 'verify';
+      break;
+    }
     case 'restart':
       next.restart = 'build';
       break;
     case 'done':
       if (next.restart !== 'none') next.restart = 'ok';
+      if (Array.isArray(e.deleted)) for (const m of next.modules) m.state = 'ok';
       break;
     case 'error': {
-      const active = next.modules.find((m) => m.state === 'build' || m.state === 'upload');
+      const active = next.modules.find((m) => m.state === 'build' || m.state === 'upload' || m.state === 'verify');
       if (active) active.state = 'failed';
       else if (next.restart === 'build') next.restart = 'failed';
       break;
@@ -262,4 +273,27 @@ export function onDeviceWithPending(view: TransferView, p: Progress | undefined)
 export function applyVerified(v: Verified, e: TransferEvent): Verified {
   if (e.event !== 'verify' || typeof e.path !== 'string') return v;
   return { ...v, [e.path]: e.ok ? 'ok' : 'failed' };
+}
+
+// ---- delete -----------------------------------------------------------------------------------------------------------------------
+
+/** The store paths ticked in the On device pane, in list order (ticks of rows that are gone are dropped). */
+export function deletePaths(view: TransferView, ticked: Set<string>): string[] {
+  return onDevice(view)
+    .filter((r) => ticked.has(r.path))
+    .map((r) => r.path);
+}
+
+/** The label of the Delete button: the count, and "Confirm" on the first click. */
+export function deleteLabel(n: number, confirming: boolean): string {
+  if (n === 0) return 'Delete';
+  return confirming ? `Confirm delete ${n}` : `Delete ${n}`;
+}
+
+/** The text after a delete job: a module that was loaded stays loaded until the restart (DELETE does not touch the device's selection). */
+export function deleteDoneText(view: TransferView, paths: string[]): string {
+  const rows = onDevice(view).filter((r) => paths.includes(r.path));
+  const loaded = rows.filter((r) => r.loaded).map((r) => r.label ?? r.name);
+  const base = `Deleted ${paths.length} file${paths.length === 1 ? '' : 's'}.`;
+  return loaded.length ? `${base} ${loaded.join(', ')}: deleted; unloads at restart.` : base;
 }

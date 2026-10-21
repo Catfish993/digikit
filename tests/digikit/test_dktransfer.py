@@ -133,6 +133,7 @@ class MockUp:
     def __init__(self, card, loaded_after, runtime=0x000204, corrupt=False):
         self.card, self.loaded_after, self.runtime = list(card), loaded_after, runtime
         self.calls, self.restarted, self.data, self.corrupt = [], False, {}, corrupt
+        self.stuck = False  # a DELETE the card does not keep
 
     def info(self):
         return {
@@ -164,6 +165,11 @@ class MockUp:
         if got is None:  # on the card from before: its listed hash
             return next(h for p, _, h in self.card if p == path)
         return hashlib.sha256(got + (b"!" if self.corrupt else b"")).hexdigest()
+
+    def rm(self, path):
+        self.calls.append(("rm", path))
+        if not self.stuck:
+            self.card = [c for c in self.card if c[0] != path]
 
     def select(self, paths):
         self.calls.append(("select", list(paths)))
@@ -457,3 +463,45 @@ def test_upload_progress_events_are_capped_and_end_at_the_file_size(
     for n in range(1, 6):
         cb(n, 5)
     assert cb_events[-1]["sent"] == 5 and len(cb_events) <= T.PROGRESS_EVENTS + 1
+
+
+def test_delete_sends_one_delete_per_path_and_confirms_with_list():
+    card = [
+        ("modules/a.dkm", 5, "aa"),
+        ("modules/b.dkm", 6, "bb"),
+        ("modules/c.dkm", 7, "cc"),
+    ]
+    up = MockUp(card, [])
+    events = []
+    out = T.delete(
+        up, ["modules/a.dkm", "modules/c.dkm", "modules/a.dkm"], events.append
+    )
+    assert out == {
+        "deleted": ["modules/a.dkm", "modules/c.dkm"]
+    }  # a repeated path is one DELETE
+    assert up.calls == [
+        ("rm", "modules/a.dkm"),
+        ("rm", "modules/c.dkm"),
+    ]  # no SELECT: the selection is the device's
+    assert up.card == [("modules/b.dkm", 6, "bb")]
+    assert [e["event"] for e in events] == ["start", "delete", "delete", "done"]
+    assert events[1] == {"event": "delete", "path": "modules/a.dkm"}
+    assert events[-1] == {
+        "event": "done",
+        "deleted": ["modules/a.dkm", "modules/c.dkm"],
+    }
+
+
+def test_delete_of_a_path_that_is_not_on_the_card_sends_nothing():
+    up = MockUp([("modules/a.dkm", 5, "aa")], [])
+    events = []
+    with pytest.raises(T.TransferError, match="not on the card: modules/none.dkm"):
+        T.delete(up, ["modules/a.dkm", "modules/none.dkm"], events.append)
+    assert up.calls == [] and events == []  # reported before anything is sent
+
+
+def test_delete_fails_when_list_still_shows_the_file():
+    up = MockUp([("modules/a.dkm", 5, "aa")], [])
+    up.stuck = True
+    with pytest.raises(T.TransferError, match="still on the card after DELETE"):
+        T.delete(up, ["modules/a.dkm"])

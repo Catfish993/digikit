@@ -1342,6 +1342,7 @@ def run_live(c: Ctx) -> None:
 
     from tools import python_env
     from tools.control.digi_client import Emu
+    from tools.device import dklog as L
     from tools.device import dktransfer as TR
     from tools.device import dkupload as DK
     from tools.firmware import config
@@ -1388,17 +1389,37 @@ def run_live(c: Ctx) -> None:
         c.report["install_s"] = round(secs, 1)
         c.check("the emulator booted again (epoch)", emu.status()["epoch"] > epoch0)
         up = DK.Uploader(TR.LiveTransport(emu))
-        rc2, ev2, secs2 = tool("restart", module)
-        res2 = next((e for e in ev2 if e["event"] == "result"), {})
-        c.check(
-            "dktransfer restart: a second restart reports the module loaded",
-            rc2 == 0 and res2.get("loaded") == [module] and not res2.get("missing"),
-            f"rc {rc2} {ev2[-1:] if ev2 else ''}",
-        )
         c.check(
             "the file is on the card after the soft reset",
             [p for p, _, _ in up.ls()] == [f"modules/{module.split('/')[-1]}.dkm"],
             str(up.ls()),
+        )
+        # delete the selected file: DELETE does not touch the selection, so the next boot finds a selected path whose file is gone and
+        # skips it with an error line (MOD_LOAD result -1) instead of failing the boot
+        # (the boot after `install --restart` is the second boot with a selection that has not run the stable period, 30 s of DSP blocks:
+        # one more such boot would be a safe boot, so the scenario restarts once more only)
+        path = f"modules/{module.split('/')[-1]}.dkm"
+        rc3, ev3, _ = tool("delete", path)
+        c.check(
+            "dktransfer delete: the file is gone from the card",
+            rc3 == 0 and any(e["event"] == "delete" for e in ev3) and up.ls() == [],
+            f"rc {rc3} {ev3[-1:] if ev3 else ''}",
+        )
+        rc4, ev4, _ = tool("restart")
+        up = DK.Uploader(TR.LiveTransport(emu))
+        _, _, evs = L.read_all(up)
+        c.check(
+            "the boot after the delete skips the selected path (MOD_LOAD E_NOT_FOUND) and reaches the UI",
+            rc4 == 0
+            and any(e[2] == L.K["MOD_LOAD"] and e[4][1] == 0xFFFFFFFF for e in evs)
+            and any(e[2] == L.K["UI_FIRST"] for e in evs)
+            and [m["name"] for m in up.modules()["modules"]] == [],
+            f"rc {rc4} {ev4[-2:]} "
+            + " | ".join(
+                L.text_of(L.event_dict(e)).strip()
+                for e in evs
+                if e[2] != L.K["DSP_DIAG"]
+            ),
         )
     finally:
         emu.__exit__(None, None, None)

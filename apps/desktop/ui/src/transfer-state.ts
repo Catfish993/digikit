@@ -6,6 +6,8 @@ import type { Progress, TransferView, Verified } from './transfer-core';
 export const [lastView, setLastView] = createSignal<TransferView>();
 /** The repo modules ticked for install. */
 export const [ticks, setTicks] = createSignal<Set<string>>(new Set());
+/** The store paths ticked in the On device pane (for Delete). */
+export const [delTicks, setDelTicks] = createSignal<Set<string>>(new Set());
 export const [verified, setVerified] = createSignal<Verified>({});
 export const [progress, setProgress] = createSignal<Progress>();
 export const [showTests, setShowTests] = createSignal(false);

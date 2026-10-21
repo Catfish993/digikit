@@ -235,3 +235,8 @@
   font-size: 11.5px;
   white-space: pre-wrap;
 }
+.transfer-page .act.danger {
+  background: #4a1713;
+  border-color: #e5594d;
+  color: #ffb4ab;
+}

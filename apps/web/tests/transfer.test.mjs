@@ -5,6 +5,9 @@ import {
   DONE_ON_CARD,
   applyEvent,
   applyVerified,
+  deleteDoneText,
+  deleteLabel,
+  deletePaths,
   available,
   eventText,
   installModules,
@@ -188,4 +191,48 @@ test('verify results are kept by path', () => {
   v = applyVerified(v, { event: 'verify', path: 'modules/y.dkm', ok: false });
   v = applyVerified(v, { event: 'upload', path: 'modules/z.dkm' });
   assert.deepEqual(v, { 'modules/x.dkm': 'ok', 'modules/y.dkm': 'failed' });
+});
+
+test('delete: the ticked card files, the button label, the done text', () => {
+  // repo modules that are on the card and card-only files are both rows of the On device pane, keyed by path
+  assert.deepEqual(deletePaths(view, new Set()), []);
+  assert.deepEqual(deletePaths(view, new Set(['modules/pluck.dkm', 'modules/junk.dkm'])), [
+    'modules/junk.dkm',
+    'modules/pluck.dkm',
+  ]);
+  // a file that is not on the card (an Available row) or gone since is dropped
+  assert.deepEqual(deletePaths(view, new Set(['modules/sine.dkm', 'modules/gone.dkm'])), []);
+  assert.equal(deleteLabel(0, false), 'Delete');
+  assert.equal(deleteLabel(2, false), 'Delete 2');
+  assert.equal(deleteLabel(2, true), 'Confirm delete 2');
+  assert.equal(deleteDoneText(view, ['modules/junk.dkm']), 'Deleted 1 file.');
+  // pluck is loaded: it stays loaded until the restart
+  assert.equal(
+    deleteDoneText(view, ['modules/pluck.dkm', 'modules/junk.dkm']),
+    'Deleted 2 files. digikit/pluck: deleted; unloads at restart.',
+  );
+});
+
+test('the delete progress: one step per path, active then done, text from the events', () => {
+  let p = startProgress(['modules/a.dkm', 'modules/b.dkm'], false);
+  const ev = (e) => (p = applyEvent(p, e));
+  ev({ event: 'start', paths: ['modules/a.dkm', 'modules/b.dkm'] });
+  ev({ event: 'delete', path: 'modules/a.dkm' });
+  assert.equal(p.message, 'Deleting modules/a.dkm');
+  const half = progressFraction(p);
+  assert.ok(half > 0 && half < 0.5, String(half));
+  ev({ event: 'delete', path: 'modules/b.dkm' });
+  assert.deepEqual(
+    p.modules.map((m) => m.state),
+    ['ok', 'verify'],
+  );
+  ev({ event: 'done', deleted: ['modules/a.dkm', 'modules/b.dkm'] });
+  assert.equal(progressFraction(p), 1);
+  assert.equal(p.message, 'Deleted 2 files');
+  // an error marks the active path failed
+  p = startProgress(['modules/a.dkm'], false);
+  ev({ event: 'delete', path: 'modules/a.dkm' });
+  ev({ event: 'error', message: 'E_FULL' });
+  assert.equal(p.modules[0].state, 'failed');
+  assert.equal(progressFailed(p), true);
 });

@@ -65,7 +65,7 @@ SELECT also answers the selection record's own codes (runtime codes -40 to -49):
 | 0x10 | BEGIN | `path NUL, u32 size, sha256[32]` | (none). Opens an upload; a BEGIN while one is open drops the old one. |
 | 0x11 | DATA | `u32 offset, bytes` | (none). |
 | 0x12 | END | (none) | (none). Verifies, then commits (below). |
-| 0x13 | DELETE | `path NUL` | (none). Commits a table without the path. |
+| 0x13 | DELETE | `path NUL` | (none). Commits a table without the path. It does not touch the selection record: a selected or loaded file that is deleted stays selected and loaded until the next boot, which skips the path with a `MOD_LOAD` error line (`E_NOT_FOUND`) and carries on. |
 | 0x14 | CLEAR | `u32 0x434c5221` ("CLR!") | (none). Commits an empty store. |
 | 0x15 | ABORT | (none) | (none). Drops an open upload. |
 | 0x16 | READ (runtime 0.2.4, capability bit 7) | `path NUL, u32 offset, u32 length` | `u32 file size`, then `min(length, 768, size - offset)` bytes of the file from `offset`. Read-only: every state, one card read, not logged as an UPLOAD event. Errors: E_NOFILE (not in the store), E_LENGTH (length 0), E_OFFSET (offset at or past the end of the file), E_PATH, E_MSG. The cap of 768 keeps the reply (status, size, bytes) inside the 880-byte reply body; a host reads a larger file with several requests. A .dkm header is the first 0xa0 bytes (`digikit-dkm.md`). |

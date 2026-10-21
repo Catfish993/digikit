@@ -510,6 +510,7 @@ fn main() {
             transfer::xfer_list,
             transfer::xfer_install,
             transfer::xfer_restart,
+            transfer::xfer_delete,
             transfer::xfer_events
         ])
         .run(tauri::generate_context!())
