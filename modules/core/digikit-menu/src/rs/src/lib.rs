@@ -13,7 +13,8 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
-use dkrt_sdk::{store, DkrtBootInfo, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
+use dkrt_sdk::proto::{CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_VOICE_ROWS};
+use dkrt_sdk::{store, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -73,6 +74,8 @@ extern "C" {
     fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32;
     /// CPU load, the DSP's block time, the heap, the arena and the DSP area (finding 41).
     fn dkrt_health(out: *mut DkrtHealth);
+    /// The CAPACITY command's entries (limit, used, largest per resource); how many were written, at most `max`.
+    fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32;
     /// DSP blocks since boot (a 1500 Hz clock), 0 without core/health.
     fn dkrt_blocks() -> u32;
     /// A function the UI loop calls once per pass (0 removes it).
@@ -142,11 +145,13 @@ static mut MAIN: View = NO_VIEW;
 static mut LOADV: View = NO_VIEW;
 static mut ABOUTV: View = NO_VIEW;
 static mut HEALTHV: View = NO_VIEW;
+static mut MEMV: View = NO_VIEW;
 
 static NAME_MAIN: &[u8] = b"DigikitMenu\0";
 static NAME_LOAD: &[u8] = b"DigikitLoadMenu\0";
 static NAME_ABOUT: &[u8] = b"DigikitAboutMenu\0";
 static NAME_HEALTH: &[u8] = b"DigikitHealthMenu\0";
+static NAME_MEM: &[u8] = b"DigikitMemoryMenu\0";
 
 /// The address of the stock icon the SYSTEM item uses, read from the operand of the instruction that pushes it.
 unsafe fn icon() -> *const u8 {
@@ -653,6 +658,7 @@ const A_CLEAR: u32 = 5;
 const A_SAFE: u32 = 6;
 const A_OPEN_HEALTH: u32 = 7;
 const A_DEBUG: u32 = 8;
+const A_OPEN_MEM: u32 = 9;
 const A_TOGGLE: u32 = 0x100;
 
 unsafe fn fill_main() {
@@ -667,6 +673,7 @@ unsafe fn fill_main() {
     row(m, b"MODULES\0", A_OPEN_LOAD, 0);
     row(m, b"ABOUT\0", A_OPEN_ABOUT, 0);
     row(m, b"HEALTH\0", A_OPEN_HEALTH, 0);
+    row(m, b"MEMORY\0", A_OPEN_MEM, 0);
     let mut d: DkrtDiag = core::mem::zeroed();
     dkrt_diag(&mut d);
     row(m, if d.debug_on != 0 { b"DEBUG: ON\0" } else { b"DEBUG: OFF\0" }, A_DEBUG, 0);
@@ -848,6 +855,74 @@ unsafe fn fill_about() {
     t.s(b"FREE ").num(st.arena_free / 1024).s(b" KB");
     arow(m, &t.b);
     arow(m, if d.ram_kept != 0 { b"RAM KEPT: YES\0" } else { b"RAM KEPT: NO\0" });
+    end_rebuild(m, sel);
+}
+
+// ---- MEMORY (finding 57) ---------------------------------------------------------------------------------------------------
+
+/// The rows of the MEMORY page as text (24 bytes each, NUL-terminated) and how many there are. Read by the proof.
+#[no_mangle]
+pub static mut DK_MEM: [[u8; 24]; 8] = [[0; 24]; 8];
+#[no_mangle]
+pub static mut DK_MEM_N: u32 = 0;
+
+/// The resources the page shows, in order: the CAPACITY kind, the row label and 1 when the row shows a percent (bytes), 0 for `used/limit`.
+/// Left out: the staging buffer, the selection, the effect slots and the map entries (they say nothing a user can act on).
+const MEM_KINDS: [(u8, &[u8], u8); 7] = [
+    (CAPK_DSP_AREA, b"DSP   ", 1),
+    (CAPK_ARENA, b"ARENA ", 1),
+    (CAPK_MODULES, b"MODS  ", 0),
+    (CAPK_MACHINE_ROWS, b"MACH  ", 0),
+    (CAPK_VOICE_ROWS, b"VOICE ", 0),
+    (CAPK_PARAM_ROWS, b"PARAM ", 0),
+    (CAPK_PAGE_ROWS, b"PAGE  ", 0),
+];
+
+/// One MEMORY row: the label, a ten-character bar (`|` used, `.` free: both are 2 pixels wide, so the bar keeps its width; `#` is 6 pixels and a full bar runs off the row), then a percent or `used/limit`. Its text is also kept in `DK_MEM`.
+unsafe fn mem_row(m: *mut u8, label: &[u8], e: &DkrtCap, pct: bool) {
+    let used = if e.used > e.limit { e.limit } else { e.used };
+    let full = (used * 10 / e.limit) as usize;
+    let mut t = Text::new();
+    t.s(label);
+    for k in 0..10 {
+        t.s(if k < full { b"|" } else { b"." });
+    }
+    t.s(b" ");
+    if pct {
+        t.num(used * 100 / e.limit).s(b"%");
+    } else {
+        t.num(e.used).s(b"/").num(e.limit);
+    }
+    let k = DK_MEM_N as usize;
+    if k < 8 {
+        let mut n = 0;
+        while n < 23 && t.b[n] != 0 {
+            DK_MEM[k][n] = t.b[n];
+            n += 1;
+        }
+        while n < 24 {
+            DK_MEM[k][n] = 0;
+            n += 1;
+        }
+        DK_MEM_N += 1;
+    }
+    row(m, &t.b, A_NOP, 0);
+}
+
+unsafe fn fill_mem() {
+    let m = MEMV.obj;
+    let sel = begin_rebuild(m);
+    DK_MEM_N = 0;
+    let mut caps = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; CAP_MAX];
+    let n = dkrt_capacity(caps.as_mut_ptr(), CAP_MAX as u32) as usize;
+    for &(kind, label, pct) in MEM_KINDS.iter() {
+        for e in &caps[..n] {
+            // a resource the device does not have (limit 0) has no row
+            if e.kind == kind as u32 && e.limit != 0 {
+                mem_row(m, label, e, pct != 0);
+            }
+        }
+    }
     end_rebuild(m, sel);
 }
 
@@ -1103,6 +1178,10 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         H_LAST = 0;
         H_CALLS = 0;
         dkrt_poll_set(dk_poll as usize);
+    } else if act == A_OPEN_MEM {
+        ensure_view(addr_of_mut!(MEMV), NAME_MEM, b"MEMORY\0", MAIN.obj);
+        fill_mem();
+        push(MAIN.obj, addr_of_mut!(MEMV));
     } else if act == A_APPLY {
         do_apply();
         fill_load();

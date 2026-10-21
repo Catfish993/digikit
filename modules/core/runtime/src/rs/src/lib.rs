@@ -642,6 +642,50 @@ pub unsafe extern "C" fn dkrt_status(out: *mut DkrtStatus) {
     o.dsp_largest = dlargest;
 }
 
+/// `dkrt_capacity(out, max)`: the entries of the CAPACITY command (one `DkrtCap` per resource, kinds in sdk/sdk.toml `[capacity.kinds]`), at most
+/// `max` of them; returns how many it wrote. The SysEx command and the DIGIKIT menu's MEMORY page read the same figures.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
+    init_once();
+    use dkrt_sdk::proto::*;
+    let s = st();
+    let (af, al) = arena::stats();
+    let (df, dl) = dsp::area_stats();
+    let area = dsp::area_bytes();
+    let arena = s.arena_hi - s.arena_lo;
+    let mut mods = 0;
+    let mut i = 0;
+    while i < MAX_MODULES {
+        if s.modules[i].used != 0 {
+            mods += 1;
+        }
+        i += 1;
+    }
+    let (vrows, vused) = dsp::rows_counts();
+    let [mach, param, page] = registry::counts();
+    let stage = STAGE_BYTES as u32;
+    let entries: [(u8, u32, u32, u32); 11] = [
+        (CAPK_MODULES, MAX_MODULES as u32, mods, 0),
+        (CAPK_SELECTION, dkrt_sdk::SEL_MAX as u32, boot::selected(), 0),
+        (CAPK_ARENA, arena, arena - af, al),
+        (CAPK_STAGE, stage, 0, stage),
+        (CAPK_DSP_AREA, area, area - df, dl),
+        (CAPK_MACHINE_ROWS, mach.0, mach.1, 0),
+        (CAPK_VOICE_ROWS, vrows, vused, 0),
+        (CAPK_PARAM_ROWS, param.0, param.1, 0),
+        (CAPK_PAGE_ROWS, page.0, page.1, 0),
+        (CAPK_FX_SLOTS, dkrt_sdk::device::LIMIT_FX_SLOTS, 0, 0),
+        (CAPK_MAP_ENTRIES, dkrt_sdk::sel::MAP_N as u32, assign::map_used(), 0),
+    ];
+    let mut k = 0;
+    while k < entries.len() && (k as u32) < max {
+        let (kind, limit, used, largest) = entries[k];
+        *out.add(k) = DkrtCap { kind: kind as u32, limit, used, largest };
+        k += 1;
+    }
+    k as u32
+}
+
 /// `dkrt_diag(out)`: what the debug log, the card check and the DSP watch found (a `DkrtDiag`).
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_diag(out: *mut DkrtDiag) {

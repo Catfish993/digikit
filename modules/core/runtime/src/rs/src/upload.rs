@@ -15,7 +15,7 @@ use crate::{block_read, block_write, boot, card, dlog, midi_send, rd32, tx_in_fl
 use core::ptr::{addr_of, addr_of_mut};
 use dkrt_sdk::store::{self, Hdr, ENTRY, FIRST, HEADER_B, LIMIT};
 use dkrt_sdk::proto::*;
-use dkrt_sdk::{logk, E_NOT_FOUND, OK, RUNTIME_VERSION};
+use dkrt_sdk::{logk, DkrtCap, CAP_MAX, E_NOT_FOUND, OK, RUNTIME_VERSION};
 
 // The protocol numbers (commands, the `E_*` statuses, `VERSION`, the INFO capability bits) are `dkrt_sdk::proto`, written by `patchkit gen`
 // from `[protocol]` of `sdk/sdk.toml`. E_INUSE: the card's store area is not ours and not blank, the runtime writes nothing there
@@ -582,46 +582,19 @@ unsafe fn cmd_modules(seq: u32, body: *const u8, blen: usize) -> i32 {
 /// `n` entries of `u8 kind` (`CAPK_*`, sdk/sdk.toml `[capacity.kinds]`), `u32 limit`, `u32 used`, `u32 largest` (0 where a largest piece has
 /// no meaning). A host skips a kind it does not know; new kinds are appended.
 unsafe fn cmd_capacity(seq: u32) -> i32 {
-    let s = crate::st();
-    let (af, al) = crate::arena::stats();
-    let (df, dl) = crate::dsp::area_stats();
-    let area = crate::dsp::area_bytes();
-    let arena = s.arena_hi - s.arena_lo;
-    let mut mods = 0;
-    let mut i = 0;
-    while i < crate::MAX_MODULES {
-        if s.modules[i].used != 0 {
-            mods += 1;
-        }
-        i += 1;
-    }
-    let (vrows, vused) = crate::dsp::rows_counts();
-    let [mach, param, page] = crate::registry::counts();
-    let stage = crate::STAGE_BYTES as u32;
-    let entries: [(u8, u32, u32, u32); 11] = [
-        (CAPK_MODULES, crate::MAX_MODULES as u32, mods, 0),
-        (CAPK_SELECTION, dkrt_sdk::SEL_MAX as u32, boot::selected(), 0),
-        (CAPK_ARENA, arena, arena - af, al),
-        (CAPK_STAGE, stage, 0, stage),
-        (CAPK_DSP_AREA, area, area - df, dl),
-        (CAPK_MACHINE_ROWS, mach.0, mach.1, 0),
-        (CAPK_VOICE_ROWS, vrows, vused, 0),
-        (CAPK_PARAM_ROWS, param.0, param.1, 0),
-        (CAPK_PAGE_ROWS, page.0, page.1, 0),
-        (CAPK_FX_SLOTS, dkrt_sdk::device::LIMIT_FX_SLOTS, 0, 0),
-        (CAPK_MAP_ENTRIES, dkrt_sdk::sel::MAP_N as u32, crate::assign::map_used(), 0),
-    ];
+    let mut entries = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; CAP_MAX];
+    let n = crate::dkrt_capacity(entries.as_mut_ptr(), CAP_MAX as u32) as usize;
     let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
     *rb = 1;
-    *rb.add(1) = entries.len() as u8;
+    *rb.add(1) = n as u8;
     let mut at = 2usize;
     let mut k = 0;
-    while k < entries.len() {
-        let (kind, limit, used, largest) = entries[k];
-        *rb.add(at) = kind;
-        wr32(rb.add(at + 1), limit);
-        wr32(rb.add(at + 5), used);
-        wr32(rb.add(at + 9), largest);
+    while k < n {
+        let e = &entries[k];
+        *rb.add(at) = e.kind as u8;
+        wr32(rb.add(at + 1), e.limit);
+        wr32(rb.add(at + 5), e.used);
+        wr32(rb.add(at + 9), e.largest);
         at += 13;
         k += 1;
     }

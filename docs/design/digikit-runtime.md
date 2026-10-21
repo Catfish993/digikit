@@ -57,6 +57,7 @@ results.
                                                     //   module count, ticks, last result, loads, slot calls
     int32_t dkrt_module(uint32_t index, DkrtModule *out);   // name, version, base, size, slot mask, store path; E_NOT_FOUND past the end
     void    dkrt_health(DkrtHealth *out);   // CPU load, DSP block time, heap, arena, DSP area (finding 41; needs core/health for the first three)
+    uint32_t dkrt_capacity(DkrtCap *out, uint32_t max);   // the CAPACITY entries (kind, limit, used, largest); returns how many (0.2.3, finding 57)
     uint32_t dkrt_blocks(void);             // DSP blocks since boot (1500 per second), 0 without core/health: a clock for a UI
     void    dkrt_poll_set(uintptr_t fn);    // fn() is called at the end of every UI-loop pass in the UI task (0 removes it); one caller
 

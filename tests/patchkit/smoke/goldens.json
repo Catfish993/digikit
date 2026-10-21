@@ -1,6 +1,6 @@
 {
  "dn2-1.12/core/digikit-menu/boot/main": "c7f7475bd43858a16bd173a05aab441e0bff2ba148a58b874457b2bf111e0b86",
- "dn2-1.12/core/digikit-menu/core.digikit-menu.menu/digikit": "5112340cc31ef4d0e475781799e246a3d7cebb50f645cace51457d8f85f29e01",
+ "dn2-1.12/core/digikit-menu/core.digikit-menu.menu/digikit": "cf9cbbbd7656b9cf9ba8c21093f03f361e7d5ebf403f7ff458415abf8ef1d117",
  "dn2-1.12/core/digikit-menu/core.digikit-menu.menu/settings_digikit": "be52a179611a778a52cfe20dc52553580acc28efcb5fdd304789cea21aaccaf3",
  "dn2-1.12/core/digikit-menu/machine_menu/closed": "c7f7475bd43858a16bd173a05aab441e0bff2ba148a58b874457b2bf111e0b86",
  "dn2-1.12/core/digikit-menu/machine_menu/down": "6cba6ea5195677be7a5ec1ad80aba6d490ee7483da9fe7ca3b30006efe26f950",
@@ -122,7 +122,7 @@
  "dn2-1.12/stock/track/track1": "2b0b0903810ba7df34ea4a421f2cf37571117dae52b3151e1610a25264736abb",
  "dn2-1.12/stock/track/track2": "a8ce60f553cb545e99e2b9567003a25d96afd16eeb0fbbcd30db90e6db548a97",
  "dt2-1.17/core/digikit-menu/boot/main": "101c51af5a051a953867e4ffa7b0141e175ecf077351f2ec89a0da4a73e7cf50",
- "dt2-1.17/core/digikit-menu/core.digikit-menu.menu/digikit": "5112340cc31ef4d0e475781799e246a3d7cebb50f645cace51457d8f85f29e01",
+ "dt2-1.17/core/digikit-menu/core.digikit-menu.menu/digikit": "cf9cbbbd7656b9cf9ba8c21093f03f361e7d5ebf403f7ff458415abf8ef1d117",
  "dt2-1.17/core/digikit-menu/core.digikit-menu.menu/settings_digikit": "be52a179611a778a52cfe20dc52553580acc28efcb5fdd304789cea21aaccaf3",
  "dt2-1.17/core/digikit-menu/machine_menu/closed": "101c51af5a051a953867e4ffa7b0141e175ecf077351f2ec89a0da4a73e7cf50",
  "dt2-1.17/core/digikit-menu/machine_menu/down": "286abf5b5ab27ba495c5464e4c6334e6454cda553fabbdf8117efed48514d323",

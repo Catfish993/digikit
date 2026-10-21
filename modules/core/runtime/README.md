@@ -33,5 +33,6 @@ hot reload is archived, `docs/plans/digikit-hot-reload.md`). The DIGIKIT menu ch
   stored on the card (reset at boot). Modules use `Api.log(msg, value)` (info) or `Api.log_lv(level, msg, value)`. Host: `tools/device/dklog.py level`.
 - Table check (0.1.0): after every load and unload the runtime checks its module table (ranges inside their area, disjoint, rows owned by live modules).
   A violation logs TABLE_BAD and refuses further loads (`E_TABLE` -49). Limits per type are `[limits]` in `devices/*.toml`, generated into the runtime.
+- Capacity (finding 57, 0.2.3): `dkrt_capacity(DkrtCap *out, max)` writes the CAPACITY command's entries (limit, used, largest per resource) and returns how many; the SysEx command and the DIGIKIT MEMORY page read the same call.
 - Health (finding 41): `dkrt_health(DkrtHealth *)` (CPU load, the DSP's block time, heap, arena, DSP area; the first three need `core/health`), `dkrt_blocks()` (a 1500 Hz
   clock), `dkrt_poll_set(fn)` (a function the UI-loop tick calls once per pass; the DIGIKIT HEALTH page refreshes itself with it), mailbox command `CMD_HEALTH`.
