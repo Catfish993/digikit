@@ -251,9 +251,7 @@ fn parse(text: &str) -> Result<Sdk> {
     let p = &sdk.protocol;
     for (i, (n, v)) in p.commands.iter().enumerate() {
         if p.commands.iter().skip(i + 1).any(|(_, w)| w == v) {
-            return Err(err!(
-                "{SOURCE}: protocol command number {v:#04x} ({n}) twice"
-            ));
+            return Err(err!("{SOURCE}: protocol command number {v:#04x} ({n}) twice"));
         }
     }
     for (i, (n, v)) in p.caps.iter().enumerate() {
@@ -267,10 +265,7 @@ fn parse(text: &str) -> Result<Sdk> {
     for (what, table) in [("protocol", &p.status), ("load", &sdk.load.status)] {
         for (i, (n, s)) in table.iter().enumerate() {
             if s.code >= 0 || (what == "protocol" && s.code < -128) {
-                return Err(err!(
-                    "{SOURCE}: {what} status {n}: code {} out of range",
-                    s.code
-                ));
+                return Err(err!("{SOURCE}: {what} status {n}: code {} out of range", s.code));
             }
             if table.iter().skip(i + 1).any(|(_, t)| t.code == s.code) {
                 return Err(err!("{SOURCE}: {what} status code {} ({n}) twice", s.code));
