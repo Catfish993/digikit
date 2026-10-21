@@ -61,6 +61,7 @@ DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "dkupload": ("upload", "menu", "debug", "crash", "card"),
     "dkrun": ("menu",),
     "dktransfer": ("menu", "live"),
+    "dkpackall": (),  # a dev task: the files the workbench reads
     "dkscreen": ("upload",),
     "dklog": ("debug", "crash", "card"),
     "dklog_kinds": ("debug", "crash", "card"),  # the event kinds dklog reads

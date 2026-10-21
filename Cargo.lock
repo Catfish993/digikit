@@ -886,7 +886,6 @@ version = "0.1.0"
 dependencies = [
  "digi-control",
  "digi-coupled",
- "dkupload",
  "elektron-native-boot",
  "emmc-card",
  "serde",

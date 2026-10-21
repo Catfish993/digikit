@@ -4,53 +4,20 @@
 // The page only puts files on the card (upload and verify) and restarts the device. Which modules the device loads is its own
 // selection, made in SETTINGS > DIGIKIT > MODULES on the device and applied there.
 
-export type Group = 'Machines' | 'Effects' | 'Tools';
+import type { Group, TransferEvent, TransferRow, TransferView } from '../../../web/src/modules/dktransfer.ts';
+export type { Group, TransferEvent, TransferRow, TransferView };
 export const GROUPS: Group[] = ['Machines', 'Effects', 'Tools'];
-
-/** One row of `dktransfer list --json`: a repo module (`id` set) or a card file that matches no repo module (`id` null). */
-export interface TransferRow {
-  id: string | null;
-  path: string;
-  name: string;
-  label?: string;
-  group: Group;
-  test: boolean;
-  version: string | null;
-  file_size: number;
-  arena?: number;
-  dsp?: number;
-  build?: 'unchanged' | 'needs build';
-  on_card: 'yes' | 'no' | 'other version';
-  loaded: boolean;
-  fits?: boolean | null;
-  warnings?: string[];
-  known?: boolean;
-}
-
-export interface TransferView {
-  device: string;
-  runtime: string;
-  free_bytes: number;
-  loaded: string[];
-  modules: TransferRow[];
-  card_only: TransferRow[];
-}
-
-export interface TransferEvent {
-  event: string;
-  [k: string]: unknown;
-}
 
 /** The key of a row in the tick set. */
 export const rowKey = (r: TransferRow): string => r.id ?? r.path;
 
-/** The "On device" list: every file on the card (repo modules that are on it, then files the repo does not know), by path. */
+/** The "On device" list: every file on the card (library modules that are on it, then files the library does not have), by path. */
 export function onDevice(view: TransferView): TransferRow[] {
   const mine = view.modules.filter((r) => r.on_card !== 'no');
   return [...mine, ...view.card_only].sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** The "Available" list: the repo modules in the three groups (test modules behind the toggle). */
+/** The "Available" list: the library modules in the three groups (test modules behind the toggle). */
 export function available(view: TransferView, showTests: boolean): { group: Group; rows: TransferRow[] }[] {
   return GROUPS.map((group) => ({
     group,
@@ -58,7 +25,7 @@ export function available(view: TransferView, showTests: boolean): { group: Grou
   }));
 }
 
-/** The module ids to install: the ticked repo modules, in list order. (Ticks mean "install these"; nothing else.) */
+/** The module ids to install: the ticked library modules, in list order. (Ticks mean "install these"; nothing else.) */
 export function installModules(view: TransferView, ticks: Set<string>): string[] {
   return view.modules.filter((r) => r.id && ticks.has(rowKey(r))).map((r) => r.id as string);
 }
@@ -106,13 +73,12 @@ export function warningText(r: TransferRow): string {
   return r.warnings && r.warnings.length ? r.warnings.join('; ') : '';
 }
 
-/** The state words of a row: loaded or on the card, and the build state. */
+/** The state words of a row: loaded, or on the card (or not). */
 export function stateText(r: TransferRow): string {
   const out: string[] = [];
   if (r.loaded) out.push('loaded');
   else
     out.push(r.on_card === 'yes' ? 'on card' : r.on_card === 'other version' ? 'other version on card' : 'not on card');
-  if (r.build === 'needs build') out.push('needs build');
   return out.join(', ');
 }
 

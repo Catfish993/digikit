@@ -142,7 +142,7 @@ mise run workbench -- out/patch/rt-dt2.syx
 device, the stock base image for the card builder and the `plus_drive/<device>/` card, the same card that `inject`
 keeps. Then:
 
-1. Upload the module: the Modules panel of the desktop app, or
+1. Upload the module: the Transfer page of the desktop app, or
    `uv run python -m tools.device.dkupload --emu put out/patch/pluck-dt2.dkm` (it lands in `modules/` of the store).
 2. On the emulated device: SETTINGS > DIGIKIT > MODULES, select the module, APPLY & RESTART.
 3. After the restart check the module in HEALTH and ABOUT (the same menu).

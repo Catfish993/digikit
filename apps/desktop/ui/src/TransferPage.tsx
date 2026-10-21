@@ -1,12 +1,12 @@
-// The Transfer page (desktop only): what is on the emulated device, and the repo's run-time modules that could be (tools/device/dktransfer.py
-// through the native commands). Install builds what changed, uploads and verifies each file on the card; that is all. The device's selection
-// is the device's own: the user selects the module in MODULES on the device, then applies and restarts there. Restart only restarts the
-// device and reports what loaded. Delete (in the On device header) removes the ticked files from the card; a loaded module stays loaded
-// until the restart. "Add .dkm" and the drop zone put a module from outside the repo on the card.
+// The Transfer page (desktop only): what is on the emulated device, and the built modules of the library folder that could be
+// (out/modules/<device>/, filled by `mise run module:pack-all`; Refresh reads it again). The page speaks the upload protocol itself, in
+// TypeScript (apps/web/src/modules), over the controller's USB capture; no process is started and nothing is built. Install uploads and
+// verifies each file on the card; that is all. The device's selection is the device's own: the user selects the module in MODULES on the
+// device, then applies and restarts there. Restart only restarts the device and reports what loaded. Delete (in the On device header)
+// removes the ticked files from the card; a loaded module stays loaded until the restart. "Add .dkm" and the drop zone put a module from
+// outside the library on the card.
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
-import { hexSha256, storePath } from '@web/modules/dkupload-core';
 import { errorLine, formatBytes } from '@web/modules/backend';
-import { emulatorModules } from './modules-backend';
 import { transferBackend } from './transfer-backend';
 import {
   applyEvent,
@@ -129,18 +129,10 @@ export default function TransferPage(): JSX.Element {
         setError('Only .dkm files can be added.');
         return;
       }
-      const onCard = new Map((await emulatorModules.list()).map((e) => [e.path, e.sha256]));
-      const lines: string[] = [];
-      for (const file of picked) {
-        const data = new Uint8Array(await file.arrayBuffer());
-        const path = storePath(file.name);
-        if (onCard.get(path) === (await hexSha256(data))) {
-          lines.push(`${path}: already on the card`);
-          continue;
-        }
-        await emulatorModules.put(path, data, () => true);
-        lines.push(`Added ${path}`);
-      }
+      const files2 = await Promise.all(
+        picked.map(async (f) => ({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) })),
+      );
+      const lines = await transferBackend.add(files2);
       setLog(lines);
     });
   // Delete: the first click asks for a confirmation for about 3 s, the second runs it (no modal).
@@ -387,7 +379,7 @@ export default function TransferPage(): JSX.Element {
                         <span class="name" title={r.path}>
                           {label(r)}
                           <Show when={!r.id}>
-                            <em> not from this repo</em>
+                            <em> not in the library</em>
                           </Show>
                         </span>
                         <span class="dim">{r.version ?? ''}</span>

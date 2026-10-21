@@ -85,7 +85,7 @@ test('texts', () => {
   assert.equal(eventText({ event: 'done', restarted: true, loaded: ['x', 'y'] }), 'Restarted. Loaded: x, y');
   assert.equal(eventText({ event: 'done', restarted: true, loaded: [] }), 'Restarted. No module is loaded.');
   assert.equal(eventText({ event: 'error', message: 'paused' }), 'Error: paused');
-  assert.equal(stateText({ ...view.modules[0], build: 'needs build' }), 'loaded, needs build');
+  assert.equal(stateText(view.modules[0]), 'loaded');
   assert.equal(stateText(view.modules[1]), 'not on card');
   assert.equal(stateText({ ...view.modules[1], on_card: 'yes' }), 'on card');
   assert.equal(stateText({ ...view.modules[1], on_card: 'other version' }), 'other version on card');

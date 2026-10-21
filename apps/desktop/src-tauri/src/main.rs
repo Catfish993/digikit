@@ -12,8 +12,7 @@ use digi_control::{
 };
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
-mod modules;
-mod transfer;
+mod library;
 use serde_json::Value;
 use std::sync::mpsc;
 use tauri::State;
@@ -27,8 +26,6 @@ struct Host {
     /// The .syx the app was started with (`mise run workbench -- FILE`); the console shows it and reloads it
     /// when it changes. The page can read only this file.
     source: Option<PathBuf>,
-    /// This app's own control socket (`out/native/run/<pid>.sock`), which `dktransfer` is pointed at; None with `--no-control`.
-    socket: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<StartupArgs, String> {
@@ -469,10 +466,6 @@ fn main() {
     };
     #[cfg(not(unix))]
     let _ = (&run_dir, Dispatcher::new);
-    #[cfg(unix)]
-    let socket = _server.as_ref().map(|s| s.socket.clone());
-    #[cfg(not(unix))]
-    let socket: Option<PathBuf> = None;
     let host = Host {
         handle,
         staging: run_dir_for_staging.join("cards").join("staging"),
@@ -481,12 +474,9 @@ fn main() {
             .syx
             .clone()
             .map(|path| std::fs::canonicalize(&path).unwrap_or(path)),
-        socket,
     };
     tauri::Builder::default()
         .manage(host)
-        .manage(modules::Modules::default())
-        .manage(transfer::Transfer::default())
         .invoke_handler(tauri::generate_handler![
             emu_call,
             emu_stage_syx,
@@ -500,18 +490,8 @@ fn main() {
             emu_card_reset,
             emu_card_stage,
             emu_card_load,
-            modules::mod_info,
-            modules::mod_list,
-            modules::mod_delete,
-            modules::mod_clear,
-            modules::mod_put,
-            modules::mod_progress,
-            modules::mod_cancel,
-            transfer::xfer_list,
-            transfer::xfer_install,
-            transfer::xfer_restart,
-            transfer::xfer_delete,
-            transfer::xfer_events
+            library::lib_scan,
+            library::lib_read
         ])
         .run(tauri::generate_context!())
         .expect("tauri runtime error");

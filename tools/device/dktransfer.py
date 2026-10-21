@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Transfer: the repo's run-time modules on a target (emulator or device), and install of a chosen set.
 
+This is the command line for scripts and the scenarios. The desktop workbench does not use it: its Transfer page speaks the same protocol in
+TypeScript (apps/web/src/modules/dkupload-core.ts `DkSession`, dktransfer.py's port in apps/web/src/modules/dktransfer.ts) and reads
+built modules from out/modules/<device>/ (`mise run module:pack-all`, tools/device/dkpackall.py). Python is for reverse engineering and
+dev tooling; the app starts no process.
+
     uv run python -m tools.device.dktransfer list --emu [--json]
     uv run python -m tools.device.dktransfer install digikit/pluck [MOD ...] --emu [--select [--keep PATH ...]] [--restart] [--json]
     uv run python -m tools.device.dktransfer restart --emu [--json]
