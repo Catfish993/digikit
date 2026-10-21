@@ -122,6 +122,9 @@ pub struct RegistryDef {
     pub first: ExprSrc,
     /// Most entries the framework can take.
     pub max: u32,
+    /// A device limit (`[limits]` of the device file, see `devdata::LIMIT_NAMES`) that caps the entries on that device below `max`.
+    #[serde(default)]
+    pub limit: Option<String>,
     pub region: String,
     #[serde(default)]
     pub devices: Vec<String>,
