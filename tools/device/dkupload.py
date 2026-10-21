@@ -46,6 +46,7 @@ from tools.device.dkproto import (
     CMD_LOGCFG,
     CMD_MODULES,
     CMD_PEEK,
+    CMD_READ,
     CMD_RESTART,
     CMD_SELECT,
     LOAD_STATUS,
@@ -58,6 +59,9 @@ PREFIX = bytes((0xF0, 0x7D, 0x64, 0x6B))
 CLEAR_MAGIC = 0x434C5221
 MAX_CHUNK = 32768
 DEPTH = 2
+E_OFFSET = next(c for c, (n, _) in dkproto.STATUS.items() if n == "E_OFFSET")
+READ_MAX = 768  # most bytes one READ returns (the reply body is at most 880 bytes)
+HEADER_BYTES = 0xA0  # a .dkm header (docs/design/digikit-dkm.md)
 
 # status code -> name: the upload statuses, and the load and selection codes (SELECT answers them as the menu's APPLY gets them)
 STATUS: dict[int, str] = {
@@ -463,6 +467,36 @@ class Uploader:
     def abort(self) -> None:
         self._ok(CMD_ABORT, "abort")
 
+    def read(self, path: str, offset: int, length: int) -> tuple[int, bytes]:
+        """READ (runtime 0.2.4, capability READ): (file size, the bytes) of a store file from `offset`. The device returns at most
+        768 bytes and none past the end of the file, so the bytes may be fewer than `length`. Raises `UploadError`: E_NOFILE (no such
+        file), E_OFFSET (offset at or past the end), E_LENGTH (length 0)."""
+        b = self._ok(
+            CMD_READ, "read", path.encode() + b"\0" + struct.pack(">II", offset, length)
+        )
+        if len(b) < 4:
+            raise UploadError(-50, "read: malformed reply")
+        return struct.unpack_from(">I", b, 0)[0], b[4:]
+
+    def header(self, path: str) -> bytes:
+        """The first 0xa0 bytes of a store file (a .dkm header; fewer for a shorter file)."""
+        return self.read(path, 0, HEADER_BYTES)[1]
+
+    def read_file(
+        self, path: str, progress: Callable[[int, int], None] | None = None
+    ) -> bytes:
+        """The whole file, in READ requests of 768 bytes (an empty file raises E_OFFSET: READ has nothing to return)."""
+        out = bytearray()
+        size = 1
+        while len(out) < size:
+            size, got = self.read(path, len(out), READ_MAX)
+            if not got:
+                raise UploadError(-50, "read: empty reply")
+            out += got
+            if progress:
+                progress(len(out), size)
+        return bytes(out)
+
     def rm(self, path: str) -> None:
         self._ok(CMD_DELETE, "rm", path.encode() + b"\0")
 
@@ -524,6 +558,35 @@ def modules_lines(m: dict[str, Any]) -> list[str]:
     return out
 
 
+def read_range(
+    up: Uploader, path: str, offset: int = 0, length: int | None = None
+) -> bytes:
+    """`length` bytes of a store file from `offset` (None: to the end), in READ requests of at most 768 bytes."""
+    out = bytearray()
+    while length is None or len(out) < length:
+        want = READ_MAX if length is None else min(READ_MAX, length - len(out))
+        try:
+            size, got = up.read(path, offset + len(out), want)
+        except UploadError as e:
+            if e.status == E_OFFSET and out:
+                break  # the range ran past the end of the file
+            raise
+        out += got
+        if offset + len(out) >= size:
+            break
+    return bytes(out)
+
+
+def hex_lines(data: bytes, base: int = 0) -> list[str]:
+    """`OFFSET  16 hex bytes  text` lines, like hexdump -C."""
+    out = []
+    for i in range(0, len(data), 16):
+        row = data[i : i + 16]
+        txt = "".join(chr(c) if 32 <= c < 127 else "." for c in row)
+        out.append(f"{base + i:08x}  {row.hex(' '):<47}  {txt}")
+    return out
+
+
 def _emu(run_dir: Path | None = None) -> Any:
     from tools.control.digi_client import Emu
 
@@ -558,6 +621,15 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("rm")
     p.add_argument("path")
     sub.add_parser("clear")
+    p = sub.add_parser(
+        "read", help="print or save a store file (or a byte range of it)"
+    )
+    p.add_argument("path")
+    p.add_argument("--offset", type=int, default=0)
+    p.add_argument("--length", type=int, help="default: to the end of the file")
+    p.add_argument(
+        "-o", "--output", type=Path, help="write the bytes here (default: a hex dump)"
+    )
     args = ap.parse_args(argv)
     t: Any = (
         EmuTransport(_emu(args.run_dir)) if args.emu else RtMidiTransport(args.port)
@@ -587,6 +659,14 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"{path}: {len(data)} bytes in {time.monotonic() - t0:.1f} s (sha256 checked on the device)"
             )
+        elif args.cmd == "read":
+            data = read_range(up, args.path, args.offset, args.length)
+            if args.output:
+                args.output.write_bytes(data)
+                print(f"{args.path}: {len(data)} bytes to {args.output}")
+            else:
+                for line in hex_lines(data, args.offset):
+                    print(line)
         elif args.cmd == "rm":
             up.rm(args.path)
         elif args.cmd == "clear":

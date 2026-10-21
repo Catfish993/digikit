@@ -313,3 +313,70 @@ def test_capacity_decodes_the_entries_by_kind_name_and_prints_them():
         "capacity kind99: 2/1  largest free 3",
     ]
     assert D.CAP["CAPACITY"] == 6
+
+
+def _read_fake(files: dict[str, bytes]):
+    """A device that answers READ as the runtime does: the size, then at most 768 bytes from the offset; E_NOFILE, E_LENGTH, E_OFFSET."""
+    import struct
+
+    from tools.device.midisniff import unpack_8in7
+    from tools.firmware.build import encode_8in7
+
+    seen: list[bytes] = []
+
+    class Fake:
+        def send(self, msg: bytes) -> None:
+            self.msg = msg
+            seen.append(unpack_8in7(msg[7:-1]))
+
+        def recv(self) -> bytes:
+            m = self.msg
+            body = seen[-1]
+            path, tail = body.split(b"\0", 1)
+            off, n = struct.unpack(">II", tail)
+            f = files.get(path.decode())
+            if f is None:
+                out = bytes([0xC5])  # -59
+            elif n == 0:
+                out = bytes([0xC9])  # -55
+            elif off >= len(f):
+                out = bytes([0xCA])  # -54
+            else:
+                out = b"\0" + struct.pack(">I", len(f)) + f[off : off + min(n, 768)]
+            return m[:4] + bytes([1, m[5] | 0x40, m[6]]) + encode_8in7(out) + b"\xf7"
+
+    return D.Uploader(Fake()), seen
+
+
+def test_read_request_and_reply_encoding():
+    data = bytes(range(256)) * 10  # 2560 bytes
+    up, seen = _read_fake({"modules/a.dkm": data})
+    assert D.frame(D.CMD_READ, 2)[5] == 0x16
+    assert up.read("modules/a.dkm", 5, 20) == (2560, data[5:25])
+    assert seen[-1] == b"modules/a.dkm\0" + bytes.fromhex("00000005 00000014")
+    assert up.header("modules/a.dkm") == data[:0xA0]
+    assert (
+        up.read("modules/a.dkm", 0, 5000)[1] == data[:768]
+    )  # the device caps a reply at 768 bytes
+    assert (
+        up.read("modules/a.dkm", 2500, 100)[1] == data[2500:]
+    )  # and stops at the end of the file
+    assert up.read_file("modules/a.dkm") == data
+    assert D.read_range(up, "modules/a.dkm", 700, 1000) == data[700:1700]
+    assert D.read_range(up, "modules/a.dkm", 2000, 9999) == data[2000:]
+
+
+def test_read_errors_are_the_upload_statuses():
+    up, _ = _read_fake({"a": b"x" * 10})
+    for args, name in [
+        (("none", 0, 4), "E_NOFILE"),
+        (("a", 0, 0), "E_LENGTH"),
+        (("a", 10, 4), "E_OFFSET"),
+    ]:
+        with pytest.raises(D.UploadError) as e:
+            up.read(*args)
+        assert D.STATUS[e.value.status] == name
+
+
+def test_hex_lines():
+    assert D.hex_lines(b"AB\x00", 0x10) == ["00000010  41 42 00" + " " * 39 + "  AB."]

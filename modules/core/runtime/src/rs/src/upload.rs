@@ -184,7 +184,7 @@ unsafe fn reply(cmd: u8, seq: u32, status: i32, extra: usize) -> i32 {
     let n = pack(rb, 1 + extra, w.add(7));
     *w.add(7 + n) = 0xf7;
     DKRT_UPLOAD_LAST = status;
-    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG && cmd != CMD_MODULES && cmd != CMD_CAPACITY {
+    if cmd != CMD_INFO && cmd != CMD_LOG && cmd != CMD_PEEK && cmd != CMD_LOGCFG && cmd != CMD_MODULES && cmd != CMD_CAPACITY && cmd != CMD_READ {
         dlog::ev(logk::UPLOAD, if status == 0 { dlog::INFO } else { logk::F_ERROR }, [cmd as u32, status as u32, DKRT_UPLOAD_WRITES, 0, 0]);
     }
     if !tx_room(8 + n) {
@@ -485,7 +485,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     wr32(rb.add(21), newest);
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
-    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY);
+    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ);
     reply(CMD_INFO, seq, OK, 33)
 }
 
@@ -823,6 +823,58 @@ unsafe fn cmd_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i3
     reply(CMD_DELETE, seq, r, 0)
 }
 
+/// Most bytes one READ returns: the reply body is a status, the u32 file size and the bytes, in at most `REPLY_BODY_MAX`.
+const READ_MAX: u32 = 768;
+
+/// READ: path, NUL, u32 offset, u32 length. Reply: the file size (u32), then `min(length, 768, size - offset)` bytes.
+/// E_PATH / E_MSG: bad request; E_NOFILE: not in the store; E_LENGTH: length 0; E_OFFSET: offset at or past the end of the file.
+unsafe fn cmd_read(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    let pl = match path_ok(body, blen) {
+        Some(n) if n + 1 + 8 == blen => n,
+        _ => return reply(CMD_READ, seq, if blen < 10 { E_MSG } else { E_PATH }, 0),
+    };
+    let off = rd32(body.add(pl + 1));
+    let mut len = rd32(body.add(pl + 5));
+    if len == 0 {
+        return reply(CMD_READ, seq, E_LENGTH, 0);
+    }
+    let st = match state(buf) {
+        Ok(s) => s,
+        Err(e) => return reply(CMD_READ, seq, e, 0),
+    };
+    let mut idx = 0u32;
+    while idx < st.count {
+        if cmp_path(body, buf.add(idx as usize * ENTRY)) == 0 {
+            break;
+        }
+        idx += 1;
+    }
+    if idx == st.count {
+        return reply(CMD_READ, seq, E_NOFILE, 0);
+    }
+    let f = store::file(buf, idx as usize);
+    if off >= f.size {
+        return reply(CMD_READ, seq, E_OFFSET, 0);
+    }
+    if len > READ_MAX {
+        len = READ_MAX;
+    }
+    if len > f.size - off {
+        len = f.size - off;
+    }
+    // the sectors that hold the range, into the scratch region (3 sectors at most)
+    let scratch = buf.add(SCRATCH_AT);
+    let skip = off % 512;
+    let secs = (skip + len + 511) / 512;
+    if block_read(FIRST + f.first + off / 512, secs * 512, scratch) != 0 {
+        return reply(CMD_READ, seq, E_READ, 0);
+    }
+    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
+    wr32(rb, f.size);
+    copy(rb.add(4), scratch.add(skip as usize), len as usize);
+    reply(CMD_READ, seq, OK, 4 + len as usize)
+}
+
 unsafe fn cmd_clear(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     up().open = false;
     if !card::writable() {
@@ -1109,6 +1161,8 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
         cmd_end(seq, buf)
     } else if cmd == CMD_DELETE {
         cmd_delete(seq, buf, body, blen)
+    } else if cmd == CMD_READ {
+        cmd_read(seq, buf, body, blen)
     } else if cmd == CMD_CLEAR {
         cmd_clear(seq, buf, body, blen)
     } else if cmd == CMD_ABORT {

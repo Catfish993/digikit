@@ -305,6 +305,26 @@ pub fn path_body(path: &str) -> Result<Vec<u8>, Error> {
     Ok(b)
 }
 
+/// Most bytes one READ returns (the device caps the reply body at 880 bytes).
+pub const READ_MAX: u32 = 768;
+/// The size of a .dkm header (docs/design/digikit-dkm.md).
+pub const HEADER_BYTES: u32 = 0xa0;
+
+/// The body of READ: path, NUL, u32 offset, u32 length.
+pub fn read_body(path: &str, offset: u32, length: u32) -> Result<Vec<u8>, Error> {
+    let mut b = path_body(path)?;
+    b.extend(offset.to_be_bytes());
+    b.extend(length.to_be_bytes());
+    Ok(b)
+}
+
+/// The reply of READ: the file size, then the bytes.
+pub fn parse_read(body: &[u8]) -> Result<(u32, Vec<u8>), Error> {
+    let mut c = Cur(body);
+    let size = c.u32()?;
+    Ok((size, c.0.to_vec()))
+}
+
 pub fn begin_body(path: &str, size: u32, sha: &[u8; 32]) -> Result<Vec<u8>, Error> {
     let mut b = path_body(path)?;
     b.extend(size.to_be_bytes());
@@ -332,6 +352,15 @@ mod tests {
             assert_eq!(Status::from_code(c).code(), c);
         }
         assert_eq!(Status::from_code(-52).name(), "E_FULL");
+    }
+
+    #[test]
+    fn read_body_and_reply() {
+        let b = read_body("modules/a.dkm", 5, 20).unwrap();
+        assert_eq!(b, b"modules/a.dkm\0\0\0\0\x05\0\0\0\x14");
+        assert!(read_body("a//b", 0, 1).is_err());
+        assert_eq!(parse_read(&[0, 0, 1, 0, 7, 8]).unwrap(), (256, vec![7, 8]));
+        assert!(parse_read(&[0, 0, 1]).is_err());
     }
 
     #[test]
@@ -395,7 +424,10 @@ mod tests {
         tail.extend(0x0002_0000u32.to_be_bytes());
         tail.extend((CAP_LOG | CAP_MODULES).to_be_bytes());
         let new = parse_info(&info_body(0, &tail)).unwrap();
-        assert_eq!((new.runtime32, new.runtime()), (Some(0x0002_0000), 0x0002_0000));
+        assert_eq!(
+            (new.runtime32, new.runtime()),
+            (Some(0x0002_0000), 0x0002_0000)
+        );
         assert!(new.has_cap(CAP_LOG) && new.has_cap(CAP_MODULES) && !new.has_cap(CAP_PEEK));
     }
 
