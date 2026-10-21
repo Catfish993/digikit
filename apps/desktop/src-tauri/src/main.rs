@@ -435,6 +435,9 @@ fn main() {
         // The first session is 1 (`emu_startup` and the webview's pump use it). The digikit runtime is patched in unless
         // `--no-runtime` or a scenario run (scenarios are stock).
         let runtime = startup.runtime.unwrap_or(!has_scenario);
+        if runtime {
+            eprintln!("emulator startup: patching the digikit runtime in; a first boot of a new image takes a while, later ones come from the cache");
+        }
         if let Err(error) = load_startup(&handle, &path, startup.card_image.as_deref(), runtime) {
             eprintln!("emulator startup: {error}");
             process::exit(2);
