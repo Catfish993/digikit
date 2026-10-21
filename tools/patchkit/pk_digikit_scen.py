@@ -1334,7 +1334,7 @@ def run_pages(c: Ctx) -> None:
     PG.run_pages(c)
 
 
-def live_boot(c: Ctx) -> tuple[Any, Path]:
+def live_boot(c: Ctx, tag: str = "") -> tuple[Any, Path]:
     """A coupled daemon free-running on a stock image with the runtime patched in (the DT2 on a card built from a folder, the DN2 on none),
     started with `--mirror-dir`; returns it and the mirror folder. The caller closes it."""
     from tools.control.digi_client import Emu
@@ -1353,7 +1353,7 @@ def live_boot(c: Ctx) -> tuple[Any, Path]:
         str(mirror),
         timeout=300,
         binary=H.daemon_binary(dev, syx),
-        run_dir=c.work / "live-run",
+        run_dir=c.work / f"live-run{tag}",
     )
     try:
         if dev == "dt2":  # the DT2 boots on a card built from a folder; the DN2 on none
@@ -1463,6 +1463,97 @@ def run_live_svc(c: Ctx) -> None:
         emu.__exit__(None, None, None)
 
 
+def run_live_input(c: Ctx) -> None:
+    """core/input against the emulator's own input path. The same presses are made on two free-running daemons with the same boot history (the probe installed, one restart):
+    on the first with the emulator's `input.button` / `input.turn` (the panel UART path), on the second through `test/input-probe` (SysEx
+    commands 0x38 key and 0x39 turn that call core/input; installed and loaded first). The screens must be the same after each step: the
+    firmware's decoders saw the same presses. A turn shows on the screen only some seconds later (the firmware flushes it on a tick), and the
+    emulator runs slower than real time, so each step waits `settle` seconds. The codes and the encoder come from the scenario file, the layout
+    of the codes from the device file."""
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+
+    t = c.table()
+    (module,) = t["modules"]
+    key_a, key_b, enc, detents = t["key_a"], t["key_b"], t["encoder"], t["detents"]
+
+    def sequence(
+        emu: Any, key: Callable[[int], None], turn: Callable[[int], None]
+    ) -> list[str]:
+        out = []
+        for act in (lambda: key(key_a), lambda: turn(detents), lambda: key(key_b)):
+            act()
+            time.sleep(float(t.get("settle", 10)))
+            out.append(str(emu.frame_hash()))
+        return out
+
+    def boot_with_probe(tag: str) -> Any:
+        """A daemon with the probe installed and the device restarted once: both runs have the same boot history (the firmware's first boot and a soft
+        reset boot are not the same state, so a screen after the same keys differs between them)."""
+        emu, _ = live_boot(c, tag)
+        try:
+            rc, ev, _ = live_tool(emu)("install", module, "--restart")
+            res = next((e for e in ev if e["event"] == "result"), {})
+            c.check(
+                f"install --restart ({tag[1:]}): the probe loaded (it imports input_key and input_turn: core/input is in the image)",
+                rc == 0 and module in res.get("loaded", []),
+                f"rc {rc} {ev[-1:] if ev else ''}",
+            )
+            time.sleep(float(t.get("settle", 10)))
+        except BaseException:
+            emu.__exit__(None, None, None)
+            raise
+        return emu
+
+    emu = boot_with_probe("-stock")
+    try:
+
+        def stock_key(code: int) -> None:
+            emu.button(code, True)
+            time.sleep(0.3)
+            emu.button(code, False)
+
+        stock = sequence(emu, stock_key, lambda n: emu.turn(enc, n))
+    finally:
+        emu.__exit__(None, None, None)
+    c.check(
+        "the emulator's path: each step changes the screen",
+        len(set(stock)) == 3,
+        " ".join(h[:8] for h in stock),
+    )
+
+    emu = boot_with_probe("-probe")
+    try:
+        up = DK.Uploader(TR.LiveTransport(emu))
+        answers: list[int] = []
+
+        def probe_key(code: int) -> None:
+            answers.append(up.request(0x38, bytes((code, 1)))[0])
+            time.sleep(0.3)
+            answers.append(up.request(0x38, bytes((code, 0)))[0])
+
+        def probe_turn(n: int) -> None:
+            answers.append(up.request(0x39, bytes((enc, n & 0xFF)))[0])
+
+        probe = sequence(emu, probe_key, probe_turn)
+        c.check("every probe command answered ok", set(answers) == {0}, str(answers))
+        for name, a, b in zip(
+            ("a key", "a turn", "a second key"), probe, stock, strict=True
+        ):
+            c.check(
+                f"{name} through core/input gives the screen the panel path gave",
+                a == b,
+                f"{a[:8]} {b[:8]}",
+            )
+        # refusals: a code that is not a key, an encoder that does not exist
+        st, _ = up.request(0x38, bytes((200, 1)))
+        c.check("a code that is no key is refused (-1)", st == -1, str(st))
+        st, _ = up.request(0x39, bytes((99, 1)))
+        c.check("an encoder that does not exist is refused (-1)", st == -1, str(st))
+    finally:
+        emu.__exit__(None, None, None)
+
+
 def run_live(c: Ctx) -> None:
     """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
     by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
@@ -1473,6 +1564,8 @@ def run_live(c: Ctx) -> None:
 
     if c.table().get("part") == "svc":
         return run_live_svc(c)
+    if c.table().get("part") == "input":
+        return run_live_input(c)
     (module,) = c.table()["modules"]
     dev, _ = c.image.split("-")
     emu, mirror = live_boot(c)

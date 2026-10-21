@@ -1,0 +1,78 @@
+[module]
+id = "core/input"
+version = "0.1.0"
+name = "Input"
+category = "core"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Presses keys and turns encoders from software through the firmware's own panel decoders: input_key(code, down) and input_turn(encoder, delta) for modules"
+requires = ["core/runtime"]
+conflicts = []
+ports = ["dt2-1.17", "dn2-1.12"]
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The panel MCU sends 2-byte packets on UART8 (key: 0x20 | channel and the 8-bit mask; encoder: 0x30 | (encoder - 1) and a signed delta); the firmware
+# decodes them with two plain C functions. This module calls those (docs/findings/58-panel-input-path.md, docs/plans/remote-control.md). Which
+# backend a device uses, and its key code layout, are the device file's ([input], [panel]), generated into `build/gen/input-<dev>.inc`.
+[[gen]]
+kind = "gas"
+path = "build/gen/input-{dev}.inc"
+
+[[object]]
+path = "build/input.dko.json"
+sources = ["src/cf/input.c"]
+place = "cf.expansion"
+
+[object.externs]
+input_fw_key = "input.fw.key_decoder"
+input_fw_turn = "input.fw.enc_decoder"
+input_mask_lit = "input.fw.key_mask_lit"
+input_queue_lit = "dkrt.ui.queue_lit"
+
+[[object]]
+path = "build/device-dt2.dko.json"
+sources = ["src/cf/dt2/device.s"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[[object]]
+path = "build/device-dn2.dko.json"
+sources = ["src/cf/dn2/device.s"]
+place = "cf.expansion"
+devices = ["dn2"]
+
+# The button decoder `void f(u32 channel, u32 new_mask)`: it compares the channel's new mask with the previous one (a byte per channel in RAM), updates
+# the previous one and queues the events (key down and up, chords, repeat). DT2 1.17 0x4011e318, DN2 1.12 0x4011fc8c: the same code, cfdb h_strict hash
+# identical and unique on both images. The first `lea` of its body loads the address of the previous masks: its literal is at +0x10.
+[[anchor_rule]]
+name = "input.fw.key_decoder"
+cpu = "cf"
+kind = "cf_func"
+hash = "157be8bc0a941e9aa4c960f56894c227"
+offset = 0
+len = 2
+mark = "D"
+
+[[anchor_rule]]
+name = "input.fw.key_mask_lit"
+cpu = "cf"
+kind = "cf_func"
+hash = "157be8bc0a941e9aa4c960f56894c227"
+offset = 0x10
+len = 4
+mark = "D"
+
+# The encoder decoder `void f(u32 encoder0, int delta)`: it adds the delta to the encoder's pending count; a periodic tick flushes it, clamped to +-30
+# every 4 ticks. DT2 1.17 0x4011e598, DN2 1.12 0x4011ff0c.
+[[anchor_rule]]
+name = "input.fw.enc_decoder"
+cpu = "cf"
+kind = "cf_func"
+hash = "173900efe85a324d026b5b84e6c72999"
+offset = 0
+len = 2
+mark = "D"

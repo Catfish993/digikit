@@ -648,6 +648,14 @@ MIDI task, so it is short and never waits. The ranges a module may take are rese
 returns `E_CMD_RANGE` (-64). The ranges are released when the module's `fini` has run. `docs/design/digikit-upload.md` ("Service commands") has the wire side; the fixture
 `test/svc-echo` and the scenario `service-cmds` show the round trip.
 
+### 11.7 The input adapter (`core/input`, runtime 0.2.5)
+
+A module that wants to press a key or turn an encoder imports two functions by name from the runtime's table (a runtime without `core/input` does not have them; the load fails with
+`E_IMPORT`): `int input_key(u32 code, u32 down)` and `int input_turn(u32 encoder, int delta)`. They return 0, or `-1` (not a key code, or an encoder that does not exist), `-2` (the UI
+queue is full), `-3` (the device profile names no backend `core/input` has). Codes are the device file's `[panel]` codes; the backend is the device file's `[input] backend`. They call the
+firmware's own panel decoders (`docs/findings/58-panel-input-path.md`) and are for the MIDI task; the first user is `digikit/remote`, the proof is `test/input-probe` and the scenario `input-adapter`.
+A device that reaches its events another way adds a backend to `core/input` and names it in its profile; modules and hosts keep calling the same two functions.
+
 ## 12. Hot reload as a later goal
 
 Not in SDK v1. The aim is that v1 does not make it harder.

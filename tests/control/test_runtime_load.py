@@ -45,7 +45,7 @@ def test_the_runtime_boots_and_answers_info(device, version):
         load_s = time.monotonic() - started
         runtime = report["runtime"]
         assert runtime["patched"] is True and runtime["set"] == "emulator"
-        assert len(runtime["modules"]) == 10
+        assert len(runtime["modules"]) == 11
         info = Uploader(EmuTransport(emu, limit=2_000_000_000)).info()
         print(
             device,

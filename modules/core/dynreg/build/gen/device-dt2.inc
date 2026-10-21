@@ -28,6 +28,34 @@
     .equ LIMIT_FX_SLOTS, 0x4    /* [limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY) */
     .equ LIMIT_STAGE_BYTES, 0x10000    /* [limits] stage_bytes (the staging buffer of a .dkm file) */
     .equ PEEK_N, 0x2    /* [digikit] peek: number of ranges */
+    .equ INPUT_BACKEND, 0x1    /* [input] backend (1 panel-uart; 0 none) */
+    .equ PANEL_LINEAR, 0x6    /* [panel] linear_channels (code = channel * 8 + bit + 1) */
+    .equ PANEL_ENCODERS, 0x9    /* [panel] encoders */
+    .equ PANEL_EXC_N, 0x2    /* [panel.exceptions]: number of codes */
+    .equ PANEL_EXC_CODE_0, 0x31    /* [panel.exceptions] code */
+    .equ PANEL_EXC_CH_0, 0x6    /* [panel.exceptions] channel of the code */
+    .equ PANEL_EXC_BIT_0, 0x1    /* [panel.exceptions] bit of the code */
+    .equ PANEL_EXC_CODE_1, 0x32    /* [panel.exceptions] code */
+    .equ PANEL_EXC_CH_1, 0x6    /* [panel.exceptions] channel of the code */
+    .equ PANEL_EXC_BIT_1, 0x0    /* [panel.exceptions] bit of the code */
+    .equ PANEL_EXC_CODE_2, 0x0    /* [panel.exceptions] code */
+    .equ PANEL_EXC_CH_2, 0x0    /* [panel.exceptions] channel of the code */
+    .equ PANEL_EXC_BIT_2, 0x0    /* [panel.exceptions] bit of the code */
+    .equ PANEL_EXC_CODE_3, 0x0    /* [panel.exceptions] code */
+    .equ PANEL_EXC_CH_3, 0x0    /* [panel.exceptions] channel of the code */
+    .equ PANEL_EXC_BIT_3, 0x0    /* [panel.exceptions] bit of the code */
+    .equ PANEL_EXC_CODE_4, 0x0    /* [panel.exceptions] code */
+    .equ PANEL_EXC_CH_4, 0x0    /* [panel.exceptions] channel of the code */
+    .equ PANEL_EXC_BIT_4, 0x0    /* [panel.exceptions] bit of the code */
+    .equ PANEL_EXC_CODE_5, 0x0    /* [panel.exceptions] code */
+    .equ PANEL_EXC_CH_5, 0x0    /* [panel.exceptions] channel of the code */
+    .equ PANEL_EXC_BIT_5, 0x0    /* [panel.exceptions] bit of the code */
+    .equ PANEL_EXC_CODE_6, 0x0    /* [panel.exceptions] code */
+    .equ PANEL_EXC_CH_6, 0x0    /* [panel.exceptions] channel of the code */
+    .equ PANEL_EXC_BIT_6, 0x0    /* [panel.exceptions] bit of the code */
+    .equ PANEL_EXC_CODE_7, 0x0    /* [panel.exceptions] code */
+    .equ PANEL_EXC_CH_7, 0x0    /* [panel.exceptions] channel of the code */
+    .equ PANEL_EXC_BIT_7, 0x0    /* [panel.exceptions] bit of the code */
     .equ PEEK_LO_0, 0x40000000    /* [digikit] peek range start (RAM the PEEK command may read) */
     .equ PEEK_HI_0, 0x47e30000    /* [digikit] peek range end (exclusive) */
     .equ PEEK_LO_1, 0x47e8b000    /* [digikit] peek range start (RAM the PEEK command may read) */

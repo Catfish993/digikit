@@ -119,6 +119,10 @@ extern "C" {
     /// address is that of the literal in the firmware's code, whose value is the address of the word.
     static dkrt_block_counter_lit: u32;
     static dkrt_tx_inflight_lit: u32;
+    /// The interface of core/input (`input_key(u32 code, u32 down) -> int`, `input_turn(u32 encoder, int delta) -> int`), importable by name by a
+    /// module; each resolves to 0 when core/input is not in the image (`[object] optional`), and the import is then not found.
+    fn input_key();
+    fn input_turn();
     /// `cpushl` over a byte range (both caches), `src/cf/tramp.s`.
     fn dkrt_flush(start: u32, len: u32);
     // Firmware functions: addresses are anchors resolved at patch time.
@@ -278,7 +282,7 @@ pub struct Import {
     pub name: [u8; 28],
     pub addr: *const (),
 }
-pub struct Imports(pub [Import; 10]);
+pub struct Imports(pub [Import; 12]);
 unsafe impl Sync for Imports {}
 
 const fn nm(s: &[u8]) -> [u8; 28] {
@@ -329,6 +333,15 @@ pub static IMPORTS: Imports = Imports([
     Import {
         name: nm(b"__umoddi3"),
         addr: __umoddi3 as *const (),
+    },
+    // core/input: press a key, turn an encoder (the address is 0 without the module)
+    Import {
+        name: nm(b"input_key"),
+        addr: input_key as *const (),
+    },
+    Import {
+        name: nm(b"input_turn"),
+        addr: input_turn as *const (),
     },
     // the 1500 Hz block clock (`dkrt_blocks`), for a module that wants to measure time
     Import {

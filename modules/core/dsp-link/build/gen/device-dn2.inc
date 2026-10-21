@@ -58,6 +58,62 @@
 #define LIMIT_STAGE_BYTES 65536
 // [digikit] peek: number of ranges
 #define PEEK_N 2
+// [input] backend (1 panel-uart; 0 none)
+#define INPUT_BACKEND 1
+// [panel] linear_channels (code = channel * 8 + bit + 1)
+#define PANEL_LINEAR 6
+// [panel] encoders
+#define PANEL_ENCODERS 9
+// [panel.exceptions]: number of codes
+#define PANEL_EXC_N 6
+// [panel.exceptions] code
+#define PANEL_EXC_CODE_0 49
+// [panel.exceptions] channel of the code
+#define PANEL_EXC_CH_0 6
+// [panel.exceptions] bit of the code
+#define PANEL_EXC_BIT_0 1
+// [panel.exceptions] code
+#define PANEL_EXC_CODE_1 50
+// [panel.exceptions] channel of the code
+#define PANEL_EXC_CH_1 6
+// [panel.exceptions] bit of the code
+#define PANEL_EXC_BIT_1 0
+// [panel.exceptions] code
+#define PANEL_EXC_CODE_2 51
+// [panel.exceptions] channel of the code
+#define PANEL_EXC_CH_2 6
+// [panel.exceptions] bit of the code
+#define PANEL_EXC_BIT_2 4
+// [panel.exceptions] code
+#define PANEL_EXC_CODE_3 52
+// [panel.exceptions] channel of the code
+#define PANEL_EXC_CH_3 6
+// [panel.exceptions] bit of the code
+#define PANEL_EXC_BIT_3 5
+// [panel.exceptions] code
+#define PANEL_EXC_CODE_4 53
+// [panel.exceptions] channel of the code
+#define PANEL_EXC_CH_4 6
+// [panel.exceptions] bit of the code
+#define PANEL_EXC_BIT_4 6
+// [panel.exceptions] code
+#define PANEL_EXC_CODE_5 54
+// [panel.exceptions] channel of the code
+#define PANEL_EXC_CH_5 6
+// [panel.exceptions] bit of the code
+#define PANEL_EXC_BIT_5 7
+// [panel.exceptions] code
+#define PANEL_EXC_CODE_6 0
+// [panel.exceptions] channel of the code
+#define PANEL_EXC_CH_6 0
+// [panel.exceptions] bit of the code
+#define PANEL_EXC_BIT_6 0
+// [panel.exceptions] code
+#define PANEL_EXC_CODE_7 0
+// [panel.exceptions] channel of the code
+#define PANEL_EXC_CH_7 0
+// [panel.exceptions] bit of the code
+#define PANEL_EXC_BIT_7 0
 // [digikit] peek range start (RAM the PEEK command may read)
 #define PEEK_LO_0 1073741824
 // [digikit] peek range end (exclusive)
