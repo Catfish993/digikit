@@ -12,6 +12,7 @@ import {
   LOAD_STATUS,
   LOG_KIND,
   PROTO_VERSION,
+  SERVICE_CMD,
   STATUS as GSTATUS,
 } from './gen_proto.ts';
 
@@ -527,6 +528,46 @@ export function hasCap(info: DkInfoFull, name: keyof typeof GCAP): boolean {
   return info.caps !== null && ((info.caps >>> GCAP[name]) & 1) === 1;
 }
 
+// ---- the firmware's own screenshot (stock MidiRpc type 0x04, docs/MIDI-SYSEX-RPC.md) ------------------------------------------------
+
+const RPC_HEADER = [0xf0, 0x00, 0x20, 0x3c, 0x10, 0x00];
+const RPC_SCREENSHOT = 0x04;
+/** Format 1, width 128, height 64, length 1024 (big endian): the 9 bytes before the shadow buffer in a Screenshot reply. */
+const SCREEN_HEADER = [0x01, 0x00, 0x80, 0x00, 0x40, 0x00, 0x00, 0x04, 0x00];
+export const SCREEN_BYTES = 1024;
+
+/** A stock MidiRpc request: `seq16 00 00 type payload`, 8-in-7 packed after `10 00`. */
+export function rpcRequest(type: number, seq: number, payload: Uint8Array = new Uint8Array()): Uint8Array {
+  const packed = encode8in7(concat(Uint8Array.of((seq >> 8) & 255, seq & 255, 0, 0, type), payload));
+  return concat(Uint8Array.from(RPC_HEADER), packed, Uint8Array.of(0xf7));
+}
+
+/** A stock MidiRpc reply as `[type, payload]` (the type without its reply bit), or null for any other message. */
+export function parseRpcReply(msg: Uint8Array): [number, Uint8Array] | null {
+  if (msg.length < 13 || msg[msg.length - 1] !== 0xf7 || RPC_HEADER.some((b, i) => msg[i] !== b)) return null;
+  const body = decode8in7(msg.subarray(6, msg.length - 1));
+  if (body.length < 5) return null;
+  return [body[4] & 0x7f, body.subarray(5)];
+}
+
+/** The 1024 shadow-buffer bytes of a Screenshot reply payload (`byte (7 - y / 8) + 8 x`, bit `y mod 8`), or null for another shape. */
+export function decodeScreen(payload: Uint8Array): Uint8Array | null {
+  if (payload.length !== SCREEN_HEADER.length + SCREEN_BYTES || SCREEN_HEADER.some((b, i) => payload[i] !== b))
+    return null;
+  return payload.subarray(SCREEN_HEADER.length);
+}
+
+/** The pixel at (x, y), 0 to 127 and 0 to 63, of a screen buffer. */
+export const screenPixel = (buf: Uint8Array, x: number, y: number): boolean =>
+  ((buf[7 - (y >> 3) + 8 * x] >> (y & 7)) & 1) === 1;
+
+/** The state of digikit/remote (REMOTE_STATE): the DIGIKIT > REMOTE switch, the state format and how many detents one TURN takes. */
+export interface RemoteState {
+  enabled: boolean;
+  format: number;
+  turnLimit: number;
+}
+
 /** The whole protocol over a transport (`send` one message, `recv` the next): pure TypeScript, requests one at a time. */
 export class DkSession {
   private t: DkTransport;
@@ -738,6 +779,60 @@ export class DkSession {
       if (events.length === 0 || events[events.length - 1].seq >= newest) return out;
       from = events[events.length - 1].seq + 1;
     }
+  }
+
+  // ---- digikit/remote (docs/plans/remote-control.md): the commands of a run-time service module -----------------------------------
+  /** REMOTE_STATE: answered while the switch is off; E_PROTO when digikit/remote is not loaded. */
+  async remoteState(): Promise<RemoteState> {
+    const b = await this.ok(SERVICE_CMD.REMOTE_STATE, 'remote state');
+    return { enabled: b[0] === 1, format: b[1], turnLimit: b[2] };
+  }
+  /** REMOTE_KEY: press (`down`) or release the key with the device file's panel code. E_DISABLED while the switch is off. */
+  async remoteKey(code: number, down: boolean): Promise<void> {
+    await this.ok(SERVICE_CMD.REMOTE_KEY, 'remote key', Uint8Array.of(code, down ? 1 : 0));
+  }
+  /** REMOTE_TURN: one request; the reply is the delta the device took (at most the state's `turnLimit`), the caller sends the rest again. */
+  async remoteTurnOnce(encoder: number, delta: number): Promise<number> {
+    const part = Math.max(-127, Math.min(127, delta));
+    const b = await this.ok(SERVICE_CMD.REMOTE_TURN, 'remote turn', Uint8Array.of(encoder, part & 255));
+    return b[0] > 127 ? b[0] - 256 : b[0];
+  }
+  /** REMOTE_TURN for a whole delta: sends the rest again after `paceMs` until it is taken. */
+  async remoteTurn(encoder: number, delta: number, paceMs = 150): Promise<void> {
+    let left = delta;
+    let stalled = 0;
+    while (left !== 0) {
+      const took = await this.remoteTurnOnce(encoder, left);
+      left -= took;
+      stalled = took === 0 ? stalled + 1 : 0;
+      if (stalled > 200) throw new DkError({ error: 'remote turn: the device takes no more', kind: 'device' });
+      if (left !== 0) await new Promise((r) => setTimeout(r, paceMs));
+    }
+  }
+  /** REMOTE_RELEASE: let go of every key the module holds (a page sends it when it closes). */
+  async remoteRelease(): Promise<void> {
+    await this.ok(SERVICE_CMD.REMOTE_RELEASE, 'remote release');
+  }
+  /** The firmware's own Screenshot (stock MidiRpc 0x04): the 1024 bytes of the OLED shadow buffer (`screenPixel`), taking its turn with the other requests. */
+  screen(): Promise<Uint8Array> {
+    const next = this.turn.then(async () => {
+      const seq = this.takeSeq();
+      await this.t.send(rpcRequest(RPC_SCREENSHOT, seq));
+      const deadline = Date.now() + this.timeoutMs;
+      for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
+        const raw = await this.t.recv(left);
+        if (!raw) break;
+        const r = parseRpcReply(raw);
+        if (r && r[0] === RPC_SCREENSHOT) {
+          const shot = decodeScreen(r[1]);
+          if (shot) return shot.slice();
+          throw new DkError({ error: 'screen: unexpected Screenshot reply', kind: 'protocol' });
+        }
+      }
+      throw new DkError({ error: 'no screenshot from the device', kind: 'timeout' });
+    });
+    this.turn = next.catch(() => {});
+    return next;
   }
 
   /** Upload one file (BEGIN, DATA chunks one after the other, END). `onProgress(sent, total)` follows each acknowledged chunk. */

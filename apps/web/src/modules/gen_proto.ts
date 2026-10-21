@@ -22,6 +22,14 @@ export const CMD = {
   RESTART: 0x31,
 } as const;
 
+/** The commands of run-time service modules (`[protocol.service]`). */
+export const SERVICE_CMD = {
+  REMOTE_KEY: 0x38,
+  REMOTE_TURN: 0x39,
+  REMOTE_RELEASE: 0x3a,
+  REMOTE_STATE: 0x3e,
+} as const;
+
 /** [code, name, text] */
 export const STATUS: [number, string, string][] = [
   [-50, 'E_MSG', 'body too short or malformed'],

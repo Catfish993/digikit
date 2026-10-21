@@ -39,6 +39,13 @@ CMD_LOGCFG = 0x22
 CMD_SELECT = 0x30
 CMD_RESTART = 0x31
 
+SERVICE_CMD: dict[str, int] = {
+    "REMOTE_KEY": 0x38,
+    "REMOTE_TURN": 0x39,
+    "REMOTE_RELEASE": 0x3A,
+    "REMOTE_STATE": 0x3E,
+}
+
 STATUS: dict[int, tuple[str, str]] = {
     -50: ("E_MSG", "body too short or malformed"),
     -51: ("E_PATH", "path breaks the store rules"),

@@ -82,6 +82,10 @@ pub mod proto {
     pub const CMD_LOGCFG: u8 = 0x22;
     pub const CMD_SELECT: u8 = 0x30;
     pub const CMD_RESTART: u8 = 0x31;
+    pub const SVC_REMOTE_KEY: u8 = 0x38;
+    pub const SVC_REMOTE_TURN: u8 = 0x39;
+    pub const SVC_REMOTE_RELEASE: u8 = 0x3a;
+    pub const SVC_REMOTE_STATE: u8 = 0x3e;
     pub const E_MSG: i32 = -50;
     pub const E_PATH: i32 = -51;
     pub const E_FULL: i32 = -52;

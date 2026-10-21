@@ -1,8 +1,9 @@
-// The desktop Transfer backend: the protocol client and the Transfer logic of apps/web/src/modules (TypeScript), over the controller's
-// USB MIDI capture (`emu_call`, desktop-transport.ts). The only native part is the library folder of built modules (src-tauri/src/library.rs).
+// The desktop Transfer backend: the protocol client and the Transfer logic of apps/web/src/modules (TypeScript), over the selected target
+// (target.ts: the controller's USB MIDI capture of the emulator, or a MIDI port with a device on it). The only native parts are the library
+// folder of built modules (src-tauri/src/library.rs) and the MIDI port (src-tauri/src/midi_port.rs).
 // Nothing is built here and no process is started: `mise run module:pack-all` (run by `mise run workbench`) fills the folder.
 import { invoke } from '@tauri-apps/api/core';
-import { DkSession, hexSha256, storePath } from '@web/modules/dkupload-core';
+import { hexSha256, storePath } from '@web/modules/dkupload-core';
 import {
   buildView,
   deleteFiles,
@@ -13,20 +14,9 @@ import {
   type TransferEvent,
   type TransferView,
 } from '@web/modules/dktransfer';
-import { EmuUsbTransport, emulatorMode } from './desktop-transport';
+import { PAUSED, session as running } from './target';
 
-export const PAUSED =
-  'The emulator is paused: nothing would run the transfer. Resume it (the Run button of the workbench), then try again.';
-
-let shared: DkSession | undefined;
-/** One session for the window: its requests take turns on the one reply stream. */
-const session = (): DkSession => (shared ??= new DkSession(new EmuUsbTransport(), { timeoutMs: 6000 }));
-
-/** Every device operation first checks that the emulator runs. */
-async function running(): Promise<DkSession> {
-  if ((await emulatorMode()) === 'paused') throw new Error(PAUSED);
-  return session();
-}
+export { PAUSED };
 
 /** The built modules of the device's folder, read again each time (a rebuild in a terminal shows up at the next Refresh). */
 export async function loadLibrary(device: string): Promise<LibraryModule[]> {

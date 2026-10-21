@@ -9,6 +9,9 @@
     uv run python -m tools.device.dkupload --emu clear
     uv run python -m tools.device.dkupload --emu --run-dir out/runs/patchkit/run-NAME put build/m.dkm   # a scenario's daemon, not the desktop app's
     uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info    # a real device (not exercised in CI)
+    uv run python -m tools.device.dkupload --emu remote state              # digikit/remote (docs/plans/remote-control.md): the REMOTE switch
+    uv run python -m tools.device.dkupload --emu remote key 10             # press and release a key (the device file's panel code); --hold S keeps it down
+    uv run python -m tools.device.dkupload --emu remote turn 1 -5          # turn encoder 1 by -5 detents
 
 `put FILE [PATH]` stores FILE at PATH (default: `modules/<file name>`) in chunks of at most 32 KiB, two requests in flight, and
 checks the file's sha256 on the device (END reads the staged file back from the card). It changes only the module store; an uploaded
@@ -455,6 +458,44 @@ class Uploader:
         """RESTART (runtime 4): the reply comes first, then the device soft-resets (as APPLY & RESTART)."""
         self._ok(CMD_RESTART, "restart")
 
+    # -- digikit/remote (docs/plans/remote-control.md): the commands of a run-time service module, `dkproto.SERVICE_CMD`
+    def remote_state(self) -> dict[str, int]:
+        """REMOTE_STATE: `enabled` (the DIGIKIT > REMOTE switch), the state `format` and the `turn_limit` of one TURN. Answered while the switch is off, and
+        when digikit/remote is not loaded this raises `UploadError` with E_PROTO."""
+        b = self._ok(dkproto.SERVICE_CMD["REMOTE_STATE"], "remote state")
+        return {"enabled": b[0], "format": b[1], "turn_limit": b[2]}
+
+    def remote_key(self, code: int, down: bool) -> None:
+        """REMOTE_KEY: press (`down`) or release the key with the device file's panel code. `UploadError` E_DISABLED while the switch is off."""
+        self._ok(
+            dkproto.SERVICE_CMD["REMOTE_KEY"],
+            "remote key",
+            bytes((code, 1 if down else 0)),
+        )
+
+    def remote_turn(self, encoder: int, delta: int, pace_s: float = 0.15) -> None:
+        """REMOTE_TURN: turn an encoder by `delta` detents. One request takes at most the state's `turn_limit`; the rest is sent again after `pace_s`."""
+        left = delta
+        stalled = 0
+        while left:
+            part = max(-127, min(127, left))
+            b = self._ok(
+                dkproto.SERVICE_CMD["REMOTE_TURN"],
+                "remote turn",
+                bytes((encoder, part & 0xFF)),
+            )
+            took = b[0] - 256 if b[0] > 127 else b[0]
+            left -= took
+            stalled = 0 if took else stalled + 1
+            if stalled > 200:
+                raise UploadError(0, "remote turn: the device takes no more")
+            if left:
+                time.sleep(pace_s)
+
+    def remote_release(self) -> None:
+        """REMOTE_RELEASE: let go of every key the module holds (a host sends it when it stops)."""
+        self._ok(dkproto.SERVICE_CMD["REMOTE_RELEASE"], "remote release")
+
     def begin(self, path: str, size: int, sha256: bytes) -> None:
         self._ok(
             CMD_BEGIN,
@@ -639,6 +680,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "-o", "--output", type=Path, help="write the bytes here (default: a hex dump)"
     )
+    p = sub.add_parser(
+        "remote", help="digikit/remote: state, key, turn, release (needs the module)"
+    )
+    rsub = p.add_subparsers(dest="rcmd", required=True)
+    rsub.add_parser("state")
+    rsub.add_parser("release")
+    q = rsub.add_parser("key", help="press and release a key")
+    q.add_argument("code", type=int)
+    q.add_argument("--hold", type=float, default=0.1, help="seconds down (default 0.1)")
+    q = rsub.add_parser("turn", help="turn an encoder")
+    q.add_argument("encoder", type=int)
+    q.add_argument("delta", type=int)
     args = ap.parse_args(argv)
     t: Any = (
         EmuTransport(_emu(args.run_dir)) if args.emu else RtMidiTransport(args.port)
@@ -680,6 +733,17 @@ def main(argv: list[str] | None = None) -> int:
             up.rm(args.path)
         elif args.cmd == "clear":
             up.clear()
+        elif args.cmd == "remote":
+            if args.rcmd == "state":
+                print(up.remote_state())
+            elif args.rcmd == "key":
+                up.remote_key(args.code, True)
+                time.sleep(args.hold)
+                up.remote_key(args.code, False)
+            elif args.rcmd == "turn":
+                up.remote_turn(args.encoder, args.delta)
+            else:
+                up.remote_release()
     except UploadError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

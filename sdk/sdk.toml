@@ -257,6 +257,12 @@ RESTART = 0x31
 remote = [0x38, 0x3d]   # digikit/remote: key and turn of the panel (docs/plans/remote-control.md); guarded: refused while DIGIKIT > REMOTE is off
 remote_state = [0x3e, 0x3f]   # digikit/remote: the state (enabled or not), always answered
 
+[protocol.service]  # the commands of run-time service modules, by name; each lies in a range above (a module registers them with Api.register_cmds)
+REMOTE_KEY = 0x38      # digikit/remote: code (u8), down (u8)
+REMOTE_TURN = 0x39     # encoder (u8), delta (s8); the reply body is the delta taken (s8, at most 30 either way)
+REMOTE_RELEASE = 0x3a  # release every key the module holds
+REMOTE_STATE = 0x3e    # reply: enabled (u8), state format (u8), turn limit (u8)
+
 [protocol.status]   # reply status codes of the upload commands (0 = ok); never renumber
 E_MSG = { code = -50, text = "body too short or malformed" }
 E_PATH = { code = -51, text = "path breaks the store rules" }

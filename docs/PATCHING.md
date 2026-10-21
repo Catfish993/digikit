@@ -151,6 +151,16 @@ keeps. Then:
 
 Use `DIGI_PLUS_DRIVE=DIR` or `-- --plus-drive DIR` for a scratch folder instead of the repository's `plus_drive/`.
 
+### Remote control and a device on a MIDI port
+
+The desktop app has a target selector in the Transfer and Remote pages: the emulator, or a MIDI port (the app opens it itself, through the Rust crate
+midir; it starts no process). The Transfer page then lists, installs and deletes on the device. The Remote page shows the target's own screen (the
+firmware's Screenshot, polled) on the faceplate, and its keys and knobs press and turn on the target through `digikit/remote`, a run-time module:
+install it on the Transfer page (`out/modules/<device>/digikit/remote.dkm` after `mise run module:pack-all`), select it in MODULES on the device, apply and
+restart. The commands work while SETTINGS > DIGIKIT > REMOTE is on: it starts on in the emulator and off on a device, and is never saved
+(`docs/design/digikit-upload.md`, "Service commands"). From a terminal: `uv run python -m tools.device.dkupload --emu remote state|key CODE|turn ENC N`
+(`--port NAME` for a device).
+
 ### Developer loop
 
 ```sh

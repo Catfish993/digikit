@@ -5,9 +5,11 @@
 // device, then applies and restarts there. Restart only restarts the device and reports what loaded. Delete (in the On device header)
 // removes the ticked files from the card; a loaded module stays loaded until the restart. "Add .dkm" and the drop zone put a module from
 // outside the library on the card.
-import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
+import { For, Show, createEffect, createSignal, on, onMount, type JSX } from 'solid-js';
 import { errorLine, formatBytes } from '@web/modules/backend';
 import { bumpCardRefresh } from './card-state';
+import TargetSelect from './TargetSelect';
+import { target, targetLabel } from './target';
 import { transferBackend } from './transfer-backend';
 import {
   applyEvent,
@@ -81,6 +83,19 @@ export default function TransferPage(): JSX.Element {
     }
   };
   onMount(() => void run('Reading', async () => {}));
+  // another target: the list of the old one is not shown; read the new one
+  createEffect(
+    on(
+      target,
+      () => {
+        setLastView(undefined);
+        setTicks(new Set<string>());
+        setDelTicks(new Set<string>());
+        void run('Reading', async () => {});
+      },
+      { defer: true },
+    ),
+  );
 
   const onEvent = (e: TransferEvent) => {
     const p = progress();
@@ -225,11 +240,12 @@ export default function TransferPage(): JSX.Element {
         <Show when={lastView()}>
           {(v) => (
             <span class="meta">
-              Emulator · {v().device} · runtime {v().runtime} · {formatBytes(v().free_bytes)} free
+              {targetLabel(target())} · {v().device} · runtime {v().runtime} · {formatBytes(v().free_bytes)} free
             </span>
           )}
         </Show>
         <span class="sp" />
+        <TargetSelect disabled={!!busy()} onError={setError} />
         <Show when={busy() === 'Reading' && lastView()}>
           <span class="meta">refreshing…</span>
         </Show>
@@ -256,7 +272,7 @@ export default function TransferPage(): JSX.Element {
           type="button"
           class="act"
           disabled={!!busy() || !lastView()}
-          title="RESTART the emulated device (it loads what its MODULES menu has selected)"
+          title="RESTART the device (it loads what its MODULES menu has selected)"
           onClick={() => void restart()}
         >
           {busy() === 'Restarting' ? 'Restarting…' : 'Restart'}

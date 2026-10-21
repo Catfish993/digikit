@@ -202,6 +202,13 @@ fn the_capacity_kinds_are_generated_for_every_host() {
         assert_ne!(broken, text);
         assert!(sdkgen::render(&broken).is_err(), "{bad}");
     }
+    // the commands of the service modules, in every host's numbers; one outside every range is refused
+    assert!(get(sdkgen::PROTO_TS_OUT).contains("  REMOTE_KEY: 0x38,"));
+    assert!(get(sdkgen::PROTO_PY_OUT).contains("\"REMOTE_STATE\": 0x3E,"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("pub const SVC_REMOTE_TURN: u8 = 0x39;"));
+    let broken = text.replace("REMOTE_KEY = 0x38 ", "REMOTE_KEY = 0x10 ");
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).is_err());
     // a guarded range must exist
     let broken = text.replace("guarded = [\"remote\"]", "guarded = [\"nope\"]");
     assert_ne!(broken, text);

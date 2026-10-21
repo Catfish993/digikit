@@ -50,6 +50,9 @@ struct Protocol {
     #[serde(default)]
     guarded: Vec<String>,
     commands: BTreeMap<String, u8>,
+    /// The commands of run-time service modules, by name (`REMOTE_KEY`): each lies in a range of `ranges`. A module registers them with `Api.register_cmds`.
+    #[serde(default)]
+    service: BTreeMap<String, u8>,
     status: BTreeMap<String, Status>,
     caps: BTreeMap<String, u32>,
     /// Command numbers a run-time module may register (`Api::register_cmds`): name -> [first, last]. Request numbers are 6 bits (bit 6 of the
@@ -291,6 +294,18 @@ fn parse(text: &str) -> Result<Sdk> {
             return Err(err!("{SOURCE}: protocol ranges {n} and {o} overlap"));
         }
     }
+    for (i, (n, v)) in p.service.iter().enumerate() {
+        if !p.ranges.values().any(|[f, l]| v >= f && v <= l) {
+            return Err(err!(
+                "{SOURCE}: protocol service command {n} ({v:#04x}) is in no range of [protocol.ranges]"
+            ));
+        }
+        if p.service.iter().skip(i + 1).any(|(_, w)| w == v) {
+            return Err(err!(
+                "{SOURCE}: protocol service command number {v:#04x} ({n}) twice"
+            ));
+        }
+    }
     for g in &p.guarded {
         if !p.ranges.contains_key(g) {
             return Err(err!(
@@ -348,6 +363,9 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
     let _ = writeln!(s, "{indent}pub const VERSION: u8 = {};", p.version);
     for (n, v) in by_value(&p.commands) {
         let _ = writeln!(s, "{indent}pub const CMD_{n}: u8 = {v:#04x};");
+    }
+    for (n, v) in by_value(&p.service) {
+        let _ = writeln!(s, "{indent}pub const SVC_{n}: u8 = {v:#04x};");
     }
     for (n, st) in by_code(&p.status) {
         let _ = writeln!(s, "{indent}pub const {n}: {status_ty} = {};", st.code);
@@ -484,6 +502,11 @@ fn python_proto(sdk: &Sdk) -> String {
     for (n, v) in by_value(&p.commands) {
         let _ = writeln!(s, "CMD_{n} = 0x{v:02X}");
     }
+    s.push_str("\nSERVICE_CMD: dict[str, int] = {\n");
+    for (n, v) in by_value(&p.service) {
+        let _ = writeln!(s, "    {n:?}: 0x{v:02X},");
+    }
+    s.push_str("}\n");
     s.push_str("\nSTATUS: dict[int, tuple[str, str]] = {\n");
     for (n, st) in by_code(&p.status) {
         py_status(&mut s, n, st);
@@ -532,6 +555,11 @@ fn ts_proto(sdk: &Sdk) -> String {
     );
     s.push_str("export const CMD = {\n");
     for (n, v) in by_value(&p.commands) {
+        let _ = writeln!(s, "  {n}: {v:#04x},");
+    }
+    s.push_str("} as const;\n\n");
+    s.push_str("/** The commands of run-time service modules (`[protocol.service]`). */\nexport const SERVICE_CMD = {\n");
+    for (n, v) in by_value(&p.service) {
         let _ = writeln!(s, "  {n}: {v:#04x},");
     }
     s.push_str("} as const;\n\n");
