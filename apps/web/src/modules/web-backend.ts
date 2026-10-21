@@ -6,7 +6,7 @@ import { WebMidiTransport, type MidiInputLike, type MidiOutputLike } from './web
 export function clientBackend(client: DkClient, label: string): ModuleBackend {
   return {
     label,
-    info: () => client.info(),
+    info: (quick) => client.info(quick),
     list: () => client.list(),
     put: (path, data, onProgress) => client.put(path, data, onProgress),
     remove: (path) => client.delete(path),

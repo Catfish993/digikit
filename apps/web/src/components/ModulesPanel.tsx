@@ -2,13 +2,16 @@
 // (docs/design/digikit-upload.md). List, add .dkm files (picker or drag and drop), delete, repack.
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { hexSha256, repackMissing, storePath, type DkEntry, type DkInfo } from '../modules/dkupload-core.ts';
-import { errorLine, formatBytes, isCancelled, type ModuleBackend } from '../modules/backend.ts';
+import { errorLine, formatBytes, isCancelled, isTimeout, type ModuleBackend } from '../modules/backend.ts';
 import './modules-panel.css';
 
 interface Held {
   data: Uint8Array;
   sha256: string;
 }
+
+const NO_RUNTIME =
+  'No digikit runtime answered. Load a firmware patched with the runtime (mise run patch -- --firmware X.syx --modules <runtime set>), or wait for Boot with runtime.';
 
 export interface ModulesPanelProps {
   backend: ModuleBackend;
@@ -22,6 +25,8 @@ export default function ModulesPanel(props: ModulesPanelProps): JSX.Element {
   const [busy, setBusy] = createSignal('');
   const [note, setNote] = createSignal('');
   const [error, setError] = createSignal('');
+  // The last probe got no answer: the device runs no digikit runtime (stock firmware).
+  const [absent, setAbsent] = createSignal(false);
   const [progress, setProgress] = createSignal<{
     name: string;
     done: number;
@@ -39,14 +44,21 @@ export default function ModulesPanel(props: ModulesPanelProps): JSX.Element {
     if (isCancelled(e)) setNote('Cancelled.');
     else setError(errorLine(e));
   };
+  // Until a runtime has answered, INFO is a short probe (about 1 s, no retries): stock firmware never answers, and
+  // the normal retries would take about 18 s. One request at a time (the backends queue them anyway).
   const refresh = async () => {
+    const probing = !info();
     try {
-      const [i, l] = await Promise.all([props.backend.info(), props.backend.list()]);
+      const i = await props.backend.info(probing);
+      setAbsent(false);
       setInfo(i);
-      setEntries(l);
+      setEntries(await props.backend.list());
     } catch (e) {
       setInfo(undefined);
-      fail(e);
+      if (probing && isTimeout(e)) {
+        setAbsent(true);
+        setEntries([]);
+      } else fail(e);
     }
   };
   const run = async (what: string, f: () => Promise<void>) => {
@@ -177,7 +189,9 @@ export default function ModulesPanel(props: ModulesPanelProps): JSX.Element {
 
       <Show
         when={entries().length}
-        fallback={<p class="empty">{info() ? 'The store holds no files.' : 'No device answered.'}</p>}
+        fallback={
+          <p class="empty">{info() ? 'The store holds no files.' : absent() ? NO_RUNTIME : 'No device answered.'}</p>
+        }
       >
         <ul class="files">
           <For each={entries()}>
@@ -238,7 +252,7 @@ export default function ModulesPanel(props: ModulesPanelProps): JSX.Element {
             void sendFiles(files);
           }}
         />
-        <button type="button" class="act primary" disabled={!!busy()} onClick={() => input?.click()}>
+        <button type="button" class="act primary" disabled={!!busy() || absent()} onClick={() => input?.click()}>
           Add .dkm…
         </button>
         <button type="button" class="act" disabled={!!busy()} onClick={() => void run('Reading', async () => {})}>

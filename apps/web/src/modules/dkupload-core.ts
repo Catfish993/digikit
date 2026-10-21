@@ -212,6 +212,9 @@ export interface DkOptions {
   chunk?: number;
 }
 
+/** The wait for the INFO probe that finds out whether a runtime answers at all. */
+export const QUICK_TIMEOUT_MS = 1000;
+
 export class DkClient {
   private dk: Dk;
   private t: DkTransport;
@@ -219,6 +222,8 @@ export class DkClient {
   private timeoutMs: number;
   private retries: number;
   private chunk: number;
+  /** Requests take turns: the transport has one reply stream, so two overlapping requests would eat each other's reply. */
+  private turn: Promise<unknown> = Promise.resolve();
   constructor(dk: Dk, transport: DkTransport, options: DkOptions = {}) {
     this.dk = dk;
     this.t = transport;
@@ -231,12 +236,20 @@ export class DkClient {
     this.seq = (this.seq + 1) & 0x7f;
     return s;
   }
-  /** One request and its reply; retried with a new seq after a timeout. Throws DkError. */
-  private async request(cmd: number, path = '', num = 0): Promise<DkReply> {
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
+  /** One request and its reply, after the requests queued before it; retried with a new seq after a timeout. */
+  private request(cmd: number, path = '', num = 0, quick = false): Promise<DkReply> {
+    const next = this.turn.then(() => this.exchange(cmd, path, num, quick));
+    this.turn = next.catch(() => {});
+    return next;
+  }
+  /** `quick`: one short try (a probe for a device that may not run the runtime). Throws DkError. */
+  private async exchange(cmd: number, path: string, num: number, quick: boolean): Promise<DkReply> {
+    const retries = quick ? 0 : this.retries;
+    const timeoutMs = quick ? Math.min(this.timeoutMs, QUICK_TIMEOUT_MS) : this.timeoutMs;
+    for (let attempt = 0; attempt <= retries; attempt++) {
       const seq = this.takeSeq();
       await this.t.send(this.dk.command(cmd, seq, path, num));
-      const deadline = Date.now() + this.timeoutMs;
+      const deadline = Date.now() + timeoutMs;
       for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
         const raw = await this.t.recv(left);
         if (!raw) break;
@@ -254,8 +267,9 @@ export class DkClient {
     throw new DkError({ error: 'no reply from the device', kind: 'timeout' });
   }
 
-  async info(): Promise<DkInfo> {
-    return (await this.request(CMD.INFO)).info!;
+  /** `quick`: one INFO with a short timeout and no retries. */
+  async info(quick = false): Promise<DkInfo> {
+    return (await this.request(CMD.INFO, '', 0, quick)).info!;
   }
   async list(): Promise<DkEntry[]> {
     const out: DkEntry[] = [];

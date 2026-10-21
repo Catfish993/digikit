@@ -6,7 +6,7 @@ import type { DkEntry, DkInfo } from '@web/modules/dkupload-core';
 
 export const emulatorModules: ModuleBackend = {
   label: 'Emulator',
-  info: () => invoke<DkInfo>('mod_info'),
+  info: (quick) => invoke<DkInfo>('mod_info', { quick: !!quick }),
   list: () => invoke<DkEntry[]>('mod_list'),
   remove: (path) => invoke('mod_delete', { path }),
   clear: () => invoke('mod_clear'),
