@@ -98,6 +98,14 @@ def test_default_no_audio_keeps_coupling_but_mutes_playback(monkeypatch, tmp_pat
     assert scope["default_audio_args"](["--no-audio"])[-1] == "0.3"
 
 
+def test_the_mirror_folder_is_not_taken_for_the_firmware(monkeypatch, tmp_path):
+    scope = launcher()
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.12.syx")
+    syx_from_args = scope["syx_from_args"]
+    assert syx_from_args(["--mirror-dir", "/m"]) == tmp_path / "Digitone_II_OS1.12.syx"
+    assert syx_from_args(["--mirror-dir", "/m", "a.syx"]) == Path("a.syx")
+
+
 def test_selected_firmware_keeps_its_path_but_profile_stays_known(
     monkeypatch, tmp_path
 ):

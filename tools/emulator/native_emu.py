@@ -118,16 +118,19 @@ def pgo_trained_core(device: str) -> pathlib.Path | None:
     return path
 
 
+# Launcher options that take a value: the value is not the firmware file (the first positional argument).
+VALUE_OPTIONS = {"--card-image", "--card-folder", "--audio-buffer", "--mirror-dir"}
+
+
 def default_audio_args(args: list[str] | None = None) -> list[str]:
     """Add local ready audio inputs to a normal launcher command line."""
     args = [] if args is None else list(args)
-    value_options = {"--card-image", "--card-folder", "--audio-buffer"}
     positional = next(
         (
             value
             for index, value in enumerate(args)
             if not value.startswith("--")
-            and (index == 0 or args[index - 1] not in value_options)
+            and (index == 0 or args[index - 1] not in VALUE_OPTIONS)
         ),
         None,
     )
@@ -621,12 +624,11 @@ def take_option(args: list[str], name: str) -> tuple[str | None, list[str]]:
 def syx_from_args(args: list[str]) -> pathlib.Path:
     """The firmware file the launcher will run: the first positional argument,
     else the default."""
-    value_options = {"--card-image", "--card-folder", "--audio-buffer"}
     syx_arg = next(
         (
             v
             for j, v in enumerate(args)
-            if not v.startswith("--") and (j == 0 or args[j - 1] not in value_options)
+            if not v.startswith("--") and (j == 0 or args[j - 1] not in VALUE_OPTIONS)
         ),
         None,
     )
@@ -666,12 +668,7 @@ def main(args: list[str] | None = None) -> None:
         # A patched image gets the card of its stock base (the same card as `inject` keeps).
         card = plusdrive_card(folder, digi_env.base_firmware(syx), env, device)
         first_positional = any(
-            not v.startswith("--")
-            and (
-                j == 0
-                or args[j - 1]
-                not in ("--card-image", "--card-folder", "--audio-buffer")
-            )
+            not v.startswith("--") and (j == 0 or args[j - 1] not in VALUE_OPTIONS)
             for j, v in enumerate(args)
         )
         args = [
