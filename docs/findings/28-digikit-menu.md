@@ -117,7 +117,7 @@ or the menu changes.
   DMA through the firmware's own block read (bounce buffer when unaligned); the emulator is coherent and the flush check saw no hit.
 - **[O]** The OUTBOX 8 row is conditional (finding 23): with it visible DIGIKIT is the tenth row; the scripts assume 8 DOWN.
 - **[O]** More than 32 table entries are ignored; names longer than 17 characters show their last 17; non-`.dkm` entries are skipped.
-  The icon of every row and title is the SYSTEM one.
+  The icon of every row and title is the SYSTEM one **[C]** (2026-10-21: no glyph on the DIGIKIT rows and pages any more; see "Glyphs and text pages").
 - **[O]** After LOAD the last row shows the answer text and still loads when pressed again.
 - **[O]** `dkrt_load` runs on the UI task and blocks it for the duration of the load.
 
@@ -167,3 +167,45 @@ Lane r1, 2026-10-16, native emulator, all four images. Everything below is **[D]
 - **[O]** More than 32 `.dkm` entries, names longer than 17 characters (their last 17 are shown), and a store with more than 128
   entries are not handled (`BAD STORE`).
 - **[O]** A file renamed in the store but loaded earlier: the match is by store path, so the row of the new name is unmarked.
+
+## Glyphs and text pages (2026-10-21, W2c) **[D]**
+
+Read once from the decompile and run in the emulator (DT2 1.17 and DN2 1.12); no second agent has checked the addresses. DN2 1.12 addresses in brackets.
+
+**Where the glyphs come from.**
+- Every MenuItem has an icon `std::function` at `+0x2c` (manager `+0x34`, invoker `+0x38`). The row paint draws it through `FUN_40115808` [`0x4011717c`]:
+  `if (item[0x34] != 0) item[0x38](item+0x2c, item, canvas, 0x2a, y-2)`. An empty function draws nothing, and the destructor `FUN_40197ce0`
+  [`0x40188366`] and the MenuItem constructor `0x40115a44` [`0x401173b8`] accept one (the constructor copies the icon function only when its manager is not 0).
+- The stock item builder `FUN_40115b90` [`0x40117504`] always builds a non-empty icon function from a `Bitmap*` (`FUN_401159bc` copies the bitmap, so null would
+  crash). All 30 [28] stock call sites pass a real icon object (bss `0x44f3....`), each row its own (RENAME `0x44f34354`, SYSTEM `0x44f35854`). Stock items without a
+  glyph are built with the MenuItem constructor and an empty icon function: `SamplePicker::vfunc_41`, call `0x4001d6aa` (the icon function and the fourth
+  function are temporaries with `clr.l` on their managers).
+- The page's glyph at the bottom left is the view constructor's `icon` argument (`VerticalMenuView` ctor `0x40119f6c` [`0x4011b8e0`], stored at `this+0xa4`):
+  `VerticalMenuView::vfunc_31` `0x4011a234` [`0x4011bba8`] draws it only `if (this[0x29] != 0)`, at (1, 1). Stock passes null in `TotalRecallMenuView`
+  (`0x4010dd7a` [`0x4010f6ee`], `clr.l` as the icon).
+
+**What the module does now.** `ensure_view` passes null as the view icon. `make_item` runs the builder (it needs a valid icon) and then destroys the icon function through
+its own manager (`op 3`) and stores 0 at `item+0x34`: no new anchor, only the offsets above. The DIGIKIT row in SETTINGS keeps its glyph (`glyph = true`), as
+every stock SETTINGS row has one. The `digikit` frame of the menu cells changed in the glyph boxes only (318 px in x 1..50, y 2..61: a box left of each of the five rows and the one at
+the bottom left); `settings_digikit` and the other frames of the cells are unchanged. Frame hash on both devices `b52b1981...`.
+
+**No stock text-only view.** Of the stock view classes (about 130 by name) none shows free text or a list without selection: `FreeSpaceMenuView` (STORAGE, ctor `0x401550f4`)
+paints a fixed layout of its own, `ShowMsgView` is the LED message view, and the popup the menu already uses shows one message and takes the key focus. The
+non-selectable alternative does not exist either: a MenuItem has no disabled flag the paint or the key handler reads (the byte at `+0x50` is never read there).
+**[O]** `OsUpgradeMenuView`, `PlusDriveFormatMenuView`, `TimeoutView` and the like were not read.
+
+**The highlight and the cursor.** The row bar is the paint's: with the Menu's marker (`this+0x24`, `-1` after the constructor) negative, it inverts the row whose index in
+the visible window equals the cursor (`this+0x18`, read through vtable slot 15). Parking the cursor does not hold: the selection getter `FUN_40114bf6` recomputes
+`cursor = selection - scroll` on every call, and the move function `FUN_40114aac` sets `selection = cursor + scroll` on every key, so the first key brings the bar back,
+and a page of more than five rows needs the keys to scroll. What works is hiding the cursor only during the paint, on the three text pages (ABOUT, HEALTH, MEMORY; MODULES stays selectable):
+- The page's View sub-object (`obj+0x38`) reaches the paint through slot 4 of its vtable, a thunk (`moveq #-0x38,d0; add.l d0,4(a7); bra.w vfunc_31`, bytes `70c8 d1af 0004 6000`).
+  The pages get a copy of that vtable in module RAM (17 slots) whose slot 4 is `text_paint`: it saves the cursor, sets it to `0x7fffffff`, calls the stock slot, restores it.
+  The keys, the selection and the scroll are the stock ones; only the bar is gone.
+- The copy must include the two words before the slots (`offset_to_top`, the type info; 19 words, the object points at word 2): the first try, 17 words only, faulted with
+  `UnsupportedGuestPc(0)` on opening ABOUT, because the view manager reads them (a cast through the vtable).
+- Checked on both devices: every page (ABOUT, HEALTH with `core/health`, MEMORY) opened and popped twice, with no fault; HEALTH scrolled seven rows down and seven up (the window
+  moves, the scroll bar follows, no row inverted, the frame after seven UP equals the first); the smoke `menu` tour pins the MEMORY frame (`digikit_memory`) and requires it to be
+  the same after one DOWN.
+- This is a module-owned vtable copy, so it breaks finding 23's "no new vtable" for these pages. The module does not call it with a stock slot it does not recognise: the first
+  word of slot 4 must be `0x70c8`, otherwise the pages keep the bar. **[O]** Hardware: not run on a device; the paint-time cursor write assumes one UI task paints.
+**[O]** The alternative (c), a page class of our own, was not built.

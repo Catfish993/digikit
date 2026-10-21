@@ -12,7 +12,7 @@
 
 use core::mem::transmute;
 use core::panic::PanicInfo;
-use core::ptr::{addr_of, addr_of_mut, null_mut};
+use core::ptr::{addr_of, addr_of_mut, null, null_mut};
 use dkrt_sdk::proto::{CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_VOICE_ROWS};
 use dkrt_sdk::{store, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
@@ -185,8 +185,11 @@ unsafe fn end_rebuild(menu: *mut u8, sel: u32) {
     fw_invalidate(menu.add(0x38));
 }
 
-/// One MenuItem with a text label and an action; returned to the caller, which hands it to `add_item`.
-unsafe fn make_item(label: *const u8, act: u32, ctx: u32) -> *mut u8 {
+/// One MenuItem with a text label and an action; returned to the caller, which hands it to `add_item`. `glyph`: keep the stock
+/// icon the builder always gives an item (the DIGIKIT row among the stock SETTINGS rows, which all have one); without it the
+/// icon function is destroyed and emptied after the build, as the firmware's own glyph-less items have it (the MenuItem
+/// constructor copies the icon function only when its manager, +0x34, is not 0; the row's paint skips an empty one).
+unsafe fn make_item(label: *const u8, act: u32, ctx: u32, glyph: bool) -> *mut u8 {
     let item = fw_new(0x54);
     let mut action = make_fn(act, ctx);
     let mut fn4 = EMPTY_FN;
@@ -194,11 +197,21 @@ unsafe fn make_item(label: *const u8, act: u32, ctx: u32) -> *mut u8 {
     // the builder copied both; destroy the temporaries as the firmware does (fn4 first)
     fn_manager(addr_of_mut!(fn4) as *mut u32, addr_of!(fn4) as *const u32, 3);
     fn_manager(addr_of_mut!(action) as *mut u32, addr_of!(action) as *const u32, 3);
+    if !glyph {
+        // MenuItem: icon std::function at +0x2c (storage), +0x34 (manager), +0x38 (invoker); op 3 frees the copied bitmap
+        let storage = item.add(0x2c) as *mut u32;
+        let manager = item.add(0x34) as *mut usize;
+        if *manager != 0 {
+            let destroy: unsafe extern "C" fn(*mut u32, *const u32, u32) -> u32 = transmute(*manager);
+            destroy(storage, storage, 3);
+            *manager = 0;
+        }
+    }
     item
 }
 
 unsafe fn row(menu: *mut u8, text: &[u8], act: u32, ctx: u32) {
-    add_item(menu, make_item(text.as_ptr(), act, ctx));
+    add_item(menu, make_item(text.as_ptr(), act, ctx, false));
 }
 
 /// Build a stock VerticalMenuView once; `parent` is the object that will push it.
@@ -210,12 +223,61 @@ unsafe fn ensure_view(v: *mut View, name: &'static [u8], title: &'static [u8], p
     let mut s: u32 = 0;
     let alloc: u8 = 0;
     fw_str_ctor(&mut s, title.as_ptr(), &alloc);
-    fw_view_ctor(obj, name.as_ptr(), 8, &s, icon());
+    // no icon: the view draws one at the bottom left only when the pointer (+0xa4) is not null (`TotalRecallMenuView` passes null)
+    fw_view_ctor(obj, name.as_ptr(), 8, &s, null());
     fw_str_dtor(&mut s);
     (*v).obj = obj;
     // the View sub-object sits at +0x38
     (*v).sp = fw_new(8) as *mut SharedPtr;
     dk_make_sp((*v).sp, parent, obj.add(0x38));
+}
+
+// ---- text pages: no highlighted row ------------------------------------------------------------------------------------
+//
+// ABOUT, HEALTH and MEMORY show text, not choices. The stock paint (`VerticalMenuView::vfunc_31`) inverts the row at the Menu's
+// cursor (`this+0x18`, a row index in the visible window) and nothing else decides it. The View sub-object (+0x38) reaches the paint
+// through slot 4 of its vtable, a thunk that subtracts 0x38 and branches to it. These pages get a copy of that vtable (17 slots,
+// held in module RAM) whose slot 4 sets the cursor out of range around the stock paint: no row matches, the cursor and the
+// selection themselves are untouched, so the keys scroll a long page as before.
+
+/// The View vtable of a stock `VerticalMenuView`: 17 slots, preceded by the two words the C++ runtime reads at negative offsets
+/// (`offset_to_top`, the type info: the view manager casts through them), so the copy has 19 words and the pointer is at word 2.
+const VIEW_VT_SLOTS: usize = 17;
+static mut TEXT_VT: [usize; VIEW_VT_SLOTS + 2] = [0; VIEW_VT_SLOTS + 2];
+/// The stock slot 4 (the thunk to the paint).
+static mut TEXT_PAINT: usize = 0;
+
+unsafe extern "C" fn text_paint(view: *mut u8, canvas: *mut u8) {
+    let cursor = view.sub(0x38).add(0x18) as *mut u32;
+    let saved = *cursor;
+    *cursor = 0x7fff_ffff;
+    let paint: unsafe extern "C" fn(*mut u8, *mut u8) = transmute(TEXT_PAINT);
+    paint(view, canvas);
+    *cursor = saved;
+}
+
+/// Give the page `obj` (a `VerticalMenuView` built by `ensure_view`) the text paint. It leaves the page as it is when the stock slot is
+/// not the expected thunk (`moveq #-0x38,d0` is 0x70c8): rows with the cursor bar, as before.
+unsafe fn text_page(obj: *mut u8) {
+    let vptr = obj.add(0x38) as *mut usize;
+    let new = addr_of_mut!(TEXT_VT[2]) as usize;
+    if *vptr == new {
+        return;
+    }
+    let old = *vptr as *const usize;
+    if TEXT_PAINT == 0 {
+        if *(*old.add(4) as *const u16) != 0x70c8 {
+            return;
+        }
+        let mut i = 0;
+        while i < VIEW_VT_SLOTS + 2 {
+            TEXT_VT[i] = *old.sub(2).add(i);
+            i += 1;
+        }
+        TEXT_PAINT = TEXT_VT[2 + 4];
+        TEXT_VT[2 + 4] = text_paint as usize;
+    }
+    *vptr = new;
 }
 
 unsafe fn push(from: *mut u8, v: *mut View) {
@@ -1168,10 +1230,12 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         push(MAIN.obj, addr_of_mut!(LOADV));
     } else if act == A_OPEN_ABOUT {
         ensure_view(addr_of_mut!(ABOUTV), NAME_ABOUT, b"ABOUT\0", MAIN.obj);
+        text_page(ABOUTV.obj);
         fill_about();
         push(MAIN.obj, addr_of_mut!(ABOUTV));
     } else if act == A_OPEN_HEALTH {
         ensure_view(addr_of_mut!(HEALTHV), NAME_HEALTH, b"HEALTH\0", MAIN.obj);
+        text_page(HEALTHV.obj);
         refresh_health();
         push(MAIN.obj, addr_of_mut!(HEALTHV));
         H_SEEN = 0;
@@ -1180,6 +1244,7 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         dkrt_poll_set(dk_poll as usize);
     } else if act == A_OPEN_MEM {
         ensure_view(addr_of_mut!(MEMV), NAME_MEM, b"MEMORY\0", MAIN.obj);
+        text_page(MEMV.obj);
         fill_mem();
         push(MAIN.obj, addr_of_mut!(MEMV));
     } else if act == A_APPLY {
@@ -1220,7 +1285,7 @@ unsafe fn safe_popup() {
 /// Called from the hook at the end of the SETTINGS rebuild (shim.s) with the settings menu: adds DIGIKIT after SYSTEM.
 #[no_mangle]
 pub unsafe extern "C" fn dk_add_item(menu: *mut u8) {
-    add_item(menu, make_item(b"DIGIKIT\0".as_ptr(), A_OPEN_MAIN, menu as u32));
+    add_item(menu, make_item(b"DIGIKIT\0".as_ptr(), A_OPEN_MAIN, menu as u32, true));
 }
 
 /// For the test that calls the module in place: the number of `.dkm` entries found by the last scan.
