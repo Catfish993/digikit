@@ -18,6 +18,7 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
   of that. Declared budget: `max_cycles_block` 2200, `max_cycles_note_on` 9000.
 - **Memory [D]:** 256 KiB of delay lines (16 voices x 4096 words): half of the Digitakt II run-time DSP area (512 KiB) and
   most of the Digitone II one (320 KiB) (finding 32).
+  Size per-voice state for the lowest musical note, not for the arithmetic limit: pluck's 4096-word lines are 258 KiB; 2048 words would still reach the lowest note, about 23 Hz (finding 57: the area is whole 64-byte granules and the loader refuses a module that does not fit with `E_DSP_NOSPACE`).
 - **Traps found [D]:**
   - An LFO on TUNE moved the period past what the delay line serves; the all-pass went unstable and Inf/NaN reached the
     send FX of every track. Fix: clamp the pitch, the period (2 .. 4090) and the all-pass coefficient (+-0.9); the
