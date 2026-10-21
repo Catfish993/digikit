@@ -80,12 +80,22 @@ def test_constants_agree_between_the_two_sides():
         area = pk_device.load(dev)["digikit"]["dsp_area_bytes"]
         assert define(d, "DL_AREA_BYTES") == area
         assert define(d, "DL_AREA_WORDS") * 4 == define(d, "DL_AREA_BYTES")
+        # the ColdFire side checks against the contract's maximum (generated from sdk.toml), which a device's area does not pass
+        h = (MOD / "build/gen/dl-limits.h").read_text()
+        assert (
+            define(h, "DL_AREA_MAX_BYTES")
+            == pk_device.contract_max()["dsp_area_bytes"]
+            >= area
+        )
+        assert define(h, "DL_AREA_MAX_WORDS") * 4 == define(h, "DL_AREA_MAX_BYTES")
         # the DSP source sizes its bss by the generated define
         assert re.search(
             r"\.PKBSS _dl_area, DL_AREA_BYTES;",
             (MOD / "src" / "dsp" / f"{dev}.s").read_text(),
         )
-        assert define(d, "DL_AREA_BYTES") <= define(c, "DL_AREA_BYTES") <= 4 << 17
+        assert define(d, "DL_AREA_BYTES") <= define(h, "DL_AREA_MAX_BYTES") <= 4 << 17
+        # the C file takes its width from the header, not from a literal
+        assert re.search(r"#define DL_AREA_BYTES DL_AREA_MAX_BYTES", c)
 
 
 @pytest.mark.parametrize("image", sorted(IMAGES))
@@ -173,7 +183,9 @@ def built():
         "dl_rec_lit": RECLIT,
         "dl_stock_send": BASE + 0x100,
     }
-    return pk_link.build([MOD / "src/cf/dsp-link.c"], BASE, syms)[1]
+    return pk_link.build([MOD / "src/cf/dsp-link.c"], BASE, syms, [MOD / "build/gen"])[
+        1
+    ]
 
 
 @pytest.fixture(scope="module")
