@@ -66,6 +66,7 @@ class FakeDevice {
     this.queue = [];
     this.free = 1 << 20; // INFO's u32 free_bytes
     this.storeKib = null; // CAPACITY's STORE limit in KiB (null: the entry is left out); 1024 KiB are used
+    this.caps = null; // INFO's capability word (null: every capability)
     this.pending = 0; // after a RESTART: requests that are still answered by the old boot before the reset
   }
   reply(cmd, seq, status, body = new Uint8Array()) {
@@ -113,7 +114,7 @@ class FakeDevice {
             be32(1),
             be32(this.log.length),
             be32(0x000204),
-            be32(Object.values(CAP).reduce((a, bit) => a | (1 << bit), 0)),
+            be32(this.caps ?? Object.values(CAP).reduce((a, bit) => a | (1 << bit), 0)),
           ),
         );
       }
@@ -457,6 +458,39 @@ test('buildView reads the device: INFO, LIST, MODULES, CAPACITY and the headers 
   assert.equal(view.modules[0].on_card, 'yes');
   assert.deepEqual([view.card_only[0].group, view.card_only[0].version], ['Effects', '0.1.2']);
   assert.ok(dev.seen.includes('READ') && dev.seen.includes('MODULES') && dev.seen.includes('CAPACITY'));
+});
+
+test('Modules mode lists the modules/ folder only: the samples/ of a version 3 store stay out (with and without FOLDERS)', async () => {
+  const pluck = dkm('digikit/pluck', { machine: 1, dsp: 64, size: 900 });
+  const withSamples = () => {
+    const dev = new FakeDevice();
+    dev.files.set('modules/pluck.dkm', pluck);
+    dev.files.set('modules/other.dkm', dkm('someone/effect', { fx: 1, size: 700 }));
+    dev.files.set('samples/01', new Uint8Array(3000).fill(7));
+    dev.files.set('samples/ff_ht_bass_drop_A#', new Uint8Array(500).fill(9));
+    dev.files.set('samples/Drums/kick.wav', new Uint8Array(400).fill(3));
+    dev.dirs.add('samples/empty');
+    return dev;
+  };
+  const lib = [await libraryModule(pluck)];
+  const rows = (v) => [...v.modules, ...v.card_only].map((r) => r.path ?? r.id).sort();
+  // FOLDERS: the device filters by the LIST prefix, and the host does not read the other files' headers
+  const dev = withSamples();
+  const view = await buildView(session(dev), lib);
+  assert.deepEqual(rows(view), ['modules/other.dkm', 'modules/pluck.dkm'].sort());
+  assert.deepEqual(
+    view.card_only.map((r) => r.name),
+    ['someone/effect'],
+  );
+  // a runtime without FOLDERS answers every entry to a LIST: the host filters
+  const old = withSamples();
+  old.caps = Object.values(CAP).reduce((a, bit) => a | (1 << bit), 0) & ~(1 << CAP.FOLDERS);
+  assert.deepEqual(rows(await buildView(session(old), lib)), ['modules/other.dkm', 'modules/pluck.dkm'].sort());
+  // install compares with the modules/ entries too, and leaves the samples alone
+  const events = [];
+  await install(session(dev), ['digikit/pluck'], lib, (e) => events.push(e));
+  assert.ok(events.some((e) => e.event === 'skip'));
+  assert.equal(dev.files.size, 5);
 });
 
 test('free space above 4 GiB: INFO saturates at 2^32 - 1, CAPACITY STORE (KiB) does not, and the view uses it', async () => {
