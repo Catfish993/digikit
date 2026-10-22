@@ -18,7 +18,8 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
     case 'emu_call': {
       const method = String(args?.method);
       if (method === 'status') return { mode: sim.paused ? 'paused' : 'running' } as T;
-      if (method.startsWith('card.')) return (await cardCall(method, (args?.params as Record<string, unknown>) ?? {})) as T;
+      if (method.startsWith('card.'))
+        return (await cardCall(method, (args?.params as Record<string, unknown>) ?? {})) as T;
       return {} as T; // midi.usb.in / midi.usb.out: nothing is ever answered
     }
     default:

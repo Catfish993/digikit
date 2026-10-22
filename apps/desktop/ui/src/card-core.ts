@@ -92,7 +92,8 @@ export function folderNotice(c: CardFolder): string {
   if (c.reload_needed && c.next_folder) {
     return `The card is built from its folder when it loads. A reload makes it use ${shortFolder(c.next_folder)}; until then changes go to ${shortFolder(c.folder)}.`;
   }
-  if (c.chosen_missing) return `The folder you chose, ${shortFolder(c.chosen_missing)}, is missing. The default folder is used.`;
+  if (c.chosen_missing)
+    return `The folder you chose, ${shortFolder(c.chosen_missing)}, is missing. The default folder is used.`;
   return '';
 }
 

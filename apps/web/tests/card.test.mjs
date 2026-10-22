@@ -1,7 +1,15 @@
 // The pure logic of the desktop Card panel (apps/desktop/ui/src/card-core.ts).
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { agoText, canUseDefault, fileRows, folderNotice, pickStart, shortFolder, statusText } from '../../desktop/ui/src/card-core.ts';
+import {
+  agoText,
+  canUseDefault,
+  fileRows,
+  folderNotice,
+  pickStart,
+  shortFolder,
+  statusText,
+} from '../../desktop/ui/src/card-core.ts';
 
 const card = (extra = {}) => ({
   folder: '/Users/em/src/digi/digitakt2/plus_drive/dt2',

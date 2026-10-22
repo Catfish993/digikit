@@ -577,7 +577,12 @@ const SCENES = [
     },
   },
   { name: 'card-dt2-saved-choice', q: 'page=emulator&card=dt2&chosen=1', size: WIDE, steps: async (p) => p.wait(700) },
-  { name: 'card-dt2-missing-choice', q: 'page=emulator&card=dt2&chosen=1&missing=1', size: WIDE, steps: async (p) => p.wait(700) },
+  {
+    name: 'card-dt2-missing-choice',
+    q: 'page=emulator&card=dt2&chosen=1&missing=1',
+    size: WIDE,
+    steps: async (p) => p.wait(700),
+  },
   {
     name: 'card-dt2-use-default',
     q: 'page=emulator&card=dt2&chosen=1',
