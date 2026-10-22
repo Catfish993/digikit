@@ -13,7 +13,7 @@ import { deviceStorage, readLocal, readSamples } from './samples-backend';
 import { target, targetLabel } from './target';
 import { transferBackend } from './transfer-backend';
 import { MODES, parseMode, progressFailed, progressFraction } from './transfer-core';
-import type { PageCtx } from './TransferParts';
+import { writing, type PageCtx } from './TransferParts';
 import {
   log,
   mode,
@@ -133,7 +133,7 @@ export default function TransferPage(): JSX.Element {
           <span class="dim">Mode</span>{' '}
           <select
             aria-label="Mode"
-            disabled={!!busy()}
+            disabled={writing(busy())}
             value={mode()}
             onChange={(e) => changeMode(e.currentTarget.value)}
           >

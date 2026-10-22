@@ -6,7 +6,7 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px 20px 0;
-  overflow-y: auto;
+  overflow: hidden;
   background: #0f1012;
   color: var(--ink, #eceae5);
   font-size: 13px;
