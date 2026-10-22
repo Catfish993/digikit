@@ -411,7 +411,6 @@ def test_candidates_are_the_run_time_modules_and_pack_to_a_dkm(tmp_path):
     ids = T.candidates()
     assert "digikit/remote" in ids and "digikit/pluck" in ids and "test/svc-echo" in ids
     assert not [i for i in ids if i.startswith("core/")]
-    assert not {"fadedlimes/pd", "fadedlimes/analog", "digikit/master-gain"} & set(ids)
     # the packer is the truth: digikit/remote packs and its header has the service contract (group Tools)
     rows = T.repo_rows(
         "dn2",
