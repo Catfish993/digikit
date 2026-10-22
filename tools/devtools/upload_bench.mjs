@@ -3,9 +3,10 @@
 // (guest instructions, the real-time factor of the run) and what the protocol costs (round trips, polling). A dev tool: tools/devtools/upload_bench.py starts
 // the daemon and runs this. By hand:
 //
-//     node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P]
+//     node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P] [--check-sizes N,N,...]
 //
 // One JSON line per run on stdout: wall seconds and MB/s of the upload and of VERIFY, guest instructions per file byte, the real-time factor.
+// With `--check-sizes` instead one line per file size and no timing: the hash and 8-in-7 paths of the runtime against the host's SHA-256.
 import { randomBytes } from 'node:crypto';
 import { DkSession, hexSha256 } from '../../apps/web/src/modules/dkupload-core.ts';
 import { connect } from './emu_midi.mjs';
@@ -13,7 +14,7 @@ import { connect } from './emu_midi.mjs';
 const [socketPath, ...flags] = process.argv.slice(2);
 const flag = (name, dflt) => (flags.includes(name) ? flags[flags.indexOf(name) + 1] : dflt);
 if (!socketPath) {
-  console.error('usage: node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P]');
+  console.error('usage: node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P] [--check-sizes N,N,...]');
   process.exit(2);
 }
 const bytes = Number(flag('--bytes', 8_000_000));
@@ -22,7 +23,31 @@ const runs = Number(flag('--runs', 1));
 const piece = Number(flag('--verify-piece', 1 << 20));
 const path = flag('--path', 'bench/file');
 
+const sizes = flag('--check-sizes', null);
 const emu = await connect(socketPath);
+if (sizes !== null) {
+  // correctness instead of speed: files of the given sizes (a comma list: the SHA-256 block edges 55, 56, 63, 64, 65, the 8-in-7 group, a chunk and one over)
+  // are uploaded in the chunk size asked for, and VERIFY (the device's hash of what the card holds) is compared with the host's, whole and in ranges
+  const session = new DkSession(emu.transport, { timeoutMs: 60000, chunk });
+  let bad = 0;
+  for (const n of sizes.split(',').map(Number)) {
+    const data = Uint8Array.from(randomBytes(n));
+    const want = await hexSha256(data);
+    await session.put(`check/f${n}`, data);
+    const whole = await session.verify(`check/f${n}`);
+    let ranged = true;
+    for (let off = 0; off < n; off += 4096) {
+      const part = data.subarray(off, Math.min(n, off + 4096));
+      if ((await session.verify(`check/f${n}`, off, part.length)) !== (await hexSha256(part))) ranged = false;
+    }
+    const ok = whole === want && ranged;
+    if (!ok) bad++;
+    console.log(JSON.stringify({ size: n, ok, whole: whole === want, ranged }));
+    await session.delete(`check/f${n}`);
+  }
+  emu.close();
+  process.exit(bad ? 1 : 0);
+}
 const snap = async () => {
   const s = await emu.call('status');
   return {
