@@ -22,6 +22,14 @@ export const CMD = {
   RESTART: 0x31,
 } as const;
 
+/** The commands of run-time service modules (`[protocol.service]`). */
+export const SERVICE_CMD = {
+  REMOTE_KEY: 0x38,
+  REMOTE_TURN: 0x39,
+  REMOTE_RELEASE: 0x3a,
+  REMOTE_STATE: 0x3e,
+} as const;
+
 /** [code, name, text] */
 export const STATUS: [number, string, string][] = [
   [-50, 'E_MSG', 'body too short or malformed'],
@@ -38,6 +46,8 @@ export const STATUS: [number, string, string][] = [
   [-61, 'E_NOSTORE', 'the store header is unreadable (CLEAR still works)'],
   [-62, 'E_INUSE', "the card's store area is not ours and not blank"],
   [-63, 'E_PEEK', 'PEEK range not allowed, or length 0 or over 512'],
+  [-64, 'E_CMD_RANGE', 'command range not reserved, taken, or empty'],
+  [-65, 'E_DISABLED', 'a guarded command range is switched off (DIGIKIT > REMOTE)'],
 ];
 
 /** [code, name, text] */
@@ -93,7 +103,17 @@ export const CAP = {
   CAPACITY: 6,
   READ: 7,
   VERIFY: 8,
+  SERVICE_CMDS: 9,
 } as const;
+
+/** The command numbers a module may register: [first, last]. */
+export const RANGES = {
+  remote: [0x38, 0x3d],
+  remote_state: [0x3e, 0x3f],
+} as const;
+
+/** The ranges the runtime refuses while the REMOTE switch is off. */
+export const GUARDED: string[] = ['remote'];
 
 export const CAPACITY_KINDS = {
   MODULES: 1,

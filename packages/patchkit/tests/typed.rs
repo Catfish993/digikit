@@ -89,10 +89,7 @@ fn xslice_stays_off_the_digitone() {
     let Ok(raw) = std::fs::read(root().join("firmware/Digitone_II_OS1.12.syx")) else {
         return;
     };
-    let ids = lib
-        .with_requires(&["test/xslice".to_string()])
-        .unwrap()
-        .0;
+    let ids = lib.with_requires(&["test/xslice".to_string()]).unwrap().0;
     let Err(e) = apply::apply(&raw, &reg, &lib, &ids) else {
         panic!("xslice applied to a Digitone II");
     };

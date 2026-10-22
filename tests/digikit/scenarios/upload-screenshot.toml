@@ -2,7 +2,7 @@
 [scenario]
 name = "upload-screenshot"
 kind = "upload"
-devices = ["dt2"]
+devices = ["dt2", "dn2"]
 tier = "quick"
 
 [upload]

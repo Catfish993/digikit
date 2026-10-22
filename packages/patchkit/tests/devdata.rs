@@ -297,12 +297,94 @@ const RT021_MODULES: [&str; 10] = [
 fn the_patch_sets_are_the_rt021_flash_modules() {
     let lib = Library::scan_repo(&root()).unwrap();
     for dev in devdata::all() {
-        for set in ["emulator", "device"] {
+        // the device set is the flash modules and core/input (the REMOTE switch of the DIGIKIT menu starts off); the emulator set adds core/remote-open (it starts on)
+        for (set, extra) in [
+            ("device", vec!["core/input"]),
+            ("emulator", vec!["core/input", "core/remote-open"]),
+        ] {
             let roots = dev.patch_set(set).unwrap();
             let (mut all, _) = lib.with_requires(roots).unwrap();
             all.sort();
-            assert_eq!(all, RT021_MODULES, "{} set {set}", dev.short);
+            let mut want: Vec<&str> = RT021_MODULES.to_vec();
+            want.extend(extra);
+            want.sort();
+            assert_eq!(all, want, "{} set {set}", dev.short);
         }
         assert!(dev.patch_set("nope").is_err());
+    }
+}
+
+#[test]
+fn the_input_facts_are_the_device_files_panel() {
+    let mut lib = Library::scan_repo(&root()).unwrap();
+    lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
+        .unwrap();
+    let facts = Facts::from_dir(&root().join("devices")).unwrap();
+    let files = devgen::generate(&lib, &facts, "core/input").unwrap();
+    let get = |p: &str| &files.iter().find(|f| f.0 == p).unwrap().1;
+    // DT2 lists 49 = [6, 1] and 50 = [6, 0]; DN2 adds 51 to 54 = [6, 4 to 7]
+    for (dev, wants) in [
+        (
+            "dt2",
+            vec![
+                "PANEL_EXC_N, 0x2 ",
+                "PANEL_EXC_CODE_0, 0x31 ",
+                "PANEL_EXC_BIT_0, 0x1 ",
+                "PANEL_EXC_CODE_1, 0x32 ",
+                "PANEL_EXC_BIT_1, 0x0 ",
+            ],
+        ),
+        (
+            "dn2",
+            vec![
+                "PANEL_EXC_N, 0x6 ",
+                "PANEL_EXC_CODE_5, 0x36 ",
+                "PANEL_EXC_BIT_5, 0x7 ",
+            ],
+        ),
+    ] {
+        let text = get(&format!("build/gen/input-{dev}.inc"));
+        for want in [
+            "INPUT_BACKEND, 0x1 ",
+            "PANEL_LINEAR, 0x6 ",
+            "PANEL_ENCODERS, 0x9 ",
+            "PANEL_BUTTON_CHANNELS, 0x7 ",
+        ]
+        .into_iter()
+        .chain(wants)
+        {
+            assert!(
+                text.contains(&format!(".equ {want}")),
+                "{dev}: {want}\n{text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_unknown_backend_or_a_bad_panel_exception_is_refused() {
+    let (dt2, dn2) = device_texts();
+    for (what, from, to) in [
+        (
+            "backend",
+            "backend = \"panel-uart\"",
+            "backend = \"carrier-pigeon\"",
+        ),
+        ("exceptions", "49 = [6, 1]", "49 = [3, 1]"),
+        ("exceptions", "49 = [6, 1]", "49 = [6, 9]"),
+        // a channel at or above button_channels is outside the decoder's tables
+        ("exceptions", "49 = [6, 1]", "49 = [7, 1]"),
+        (
+            "button_channels",
+            "button_channels = 7",
+            "button_channels = 5",
+        ),
+    ] {
+        let bad = dt2.replace(from, to);
+        assert_ne!(bad, dt2, "{what}: the test text did not change");
+        let e = Facts::from_texts([bad.as_str(), dn2.as_str()])
+            .unwrap_err()
+            .0;
+        assert!(e.contains(what), "{what}: {e}");
     }
 }

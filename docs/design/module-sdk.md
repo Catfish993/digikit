@@ -640,6 +640,29 @@ These supersede earlier text where they conflict; the passages they change point
 - **D12. Raw path and public module.** The old-form voice row (a row with no `note_on`) stays as the path of a `raw` module (D2): no contract, no guard clamp. The patched-in pluck stays the public browser module until the web flow delivers a `.dkm`.
 - **Estimate.** With D4 (DSP relocation, one pluck body) and the steps merged into three PRs, about 30 to 45 agent hours. Most of the risk is in the DN2 adapter. The table in 11.3 is the earlier per-step upper bound.
 
+### 11.6 Service commands (api 1.2, runtime 0.2.5)
+
+A module that needs a SysEx command of its own (the first is `digikit/remote`: key, turn and state of the panel) calls `Api.register_cmds(first, count, handler)` from `init`.
+The handler is `int handler(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)`: it returns the number of reply bytes written to `out`, or a negative status. It runs in the firmware's
+MIDI task, so it is short and never waits. The ranges a module may take are reserved in `sdk/sdk.toml` `[protocol.ranges]`; a request outside them, over another module's, or empty
+returns `E_CMD_RANGE` (-64). The ranges are released when the module's `fini` has run. `docs/design/digikit-upload.md` ("Service commands") has the wire side; the fixture
+`test/svc-echo` and the scenario `service-cmds` show the round trip.
+
+### 11.7 The input adapter (`core/input`, runtime 0.2.5)
+
+A module that wants to press a key or turn an encoder imports two functions by name from the runtime's table (a runtime without `core/input` does not have them; the load fails with
+`E_IMPORT`): `int input_key(u32 code, u32 down)` and `int input_turn(u32 encoder, int delta)`. They return 0, or `-1` (not a key code, or an encoder that does not exist), `-2` (the UI
+queue is full), `-3` (the device profile names no backend `core/input` has). Codes are the device file's `[panel]` codes; the backend is the device file's `[input] backend`. They call the
+firmware's own panel decoders (`docs/findings/58-panel-input-path.md`) and are for the MIDI task; the first user is `digikit/remote`, the proof is `test/input-probe` and the scenario `input-adapter`.
+A device that reaches its events another way adds a backend to `core/input` and names it in its profile; modules and hosts keep calling the same two functions.
+
+### 11.8 digikit/remote and the REMOTE switch
+
+`digikit/remote` (`modules/tools/remote`, a run-time `.dkm`, the same file for both devices) registers KEY 0x38 (`code`, `down`), TURN 0x39 (`encoder`, signed `delta`; the reply is the delta
+taken, at most 30 either way, and the host sends the rest again), RELEASE 0x3a (lets go of every key the module holds) in the guarded `remote` range, and STATE 0x3e (`enabled`, format, turn
+limit) in the `remote_state` range. The module knows no device: codes and encoders are the device file's `[panel]` (the host lays the keys out from them). The switch, the guard and its
+defaults are in `docs/design/digikit-upload.md` ("Service commands"). A module can read the switch with the runtime import `int remote_enabled(void)`. Proof: scenario `remote-control`.
+
 ## 12. Hot reload as a later goal
 
 Not in SDK v1. The aim is that v1 does not make it harder.

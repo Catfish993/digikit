@@ -7,6 +7,8 @@ import PanelArt from './PanelArt';
 export interface LivePanelApi {
   /** Draw a snapshot's OLED frame and LEDs. */
   show(snapshot: RuntimeSnapshot): void;
+  /** Draw an OLED frame alone (1024 bytes, the emulator's frame layout); the Remote page's device screen. */
+  showFrame(frame: Uint8Array): void;
   /** Clear the OLED and turn every LED off. */
   clear(): void;
   /** Release every held key and end any knob drag. */
@@ -17,7 +19,8 @@ export interface LivePanelApi {
 
 export interface LivePanelProps {
   panel: Panel;
-  runtime: () => EmulatorRuntime | undefined;
+  /** Where keys and knobs go: the emulator's runtime, or anything that presses, releases and turns (the Remote page's device). */
+  runtime: () => Pick<EmulatorRuntime, 'press' | 'release' | 'turn'> | undefined;
   /** Where key and knob failures go. */
   onError: (message: string) => void;
   /** Called once, on creation. */
@@ -143,6 +146,9 @@ export default function LivePanel(props: LivePanelProps): JSX.Element {
     show: (snapshot) => {
       if (snapshot.frame && canvas) drawFrame(canvas, snapshot.frame);
       if (snapshot.leds !== undefined) setLeds(parseLeds(snapshot.leds));
+    },
+    showFrame: (frame) => {
+      if (canvas) drawFrame(canvas, frame);
     },
     clear: () => {
       if (canvas) canvas.getContext('2d')?.clearRect(0, 0, 128, 64);

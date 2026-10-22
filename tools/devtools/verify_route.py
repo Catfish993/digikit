@@ -51,6 +51,7 @@ FRAMEWORK = frozenset(
         "core/dyndsp",
         "core/digikit-menu",
         "core/health",
+        "core/input",
         "core/expansion",
     }
 )

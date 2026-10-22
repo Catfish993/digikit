@@ -14,6 +14,8 @@ import {
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
 import CardPanel from './CardPanel';
+import RemotePage from './RemotePage';
+import { target } from './target';
 import TransferPage from './TransferPage';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 
@@ -78,6 +80,7 @@ const RESTART = 'M3 2.5V6H6.5M3 6A5.2 5.2 0 1 1 2.8 9.8';
 const CHART = 'M2 12.5L5.5 7.5L8.5 10L13.5 3.5M10.5 3.5H13.5V6.5';
 const SPEAKER = 'M2.5 6H5L8.5 3V13L5 10H2.5ZM11 5.5a3.5 3.5 0 0 1 0 5';
 const UP = 'M4 10L8 6L12 10';
+const REMOTE = 'M2.5 3.5H13.5V10.5H2.5ZM6 13H10M8 10.5V13';
 const MODULES = 'M2.5 5L8 2.5L13.5 5V11L8 13.5L2.5 11ZM2.5 5L8 7.5L13.5 5M8 7.5V13.5';
 const DOWN = 'M4 6L8 10L12 6';
 
@@ -106,7 +109,7 @@ export default function Console() {
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
   const [rate, setRate] = createSignal<number>();
   const [drawer, setDrawer] = createSignal(false);
-  const [page, setPage] = createSignal<'emulator' | 'transfer'>('emulator');
+  const [page, setPage] = createSignal<'emulator' | 'transfer' | 'remote'>('emulator');
   const [sidebarOpen, setSidebarOpen] = createSignal(readSidebarPref());
   const [card, setCard] = createSignal<CardStatus>();
   const [cardBusy, setCardBusy] = createSignal(false);
@@ -463,16 +466,28 @@ export default function Console() {
             class="side"
             classList={{ on: page() === 'transfer' }}
             aria-current={page() === 'transfer' ? 'page' : undefined}
-            disabled={!status()}
-            title="Choose the modules that run on the emulator and install them"
+            disabled={!status() && target().kind === 'emulator'}
+            title="Choose the modules that run on the target (the emulator or a device on a MIDI port) and install them"
             onClick={() => setPage('transfer')}
           >
             <Icon d={MODULES} />
             <span>Transfer</span>
           </button>
+          <button
+            type="button"
+            class="side"
+            classList={{ on: page() === 'remote' }}
+            aria-current={page() === 'remote' ? 'page' : undefined}
+            disabled={!status() && target().kind === 'emulator'}
+            title="Press the keys and turn the encoders of the target, and see its screen"
+            onClick={() => setPage('remote')}
+          >
+            <Icon d={REMOTE} />
+            <span>Remote</span>
+          </button>
         </nav>
         <div class="content">
-          {/* The faceplate stays mounted behind the Transfer page: the emulator, its audio and the snapshot pump run on. */}
+          {/* The faceplate stays mounted behind the Transfer and Remote pages: the emulator, its audio and the snapshot pump run on. */}
           <div class="emu-row" hidden={page() !== 'emulator'}>
             <main class="stage" aria-label={`${panel().name} front panel`}>
               <div class="surface">
@@ -483,6 +498,9 @@ export default function Console() {
           </div>
           <Show when={page() === 'transfer'}>
             <TransferPage />
+          </Show>
+          <Show when={page() === 'remote'}>
+            <RemotePage fallbackDevice={device()} />
           </Show>
         </div>
       </div>

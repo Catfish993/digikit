@@ -130,11 +130,16 @@ dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 
 # Named module sets, as roots (the modules they require are added). `patchkit apply` without --modules applies `device`
 # (`--set NAME` picks another); `firmware.load {runtime: true}` patches the stock image with `emulator` (`patch_set` picks
-# another). Both are the flash-image roots of the rt021 images for now; `emulator` will gain modules that a device does not
-# take (core/input, digikit/remote).
+# another). Both are the flash-image roots of the rt021 images for now; `emulator` adds `core/remote-open`: the REMOTE
+# switch of the DIGIKIT menu starts on in the emulator and off on a device (core/input is in both; the commands of digikit/remote need the switch).
 [patch_sets]
-emulator = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health"]
-device = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health"]
+emulator = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health", "core/input", "core/remote-open"]
+device = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health", "core/input"]
+
+# The input backend core/input uses to press keys and turn encoders from software (docs/plans/remote-control.md). The profile chooses; `panel-uart`: the panel
+# MCU's UART packets are decoded by the firmware's own key and encoder decoders, which core/input calls (anchors by hash in the port files).
+[input]
+backend = "panel-uart"
 
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.
@@ -142,6 +147,8 @@ device = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health"]
 # measured on this build with unicorn-reference-final:tools/panelsweep.py by reading the event
 # records the firmware emits.
 linear_channels = 6
+# The firmware's button decoder indexes its tables by channel with no bounds check: channels 0..6 are safe (finding 58). core/input refuses others.
+button_channels = 7
 encoders = 9
 
 # Channel 6 is not linear, and is not the same on the two products. Digitakt's

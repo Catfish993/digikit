@@ -34,6 +34,24 @@ struct Doc {
     limits: Option<Limits>,
     adapter: Option<AdapterDoc>,
     modules: Option<ModulesDoc>,
+    input: Option<InputDoc>,
+    panel: Option<PanelDoc>,
+}
+/// `[input]`: which input backend the device uses (a name of `INPUT_BACKENDS`); the profile chooses, the code of core/input has one backend each.
+#[derive(Deserialize)]
+struct InputDoc {
+    backend: String,
+}
+/// `[panel]`: the key codes: codes 1 to 8 * `linear_channels` are linear (code = channel * 8 + bit + 1), `[panel.exceptions]` lists the others as
+/// code = [channel, bit]. Only these numbers are generated; the groups are for hosts that draw the panel.
+#[derive(Deserialize)]
+struct PanelDoc {
+    linear_channels: u64,
+    /// The channels the firmware's button decoder has tables for (it has no bounds check; docs/findings/58-panel-input-path.md): a key channel is below it.
+    button_channels: u64,
+    encoders: u64,
+    #[serde(default)]
+    exceptions: BTreeMap<String, [u64; 2]>,
 }
 #[derive(Deserialize)]
 struct AdapterDoc {
@@ -129,6 +147,17 @@ struct Entry {
     store: StoreF,
     limits: LimitsF,
     adapter: Option<AdapterF>,
+    input: InputF,
+}
+/// A device's input facts: the backend (index into `INPUT_BACKENDS` plus 1; 0 none) and the panel's key code layout.
+#[derive(Debug, Default)]
+struct InputF {
+    backend: u64,
+    linear_channels: u64,
+    button_channels: u64,
+    encoders: u64,
+    /// (code, channel, bit)
+    exceptions: Vec<[u64; 3]>,
 }
 #[derive(Debug)]
 struct AdapterF {
@@ -228,6 +257,7 @@ impl Facts {
                 ));
             }
             check_limits(&short, &l, k.dsp_area_bytes, &crate::sdkgen::limits_max())?;
+            let input = input_facts(&short, d.input, d.panel)?;
             let adapter = adapter_facts(
                 &short,
                 d.adapter.and_then(|a| a.machine),
@@ -274,6 +304,7 @@ impl Facts {
                             page_rows: l.page_rows,
                         },
                         adapter,
+                        input,
                     },
                 )
                 .is_some()
@@ -338,6 +369,64 @@ const ADM_SLOTS: usize = 8;
 /// The `ADM_PARAM_SLOT*` value of a parameter without a slot.
 const ADM_NO_SLOT: i64 = 255;
 
+/// The input backends core/input has code for. A device file names one in `[input] backend`; a new device with the same panel path needs
+/// only that line, a different path adds a backend here and in core/input.
+pub const INPUT_BACKENDS: [&str; 1] = ["panel-uart"];
+/// The most exceptions to the linear key codes a device file may list.
+const PANEL_EXC_MAX: usize = 8;
+
+fn input_facts(short: &str, i: Option<InputDoc>, p: Option<PanelDoc>) -> Result<InputF> {
+    let Some(i) = i else {
+        return Ok(InputF::default());
+    };
+    let Some(backend) = INPUT_BACKENDS.iter().position(|b| *b == i.backend) else {
+        return Err(err!(
+            "{short}: [input] backend {:?} is not one of {INPUT_BACKENDS:?}",
+            i.backend
+        ));
+    };
+    let Some(p) = p else {
+        return Err(err!("{short}: [input] needs a [panel] (the key codes)"));
+    };
+    if p.exceptions.len() > PANEL_EXC_MAX {
+        return Err(err!(
+            "{short}: [panel.exceptions] lists at most {PANEL_EXC_MAX} codes"
+        ));
+    }
+    if p.linear_channels > p.button_channels
+        || p.button_channels > 16
+        || p.encoders == 0
+        || p.encoders > 16
+    {
+        return Err(err!(
+            "{short}: [panel] linear_channels <= button_channels <= 16 and encoders 1 to 16"
+        ));
+    }
+    let mut exceptions = vec![];
+    for (code, [ch, bit]) in &p.exceptions {
+        let code: u64 = code
+            .parse()
+            .map_err(|_| err!("{short}: [panel.exceptions] key {code:?} is not a code"))?;
+        if code <= p.linear_channels * 8
+            || *bit > 7
+            || *ch < p.linear_channels
+            || *ch >= p.button_channels
+        {
+            return Err(err!(
+                "{short}: [panel.exceptions] {code} = [{ch}, {bit}]: a code above the linear ones, on a channel after them and below button_channels, bit 0 to 7"
+            ));
+        }
+        exceptions.push([code, *ch, *bit]);
+    }
+    Ok(InputF {
+        backend: backend as u64 + 1,
+        linear_channels: p.linear_channels,
+        button_channels: p.button_channels,
+        encoders: p.encoders,
+        exceptions,
+    })
+}
+
 /// Check `[adapter.machine]` and join it with `[modules.frame]` and the block length of `[board]`.
 fn adapter_facts(
     short: &str,
@@ -365,7 +454,9 @@ fn adapter_facts(
         if v.is_some() {
             Ok(())
         } else {
-            Err(err!("{short}: [adapter.machine] {what} is needed for {when}"))
+            Err(err!(
+                "{short}: [adapter.machine] {what} is needed for {when}"
+            ))
         }
     };
     if m.note_on == "record" {
@@ -745,6 +836,58 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "[digikit] peek: number of ranges",
         ),
     ];
+    let inp = &e.input;
+    v.push(c(
+        "INPUT_BACKEND",
+        inp.backend,
+        PerDevice,
+        "[input] backend (1 panel-uart; 0 none)",
+    ));
+    v.push(c(
+        "PANEL_LINEAR",
+        inp.linear_channels,
+        PerDevice,
+        "[panel] linear_channels (code = channel * 8 + bit + 1)",
+    ));
+    v.push(c(
+        "PANEL_BUTTON_CHANNELS",
+        inp.button_channels,
+        PerDevice,
+        "[panel] button_channels (the button decoder's tables: a key channel is below it)",
+    ));
+    v.push(c(
+        "PANEL_ENCODERS",
+        inp.encoders,
+        PerDevice,
+        "[panel] encoders",
+    ));
+    v.push(c(
+        "PANEL_EXC_N",
+        inp.exceptions.len() as u64,
+        PerDevice,
+        "[panel.exceptions]: number of codes",
+    ));
+    for k in 0..PANEL_EXC_MAX {
+        let [code, ch, bit] = inp.exceptions.get(k).copied().unwrap_or([0, 0, 0]);
+        v.push(C {
+            name: PANEL_EXC_CODE[k],
+            value: code as i64,
+            scope: PerDevice,
+            note: "[panel.exceptions] code",
+        });
+        v.push(C {
+            name: PANEL_EXC_CH[k],
+            value: ch as i64,
+            scope: PerDevice,
+            note: "[panel.exceptions] channel of the code",
+        });
+        v.push(C {
+            name: PANEL_EXC_BIT[k],
+            value: bit as i64,
+            scope: PerDevice,
+            note: "[panel.exceptions] bit of the code",
+        });
+    }
     for i in 0..PEEK_MAX {
         let r = k.peek.get(i).copied().unwrap_or([0, 0]);
         v.push(C {
@@ -763,6 +906,36 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
     Ok(v)
 }
 
+const PANEL_EXC_CODE: [&str; PANEL_EXC_MAX] = [
+    "PANEL_EXC_CODE_0",
+    "PANEL_EXC_CODE_1",
+    "PANEL_EXC_CODE_2",
+    "PANEL_EXC_CODE_3",
+    "PANEL_EXC_CODE_4",
+    "PANEL_EXC_CODE_5",
+    "PANEL_EXC_CODE_6",
+    "PANEL_EXC_CODE_7",
+];
+const PANEL_EXC_CH: [&str; PANEL_EXC_MAX] = [
+    "PANEL_EXC_CH_0",
+    "PANEL_EXC_CH_1",
+    "PANEL_EXC_CH_2",
+    "PANEL_EXC_CH_3",
+    "PANEL_EXC_CH_4",
+    "PANEL_EXC_CH_5",
+    "PANEL_EXC_CH_6",
+    "PANEL_EXC_CH_7",
+];
+const PANEL_EXC_BIT: [&str; PANEL_EXC_MAX] = [
+    "PANEL_EXC_BIT_0",
+    "PANEL_EXC_BIT_1",
+    "PANEL_EXC_BIT_2",
+    "PANEL_EXC_BIT_3",
+    "PANEL_EXC_BIT_4",
+    "PANEL_EXC_BIT_5",
+    "PANEL_EXC_BIT_6",
+    "PANEL_EXC_BIT_7",
+];
 const PEEK_LO: [&str; PEEK_MAX] = ["PEEK_LO_0", "PEEK_LO_1", "PEEK_LO_2", "PEEK_LO_3"];
 const PEEK_HI: [&str; PEEK_MAX] = ["PEEK_HI_0", "PEEK_HI_1", "PEEK_HI_2", "PEEK_HI_3"];
 

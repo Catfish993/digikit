@@ -83,6 +83,11 @@ pub fn leave_module(prev: u8) {
     unsafe { write_volatile(addr_of_mut!(CURRENT_SRC), prev) }
 }
 
+/// The source index of the module whose `init` or `fini` runs now (record index + 1), 0 outside one.
+pub fn current_source() -> u8 {
+    unsafe { read_volatile(addr_of!(CURRENT_SRC)) }
+}
+
 /// Call a module's `init` (record `idx`) with its source set.
 pub unsafe fn call_init(idx: usize, f: unsafe extern "C" fn(*const Api) -> i32, api: *const Api) -> i32 {
     let prev = enter_module(idx);

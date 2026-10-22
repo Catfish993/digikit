@@ -51,6 +51,8 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | -61 | E_NOSTORE | the device has no `[card.store]` or the store header is unreadable (CLEAR still works) |
 | -62 | E_INUSE | BEGIN, DELETE or CLEAR on a card whose store area is not ours and not blank: the runtime writes nothing there (see "Card safety") |
 | -63 | E_PEEK | PEEK of a range that the device file does not list, or a length of 0 or over 512 |
+| -65 | E_DISABLED | a command of a guarded range (the remote range) while DIGIKIT > REMOTE is off (runtime 0.2.5) |
+| -64 | E_CMD_RANGE | `Api.register_cmds` with a range that is empty, outside every reserved range, or over a registered one (runtime 0.2.5) |
 
 SELECT also answers the selection record's own codes (runtime codes -40 to -49): -40 `E_SEL_PATH` (a path is empty, too long (over 55 bytes) or has a character outside 0x21 to 0x7e), -41 `E_SEL_COUNT` (more than 8 paths), -42 `E_SEL_WRITE` (the firmware's block write failed), -46 `E_RANGE`, -47 `E_CARD_RO`.
 
@@ -95,6 +97,24 @@ Behaviour the first draft left open (lane r4, built and tested):
 DATA rules: `offset` equals the next expected byte, or the offset of the previous chunk with the same length (a retry; the
 reply is ok and nothing is written again). The length is 1 to 32768 and a multiple of 512, except for the chunk that ends the
 file. The host may keep at most 2 DATA requests in flight; replies come in order.
+
+## Service commands (runtime 0.2.5, capability bit 9)
+
+The runtime keeps its commands in a table (command number, flags, handler: one lookup after the other, since a jump table is not ColdFire code; the
+flag marks a read-only command whose reply is not logged). A run-time module can add commands of its own with `Api.register_cmds(first, count, handler)`
+(api 1.2, `docs/design/module-sdk.md`). Only numbers in a range that `sdk/sdk.toml` `[protocol.ranges]` reserves can be registered; today `remote = [0x38, 0x3d]`
+(the panel's key, turn and release commands of `digikit/remote`) and `remote_state = [0x3e, 0x3f]` (its state). A request number is 6 bits (bit 6 of the command byte marks a reply), so ranges lie in 0x01 to 0x3f.
+A range that is empty, outside a reserved range or over a registered one is refused with `E_CMD_RANGE`; at most four ranges are registered; the module's ranges are released
+when it is taken down (`fini`). INFO's `caps` bit 9 (`CAP_SERVICE_CMDS`) says the runtime has them.
+
+A range in `[protocol] guarded` (today `remote`) is answered only while the REMOTE switch is on (SETTINGS > DIGIKIT > REMOTE, `dkrt_remote_set`): while it is off
+the runtime answers `E_DISABLED` (-65) before the module sees the command, so a module cannot forget the check. The switch is never saved: it starts on when the image has
+`core/remote-open` (the emulator's patch set) and off otherwise (a device's), and exists only when the image has `core/input` (no REMOTE row without it). The state range stays
+answered, so a host can show whether the switch is on.
+
+A service command is handled in the firmware's MIDI task, like the built-in ones. The handler gets the command, `seq`, the body (at most 160 bytes: the same limit as
+every command but DATA and SELECT) and a buffer for the reply body (at most 879 bytes); it returns the reply length (the status is 0), or a negative status (sent with
+no body). A reply of a service command is logged as an UPLOAD event only when its status is not 0 (a key press must not fill the log ring); a number nobody registered is `E_PROTO`.
 
 ## CAPACITY
 

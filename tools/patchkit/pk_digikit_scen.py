@@ -1334,20 +1334,12 @@ def run_pages(c: Ctx) -> None:
     PG.run_pages(c)
 
 
-def run_live(c: Ctx) -> None:
-    """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
-    by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
-    guest's card writes are laid over a default blank card when the firmware was loaded without one."""
-    import subprocess
-
-    from tools import python_env
+def live_boot(c: Ctx, tag: str = "", patch_set: str | None = None) -> tuple[Any, Path]:
+    """A coupled daemon free-running on a stock image with the runtime patched in (the DT2 on a card built from a folder, the DN2 on none),
+    started with `--mirror-dir`; returns it and the mirror folder. The caller closes it."""
     from tools.control.digi_client import Emu
-    from tools.device import dklog as L
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
     from tools.firmware import config
 
-    (module,) = c.table()["modules"]
     dev, ver = c.image.split("-")
     spec = H.FIRMWARE[(dev, ver)]
     syx = config.stock(spec["syx"])
@@ -1361,7 +1353,7 @@ def run_live(c: Ctx) -> None:
         str(mirror),
         timeout=300,
         binary=H.daemon_binary(dev, syx),
-        run_dir=c.work / "live-run",
+        run_dir=c.work / f"live-run{tag}",
     )
     try:
         if dev == "dt2":  # the DT2 boots on a card built from a folder; the DN2 on none
@@ -1370,27 +1362,452 @@ def run_live(c: Ctx) -> None:
             samples = H.OUT / "samples"
             card_check.make_samples(samples)
             card = emu.call("card.load", dir=str(samples))["card"]
-            emu.load(syx, runtime=True, start="auto", card=card)
+            emu.load(syx, runtime=True, start="auto", card=card, patch_set=patch_set)
         else:
-            emu.load(syx, runtime=True, start="auto")
+            emu.load(syx, runtime=True, start="auto", patch_set=patch_set)
         emu.call("run.mode", mode="free")
         time.sleep(float(c.table().get("settle_s", 12)))
         c.check("the daemon runs free", emu.status().get("mode") == "free")
-        epoch0 = emu.status()["epoch"]
+    except BaseException:
+        emu.__exit__(None, None, None)
+        raise
+    return emu, mirror
 
-        def tool(*args: str) -> tuple[int, list[dict[str, Any]], float]:
-            t0 = time.monotonic()
-            r = subprocess.run(
-                [sys.executable, "-m", "tools.device.dktransfer", "--emu"]
-                + ["--socket", emu.path, "--json", *args],
-                capture_output=True,
-                text=True,
-                cwd=ROOT,
-                env=python_env(),
-                timeout=300,
+
+def live_tool(emu: Any) -> Callable[..., tuple[int, list[dict[str, Any]], float]]:
+    """`tools.device.dktransfer` as a command line against the daemon: (return code, JSON events, seconds)."""
+    import subprocess
+
+    from tools import python_env
+
+    def tool(*args: str) -> tuple[int, list[dict[str, Any]], float]:
+        t0 = time.monotonic()
+        r = subprocess.run(
+            [sys.executable, "-m", "tools.device.dktransfer", "--emu"]
+            + ["--socket", emu.path, "--json", *args],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            env=python_env(),
+            timeout=300,
+        )
+        ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        return r.returncode, ev, time.monotonic() - t0
+
+    return tool
+
+
+def run_live_svc(c: Ctx) -> None:
+    """A module that registers SysEx commands (Api.register_cmds): `test/svc-echo` is installed and loaded by the runtime, then its commands
+    answer over SysEx (an echo, a status of its own), the refusals it provoked at init are the ones the runtime must give, an unregistered
+    command is E_PROTO, and INFO says the runtime has the capability."""
+    from tools.device import dkproto
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+
+    (module,) = c.table()["modules"]
+    emu, _mirror = live_boot(c)
+    try:
+        tool = live_tool(emu)
+        rc, ev, _ = tool("install", module, "--restart")
+        res = next((e for e in ev if e["event"] == "result"), {})
+        c.check(
+            "install --restart: the module that registers commands loaded",
+            rc == 0 and module in res.get("loaded", []),
+            f"rc {rc} {ev[-1:] if ev else ''}",
+        )
+        up = DK.Uploader(TR.LiveTransport(emu))
+        info = up.info()
+        c.check(
+            "INFO: the capability for service commands",
+            DK.has_cap(info, "SERVICE_CMDS"),
+            str(info["caps"]),
+        )
+        lo, hi = dkproto.RANGES["remote_state"]
+        c.check(
+            "the remote state range is reserved",
+            (lo, hi) == (0x3E, 0x3F),
+            str((lo, hi)),
+        )
+        echo, refusals = 0x3E, 0x3F
+        status, body = up.request(echo, b"hello \x80\xff")
+        c.check(
+            "an echo command: the reply body is the request body (8-bit bytes too)",
+            status == 0 and body == b"hello \x80\xff",
+            f"{status} {body!r}",
+        )
+        status, body = up.request(echo, b"")
+        c.check("an echo of nothing", status == 0 and body == b"", f"{status} {body!r}")
+        status, body = up.request(echo, b"\xee")
+        c.check(
+            "a status of the module's own, no body",
+            status == -77 and body == b"",
+            f"{status} {body!r}",
+        )
+        status, body = up.request(echo, bytes(range(150)))
+        c.check(
+            "a 150-byte body", status == 0 and body == bytes(range(150)), f"{status}"
+        )
+        status, body = up.request(echo, bytes(200))
+        c.check(
+            "a body over 160 bytes is refused (E_MSG)",
+            status == -50,
+            f"{status}",
+        )
+        status, body = up.request(refusals)
+        e_range = 0xC0  # E_CMD_RANGE = -64, its low byte
+        c.check(
+            "the runtime refused what it had to: outside a reserved range, over a registered one, an empty range",
+            status == 0 and list(body) == [e_range] * 3,
+            f"{status} {list(body)}",
+        )
+        status, _ = up.request(0x3D)
+        c.check("a command nobody registered is E_PROTO", status == -60, str(status))
+    finally:
+        emu.__exit__(None, None, None)
+
+
+def run_live_input(c: Ctx) -> None:
+    """core/input against the emulator's own input path. The same presses are made on two free-running daemons with the same boot history (the probe installed, one restart):
+    on the first with the emulator's `input.button` / `input.turn` (the panel UART path), on the second through `test/input-probe` (SysEx
+    commands 0x38 key and 0x39 turn that call core/input; installed and loaded first). The screens must be the same after each step: the
+    firmware's decoders saw the same presses. A turn shows on the screen only some seconds later (the firmware flushes it on a tick), and the
+    emulator runs slower than real time, so each step waits `settle` seconds. The codes and the encoder come from the scenario file, the layout
+    of the codes from the device file."""
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+
+    t = c.table()
+    (module,) = t["modules"]
+    key_a, key_b, enc, detents = t["key_a"], t["key_b"], t["encoder"], t["detents"]
+
+    def sequence(
+        emu: Any, key: Callable[[int], None], turn: Callable[[int], None]
+    ) -> list[str]:
+        out = []
+        for act in (lambda: key(key_a), lambda: turn(detents), lambda: key(key_b)):
+            act()
+            time.sleep(float(t.get("settle", 10)))
+            out.append(str(emu.frame_hash()))
+        return out
+
+    def boot_with_probe(tag: str) -> Any:
+        """A daemon with the probe installed and the device restarted once: both runs have the same boot history (the firmware's first boot and a soft
+        reset boot are not the same state, so a screen after the same keys differs between them)."""
+        emu, _ = live_boot(c, tag)
+        try:
+            rc, ev, _ = live_tool(emu)("install", module, "--restart")
+            res = next((e for e in ev if e["event"] == "result"), {})
+            c.check(
+                f"install --restart ({tag[1:]}): the probe loaded (it imports input_key and input_turn: core/input is in the image)",
+                rc == 0 and module in res.get("loaded", []),
+                f"rc {rc} {ev[-1:] if ev else ''}",
             )
-            ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
-            return r.returncode, ev, time.monotonic() - t0
+            time.sleep(float(t.get("settle", 10)))
+        except BaseException:
+            emu.__exit__(None, None, None)
+            raise
+        return emu
+
+    emu = boot_with_probe("-stock")
+    try:
+
+        def stock_key(code: int) -> None:
+            emu.button(code, True)
+            time.sleep(0.3)
+            emu.button(code, False)
+
+        stock = sequence(emu, stock_key, lambda n: emu.turn(enc, n))
+    finally:
+        emu.__exit__(None, None, None)
+    c.check(
+        "the emulator's path: each step changes the screen",
+        len(set(stock)) == 3,
+        " ".join(h[:8] for h in stock),
+    )
+
+    emu = boot_with_probe("-probe")
+    try:
+        up = DK.Uploader(TR.LiveTransport(emu))
+        answers: list[int] = []
+
+        def probe_key(code: int) -> None:
+            answers.append(up.request(0x38, bytes((code, 1)))[0])
+            time.sleep(0.3)
+            answers.append(up.request(0x38, bytes((code, 0)))[0])
+
+        def probe_turn(n: int) -> None:
+            answers.append(up.request(0x39, bytes((enc, n & 0xFF)))[0])
+
+        probe = sequence(emu, probe_key, probe_turn)
+        c.check("every probe command answered ok", set(answers) == {0}, str(answers))
+        for name, a, b in zip(
+            ("a key", "a turn", "a second key"), probe, stock, strict=True
+        ):
+            c.check(
+                f"{name} through core/input gives the screen the panel path gave",
+                a == b,
+                f"{a[:8]} {b[:8]}",
+            )
+        # refusals: a code that is not a key, an encoder that does not exist
+        st, _ = up.request(0x38, bytes((200, 1)))
+        c.check("a code that is no key is refused (-1)", st == -1, str(st))
+        st, _ = up.request(0x39, bytes((99, 1)))
+        c.check("an encoder that does not exist is refused (-1)", st == -1, str(st))
+    finally:
+        emu.__exit__(None, None, None)
+
+
+def run_live_remote(c: Ctx) -> None:
+    """digikit/remote and the REMOTE switch, on a daemon booted with the `device` patch set (core/input in it, core/remote-open not): the switch is off
+    at the boot. The module is installed and loaded; STATE answers (it is never guarded) and says off; KEY, TURN and RELEASE are refused with
+    E_DISABLED (-65). The switch is turned on in the menu (SETTINGS > DIGIKIT > REMOTE, with the emulator's own button input): STATE says on and the commands work, TURN
+    takes at most 30 detents and the rest after the module's pacing time, a malformed body is refused; the menu turns the switch off again."""
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+
+    t = c.table()
+    (module,) = t["modules"]
+    emu, _ = live_boot(c, "-remote", patch_set=t.get("patch_set"))
+    try:
+        rc, ev, _ = live_tool(emu)("install", module, "--restart")
+        res = next((e for e in ev if e["event"] == "result"), {})
+        c.check(
+            "install --restart: digikit/remote loaded (it imports input_key and input_turn: core/input is in the image)",
+            rc == 0 and module in res.get("loaded", []),
+            f"rc {rc} {ev[-1:] if ev else ''}",
+        )
+        time.sleep(float(t.get("settle", 10)))
+        up = DK.Uploader(TR.LiveTransport(emu))
+        enc, key = t["encoder"], t["key"]
+
+        def state() -> list[int]:
+            st, body = up.request(0x3E)
+            return [st, *body]
+
+        def cmd(n: int, body: bytes = b"") -> tuple[int, bytes]:
+            st, b = up.request(n, body)
+            return st, bytes(b)
+
+        c.check(
+            "STATE with the switch off: enabled 0, format 1, turn limit 30",
+            state() == [0, 0, 1, 30],
+            str(state()),
+        )
+        refused = [
+            cmd(0x38, bytes((key, 1)))[0],
+            cmd(0x39, bytes((enc, 1)))[0],
+            cmd(0x3A)[0],
+        ]
+        c.check(
+            "KEY, TURN and RELEASE are refused with E_DISABLED (-65) while the switch is off",
+            refused == [-65] * 3,
+            str(refused),
+        )
+
+        def tap(name: str, wait: float = 1.2) -> None:
+            code = H.button(name)
+            emu.button(code, True)
+            time.sleep(0.4)
+            emu.button(code, False)
+            time.sleep(wait)
+
+        def menu_remote() -> None:
+            """SETTINGS > DIGIKIT (the ninth row) > REMOTE (the sixth row of the DIGIKIT page), one press: the switch toggles."""
+            tap("NO", 2)
+            tap("SETTINGS", 3)
+            for _ in range(8):
+                tap("DOWN")
+            tap("YES", 3)
+            for _ in range(5):
+                tap("DOWN")
+            tap("YES", 2)
+            tap("NO", 2)
+
+        menu_remote()
+        c.check(
+            "the menu's REMOTE row turned the switch on: STATE says 1",
+            state() == [0, 1, 1, 30],
+            str(state()),
+        )
+        r = [cmd(0x38, bytes((key, 1))), cmd(0x38, bytes((key, 0))), cmd(0x3A)]
+        c.check(
+            "KEY down, KEY up and RELEASE answer ok",
+            [x[0] for x in r] == [0, 0, 0],
+            str(r),
+        )
+        c.check(
+            "a malformed KEY and an encoder that does not exist are refused (E_MSG -50)",
+            [
+                cmd(0x38, b"\x01")[0],
+                cmd(0x38, bytes((key, 2)))[0],
+                cmd(0x39, bytes((0, 1)))[0],
+            ]
+            == [-50] * 3,
+        )
+        c.check(
+            "a key that is no key is refused by the adapter (-1)",
+            cmd(0x38, bytes((127, 1)))[0] == -1,
+        )
+        st1, b1 = cmd(0x39, bytes((enc, 100)))
+        st2, b2 = cmd(0x39, bytes((enc, 100)))
+        c.check(
+            "TURN 100: the module takes 30, and 0 straight after (the firmware's clamp is respected)",
+            (st1, b1, st2, b2) == (0, bytes((30,)), 0, bytes((0,))),
+            f"{(st1, b1, st2, b2)}",
+        )
+        time.sleep(float(t.get("pace_wait", 3)))
+        st3, b3 = cmd(0x39, bytes((enc, 0x100 - 100)))
+        c.check(
+            "after the pacing time a turn back is taken (negative, within 30)",
+            st3 == 0 and len(b3) == 1 and 1 <= 256 - b3[0] <= 30,
+            f"{(st3, b3)}",
+        )
+        menu_remote()
+        c.check(
+            "the menu's REMOTE row turned the switch off again: STATE says 0, KEY is refused",
+            state() == [0, 0, 1, 30] and cmd(0x38, bytes((key, 1)))[0] == -65,
+            str(state()),
+        )
+    finally:
+        emu.__exit__(None, None, None)
+
+
+def run_live_remote_keys(c: Ctx) -> None:
+    """The whole path: digikit/remote's KEY and TURN on a free-running daemon booted with the `emulator` patch set (REMOTE is on at the boot). Keys: SETTINGS, DOWN x8
+    (the ninth row), YES open DIGIKIT, DOWN and YES open ABOUT, whose rows the menu keeps in DK_ABOUT (`expect_text`: the runtime version; the symbol addresses come from
+    the plan of the same patch set built offline: the same modules in the same order give the same layout, and the check fails if they do not). TURN: on the main screen
+    an encoder turned by some detents changes the screen (the value label shows; polled, because it goes after a few emulated seconds)."""
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+    from tools.firmware import config
+    from tools.patchkit import pk_dkrt as RTK
+
+    t = c.table()
+    (module,) = t["modules"]
+    dev, ver = c.image.split("-")
+    stock = config.stock(H.FIRMWARE[(dev, ver)]["syx"])
+    syx = c.work / f"plan-{dev}.syx"
+    plan_file = syx.with_suffix(".plan.json")
+    RTK.Tools().patchkit_run(
+        "apply",
+        "--firmware",
+        stock,
+        "--set",
+        t.get("patch_set", "emulator"),
+        "-o",
+        syx,
+        "--plan",
+        plan_file,
+    )
+    plan = json.loads(plan_file.read_text())
+    emu, _ = live_boot(c, "-keys")
+    try:
+        rc, ev, _ = live_tool(emu)("install", module, "--restart")
+        res = next((e for e in ev if e["event"] == "result"), {})
+        c.check(
+            "install --restart: digikit/remote loaded",
+            rc == 0 and module in res.get("loaded", []),
+            f"rc {rc} {ev[-1:] if ev else ''}",
+        )
+        time.sleep(float(t.get("settle", 10)))
+        up = DK.Uploader(TR.LiveTransport(emu))
+        c.check(
+            "REMOTE is on at the boot of the emulator set",
+            up.remote_state()["enabled"] == 1,
+            str(up.remote_state()),
+        )
+
+        shots = 0
+
+        def shot(what: str) -> None:
+            """The OLED after a step, as a PNG in the scenario's work folder (to look at when a check fails)."""
+            nonlocal shots
+            from tools.control.digi_client import oled_png
+
+            shots += 1
+            (c.work / f"keys-{shots:02d}-{what}.png").write_bytes(
+                oled_png(emu.frame()[1], 3)
+            )
+
+        def tap(name: str, wait: float = 1.2) -> None:
+            code = H.button(name)
+            up.remote_key(code, True)
+            time.sleep(0.3)
+            up.remote_key(code, False)
+            time.sleep(wait)
+            shot(name.lower())
+
+        shot("start")
+        tap("NO", 2)
+        tap("SETTINGS", 3)
+        for _ in range(8):
+            tap("DOWN")
+        tap("YES", 3)  # the DIGIKIT menu, the cursor on MODULES
+        tap("DOWN")  # ABOUT
+        tap("YES", 3)  # the ABOUT page
+        base = H.plan_symbol(plan, "DK_ABOUT")
+        n = emu.peek32(H.plan_symbol(plan, "DK_ABOUT_N")) or 0
+        rows = H.text_rows(lambda a: emu.peek32(a) or 0, base, n, 24)
+        lost = H.missing_rows(rows, ["RUNTIME {runtime}"])
+        c.check(
+            "KEY presses opened ABOUT: its rows hold the runtime version (expect_text DK_ABOUT)",
+            not lost,
+            f"rows {rows}" if not lost else f"no row {lost} in {rows}",
+        )
+        for _ in range(4):  # back to the main screen
+            tap("NO", 2)
+        # TURN: a value of the firmware changes by the detents and returns when they are turned back (the screen is the value as the firmware draws it)
+        enc, detents = int(t["encoder"]), int(t["detents"])
+        settle = float(t.get("turn_wait", 8))  # the firmware flushes a turn on its tick
+
+        def changed_from(ref: str) -> str | None:
+            """The first screen that differs from REF within the settle time (polled: the value label shows for a few emulated seconds and goes, so one look at the
+            end could miss it)."""
+            end = time.monotonic() + settle
+            while time.monotonic() < end:
+                h = emu.frame_hash()
+                if h != ref:
+                    return str(h)
+                time.sleep(0.4)
+            return None
+
+        before = emu.frame_hash()
+        up.remote_turn(enc, detents)
+        up_h = changed_from(before)
+        shot("turn+")
+        c.check(
+            "TURN reached the firmware: the screen changed (the value shows)",
+            up_h is not None,
+            f"{before[:8]} {(up_h or 'same')[:8]}",
+        )
+        up.remote_release()
+    finally:
+        emu.__exit__(None, None, None)
+
+
+def run_live(c: Ctx) -> None:
+    """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
+    by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
+    guest's card writes are laid over a default blank card when the firmware was loaded without one."""
+    from tools.device import dklog as L
+    from tools.device import dktransfer as TR
+    from tools.device import dkupload as DK
+
+    if c.table().get("part") == "svc":
+        return run_live_svc(c)
+    if c.table().get("part") == "input":
+        return run_live_input(c)
+    if c.table().get("part") == "remote":
+        return run_live_remote(c)
+    if c.table().get("part") == "remote-keys":
+        return run_live_remote_keys(c)
+    (module,) = c.table()["modules"]
+    dev, _ = c.image.split("-")
+    emu, mirror = live_boot(c)
+    try:
+        epoch0 = emu.status()["epoch"]
+        tool = live_tool(emu)
 
         rc, ev, secs = tool("install", module, "--restart")
         res = next((e for e in ev if e["event"] == "result"), {})

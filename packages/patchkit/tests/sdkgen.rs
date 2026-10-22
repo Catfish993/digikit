@@ -119,8 +119,14 @@ fn the_fx_header_matches_sdk_toml() {
         );
     }
     // the chain cap of the registry in core/fx is the header's
-    let max = f.consts.iter().find(|c| c.name == "DK_FX_MAX").unwrap().value;
-    let man = std::fs::read_to_string(root().join("modules/core/fx/module.toml")).unwrap_or_default();
+    let max = f
+        .consts
+        .iter()
+        .find(|c| c.name == "DK_FX_MAX")
+        .unwrap()
+        .value;
+    let man =
+        std::fs::read_to_string(root().join("modules/core/fx/module.toml")).unwrap_or_default();
     if !man.is_empty() {
         assert!(
             man.contains(&format!("max = {max}")),
@@ -173,8 +179,40 @@ fn the_capacity_kinds_are_generated_for_every_host() {
     assert!(get(sdkgen::PROTO_PY_OUT).contains("CMD_CAPACITY = 0x04"));
     assert!(get(sdkgen::PROTO_RS_OUT).contains("pub const CAPK_DSP_AREA: u8 = 5;"));
     assert!(get(sdkgen::PROTO_TS_OUT).contains("  VERIFY: 0x17,"));
-    assert!(get(sdkgen::PROTO_TS_OUT).contains("  [-59, 'E_NOFILE', 'that path is not in the store'],"));
+    assert!(
+        get(sdkgen::PROTO_TS_OUT).contains("  [-59, 'E_NOFILE', 'that path is not in the store'],")
+    );
     assert!(get(sdkgen::PROTO_TS_OUT).contains("  ARENA: 3,"));
+    // the command ranges a module may register: in every host's numbers, and a bad one is refused
+    assert!(get(sdkgen::PROTO_TS_OUT).contains("  remote: [0x38, 0x3d],"));
+    assert!(get(sdkgen::PROTO_TS_OUT).contains("GUARDED: string[] = ['remote'];"));
+    assert!(get(sdkgen::PROTO_PY_OUT).contains("\"remote\": (0x38, 0x3D),"));
+    assert!(get(sdkgen::PROTO_PY_OUT).contains("GUARDED: tuple[str, ...] = (\"remote\",)"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("(0x38, 0x3d, true), // remote"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("(0x3e, 0x3f, false), // remote_state"));
+    for bad in [
+        "remote = [0x38, 0x40]",
+        "remote = [0x10, 0x18]",
+        "remote = [0x3f, 0x38]",
+        "remote = [0, 0x08]",
+        "remote = [0x38, 0x3e]",
+    ] {
+        let broken = text.replace("remote = [0x38, 0x3d]", bad);
+        assert_ne!(broken, text);
+        assert!(sdkgen::render(&broken).is_err(), "{bad}");
+    }
+    // the commands of the service modules, in every host's numbers; one outside every range is refused
+    assert!(get(sdkgen::PROTO_TS_OUT).contains("  REMOTE_KEY: 0x38,"));
+    assert!(get(sdkgen::PROTO_PY_OUT).contains("\"REMOTE_STATE\": 0x3E,"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("pub const SVC_REMOTE_TURN: u8 = 0x39;"));
+    let broken = text.replace("REMOTE_KEY = 0x38 ", "REMOTE_KEY = 0x10 ");
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).is_err());
+    // a guarded range must exist
+    let broken = text.replace("guarded = [\"remote\"]", "guarded = [\"nope\"]");
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).is_err());
     assert!(get(sdkgen::RUST_OUT).contains("pub const CAP_CAPACITY: u32 = 1 << 6;"));
     // two kinds with one number, or kind 0, are refused
     let dup = text.replace("ARENA = 3 ", "ARENA = 2 ");

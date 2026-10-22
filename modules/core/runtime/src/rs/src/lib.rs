@@ -119,6 +119,12 @@ extern "C" {
     /// address is that of the literal in the firmware's code, whose value is the address of the word.
     static dkrt_block_counter_lit: u32;
     static dkrt_tx_inflight_lit: u32;
+    /// The interface of core/input (`input_key(u32 code, u32 down) -> int`, `input_turn(u32 encoder, int delta) -> int`), importable by name by a
+    /// module; each resolves to 0 when core/input is not in the image (`[object] optional`), and the import is then not found.
+    fn input_key();
+    fn input_turn();
+    /// core/remote-open: present in a patch set that starts with the REMOTE switch on (0 without it).
+    fn remote_open();
     /// `cpushl` over a byte range (both caches), `src/cf/tramp.s`.
     fn dkrt_flush(start: u32, len: u32);
     // Firmware functions: addresses are anchors resolved at patch time.
@@ -278,7 +284,7 @@ pub struct Import {
     pub name: [u8; 28],
     pub addr: *const (),
 }
-pub struct Imports(pub [Import; 10]);
+pub struct Imports(pub [Import; 13]);
 unsafe impl Sync for Imports {}
 
 const fn nm(s: &[u8]) -> [u8; 28] {
@@ -330,12 +336,66 @@ pub static IMPORTS: Imports = Imports([
         name: nm(b"__umoddi3"),
         addr: __umoddi3 as *const (),
     },
+    // core/input: press a key, turn an encoder (the address is 0 without the module)
+    Import {
+        name: nm(b"input_key"),
+        addr: input_key as *const (),
+    },
+    Import {
+        name: nm(b"input_turn"),
+        addr: input_turn as *const (),
+    },
+    // the REMOTE switch (the guard of the panel commands)
+    Import {
+        name: nm(b"remote_enabled"),
+        addr: remote_enabled as *const (),
+    },
     // the 1500 Hz block clock (`dkrt_blocks`), for a module that wants to measure time
     Import {
         name: nm(b"dkrt_blocks"),
         addr: dkrt_blocks as *const (),
     },
 ]);
+
+// ---- the REMOTE switch ---------------------------------------------------------------------------------------------------
+
+/// The REMOTE switch of the DIGIKIT menu: whether the guarded command ranges (`sdk/sdk.toml` `[protocol] guarded`: the panel's key and turn
+/// commands) are answered. 2: not set since the boot. It is not saved: every boot starts at the default, which is on exactly when `core/remote-open`
+/// is in the image (the emulator's patch set has it, the device's does not: the owner switches it on in the menu). Without `core/input` the switch
+/// does not exist (`-1`).
+static mut REMOTE: u8 = 2;
+
+fn input_present() -> bool {
+    core::hint::black_box(input_key as usize) != 0
+}
+
+/// `dkrt_remote_get()`: 1 on, 0 off, -1 when there is no input adapter in the image (no REMOTE row in the menu then).
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_remote_get() -> i32 {
+    if !input_present() {
+        return -1;
+    }
+    if read_volatile(addr_of!(REMOTE)) == 2 {
+        let open = core::hint::black_box(remote_open as usize) != 0;
+        write_volatile(addr_of_mut!(REMOTE), open as u8);
+    }
+    read_volatile(addr_of!(REMOTE)) as i32
+}
+
+/// `dkrt_remote_set(on)`: the switch, until the next boot. -1 when there is no input adapter.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_remote_set(on: u32) -> i32 {
+    if !input_present() {
+        return -1;
+    }
+    write_volatile(addr_of_mut!(REMOTE), (on != 0) as u8);
+    OK
+}
+
+/// The import `remote_enabled` of modules (`int remote_enabled(void)`): 1 when the REMOTE switch is on, else 0.
+unsafe extern "C" fn remote_enabled() -> i32 {
+    (dkrt_remote_get() == 1) as i32
+}
 
 /// Address of the import `name` (NUL-terminated), 0 when the table has none.
 pub unsafe fn import_addr(name: *const u8) -> u32 {
@@ -369,6 +429,9 @@ unsafe extern "C" fn api_log(msg: *const u8, value: u32) {
 unsafe extern "C" fn api_log_lv(level: u32, msg: *const u8, value: u32) {
     log_at(level, msg, value);
 }
+unsafe extern "C" fn api_register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::ServiceCmd>) -> i32 {
+    upload::register_cmds(first, count, handler)
+}
 
 /// The table is built at first use: pointers to the helpers are not constants.
 #[no_mangle]
@@ -389,6 +452,7 @@ pub static mut dkrt_api: Api = Api {
     udivdi3: 0,
     umoddi3: 0,
     log_lv: api_log_lv,
+    register_cmds: api_register_cmds,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {

@@ -20,6 +20,10 @@ pub const CMD_PEEK: u8 = 0x21;
 pub const CMD_LOGCFG: u8 = 0x22;
 pub const CMD_SELECT: u8 = 0x30;
 pub const CMD_RESTART: u8 = 0x31;
+pub const SVC_REMOTE_KEY: u8 = 0x38;
+pub const SVC_REMOTE_TURN: u8 = 0x39;
+pub const SVC_REMOTE_RELEASE: u8 = 0x3a;
+pub const SVC_REMOTE_STATE: u8 = 0x3e;
 pub const E_MSG: i8 = -50;
 pub const E_PATH: i8 = -51;
 pub const E_FULL: i8 = -52;
@@ -34,6 +38,8 @@ pub const E_PROTO: i8 = -60;
 pub const E_NOSTORE: i8 = -61;
 pub const E_INUSE: i8 = -62;
 pub const E_PEEK: i8 = -63;
+pub const E_CMD_RANGE: i8 = -64;
+pub const E_DISABLED: i8 = -65;
 pub const CAP_LOG: u32 = 1 << 0;
 pub const CAP_PEEK: u32 = 1 << 1;
 pub const CAP_LOGCFG: u32 = 1 << 2;
@@ -43,6 +49,7 @@ pub const CAP_MODULES: u32 = 1 << 5;
 pub const CAP_CAPACITY: u32 = 1 << 6;
 pub const CAP_READ: u32 = 1 << 7;
 pub const CAP_VERIFY: u32 = 1 << 8;
+pub const CAP_SERVICE_CMDS: u32 = 1 << 9;
 pub const CAPK_MODULES: u8 = 1;
 pub const CAPK_SELECTION: u8 = 2;
 pub const CAPK_ARENA: u8 = 3;
@@ -54,3 +61,11 @@ pub const CAPK_PARAM_ROWS: u8 = 8;
 pub const CAPK_PAGE_ROWS: u8 = 9;
 pub const CAPK_FX_SLOTS: u8 = 10;
 pub const CAPK_MAP_ENTRIES: u8 = 11;
+/// The command ranges a module may register, as (first, last, guarded).
+/// The third field: the runtime refuses the range's commands while the REMOTE switch is off.
+pub const RANGES: [(u8, u8, bool); 2] = [
+    (0x38, 0x3d, true), // remote
+    (0x3e, 0x3f, false), // remote_state
+];
+pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
+pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);

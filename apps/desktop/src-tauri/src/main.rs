@@ -13,6 +13,7 @@ use digi_control::{
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
 mod library;
+mod midi_port;
 use serde_json::Value;
 use std::sync::mpsc;
 use tauri::State;
@@ -480,6 +481,7 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(host)
+        .manage(midi_port::MidiPort::default())
         .invoke_handler(tauri::generate_handler![
             emu_call,
             emu_stage_syx,
@@ -495,7 +497,12 @@ fn main() {
             emu_card_load,
             card_open_folder,
             library::lib_scan,
-            library::lib_read
+            library::lib_read,
+            midi_port::midi_ports,
+            midi_port::midi_open,
+            midi_port::midi_close,
+            midi_port::midi_send,
+            midi_port::midi_recv
         ])
         .build(tauri::generate_context!())
         .expect("tauri build error");

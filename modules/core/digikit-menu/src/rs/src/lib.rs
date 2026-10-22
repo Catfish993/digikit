@@ -84,6 +84,10 @@ extern "C" {
     fn dkrt_diag(out: *mut DkrtDiag);
     /// The debug log keeps every event (1) or errors only (0); saved in the selection record. 0 or an `E_*` code (`E_CARD_RO`: held until the next boot).
     fn dkrt_debug_set(on: u32) -> i32;
+    /// The REMOTE switch (the commands of the remote range are answered only while it is on; not saved): 1 on, 0 off, -1 when the image has no input
+    /// adapter (core/input) and so no remote control.
+    fn dkrt_remote_get() -> i32;
+    fn dkrt_remote_set(on: u32) -> i32;
 }
 
 // ---- std::function and shared_ptr as the firmware lays them out -----------------------------------------------
@@ -721,6 +725,7 @@ const A_SAFE: u32 = 6;
 const A_OPEN_HEALTH: u32 = 7;
 const A_DEBUG: u32 = 8;
 const A_OPEN_MEM: u32 = 9;
+const A_REMOTE: u32 = 10;
 const A_TOGGLE: u32 = 0x100;
 
 unsafe fn fill_main() {
@@ -739,6 +744,12 @@ unsafe fn fill_main() {
     let mut d: DkrtDiag = core::mem::zeroed();
     dkrt_diag(&mut d);
     row(m, if d.debug_on != 0 { b"DEBUG: ON\0" } else { b"DEBUG: OFF\0" }, A_DEBUG, 0);
+    // the row exists only in an image that can be remote controlled
+    match dkrt_remote_get() {
+        1 => row(m, b"REMOTE: ON\0", A_REMOTE, 0),
+        0 => row(m, b"REMOTE: OFF\0", A_REMOTE, 0),
+        _ => {}
+    }
     end_rebuild(m, sel);
 }
 
@@ -1261,6 +1272,9 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         if r != OK {
             fail_text(b"NOT SAVED", r);
         }
+        fill_main();
+    } else if act == A_REMOTE {
+        dkrt_remote_set((dkrt_remote_get() != 1) as u32);
         fill_main();
     } else if act == A_SAFE {
         safe_popup();

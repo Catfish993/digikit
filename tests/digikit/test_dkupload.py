@@ -89,7 +89,7 @@ def test_select_and_restart_bodies_and_frames():
 def test_uploader_select_and_restart_send_the_commands():
     from tools.firmware.build import encode_8in7
 
-    seen: list[tuple[int, bytes]] = []
+    seen: list[int] = []
 
     class Fake:
         def __init__(self):
@@ -409,3 +409,57 @@ def test_verify_request_and_reply():
     with pytest.raises(D.UploadError) as e:
         up.verify("none.dkm")
     assert D.STATUS[e.value.status] == "E_NOFILE"
+
+
+def test_service_command_ranges_and_capability_are_generated():
+    from tools.device import dkproto
+
+    # a request number is 6 bits (bit 6 of the command byte marks a reply): a range lies in 0x01..0x3f and holds no command
+    for first, last in dkproto.RANGES.values():
+        assert 1 <= first <= last <= 0x3F
+        assert not any(first <= v <= last for v in dkproto.CMD.values())
+    assert dkproto.RANGES["remote"] == (0x38, 0x3D)
+    assert dkproto.RANGES["remote_state"] == (0x3E, 0x3F)
+    assert dkproto.GUARDED == ("remote",)
+    assert D.CAP["SERVICE_CMDS"] == 9
+    assert D.STATUS[-64] == "E_CMD_RANGE"
+
+
+def test_remote_commands_use_the_generated_numbers_and_pace_a_turn():
+    """KEY, TURN, RELEASE and STATE (digikit/remote) frame the generated service numbers; a TURN the device takes in parts is sent again for the rest."""
+    from tools.device import dkproto
+    from tools.firmware.build import encode_8in7
+
+    seen: list[int] = []
+    takes = [30, 30, 30, 10]  # a turn of 100: the device takes at most 30 each time
+
+    class Fake:
+        def __init__(self):
+            self.queue: list[bytes] = []
+
+        def send(self, msg: bytes) -> None:
+            cmd, seq = msg[5], msg[6]
+            seen.append(cmd)
+            out = b"\x00"
+            if cmd == dkproto.SERVICE_CMD["REMOTE_TURN"]:
+                out += bytes((takes.pop(0),))
+            elif cmd == dkproto.SERVICE_CMD["REMOTE_STATE"]:
+                out += bytes((1, 1, 30))
+            self.queue.append(
+                msg[:4] + bytes([1, cmd | 0x40, seq]) + encode_8in7(out) + b"\xf7"
+            )
+
+        def recv(self) -> bytes:
+            return self.queue.pop(0)
+
+    up = D.Uploader(Fake())
+    assert up.remote_state() == {"enabled": 1, "format": 1, "turn_limit": 30}
+    up.remote_key(2, True)
+    up.remote_turn(1, 100, pace_s=0)
+    up.remote_release()
+    assert seen == [
+        dkproto.SERVICE_CMD[n]
+        for n in ["REMOTE_STATE", "REMOTE_KEY"]
+        + ["REMOTE_TURN"] * 4
+        + ["REMOTE_RELEASE"]
+    ]

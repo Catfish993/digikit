@@ -2224,6 +2224,36 @@ mark = "D"
 rule = "core/health:cf_func"
 
 [[anchor]]
+name = "input.fw.enc_decoder"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e2b8
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/input:cf_func"
+
+[[anchor]]
+name = "input.fw.key_decoder"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e038
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/input:cf_func"
+
+[[anchor]]
+name = "input.fw.key_mask_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e048
+len = 4
+sha256 = "3cabd0a8df07ca318cf51a7b9dd449e9f5110f7a3ce012a96f8910ccf8df50fd"
+mark = "D"
+rule = "core/input:cf_func"
+
+[[anchor]]
 name = "test.demo.kit_setter"
 cpu = "cf"
 kind = "code"

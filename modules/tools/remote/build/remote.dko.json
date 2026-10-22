@@ -1,0 +1,300 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 2,
+   "section": ".text.state",
+   "symbol": "remote_enabled",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 14,
+   "section": ".text.release",
+   "symbol": ".sec..bss.held",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 40,
+   "section": ".text.release",
+   "symbol": "input_key",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 46,
+   "section": ".text.turn",
+   "symbol": "dkrt_blocks",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 52,
+   "section": ".text.turn",
+   "symbol": ".sec..bss.pending",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 58,
+   "section": ".text.turn",
+   "symbol": ".sec..bss.stamp",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 204,
+   "section": ".text.turn",
+   "symbol": "input_turn",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 54,
+   "section": ".text.key",
+   "symbol": "input_key",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 68,
+   "section": ".text.key",
+   "symbol": ".sec..bss.held",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 90,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..text.state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..text.key",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 32,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..text.turn",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 62,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..text.release",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 122,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..rodata.dkm_init.str1.1",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 2,
+   "hex": "4eb900000000206f00144a8056c044801080303c011e3140000170034e75",
+   "kind": "text",
+   "name": ".text.state",
+   "size": 30
+  },
+  {
+   "align": 2,
+   "hex": "4fefffe448d70c7c4284428245f9000000007a07ca822602e68b71b238000b00672042a72f024eb900000000508f4a8066267001eba8123238004680c0811580380052820c820000008066c620044cd70c7c4fef001c4e75280060e6",
+   "kind": "text",
+   "name": ".text.release",
+   "size": 92
+  },
+  {
+   "align": 2,
+   "hex": "4fefffe8700248d7047cb0af0028670c70ce4cd7047c4fef00184e75206f0024700f799026045383b08365e44eb90000000045f90000000043f900000000725f2a313c009085b280643474604c42000024323c002c02721e4c0018004a826c024486b286644c4a826d024481d28225813c0072604c010800d08523803c00206f002422323c00712800014a806f28741e94816a024282b0826e084482b0826f0224004a826620206f002c421070016000ff62428160b8240106820000001e4a826cd8428260d42f022f044eb900000000508f4a806600ff3c206f002cd5b23c00108260c8",
+   "kind": "text",
+   "name": ".text.turn",
+   "size": 228
+  },
+  {
+   "align": 2,
+   "hex": "4feffff0700248d70c0c246f001cb0af0020670c70ce4cd70c0c4fef00104e7573aa00017401b48165ea10126be671802f012f004eb900000000508f4a8066d6161247f90000000032437383e68976071433180020412209c28326017201e7a94a2a0001670882821781880060a84681c28260f4",
+   "kind": "text",
+   "name": ".text.key",
+   "size": 116
+  },
+  {
+   "align": 1,
+   "hex": "72656d6f7465207265676973746572656400",
+   "kind": "data",
+   "name": ".rodata.dkm_init.str1.1",
+   "size": 18
+  },
+  {
+   "align": 2,
+   "hex": "518f2f0a2f02246f00144879000000004878000148780038206a00404e90487900000000206a0040487800014878003924004e90206a00402f400020487900000000487800014878003a4e90206a00402f4000304fef00202ebc00000000487800014878003e4e9084af0014206a002084af001884802f024879000000004e904a8256c04fef0014241f245f7100508f4e75",
+   "kind": "text",
+   "name": ".text.dkm_init",
+   "size": 146
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.stamp",
+   "size": 64
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.pending",
+   "size": 64
+  },
+  {
+   "align": 1,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.held",
+   "size": 16
+  }
+ ],
+ "source_sha256": "1d4e4cc63e1eea392546059d3b14656f181b423e968aaf83162f291429190025",
+ "symbols": [
+  {
+   "global": false,
+   "name": ".sec..bss.held",
+   "section": ".bss.held",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.pending",
+   "section": ".bss.pending",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.stamp",
+   "section": ".bss.stamp",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..rodata.dkm_init.str1.1",
+   "section": ".rodata.dkm_init.str1.1",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.key",
+   "section": ".text.key",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.release",
+   "section": ".text.release",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.state",
+   "section": ".text.state",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.turn",
+   "section": ".text.turn",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkm_init",
+   "section": ".text.dkm_init",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkrt_blocks",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "held",
+   "section": ".bss.held",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "input_key",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "input_turn",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "key",
+   "section": ".text.key",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "pending",
+   "section": ".bss.pending",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "release",
+   "section": ".text.release",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "remote_enabled",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "stamp",
+   "section": ".bss.stamp",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "state",
+   "section": ".text.state",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "turn",
+   "section": ".text.turn",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "213",
+  "isa_check": "a5200dfb3759320746c880ca4629fd964b1b6c902767209dd8b5b68ba3295a93",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

@@ -34,7 +34,11 @@ impl DeviceInfo {
     pub fn patch_set(&self, name: &str) -> Result<&[String]> {
         self.patch_sets.get(name).map(Vec::as_slice).ok_or_else(|| {
             let known: Vec<&str> = self.patch_sets.keys().map(String::as_str).collect();
-            err!("{} has no patch set {name:?} (known: {})", self.short, known.join(", "))
+            err!(
+                "{} has no patch set {name:?} (known: {})",
+                self.short,
+                known.join(", ")
+            )
         })
     }
 

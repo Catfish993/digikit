@@ -88,7 +88,8 @@ fn the_register_records_are_the_lowered_typed_sections() {
 
 #[test]
 fn the_run_time_type_range_is_checked() {
-    let ok = "[dt2]\nlast = 23\ndynamic_first = 16\n[dt2.alloc]\n\"a:x\" = 7\n\"core/dynreg:d\" = 16\n";
+    let ok =
+        "[dt2]\nlast = 23\ndynamic_first = 16\n[dt2.alloc]\n\"a:x\" = 7\n\"core/dynreg:d\" = 16\n";
     assert!(AllocTable::parse(ok).is_ok());
     let static_in_range = ok.replace("\"a:x\" = 7", "\"a:x\" = 18");
     assert!(
@@ -169,16 +170,23 @@ fn a_type_hint_is_the_low_byte_of_the_machine_key_and_is_range_checked() {
     assert_eq!(key("dn2"), h | 17);
     assert_eq!(fmt_type(key("dt2")), format!("h{:06x}+18", h >> 8));
     // a machine without a hint keeps the low byte 0
-    let text = std::fs::read_to_string(root().join("tests/fixtures/modules/dyn-xslice/module.toml")).unwrap();
+    let text =
+        std::fs::read_to_string(root().join("tests/fixtures/modules/dyn-xslice/module.toml"))
+            .unwrap();
     let none = text.replace("type_hint = 16", "");
     let mx: patchkit::module::Manifest = toml::from_str(&none).unwrap();
     let rx = resolve(&mx, &models).unwrap();
-    assert_eq!(Register::lower(&rx[0], "test/dyn-xslice").unwrap().machines[0].type_no & 0xff, 0);
+    assert_eq!(
+        Register::lower(&rx[0], "test/dyn-xslice").unwrap().machines[0].type_no & 0xff,
+        0
+    );
     // the range: 16 ..= 23 is fine, 15 and 24 are pack errors that name the machine
     let dt2 = res.iter().find(|r| r.dev == "dt2").unwrap();
     assert!(check_type_hints(dt2, "digikit/pluck", 16, 23).is_ok());
     for (first, last) in [(19, 23), (16, 17)] {
-        let e = check_type_hints(dt2, "digikit/pluck", first, last).unwrap_err().0;
+        let e = check_type_hints(dt2, "digikit/pluck", first, last)
+            .unwrap_err()
+            .0;
         assert!(e.contains("type_hint 18") && e.contains("pluck"), "{e}");
     }
     // a hint of 300 is not a type number
@@ -186,5 +194,10 @@ fn a_type_hint_is_the_low_byte_of_the_machine_key_and_is_range_checked() {
         .unwrap()
         .replace("type_hint = 18", "type_hint = 300");
     let mf: patchkit::module::Manifest = toml::from_str(&bad).unwrap();
-    assert!(resolve(&mf, &models).unwrap_err().0.contains("type_hint 300"));
+    assert!(
+        resolve(&mf, &models)
+            .unwrap_err()
+            .0
+            .contains("type_hint 300")
+    );
 }

@@ -39,6 +39,13 @@ CMD_LOGCFG = 0x22
 CMD_SELECT = 0x30
 CMD_RESTART = 0x31
 
+SERVICE_CMD: dict[str, int] = {
+    "REMOTE_KEY": 0x38,
+    "REMOTE_TURN": 0x39,
+    "REMOTE_RELEASE": 0x3A,
+    "REMOTE_STATE": 0x3E,
+}
+
 STATUS: dict[int, tuple[str, str]] = {
     -50: ("E_MSG", "body too short or malformed"),
     -51: ("E_PATH", "path breaks the store rules"),
@@ -54,6 +61,8 @@ STATUS: dict[int, tuple[str, str]] = {
     -61: ("E_NOSTORE", "the store header is unreadable (CLEAR still works)"),
     -62: ("E_INUSE", "the card's store area is not ours and not blank"),
     -63: ("E_PEEK", "PEEK range not allowed, or length 0 or over 512"),
+    -64: ("E_CMD_RANGE", "command range not reserved, taken, or empty"),
+    -65: ("E_DISABLED", "a guarded command range is switched off (DIGIKIT > REMOTE)"),
 }
 
 LOAD_STATUS: dict[int, tuple[str, str]] = {
@@ -108,7 +117,15 @@ CAP: dict[str, int] = {
     "CAPACITY": 6,
     "READ": 7,
     "VERIFY": 8,
+    "SERVICE_CMDS": 9,
 }
+
+RANGES: dict[str, tuple[int, int]] = {
+    "remote": (0x38, 0x3D),
+    "remote_state": (0x3E, 0x3F),
+}
+
+GUARDED: tuple[str, ...] = ("remote",)
 
 CAPACITY_KINDS: dict[str, int] = {
     "MODULES": 1,

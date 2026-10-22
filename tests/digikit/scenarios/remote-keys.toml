@@ -1,0 +1,19 @@
+# The whole remote path (docs/plans/remote-control.md): digikit/remote's KEY presses open SETTINGS > DIGIKIT > ABOUT, checked by the rows the menu keeps (expect_text DK_ABOUT: the
+# runtime version); a TURN of 20 detents changes the main screen (polled: the value label goes after a few emulated seconds). On a free-running daemon booted with the `emulator` patch set,
+# where REMOTE is on at the boot. Both devices.
+[scenario]
+name = "remote-keys"
+kind = "live"
+devices = ["dn2", "dt2"]
+tier = "full"
+
+[live]
+part = "remote-keys"
+modules = ["digikit/remote"]
+encoder = 1
+detents = 20
+settle = 10
+turn_wait = 8
+
+[live.dn2]
+settle_s = 45
