@@ -5,7 +5,7 @@
 //
 // The app does not build: its modules are built `.dkm` files of a folder (`mise run module:pack-all`).
 import { DkError, DkSession, HEADER_BYTES, fmtVersion, hasCap, hexOf, storeFree } from './dkupload-core.ts';
-import type { DkInfoFull } from './dkupload-core.ts';
+import type { DkEntry, DkInfoFull } from './dkupload-core.ts';
 
 export type Group = 'Machines' | 'Effects' | 'Tools';
 
@@ -203,11 +203,20 @@ export function requireRuntime(info: DkInfoFull): void {
     });
 }
 
+/** The store folder of the modules; a store of version 3 also has `samples/` (and the Samples mode lists that one). */
+export const MODULES_FOLDER = 'modules/';
+
+/** The module files of the store (the entries under `modules/`): by prefix when the runtime has FOLDERS, else all entries, filtered here. */
+export async function listModules(s: DkSession, info: DkInfoFull): Promise<DkEntry[]> {
+  if (hasCap(info, 'FOLDERS')) return s.list(MODULES_FOLDER);
+  return (await s.list()).filter((e) => e.path.startsWith(MODULES_FOLDER));
+}
+
 /** The merged view for the device behind `s`. */
 export async function buildView(s: DkSession, library: LibraryModule[]): Promise<TransferView> {
   const info = await s.info();
   requireRuntime(info);
-  const card = await s.list();
+  const card = await listModules(s, info);
   const loaded = hasCap(info, 'MODULES') ? (await s.modules()).map((m) => m.name) : [];
   const cap = hasCap(info, 'CAPACITY') ? await s.capacity() : null;
   const mine = new Set(library.map((m) => m.path));
@@ -265,7 +274,7 @@ export async function install(
       kind: 'request',
     });
   emit({ event: 'start', device: info.port, modules: ids });
-  const have = new Map((await s.list()).map((c) => [c.path, c]));
+  const have = new Map((await listModules(s, info)).map((c) => [c.path, c]));
   const canVerify = hasCap(info, 'VERIFY');
   const uploaded: string[] = [];
   for (const id of ids) {

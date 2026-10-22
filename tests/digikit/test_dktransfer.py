@@ -404,6 +404,26 @@ def test_a_paused_emulator_is_refused():
         T._emu_at = orig
 
 
+def test_candidates_are_the_run_time_modules_and_pack_to_a_dkm(tmp_path):
+    # service modules (digikit/remote) are run-time modules; frameworks and patched-in modules are not
+    from tools.device import dkrun as R
+
+    ids = T.candidates()
+    assert "digikit/remote" in ids and "digikit/pluck" in ids and "test/svc-echo" in ids
+    assert not [i for i in ids if i.startswith("core/")]
+    assert not {"fadedlimes/pd", "fadedlimes/analog", "digikit/master-gain"} & set(ids)
+    # the packer is the truth: digikit/remote packs and its header has the service contract (group Tools)
+    rows = T.repo_rows(
+        "dn2",
+        ["digikit/remote"],
+        pack=lambda mid, dev: R.pack_module(mid, dev, tmp_path / "remote.dkm"),
+    )
+    assert [(r["id"], r["group"], r["version"]) for r in rows] == [
+        ("digikit/remote", "Tools", "0.1.0")
+    ]
+    assert rows[0]["file_size"] > 0
+
+
 def test_pk_build_hash_matches_the_committed_objects():
     # the skip-if-unchanged hash is the one the builders write: every committed object of the repo carries it
     from tools.patchkit import modroots, pk_build

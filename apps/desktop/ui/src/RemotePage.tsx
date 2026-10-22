@@ -101,9 +101,16 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
           {screenError()}
         </p>
       </Show>
-      <div class="stage">
-        <LivePanel panel={panel()} runtime={() => runtime} onError={setScreenError} ref={(api) => (live = api)} />
-      </div>
+      {/* the same markup as the Emulator page's faceplate (Console.tsx), so the screen has the same place and scale */}
+      <main
+        class="stage"
+        aria-label={`${panel().name} front panel`}
+        style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}
+      >
+        <div class="surface">
+          <LivePanel panel={panel()} runtime={() => runtime} onError={setScreenError} ref={(api) => (live = api)} />
+        </div>
+      </main>
       <div class="encoders" aria-label="Encoders">
         <For each={encoders()}>
           {(k) => (

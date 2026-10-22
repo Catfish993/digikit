@@ -5,7 +5,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 16px 20px;
+  padding: 16px 0 12px;
   overflow-y: auto;
   background: #0f1012;
   color: var(--ink, #eceae5);
@@ -41,14 +41,17 @@
   margin: 0;
   color: #ff8d7a;
 }
+/* The faceplate: the Emulator page's own .stage and .surface (console.css), so the panel has the same size and place. The stage takes the
+   height the rows around it leave; it keeps room for a readable panel when the window is low and the page scrolls instead. */
 .remote-page .stage {
-  display: flex;
-  justify-content: center;
-  min-height: 0;
+  min-height: 260px;
 }
-.remote-page .stage > * {
-  max-width: 100%;
-  max-height: 62vh;
+.remote-page .head,
+.remote-page .note,
+.remote-page .err,
+.remote-page .encoders,
+.remote-page .hint {
+  margin-inline: 20px;
 }
 .remote-page .encoders {
   display: flex;

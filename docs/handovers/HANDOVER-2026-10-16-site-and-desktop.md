@@ -23,8 +23,9 @@ a real key press) passed on DT2 1.17 and DN2 1.12.
 ## Next
 
 1. Browser audio on the public site: steps B1-B6, with what each gains, in
-   `../SHARC-PERFORMANCE-PLAN-2026-10-14.md` ("Browser audio on the public site"). Start with B1 (ship the generic
-   core, measure on a Pages build).
+   `~/src/digi/SHARC-PERFORMANCE-PLAN-2026-10-14.archived.md` (historical "Browser audio on the public site").
+   Current priorities are in `~/src/digi/SHARC-PERFORMANCE-PLAN-2026-10-23.md`: native DT2 first, browser follow-up
+   deferred. Recheck current implementation before resuming any historical B1-B6 step.
 2. Open points: XSLICE shows "Works with Digitone II 1.12" because patchkit's check accepts it, while its
    `[targets]` list only DT2 (decide whether cards also show the test status); files opened with Open... in the
    desktop console are not watched (the page has no path); a shared `packages/panel` is deferred until a third
