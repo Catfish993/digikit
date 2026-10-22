@@ -13,7 +13,11 @@ const bytesOf = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => pars
 const call = <T>(method: string, params: Record<string, unknown> = {}) =>
   invoke<T>('emu_call', { method, params, session: null });
 
+/** The emulator's USB takes any size of MidiRpc write: 16 KiB a request makes a +Drive file about twice as fast as 2 KiB (the firmware's work per request, and the guest idle between requests). */
+export const EMU_RPC_CHUNK = 16384;
+
 export class EmuUsbTransport implements DkTransport {
+  readonly rpcChunk = EMU_RPC_CHUNK;
   private rx: Uint8Array = new Uint8Array();
   private ready: Uint8Array[] = [];
 

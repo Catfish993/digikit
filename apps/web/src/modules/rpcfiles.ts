@@ -49,6 +49,8 @@ export interface RpcSpace {
 /** The transport of the requests: `DkSession` (`rpc` takes its turn with the other requests). */
 export interface RpcPort {
   rpc(type: number, payload?: Uint8Array, timeoutMs?: number): Promise<Uint8Array>;
+  /** Data bytes per write request this link takes (`DkTransport.rpcChunk`); `RPC_CHUNK` when absent. */
+  readonly rpcChunk?: number;
 }
 
 const text = new TextEncoder();
@@ -77,7 +79,7 @@ export class RpcFiles {
   private timeoutMs?: number;
   constructor(port: RpcPort, options: { chunk?: number; timeoutMs?: number } = {}) {
     this.port = port;
-    this.chunk = options.chunk ?? RPC_CHUNK;
+    this.chunk = options.chunk ?? port.rpcChunk ?? RPC_CHUNK;
     this.timeoutMs = options.timeoutMs;
   }
 

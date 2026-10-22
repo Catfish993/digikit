@@ -48,6 +48,13 @@ export interface DkTransport {
   send(msg: Uint8Array): void | Promise<void>;
   /** `signal`: when it aborts, a transport that can (a native wait) ends the wait early and returns null; the session does not rely on it. */
   recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null>;
+  /**
+   * Data bytes of one stock MidiRpc write request (WriteFileV1) this link takes, when it takes more than `RPC_CHUNK` (rpcfiles.ts): the
+   * emulator's USB has no packet limit, and a request costs the stock firmware about 6 ms of model time of its own whatever its size, besides
+   * 2.3 us a byte (finding 43, upload speed).
+   * A link to a device leaves it out.
+   */
+  readonly rpcChunk?: number;
 }
 
 const cancelledError = () => new DkError({ error: 'cancelled', kind: 'cancelled' });
@@ -621,6 +628,11 @@ export class DkSession {
     this.timeoutMs = options.timeoutMs ?? 6000;
     this.retries = options.retries ?? 2;
     this.chunk = options.chunk ?? MAX_CHUNK;
+  }
+
+  /** The transport's `rpcChunk`: how much data one MidiRpc write may carry on this link, or undefined (use the default). */
+  get rpcChunk(): number | undefined {
+    return this.t.rpcChunk;
   }
 
   private takeSeq(): number {

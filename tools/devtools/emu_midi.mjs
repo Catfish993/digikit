@@ -3,6 +3,9 @@
 import net from 'node:net';
 import { splitMessages } from '../../apps/web/src/modules/dkupload-core.ts';
 
+/** Milliseconds between two polls of `midi.usb.out` while a request waits for its reply (the desktop transport polls every 10; `DIGI_POLL_MS` to try another). */
+const POLL_MS = Number(process.env.DIGI_POLL_MS ?? 10);
+
 /** Connect to the daemon's socket: `{ call(method, params), transport, close() }`. */
 export async function connect(socketPath) {
   const sock = net.connect(socketPath);
@@ -31,6 +34,7 @@ export async function connect(socketPath) {
   await call('hello', { min_schema: 1 });
 
   const transport = {
+    rpcChunk: 16384, // the emulator's USB takes any size (the desktop transport says the same)
     rx: new Uint8Array(),
     ready: [],
     async send(msg) {
@@ -49,7 +53,7 @@ export async function connect(socketPath) {
           continue;
         }
         if (Date.now() >= end) return null;
-        await new Promise((r) => setTimeout(r, 10));
+        await new Promise((r) => setTimeout(r, POLL_MS));
       }
     },
   };

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DkSession, decode8in7 } from '../src/modules/dkupload-core.ts';
-import { RPC_FILE, RpcFiles, pathBytes, putVerified, verifyWritten } from '../src/modules/rpcfiles.ts';
+import { RPC_CHUNK, RPC_FILE, RpcFiles, pathBytes, putVerified, verifyWritten } from '../src/modules/rpcfiles.ts';
 import { FakeDrive, hashOf } from './fakedrive.mjs';
 
 const setup = (opts) => {
@@ -74,6 +74,20 @@ test('write: chunks at sequential offsets, the byte count at close, the size wit
   assert.deepEqual(await files.info('/s/none'), { found: false, size: 0, hash: 0 });
   // an empty file
   assert.equal((await files.write('s/empty', new Uint8Array(0))).size, 0);
+});
+
+test('the chunk of a write: the default, the link\'s own (rpcChunk of the transport), or the one asked for', async () => {
+  const writes = async (rpcChunk, options) => {
+    const dev = new FakeDrive();
+    if (rpcChunk !== undefined) dev.rpcChunk = rpcChunk;
+    const session = new DkSession(dev, { timeoutMs: 50 });
+    assert.equal(session.rpcChunk, rpcChunk);
+    await new RpcFiles(session, { timeoutMs: 50, ...options }).write('s/f', data(3 * RPC_CHUNK + 1));
+    return dev.seen.filter((t) => t === RPC_FILE.WRITE_V1).length;
+  };
+  assert.equal(await writes(undefined), 4); // a device link: RPC_CHUNK
+  assert.equal(await writes(4 * RPC_CHUNK), 1); // the emulator's USB
+  assert.equal(await writes(4 * RPC_CHUNK, { chunk: RPC_CHUNK }), 4); // the caller's own choice wins
 });
 
 test('a root-level file is sent with its leading slash (a bare name would fail on the device)', async () => {
