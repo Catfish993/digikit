@@ -12,7 +12,13 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.firmware import config  # noqa: E402
-from tools.patchkit import pk_build, pk_dkrt, pk_dkrt_boot, pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_build,
+    pk_device,
+    pk_dkrt,
+    pk_dkrt_boot,
+    pk_toolchains,
+)
 
 RUNTIME = ROOT / "modules/core/runtime"
 IMAGES = {
@@ -64,26 +70,22 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
-    # the record, the store header copies, the reader against a commit that runs during it (finding 43) and the card-write range (finding 46): 13 tests
-    assert r.returncode == 0 and "14 passed; 0 failed" in r.stdout, r.stdout
+    # the record (4 tests) and the version 3 store: format, table stream, free space, power cuts, header copies, a read against a commit (finding 43), the card-write range (finding 46)
+    assert r.returncode == 0 and "18 passed; 0 failed" in r.stdout, r.stdout
 
 
 def test_the_store_profile_reserves_the_two_record_sectors():
-    for dev in ("digitakt-ii", "digitone-ii"):
+    for dev, short in (("digitakt-ii", "dt2"), ("digitone-ii", "dn2")):
         store = tomllib.loads((ROOT / "devices" / f"{dev}.toml").read_text())["card"][
             "store"
         ]
-        assert (
-            store["end_sector"] == pk_dkrt_boot.STORE_FIRST + pk_dkrt_boot.STORE_SECTORS
-        )
-        assert store["first_sector"] == pk_dkrt_boot.STORE_FIRST
+        s = pk_device.store_of(short)
+        assert store["end_sector"] == s.first + s.sectors
+        assert store["first_sector"] == s.first
         assert store["selection_sectors"] == 2
         assert store["header_b_sector"] == store["end_sector"] - 2 - 1
-        assert store["header_b_sector"] == pk_dkrt_boot.STORE_FIRST + 0x5FFD
-        assert (
-            store["end_sector"] - 2 == pk_dkrt_boot.SECTOR_A
-            and store["end_sector"] - 1 == pk_dkrt_boot.SECTOR_B
-        )
+        assert store["header_b_sector"] == s.header_b
+        assert (s.sel_a, s.sel_b) == (store["end_sector"] - 2, store["end_sector"] - 1)
 
 
 @pytest.mark.parametrize("image", sorted(IMAGES))

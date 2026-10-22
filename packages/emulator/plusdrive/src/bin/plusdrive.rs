@@ -150,7 +150,7 @@ fn store_ls(args: Vec<String>) -> Result<(), String> {
     let image = open_image(&image.ok_or(usage())?)?;
     let layout = card_layout(&device)?;
     let range = layout.store.ok_or("this device has no module store")?;
-    let size = range.end_sector - range.first_sector;
+    let size = range.store_limit();
     let store = read_store(&image, range.first_sector, size, range.header_b())
         .map_err(|e| e.to_string())?
         .ok_or("no module store on this card")?;
@@ -174,9 +174,16 @@ fn store_ls(args: Vec<String>) -> Result<(), String> {
         store.seq,
         if store.from_b { "B" } else { "A" }
     );
-    for e in &store.entries {
+    // by path (the table is by position)
+    let mut entries: Vec<_> = store.entries.iter().collect();
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    for e in entries {
         let hex: String = e.sha256.iter().map(|b| format!("{b:02x}")).collect();
-        println!("{}\t{}\t{}\t{hex}", e.path, e.first_sector, e.size_bytes);
+        if e.is_dir {
+            println!("{}/\t-\t0\tfolder", e.path);
+        } else {
+            println!("{}\t{}\t{}\t{hex}", e.path, e.first_sector, e.size_bytes);
+        }
     }
     Ok(())
 }

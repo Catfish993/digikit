@@ -31,7 +31,7 @@ from the menu. No hardware flashing until everything works in the emulator.
    copied byte for byte. `.mmcfs/projects/`, `.mmcfs/sounds/` and `.mmcfs/kits/` hold raw MmcFs slots, one file
    per slot (`NNNN.bin`). The exporter writes changed files back byte for byte and keeps each replaced file under
    `out/plusdrive/backup/`.
-7. Module store: card sectors 0x38000-0x3E000 on both devices (S6), read with the firmware's own block read
+7. Module store: card sectors 0x38000-0x3E000 on both devices (S6; **superseded 2026-10-22**: a per-device area above the +Drive on the DT2 and above 0x800000 on the DN2, `docs/design/digikit-store.md` version 3, finding 59), read with the firmware's own block read
    function. `plus_drive/<device>/digikit/` maps into it. The DT2 path filesystem stays for samples.
 8. Device facts are data: what differs between devices (card layout, store range, panel, DSP link, frame
    channel sizes) lives in `devices/<device>.toml`, and firmware-version addresses in `devices/ports/*.toml`.

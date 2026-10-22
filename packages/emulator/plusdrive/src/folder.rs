@@ -250,9 +250,15 @@ fn scan_store(dir: &Path, layout: &CardLayout, out: &mut FolderScan) -> Result<(
                     out.tree.selection = Some(paths);
                     continue;
                 }
-                out.tree.store.push(StoreFile { path: rel, bytes });
+                out.tree.store.push(StoreFile {
+                    dir: false,
+                    path: rel,
+                    bytes,
+                });
             }
         }
+        // (an empty folder of `digikit/` is not built into the store: a folder with files is implied by their paths, and a store of nothing but
+        // an empty folder would make a card "have a store". Folder entries are made by the runtime's MKDIR and are exported, not built.)
     }
     if let Some(paths) = &out.tree.selection {
         for path in paths {

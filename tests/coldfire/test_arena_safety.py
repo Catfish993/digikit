@@ -21,17 +21,25 @@ def _overlay(*sectors: int) -> bytes:
 
 
 def test_card_store_hits_names_sectors_in_the_module_store_only():
-    ov = _overlay(0, 0x37FFF, 0x38000, 0x3DFFF, 0x3E000, 0x58000)
-    assert a.card_store_hits(ov) == [0x38000, 0x3DFFF]
-    assert a.card_store_hits(_overlay(0, 0x2000, 0x58000)) == []
-    assert a.card_store_hits(a.parse_overlay(ov), 0x3E000, 0x3F000) == [0x3E000]
+    lo, hi = a.card_store(
+        "dt2"
+    )  # devices/*.toml [card.store]: the area differs per device
+    ov = _overlay(0, lo - 1, lo, hi - 1, hi, 0x58000)
+    assert a.card_store_hits(ov, "dt2") == [lo, hi - 1]
+    assert a.card_store_hits(_overlay(0, 0x2000, 0x58000), "dt2") == []
+    assert a.card_store_hits(a.parse_overlay(ov), "dt2", hi, hi + 0x1000) == [hi]
+    # the DN2's area is another one: the DT2's first sector is inside it, the other way round is not
+    dlo, dhi = a.card_store("dn2")
+    assert (dlo, dhi) != (lo, hi) and dlo < lo < dhi
+    assert a.card_store_hits(_overlay(lo, dlo - 1), "dn2") == [lo]
 
 
 def test_card_store_hits_reads_a_file(tmp_path):
+    lo, _ = a.card_store("dt2")
     f = tmp_path / "overlay.bin"
-    f.write_bytes(_overlay(0x38001))
-    assert a.card_store_hits(f) == [0x38001]
-    assert a.card_store_hits(str(f), 0, 1) == []
+    f.write_bytes(_overlay(lo + 1))
+    assert a.card_store_hits(f, "dt2") == [lo + 1]
+    assert a.card_store_hits(str(f), "dt2", 0, 1) == []
 
 
 def test_parse_overlay_refuses_a_torn_file():
@@ -202,12 +210,12 @@ def test_static_check_finds_absolute_references_in_both_views(monkeypatch):
     from tools.coldfire import regions
 
     # move.l #$47e8b000,d0 (cached view) and move.l #$4fe8b010,d1 (uncached alias), then a sector immediate and an unrelated one
-    code = bytes.fromhex("203c47e8b000223c4fe8b010243c00038001263c00001234") + bytes(8)
+    code = bytes.fromhex("203c47e8b000223c4fe8b010243c02df1001263c00001234") + bytes(8)
     monkeypatch.setattr(regions, "load_main", lambda image: code)
     r = a.static_check("dt2-1.16", with_cf=False)
     assert [h["target"] for h in r["views"]["cached"]["hits"]] == [0x47E8B000]
     assert [h["target"] for h in r["views"]["uncached"]["hits"]] == [0x4FE8B010]
-    assert [h["target"] for h in r["store"]["store_sector"]["hits"]] == [0x38001]
+    assert [h["target"] for h in r["store"]["store_sector"]["hits"]] == [0x2DF1001]
     assert "0x47e8b000" in a._static_report(r)
 
 

@@ -25,8 +25,8 @@ F0 7D 64 6B 01 <cmd | 0x40> <seq> <body, 8-in-7 packed> F7   device -> host, one
 - Packing (as the firmware's MidiRpc, finding 42 section 2.5): each group of up to 7 data bytes becomes a collector byte and
   then the 7 bytes with bit 7 cleared; data byte j (1..7) of the group takes its bit 7 from collector bit (7 - j). The last
   group may be short. Example: `80 01 02 03 04 05 06` packs to `40 00 01 02 03 04 05 06`; `FF` packs to `40 7F`.
-- Integers in the unpacked body are big-endian. Paths are bytes plus a NUL, under the store's path rules (1 to 87 bytes, `/`
-  separated, no empty, `.` or `..` part).
+- Integers in the unpacked body are big-endian. Paths are bytes plus a NUL, under the store's path rules (1 to 159 bytes of printable text, `/`
+  separated, no empty, `.` or `..` part; docs/design/digikit-store.md).
 - A request is at most 40 KiB on the wire (the firmware drops a SysEx message over 128 KiB and holds about 150 KiB in its pool).
   A reply is at most 1 KiB on the wire (the firmware's TX ring is 4 KiB and spins when full), and **a reply is sent only when the ring has room**:
 the runtime reads the firmware's count of bytes handed to the USB stack and not yet sent (anchor `dkrt.fw.tx_inflight_lit`) and drops the
@@ -39,7 +39,7 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 |---|---|---|
 | -50 | E_MSG | body too short or malformed |
 | -51 | E_PATH | path breaks the store rules |
-| -52 | E_FULL | not enough free sectors (reply carries `u32 free_bytes`) |
+| -52 | E_FULL | no gap for the file, or none for the table beside it (reply carries `u32 free_bytes`, INFO's: the sum of the free space, saturated to 32 bits; a store with many gaps may refuse a file smaller than that) |
 | -53 | E_STATE | no upload open (DATA, END) |
 | -54 | E_OFFSET | offset is neither the next byte nor a retry of the previous chunk |
 | -55 | E_LENGTH | chunk length breaks the rule below, or the file would pass its size |
@@ -83,12 +83,12 @@ SoftwareVersion (the stock route is unchanged). *Changed 2026-10-18 (lane r4); t
 
 Behaviour the first draft left open (lane r4, built and tested):
 
-- A card with nothing in the store range is an empty store: INFO, LIST and BEGIN work, and the first END writes both headers.
+- A card with nothing in the store area is an empty store: INFO, LIST and BEGIN work, and the first END writes both headers. A card that is smaller than the area has no store (`E_NOSTORE` for every command that needs it).
   `E_NOSTORE` is for a header that is there but unreadable (no usable copy); CLEAR still works then.
 - END closes the upload whatever its result (a failed END needs a new BEGIN). BEGIN, DELETE and CLEAR drop an open upload. ABORT with
   none open is ok.
-- A store holds at most 256 files for upload commands (the table is held in the 32 KiB buffer); BEGIN answers `E_FULL` (free 0) past that.
-  LIST and the loader read what is there.
+- The table is streamed through two 8 KiB buffers, so a store holds as many entries as the card has room for (version 3, docs/design/digikit-store.md); a request body is at most 256 bytes (a path of 159 bytes
+  and BEGIN's size and sha256 make 196).
 - The buffer is a static object of the runtime, 32 KiB plus 16 bytes of body offset and 4 KiB scratch (36,896 bytes), 16-byte aligned. The first
   draft said "from its arena"; a static address lets the write-watch leave out the card reads that land in it by DMA, as it does for
   the staging buffer, and the buffer cannot fail to allocate.
@@ -207,14 +207,14 @@ selection_sectors - 1`; recorded in `devices/<device>.toml` `[card.store]`, not 
 - **Equal headers before staging:** BEGIN first makes the two header copies equal (the lagging, torn or version 1 copy is rewritten from
   the winner); CLEAR makes the space reusable, and a cut between B and A must not leave a stale copy that names a table the next upload
   overwrites ("The CLEAR double fault", finding 43). If that write fails BEGIN answers `E_WRITE` and stages nothing.
-- **Staging:** BEGIN reserves `ceil(size / 512)` sectors from `used_sectors` on, plus room for the new table. DATA writes whole
-  sectors there at once (the last partial sector is zero padded). Nothing the current header points at is written.
-- **Commit (END, DELETE, CLEAR):** END first reads the staged file back from the card and checks its sha256. Then: write the
-  new table after the staged data (sorted by path, a replaced path takes the new entry), read it back and check its CRC,
-  write header B with `seq + 1`, then header A with `seq + 1`. A power cut before B leaves the old store; between B and A
-  the next reader takes B. `used_sectors` is the end of the new table; old file data is not reused until CLEAR.
-- **Full:** BEGIN answers E_FULL with the free bytes. The host's way out is CLEAR and an upload of the files it wants
-  (the hosts offer this as "repack"); a module missing at boot is skipped and reported, as today.
+- **Staging:** BEGIN checks the path against the table (it may replace a file; it may not replace a folder, lie inside a file or be a folder that has entries: `E_PATH`) and finds the
+  first gap that holds `ceil(size / 512)` sectors, and a gap beside it for the new table of one more entry (`E_FULL` otherwise). DATA writes whole sectors into the file's extent at once (the last partial sector is zero
+  padded). Nothing the current header points at is written.
+- **Commit (END, DELETE, CLEAR):** END first reads the staged file back from the card and checks its sha256. Then the new table is streamed from the old one, with the entry inserted, replaced (a replaced path takes the
+  new entry and frees the old extent) or removed, into the first gap that holds it (never over the table in use or the staged file), read back and checked by its CRC; then header B with `seq + 1`, then header A
+  with `seq + 1`. A power cut before B leaves the old store; between B and A the next reader takes B. Space freed by a delete or a replace is reused by the next BEGIN; BEGIN, DELETE and CLEAR first
+  make the two header copies agree.
+- **Full:** BEGIN answers E_FULL with the free bytes. The host's way out is to delete files (the space is reused), or CLEAR and an upload of the files it wants; a module missing at boot is skipped and reported, as today.
 - Every card access goes through the firmware's block read and block write (`dkrt.fw.block_read`, `dkrt.fw.block_write`; the
   write takes the eMMC mutex), from the MIDI task, one request at a time.
 

@@ -6,16 +6,17 @@
 //!
 //! A reply is sent only when the firmware's TX ring has room (`tx_room`), so a host that does not read its input cannot hang the MIDI task.
 //!
-//! Store writes go through the firmware's block write, only to store sectors: staged data and tables in `[1, LIMIT)`, the two header
-//! copies at sector 0 and `HEADER_B`. Never the selection record (the two sectors after `HEADER_B`). Rules: no `match` on integers (a
-//! dense one becomes a jump table, which is not ColdFire code), no `core::fmt`, no slice indexing (a bounds panic hangs the task).
+//! Store writes go through the firmware's block write, only to store sectors: file data and tables in `[1, limit)`, the two header copies at sector
+//! 0 and `header_b`. Never the selection record (the two sectors after `header_b`). The table is streamed through two 8 KiB buffers and rewritten whole,
+//! in free space, on every commit (`dkrt_sdk::store`, docs/design/digikit-store.md). Rules: no `match` on integers (a dense one becomes a jump
+//! table, which is not ColdFire code), no `core::fmt`, no slice indexing (a bounds panic hangs the task).
 
 use crate::sha256::Sha;
 use crate::{block_read, block_write, boot, card, dlog, midi_send, rd32, tx_in_flight, wr32};
 use core::ptr::{addr_of, addr_of_mut};
-use dkrt_sdk::store::{self, Hdr, ENTRY, FIRST, HEADER_B, LIMIT};
+use dkrt_sdk::store::{self, Edit, Entry, Hdr, Io, Layout, Table, KIND_DIR, KIND_FILE};
 use dkrt_sdk::proto::*;
-use dkrt_sdk::{logk, DkrtCap, CAP_MAX, E_NOT_FOUND, OK, RUNTIME_VERSION};
+use dkrt_sdk::{logk, DkrtCap, CARD_TOO_SMALL, CAP_MAX, E_NOT_FOUND, OK, RUNTIME_VERSION};
 
 // The protocol numbers (commands, the `E_*` statuses, `VERSION`, the INFO capability bits) are `dkrt_sdk::proto`, written by `patchkit gen`
 // from `[protocol]` of `sdk/sdk.toml`. E_INUSE: the card's store area is not ours and not blank, the runtime writes nothing there
@@ -37,8 +38,10 @@ const BUF_BYTES: usize = SCRATCH_AT + SCRATCH_BYTES;
 pub struct UploadBuf([u8; BUF_BYTES]);
 #[no_mangle]
 pub static mut DKRT_UPLOAD_BUF: UploadBuf = UploadBuf([0; BUF_BYTES]);
-/// The table must fit in the 32 KiB: at most 256 entries.
-const TABLE_MAX: u32 = (MAX_CHUNK as usize / ENTRY) as u32;
+/// The table is streamed through two buffers of this size, inside the body region (a command that is not DATA has a small body, copied out first).
+const TBL_CAP: usize = 8192;
+const IN_AT: usize = 1024;
+const OUT_AT: usize = IN_AT + TBL_CAP;
 /// Wire bytes of a reply are at most 1 KiB: the unpacked body at most this.
 const REPLY_BODY_MAX: usize = 880;
 const REQ_WIRE_MAX: u32 = 40 * 1024;
@@ -48,21 +51,21 @@ const CLEAR_MAGIC: u32 = 0x434c_5221;
 struct Up {
     open: bool,
     have_last: bool,
-    path: [u8; 88],
+    path: [u8; 160],
     size: u32,
     sha: [u8; 32],
     /// Next expected byte offset.
     next: u32,
     last_off: u32,
     last_len: u32,
-    /// First staged sector, relative to the store (the store's used sectors at BEGIN).
+    /// First sector of the file's extent, relative to the store (a gap of the store at BEGIN; 0 for a file with no data).
     start: u32,
 }
 
 static mut UP: Up = Up {
     open: false,
     have_last: false,
-    path: [0; 88],
+    path: [0; 160],
     size: 0,
     sha: [0; 32],
     next: 0,
@@ -70,6 +73,8 @@ static mut UP: Up = Up {
     last_len: 0,
     start: 0,
 };
+/// A request body that is not DATA or SELECT, copied out of the buffer (a store path is up to 159 bytes: BEGIN's body is at most 196).
+static mut REQ: [u8; 256] = [0; 256];
 /// Reply under construction: the unpacked body, then the wire message.
 static mut RBODY: [u8; REPLY_BODY_MAX] = [0; REPLY_BODY_MAX];
 static mut RWIRE: [u8; 1100] = [0; 1100];
@@ -87,6 +92,10 @@ pub static mut DKRT_UPLOAD_TEAR: crate::boot::Knob = crate::boot::Knob(0);
 #[repr(C, align(16))]
 struct Sec([u8; 512]);
 static mut TEAR_BUF: Sec = Sec([0; 512]);
+/// Test knob: when not 0, the store has this many sectors (from sector 0) for header A, tables and files: the rest up to header B is kept out of every
+/// allocation, so a store that is 22 GiB can be filled in a test. Not saved; 0 at every boot.
+#[no_mangle]
+pub static mut DKRT_STORE_CAP: u32 = 0;
 /// Replies dropped because the TX ring had no room (the host retries).
 #[no_mangle]
 pub static mut DKRT_UPLOAD_DROPPED: u32 = 0;
@@ -202,36 +211,60 @@ unsafe fn put32(at: usize, v: u32) {
 
 // ---- the store ----------------------------------------------------------------------------------------------------------
 
-/// What the current header says.
-struct St {
-    used: u32,
-    seq: u32,
-    count: u32,
-    sectors: u32,
-    /// Which header copy it came from: 0 = A, 1 = B.
-    copy: u32,
-    /// The other copy says the same (nothing to repair).
-    agree: bool,
+fn lay() -> Layout {
+    crate::store::layout()
 }
 
-/// Read the current store; its table is then at `buf`. A card with nothing in the range is an empty store (`used` 1, `seq` 0).
-/// `Err(E_NOSTORE)`: a header is there but no copy is usable (or the table is more than 256 entries).
-unsafe fn state(buf: *mut u8) -> Result<St, i32> {
-    match store::open(rd, buf, MAX_CHUNK as usize) {
-        Ok(t) => {
-            if t.count > TABLE_MAX {
-                return Err(E_NOSTORE);
-            }
-            Ok(St { used: t.used, seq: t.seq, count: t.count, sectors: t.sectors, copy: t.copy, agree: t.agree })
-        }
+unsafe extern "C" fn rd(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
+    block_read(sector, bytes, buf)
+}
+
+/// The card writes of the store code: the one gated write, counted and cut by the test knobs. A header write marks the figures stale.
+unsafe extern "C" fn wr(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
+    let l = lay();
+    let header = sector == l.first || sector == l.first + l.header_b();
+    let ok = card_write(sector, bytes, buf);
+    if header {
+        crate::store::figures_stale(); // the HEALTH page's used and free figures come from the headers
+    }
+    if ok {
+        0
+    } else {
+        -1
+    }
+}
+
+fn io() -> Io {
+    Io { rd, wr }
+}
+
+/// A status of `dkrt_sdk::store` as the protocol's: its reads say the load codes.
+fn pe(e: i32) -> i32 {
+    if e == dkrt_sdk::E_READ {
+        E_READ
+    } else if e == dkrt_sdk::E_BAD_STORE || e == E_NOT_FOUND {
+        E_NOSTORE
+    } else {
+        e
+    }
+}
+
+/// Read the current store: the headers (the table is checked once per header: `crate::store::open_in`), through the buffer. A card with nothing in
+/// the area is an empty store (`seq` 0). `Err(E_NOSTORE)`: a header is there but no copy is usable, or the card is too small, or the area is somebody's.
+unsafe fn state(buf: *mut u8) -> Result<Table, i32> {
+    if card::state() == CARD_TOO_SMALL {
+        return Err(E_NOSTORE);
+    }
+    match crate::store::open_in(buf.add(SCRATCH_AT), buf.add(IN_AT), TBL_CAP) {
+        Ok(t) => Ok(t),
         Err(e) => {
             if e == E_NOT_FOUND {
-                // "No store" is an empty range (or one with only a selection record, which also makes the card ours). Bytes in a header sector that are
+                // "No store" is an empty area (or one with only a selection record, which also makes the card ours). Bytes in a header sector that are
                 // not a store header are somebody's data: a write would overwrite them, so refuse (finding 46, card safety).
                 if !header_sectors_blank(buf.add(SCRATCH_AT)) {
                     return Err(E_NOSTORE);
                 }
-                Ok(St { used: 1, seq: 0, count: 0, sectors: 0, copy: 0, agree: true })
+                Ok(Table { h: Hdr::empty(&lay()), copy: 0, agree: true })
             } else {
                 Err(E_NOSTORE)
             }
@@ -241,27 +274,16 @@ unsafe fn state(buf: *mut u8) -> Result<St, i32> {
 
 /// Do both header sectors (A, B) read all 0x00 or all 0xFF? A sector that cannot be read does not count as blank.
 unsafe fn header_sectors_blank(scratch: *mut u8) -> bool {
+    let l = lay();
     let mut k = 0;
     while k < 2 {
-        let rel = if k == 0 { 0 } else { HEADER_B };
-        if block_read(FIRST + rel, 512, scratch) != 0 || !card::blank(scratch) {
+        let rel = if k == 0 { 0 } else { l.header_b() };
+        if block_read(l.first + rel, 512, scratch) != 0 || !card::blank(scratch) {
             return false;
         }
         k += 1;
     }
     true
-}
-
-unsafe extern "C" fn rd(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
-    block_read(sector, bytes, buf)
-}
-
-/// Write `sectors` at store sector `rel` (data and tables only: `[1, LIMIT)`).
-unsafe fn wr_data(rel: u32, sectors: u32, buf: *const u8) -> bool {
-    if rel < 1 || sectors == 0 || rel > LIMIT || sectors > LIMIT - rel || sectors > 128 {
-        return false;
-    }
-    card_write(FIRST + rel, sectors * 512, buf)
 }
 
 /// The only place the upload path writes the card.
@@ -283,79 +305,46 @@ unsafe fn card_write(sector: u32, bytes: u32, buf: *const u8) -> bool {
     block_write(sector, bytes, buf) == 0
 }
 
-/// Write a header sector to copy A (`b` false) or B.
-unsafe fn wr_header(b: bool, buf: *const u8) -> bool {
-    let rel = if b { HEADER_B } else { 0 };
-    let ok = card_write(FIRST + rel, 512, buf);
-    crate::store::figures_stale(); // the HEALTH page's used and free figures come from the headers
-    ok
-}
-
 fn sectors_of(bytes: u32) -> u32 {
-    (bytes + 511) / 512
+    store::sectors_of(bytes)
 }
 
-fn table_sectors(count: u32) -> u32 {
-    (count * ENTRY as u32 + 511) / 512
+/// Sectors a store may use now: up to header B, or the test knob.
+fn limit_now() -> u32 {
+    let l = lay();
+    let cap = unsafe { core::ptr::read_volatile(addr_of!(DKRT_STORE_CAP)) };
+    if cap != 0 && cap < l.limit() {
+        cap
+    } else {
+        l.limit()
+    }
 }
 
-/// Free bytes for files, keeping room for a table of `count + 1` entries.
-fn free_bytes(st: &St) -> u32 {
-    let room = table_sectors(st.count + 1);
-    let free = LIMIT.saturating_sub(st.used).saturating_sub(room);
-    free * 512
-}
-
-/// A store path: 1 to 87 bytes, no empty, `.` or `..` part, and nothing below 0x20 or 0x7f (the store itself allows any byte but
-/// NUL; 7-bit text keeps the paths printable on the hosts).
-unsafe fn path_ok(p: *const u8, max: usize) -> Option<usize> {
+/// The extents an allocation keeps out of: the sectors the test knob takes away, and `pend` (a file being uploaded). At most two.
+fn extras(buf: &mut [(u32, u32); 2], pend: Option<(u32, u32)>) -> &[(u32, u32)] {
+    let l = lay();
     let mut n = 0;
-    while n < max && *p.add(n) != 0 {
+    let lim = limit_now();
+    if lim < l.limit() {
+        buf[n] = (lim, l.limit() - lim);
         n += 1;
     }
-    if n == 0 || n > 87 || n >= max {
-        return None;
+    if let Some(p) = pend {
+        buf[n] = p;
+        n += 1;
     }
-    let mut part = 0usize;
-    let mut dots = 0usize;
-    let mut i = 0;
-    while i <= n {
-        let c = if i < n { *p.add(i) } else { b'/' };
-        if i < n && (c < 0x20 || c == 0x7f) {
-            return None;
-        }
-        if c == b'/' {
-            if part == 0 || (dots == part && part <= 2) {
-                return None;
-            }
-            part = 0;
-            dots = 0;
-        } else {
-            part += 1;
-            if c == b'.' {
-                dots += 1;
-            }
-        }
-        i += 1;
-    }
-    Some(n)
+    &buf[..n]
 }
 
-/// Compare NUL-terminated `a` with the 88-byte path field `b`: negative, 0, positive (byte order).
-unsafe fn cmp_path(a: *const u8, b: *const u8) -> i32 {
-    let mut i = 0;
-    while i < 88 {
-        let x = *a.add(i);
-        let y = *b.add(i);
-        if x != y {
-            return x as i32 - y as i32;
-        }
-        if x == 0 {
-            return 0;
-        }
-        i += 1;
+/// Bytes of free space in all (the room for the table's next entry kept back), saturated to 32 bits for INFO.
+fn free_bytes(h: &Hdr) -> u32 {
+    let room = store::table_sectors(h.count + 1);
+    let b = limit_now().saturating_sub(h.used).saturating_sub(room) as u64 * 512;
+    if b > u32::MAX as u64 {
+        u32::MAX
+    } else {
+        b as u32
     }
-    0
 }
 
 unsafe fn copy(dst: *mut u8, src: *const u8, n: usize) {
@@ -374,88 +363,22 @@ unsafe fn zero(dst: *mut u8, n: usize) {
     }
 }
 
-/// Move `n` bytes from `src` to `dst` where `dst` may overlap above or below `src`.
-unsafe fn mv(dst: *mut u8, src: *const u8, n: usize) {
-    if (dst as usize) < (src as usize) {
-        copy(dst, src, n);
-    } else {
-        let mut i = n;
-        while i > 0 {
-            i -= 1;
-            *dst.add(i) = *src.add(i);
-        }
-    }
+/// Make the two header copies say the same thing before any space is reused (`store::sync_headers`). `false`: that write failed.
+unsafe fn sync_headers(buf: *mut u8, t: &Table) -> bool {
+    store::sync_headers(&io(), &lay(), t, buf.add(SCRATCH_AT))
 }
 
-// ---- both headers before space is reused -------------------------------------------------------------------------------------
-
-/// The header sector `rel` as a `Hdr`, `None` when it is not a usable header (the scratch region of `buf` is used).
-unsafe fn header_at(rel: u32, scratch: *mut u8) -> Option<Hdr> {
-    if block_read(FIRST + rel, 512, scratch) != 0 {
-        return None;
-    }
-    store::parse_header(scratch)
-}
-
-/// Make the two header copies say the same thing (finding 43, "CLEAR double fault"). A cut between header B and header A leaves the
-/// copies different, the lagging one pointing at the table of the store before. That is harmless while no sector is reused, but a store
-/// that starts over (CLEAR) stages its next file over exactly those sectors; if that upload's header B then tears, the lagging A would be
-/// the only copy left and would point at overwritten sectors. So BEGIN, which is where staging starts, first rewrites the lagging or
-/// unusable copy from the winner. `false`: that write failed (nothing is staged then). A card with no store has nothing to do.
-unsafe fn sync_headers(buf: *mut u8, st: &St) -> bool {
-    // `store::open` has read both headers already: a healthy store costs nothing here
-    if st.seq == 0 || st.agree {
-        return true;
-    }
-    let scratch = buf.add(SCRATCH_AT);
-    let win_rel = if st.copy == 1 { HEADER_B } else { 0 };
-    let w = match header_at(win_rel, scratch) {
-        Some(h) => h,
-        None => return false,
-    };
-    let h = Hdr { version: 2, ..w };
-    store::encode_header(&h, scratch);
-    wr_header(st.copy == 0, scratch)
-}
-
-// ---- commit -------------------------------------------------------------------------------------------------------------
-
-/// The table in `buf` (`count` entries, padded to its sectors with zeros) goes to store sector `at`; read it back and check its
-/// CRC; then header B and header A with `seq + 1`. Returns a status. `used` is the new end of the used sectors.
-unsafe fn commit(buf: *mut u8, count: u32, at: u32, used_after_tables: u32, seq: u32) -> i32 {
-    let ts = table_sectors(count);
-    zero(buf.add(count as usize * ENTRY), ts as usize * 512 - count as usize * ENTRY);
-    let crc = store::crc32_of(buf, ts as usize * 512);
-    if ts != 0 {
-        if !wr_data(at, ts, buf) {
-            return E_WRITE;
+/// Commit an edit of the table `cur`; the runtime's store cache learns the new table. A status.
+unsafe fn do_commit(buf: *mut u8, cur: &Hdr, edit: Edit, pend: Option<(u32, u32)>) -> i32 {
+    let mut ex = [(0, 0); 2];
+    let extra = extras(&mut ex, pend);
+    match store::commit(&io(), &lay(), cur, buf.add(IN_AT), buf.add(OUT_AT), TBL_CAP, buf.add(SCRATCH_AT), edit, extra) {
+        Ok(c) => {
+            crate::store::note_commit(&c.h);
+            OK
         }
-        // read the table back and check its CRC, through the scratch region
-        let scratch = buf.add(SCRATCH_AT);
-        let mut c = 0xffff_ffffu32;
-        let mut done = 0;
-        while done < ts {
-            let n = if ts - done > 8 { 8 } else { ts - done };
-            if block_read(FIRST + at + done, n * 512, scratch) != 0 {
-                return E_READ;
-            }
-            c = store::crc32(c, scratch, n as usize * 512);
-            done += n;
-        }
-        if !c != crc {
-            return E_WRITE;
-        }
+        Err(e) => pe(e),
     }
-    let h = Hdr { version: 2, count, sectors: ts, used: used_after_tables, table_crc: crc, table_first: at, seq: seq + 1 };
-    let hb = buf.add(SCRATCH_AT);
-    store::encode_header(&h, hb);
-    if !wr_header(true, hb) {
-        return E_WRITE;
-    }
-    if !wr_header(false, hb) {
-        return E_WRITE;
-    }
-    OK
 }
 
 // ---- commands -------------------------------------------------------------------------------------------------------------
@@ -463,7 +386,7 @@ unsafe fn commit(buf: *mut u8, count: u32, at: u32, used_after_tables: u32, seq:
 unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     let st = state(buf);
     let free = match &st {
-        Ok(s) => free_bytes(s),
+        Ok(s) => free_bytes(&s.h),
         Err(_) => 0,
     };
     let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
@@ -601,37 +524,43 @@ unsafe fn cmd_capacity(seq: u32) -> i32 {
     reply(CMD_CAPACITY, seq, OK, at)
 }
 
+/// The store paths a request carries: 1 to 159 bytes, NUL-terminated inside the body.
+unsafe fn path_ok(p: *const u8, max: usize) -> Option<usize> {
+    store::path_ok(p, max)
+}
+
+/// LIST: body `u32 first` (an entry index). Reply: `u32 count` (all entries), `u8 n`, then per entry `path NUL, u32 size, sha256[32]`, as many as fit,
+/// from entry `first` on, in table order (by first sector: a host sorts for display). A folder with no file in it has size 0 and a zero sha256.
 unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     if blen < 4 {
         return reply(CMD_LIST, seq, E_MSG, 0);
     }
     let first = rd32(body);
-    let st = match state(buf) {
-        Ok(s) => s,
+    let t = match state(buf) {
+        Ok(t) => t,
         Err(e) => return reply(CMD_LIST, seq, e, 0),
     };
     let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
-    wr32(rb, st.count);
-    let mut at = 5;
+    wr32(rb, t.h.count);
+    let mut at = 5usize;
     let mut n = 0u32;
-    let mut i = first;
-    while i < st.count {
-        let e = buf.add(i as usize * ENTRY);
-        let mut pl = 0;
-        while pl < 88 && *e.add(pl) != 0 {
-            pl += 1;
-        }
+    let r = store::scan_from(&io(), &lay(), &t.h, first, buf.add(IN_AT), TBL_CAP, |_, e| {
+        let pl = store::path_len(e);
         let need = pl + 1 + 4 + 32;
         if at + need > REPLY_BODY_MAX - 1 {
-            break;
+            return false;
         }
+        let en = store::entry_of(e);
         copy(rb.add(at), e, pl);
         *rb.add(at + pl) = 0;
-        copy(rb.add(at + pl + 1), e.add(92), 4);
-        copy(rb.add(at + pl + 5), e.add(96), 32);
+        wr32(rb.add(at + pl + 1), en.size);
+        copy(rb.add(at + pl + 5), en.sha.as_ptr(), 32);
         at += need;
         n += 1;
-        i += 1;
+        true
+    });
+    if r != OK {
+        return reply(CMD_LIST, seq, pe(r), 0);
     }
     *rb.add(4) = n as u8;
     reply(CMD_LIST, seq, OK, at)
@@ -640,7 +569,7 @@ unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
 unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     up().open = false;
     if !card::writable() {
-        return reply(CMD_BEGIN, seq, E_INUSE, 0);
+        return reply(CMD_BEGIN, seq, if card::state() == CARD_TOO_SMALL { E_NOSTORE } else { E_INUSE }, 0);
     }
     let pl = match path_ok(body, blen) {
         Some(n) => n,
@@ -650,20 +579,56 @@ unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32
         return reply(CMD_BEGIN, seq, E_MSG, 0);
     }
     let size = rd32(body.add(pl + 1));
-    let st = match state(buf) {
-        Ok(s) => s,
+    let t = match state(buf) {
+        Ok(t) => t,
         Err(e) => return reply(CMD_BEGIN, seq, e, 0),
     };
-    if !sync_headers(buf, &st) {
+    if !sync_headers(buf, &t) {
         return reply(CMD_BEGIN, seq, E_WRITE, 0);
     }
-    let need = sectors_of(size) as u64 + table_sectors(st.count + 1) as u64;
-    if st.count >= TABLE_MAX || st.used as u64 + need > LIMIT as u64 {
-        put32(1, free_bytes(&st));
-        return reply(CMD_BEGIN, seq, E_FULL, 4);
+    let (io, lay) = (io(), lay());
+    // the path may replace a file, but not a folder, and may not lie inside a file or over a folder that has entries
+    let mut conflict = false;
+    let r = store::scan(&io, &lay, &t.h, buf.add(IN_AT), TBL_CAP, |_, e| {
+        let rel = store::relation(body, e);
+        if rel >= 2 || (rel == 1 && store::entry_of(e).kind == KIND_DIR) {
+            conflict = true;
+        }
+        !conflict
+    });
+    if r != OK {
+        return reply(CMD_BEGIN, seq, pe(r), 0);
+    }
+    if conflict {
+        return reply(CMD_BEGIN, seq, E_PATH, 0);
+    }
+    // the file's extent: the first gap that holds it, and room beside it for the table of one more entry
+    let need = sectors_of(size);
+    let mut ex0 = [(0, 0); 2];
+    let start = if need == 0 {
+        0
+    } else {
+        match store::first_fit(&io, &lay, &t.h, buf.add(IN_AT), TBL_CAP, need, extras(&mut ex0, None)) {
+            Ok(Some(s)) => s,
+            Ok(None) => {
+                put32(1, free_bytes(&t.h));
+                return reply(CMD_BEGIN, seq, E_FULL, 4);
+            }
+            Err(e) => return reply(CMD_BEGIN, seq, pe(e), 0),
+        }
+    };
+    let pend = if need == 0 { None } else { Some((start, need)) };
+    let mut ex1 = [(0, 0); 2];
+    match store::first_fit(&io, &lay, &t.h, buf.add(IN_AT), TBL_CAP, store::table_sectors(t.h.count + 1), extras(&mut ex1, pend)) {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            put32(1, free_bytes(&t.h));
+            return reply(CMD_BEGIN, seq, E_FULL, 4);
+        }
+        Err(e) => return reply(CMD_BEGIN, seq, pe(e), 0),
     }
     let u = up();
-    zero(u.path.as_mut_ptr(), 88);
+    zero(u.path.as_mut_ptr(), 160);
     copy(u.path.as_mut_ptr(), body, pl);
     u.size = size;
     copy(u.sha.as_mut_ptr(), body.add(pl + 5), 32);
@@ -671,7 +636,7 @@ unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32
     u.have_last = false;
     u.last_off = 0;
     u.last_len = 0;
-    u.start = st.used;
+    u.start = start;
     u.open = true;
     reply(CMD_BEGIN, seq, OK, 0)
 }
@@ -703,7 +668,7 @@ unsafe fn cmd_data(seq: u32, buf: *mut u8, blen: usize) -> i32 {
     let data = buf.add(BODY_AT + 4);
     let sectors = sectors_of(len);
     zero(data.add(len as usize), (sectors * 512 - len) as usize);
-    if !wr_data(u.start + off / 512, sectors, data) {
+    if store::write_sectors(&io(), &lay(), u.start + off / 512, sectors, data) != OK {
         return reply(CMD_DATA, seq, E_WRITE, 0);
     }
     u.have_last = true;
@@ -711,6 +676,26 @@ unsafe fn cmd_data(seq: u32, buf: *mut u8, blen: usize) -> i32 {
     u.last_len = len;
     u.next = end as u32;
     reply(CMD_DATA, seq, OK, 0)
+}
+
+/// The sha256 of `size` bytes of the card from store sector `first`, read in chunks through `buf`.
+unsafe fn sha_of(buf: *mut u8, first: u32, size: u32, out: *mut u8) -> bool {
+    let l = lay();
+    let mut sha = Sha::new();
+    let mut left = size;
+    let mut sector = first;
+    while left > 0 {
+        let n = if left > MAX_CHUNK { MAX_CHUNK } else { left };
+        let secs = sectors_of(n);
+        if block_read(l.first + sector, secs * 512, buf.add(16)) != 0 {
+            return false;
+        }
+        sha.update(buf.add(16), n);
+        left -= n;
+        sector += secs;
+    }
+    sha.finish(out);
+    true
 }
 
 unsafe fn cmd_end(seq: u32, buf: *mut u8) -> i32 {
@@ -724,21 +709,10 @@ unsafe fn cmd_end(seq: u32, buf: *mut u8) -> i32 {
         return reply(CMD_END, seq, E_LENGTH, 0);
     }
     // read the staged file back from the card and check its sha256
-    let mut sha = Sha::new();
-    let mut left = u.size;
-    let mut sector = u.start;
-    while left > 0 {
-        let n = if left > MAX_CHUNK { MAX_CHUNK } else { left };
-        let secs = sectors_of(n);
-        if block_read(FIRST + sector, secs * 512, buf.add(16)) != 0 {
-            return reply(CMD_END, seq, E_READ, 0);
-        }
-        sha.update(buf.add(16), n);
-        left -= n;
-        sector += secs;
-    }
     let mut got = [0u8; 32];
-    sha.finish(got.as_mut_ptr());
+    if !sha_of(buf, u.start, u.size, got.as_mut_ptr()) {
+        return reply(CMD_END, seq, E_READ, 0);
+    }
     let mut i = 0;
     while i < 32 {
         if got[i] != u.sha[i] {
@@ -746,85 +720,57 @@ unsafe fn cmd_end(seq: u32, buf: *mut u8) -> i32 {
         }
         i += 1;
     }
-    // the new table: the current one with the entry replaced or inserted, sorted by path
-    let st = match state(buf) {
-        Ok(s) => s,
+    // the new table: the current one with the entry replaced or inserted
+    let t = match state(buf) {
+        Ok(t) => t,
         Err(e) => return reply(CMD_END, seq, e, 0),
     };
-    if st.used != u.start || st.count >= TABLE_MAX {
-        return reply(CMD_END, seq, E_STATE, 0);
-    }
-    let mut idx = 0u32;
-    let mut found = false;
-    while idx < st.count {
-        let c = cmp_path(u.path.as_ptr(), buf.add(idx as usize * ENTRY));
-        if c == 0 {
-            found = true;
-            break;
-        }
-        if c < 0 {
-            break;
-        }
-        idx += 1;
-    }
-    let mut count = st.count;
-    let e = buf.add(idx as usize * ENTRY);
-    if !found {
-        mv(e.add(ENTRY), e, (st.count - idx) as usize * ENTRY);
-        count += 1;
-    }
-    zero(e, ENTRY);
-    copy(e, u.path.as_ptr(), 88);
-    wr32(e.add(88), u.start);
-    wr32(e.add(92), u.size);
-    copy(e.add(96), u.sha.as_ptr(), 32);
-    let at = u.start + sectors_of(u.size);
-    let used = at + table_sectors(count);
-    if used > LIMIT {
-        return reply(CMD_END, seq, E_FULL, 0);
-    }
-    let r = commit(buf, count, at, used, st.seq);
+    let mut ent = [0u8; store::ENTRY];
+    let e = Entry { first: u.start, size: u.size, kind: KIND_FILE, sha: u.sha };
+    store::encode_entry(u.path.as_ptr(), &e, ent.as_mut_ptr());
+    let pend = if u.size == 0 { None } else { Some((u.start, sectors_of(u.size))) };
+    let r = do_commit(buf, &t.h, Edit::Insert(ent.as_ptr()), pend);
     reply(CMD_END, seq, r, 0)
 }
 
+/// DELETE: a path of the store (a file or a folder entry). The space is free again when the commit is done. An upload in progress is aborted.
 unsafe fn cmd_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     up().open = false;
     if !card::writable() {
-        return reply(CMD_DELETE, seq, E_INUSE, 0);
+        return reply(CMD_DELETE, seq, if card::state() == CARD_TOO_SMALL { E_NOSTORE } else { E_INUSE }, 0);
     }
-    let pl = match path_ok(body, blen) {
-        Some(n) if n + 1 == blen => n,
+    match path_ok(body, blen) {
+        Some(n) if n + 1 == blen => {}
         _ => return reply(CMD_DELETE, seq, if blen < 2 { E_MSG } else { E_PATH }, 0),
-    };
-    let _ = pl;
-    let st = match state(buf) {
-        Ok(s) => s,
+    }
+    let t = match state(buf) {
+        Ok(t) => t,
         Err(e) => return reply(CMD_DELETE, seq, e, 0),
     };
-    let mut idx = 0u32;
-    while idx < st.count {
-        if cmp_path(body, buf.add(idx as usize * ENTRY)) == 0 {
-            break;
-        }
-        idx += 1;
+    if !sync_headers(buf, &t) {
+        return reply(CMD_DELETE, seq, E_WRITE, 0);
     }
-    if idx == st.count {
-        return reply(CMD_DELETE, seq, E_NOFILE, 0);
+    match store::find(&io(), &lay(), &t.h, buf.add(IN_AT), TBL_CAP, body) {
+        Ok(Some(_)) => {}
+        Ok(None) => return reply(CMD_DELETE, seq, E_NOFILE, 0),
+        Err(e) => return reply(CMD_DELETE, seq, pe(e), 0),
     }
-    let e = buf.add(idx as usize * ENTRY);
-    mv(e, e.add(ENTRY), (st.count - idx - 1) as usize * ENTRY);
-    let count = st.count - 1;
-    let at = st.used;
-    let used = at + table_sectors(count);
-    if used > LIMIT {
-        return reply(CMD_DELETE, seq, E_FULL, 0);
-    }
-    let r = commit(buf, count, at, used, st.seq);
+    let r = do_commit(buf, &t.h, Edit::Remove(body), None);
     reply(CMD_DELETE, seq, r, 0)
 }
 
 /// Most bytes one READ returns: the reply body is a status, the u32 file size and the bytes, in at most `REPLY_BODY_MAX`.
 const READ_MAX: u32 = 768;
+
+/// The file `path` (NUL-terminated) of the store, or the status to reply.
+unsafe fn file_of(buf: *mut u8, path: *const u8) -> Result<Entry, i32> {
+    let t = state(buf)?;
+    match store::find(&io(), &lay(), &t.h, buf.add(IN_AT), TBL_CAP, path) {
+        Ok(Some((_, e))) if e.kind == KIND_FILE => Ok(e),
+        Ok(_) => Err(E_NOFILE),
+        Err(e) => Err(pe(e)),
+    }
+}
 
 /// READ: path, NUL, u32 offset, u32 length. Reply: the file size (u32), then `min(length, 768, size - offset)` bytes.
 /// E_PATH / E_MSG: bad request; E_NOFILE: not in the store; E_LENGTH: length 0; E_OFFSET: offset at or past the end of the file.
@@ -838,21 +784,10 @@ unsafe fn cmd_read(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
     if len == 0 {
         return reply(CMD_READ, seq, E_LENGTH, 0);
     }
-    let st = match state(buf) {
-        Ok(s) => s,
+    let f = match file_of(buf, body) {
+        Ok(f) => f,
         Err(e) => return reply(CMD_READ, seq, e, 0),
     };
-    let mut idx = 0u32;
-    while idx < st.count {
-        if cmp_path(body, buf.add(idx as usize * ENTRY)) == 0 {
-            break;
-        }
-        idx += 1;
-    }
-    if idx == st.count {
-        return reply(CMD_READ, seq, E_NOFILE, 0);
-    }
-    let f = store::file(buf, idx as usize);
     if off >= f.size {
         return reply(CMD_READ, seq, E_OFFSET, 0);
     }
@@ -866,7 +801,7 @@ unsafe fn cmd_read(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
     let scratch = buf.add(SCRATCH_AT);
     let skip = off % 512;
     let secs = (skip + len + 511) / 512;
-    if block_read(FIRST + f.first + off / 512, secs * 512, scratch) != 0 {
+    if block_read(lay().first + f.first + off / 512, secs * 512, scratch) != 0 {
         return reply(CMD_READ, seq, E_READ, 0);
     }
     let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
@@ -882,63 +817,43 @@ unsafe fn cmd_verify(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i3
         Some(n) if n + 1 == blen => {}
         _ => return reply(CMD_VERIFY, seq, if blen < 2 { E_MSG } else { E_PATH }, 0),
     }
-    let st = match state(buf) {
-        Ok(s) => s,
+    let f = match file_of(buf, body) {
+        Ok(f) => f,
         Err(e) => return reply(CMD_VERIFY, seq, e, 0),
     };
-    let mut idx = 0u32;
-    while idx < st.count {
-        if cmp_path(body, buf.add(idx as usize * ENTRY)) == 0 {
-            break;
-        }
-        idx += 1;
+    if !sha_of(buf, f.first, f.size, (addr_of_mut!(RBODY) as *mut u8).add(1)) {
+        return reply(CMD_VERIFY, seq, E_READ, 0);
     }
-    if idx == st.count {
-        return reply(CMD_VERIFY, seq, E_NOFILE, 0);
-    }
-    let f = store::file(buf, idx as usize); // the table is overwritten by the reads below
-    let mut sha = Sha::new();
-    let mut left = f.size;
-    let mut sector = f.first;
-    while left > 0 {
-        let n = if left > MAX_CHUNK { MAX_CHUNK } else { left };
-        let secs = sectors_of(n);
-        if block_read(FIRST + sector, secs * 512, buf.add(16)) != 0 {
-            return reply(CMD_VERIFY, seq, E_READ, 0);
-        }
-        sha.update(buf.add(16), n);
-        left -= n;
-        sector += secs;
-    }
-    sha.finish((addr_of_mut!(RBODY) as *mut u8).add(1));
     reply(CMD_VERIFY, seq, OK, 32)
 }
 
 unsafe fn cmd_clear(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     up().open = false;
     if !card::writable() {
-        return reply(CMD_CLEAR, seq, E_INUSE, 0);
+        return reply(CMD_CLEAR, seq, if card::state() == CARD_TOO_SMALL { E_NOSTORE } else { E_INUSE }, 0);
     }
     if blen != 4 || rd32(body) != CLEAR_MAGIC {
         return reply(CMD_CLEAR, seq, E_MSG, 0);
     }
     // CLEAR works on a damaged store too: the new sequence number is above every copy that is readable
     let seq_now = match state(buf) {
-        Ok(s) => s.seq,
+        Ok(t) => t.h.seq,
         Err(_) => highest_seq(buf),
     };
-    let r = commit(buf, 0, 1, 1, seq_now);
+    let cur = Hdr { seq: seq_now, ..Hdr::empty(&lay()) };
+    let r = do_commit(buf, &cur, Edit::Clear, None);
     reply(CMD_CLEAR, seq, r, 0)
 }
 
 /// The higher `seq` of the two header copies that parse (0 when none).
 unsafe fn highest_seq(buf: *mut u8) -> u32 {
+    let l = lay();
     let mut best = 0;
     let mut k = 0;
     while k < 2 {
-        let rel = if k == 0 { 0 } else { HEADER_B };
-        if block_read(FIRST + rel, 512, buf) == 0 {
-            if let Some(h) = store::parse_header(buf) {
+        let rel = if k == 0 { 0 } else { l.header_b() };
+        if block_read(l.first + rel, 512, buf.add(SCRATCH_AT)) == 0 {
+            if let Some(h) = store::parse_header(buf.add(SCRATCH_AT)) {
                 if h.seq > best {
                     best = h.seq;
                 }
@@ -1175,9 +1090,9 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
     let blen = unpack(msg.add(7), wire as usize, buf.add(BODY_AT));
     let ent = find(cmd);
     let big = ent.is_some_and(|e| e.flags & BIG != 0);
-    // Every command but DATA and SELECT has a small body. Copy it out: the commands read the table into the front of the buffer.
+    // Every command but DATA and SELECT has a small body. Copy it out: the commands stream the table through the buffer.
     // (DATA and SELECT read theirs in place: SELECT's is up to 8 paths of 56 bytes and it never touches the table; DATA's is a chunk.)
-    let mut req = [0u8; 160];
+    let req = &mut *addr_of_mut!(REQ);
     if !big {
         if blen > req.len() {
             return reply(cmd, seq, E_MSG, 0);

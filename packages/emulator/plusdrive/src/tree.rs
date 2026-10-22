@@ -538,7 +538,13 @@ pub fn build_tree_image(
     project_seed: Option<crate::ProjectSeed<'_>>,
 ) -> Result<crate::BuiltImage, ImageError> {
     let layout = &options.layout;
+    // The store lies at the end of the card (above the +Drive): an image that holds store files or a selection reaches the end of its area.
+    let store_end = match &layout.store {
+        Some(s) if !tree.store.is_empty() || tree.selection.is_some() => s.end_sector,
+        _ => 0,
+    };
     let capacity = u64::from(options.capacity_blocks)
+        .max(store_end)
         .checked_mul(SECTOR as u64)
         .ok_or(ImageError::CapacityOverflow)?;
     let path_fs = match &layout.path_fs {
@@ -682,8 +688,8 @@ pub fn build_tree_image(
         if !tree.store.is_empty() {
             // the files keep out of the selection record sectors at the end of the range
             // and out of header copy B, the sector before them
-            let bytes = crate::encode_store(tree.store, range.store_limit())
-                .map_err(ImageError::Store)?;
+            let bytes =
+                crate::encode_store(tree.store, range.store_limit()).map_err(ImageError::Store)?;
             image.write_at(bytes_at_sector(range.first_sector)?, &bytes)?;
             image.write_at(bytes_at_sector(range.header_b())?, &bytes[..crate::SECTOR])?;
         }
@@ -1249,10 +1255,12 @@ mod tests {
         for device in ["dt2", "dn2"] {
             let files = vec![
                 crate::StoreFile {
+                    dir: false,
                     path: "b.dkm".into(),
                     bytes: pattern(1500),
                 },
                 crate::StoreFile {
+                    dir: false,
                     path: "a/x.bin".into(),
                     bytes: vec![1],
                 },
@@ -1266,18 +1274,30 @@ mod tests {
                 None,
             )
             .unwrap();
-            let store = crate::read_store(&built.image, 0x38000, 0x6000, 0x3dffd)
-                .unwrap()
-                .unwrap();
+            let area = card_layout(device).unwrap().store.unwrap();
+            let store = crate::read_store(
+                &built.image,
+                area.first_sector,
+                area.store_limit(),
+                area.header_b(),
+            )
+            .unwrap()
+            .unwrap();
+            // table order: by first sector (the data is in path order)
             let names: Vec<_> = store.entries.iter().map(|e| e.path.as_str()).collect();
             assert_eq!(names, ["a/x.bin", "b.dkm"]);
-            let bytes = crate::read_store_file(&built.image, 0x38000, &store.entries[1]).unwrap();
+            let bytes =
+                crate::read_store_file(&built.image, area.first_sector, &store.entries[1]).unwrap();
             assert_eq!(bytes, pattern(1500));
+            // the image reaches the end of the area (the store is at the end of the card)
+            assert!(built.image.logical_len() >= area.end_sector * 512);
         }
         let too_big = crate::StoreFile {
+            dir: false,
             path: "big".into(),
-            bytes: vec![0; 12 * 1024 * 1024],
+            bytes: vec![0; 90 * 1024 * 1024],
         };
+        // (82 MiB is the DT2's store)
         assert!(matches!(
             build_tree_image(
                 tree_with(Vec::new(), vec![too_big]),
@@ -1297,6 +1317,7 @@ mod tests {
             let built = build_tree_image(
                 Tree {
                     store: vec![crate::StoreFile {
+                        dir: false,
                         path: "modules/a.dkm".into(),
                         bytes: pattern(1500),
                     }],
@@ -1320,18 +1341,19 @@ mod tests {
             let read = crate::read_store(
                 &built.image,
                 store.first_sector,
-                store.end_sector - store.first_sector,
+                store.store_limit(),
                 store.header_b(),
             )
             .unwrap()
             .unwrap();
             assert_eq!(read.entries.len(), 1);
-            assert_eq!(store.header_b(), 0x3dffd);
+            assert_eq!(store.header_b(), store.end_sector - 3);
             let limit = store.store_limit() as usize * 512;
             let fits = |bytes: usize| {
                 build_tree_image(
                     Tree {
                         store: vec![crate::StoreFile {
+                            dir: false,
                             path: "big".into(),
                             bytes: vec![1; bytes],
                         }],
@@ -1344,11 +1366,14 @@ mod tests {
                     None,
                 )
             };
-            assert!(fits(limit - 2 * 512).is_ok());
-            assert!(matches!(
-                fits(limit - 512),
-                Err(ImageError::Store(crate::StoreError::DoesNotFit { .. }))
-            ));
+            // (the DN2's store is 22 GiB: its limit is not tried with a real file)
+            if device == "dt2" {
+                assert!(fits(limit - 2 * 512).is_ok());
+                assert!(matches!(
+                    fits(limit - 512),
+                    Err(ImageError::Store(crate::StoreError::DoesNotFit { .. }))
+                ));
+            }
             // no selection: both sectors stay zero (no record)
             let none = build_tree_image(
                 Tree::default(),

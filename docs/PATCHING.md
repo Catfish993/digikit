@@ -518,8 +518,8 @@ uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt put 
 uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt ls      # modules/pluck-dt2.dkm  4484  <the sha256 of the file>
 ```
 
-`put` ends with `4484 bytes in ... (sha256 checked on the device)`. In the rehearsal the upload wrote 12 sectors, all inside the store range
-(sectors 0x38000 to 0x3e000); the firmware's own project sectors were not touched. If `put` fails, nothing else has happened: `dkupload ... clear`
+`put` ends with `4484 bytes in ... (sha256 checked on the device)`. In the rehearsal the upload wrote 12 sectors, all inside the store area
+(the device's `[card.store]`: DT2 `0x2DF1000..0x2E1A000`, DN2 `0x800000` to the card end; the rehearsal ran on the older area `0x38000..0x3e000`); the firmware's own project sectors were not touched. If `put` fails, nothing else has happened: `dkupload ... clear`
 empties the store (it changes only that range).
 
 **5. Tick it and restart** (on the device): SETTINGS > DIGIKIT > MODULES. The list shows `[ ] PLUCK-DT2.DKM`. Press **YES** (it shows

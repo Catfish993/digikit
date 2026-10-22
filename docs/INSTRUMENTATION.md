@@ -196,7 +196,7 @@ Finding 25. `regions_probe` (`packages/emulator/boot/examples/regions_probe.rs`,
 `uv run python -m tools.coldfire.arena_safety run IMAGE SCRIPT` runs one panel script (`tools/coldfire/panel_script.py`;
 also `boot`, `nav`, `play`) with `DIGI_WRITE_WATCH` on `cf.expansion` from the first CACR write, the flush check, a canary
 pattern in the region and the card overlay check, and judges it; `suite IMAGE` runs them all (a few minutes with
-`--jobs 6`); `card-check OVERLAY.bin` tests a saved overlay for sectors in the module store 0x38000-0x3E000;
+`--jobs 6`); `card-check OVERLAY.bin [--device dt2|dn2]` tests a saved overlay for sectors in the device's module store area (`devices/*.toml [card.store]`);
 `list` names the scripts. Each run leaves `facts.json`, the frames (PNG) and `overlay.bin` in its directory
 (default `out/runs/arena/IMAGE-SCRIPT`). `contact_sheet()` joins frames into one picture for reading a script's path.
 Frame SHA-256 goldens: `tests/golden/arena_safety_frames.json` (`suite --update-goldens` rewrites them after a firmware or

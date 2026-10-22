@@ -80,7 +80,9 @@ def proof(image: str, keep: Path | None = None) -> dict:
     pk_dkrt.pack(tools, "test/c-demo", store / "modules" / "c-demo.dkm")
     card = work / f"{device}.img"
     pk_dkrt.build_card(tools, folder, card, syx, device)
-    pk_dkrt.write_selection(card, ["modules/c-demo.dkm"])  # loaded by the boot hook
+    pk_dkrt.write_selection(
+        card, ["modules/c-demo.dkm"], device
+    )  # loaded by the boot hook
     st, arena = rt["state"], rt["arena"]
     region_lo = min(
         w["addr"]

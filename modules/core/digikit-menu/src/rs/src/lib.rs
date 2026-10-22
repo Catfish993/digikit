@@ -14,7 +14,7 @@ use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null, null_mut};
 use dkrt_sdk::proto::{CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_VOICE_ROWS};
-use dkrt_sdk::{store, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
+use dkrt_sdk::{DkrtStoreEntry, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -37,8 +37,6 @@ extern "C" {
     fn fw_str_dtor(s: *mut u32);
     /// `View::invalidate(View *)`: asks for a redraw of the view (the screen is redrawn only when a view says so).
     fn fw_invalidate(view: *mut u8);
-    /// The eMMC block read: `(sector, byte count, buffer)`; 0 = ok. Buffer 16-byte aligned, count a multiple of 512.
-    fn fw_blk_read(sector: u32, bytes: u32, buf: *mut u8) -> i32;
     /// The `pea (icon).l` instruction of the SYSTEM item (6 bytes of code); its operand is the address of a stock icon
     /// object built at run time.
     static fw_icon_ref: [u16; 3];
@@ -84,6 +82,11 @@ extern "C" {
     fn dkrt_diag(out: *mut DkrtDiag);
     /// The debug log keeps every event (1) or errors only (0); saved in the selection record. 0 or an `E_*` code (`E_CARD_RO`: held until the next boot).
     fn dkrt_debug_set(on: u32) -> i32;
+    /// The files of the module store whose path starts with `prefix` (NUL-terminated), sorted by path, at most `max` into `out`: the count, or a negative code
+    /// (`E_NOT_FOUND`: no store).
+    fn dkrt_store_list(prefix: *const u8, out: *mut DkrtStoreEntry, max: u32) -> i32;
+    /// One sector of the store (relative to its start) into `out` (512 bytes, 16-byte aligned).
+    fn dkrt_store_read_sector(rel: u32, out: *mut u8) -> i32;
     /// The REMOTE switch (the commands of the remote range are answered only while it is on; not saved): 1 on, 0 off, -1 when the image has no input
     /// adapter (core/input) and so no remote control.
     fn dkrt_remote_get() -> i32;
@@ -350,17 +353,15 @@ impl Text {
     }
 }
 
-// ---- the module store (docs/design/digikit-store.md; the reader is `dkrt_sdk::store`, shared with the runtime) ----------
+// ---- the module store (docs/design/digikit-store.md; the runtime reads it: `dkrt_store_list`, `dkrt_store_read_sector`) -------------------
 
 const MAX_ENT: usize = 32;
-/// Table buffer: 128 entries. The card DMA writes it, so it comes from the firmware heap (module RAM stays free of writes by
-/// anything but this code); the buddy allocator hands out blocks aligned to their size.
-const TAB_BYTES: usize = 16 * 1024;
-static mut TAB: *mut u8 = null_mut();
+/// The store files under `modules/` as the runtime listed them (path, first sector, size), in path order.
+static mut ENTRIES: [DkrtStoreEntry; MAX_ENT] = unsafe { core::mem::zeroed() };
 
 /// 0 = not read, 1 = ok, 2 = no store, 3 = read error, 4 = bad or too big
 static mut STORE: u32 = 0;
-/// Table indices of the `.dkm` entries.
+/// Indices into `ENTRIES` of the `.dkm` files.
 static mut ENT: [u8; MAX_ENT] = [0; MAX_ENT];
 /// The pending selection: 1 when the row is ticked. It starts as the saved selection and is only saved by APPLY & RESTART.
 static mut TICK: [u8; MAX_ENT] = [0; MAX_ENT];
@@ -410,7 +411,12 @@ const MOD_STATE_OFF: usize = 112;
 const MOD_LOADING: u32 = 1;
 
 unsafe fn entry_path(e: usize) -> &'static [u8] {
-    store::path(TAB, e)
+    let p = &ENTRIES[e].path;
+    let mut n = 0;
+    while n < 63 && p[n] != 0 {
+        n += 1;
+    }
+    &p[..n]
 }
 
 /// Ask the runtime which modules it holds and match their store paths against the rows.
@@ -440,10 +446,11 @@ const DKM_MAGIC: u32 = 0x444b_4d46; // "DKMF"
 const REG_MAGIC: u32 = 0x444b_5247; // "DKRG"
 /// A header word at byte `off` of the file starting at store sector `first`, read through the block reader; None on an error.
 unsafe fn file_word(first: u32, off: u32) -> Option<u32> {
-    if store::read_sectors(fw_blk_read, first + off / 512, 1, HDR, 512) != OK {
+    if dkrt_store_read_sector(first + off / 512, HDR) != OK {
         return None;
     }
-    Some(store::be32(HDR.add((off % 512) as usize)))
+    let p = HDR.add((off % 512) as usize);
+    Some(((*p as u32) << 24) | ((*p.add(1) as u32) << 16) | ((*p.add(2) as u32) << 8) | (*p.add(3) as u32))
 }
 
 /// Whether the file at store sector `first` can be loaded by this runtime on this device, judged from its header: the `.dkm`
@@ -515,21 +522,13 @@ unsafe fn load_selection() {
     SAVED = TICK;
 }
 
-/// Scan the store; a commit of the upload (the MIDI task) that ran during the scan, in the headers' fingerprint, starts it again (at most
-/// three times): the table and the file words read must belong to one header (finding 43, "the menu's reader and a commit").
+/// Scan the store: the runtime lists the files under `modules/`, and a commit of the upload (the MIDI task) that ran during the list makes it start
+/// again inside the runtime (finding 43, "the menu's reader and a commit"); the file words read after belong to the same table or fail the load check.
 unsafe fn scan_store() {
     if HDR.is_null() {
         HDR = fw_new(512);
     }
-    let mut tries = 0;
-    loop {
-        let before = store::fingerprint(fw_blk_read, HDR);
-        scan_once();
-        if tries >= 3 || before.is_none() || store::fingerprint(fw_blk_read, HDR) == before {
-            break;
-        }
-        tries += 1;
-    }
+    scan_once();
 }
 
 unsafe fn scan_once() {
@@ -540,17 +539,12 @@ unsafe fn scan_once() {
     SAVED_EXTRA = 0;
     RESULT.clear();
     ARMED = 0;
-    if TAB.is_null() {
-        TAB = fw_new(TAB_BYTES as u32);
+    let n = dkrt_store_list(b"modules/\0".as_ptr(), addr_of_mut!(ENTRIES) as *mut DkrtStoreEntry, MAX_ENT as u32);
+    if n < 0 {
+        STORE = if n == E_NOT_FOUND { 2 } else if n == E_READ { 3 } else { 4 };
+        return;
     }
-    let t = match store::open_stable(fw_blk_read, TAB, TAB_BYTES, HDR) {
-        Ok(t) => t,
-        Err(e) => {
-            STORE = if e == E_NOT_FOUND { 2 } else if e == E_READ { 3 } else { 4 };
-            return;
-        }
-    };
-    for e in 0..t.count as usize {
+    for e in 0..n as usize {
         let p = entry_path(e);
         let l = p.len();
         if l > 4
@@ -568,8 +562,7 @@ unsafe fn scan_once() {
     let mut st: DkrtStatus = core::mem::zeroed();
     dkrt_status(&mut st);
     for i in 0..NENT {
-        let f = store::file(TAB, ENT[i] as usize);
-        if !compatible(f.first, st.device) {
+        if !compatible(ENTRIES[ENT[i] as usize].first, st.device) {
             NOK[i] = 1;
         }
     }
@@ -1026,6 +1019,19 @@ fn size_text(t: &mut Text, n: u32) {
     }
 }
 
+/// A size in KiB as `812 KB`, `12.3 MB` or `21.9 GB` (the store figures: a store can be 22 GiB).
+fn size_text_kb(t: &mut Text, kb: u32) {
+    if kb >= 1024 * 1024 {
+        let tenth = (kb / 1024 * 10) / 1024;
+        t.num(tenth / 10).s(b".").num(tenth % 10).s(b" GB");
+    } else if kb >= 1024 {
+        let tenth = (kb * 10) / 1024;
+        t.num(tenth / 10).s(b".").num(tenth % 10).s(b" MB");
+    } else {
+        t.num(kb).s(b" KB");
+    }
+}
+
 /// A load in tenths of a percent as `37%`.
 fn pct_text(t: &mut Text, x10: u32) {
     t.num((x10 + 5) / 10).s(b"%");
@@ -1105,7 +1111,7 @@ unsafe fn fill_health() {
     let mut t = Text::new();
     t.s(b"STORE USED ");
     if h.flags & HEALTH_STORE != 0 {
-        size_text(&mut t, h.store_used);
+        size_text_kb(&mut t, h.store_used);
     } else {
         t.s(b"--");
     }
@@ -1113,7 +1119,7 @@ unsafe fn fill_health() {
     let mut t = Text::new();
     t.s(b"STORE FREE ");
     if h.flags & HEALTH_STORE != 0 {
-        size_text(&mut t, h.store_free);
+        size_text_kb(&mut t, h.store_free);
     } else {
         t.s(b"--");
     }

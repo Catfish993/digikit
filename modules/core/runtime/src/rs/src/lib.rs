@@ -24,7 +24,7 @@ mod dsp;
 mod loader;
 pub mod registry;
 mod sha256;
-mod store;
+pub mod store;
 mod table;
 pub mod upload;
 
@@ -606,13 +606,28 @@ pub unsafe extern "C" fn dkrt_health(out: *mut DkrtHealth) {
     store::figures(&mut *out);
 }
 
+/// The module files of the store whose path starts with `prefix` (NUL-terminated), sorted by path, for the DIGIKIT menu: at most `max` entries into
+/// `out` (`DkrtStoreEntry`); the count, or a negative code (`E_NOT_FOUND`: no store on this card). Task context.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_store_list(prefix: *const u8, out: *mut DkrtStoreEntry, max: u32) -> i32 {
+    init_once();
+    store::list(prefix, out, max)
+}
+
+/// One sector of the store (`rel` sectors from its start) into `out` (512 bytes, 16-byte aligned): 0 or a negative code.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_store_read_sector(rel: u32, out: *mut u8) -> i32 {
+    init_once();
+    store::read_sector(rel, out)
+}
+
 /// `dkrt_health` without the store figures (which can read the card) and, when `walk_heap` is false, without the heap walk: what the log's
 /// snapshot uses. The store figures are left 0 and `HEALTH_STORE` clear.
 pub unsafe fn dkrt_health_light(o: &mut DkrtHealth, walk_heap: bool) {
     let s = st();
     let (afree, alargest) = arena::stats();
     o.magic = HEALTH_MAGIC;
-    o.version = 2;
+    o.version = 3;
     o.flags = 0;
     o.arena_total = s.arena_hi - s.arena_lo;
     o.arena_free = afree;
@@ -622,7 +637,7 @@ pub unsafe fn dkrt_health_light(o: &mut DkrtHealth, walk_heap: bool) {
     o.dsp_area_free = dfree;
     o.dsp_area_largest = dlargest;
     o.dsp_period = DSP_BLOCK_CYCLES;
-    o.store_total = dkrt_sdk::store::LIMIT * 512;
+    o.store_total = store::layout().limit() / 2;
     if health_fn(health_read) == 0 {
         return;
     }

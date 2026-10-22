@@ -178,6 +178,9 @@ class Ctx:
         self.report: dict[str, Any] = {"scenario": scen.name, "image": image}
         self.imgs: dict[str, B.Img] = {}
         self.totals = {"emulators": 0, "write_events": 0, "flush_hits": 0}
+        self.store = pk_device.store_of(
+            self.env.device
+        )  # the store area of this device
         self.store_writes: set[int] = set()
         self.all_writes: set[int] = set()
         self.used_cards: set[str] = set()
@@ -251,15 +254,22 @@ class Ctx:
         laid over a `base` card file (the card a scenario left behind). FOREIGN: sector images (absolute sector -> 512-byte multiple)
         written over the card, bytes that are not ours in the store range. Returns the cached file."""
         h = hashlib.sha256(self.image.encode())
+        # the store format and area are part of the key: a card built for another area or version is not this card
+        h.update(b"store-v3.1" + repr(self.store).encode())
         store_dir = self.env.folder / "digikit"
-        for f in sorted(x for x in store_dir.rglob("*") if x.is_file()):
-            h.update(str(f.relative_to(store_dir)).encode() + f.read_bytes())
+        for f in sorted(store_dir.rglob("*")):
+            if f.is_file():
+                h.update(str(f.relative_to(store_dir)).encode() + f.read_bytes())
+            elif f.is_dir() and not any(
+                f.iterdir()
+            ):  # an empty folder is a folder entry of the store
+                h.update(b"dir:" + str(f.relative_to(store_dir)).encode())
         a, b = recs if recs else (None, None)
         if recs is None and selection is not None:
             # a card laid over a base keeps the base's sticky machine types, as the menu's SELECT does (the new record is not a fresh card's)
             tmap = None
             if base is not None:
-                cur = B.current(B.records_in(base, b""))
+                cur = B.current(B.records_in(base, b"", self.env.device))
                 tmap = cur["map"] if cur else None
             a = b = B.make_record(selection, seq, counter, flags, stable_blocks, tmap)
         for x in (a, b):
@@ -280,7 +290,7 @@ class Ctx:
             else:
                 tmp = self.env.card(None, tag=key)
             if a is not None or b is not None:
-                B.write_record_sectors(tmp, a, b)
+                B.write_record_sectors(tmp, a, b, self.env.device)
             if foreign:
                 with open(tmp, "r+b") as f:
                     for s, data in sorted(foreign.items()):
@@ -346,7 +356,7 @@ class Ctx:
             str(t),
         )
         self.check("flush check over every boot: no hit", t["flush_hits"] == 0, str(t))
-        stray = sorted(self.store_writes - {B.SECTOR_A, B.SECTOR_B})
+        stray = sorted(self.store_writes - {self.store.sel_a, self.store.sel_b})
         self.check(
             "card writes in the store range: only the two selection sectors",
             not stray,
@@ -355,7 +365,7 @@ class Ctx:
         outside = sorted(
             x
             for x in self.all_writes
-            if x < FIRMWARE_FIRST and x not in (B.SECTOR_A, B.SECTOR_B)
+            if x < FIRMWARE_FIRST and x not in (self.store.sel_a, self.store.sel_b)
         )
         self.check(
             "card writes elsewhere: only the firmware's own working project and project slots (sectors from 0x50000)",
@@ -373,7 +383,7 @@ class Ctx:
             str(t),
         )
         self.check("flush check over every boot: no hit", t["flush_hits"] == 0, str(t))
-        lo, hi = B.STORE_FIRST, B.STORE_FIRST + B.STORE_SECTORS
+        lo, hi = self.store.first, self.store.end
         writes = self.all_writes | self.store_writes
         outside = sorted(
             x
@@ -1448,9 +1458,13 @@ def run_live_svc(c: Ctx) -> None:
         c.check(
             "a 150-byte body", status == 0 and body == bytes(range(150)), f"{status}"
         )
-        status, body = up.request(echo, bytes(200))
+        status, body = up.request(echo, bytes(range(250)))
         c.check(
-            "a body over 160 bytes is refused (E_MSG)",
+            "a 250-byte body", status == 0 and body == bytes(range(250)), f"{status}"
+        )
+        status, body = up.request(echo, bytes(300))
+        c.check(
+            "a body over 256 bytes is refused (E_MSG)",
             status == -50,
             f"{status}",
         )

@@ -73,6 +73,9 @@ pub fn store_files(
         {
             continue;
         }
+        if entry.is_dir {
+            continue; // a folder with nothing in it: no file (**[O]** the mirror does not make empty folders yet)
+        }
         let bytes =
             crate::read_store_file(view, range.first_sector, entry).map_err(|e| e.to_string())?;
         files.insert(entry.path.clone(), bytes);
@@ -225,6 +228,7 @@ mod tests {
             files
                 .iter()
                 .map(|(p, b)| StoreFile {
+                    dir: false,
                     path: (*p).into(),
                     bytes: b.to_vec(),
                 })
@@ -338,6 +342,7 @@ mod tests {
         let r = range();
         let mut bytes = encode_store(
             vec![StoreFile {
+                dir: false,
                 path: "modules/a.dkm".into(),
                 bytes: b"A".to_vec(),
             }],

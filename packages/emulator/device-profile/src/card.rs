@@ -67,9 +67,13 @@ pub struct RegionLayout {
 #[serde(deny_unknown_fields)]
 pub struct PathFsLayout {
     pub superblock_sector: u64,
+    /// The first sector after the filesystem (the firmware erases `end_sector - superblock_sector` sectors when it formats): the card's sectors above are
+    /// not the path filesystem's (finding 59).
+    pub end_sector: u64,
 }
 
-/// The module store: sectors `[first_sector, end_sector)` that nothing in the firmware writes.
+/// The module and sample store (docs/design/digikit-store.md, version 3): sectors `[first_sector, end_sector)` that nothing in the
+/// firmware writes (finding 59).
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StoreLayout {
@@ -118,6 +122,8 @@ pub struct CardLayout {
     pub header_sector: u64,
     /// `MmcFs` table sector: the three write-protect bitmaps.
     pub table_sector: u64,
+    /// The card's size in sectors (the whitelisted part the firmware accepts): the module and sample store runs to its end.
+    pub total_sectors: u64,
     pub pools: PoolSet,
     #[serde(default)]
     pub regions: Vec<RegionLayout>,
@@ -208,11 +214,32 @@ impl CardLayout {
                 r.sector + r.sectors,
             ));
         }
+        if let Some(fs) = &self.path_fs {
+            if fs.end_sector <= fs.superblock_sector || fs.end_sector > self.total_sectors {
+                return Err("the path filesystem range is empty or past the card".into());
+            }
+        }
         if let Some(store) = &self.store {
             if store.first_sector >= store.end_sector {
                 return Err("store range is empty".into());
             }
+            if store.end_sector > self.total_sectors {
+                return Err("the store reaches past the end of the card".into());
+            }
+            // header A, header B, the selection record and at least a few sectors of table and data
+            if store.header_b() <= store.first_sector + 16
+                || store.header_b() + 1 + store.selection_sectors != store.end_sector
+            {
+                return Err("store header copy B must be the sector before the selection record, with room before it".into());
+            }
             spans.push(("store".into(), store.first_sector, store.end_sector));
+        }
+        if let Some(fs) = &self.path_fs {
+            spans.push((
+                "path filesystem".into(),
+                fs.superblock_sector,
+                fs.end_sector,
+            ));
         }
         for (i, a) in spans.iter().enumerate() {
             for b in &spans[i + 1..] {
@@ -221,9 +248,12 @@ impl CardLayout {
                 }
             }
         }
+        // The firmware's own slots and records lie below the path filesystem (the store is above it, or elsewhere).
         if let Some(fs) = &self.path_fs {
-            // The path filesystem runs from its superblock to the end of the card: nothing may sit above it.
-            if let Some(over) = spans.iter().find(|s| s.2 > fs.superblock_sector) {
+            if let Some(over) = spans
+                .iter()
+                .find(|s| s.0 != "store" && s.0 != "path filesystem" && s.2 > fs.superblock_sector)
+            {
                 return Err(format!("{} reaches the path filesystem", over.0));
             }
         }

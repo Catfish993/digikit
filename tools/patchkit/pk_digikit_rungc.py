@@ -30,7 +30,6 @@ from typing import Any
 from tools.device import dklog as L
 from tools.device import dkupload as DK
 from tools.patchkit import pk_digikit_debug as DBG
-from tools.patchkit import pk_dkrt_boot as B
 from tools.patchkit import pk_dkrt_machine as M
 from tools.patchkit import pk_harness as H
 
@@ -38,7 +37,6 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNG_C = "core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp"
 DKM = ROOT / "out" / "patch" / "pluck-dt2.dkm"
 PLUCK_HINT = 7
-STORE_FIRST, STORE_END = B.STORE_FIRST, B.STORE_FIRST + B.STORE_SECTORS
 
 
 def out_dir() -> Path:
@@ -250,11 +248,11 @@ def _run_rungc(
             )
             after = sectors_written(rig)
             new = sorted(after - before)
-            outside = [s for s in new if not STORE_FIRST <= s < STORE_END]
+            outside = [s for s in new if not c.store.first <= s < c.store.end]
             c.check(
                 "the upload's card writes are store sectors only",
                 bool(new) and not outside,
-                f"{len(new)} sectors written, {len(outside)} outside the store range ({hex(STORE_FIRST)}..{hex(STORE_END)})",
+                f"{len(new)} sectors written, {len(outside)} outside the store range ({hex(c.store.first)}..{hex(c.store.end)})",
             )
             # ---- 2. the menu ----------------------------------------------------------------------------------------------------
             to_digikit(rig)

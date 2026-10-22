@@ -1,91 +1,111 @@
 # The digikit module store
 
-Status: built (builder and reader in `packages/emulator/plusdrive/src/store.rs`), 2026-10-16; version 2 (two header copies, for
-module upload, `docs/design/digikit-upload.md`) 2026-10-18. Plan:
-`docs/plans/digikit-runtime.md` (decision 7, Phase 1). Range choice: `docs/findings/23-digikit-runtime-spikes.md` S6.
+Status: built (builder and reader in `packages/emulator/plusdrive/src/store.rs`, runtime in `modules/core/runtime/sdk/src/store.rs`), 2026-10-16; version 2 (two header copies, for
+module upload, `docs/design/digikit-upload.md`) 2026-10-18; **version 3** (a per-device area of 82 MiB / 22 GiB, folders, reusable space, 159-byte paths, a streamed table; runtime 0.3.0) 2026-10-22.
+Plan: `docs/plans/storage.md`. Area choice: `docs/findings/59-storage-regions.md` (the older range choice, `docs/findings/23-digikit-runtime-spikes.md` S6, is superseded).
 
-The store holds the files of `plus_drive/<device>/digikit/` on the card, in sectors the firmware never writes, so the
+The store holds the files of `plus_drive/<device>/digikit/` on the card (modules, and samples on the DN2), in sectors the firmware never writes, so the
 runtime can read them with the firmware's block read (DT2 1.16 `FUN_4012deda`, DN2 1.11 `FUN_4012c59a`; arguments sector,
 byte count, buffer; the buffer 16-byte aligned, the count a multiple of 512).
 
 ## Where
 
-The range comes from the device profile (`devices/<device>.toml`, `[card.store]`): sectors
-`[first_sector, end_sector)`, `0x38000..0x3E000` (12 MiB) on both devices. Sector numbers below are relative to
-`first_sector` unless said otherwise. A device with no `[card.store]` takes no `digikit/` files (the builder reports
-them as skipped).
+The area comes from the device profile (`devices/<device>.toml`, `[card.store]`): sectors `[first_sector, end_sector)`, different per device and always
+above the MmcFs write guard at sector `0x457FFF` (finding 59):
+
+| Device | `first_sector` | `end_sector` | Size |
+| --- | --- | --- | --- |
+| DT2 | `0x2DF1000`, after the +Drive | `0x2E1A000`, the card end | 82 MiB |
+| DN2 | `0x800000`, above everything the Data API reaches | `0x2E1A000`, the card end | about 22 GiB |
+
+`[card] total_sectors` is the card the firmware accepts (the pSLC 32 GB part, 0x2E1A000 sectors); the area ends with it. A card the runtime finds
+smaller than the area (its last sector does not read) has **no store**: nothing is read or written there, uploads answer `E_NOSTORE`, and the boot goes on
+(`CARD_TOO_SMALL`, a `CARD_CHECK` event). Sector numbers below are relative to `first_sector` unless said otherwise. A device with no `[card.store]` takes no
+`digikit/` files (the builder reports them as skipped).
+
+The area is not a path filesystem: **folders are in the paths.** The runtime's modules are in `modules/`, samples (DN2) in `samples/`.
 
 ## Format
 
-All integers are big-endian. Sector size 512. The builder writes version 2; readers take versions 1 and 2.
+All integers are big-endian. Sector size 512. Version 3 is the only version: a header of another version is not a store (pre-1.0: no migrations;
+the version 1 and 2 stores lived in the old area `0x38000..0x3E000`, which no code uses any more).
 
 ```text
-sector 0, the header (copy A)
+sector 0                       header copy A
+sectors 1 .. header_b - 1      tables and file data, anywhere: free space is reused
+sector header_b = sectors - 3  header copy B
+sectors - 2, sectors - 1       the selection record, two copies (below; not a store structure)
+
+header (one sector)
   0   4   magic "DKST"
-  4   4   u32 version = 2 (1: see below)
+  4   4   u32 version = 3
   8   4   u32 entry_count
-  12  4   u32 table_sectors      = ceil(entry_count * 128 / 512)
-  16  4   u32 used_sectors       header + table + data
-  20  4   u32 crc32 of the table sectors, zero padding included (IEEE 802.3, as zlib: check value of "123456789" is 0xcbf43926)
-  24  4   u32 table_first_sector   relative to the start of the store (the builder: 1)
-  28  4   u32 seq                  sequence number of this header (the builder: 1)
-  32  ..  zero
-  508 4   u32 crc32 of bytes 0..508 of this header
+  12  4   u32 table_sectors      = ceil(entry_count / 2)
+  16  4   u32 table_first        relative to the store; 1 when there is no table
+  20  4   u32 table_crc          crc32 of the table's sectors, zero padding included (IEEE, as zlib: "123456789" gives 0xcbf43926); 0 for no table
+  24  4   u32 seq                sequence number of this header
+  28  4   u32 used_sectors       header A, the table and every file
+  32  4   u32 area_sectors       the store's size in sectors when it was written (sectors, not limit): a store made for another area is not this one
+  36  ..  zero
+  508 4   u32 crc32 of bytes 0..508
 
-sectors table_first_sector .., the table (the builder: sectors 1 .. table_sectors): entry_count entries of 128 bytes, sorted by path (byte order)
-  0   88  path, NUL padded, relative to digikit/, "/" separated
-  88  4   u32 first_sector       relative to the start of the store
-  92  4   u32 size_bytes
-  96  32  sha256 of the file bytes
-
-then the data: each file starts on a sector boundary, in table order, zero padded to the sector.
+table: entry_count entries of 256 bytes, sorted by (first_sector, path in byte order)
+  0   160 path, NUL padded (relative to digikit/, "/" separated, at most 159 bytes)
+  160 4   u32 first_sector       relative to the start of the store; 0 for an entry with no data
+  164 4   u32 size_bytes
+  168 32  sha256 of the file bytes (zero for a folder)
+  200 1   u8 kind: 0 file, 1 folder with nothing in it
+  201 55  zero
 ```
 
-Rules: a path is 1 to 87 bytes (so it always ends in a NUL), with no empty, `.` or `..` part and no NUL; two files may
-not have the same path. A file is at most 4 GiB - 1 (in practice the range is 12 MiB). An empty file takes no data
-sector. The builder refuses (an error, nothing is written) when `used_sectors` would exceed the range. A card without a
-store has zero bytes at sector 0 of the range; a reader reports "no store".
+Rules: a path is 1 to 159 bytes of printable text (0x20 to 0x7E, no NUL), with no empty, `.` or `..` part; two entries may not have the same path; a path that is a
+file may not also be the folder of another entry (`a` and `a/b`). A **folder entry** (kind 1, size 0) exists only for a folder with nothing in it (made by the
+host); a folder that has files is implied by their paths. A file or folder with no data (an empty file, a folder) has `first_sector` 0 and takes no sector; it sorts before every file with data. A file is at
+most 4 GiB - 1 bytes; each file starts on a sector boundary and takes `ceil(size / 512)` sectors.
 
-**Version 2: two header copies.** Copy A is sector 0; copy B is the sector just before the selection record
-(`end_sector - selection_sectors - 1`, absolute `0x3dffd`; `devices/<device>.toml` `[card.store] header_b_sector`; relative `0x5ffd`).
-The builder writes both with `seq` 1, and its size limit is `range - selection_sectors - 1` sectors. A copy is valid when its
-magic, version, header CRC and table CRC (the table it points at) hold. A reader uses the valid copy with the higher `seq` (equal:
-A). **Version 1** (earlier cards): no `table_first_sector` (always 1), no `seq`, no header CRC, no copy B; a version 1 copy at A is
-used only when B is not valid. An empty store (all files deleted) is a valid version 2 store with `entry_count` 0, `table_sectors` 0
-and a table CRC of 0 (the CRC of nothing).
+A header copy is **usable** when its magic, version, CRC, area and counts hold (`table_sectors` = ceil(count / 2), the table and `used_sectors` inside the area). A reader
+takes the usable copy with the higher `seq` (equal: A), and, when it checks the table's CRC (once per header: a runtime that wrote the table itself skips it), skips a copy whose table
+does not check for the other one. An empty store (CLEAR, or every file deleted) is a valid store with `entry_count` 0 and no table.
 
-There is no free-space map. The builder writes the whole store at once. The runtime's upload (`docs/design/digikit-upload.md`)
-appends: it stages a file after `used_sectors`, writes a new table after it, then header B and header A with `seq + 1`. Old data
-and old tables are not reused (only CLEAR starts over), so a power cut leaves the old or the new store, never a mix.
+**The table is never held whole.** It is read and written through small buffers (the runtime's: 8 KiB), so the number of entries is bounded only by the room on the card
+(two entries per sector). A lookup is one pass over the table; a list starts at the sector of its first entry.
 
-**Both copies agree before space is reused.** After a cut between header B and header A the copies differ: A lags and still names the
-previous table. That is harmless while nothing is overwritten, but CLEAR starts the space over, and the next upload stages over the old
-table; if its header B then tears, the lagging A would be the only usable copy and name overwritten sectors. So the upload's BEGIN first
-rewrites the copy that lost the `seq` comparison (missing, torn, version 1 or different) from the winner, and refuses to stage if that write
-fails (`docs/findings/43-digikit-upload.md`, "The CLEAR double fault").
+**Space is reused.** Free space is every gap between used extents: header A, the table, the files' data and the tail (header B and the selection record). The runtime
+allocates a file's extent in the first gap that holds it (first fit) and, on every commit, writes the new table into the first gap that holds it, never over the table in use. A host's
+free-space figure (`used_sectors`, INFO's free bytes) is the sum of the gaps less the room for the table of one more entry; **a file larger than the largest gap is refused with
+`E_FULL` even when the sum is larger** (the free space is not one piece).
 
-**A reader that runs while an upload commits** (the menu's, in the UI task, against the MIDI task) reads a fingerprint of the two header sectors
-before and after it reads header and table, and starts again when it changed (`dkrt_sdk::store::open_stable`); no lock.
+## Commits and power cuts
+
+A commit (the end of an upload, a delete, a clear) streams the old table through two small buffers into a gap, with the entry inserted, replaced or removed, reads the new
+table back and checks its CRC, and then writes header B and header A with `seq + 1`. Nothing in use is overwritten before the headers move, so a cut at any point leaves the old store or
+the new one, never a mix (`dkrt_sdk::store` tests cut a commit after every write). A file's data is written to its extent before the commit; an upload that is cut is a gap that nothing names.
+
+**Both copies agree before space is reused.** After a cut between header B and header A the copies differ: A lags and still names the previous table. That is harmless while nothing is
+overwritten, but the next commit writes a table into free space, which may be exactly the sectors of that old table; if its header B then tears, the lagging A would be the only usable copy and
+name overwritten sectors. So BEGIN, DELETE and CLEAR first rewrite the copy that lost the `seq` comparison (missing, torn or different) from the winner, and refuse if that write fails
+(`docs/findings/43-digikit-upload.md`, "The CLEAR double fault").
+
+**A reader that runs while an upload commits** (the menu's, in the UI task, against the MIDI task) reads a fingerprint of the two header sectors before and after it reads the table, and
+starts again when it changed (`dkrt_sdk::store::stable`); no lock. A table is never overwritten in place, so a reader that began with the old header reads a complete old table, and only a
+second commit during one read could reuse its sectors (the fingerprint catches that too).
 
 ## Who writes and who reads
 
-- **The builder** (`plusdrive build`, the desktop card job): every regular file under `digikit/` (recursive; symbolic
-  links and `.DS_Store` skipped) of the folder.
-- **The exporter** (since upload, 2026-10-18) reads the store and writes its files back to `digikit/` (see "+Drive round trip"
-  below). The firmware never writes these sectors; only the runtime's upload does. A path-filesystem entry
-  named `digikit` that the firmware's user made on the device is exported as `digikit~<id>` so it cannot land in the store
-  folder.
-- **A reader** for tests: `plusdrive store ls IMAGE [--device dt2|dn2] [--cat PATH]` prints `path first_sector size sha256`
-  (`--cat` writes one file's bytes). The runtime reads it with the firmware's block read; `mise run plusdrive:check` calls
-  that function on a booted DT2 1.16 and DN2 1.11 and compares the header, table and every file with the image and the
-  folder.
+- **The builder** (`plusdrive build`, the desktop card job): every regular file under `digikit/` (recursive; symbolic links and `.DS_Store` skipped; an empty folder is not built: folder entries are made by the runtime and exported). It writes both header copies (`seq` 1) and lays the data out in path order after the table. An image that holds store files or a selection reaches the end of the area (a sparse file).
+- **The exporter** (`card.export`, the end of a session) reads the store and writes its files back to `digikit/` (a folder with nothing in it too). The firmware never writes these
+  sectors; only the runtime's upload does. A path-filesystem entry named `digikit` that the firmware's user made on the device is exported as `digikit~<id>` so it cannot land in the store folder.
+- **A reader** for tests: `plusdrive store ls IMAGE [--device dt2|dn2] [--cat PATH]` prints `path first_sector size sha256` by path (a folder with nothing in it as `path/ - 0 folder`; `--cat` writes one file's bytes).
+  The runtime reads it with the firmware's block read; `mise run plusdrive:check` calls that function on a booted DT2 and DN2 and compares the header, table and every file with the image and the folder.
+- **The runtime** (`modules/core/runtime`, Rust): `dkrt_sdk::store` is the format, the reader and the one writer; `upload.rs` is its commands (docs/design/digikit-upload.md); the device's area comes
+  from its device object (`dkrt_store_first`, `dkrt_store_sectors`, written by `patchkit gen` from the device file). The runtime's one card-write function refuses a write outside the area (`E_RANGE`).
 
 ## `digikit/` and the path filesystem
 
-`digikit/` is not also copied into the DT2 path filesystem. Reasons: the folder would show in the sample picker (finding 23
-S3); two copies would need two places to keep equal; the DN2 has no path filesystem, so the runtime needs the store anyway;
-and a path-filesystem copy is read by file name through the mutex-guarded C++ layer where the block read is a single
-call. The cost is that a `digikit/` file is not visible on the device itself.
+`digikit/` is not also copied into the DT2 path filesystem. Reasons: the folder would show in the sample picker (finding 23 S3), which lists every file with no filter; two copies would need two places to keep equal;
+the DN2 has no path filesystem, so the runtime needs the store anyway; and a path-filesystem copy is read by file name through the mutex-guarded C++ layer where the block read is a single call. The cost is that a
+`digikit/` file is not visible on the device itself. **DT2 samples** are different: they belong in the sample browser, so they go to the +Drive (through the stock MidiRpc file commands, `docs/MIDI-SYSEX-RPC.md` section 12);
+**DN2 samples** go to the store's `samples/` folder (the firmware cannot play them yet).
 
 ## The selection record (boot-time loading, plan decision 9)
 
@@ -93,9 +113,9 @@ The runtime keeps one writable record in the store range: which modules to load 
 mode. It is the only thing the runtime ever writes to the card (finding 37). Layout fixed 2026-10-17; the +Drive round trip
 (lane D) and the runtime (`modules/core/runtime`, `dkrt_sdk::DkrtSelection`) both rely on it.
 
-**Where.** The last `selection_sectors` (2) sectors of the range (`devices/<device>.toml` `[card.store] selection_sectors`):
-copy A at `end_sector - 2`, copy B at `end_sector - 1` (absolute sectors `0x3dffe` and `0x3dfff` on both devices). The store builder
-must keep its files out of them (its size limit is `range - selection_sectors - 1`: header copy B is the sector before them); a reader of the store ignores them. They are
+**Where.** The last `selection_sectors` (2) sectors of the area (`devices/<device>.toml` `[card.store] selection_sectors`):
+copy A at `end_sector - 2`, copy B at `end_sector - 1` (absolute sectors `0x2E19FFE` and `0x2E19FFF` on both devices: the area ends with the card). The store builder
+keeps its files out of them (its size limit is `area - 3`: header copy B is the sector before them); a reader of the store ignores them. They are
 zero (no record) on a card the builder made.
 
 **Record** (one sector, all integers big endian):
@@ -147,7 +167,8 @@ that starts on an empty card (the DN2 has none at boot) leaves the files an earl
 
 ## Open
 
-- The range is a choice with 0x2000 sectors of margin on each side, not a measurement. That nothing in the firmware writes
-  it (save, load, format, OS update, the Data RPC) is checked for a boot and a project save only
-  (`docs/findings/23-digikit-runtime-spikes.md`, S5); Phase 2 runs the full scenario list with the write-watch.
-- The format has a version field and no compression. Module files larger than the range need a different place.
+- **[O]** The area was chosen from a static study of the firmware (finding 59), not measured on a device. The write-watch of the emulator proofs sees no firmware write in it.
+- **[O]** The ownership check reads the two headers, the two selection sectors and the first 1 MiB of the area; it cannot scan 22 GiB at every boot. Foreign data further in is not noticed.
+- **[O]** The emulator's state snapshots keep at most 131072 written card sectors (64 MiB) in the card overlay, so a store with more data than that cannot be saved with a state file.
+- **[O]** The folder mirror and the exporter read every store file (and hash the folder's) at every pass; with samples in the store they need a cheaper comparison (step 6 of the storage plan).
+- The format has a version field and no compression.

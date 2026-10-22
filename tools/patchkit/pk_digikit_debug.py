@@ -33,9 +33,6 @@ from tools.patchkit import pk_dkrt_machine as M
 from tools.patchkit import pk_harness as H
 
 E_NOSTORE, E_INUSE, E_PEEK = -61, -62, -63
-FIRST, SECTORS = B.STORE_FIRST, B.STORE_SECTORS
-END = FIRST + SECTORS
-HEADER_B = B.HEADER_B  # absolute sector of store header copy B
 
 
 def uploader(rig: Any) -> DK.Uploader:
@@ -71,6 +68,7 @@ def run_card(c: Any) -> None:
 
     img = c.image_for(B.RT, "run")
     menu_img = c.image_for(f"{B.RT},core/digikit-menu", "menu")
+    FIRST, END = c.store.first, c.store.end  # the store area of this device
     pat = bytes(
         (i * 7 + 3) & 0xFF for i in range(512)
     )  # a sector that is neither all 0x00 nor all 0xFF
@@ -81,7 +79,7 @@ def run_card(c: Any) -> None:
     # a valid selection record and nothing else in the range makes the area ours; with blank header sectors it is an empty store, with foreign
     # bytes in both header sectors it is not (these two come before the first pack, like the cards above)
     selonly = c.card([])
-    selforeign = c.card([], foreign={FIRST: pat, FIRST + B.HEADER_B: pat})
+    selforeign = c.card([], foreign={FIRST: pat, c.store.header_b: pat})
     mod = c.pack("test/c-demo", "a.dkm")
     ours = c.card([mod])
     plan = D.Plan(menu_img.plan)

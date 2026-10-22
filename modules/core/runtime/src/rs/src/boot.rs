@@ -8,7 +8,7 @@
 //! in the UI-loop hook as before. The boot counter is cleared by `ui_pass` once the session has been stable: `STABLE_BLOCKS` DSP blocks (30 s)
 //! after the first UI-loop pass (at the first pass itself in a safe boot, where no module runs). A boot that dies before then counts as bad.
 //!
-//! The record is the only thing the runtime writes to the card here, and only to its two sectors (`sel::SECTOR_A`/`SECTOR_B`), through
+//! The record is the only thing the runtime writes to the card here, and only to its two sectors (`store::Layout::sel_a`/`sel_b`), through
 //! `block_write`, which refuses a write when the card's area is not ours (`card.rs`): then the boot counter is not raised either.
 use crate::{assign, block_read, block_write, card, crash, dlog, loader, st};
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
@@ -77,7 +77,7 @@ fn secbuf() -> *mut u8 {
 
 /// Read one copy (0 = A, 1 = B).
 unsafe fn read_copy(i: u32) -> Option<Record> {
-    let sector = if i == 0 { sel::SECTOR_A } else { sel::SECTOR_B };
+    let sector = if i == 0 { crate::store::layout().sel_a() } else { crate::store::layout().sel_b() };
     if block_read(sector, 512, secbuf()) != 0 {
         return None;
     }
@@ -105,7 +105,7 @@ unsafe fn current() -> (Option<Record>, u32) {
 
 /// Write `r` to copy `i`. Only these two sectors are ever written.
 unsafe fn write_copy(i: u32, r: &Record) -> i32 {
-    let sector = if i == 0 { sel::SECTOR_A } else { sel::SECTOR_B };
+    let sector = if i == 0 { crate::store::layout().sel_a() } else { crate::store::layout().sel_b() };
     let b = &mut *(secbuf() as *mut [u8; 512]);
     sel::encode(r, b);
     let e = block_write(sector, 512, secbuf());

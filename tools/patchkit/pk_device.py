@@ -1,11 +1,10 @@
 """Device facts for the patchkit tools, read from the device files (`devices/*.toml`) instead of being repeated in code.
 
     from tools.patchkit import pk_device
-    s = pk_device.store()        # the module store's geometry (absolute sectors), the same on every device
-    pk_device.digikit_devices()  # short names of the devices that have a module store
+    s = pk_device.store_of("dt2")  # the module store's geometry of a device (absolute sectors): the area differs per device
+    pk_device.digikit_devices()    # short names of the devices that have a module store
 
-The digikit runtime is one image for all devices, so a store fact it uses must be equal in every device file; `store()` raises
-when two files differ (the same rule `patchkit gen` applies to the runtime's constants, docs/design/device-data.md).
+The store area is per device (docs/design/digikit-store.md): the runtime reads it from its device object (`devices/*.toml [card.store]`).
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ def digikit_devices() -> list[str]:
 @dataclass(frozen=True)
 class Store:
     first: int  # first card sector of the store
-    sectors: int  # sectors in the range, with the selection record at the end
+    sectors: int  # sectors in the area, with header copy B and the selection record at the end
     sel_a: int  # selection record copy A (absolute)
     sel_b: int  # selection record copy B (absolute)
     header_b: int  # store header copy B (absolute); the store's files end before it
@@ -58,27 +57,17 @@ class Store:
         """Sectors a store (header A, table, data) may use from `first`."""
         return self.header_b - self.first
 
+    @property
+    def end(self) -> int:
+        """The first sector after the area."""
+        return self.first + self.sectors
+
 
 def store_of(short: str) -> Store:
     s = load(short)["card"]["store"]
     first, end = s["first_sector"], s["end_sector"]
     sel = s.get("selection_sectors", 2)
     return Store(first, end - first, end - sel, end - sel + 1, s["header_b_sector"])
-
-
-def store() -> Store:
-    """The store geometry that every digikit device agrees on."""
-    devs = digikit_devices()
-    if not devs:
-        raise RuntimeError("no device file has a [card.store]")
-    geo = {d: store_of(d) for d in devs}
-    first = geo[devs[0]]
-    for d, g in geo.items():
-        if g != first:
-            raise RuntimeError(
-                f"the module store differs between {devs[0]} and {d}: {first} / {g}; the runtime is one image for all devices"
-            )
-    return first
 
 
 @dataclass(frozen=True)

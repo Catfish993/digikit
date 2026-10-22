@@ -1,25 +1,28 @@
 //! Card safety (docs/findings/46-digikit-debug.md): the runtime writes the card in one place only, `crate::block_write`, and that place asks
 //! this file first.
 //!
-//! - Range: a write outside the store range `[STORE_FIRST, STORE_FIRST + STORE_SECTORS)` of the device file is refused (`E_RANGE`) and counted.
+//! - Range: a write outside the store area of this device (`[card.store]`, `store::layout()`) is refused (`E_RANGE`) and counted.
+//! - Size: the card must reach the end of the area (the last sector reads); a smaller card has **no store** (`CARD_TOO_SMALL`): nothing is read or
+//!   written there, uploads answer `E_NOSTORE`, the boot goes on.
 //! - Ownership: before the first write the runtime has looked at its area on this card (`check`, at boot, or at the first write when no
-//!   boot hook ran). The area is **ours** when store header A or B is a valid header, or a selection copy is valid. Otherwise every sector of
-//!   the range must read all 0x00 or all 0xFF (**blank**); the first write may then claim it. If not (**foreign**), or a read failed
-//!   (**unreadable**), the card is read-only for the runtime: every write is refused (`E_CARD_RO`), the boot counter is not raised (so there is
-//!   no safe mode by counter), uploads answer `E_INUSE`, and ABOUT says so.
+//!   boot hook ran). The area is **ours** when store header A or B is a valid header, or a selection copy is valid. Otherwise the sectors that
+//!   would mark the area (both headers and both selection copies) and the first `BLANK_SECTORS` of the area must read all 0x00 or all 0xFF
+//!   (**blank**); the first write may then claim it. If not (**foreign**), or a read failed (**unreadable**), the card is read-only for the
+//!   runtime: every write is refused (`E_CARD_RO`), the boot counter is not raised (so there is no safe mode by counter), uploads answer
+//!   `E_INUSE`, and ABOUT says so. The area is up to 22 GiB: the rest of it is not scanned (**[O]**: finding 59).
 //! - Claiming: a write that touches only the store's header sectors or the selection record is itself a mark of ours, so it needs nothing
 //!   first. A write of data or a table into a blank range (an upload's staging) first writes an empty store header pair, so a power cut
 //!   in the middle of an upload leaves a card the next boot calls ours, not a card with unexplained data in it.
 //!
-//! The check reads the whole range only on a card where none of our structures is present (a fresh card): 12 MiB in 64 KiB reads, stopping at
-//! the first sector that is not blank. A card that is ours costs four sector reads.
+//! The check reads the start of the area only on a card where none of our structures is present (a fresh card): `BLANK_SECTORS` in 64 KiB reads,
+//! stopping at the first sector that is not blank. A card that is ours costs five sector reads.
 //!
 //! The reads go through the staging buffer (`DKRT_STAGE`), so `check` must not run while a module file is staged: the boot hook runs it first.
 use crate::dlog;
 use crate::{block_read, rd32, DKRT_STAGE};
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_sdk::sel;
-use dkrt_sdk::store::{self, Hdr, FIRST, HEADER_B, SECTORS};
+use dkrt_sdk::store::{self, Hdr};
 use dkrt_sdk::*;
 
 /// What the check found. Exported so the proof tools can peek it.
@@ -67,8 +70,14 @@ pub fn writable() -> bool {
     s == CARD_OURS || s == CARD_BLANK || s == CARD_UNKNOWN
 }
 
+fn lay() -> store::Layout {
+    crate::store::layout()
+}
+
 /// Sectors 128 at a time: 64 KiB, the most one block read takes.
 const CHUNK_SECTORS: u32 = 128;
+/// How much of the start of the area must read blank before the first write may claim it: 1 MiB (the headers, a table and the first files).
+const BLANK_SECTORS: u32 = 2048;
 
 unsafe fn stage() -> *mut u8 {
     addr_of_mut!(DKRT_STAGE) as *mut u8
@@ -110,13 +119,20 @@ pub unsafe fn check() {
         return;
     }
     c.checked = 1;
+    let l = lay();
+    // the card must reach the end of the area: the firmware's block read refuses a start at or past the card's capacity
+    if block_read(l.first + l.sectors - 1, 512, stage()) != 0 {
+        c.state = CARD_TOO_SMALL;
+        report();
+        return;
+    }
     let mut errors = 0;
     let mut ours = false;
     let probes: [(u32, u32); 4] = [
-        (FIRST, 0),
-        (FIRST + HEADER_B, 0),
-        (sel::SECTOR_A, 1),
-        (sel::SECTOR_B, 1),
+        (l.first, 0),
+        (l.first + l.header_b(), 0),
+        (l.sel_a(), 1),
+        (l.sel_b(), 1),
     ];
     let mut k = 0;
     while k < 4 {
@@ -138,12 +154,12 @@ pub unsafe fn check() {
         report();
         return;
     }
-    // nothing of ours: is the range blank?
+    // nothing of ours: is the start of the area blank?
     let mut sector = 0u32;
     let mut found = false;
-    while sector < SECTORS && !found {
-        let n = if SECTORS - sector > CHUNK_SECTORS { CHUNK_SECTORS } else { SECTORS - sector };
-        if block_read(FIRST + sector, n * 512, stage()) != 0 {
+    while sector < BLANK_SECTORS && !found {
+        let n = if BLANK_SECTORS - sector > CHUNK_SECTORS { CHUNK_SECTORS } else { BLANK_SECTORS - sector };
+        if block_read(l.first + sector, n * 512, stage()) != 0 {
             c.read_errors += 1;
             c.state = CARD_UNREADABLE;
             report();
@@ -187,14 +203,15 @@ fn count_refusal(sector: u32, bytes: u32, reason: u32) {
 
 /// Write the empty store header pair (both copies, `seq` 1): the runtime's mark on a blank range.
 unsafe fn claim() -> bool {
-    let h = Hdr { version: 2, count: 0, sectors: 0, used: 1, table_crc: 0, table_first: 1, seq: 1 };
+    let l = lay();
+    let h = Hdr { seq: 1, ..Hdr::empty(&l) };
     let buf = addr_of_mut!(CLAIM_BUF) as *mut u8;
     store::encode_header(&h, buf);
     // set first: a second task that writes meanwhile sees a claimed card
     info().state = CARD_OURS;
     info().claims += 1;
-    let b = crate::raw_block_write(FIRST + HEADER_B, 512, buf) == 0;
-    let a = crate::raw_block_write(FIRST, 512, buf) == 0;
+    let b = crate::raw_block_write(l.first + l.header_b(), 512, buf) == 0;
+    let a = crate::raw_block_write(l.first, 512, buf) == 0;
     a && b
 }
 
@@ -202,12 +219,13 @@ unsafe fn claim() -> bool {
 fn touches_marker(sector: u32, sectors: u32) -> bool {
     let end = sector + sectors;
     let hit = |s: u32| s >= sector && s < end;
-    hit(FIRST) || hit(FIRST + HEADER_B) || hit(sel::SECTOR_A) || hit(sel::SECTOR_B)
+    let l = lay();
+    hit(l.first) || hit(l.first + l.header_b()) || hit(l.sel_a()) || hit(l.sel_b())
 }
 
 /// The gate of `block_write`: `OK`, `E_RANGE` or `E_CARD_RO`. May claim a blank range.
 pub unsafe fn admit(sector: u32, bytes: u32) -> i32 {
-    if !store::write_allowed(sector, bytes) {
+    if !lay().write_allowed(sector, bytes) {
         count_refusal(sector, bytes, 1);
         return E_RANGE;
     }
@@ -215,6 +233,10 @@ pub unsafe fn admit(sector: u32, bytes: u32) -> i32 {
         check();
     }
     let s = state();
+    if s == CARD_TOO_SMALL {
+        count_refusal(sector, bytes, 4);
+        return E_CARD_RO;
+    }
     if s == CARD_OURS {
         return OK;
     }

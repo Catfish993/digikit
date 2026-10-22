@@ -48,13 +48,12 @@ fn the_runtime_constants_are_the_device_files_numbers() {
     let files = devgen::generate(&lib, &facts, "core/runtime").unwrap();
     let get = |p: &str| &files.iter().find(|f| f.0 == p).unwrap().1;
     let rs = get("sdk/src/device.rs");
-    // the numbers of devices/*.toml [card.store] (both devices) and [board]
+    // the numbers of devices/*.toml [board] that both devices share (the store is per device: below)
+    assert!(
+        !rs.contains("STORE_FIRST"),
+        "the store area differs per device"
+    );
     for want in [
-        "STORE_FIRST: u32 = 0x38000;",
-        "STORE_SECTORS: u32 = 0x6000;",
-        "STORE_HEADER_B: u32 = 0x5ffd;",
-        "STORE_SEL_A: u32 = 0x3dffe;",
-        "STORE_SEL_B: u32 = 0x3dfff;",
         "DYN_TYPE_FIRST: u32 = 0x10;",
         "DYN_TYPE_LAST: u32 = 0x17;",
         "SAFE_KEY_CODE: u32 = 0x13;",
@@ -67,6 +66,26 @@ fn the_runtime_constants_are_the_device_files_numbers() {
     }
     let dn2 = get("build/gen/device-dn2.inc");
     assert!(dn2.contains(".equ DEVICE_ID, 0x2 "), "{dn2}");
+    // the store area of each device ([card.store], docs/design/digikit-store.md): DN2 from 0x800000, DT2 after the +Drive, both to the end of the card
+    for (inc, first, sectors) in [
+        (dn2, "0x800000", "0x261a000"),
+        (get("build/gen/device-dt2.inc"), "0x2df1000", "0x29000"),
+    ] {
+        assert!(
+            inc.contains(&format!(".equ STORE_FIRST, {first} ")),
+            "{inc}"
+        );
+        assert!(
+            inc.contains(&format!(".equ STORE_SECTORS, {sectors} ")),
+            "{inc}"
+        );
+        assert!(
+            inc.contains(".equ STORE_HEADER_B, ")
+                && inc.contains(".equ STORE_SEL_A, 0x2e19ffe ")
+                && inc.contains(".equ STORE_SEL_B, 0x2e19fff "),
+            "{inc}"
+        );
+    }
     assert!(dn2.contains(".equ DL_AREA_BYTES, 0x50000 "), "{dn2}");
     // the PEEK ranges are per device (the runtime's region differs), up to four, unused ones 0, 0
     assert!(dn2.contains(".equ PEEK_N, 0x2 "), "{dn2}");
@@ -116,14 +135,15 @@ fn a_fact_that_devices_disagree_on_is_refused_for_the_shared_runtime() {
         .unwrap();
     let dt2 = std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap();
     let dn2 = std::fs::read_to_string(root().join("devices/digitone-ii.toml")).unwrap();
-    // move the Digitone's store one sector up (and keep its own checks happy)
-    let moved = dn2.replace("first_sector = 0x38000", "first_sector = 0x38001");
+    // move the Digitone's safe key (a fact the shared runtime image has once)
+    let moved = dn2.replace("safe_key = 19", "safe_key = 20");
+    assert_ne!(moved, dn2);
     let facts = Facts::from_texts([dt2.as_str(), moved.as_str()]).unwrap();
     let e = devgen::generate(&lib, &facts, "core/runtime")
         .unwrap_err()
         .0;
     assert!(
-        e.contains("STORE_FIRST") && e.contains("one image for all devices"),
+        e.contains("SAFE_KEY_CODE") && e.contains("one image for all devices"),
         "{e}"
     );
     // per-device files (the device objects) are still fine for numbers that differ

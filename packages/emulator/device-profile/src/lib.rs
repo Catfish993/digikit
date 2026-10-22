@@ -790,7 +790,12 @@ mod tests {
             );
             assert!(layout.regions.iter().all(|r| r.sectors == 0x8000));
             let store = layout.store.as_ref().unwrap();
-            assert_eq!((store.first_sector, store.end_sector), (0x38000, 0x3e000));
+            assert_eq!(store.end_sector, layout.total_sectors);
+            assert_eq!(store.header_b(), store.end_sector - 3);
+            assert!(
+                store.first_sector > 0x457fff,
+                "the store lies above the MmcFs write guard"
+            );
         }
         assert_eq!(dt2.path_fs.as_ref().unwrap().superblock_sector, 0x5d8000);
         assert!(dn2.path_fs.is_none());
@@ -798,12 +803,21 @@ mod tests {
 
     #[test]
     fn a_card_layout_with_overlapping_parts_is_rejected() {
-        let bad = DT2.replace("first_sector = 0x38000", "first_sector = 0x35000");
+        // the store starts inside the path filesystem (it ends at 0x2df0180)
+        let bad = DT2.replace("first_sector = 0x2df1000", "first_sector = 0x2df0000");
         let error = Registry::parse(&[("dt2", &bad)]).unwrap_err().to_string();
         assert!(
             error.contains("[card]") && error.contains("overlaps"),
             "{error}"
         );
+        // the store runs past the card, or header B is not the sector before the selection record
+        let bad = DT2.replace(
+            "end_sector = 0x2e1a000\nselection",
+            "end_sector = 0x2e1b000\nselection",
+        );
+        assert!(Registry::parse(&[("dt2", &bad)]).is_err());
+        let bad = DT2.replace("header_b_sector = 0x2e19ffd", "header_b_sector = 0x2e19ff0");
+        assert!(Registry::parse(&[("dt2", &bad)]).is_err());
         let bad = DT2.replace("bitmap_bytes = 16", "bitmap_bytes = 8");
         assert!(Registry::parse(&[("dt2", &bad)]).is_err());
     }

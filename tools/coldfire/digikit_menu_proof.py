@@ -25,6 +25,7 @@ PNGs of the DIGIKIT screens go to out/runs/lanes/r1-shots/ (a contact sheet per 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import pathlib
 import re
@@ -556,7 +557,10 @@ class BootProof:
         self.safe_scenario()
         if not quick:
             self.bad_scenario()
-        sel = {self.B.SECTOR_A, self.B.SECTOR_B}
+        from tools.patchkit import pk_device
+
+        store = pk_device.store_of(self.image[:3])
+        sel = {store.sel_a, store.sel_b}
         self.check(
             "card store writes only in the selection sectors",
             self.writes <= sel and self.writes,
@@ -632,7 +636,14 @@ def main(argv=None) -> int:
     secbuf = plan.addr(
         "DKRT_SECBUF"
     )  # the selection record's 512-byte read buffer: a DMA target as well
-    holes = sorted([(stage, 64 * 1024), (secbuf, 512)])
+    holes = [(stage, 64 * 1024), (secbuf, 512)]
+    for name in (
+        "DKRT_STORE_PEEK",
+        "DKRT_STORE_FP",
+    ):  # the store's header and fingerprint sectors: DMA targets too
+        with contextlib.suppress(Exception):  # an image without them
+            holes.append((plan.addr(name), 512))
+    holes.sort()
     ranges, at = [], lo
     for start, size in holes:
         if start > at:

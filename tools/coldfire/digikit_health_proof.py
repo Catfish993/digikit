@@ -77,6 +77,17 @@ def size_text(n: int) -> str:
     return f"{n // 1024} KB"
 
 
+def size_text_kb(kb: int) -> str:
+    """The store figures are KiB (a store can be 22 GiB)."""
+    if kb >= 1024 * 1024:
+        tenth = (kb // 1024 * 10) // 1024
+        return f"{tenth // 10}.{tenth % 10} GB"
+    if kb >= 1024:
+        tenth = kb * 10 // 1024
+        return f"{tenth // 10}.{tenth % 10} MB"
+    return f"{kb} KB"
+
+
 def expected_lines(h: dict) -> list[str]:
     """What the page must say for the figures `h`: this file's own formatting, not the menu's."""
     f = h["flags"]
@@ -102,8 +113,8 @@ def expected_lines(h: dict) -> list[str]:
     out.append(
         "DSP FREE " + (size_text(h["dsp_area_free"]) if h["dsp_area_total"] else "--")
     )
-    out.append("STORE USED " + (size_text(h["store_used"]) if f & F_STORE else "--"))
-    out.append("STORE FREE " + (size_text(h["store_free"]) if f & F_STORE else "--"))
+    out.append("STORE USED " + (size_text_kb(h["store_used"]) if f & F_STORE else "--"))
+    out.append("STORE FREE " + (size_text_kb(h["store_free"]) if f & F_STORE else "--"))
     return out
 
 
@@ -376,15 +387,16 @@ class HealthProof:
             and h["heap_free_blocks"] == walk["nodes"],
             f"module {h['heap_free']}/{h['heap_largest']}/{h['heap_free_blocks']} walk {walk['free']}/{walk['largest']}/{walk['nodes']}, {info}",
         )
-        limit = (
-            0x6000 - 3
-        )  # sectors a store may use (header A, tables, data): up to header B
+        from tools.patchkit import pk_device
+
+        # sectors a store may use (header A, tables, data): up to header B; the figures are KiB
+        limit = pk_device.store_of(self.image[:3]).limit
         self.check(
             "store figures: the header's used sectors, and the room left for one more file and its table entry",
             h["flags"] & F_STORE != 0
-            and h["store_total"] == limit * 512
-            and h["store_used"] == 4 * 512
-            and h["store_free"] == (limit - 4 - 1) * 512,
+            and h["store_total"] == limit // 2
+            and h["store_used"] == 4 // 2
+            and h["store_free"] == (limit - 4 - 1) // 2,
             f"flags {h['flags']:#x} total {h['store_total']} used {h['store_used']} free {h['store_free']}",
         )
         a1 = info["allocs"]

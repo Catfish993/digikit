@@ -19,8 +19,8 @@ Facts: `docs/findings/59-storage-regions.md`, `docs/MIDI-SYSEX-RPC.md` section 1
 
 ## Steps
 
-1. [ ] Findings: `docs/findings/59-storage-regions.md`, the file-command table in `docs/MIDI-SYSEX-RPC.md` section 12.
-2. [ ] Store v3: format doc, profile areas, runtime, builder, reader, exporter, mirror, CLI, tests; retire the old area.
+1. [x] Findings: `docs/findings/59-storage-regions.md`, the file-command table in `docs/MIDI-SYSEX-RPC.md` section 12.
+2. [x] Store v3: format doc, profile areas, runtime, builder, reader, exporter, mirror, CLI, tests; retire the old area. Runtime 0.3.0. Decisions: the table is sorted by first sector and streamed (no entry limit), free space is reused (first fit), E_FULL carries the sum of the free space, the ownership check reads the markers and the first 1 MiB, empty folders are not built from a folder (the runtime makes folder entries in step 3), HEALTH store figures are KiB.
 3. [ ] Streaming upload of large files, LIST per folder, delete frees space, INFO/CAPACITY report store free and total; TS `DkSession` and Python.
 4. [ ] DT2 samples: the TS MidiRpc file client, the wasm WAV converter, a DT2 scenario.
 5. [ ] DN2 samples through the store, and a scenario.

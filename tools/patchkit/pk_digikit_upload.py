@@ -40,11 +40,24 @@ from tools.patchkit import pk_dkrt_machine as M
 
 # The delivery model of the emulated USB input: one high-speed microframe (a 512-byte packet carries at most 384 MIDI bytes)
 HS: dict[str, int] = {"chunk": 384, "period": 16500}
-STORE_FIRST = B.STORE_FIRST
-LIMIT = B.HEADER_B - B.STORE_FIRST  # sectors a store may use: header A, tables, data
-FREE_FRESH = (
-    LIMIT - 1 - 1
-) * 512  # a card with no store: used 1, room for a one-entry table
+
+
+# The test knob `DKRT_STORE_CAP` of the runtime keeps every sector from here to header B out of the allocations, so the DN2's 20 GiB store can be filled
+# (and its free bytes fit INFO's 32 bits).
+CAP_SECTORS = 0x40000
+
+
+def apply_cap(c: Any, rig: Any, img: Any) -> None:
+    """Take a store of more than 4 GiB down to `CAP_SECTORS` (128 MiB) on this rig; `free_fresh` follows."""
+    if c.store.limit * 512 > 0xFFFFFFFF:
+        rig.emu.poke32(M.sym(img.plan, "core/runtime", "DKRT_STORE_CAP"), CAP_SECTORS)
+        c.store_cap = CAP_SECTORS
+
+
+def free_fresh(c: Any) -> int:
+    """INFO's free bytes of a card with no store: used 1, room for a one-entry table (the DN2's is cut by the cap)."""
+    limit = getattr(c, "store_cap", None) or c.store.limit
+    return min((limit - 1 - 1) * 512, 0xFFFFFFFF)
 
 
 def blob(n: int, seed: int) -> bytes:
@@ -88,6 +101,8 @@ def card_view(
             head = line
             continue
         path = line.split("\t")[0]
+        if line.endswith("\tfolder"):  # a folder with nothing in it: no file to read
+            continue
         out = rig.work / f"{tag}.cat.bin"  # binary: through a file, not a decoded pipe
         with out.open("wb") as f:
             p = subprocess.run(
@@ -110,7 +125,7 @@ def same(
     files: dict[str, bytes],
     view: dict[str, bytes],
     head: str,
-    version: int = 2,
+    version: int = 3,
 ) -> None:
     """The device's LIST, the reader's view and the bytes that were sent all agree."""
     want = {p: (len(b), sha(b).hex()) for p, b in files.items()}
@@ -141,6 +156,7 @@ def run_ops(c: Any, quick: bool = False) -> None:
     base = c.card(None)
     files: dict[str, bytes] = {}
     with c.rig(img, base, "ops", cf_only=True) as rig:
+        apply_cap(c, rig, img)
         up = D.Uploader(transport(rig))
         info = up.info()
         c.check(
@@ -148,7 +164,7 @@ def run_ops(c: Any, quick: bool = False) -> None:
             info["protocol"] == 1
             and info["runtime"] == B.RUNTIME_VERSION
             and info["port"] == c.device
-            and info["free_bytes"] == FREE_FRESH
+            and info["free_bytes"] == free_fresh(c)
             and info["max_chunk"] == 32768
             and not info["safe"]
             and not info["upload_open"],
@@ -159,9 +175,7 @@ def run_ops(c: Any, quick: bool = False) -> None:
         def check(label: str) -> None:
             view, head, writes = card_view(c, rig, base, f"ops-{label}")
             same(c, label, up, files, view, head)
-            c.store_writes |= {
-                w for w in writes if STORE_FIRST <= w < STORE_FIRST + B.STORE_SECTORS
-            }
+            c.store_writes |= {w for w in writes if c.store.first <= w < c.store.end}
             c.all_writes |= writes
 
         a = blob(70_000, 1)  # three chunks, the last partial
@@ -270,8 +284,9 @@ def _ops_full(c: Any, up: D.Uploader, files: dict[str, bytes], check: Any) -> No
         st == -52 and struct.unpack(">I", body[:4])[0] == free,
         f"{st} {body.hex()} free {free}",
     )
-    st, _ = up.request(D.CMD_BEGIN, b"x\0" + struct.pack(">I", free) + bytes(32))
-    c.check("BEGIN of exactly the free bytes is accepted", st == 0, str(st))
+    # (free space is the sum of the gaps: a file as big as that is accepted only on a store with one gap, tried after CLEAR below)
+    st, _ = up.request(D.CMD_BEGIN, b"x\0" + struct.pack(">I", 512) + bytes(32))
+    c.check("BEGIN of one sector is accepted", st == 0, str(st))
     c.check("INFO: an upload is open", up.info()["upload_open"])
     up.abort()
     c.check("ABORT closes it", not up.info()["upload_open"])
@@ -320,7 +335,7 @@ def _ops_full(c: Any, up: D.Uploader, files: dict[str, bytes], check: Any) -> No
     st, _ = up.request(D.CMD_END)
     c.check("END with no upload open: E_STATE", st == -53, str(st))
     # paths and messages
-    for p in ["", "/a", "a//b", "a/", "a/../b", "./a", "x" * 88]:
+    for p in ["", "/a", "a//b", "a/", "a/../b", "./a", "x" * 160]:
         st, _ = up.request(
             D.CMD_BEGIN, p.encode() + b"\0" + struct.pack(">I", 1) + bytes(32)
         )
@@ -342,7 +357,15 @@ def _ops_full(c: Any, up: D.Uploader, files: dict[str, bytes], check: Any) -> No
     files.clear()
     check("CLEAR")
     info = up.info()
-    c.check("CLEAR gives the space back", info["free_bytes"] == FREE_FRESH, str(info))
+    c.check(
+        "CLEAR gives the space back", info["free_bytes"] == free_fresh(c), str(info)
+    )
+    # one gap: a file of exactly the free bytes is accepted (the table goes beside it), one byte more is not
+    st, _ = up.request(
+        D.CMD_BEGIN, b"x\0" + struct.pack(">I", info["free_bytes"]) + bytes(32)
+    )
+    c.check("BEGIN of exactly the free bytes is accepted", st == 0, str(st))
+    up.abort()
     files["again.dkm"] = blob(5000, 12)
     up.put("again.dkm", files["again.dkm"])
     check("an upload after CLEAR")
@@ -398,7 +421,7 @@ def roundtrip(c: Any, rig: Any, base: Path, files: dict[str, bytes]) -> None:
 def _selection_untouched(c: Any) -> None:
     c.check(
         "the upload wrote no selection sector",
-        not (c.store_writes & {B.SECTOR_A, B.SECTOR_B}),
+        not (c.store_writes & {c.store.sel_a, c.store.sel_b}),
         f"{sorted(hex(s) for s in c.store_writes)}",
     )
 
@@ -410,6 +433,7 @@ def run_cut(c: Any) -> None:
     """The upload of a three-chunk file does six card writes: three DATA chunks, the table, header B, header A. A cut after the Nth."""
     old = blob(3000, 21)
     folder = c.env.folder / "digikit" / "modules"
+    folder.mkdir(parents=True, exist_ok=True)
     (folder / "old.dkm").write_bytes(old)
     base = c.card(None)
     (folder / "old.dkm").unlink()
@@ -621,6 +645,7 @@ def run_rust(c: Any) -> None:
         return host(rig, "put", str(f), path, flags=flags)
 
     with c.rig(img, base, "rust", cf_only=True) as rig:
+        apply_cap(c, rig, img)
         up = D.Uploader(transport(rig))
 
         def check(label: str) -> None:
@@ -628,9 +653,7 @@ def run_rust(c: Any) -> None:
                 c, rig, base, f"rust-{label.replace(' ', '-')}"
             )
             same(c, label, up, files, view, head)
-            c.store_writes |= {
-                w for w in writes if STORE_FIRST <= w < STORE_FIRST + B.STORE_SECTORS
-            }
+            c.store_writes |= {w for w in writes if c.store.first <= w < c.store.end}
             c.all_writes |= writes
 
         def stat(label: str, r: dict[str, Any]) -> None:
@@ -645,7 +668,7 @@ def run_rust(c: Any) -> None:
             and i["port"] == c.device == py["port"]
             and i["protocol"] == py["protocol"] == 1
             and i["runtime_version"] == py["runtime"]
-            and i["free_bytes"] == py["free_bytes"] == FREE_FRESH
+            and i["free_bytes"] == py["free_bytes"] == free_fresh(c)
             and i["max_chunk"] == 32768
             and not i["safe_mode"]
             and not i["upload_open"],
@@ -768,7 +791,7 @@ def run_rust(c: Any) -> None:
         stat("clear", host(rig, "clear"))
         files.clear()
         check("Rust clear")
-        c.check("CLEAR gives the space back", up.info()["free_bytes"] == FREE_FRESH)
+        c.check("CLEAR gives the space back", up.info()["free_bytes"] == free_fresh(c))
         c.done(rig)
     _selection_untouched(c)
     c.common_checks_upload()
@@ -836,11 +859,11 @@ def run_playback(c: Any) -> None:
     )
     c.checks += rig_checks
     extra = out["writes-during"] - out["writes-alone"]
-    lo, hi = STORE_FIRST, STORE_FIRST + LIMIT + 1
+    lo, hi = c.store.first, c.store.first + c.store.limit + 1
     stray = sorted(w for w in extra if not lo <= w < hi)
     c.check(
         "the card writes the upload added are store sectors only (header copies, data, table; no selection sector)",
-        bool(extra) and not stray and not extra & {B.SECTOR_A, B.SECTOR_B},
+        bool(extra) and not stray and not extra & {c.store.sel_a, c.store.sel_b},
         f"{len(extra)} sectors added, outside the store: {[hex(x) for x in stray[:6]]}",
     )
     c.all_writes |= out["writes-during"]
@@ -889,6 +912,7 @@ def run_clearcut(c: Any) -> None:
     one = blob(700, 62)
     two = blob(700, 63)
     folder = c.env.folder / "digikit" / "modules"
+    folder.mkdir(parents=True, exist_ok=True)
     (folder / "old.dkm").write_bytes(old)
     base = c.card(None)
     (folder / "old.dkm").unlink()

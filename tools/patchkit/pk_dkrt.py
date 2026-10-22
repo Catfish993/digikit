@@ -54,8 +54,6 @@ E_FORMAT_CMD, E_BOOT_ONLY, E_CONTRACT = -5, -45, -48
 SEL_MAGIC, SEL_VERSION, SEL_PATH = 0x444B534C, 1, 56
 # the selection record's paths (sdk/sdk.toml [limits.max])
 SEL_MAX = pk_device.contract_max()["sel_max"]
-_STORE = pk_device.store()  # devices/*.toml [card.store]
-SECTOR_A, SECTOR_B = _STORE.sel_a, _STORE.sel_b
 BOOT_FIELDS = 10  # DkrtBootInfo words before `results`
 ARENA_BYTES = pk_device.shared_limits().arena_bytes  # devices/*.toml [limits]
 MAX_MODULES = pk_device.shared_limits().modules
@@ -237,11 +235,12 @@ def make_record(
     return bytes(b)
 
 
-def write_selection(card: Path, paths: list[str]) -> None:
-    """Both copies of a selection record over the two record sectors of a card image file."""
+def write_selection(card: Path, paths: list[str], device: str) -> None:
+    """Both copies of a selection record over the two record sectors of a card image file of DEVICE (`dt2`, `dn2`)."""
     rec = make_record(paths)
+    s = pk_device.store_of(device)
     with open(card, "r+b") as f:
-        for sector in (SECTOR_A, SECTOR_B):
+        for sector in (s.sel_a, s.sel_b):
             f.seek(sector * 512)
             f.write(rec)
 
@@ -249,8 +248,10 @@ def write_selection(card: Path, paths: list[str]) -> None:
 def watch_ranges(rt: dict, lo: int, hi: int) -> list[tuple[int, int]]:
     """[lo, hi) minus the buffers the card reads fill by DMA (the staging buffer, the 512-byte record buffer)."""
     holes = [(rt["stage"], 64 * 1024)]
-    if "DKRT_SECBUF" in rt["sym"]:
-        holes.append((rt["sym"]["DKRT_SECBUF"], 512))
+    # 512-byte buffers the card reads land in by DMA: the selection record, the store's header sectors, the fingerprint of a list
+    for name in ("DKRT_SECBUF", "DKRT_STORE_PEEK", "DKRT_STORE_FP"):
+        if name in rt["sym"]:
+            holes.append((rt["sym"][name], 512))
     out, at = [], lo
     for start, size in sorted(holes):
         if start > at:
@@ -354,7 +355,7 @@ def proof(
         "modules/dyn-demo.dkm",
         "modules/dyn-demo.dkm",
     ]
-    write_selection(card, selection)
+    write_selection(card, selection, device)
 
     st, mb, arena = rt["state"], rt["mailbox"], rt["arena"]
     sym = rt["sym"]
