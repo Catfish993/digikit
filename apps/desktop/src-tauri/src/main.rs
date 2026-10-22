@@ -363,6 +363,34 @@ fn exit_on_scenario_done(handle: &Handle, report: Option<PathBuf>) {
     });
 }
 
+/// The app data folder of the app (where Tauri's path resolver puts `app_data_dir`): the system's data folder and the app identifier.
+/// The controller starts before the Tauri app is built, so it is worked out here from the environment.
+fn app_data_dir(identifier: &str) -> Option<PathBuf> {
+    app_data_dir_in(
+        identifier,
+        std::env::var_os("HOME"),
+        std::env::var_os("XDG_DATA_HOME"),
+        std::env::var_os("APPDATA"),
+    )
+}
+
+fn app_data_dir_in(
+    identifier: &str,
+    home: Option<std::ffi::OsString>,
+    xdg_data_home: Option<std::ffi::OsString>,
+    appdata: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    let non_empty = |v: Option<std::ffi::OsString>| v.filter(|v| !v.is_empty()).map(PathBuf::from);
+    let base = if cfg!(target_os = "macos") {
+        non_empty(home)?.join("Library/Application Support")
+    } else if cfg!(windows) {
+        non_empty(appdata)?
+    } else {
+        non_empty(xdg_data_home).or_else(|| non_empty(home).map(|h| h.join(".local/share")))?
+    };
+    Some(base.join(identifier))
+}
+
 /// `firmware.load` of the startup .syx as session 1. Without a usable module library or port for the runtime patch (a build outside
 /// the repository, a firmware that has no port) the image loads as it is, with a note on stderr.
 fn load_startup(handle: &Handle, syx: &std::path::Path, card: Option<&std::path::Path>, runtime: bool) -> Result<(), String> {
@@ -400,6 +428,8 @@ fn main() {
             }
         }
     }
+    let context = tauri::generate_context!();
+    let identifier = context.config().identifier.clone();
     let startup = parse_args().unwrap_or_else(|error| {
         eprintln!("{error}");
         process::exit(2)
@@ -419,6 +449,12 @@ fn main() {
     };
     config.run_dir = run_dir.clone();
     config.mirror_dir = startup.mirror_dir.clone();
+    // One folder per device; the user's choices are kept in the app data folder (the controller reads them at every load).
+    config.device_folders = startup.device_folders.then(|| digi_control::DeviceFoldersConfig {
+        root: None,
+        choices: app_data_dir(&identifier).map(|dir| dir.join("card-folders.json")),
+        sync: startup.card_sync,
+    });
     config.card_folder = startup
         .card_folder
         .clone()
@@ -524,7 +560,7 @@ fn main() {
             midi_port::midi_recv,
             midi_port::midi_cancel
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("tauri build error");
     // The window closed: let the controller end the session (`quit`: the module store is mirrored once more and the card's changes
     // are exported to the +Drive folder) before the process goes. Without it the controller thread is cut off mid-export.
@@ -593,6 +629,20 @@ mod cli_tests {
             args.iter().map(std::ffi::OsString::from),
             cfg!(feature = "coupled-audio"),
         )
+    }
+
+    #[test]
+    fn app_data_dir_is_the_systems_data_folder_and_the_identifier() {
+        let os = |s: &str| Some(std::ffi::OsString::from(s));
+        let dir = app_data_dir_in("dev.digiemu.panel", os("/home/u"), os("/data"), os("C:/Roaming")).unwrap();
+        if cfg!(target_os = "macos") {
+            assert_eq!(dir, PathBuf::from("/home/u/Library/Application Support/dev.digiemu.panel"));
+        } else if cfg!(windows) {
+            assert_eq!(dir, PathBuf::from("C:/Roaming/dev.digiemu.panel"));
+        } else {
+            assert_eq!(dir, PathBuf::from("/data/dev.digiemu.panel"));
+        }
+        assert_eq!(app_data_dir_in("x", None, None, None), None);
     }
 
     #[test]

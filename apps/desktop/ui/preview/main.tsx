@@ -10,9 +10,11 @@ import '../src/native.css';
 import { installNativeFeel } from '../src/native';
 import LivePanel from '@web/components/LivePanel';
 import { panels } from '@web/data/faceplates';
+import CardPanel from '../src/CardPanel';
 import RemotePage from '../src/RemotePage';
 import TransferPage from '../src/TransferPage';
 import { setLocalFolder, setMode } from '../src/transfer-state';
+import { cardDevice, reloadCard } from './card-mock';
 import { installRemoteMock, testPattern } from './remote-mock';
 import { SAMPLES_ROOT, control, sim } from './sim';
 
@@ -25,13 +27,14 @@ const emulatorFaceplate = () => (
     <main class="stage" aria-label="front panel">
       <div class="surface">
         <LivePanel
-          panel={panels.dn2}
+          panel={panels[cardDevice]}
           runtime={() => undefined}
           onError={() => {}}
           ref={(api) => queueMicrotask(() => api.showFrame(testPattern()))}
         />
       </div>
     </main>
+    <CardPanel visible reload={reloadCard} />
   </div>
 );
 
@@ -42,7 +45,7 @@ setLocalFolder(sim.folder === 'none' ? '' : SAMPLES_ROOT);
 
 render(
   () => (
-    <div class="console">
+    <div class="console" style={{ '--accent': panels.dn2.accent, '--func-legend': panels.dn2.func_legend }}>
       <header class="topbar">
         <span class="path">
           UI preview: fake device (state in the address: ?dev=ok|empty|noreply|error|slow &amp; folder=files|empty|none

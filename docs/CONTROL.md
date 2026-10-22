@@ -23,7 +23,7 @@ lists what is implemented. The design, including parts that are not built, is in
 
 Coupled DSP audio in the daemon needs `--auto-coupled` and the ready inputs; see [PATCHING.md](PATCHING.md).
 Startup flags are shared by both servers (`packages/emulator/control/src/cli.rs`): `--control`, `--no-control`, `--paused`,
-`--run-dir DIR`, `--card-image FILE` (with `--card-folder DIR`: the +Drive folder the image was built from; the firmware's changes are exported to it on exit; `--no-card-sync` turns the export off), `--scenario NAME_OR_FILE`, `--report PATH`, `--no-audio` and the coupled-audio
+`--run-dir DIR`, `--card-image FILE` (with `--card-folder DIR`: the +Drive folder the image was built from; the firmware's changes are exported to it on exit; `--no-card-sync` turns the export off), `--device-folders` (one card folder per device, below), `--mirror-dir DIR` (the folder of the first loaded device), `--scenario NAME_OR_FILE`, `--report PATH`, `--no-audio` and the coupled-audio
 flags. `--scenario` needs a coupled-audio build.
 
 ## Command line
@@ -206,11 +206,21 @@ same numbers). Each closed window is blended 50/50 into the shown value; a resto
 | 2 | stale session | 9 | timeout |
 | 3 | busy | | |
 
-`card.folder` and `card.sync`: the module store as a folder (`--mirror-dir DIR`; the launcher gives `plus_drive/<device>/`). While the emulator runs it
-mirrors the store files the guest wrote to the card into `DIR/digikit/` about 2 s after the guest's last card write (one way, card to folder; a file
-the card no longer has is removed from the folder, moved to `<out>/backup/mirror-<stamp>/`; a session removes only files it saw on the card). `card.folder` returns
-`{folder, continuous, files: [{path, bytes, sha256}], last_sync (ms), last, behind, error}` (`folder` null and `continuous` false without `--mirror-dir`);
-`card.sync` mirrors now and returns the same. Details: docs/plans/card-folder.md.
+`card.folder`, `card.folder_set` and `card.sync`: the module store as a folder. **The folder belongs to the device, not to the process.** With
+`--device-folders` (the launcher passes it; the desktop app keeps the user's choices in its app data folder, `card-folders.json`) every load
+(`firmware.load`, Open, Reload, a device change) sets the folder of the loaded device: the user's choice for it, else `plus_drive/<device>/`
+(`$DIGI_PLUS_DRIVE` or the repository's; made if missing). A load without a `card` builds the card from that folder when it holds something the
+device's card takes (`plusdrive_format` builder, cached by content under `<run dir>/cards/`; a card the user chose with `card.load` stays). `--mirror-dir DIR`
+alone (no `--device-folders`) is the folder of the first loaded device only: a load of another device has no mirror. While the emulator runs the
+store files the guest wrote to the card are mirrored into `<folder>/digikit/` about 2 s after the guest's last card write (one way, card to folder; a file
+the card no longer has is removed from the folder, moved to `<out>/backup/mirror-<stamp>/`; a session removes only files it saw on the card). A load finishes the
+running device's pending mirror pass into its own folder before the next device's folder takes over. `card.folder` returns
+`{folder, continuous, files: [{path, bytes, sha256}], last_sync (ms), last, behind, error, device, default_folder, custom, chosen_missing, next_folder, reload_needed}`
+(`folder` null and `continuous` false without a mirror). `custom`: the folder is the user's choice; `chosen_missing`: a saved choice whose folder is gone (the default is used);
+`next_folder`: what the next load uses; `reload_needed`: `next_folder` is not `folder` yet. `card.folder_set {dir?, device?}` saves the choice for the loaded (or the named)
+device and returns `card.folder`'s answer; no `dir` goes back to `plus_drive/<device>/`. A device without a path filesystem (the DN2) mirrors to the new folder at once (files of the
+new folder that differ from the card's store are replaced, the old ones go to the backup); a device whose card is built from the folder (the DT2) takes it at the next load
+(`restart` builds the card again from the folder in use). `card.sync` mirrors now and returns the same as `card.folder`. Details: docs/plans/card-folder.md.
 
 `card.load {dir, sync?, export_out?}` builds a card from `dir` (a `plus_drive/dt2/`-style folder: docs/SAMPLES.md) and also records `dir` as the card's +Drive folder. The same holds for a card given at start with `--card-image` and `--card-folder` (`mise run workbench` passes both; `sync` is on unless `--no-card-sync`). `card.export` and the quit export use the running device's `[card]` layout (found by the base firmware's hash). `card.export {dir?, out?, prune?}` brings
 that folder (or `dir`) up to date with what the firmware wrote to the card: files of the path filesystem by name in the

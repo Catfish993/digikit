@@ -16,6 +16,7 @@ pub mod cardmirror;
 pub mod cards;
 pub mod cli;
 pub mod controller;
+pub mod devicefolders;
 pub mod dispatch;
 pub mod events;
 pub mod firmware;
@@ -29,5 +30,6 @@ pub mod server;
 pub use controller::{
     CardSource, Command, Config, Handle, JsonReply, Mode, Reply, ScenarioSetup, load_scenario, spawn,
 };
+pub use devicefolders::DeviceFoldersConfig;
 pub use events::Events;
 pub use proto::{RpcError, RpcResult, SCHEMA_VERSION};

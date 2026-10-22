@@ -14,6 +14,7 @@ import {
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
 import CardPanel from './CardPanel';
+import { bumpCardRefresh } from './card-state';
 import RemotePage from './RemotePage';
 import { target } from './target';
 import TransferPage from './TransferPage';
@@ -158,6 +159,8 @@ export default function Console() {
       update({ type: 'snapshot', snapshot: await start(r) });
       setPaused(false);
       await refreshInfo();
+      // another firmware may be another device: its card folder
+      bumpCardRefresh();
     } catch (e) {
       setError(message(e));
     }
@@ -252,6 +255,7 @@ export default function Console() {
       if (s) update({ type: 'snapshot', snapshot: s });
       setPaused(false);
       await refreshInfo();
+      bumpCardRefresh();
     } catch (e) {
       setError(message(e));
     }
@@ -494,7 +498,7 @@ export default function Console() {
                 <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
               </div>
             </main>
-            <CardPanel visible={page() === 'emulator' && !!status()} />
+            <CardPanel visible={page() === 'emulator' && !!status()} reload={restart} />
           </div>
           <Show when={page() === 'transfer'}>
             <TransferPage />

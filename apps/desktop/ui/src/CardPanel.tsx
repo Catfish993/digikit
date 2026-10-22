@@ -1,11 +1,24 @@
-// The Card panel of the Emulator page: the host folder the emulated card's module store is mirrored to (`plus_drive/<device>/`, kept up to
-// date by the emulator itself about 2 s after the guest's last card write; one way, card to folder). It shows the folder, the module files
-// with their sizes, the time of the last sync, "Open folder" and "Sync now". The emulator does the work: this panel only asks
-// (`card.folder`, `card.sync` through `emu_call`).
+// The Card panel of the Emulator page: the host folder of the loaded device's card (`plus_drive/<device>/` or the folder the user chose for
+// the device). The module store is mirrored to it (kept up to date by the emulator itself about 2 s after the guest's last card write;
+// one way, card to folder) and the card of a load is built from it. It shows the device and the folder, the module files with their
+// sizes, the time of the last sync, "Choose folder...", "Use default", "Show in Finder" and "Sync now". A device whose card is built
+// from the folder (the Digitakt II) takes a new folder at the next load: the panel says so and offers "Reload now". The emulator does the
+// work and keeps the choice per device (`card.folder`, `card.folder_set`, `card.sync` through `emu_call`); this panel only asks.
 import { invoke } from '@tauri-apps/api/core';
 import { For, Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
 import { errorLine, formatBytes } from '@web/modules/backend';
-import { fileGroups, fileRows, nameInGroup, shortFolder, statusText, type CardFolder } from './card-core';
+import { panels } from '@web/data/faceplates';
+import {
+  canUseDefault,
+  fileGroups,
+  fileRows,
+  folderNotice,
+  nameInGroup,
+  pickStart,
+  shortFolder,
+  statusText,
+  type CardFolder,
+} from './card-core';
 import { cardRefresh } from './card-state';
 import './card-panel.css';
 
@@ -18,9 +31,14 @@ const readOpen = () => {
     return true;
   }
 };
-const call = <T,>(method: string) => invoke<T>('emu_call', { method, params: {}, session: null });
+const call = <T,>(method: string, params: Record<string, unknown> = {}) =>
+  invoke<T>('emu_call', { method, params, session: null });
+/** The device's name as the faceplate gives it. */
+const deviceName = (id: string | undefined) =>
+  id && id in panels ? panels[id as keyof typeof panels].name : (id ?? '').toUpperCase();
 
-export default function CardPanel(props: { visible: boolean }): JSX.Element {
+/** `reload`: start the loaded firmware again (the Restart button's path), which builds the card from the folder in use. */
+export default function CardPanel(props: { visible: boolean; reload?: () => Promise<void> }): JSX.Element {
   const [open, setOpen] = createSignal(readOpen());
   const [card, setCard] = createSignal<CardFolder>();
   const [error, setError] = createSignal('');
@@ -66,6 +84,35 @@ export default function CardPanel(props: { visible: boolean }): JSX.Element {
       setNow(Date.now());
     }
   };
+  /** Run a call that answers with the folder state. */
+  const change = async (run: () => Promise<CardFolder | undefined>) => {
+    setBusy(true);
+    try {
+      const next = await run();
+      if (next) setCard(next);
+      setError('');
+    } catch (e) {
+      setError(errorLine(e));
+    } finally {
+      setBusy(false);
+      setNow(Date.now());
+    }
+  };
+  const choose = () =>
+    change(async () => {
+      const c = card();
+      const dir = await invoke<string | null>('local_pick_folder', {
+        start: c ? pickStart(c) : null,
+        title: `Choose the folder of the ${deviceName(c?.device)} card`,
+      });
+      return dir ? call<CardFolder>('card.folder_set', { dir }) : undefined;
+    });
+  const useDefault = () => change(() => call<CardFolder>('card.folder_set', {}));
+  const reloadNow = () =>
+    change(async () => {
+      await props.reload?.();
+      return call<CardFolder>('card.folder');
+    });
   const openFolder = async () => {
     try {
       await invoke('card_open_folder');
@@ -99,12 +146,23 @@ export default function CardPanel(props: { visible: boolean }): JSX.Element {
       </button>
       <Show when={open()}>
         <div class="card-body">
+          <Show when={card()?.device}>
+            <h3 class="device">{deviceName(card()!.device)}</h3>
+          </Show>
           <p class="folder" title={card()?.folder ?? ''}>
             {card()?.folder ? shortFolder(card()!.folder) : 'No folder'}
           </p>
           <div class="acts">
+            <button type="button" class="act small" disabled={!card()?.device || busy()} onClick={() => void choose()}>
+              Choose folder…
+            </button>
+            <Show when={card() && canUseDefault(card()!)}>
+              <button type="button" class="act small" disabled={busy()} onClick={() => void useDefault()}>
+                Use default
+              </button>
+            </Show>
             <button type="button" class="act small" disabled={!card()?.folder} onClick={() => void openFolder()}>
-              Open folder
+              Show in Finder
             </button>
             <button
               type="button"
@@ -112,9 +170,19 @@ export default function CardPanel(props: { visible: boolean }): JSX.Element {
               disabled={!card()?.continuous || busy()}
               onClick={() => void sync()}
             >
-              {busy() ? 'Syncing…' : 'Sync now'}
+              {busy() ? 'Working…' : 'Sync now'}
             </button>
           </div>
+          <Show when={card() && folderNotice(card()!)}>
+            <div class="notice" role="status">
+              <p>{folderNotice(card()!)}</p>
+              <Show when={card()?.reload_needed && props.reload}>
+                <button type="button" class="act small" disabled={busy()} onClick={() => void reloadNow()}>
+                  Reload now
+                </button>
+              </Show>
+            </div>
+          </Show>
           <Show
             when={card() && fileRows(card()!).length}
             fallback={<p class="empty">{card()?.continuous ? 'No files in the folder.' : ''}</p>}

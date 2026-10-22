@@ -542,6 +542,65 @@ const SCENES = [
   // ---- the Remote page against the Emulator page's faceplate: the same test pattern on the 128 x 64 screen ----
   { name: 'remote-wide', q: 'page=remote', size: WIDE, steps: async (p) => p.wait(800) },
   { name: 'remote-narrow', q: 'page=remote', size: MIN, steps: async (p) => p.wait(800) },
+  // ---- the Card panel of the Emulator page: the folder of the loaded device (preview/card-mock.ts) ----
+  { name: 'card-dn2', q: 'page=emulator&card=dn2', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'card-dt2', q: 'page=emulator&card=dt2', size: WIDE, steps: async (p) => p.wait(700) },
+  {
+    // the Digitone II takes the chosen folder at once: no reload notice
+    name: 'card-dn2-chosen',
+    q: 'page=emulator&card=dn2',
+    size: WIDE,
+    steps: async (p) => {
+      await p.click('Choose folder…');
+      await p.wait(700);
+    },
+  },
+  {
+    // the Digitakt II builds its card from the folder: the notice and "Reload now"
+    name: 'card-dt2-reload-notice',
+    q: 'page=emulator&card=dt2',
+    size: WIDE,
+    steps: async (p) => {
+      await p.click('Choose folder…');
+      await p.wait(700);
+    },
+  },
+  {
+    name: 'card-dt2-reloaded',
+    q: 'page=emulator&card=dt2',
+    size: WIDE,
+    steps: async (p) => {
+      await p.click('Choose folder…');
+      await p.wait(500);
+      await p.click('Reload now');
+      await p.wait(700);
+    },
+  },
+  { name: 'card-dt2-saved-choice', q: 'page=emulator&card=dt2&chosen=1', size: WIDE, steps: async (p) => p.wait(700) },
+  {
+    name: 'card-dt2-missing-choice',
+    q: 'page=emulator&card=dt2&chosen=1&missing=1',
+    size: WIDE,
+    steps: async (p) => p.wait(700),
+  },
+  {
+    name: 'card-dt2-use-default',
+    q: 'page=emulator&card=dt2&chosen=1',
+    size: WIDE,
+    steps: async (p) => {
+      await p.click('Use default');
+      await p.wait(700);
+    },
+  },
+  {
+    name: 'card-dt2-reload-notice-narrow',
+    q: 'page=emulator&card=dt2',
+    size: MIN,
+    steps: async (p) => {
+      await p.click('Choose folder…');
+      await p.wait(700);
+    },
+  },
   { name: 'emulator-faceplate-wide', q: 'page=emulator', size: WIDE },
   { name: 'emulator-faceplate-narrow', q: 'page=emulator', size: MIN },
 ];

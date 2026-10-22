@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use digi_coupled::{AudioMode, AudioOptions};
 
-pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--mirror-dir DIR] [--control|--no-control] [--runtime|--no-runtime] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
+pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--mirror-dir DIR] [--device-folders] [--control|--no-control] [--runtime|--no-runtime] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
 
 #[derive(Clone, Debug, Default)]
 pub struct StartupArgs {
@@ -15,8 +15,11 @@ pub struct StartupArgs {
     pub card_folder: Option<PathBuf>,
     /// False with `--no-card-sync`.
     pub card_sync: bool,
-    /// The folder the module store is mirrored to while the emulator runs (`--mirror-dir`, `plus_drive/<device>/`).
+    /// The folder the module store is mirrored to for the first load (`--mirror-dir`): only the first device's default.
     pub mirror_dir: Option<PathBuf>,
+    /// `--device-folders`: one folder per device (`plus_drive/<device>/` or the user's choice): the module store is mirrored to it
+    /// and the card of a load is built from it. `--no-card-sync` turns the mirror and the export on quit off.
+    pub device_folders: bool,
     pub audio: Option<AudioOptions>,
     pub scenario: Option<String>,
     pub report: Option<PathBuf>,
@@ -54,6 +57,7 @@ pub fn parse_values(
     let mut card_folder = None;
     let mut card_sync = true;
     let mut mirror_dir = None;
+    let mut device_folders = false;
     let mut runtime = None;
     while let Some(value) = values.next() {
         let mut path = |label: &str| -> Result<PathBuf, String> {
@@ -70,6 +74,8 @@ pub fn parse_values(
             card_sync = false;
         } else if value == "--mirror-dir" {
             mirror_dir = Some(path("--mirror-dir")?);
+        } else if value == "--device-folders" {
+            device_folders = true;
         } else if value == "--control" {
             control = Some(true);
         } else if value == "--no-control" {
@@ -201,6 +207,7 @@ pub fn parse_values(
         card_folder,
         card_sync,
         mirror_dir,
+        device_folders,
         audio,
         scenario,
         report,
@@ -241,6 +248,15 @@ mod tests {
         assert!(!a.card_sync);
         assert!(parse(&["--card-folder", "pd"]).is_err());
         assert_eq!(parse(&[]).unwrap().card_folder, None);
+    }
+
+    #[test]
+    fn device_folders_is_a_switch() {
+        assert!(!parse(&[]).unwrap().device_folders);
+        let a = parse(&["x.syx", "--device-folders", "--no-card-sync"]).unwrap();
+        assert!(a.device_folders && !a.card_sync);
+        // the first load's folder is a default, not a switch
+        assert_eq!(parse(&["--mirror-dir", "m"]).unwrap().mirror_dir, Some("m".into()));
     }
 
     #[test]
