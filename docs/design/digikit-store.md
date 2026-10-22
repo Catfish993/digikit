@@ -106,6 +106,7 @@ second commit during one read could reuse its sectors (the fingerprint catches t
 the DN2 has no path filesystem, so the runtime needs the store anyway; and a path-filesystem copy is read by file name through the mutex-guarded C++ layer where the block read is a single call. The cost is that a
 `digikit/` file is not visible on the device itself. **DT2 samples** are different: they belong in the sample browser, so they go to the +Drive (through the stock MidiRpc file commands, `docs/MIDI-SYSEX-RPC.md` section 12);
 **DN2 samples** go to the store's `samples/` folder (the firmware cannot play them yet).
+A sample in `samples/` is the DT2 native sample file, byte for byte what the +Drive holds (`packages/dksample`: a 64-byte header, the 48 kHz 16-bit PCM, a 16-byte zero trailer; the header's +4 is the PCM length), so a sampling engine reads one format on both devices. The host sends it through the same upload commands as a module (`apps/web/src/modules/samples.ts`, backend "digikit"): `samples/<folder>/<name>`, no extension, and checks it with VERIFY (the host's sha256 of the bytes it sent against the runtime's sha256 of a fresh card read).
 
 ## The selection record (boot-time loading, plan decision 9)
 

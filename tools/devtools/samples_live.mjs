@@ -8,10 +8,10 @@
 // It converts a small WAV (44.1 kHz, so the resampler runs), uploads it in three chunks into a folder, closes with the byte count, lists the folder,
 // compares the firmware's content hash with the host's (and a corrupted copy, which must fail), passes a native file and a text file through, and
 // writes WAV and sent bytes to DIR for the scenario's card comparison. One JSON line per check on stdout; exit code 0 when all hold.
-import net from 'node:net';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DkSession, splitMessages } from '../../apps/web/src/modules/dkupload-core.ts';
+import { DkSession } from '../../apps/web/src/modules/dkupload-core.ts';
+import { connect } from './emu_midi.mjs';
 import { Sample, prepareUpload } from '../../apps/web/src/modules/dksample.ts';
 import { RpcFiles, putVerified, verifyWritten } from '../../apps/web/src/modules/rpcfiles.ts';
 
@@ -23,55 +23,7 @@ if (!socketPath || !out) {
 }
 mkdirSync(out, { recursive: true });
 
-// ---- JSON-RPC over the control socket ----
-const sock = net.connect(socketPath);
-let buf = '';
-let nextId = 1;
-const waiting = new Map();
-sock.on('data', (d) => {
-  buf += d;
-  for (let i = buf.indexOf('\n'); i >= 0; i = buf.indexOf('\n')) {
-    const m = JSON.parse(buf.slice(0, i));
-    buf = buf.slice(i + 1);
-    if (m.id !== undefined && waiting.has(m.id)) {
-      const { ok, fail } = waiting.get(m.id);
-      waiting.delete(m.id);
-      if (m.error) fail(new Error(m.error.message));
-      else ok(m.result);
-    }
-  }
-});
-const call = (method, params = {}) =>
-  new Promise((ok, fail) => {
-    const id = nextId++;
-    waiting.set(id, { ok, fail });
-    sock.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-  });
-await call('hello', { min_schema: 1 });
-
-class Transport {
-  rx = new Uint8Array();
-  ready = [];
-  async send(msg) {
-    await call('midi.usb.in', { bytes: Buffer.from(msg).toString('hex'), chunk: 384, period: 16500 });
-  }
-  async recv(timeoutMs) {
-    const end = Date.now() + timeoutMs;
-    for (;;) {
-      const next = this.ready.shift();
-      if (next) return next;
-      const { hex: got } = await call('midi.usb.out');
-      if (got) {
-        const { messages, rest } = splitMessages(Uint8Array.from(Buffer.concat([this.rx, Buffer.from(got, 'hex')])));
-        this.rx = rest;
-        this.ready.push(...messages);
-        continue;
-      }
-      if (Date.now() >= end) return null;
-      await new Promise((r) => setTimeout(r, 10));
-    }
-  }
-}
+const emu = await connect(socketPath);
 
 let failed = 0;
 const check = (name, ok, detail = '') => {
@@ -104,7 +56,7 @@ const wav = (() => {
 writeFileSync(join(out, 'test.wav'), wav);
 
 const sample = await Sample.create(readFileSync(new URL('../../apps/web/public/dksample.wasm', import.meta.url)));
-const session = new DkSession(new Transport(), { timeoutMs: 20000 });
+const session = new DkSession(emu.transport, { timeoutMs: 20000 });
 const files = new RpcFiles(session, { chunk: 4096 });
 const hashOf = (b) => sample.hash(b);
 
@@ -199,5 +151,5 @@ check('DeleteFile removes it', !(await files.readDir('/live')).some((e) => e.nam
 const after = await files.space();
 check('StorageSpace shrank by the file', after.free < space.free, `${space.free} -> ${after.free}`);
 
-sock.end();
+emu.close();
 process.exit(failed ? 1 : 0);

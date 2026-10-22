@@ -1577,6 +1577,53 @@ def run_live_samples(c: Ctx) -> None:
     )
 
 
+def run_live_samples_store(c: Ctx) -> None:
+    """A sample sent into the `samples/` folder of the digikit store by the TypeScript samples API (tools/devtools/samples_store_live.mjs, which also
+    converts a WAV with dksample.wasm, checks VERIFY against the host's sha256, a delete, and a RESTART), on a free-running emulator whose profile
+    says `[storage] samples = "digikit"`. Then the card mirror: the folder the emulator keeps of the store holds the file the client sent."""
+    import subprocess
+
+    out = c.work / "samples-store-out"
+    storage = pk_device.load(c.env.device)["storage"]["samples"]
+    c.check(
+        'the device profile says [storage] samples = "digikit"',
+        storage == "digikit",
+        storage,
+    )
+    emu, mirror = live_boot(c, "-samples-store")
+    try:
+        r = subprocess.run(
+            ["node", "tools/devtools/samples_store_live.mjs", emu.path, "--out", str(out),
+             "--storage", storage, "--total-kib", str(c.store.limit // 2)],
+            capture_output=True, text=True, cwd=ROOT, timeout=900,
+        )  # fmt: skip
+        lines = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        for ln in lines:
+            if "check" in ln:
+                c.check(f"client: {ln['check']}", ln["ok"], ln["detail"])
+        res = next((ln for ln in lines if "sha256" in ln), {})
+        c.check(
+            "the client ran to the end and every check held",
+            r.returncode == 0 and bool(res),
+            r.stderr[-300:],
+        )
+        c.report["compared"] = res.get("compared")
+        synced = emu.call("card.sync")
+        mirrored = mirror / "digikit" / "samples" / "drums" / "test"
+        sent = (
+            (out / "stored-test.bin").read_bytes()
+            if (out / "stored-test.bin").is_file()
+            else b""
+        )
+        c.check(
+            "the card mirror holds the file the client sent (samples/drums/test)",
+            bool(sent) and mirrored.is_file() and mirrored.read_bytes() == sent,
+            f"{mirrored} {synced.get('files')}",
+        )
+    finally:
+        emu.__exit__(None, None, None)
+
+
 def run_live_input(c: Ctx) -> None:
     """core/input against the emulator's own input path. The same presses are made on two free-running daemons with the same boot history (the probe installed, one restart):
     on the first with the emulator's `input.button` / `input.turn` (the panel UART path), on the second through `test/input-probe` (SysEx
@@ -1908,6 +1955,8 @@ def run_live(c: Ctx) -> None:
         return run_live_svc(c)
     if c.table().get("part") == "samples":
         return run_live_samples(c)
+    if c.table().get("part") == "samples-store":
+        return run_live_samples_store(c)
     if c.table().get("part") == "input":
         return run_live_input(c)
     if c.table().get("part") == "remote":

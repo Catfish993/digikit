@@ -97,8 +97,10 @@ const isWav = (b: Uint8Array) =>
 export interface Prepared {
   /** The name on the device: a WAV loses its extension, as the card builder names it. */
   name: string;
-  /** The bytes to send. */
+  /** The bytes to send over the stock MidiRpc file commands (the firmware adds the trailer at close). */
   bytes: Uint8Array;
+  /** The file the digikit store holds: the same native file as on the DT2's +Drive, so with its 16-byte trailer. Any other file is unchanged. */
+  stored: Uint8Array;
   /** What was done: converted from a WAV, a native file passed on, or any other file unchanged. */
   kind: 'converted' | 'native' | 'unchanged';
   info?: SampleInfo;
@@ -108,12 +110,15 @@ export interface Prepared {
 export function prepareUpload(sample: Sample, name: string, bytes: Uint8Array): Prepared {
   if (isWav(bytes)) {
     const c = sample.convert(bytes);
-    return { name: name.replace(/\.wav$/i, ''), bytes: c.rpc, kind: 'converted', info: c.info };
+    return { name: name.replace(/\.wav$/i, ''), bytes: c.rpc, stored: c.file, kind: 'converted', info: c.info };
   }
   if (isNative(bytes)) {
     // a native file that carries its trailer goes without it: the firmware adds its own
     const n = new DataView(bytes.buffer, bytes.byteOffset, bytes.length).getUint32(4);
-    return { name, bytes: bytes.subarray(0, 0x40 + n), kind: 'native' };
+    const body = bytes.subarray(0, 0x40 + n);
+    const stored = new Uint8Array(body.length + NATIVE_TRAILER);
+    stored.set(body);
+    return { name, bytes: body, stored, kind: 'native' };
   }
-  return { name, bytes, kind: 'unchanged' };
+  return { name, bytes, stored: bytes, kind: 'unchanged' };
 }

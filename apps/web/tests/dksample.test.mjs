@@ -109,4 +109,9 @@ test('prepareUpload: a WAV is converted, a native file and any other file pass',
   const p = prepareUpload(s, 'a.txt', t);
   assert.deepEqual([p.kind, p.name, p.bytes === t], ['unchanged', 'a.txt', true]);
   assert.equal(isNative(t), false);
+  // what the digikit store holds is the native file of the +Drive: with its trailer, whatever the input was
+  assert.deepEqual(w.stored, full);
+  assert.deepEqual(n.stored, full);
+  assert.deepEqual(same.stored, full);
+  assert.equal(p.stored, t);
 });

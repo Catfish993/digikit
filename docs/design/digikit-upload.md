@@ -234,6 +234,7 @@ anchor on all four ports (`dkrt.fw.*`). The runtime's upload buffer is a static 
 - an upload during playback: PCM equal to the same run without it; the write-watch shows store sectors only.
 - stock MidiRpc unchanged: a Ping and a SoftwareVersion reply are byte-identical with and without the runtime.
 - `upload-folders` (store format 3): MKDIR and its errors, LIST by prefix and its paging (forty entries), a streamed upload of 6 MiB (far over the staging buffer), VERIFY in ranges, a delete that frees its space for the next file (first fit), a smaller file that takes a hole, CAPACITY's STORE entry, the +Drive round trip.
+- `samples-store` (live, DN2): a WAV converted by the host and sent into `samples/<folder>/<name>` in several chunks through the generic samples API (`apps/web/src/modules/samples.ts`), VERIFY against the host's sha256, a corrupted copy reported as failed, a delete that frees the space, a RESTART after which the store still lists and verifies the file, and the folder mirror holding the file.
 - the +Drive round trip: after an upload in the emulator, the exporter writes the store's files back to
   `plus_drive/<device>/digikit/`, so the next card build holds them.
 
