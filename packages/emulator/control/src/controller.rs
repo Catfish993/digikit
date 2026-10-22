@@ -1509,13 +1509,7 @@ impl Actor {
             "audio.report" => self
                 .with_runtime(|r| Ok(r.audio_status().unwrap_or(Value::Null)))
                 .map(|audio| Some(json!({ "audio": audio }))),
-            "state.digest" => self
-                .with_runtime(|r| {
-                    r.state_digest()
-                        .map(|digest| json!({"digest": digest}))
-                        .map_err(|e| RpcError::new(code::GUEST_FAULT, e))
-                })
-                .map(Some),
+            "state.digest" => self.rpc_state_digest(&p).map(Some),
             "state.save" => self.rpc_state_save(&p).map(Some),
             "state.load" => self.rpc_state_load(&p).map(Some),
             "pcm.tap" => self.rpc_pcm_tap(&p).map(Some),
@@ -1716,6 +1710,17 @@ impl Actor {
             }
         }
         Ok(json!({"deliver": self.deliver_exceptions}))
+    }
+
+    /// `state.digest {arch?}`: the digest of the saved state. `arch: true` leaves out the counters of how the instructions were run
+    /// (interpreted, idle skipped, RAM clear skipped), so runs that reach the same guest state by different paths have the same digest.
+    fn rpc_state_digest(&mut self, p: &Params) -> RpcResult {
+        let arch = p.opt_bool("arch")?.unwrap_or(false);
+        self.with_runtime(|r| {
+            if arch { r.state_digest_arch() } else { r.state_digest() }
+                .map(|digest| json!({"digest": digest}))
+                .map_err(|e| RpcError::new(code::GUEST_FAULT, e))
+        })
     }
 
     /// `mem.cf.peek {addr}`: one guest longword, read without side effects.

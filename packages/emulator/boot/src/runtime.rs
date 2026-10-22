@@ -20,6 +20,8 @@ use coldfire::fused::Loop;
 mod call;
 pub use call::{CallResult, CallSpec};
 
+/// The interrupt level at which USB MIDI input is handed to the firmware (`service_usb`), and so the mask that holds it back.
+const USB_LEVEL: u8 = 5;
 const CHUNK_MAX: u32 = 250_000;
 const CAPTURE_BUS_TRACE: bool = false;
 const ACCELERATE_RAM_CLEAR: bool = true;
@@ -1428,10 +1430,18 @@ impl Emulator {
             || self.bus.board.dspi1_irq()
             || self.irq1_pending
             || self.input_attempted_in_chunk
-            || self.midi.busy()
+            || self.midi.din_busy()
+            || self.midi.usb.active.is_some()
         {
             return 0;
         }
+        // USB MIDI input waiting for its next call (the guest drained the last one inside the period, 125 us of model time) is idle time as
+        // well, up to the instruction that makes the call due; `step_once` hands the bytes over at that boundary as it always did.
+        let usb_wait = match self.midi.usb_due_in(self.cpu.icount) {
+            Some(0) => return 0,
+            Some(due_in) => due_in,
+            None => u64::MAX,
+        };
         if let Some(counter) = counter {
             let mut code = [0x52, 0xb9, 0, 0, 0, 0, 0x60, 0xf8];
             code[2..6].copy_from_slice(&counter.to_be_bytes());
@@ -1464,9 +1474,9 @@ impl Emulator {
         let count = if counter.is_some() {
             let before_timer =
                 deadline.map_or(u64::MAX, |due| due.saturating_sub(now).saturating_sub(1));
-            (u64::from(remaining).min(before_timer) as u32) & !1
+            (u64::from(remaining).min(before_timer).min(usb_wait) as u32) & !1
         } else {
-            idle_advance_limit(remaining, self.idle_passes, now, deadline)
+            idle_advance_limit(remaining, self.idle_passes, now, deadline).min(usb_wait.min(u64::from(u32::MAX)) as u32)
         };
         if count == 0 {
             return 0;
@@ -1615,14 +1625,14 @@ impl Emulator {
             || self.rx_pending
             || self.irq1_pending
             || !self.input_packets.is_empty()
-            || self.midi.busy()
+            || self.midi.din_busy()
             || self.fs_clear_pending.is_some()
             || self.cpu.state != coldfire::RunState::Running
             || self.bus.board.has_host_events()
         {
             return 0;
         }
-        let Some((timer_limit, level)) = self
+        let Some((timer_limit, mut level)) = self
             .bus
             .board
             .time_mut()
@@ -1633,8 +1643,23 @@ impl Emulator {
         let Some(ssi_limit) = self.bus.board.ssi_batch_limit() else {
             return 0;
         };
-        let limit = timer_limit.min(ssi_limit);
+        let mut limit = timer_limit.min(ssi_limit);
         let calls = self.softfloat.counts.calls();
+        // USB MIDI input: while a callback call is in progress `service_usb` does nothing (the return to the interrupted code is seen at
+        // `ret_pc`, an observed PC), and while the next call is not due it does nothing either, so the fast loop runs up to the
+        // instruction that makes it due (the guest tick moves one for one with icount) and `step_once` hands the bytes over there, at
+        // the boundary it always did. A call that is due while the guest runs with the interrupt mask at the call's level or above (the
+        // audio interrupt) waits for the mask to drop, which the loop's own IPL check ends the run for, as it does for a timer.
+        if let Some(due_in) = self.midi.usb_due_in(self.cpu.icount) {
+            if due_in == 0 {
+                if ((self.cpu.sr >> 8) & 7) < u16::from(USB_LEVEL) {
+                    return 0;
+                }
+                level = level.max(USB_LEVEL);
+            } else {
+                limit = limit.min(self.cpu.icount.wrapping_add(calls).saturating_add(due_in));
+            }
+        }
         let epoch = self.bus.board.mmio_epoch();
         let last_pc_offset = self.main.len().saturating_sub(6);
         // `step` only adds to icount (one per instruction, none when it
@@ -2402,7 +2427,7 @@ impl Emulator {
     /// the chunk and the callback's arguments are built below it, and the PC goes to the callback. The callback returns
     /// to an `rte` of the firmware; `observe_usb` sees it, pops the arguments and restores d0, d1, a0, a1.
     fn service_usb(&mut self) -> Result<bool, String> {
-        const LEVEL: u8 = 5;
+        const LEVEL: u8 = USB_LEVEL;
         if !self.midi.usb.enabled
             || self.midi.usb.active.is_some()
             || self.midi.usb.queue.is_empty()
@@ -3479,6 +3504,29 @@ impl Emulator {
     /// CPU, RAM, peripherals and counters for determinism checks.
     pub fn state_digest(&mut self) -> Result<String, String> {
         Ok(digest(&self.save_state()?))
+    }
+
+    /// `state_digest` with the three counters of how the instructions were run (interpreted, idle skipped, RAM clear skipped) left out:
+    /// two runs that reach the same guest state by different paths (stepping one instruction at a time, the batched loop, the idle skip)
+    /// have the same digest. The oracle for a change to those paths (`state.digest {"arch": true}`).
+    pub fn state_digest_arch(&mut self) -> Result<String, String> {
+        let saved = (
+            self.interpreted_instructions,
+            self.idle_fast_forwarded_instructions,
+            self.ram_clear_fast_forwarded_instructions,
+        );
+        (
+            self.interpreted_instructions,
+            self.idle_fast_forwarded_instructions,
+            self.ram_clear_fast_forwarded_instructions,
+        ) = (0, 0, 0);
+        let digest = self.state_digest();
+        (
+            self.interpreted_instructions,
+            self.idle_fast_forwarded_instructions,
+            self.ram_clear_fast_forwarded_instructions,
+        ) = saved;
+        digest
     }
 }
 
