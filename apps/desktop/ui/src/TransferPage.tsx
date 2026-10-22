@@ -5,12 +5,12 @@
 // line, and the progress bar of a module install. The page speaks the upload protocol itself, in TypeScript, over the controller's USB
 // capture; no process is started and nothing is built.
 import { For, Match, Show, Switch, createEffect, createSignal, on, onMount, type JSX } from 'solid-js';
-import { errorLine } from '@web/modules/backend';
+import { isCancelled, isTimeout } from '@web/modules/backend';
 import { bumpCardRefresh } from './card-state';
 import ModulesMode from './ModulesMode';
 import SamplesMode from './SamplesMode';
 import { deviceStorage, readLocal, readSamples } from './samples-backend';
-import { target } from './target';
+import { target, targetLabel } from './target';
 import { transferBackend } from './transfer-backend';
 import { MODES, parseMode, progressFailed, progressFraction } from './transfer-core';
 import type { PageCtx } from './TransferParts';
@@ -28,6 +28,8 @@ import {
   setTicks,
   setUploads,
 } from './transfer-state';
+import WaitNotice from './WaitNotice';
+import { failureLine } from './wait-core';
 import './transfer-page.css';
 
 /** Read what the mode shows, both sides: the device and the computer (the library folder, or the chosen samples folder). */
@@ -39,7 +41,7 @@ async function read(): Promise<void> {
       try {
         await step();
       } catch (e) {
-        errors.push(errorLine(e));
+        errors.push(failureLine(e, targetLabel(target())));
       }
     if (errors.length) throw new Error(errors.join('\n'));
     return;
@@ -59,16 +61,20 @@ export default function TransferPage(): JSX.Element {
     if (busy()) return;
     setBusy(what);
     setError('');
+    // after a cancel or a "no reply" the device is not asked again at once (that would wait the whole time a second time)
+    let skipRead = false;
     try {
       await f();
     } catch (e) {
-      setError(errorLine(e));
+      skipRead = isCancelled(e) || isTimeout(e);
+      setError(failureLine(e, targetLabel(target())));
     } finally {
-      try {
-        await read();
-      } catch (e) {
-        if (!error()) setError(errorLine(e));
-      }
+      if (!skipRead)
+        try {
+          await read();
+        } catch (e) {
+          if (!error()) setError(failureLine(e, targetLabel(target())));
+        }
       setBusy('');
       // the Card panel reads the folder now and again after the emulator's quiet period (the folder follows the card about 2 s later)
       bumpCardRefresh();
@@ -133,6 +139,8 @@ export default function TransferPage(): JSX.Element {
           Refresh
         </button>
       </header>
+
+      <WaitNotice active={!!busy()} />
 
       <Show when={error()}>
         <p class="err" role="alert">

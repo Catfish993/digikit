@@ -4,9 +4,10 @@
 //! port is whatever the user picks.
 use std::sync::{
     Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
     mpsc::{Receiver, RecvTimeoutError, Sender, channel},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use tauri::State;
@@ -59,8 +60,43 @@ struct Open {
     rx: Arc<Mutex<Receiver<Vec<u8>>>>,
 }
 
+/// The open port, and the cancel counter of the pending `midi_recv`: `midi_cancel` raises it, a waiting recv that sees it change ends.
+/// Both are behind an `Arc` so a command can hand them to a worker thread (no command does MIDI I/O on the thread that called it).
 #[derive(Default)]
-pub struct MidiPort(Mutex<Option<Open>>);
+pub struct MidiPort {
+    open: Arc<Mutex<Option<Open>>>,
+    cancel: Arc<AtomicU64>,
+}
+
+/// How a wait for the next message ended.
+#[derive(Debug, PartialEq)]
+pub enum Recv {
+    Message(Vec<u8>),
+    Timeout,
+    Cancelled,
+    Closed,
+}
+
+/// How often a waiting recv looks at the cancel counter.
+const CANCEL_SLICE: Duration = Duration::from_millis(40);
+
+/// Wait up to `timeout` for the next message, in short slices so a change of `cancel` (from the value `seen`) ends the wait at once.
+/// Blocks the calling thread: run it on a worker.
+pub fn recv_message(rx: &Receiver<Vec<u8>>, timeout: Duration, cancel: &AtomicU64, seen: u64) -> Recv {
+    let end = Instant::now() + timeout;
+    loop {
+        if cancel.load(Ordering::Acquire) != seen {
+            return Recv::Cancelled;
+        }
+        let left = end.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left.min(CANCEL_SLICE)) {
+            Ok(m) => return Recv::Message(m),
+            Err(RecvTimeoutError::Disconnected) => return Recv::Closed,
+            Err(RecvTimeoutError::Timeout) if left <= CANCEL_SLICE => return Recv::Timeout,
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    }
+}
 
 fn names_in(input: &MidiInput) -> Vec<String> {
     input
@@ -93,7 +129,8 @@ pub async fn midi_ports() -> Result<Vec<String>, String> {
 /// Open the port called `name` (closing the open one first).
 #[tauri::command]
 pub async fn midi_open(state: State<'_, MidiPort>, name: String) -> Result<(), String> {
-    let opened = tauri::async_runtime::spawn_blocking(move || -> Result<Open, String> {
+    let slot = state.open.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let mut input = MidiInput::new("digikit").map_err(|e| e.to_string())?;
         input.ignore(Ignore::None); // SysEx is what this is for
         let output = MidiOutput::new("digikit").map_err(|e| e.to_string())?;
@@ -124,21 +161,36 @@ pub async fn midi_open(state: State<'_, MidiPort>, name: String) -> Result<(), S
         let out = output
             .connect(&out_port, "digikit out")
             .map_err(|e| e.to_string())?;
-        Ok(Open {
+        let opened = Open {
             out,
             _input: conn,
             rx: Arc::new(Mutex::new(rx)),
-        })
+        };
+        // the old port closes here, on the worker (closing a CoreMIDI connection can take a moment)
+        *slot.lock().map_err(|e| e.to_string())? = Some(opened);
+        Ok(())
     })
     .await
-    .map_err(|e| e.to_string())??;
-    *state.0.lock().map_err(|e| e.to_string())? = Some(opened);
-    Ok(())
+    .map_err(|e| e.to_string())?
 }
 
+/// Close the open port (on a worker: dropping a connection can block).
 #[tauri::command]
-pub fn midi_close(state: State<'_, MidiPort>) -> Result<(), String> {
-    *state.0.lock().map_err(|e| e.to_string())? = None;
+pub async fn midi_close(state: State<'_, MidiPort>) -> Result<(), String> {
+    state.cancel.fetch_add(1, Ordering::AcqRel);
+    let slot = state.open.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        *slot.lock().map_err(|e| e.to_string())? = None;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// End the pending `midi_recv` now (it answers as if the time had run out). Nothing pending: no effect.
+#[tauri::command]
+pub async fn midi_cancel(state: State<'_, MidiPort>) -> Result<(), String> {
+    state.cancel.fetch_add(1, Ordering::AcqRel);
     Ok(())
 }
 
@@ -152,27 +204,34 @@ pub async fn midi_send(
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
         _ => return Err("a MIDI message must use a raw byte body".into()),
     };
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    let open = guard.as_mut().ok_or("no MIDI port is open")?;
-    open.out.send(&bytes).map_err(|e| e.to_string())
+    let slot = state.open.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = slot.lock().map_err(|e| e.to_string())?;
+        let open = guard.as_mut().ok_or("no MIDI port is open")?;
+        open.out.send(&bytes).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-/// The next complete SysEx message, or an empty reply after `timeout_ms`.
+/// The next complete SysEx message, or an empty reply after `timeout_ms` or when `midi_cancel` was called.
 #[tauri::command]
 pub async fn midi_recv(
     state: State<'_, MidiPort>,
     timeout_ms: u64,
 ) -> Result<tauri::ipc::Response, String> {
     let rx = {
-        let guard = state.0.lock().map_err(|e| e.to_string())?;
+        let guard = state.open.lock().map_err(|e| e.to_string())?;
         guard.as_ref().ok_or("no MIDI port is open")?.rx.clone()
     };
+    let cancel = state.cancel.clone();
+    let seen = cancel.load(Ordering::Acquire);
     tauri::async_runtime::spawn_blocking(move || {
         let rx = rx.lock().map_err(|e| e.to_string())?;
-        match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
-            Ok(m) => Ok(tauri::ipc::Response::new(m)),
-            Err(RecvTimeoutError::Timeout) => Ok(tauri::ipc::Response::new(Vec::new())),
-            Err(RecvTimeoutError::Disconnected) => Err("the MIDI port closed".to_string()),
+        match recv_message(&rx, Duration::from_millis(timeout_ms), &cancel, seen) {
+            Recv::Message(m) => Ok(tauri::ipc::Response::new(m)),
+            Recv::Timeout | Recv::Cancelled => Ok(tauri::ipc::Response::new(Vec::new())),
+            Recv::Closed => Err("the MIDI port closed".to_string()),
         }
     })
     .await
@@ -209,6 +268,46 @@ mod tests {
         );
         assert!(s.feed(&[0xF0, 1, 0x90, 2, 0xF7]).is_empty());
         assert_eq!(s.feed(&[0xF0, 9, 0xF7]), vec![vec![0xF0, 9, 0xF7]]);
+    }
+
+    /// A recv with no device behind it ends at its timeout, on a worker thread, and the thread that waits for it is free meanwhile.
+    #[test]
+    fn a_recv_with_no_device_returns_at_the_timeout_on_a_worker() {
+        let (_tx, rx) = channel::<Vec<u8>>(); // the sender stays alive and silent: nothing answers
+        let cancel = Arc::new(AtomicU64::new(0));
+        let started = Instant::now();
+        let worker = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || recv_message(&rx, Duration::from_millis(300), &cancel, 0))
+        };
+        // the caller is not blocked: it can do other work while the worker waits
+        assert!(!worker.is_finished());
+        assert_eq!(worker.join().unwrap(), Recv::Timeout);
+        let took = started.elapsed();
+        assert!(took >= Duration::from_millis(290) && took < Duration::from_millis(1500), "{took:?}");
+    }
+
+    #[test]
+    fn a_cancel_ends_a_long_wait_at_once_and_a_message_still_arrives() {
+        let (tx, rx) = channel::<Vec<u8>>();
+        let cancel = Arc::new(AtomicU64::new(0));
+        let worker = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || {
+                let started = Instant::now();
+                (recv_message(&rx, Duration::from_secs(30), &cancel, 0), started.elapsed(), rx)
+            })
+        };
+        std::thread::sleep(Duration::from_millis(100));
+        cancel.fetch_add(1, Ordering::AcqRel);
+        let (got, took, rx) = worker.join().unwrap();
+        assert_eq!(got, Recv::Cancelled);
+        assert!(took < Duration::from_secs(2), "{took:?}");
+        // a later wait (it sees the new counter) is not cancelled by the old cancel
+        tx.send(vec![0xF0, 1, 0xF7]).unwrap();
+        assert_eq!(recv_message(&rx, Duration::from_secs(1), &cancel, 1), Recv::Message(vec![0xF0, 1, 0xF7]));
+        drop(tx);
+        assert_eq!(recv_message(&rx, Duration::from_secs(1), &cancel, 1), Recv::Closed);
     }
 
     #[test]

@@ -36,6 +36,7 @@ export async function selectTarget(next: Target): Promise<void> {
   if (next.kind === 'midi') await openMidiPort(next.port);
   else if (opened) await closeMidiPort();
   opened = next.kind === 'midi' ? next.port : undefined;
+  cancelPending();
   shared = undefined;
   setTargetSignal(next);
   try {
@@ -63,4 +64,9 @@ export async function session(): Promise<DkSession> {
 /** Drop the session (a failed port, a restarted device): the next request makes a new one. */
 export function resetSession(): void {
   shared = undefined;
+}
+
+/** Give up on every request of the session that waits for the device (the Cancel button); each fails with the `cancelled` error. */
+export function cancelPending(): void {
+  shared?.cancelPending();
 }

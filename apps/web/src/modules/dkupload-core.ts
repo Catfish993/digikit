@@ -46,7 +46,20 @@ export interface DkProgress {
 /** Send one whole SysEx message; receive the next one from the device, or null after the timeout. */
 export interface DkTransport {
   send(msg: Uint8Array): void | Promise<void>;
-  recv(timeoutMs: number): Promise<Uint8Array | null>;
+  /** `signal`: when it aborts, a transport that can (a native wait) ends the wait early and returns null; the session does not rely on it. */
+  recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null>;
+}
+
+const cancelledError = () => new DkError({ error: 'cancelled', kind: 'cancelled' });
+
+/** `p`, or a rejection with the cancelled error as soon as `signal` aborts (the abandoned `p` is left to end by itself). */
+function abortable<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(cancelledError());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(cancelledError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    p.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
 }
 
 export class DkError extends Error {
@@ -601,6 +614,8 @@ export class DkSession {
   private retries: number;
   private chunk: number;
   private turn: Promise<unknown> = Promise.resolve();
+  /** Aborted by `cancelPending`: the requests made before it (waiting for a reply or for their turn) fail with kind `cancelled`. */
+  private ctl = new AbortController();
   constructor(transport: DkTransport, options: DkSessionOptions = {}) {
     this.t = transport;
     this.timeoutMs = options.timeoutMs ?? 6000;
@@ -614,22 +629,34 @@ export class DkSession {
     return s;
   }
 
+  /**
+   * Give up on every request that is waiting for a reply or for its turn (the user pressed Cancel): each fails at once with a `DkError` of
+   * kind `cancelled`. Requests made afterwards are not affected. A request that was already sent may still be answered; its reply is ignored.
+   */
+  cancelPending(): void {
+    const old = this.ctl;
+    this.ctl = new AbortController();
+    old.abort();
+  }
+
   /** One request and its reply (any status), after the requests queued before it. A timeout sends the request again with a new seq. */
   request(cmd: number, body: Uint8Array = new Uint8Array(), quick = false): Promise<RawReply> {
-    const next = this.turn.then(() => this.exchange(cmd, body, quick));
+    const signal = this.ctl.signal;
+    const next = this.turn.then(() => this.exchange(cmd, body, quick, signal));
     this.turn = next.catch(() => {});
     return next;
   }
 
-  private async exchange(cmd: number, body: Uint8Array, quick: boolean): Promise<RawReply> {
+  private async exchange(cmd: number, body: Uint8Array, quick: boolean, signal: AbortSignal): Promise<RawReply> {
     const retries = quick ? 0 : this.retries;
     const timeoutMs = quick ? Math.min(this.timeoutMs, QUICK_TIMEOUT_MS) : this.timeoutMs;
     for (let attempt = 0; attempt <= retries; attempt++) {
+      if (signal.aborted) throw cancelledError();
       const seq = this.takeSeq();
-      await this.t.send(frame(cmd, seq, body));
+      await abortable(Promise.resolve(this.t.send(frame(cmd, seq, body))), signal);
       const deadline = Date.now() + timeoutMs;
       for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
-        const raw = await this.t.recv(left);
+        const raw = await abortable(this.t.recv(left, signal), signal);
         if (!raw) break;
         const r = parseReply(raw);
         if (r && r.seq === seq && r.cmd === cmd) return r;
@@ -874,11 +901,13 @@ export class DkSession {
    * timed out may have been done, so the caller decides (`RpcFiles` does not repeat one).
    */
   rpc(type: number, payload: Uint8Array = new Uint8Array(), timeoutMs: number = this.timeoutMs): Promise<Uint8Array> {
+    const signal = this.ctl.signal;
     const next = this.turn.then(async () => {
-      await this.t.send(rpcRequest(type, this.takeSeq(), payload));
+      if (signal.aborted) throw cancelledError();
+      await abortable(Promise.resolve(this.t.send(rpcRequest(type, this.takeSeq(), payload))), signal);
       const deadline = Date.now() + timeoutMs;
       for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
-        const raw = await this.t.recv(left);
+        const raw = await abortable(this.t.recv(left, signal), signal);
         if (!raw) break;
         const r = parseRpcReply(raw);
         if (r && r[0] === type) return r[1].slice();

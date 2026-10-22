@@ -9,7 +9,8 @@ import { errorLine } from '@web/modules/backend';
 import type { DkSession, RemoteState } from '@web/modules/dkupload-core';
 import { deviceOfPort, remoteNotice, remoteRuntime } from './remote-core';
 import TargetSelect from './TargetSelect';
-import { resetSession, session, target, targetLabel } from './target';
+import { cancelPending, resetSession, session, target, targetLabel } from './target';
+import { failureLine } from './wait-core';
 import './remote-page.css';
 
 const SCREEN_MS = { emulator: 250, midi: 400 };
@@ -38,7 +39,7 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
         setScreenError('');
         await new Promise((r) => setTimeout(r, SCREEN_MS[t.kind]));
       } catch (e) {
-        setScreenError(errorLine(e));
+        setScreenError(failureLine(e, targetLabel(target())));
         resetSession();
         await new Promise((r) => setTimeout(r, 1500));
       }
@@ -66,11 +67,14 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
   });
   onCleanup(() => {
     alive = false;
+    // a poll that waits for a silent device must not hold up the next page's requests (they take turns on the session)
+    cancelPending();
     live?.releaseAll();
     // let go of the keys the page pressed (the module remembers them)
-    void session()
-      .then((s) => s.remoteRelease())
-      .catch(() => {});
+    if (state())
+      void session()
+        .then((s) => s.remoteRelease())
+        .catch(() => {});
   });
 
   const encoders = () => panel().knobs.filter((k) => k.encoder !== undefined);

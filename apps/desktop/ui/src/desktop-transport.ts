@@ -21,12 +21,13 @@ export class EmuUsbTransport implements DkTransport {
     await call('midi.usb.in', { bytes: hex(msg), chunk: USB_CHUNK, period: USB_PERIOD });
   }
 
-  /** The next complete message the firmware sent, or null after `timeoutMs`. */
-  async recv(timeoutMs: number): Promise<Uint8Array | null> {
+  /** The next complete message the firmware sent, or null after `timeoutMs` or when `signal` aborts. */
+  async recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null> {
     const end = Date.now() + timeoutMs;
     for (;;) {
       const next = this.ready.shift();
       if (next) return next;
+      if (signal?.aborted) return null;
       const { hex: got } = await call<{ hex?: string }>('midi.usb.out');
       if (got) {
         const joined = new Uint8Array(this.rx.length + got.length / 2);
@@ -37,7 +38,7 @@ export class EmuUsbTransport implements DkTransport {
         this.ready.push(...messages);
         continue;
       }
-      if (Date.now() >= end) return null;
+      if (Date.now() >= end || signal?.aborted) return null;
       await new Promise((r) => setTimeout(r, POLL_MS));
     }
   }
