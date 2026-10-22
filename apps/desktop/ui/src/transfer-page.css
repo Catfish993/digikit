@@ -48,12 +48,6 @@
   font-size: 11.5px;
   color: var(--ink-3, #868b94);
 }
-.transfer-page .cols {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
 .transfer-page .colhead {
   display: flex;
   align-items: center;

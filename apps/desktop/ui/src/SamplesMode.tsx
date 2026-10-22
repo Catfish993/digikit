@@ -24,6 +24,7 @@ import {
   type SampleRow,
 } from './samples-core';
 import { Crumbs, DevicePane, DeleteButton, ListRow, LocalPane, createConfirm, type PageCtx } from './TransferParts';
+import SplitPane from './SplitPane';
 import {
   addedFiles,
   deviceInfo,
@@ -162,7 +163,7 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
   };
 
   return (
-    <div class="cols">
+    <SplitPane id="transfer">
       <LocalPane
         onDrop={addFiles}
         actions={
@@ -336,6 +337,6 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
           <p class="empty note">{note()}</p>
         </Show>
       </DevicePane>
-    </div>
+    </SplitPane>
   );
 }

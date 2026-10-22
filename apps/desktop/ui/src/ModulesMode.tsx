@@ -15,6 +15,7 @@ import {
   type ChipStatus,
   type PageCtx,
 } from './TransferParts';
+import SplitPane from './SplitPane';
 import { transferBackend } from './transfer-backend';
 import {
   applyEvent,
@@ -152,7 +153,7 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
   };
 
   return (
-    <div class="cols">
+    <SplitPane id="transfer">
       <LocalPane
         onDrop={(f) => void addFiles(f)}
         actions={
@@ -299,6 +300,6 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
           )}
         </Show>
       </DevicePane>
-    </div>
+    </SplitPane>
   );
 }
