@@ -358,5 +358,5 @@ record_mark     = 0x1b9                   # byte +0x1b9: the note-on mark
 note_on         = "record"                # ACTIVE != 0 and mark == 0; DN2: "trig-edge"
 pair            = "copy-even"             # the odd voice copies the even block; DN2: "none"
 tune_slot       = 0                       # the stock tune is knob 0 of the track (a frame halfword; pluck.s "0 TUNE"), folded into `pitch`
-param_slots     = [1, 4, 6]            # knob positions for module parameters, in order (a saved project stores values by slot)
+param_slots     = [1, 2, 4, 5]            # knob positions for module parameters, in order (a saved project stores values by slot)
 reserved_slots  = [3]                     # knob 3 is the sample slot of a SAMPLE clone (module-sdk.md D1)

@@ -6,7 +6,7 @@ category = "machines"
 type = "machine"
 author = "fadedlimes"
 status = "experimental"
-summary = "A virtual-analog voice: two detuned oscillators running a saw/triangle/pulse morph and a reflection wave folder, shaped by the track filter and amp."
+summary = "A subtractive voice: two detuned saws, a wave morph, a sub and a wave folder, shaped by the track filter."
 dynamic = false
 ports = ["dt2-1.16", "dt2-1.17"]
 requires = []
@@ -29,13 +29,13 @@ render = "_va_render"
 note_on = "_va_note_on"
 desc = "_va_desc"
 
-# SAMPLE's TUNE (0xca) and LEV (0xd1) rows; the voice's own knobs on 1, 2, 4 and 5.
+# SAMPLE's TUNE (0xca) and LEV (0xd1) rows; the voice's own knobs on 1, 2 and 4.
 [[machine]]
 id = "analog"
 name = "Analog"
 short = "ANA"
 clone_of = 0
-knobs = [0xca, "analog_detune", 0, 0, "analog_wave", 0, "analog_sub", 0xd1]
+knobs = [0xca, "analog_detune", "analog_wave", 0, "analog_sub", 0, 0, 0xd1]
 
 [[param]]
 id = "analog_detune"
