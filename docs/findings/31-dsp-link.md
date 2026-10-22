@@ -91,8 +91,38 @@ writes only entries 6 to 9 of each row (24 bytes at `0x40 + 0x54 k`, measured in
 the ColdFire's default parameters 40 and 41 are entry 13. `0x60` to `0x67` are entries 11 and 12 of slot 0: written
 by no DSP code and reachable only by parameters 36 to 39 (x = 17 or 18). That the ColdFire never asks for them is
 **[O]**; the ack exists only during a transfer (a few hundred ms) and the PCM and the UI frames were unchanged in every
-run. Header and trailer are not touched. On DN2 the record has no DSP data beyond the header in any run **[D]** and the
-same offset is used.
+run. Header and trailer are not touched. On DN2 the record has no DSP data beyond the header in any run this finding
+cites **[D]**, and the same offset is used. On the instrument the DN2's slot rows carry audio: see the next section.
+
+## Digitone II: the slot rows are audio samples **[D]** (2026-10-22)
+
+Measured on a DN2 unit (OS 1.11) by dn2_firmware_explore, with a read-only USB probe (PEEK of the ColdFire's record copy at
+`0x800053a4`):
+
+- **The layout** (2026-10-07, one note held at a time, 10 to 20 reads each, `docs/waverider-pages34.md` there). The 32 rows
+  of `0x54` bytes are the 32 samples of the block. Each row is 28 channels of 24 bits. Channels 0 to 19 are tracks 7 to 16,
+  one stereo pair each (track t on channels 2 (t - 7) and 2 (t - 7) + 1).
+- **The other channels.** Channels 20 to 25 are three stereo buses that follow the effect sends. Channels 26 and 27 hold a
+  small idle noise in every state. Tracks 1 to 6 reach the ColdFire in the SSI0 TDM stream instead.
+- **Entries 11 and 12** (2026-10-22). Bytes `+0x44` to `+0x4b` of a row are bytes 68 to 75: the last byte of channel 22,
+  channels 23 and 24, and the first byte of channel 25. A read of both words in rows 1 to 12, 100 times over 60 s, gave
+  0 in every word while nothing played. While a project played (stock machines and a custom machine, unison, an arp,
+  effects on), every one of the 24 words changed all the time.
+- **Why the runs saw zeros.** The engine fills the rows outside the per-block render call that the runner and the
+  coupled emulator run. So a run with no instrument sees the cleared record.
+
+So on the DN2 these bytes are not free. Two writers in this repository use them:
+
+- the acknowledgement at `DL_ACK_OFF` (`0x60` to `0x6b`, sample 0 of the effect buses), in every block while a transfer
+  is active.
+- `dl_diag`, when `core/dsp-voice` is in the image: 24 words at `+0x44` and `+0x48` of rows 1 to 12 (samples 1 to 12 of
+  the effect buses), in every block.
+
+What the ColdFire does with channels 20 to 25 (Overbridge or USB effect returns, or nothing) is **[O]**. A DN2 build that
+writes there may put a fixed pattern into those channels at the block rate. The header words are a safer place on the
+DN2. dn2_firmware_explore publishes its own diagnostics through reply word 2 (record offset `0x08`). No stock DSP code
+writes that word. Words 0, 3, 4 and 5 are stock's.
+
 
 ## Byte order of the wire units **[D]**
 
