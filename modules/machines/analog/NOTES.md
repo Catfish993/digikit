@@ -4,35 +4,26 @@ A subtractive voice for the Digitakt II: two oscillators on one continuous wave 
 detune, a reflection wave folder and a sub. It runs before the track's FLTR and AMP, so the DT2 does the shaping;
 that is the whole design idea — a usable synth voice without loading single-cycle waveforms into the sampler.
 
-## Panel (DT2 1.17, machine type 12)
+## Panel (DT2 1.17, machine type 13)
 
 | slot | knob | range |
 |---|---|---|
 | 1 | DET | 0 = two saws in unison, 1 = 3 % apart (the rolling reese beat) |
-| 4 | WAVE | one slider: saw -> triangle -> pulse (width 5..50 %) -> square |
-| 6 | SUB | sub level over 0 .. 3/4, wave-folder drive over 3/4 .. 1 |
+| 2 | WAVE | one slider: saw -> triangle -> pulse (width 5..50 %) -> square |
+| 4 | SUB | sub level over 0 .. 3/4, wave-folder drive over 3/4 .. 1 |
 | 0 / 7 | TUNE / LEV | stock |
 
 ## The slot constraint that shapes everything
 
-Only **three** knob positions deliver a module value on a DT2 SAMPLE clone:
+The adapter maps module parameters by their position in the device's `param_slots` (devices/digitakt-ii.toml
+`[adapter.machine]`, now `[1, 2, 4, 5]`, shared with PLUCK and CLOUDY), not by the knob a manifest names. Analog has
+three parameters, so it takes the first three slots: DET on 1, WAVE on 2, SUB on 4. Slot 5 is unused. Slot 3 is the
+sample slot of a SAMPLE clone and stays reserved (`reserved_slots`); slots 0 and 7 are the stock TUNE and LEV.
 
-| slot | stock row | delivers? |
-|---|---|---|
-| 0, 7 | TUNE, LEV | stock, not available |
-| 1 | PLAY | **yes** |
-| 2 | (empty, `clr.l` on all 7 stock machines) | no |
-| 3 | SAMP (sample slot) | no — only the sample number bits reach the DSP |
-| 4 | STRT | **yes** |
-| 5 | LEN | no — the firmware maintains LEN for the DSP itself, so a value written there never reaches the frame |
-| 6 | LOOP | **yes** |
-
-Evidence: docs/findings/02-machines-and-parameters.md, the slot table and "Knob slots 3 and 6 on a run-time SAMPLE
-clone"; devices/digitakt-ii.toml `[modules.frame]` and `[adapter.machine] param_slots`. SAT lived on slot 5 for two
-builds and never responded on hardware for exactly this reason.
+Evidence: docs/findings/02-machines-and-parameters.md, "Knob slots 3 and 6 on a run-time SAMPLE clone".
 
 Consequence: four features (detune, shape, fold, sub) share three knobs, and the folder rides the top quarter of SUB.
-Adding a fifth control means either trading one of the three or waiting for the platform to expose another slot.
+Adding a fourth control means a free `param_slots` entry (slot 5) and a fourth `[[param]]`.
 
 ## Measured behaviour (note 48, 110 velocity, saw setting unless said)
 
@@ -51,10 +42,9 @@ clock), and state past `state_clear_bytes` survives across retriggers, so a step
 The pattern would be a per-mode semitone table and `increment x 2^(n/12)` via `_dv_exp2`.
 
 Why it is not in: the track is monophonic, so the arp cycles a *shape* from the played note rather than held chord
-notes — fine — but a mode knob needs a fourth slot, and there is none. Options when it is revisited: (a) merge the
-detune into WAVE (detune open first, then shape) to free slot 1, which costs independent detune and unison-square;
-(b) fix the mode at build time and let retrig switch it on, needing no knob; (c) wait for the SDK to expose another
-parameter slot or a note-stream hook.
+notes — fine — but a mode knob needs a fourth parameter, which would take slot 5. Options when it is revisited: (a) merge the
+detune into WAVE (detune open first, then shape) to free a slot, which costs independent detune and unison-square;
+(b) fix the mode at build time and let retrig switch it on, needing no knob; (c) use the fourth `param_slots` entry (slot 5), which Analog leaves free.
 
 ## Traps this module has hit (all real, all cost a build)
 

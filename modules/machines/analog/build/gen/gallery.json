@@ -13,17 +13,17 @@
               "param": "analog_detune",
               "slot": 26
             },
-            null,
-            null,
             {
               "param": "analog_wave",
-              "slot": 29
+              "slot": 27
             },
             null,
             {
               "param": "analog_sub",
-              "slot": 31
+              "slot": 29
             },
+            null,
+            null,
             {
               "slot": 32,
               "stock": 209
@@ -35,7 +35,7 @@
           "page": null,
           "position": null,
           "short": "ANA",
-          "type": 12
+          "type": 13
         },
         "dt2": {
           "clone_of": 0,
@@ -48,17 +48,17 @@
               "param": "analog_detune",
               "slot": 1
             },
-            null,
-            null,
             {
               "param": "analog_wave",
-              "slot": 4
+              "slot": 2
             },
             null,
             {
               "param": "analog_sub",
-              "slot": 6
+              "slot": 4
             },
+            null,
+            null,
             {
               "slot": 7,
               "stock": 209
@@ -70,7 +70,7 @@
           "page": null,
           "position": null,
           "short": "ANA",
-          "type": 12
+          "type": 13
         }
       },
       "id": "analog",
@@ -98,7 +98,7 @@
         "min": 0,
         "name": "Wave",
         "short": "WAVE",
-        "slot": 29,
+        "slot": 27,
         "template": 209
       },
       {
@@ -108,7 +108,7 @@
         "min": 0,
         "name": "Sub / Fold",
         "short": "SUB",
-        "slot": 31,
+        "slot": 29,
         "template": 209
       }
     ],
@@ -130,7 +130,7 @@
         "min": 0,
         "name": "Wave",
         "short": "WAVE",
-        "slot": 4,
+        "slot": 2,
         "template": 209
       },
       {
@@ -140,7 +140,7 @@
         "min": 0,
         "name": "Sub / Fold",
         "short": "SUB",
-        "slot": 6,
+        "slot": 4,
         "template": 209
       }
     ]
