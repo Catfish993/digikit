@@ -1,0 +1,63 @@
+/* The desktop app is an app, not a web page: nothing is selected or dragged by accident, the cursor is the arrow, the window does not bounce,
+   and a focus ring shows for the keyboard only. Loaded after the other styles (main.tsx); native.ts has the behaviour half.
+   Text is selectable only where copying is useful: the SELECTABLE list of native-core.ts, written out here (a test compares them). */
+html,
+body {
+  overscroll-behavior: none;
+}
+body {
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* the arrow on controls and labels (the id lifts these above the page styles' own cursor rules); the faceplate keys and knobs are
+   drawing parts, not these elements, and keep their own cursors */
+#app button,
+#app summary,
+#app label,
+#app select,
+#app a,
+#app h1,
+#app h2,
+#app h3,
+#app h4 {
+  cursor: default;
+}
+/* selectable text */
+input,
+textarea,
+[contenteditable],
+.selectable,
+pre,
+.err,
+.alert,
+.log,
+.path,
+.folder,
+.rows .name:not(button) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+#app textarea,
+#app input:not([type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='button']),
+#app .selectable,
+#app pre,
+#app .err,
+#app .alert,
+#app .log,
+#app .path,
+#app .folder,
+#app .rows .name:not(button) {
+  cursor: text;
+}
+/* a mouse click does not leave a ring; the keyboard still does (the :focus-visible rule of the site styles) */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+/* links and images are not dragged out of the window */
+a,
+img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
