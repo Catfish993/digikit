@@ -8,7 +8,10 @@ docs/findings/01, 02, 04, 06, 17, 18, 20, 21, 22.
 Repository-wide next work does not continue from this file: Em's plans in `~/src/digi/` (outside the repository) take
 over. Entry point `TEST-TOOLING-CLEANUP-PLAN-2026-10-14.md` (structure, TypeScript-first regression runner,
 collaborator readiness; section "Inputs from the patchkit milestone"), then `VERIFY-PERFORMANCE-PLAN-2026-10-14.md` and
-`SHARC-PERFORMANCE-PLAN-2026-10-14.md` (section "Patched-image DSP performance").
+`SHARC-PERFORMANCE-PLAN-2026-10-14.archived.md` (historical section "Patched-image DSP performance").
+
+Current SHARC priorities are in `SHARC-PERFORMANCE-PLAN-2026-10-23.md` in the same external directory: native DT2
+profiling first, precise compiled-region invalidation if supported by measurements, and hardware probes only for a specific evidence gap.
 
 ## State
 
