@@ -41,6 +41,12 @@ fn main() {
     config.mode = if free { Mode::Free } else { Mode::Paused };
     config.run_dir = run_dir.clone();
     config.mirror_dir = startup.mirror_dir.clone();
+    // The daemon keeps the user's folder choices for the session only (no app data folder).
+    config.device_folders = startup.device_folders.then(|| digi_control::DeviceFoldersConfig {
+        root: None,
+        choices: None,
+        sync: startup.card_sync,
+    });
     config.card_folder = startup.card_folder.clone().map(|dir| digi_control::CardSource {
         dir,
         sync: startup.card_sync,

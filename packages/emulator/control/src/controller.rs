@@ -33,6 +33,7 @@ use serde_json::{Value, json};
 use crate::{
     cardmirror::Mirror,
     cards::{self, CardPaths},
+    devicefolders::{DeviceFolders, DeviceFoldersConfig, device_ok},
     events::Events,
     firmware::{self, Analysis},
     health::{self, Alert, Health},
@@ -289,9 +290,12 @@ pub struct Config {
     /// The +Drive folder the startup card (`firmware.load`'s `card`) was built from: `card.export` writes
     /// there, and with `sync` a quit does so too.
     pub card_folder: Option<CardSource>,
-    /// The folder the module store is mirrored to while the emulator runs (`card.folder`, `card.sync`): `plus_drive/<device>/`, given by
-    /// the launcher. None: no mirror.
+    /// The folder the module store is mirrored to for the first load of the session (`--mirror-dir`); with `device_folders` it is only
+    /// the default for the first device: a load of another device uses that device's folder. None: the device's own folder.
     pub mirror_dir: Option<PathBuf>,
+    /// One folder per device (`plus_drive/<device>/` or the user's choice): the module store is mirrored to it, and the card of a load
+    /// without a `card` is built from it (`devicefolders.rs`). None: only `mirror_dir`, if given.
+    pub device_folders: Option<DeviceFoldersConfig>,
     /// The repository root that `firmware.load {runtime: true}` reads the module library and device files from
     /// (default: `$DIGI_REPO_ROOT`, else the working directory's repository; see `runtime_patch::find_root`).
     pub repo_root: Option<PathBuf>,
@@ -319,6 +323,7 @@ impl Config {
             remember_card: false,
             card_folder: None,
             mirror_dir: None,
+            device_folders: None,
             repo_root: None,
         }
     }
@@ -526,8 +531,22 @@ struct Actor {
     /// The +Drive folder the loaded card was built from, with the card image it belongs to:
     /// `card.export` without a `dir` writes there, and a quit does so when `sync` was set.
     card_folder: Option<CardFolder>,
-    /// The module store mirrored to a folder (`--mirror-dir`; `card.folder`, `card.sync`).
+    /// The module store mirrored to the folder of the loaded device (`card.folder`, `card.sync`); `mirror_select` follows the device.
     mirror: Option<Mirror>,
+    /// The mirror runs (`--mirror-dir` or the device folders with sync).
+    mirror_on: bool,
+    /// `--mirror-dir`: the folder of the first device that loads.
+    mirror_first: Option<PathBuf>,
+    /// The folder of each device (the user's choices and the defaults).
+    folders: DeviceFolders,
+    /// Build the card of a load from the device's folder (`device_folders` is set).
+    device_cards: bool,
+    /// Export the card's changes to the device's folder on quit (`device_folders.sync`).
+    folder_sync: bool,
+    /// The running card was built from this device folder: (image, folder). A card the user chose (samples) is not.
+    auto_card: Option<(PathBuf, PathBuf)>,
+    /// The card `default_card` just built from a device folder, taken by the load that mounts it.
+    next_auto: Option<(PathBuf, PathBuf)>,
     /// Press NO once the runtime is ready (closes DT2's FILE SYSTEM OK modal).
     auto_no: bool,
     /// `firmware.load {auto_no}`: press NO once the runtime it installs is ready.
@@ -554,6 +573,13 @@ struct Actor {
     deliver_exceptions: bool,
     /// The RAM range the model keeps across a soft reset (`keep_ram` of the device profile), as the guest left it, for the cold boot that follows.
     reset_ram: Option<Vec<u8>>,
+}
+
+/// `plus_drive/` for the device folders: `$DIGI_PLUS_DRIVE`, else the repository's (the app runs from a checkout). None outside one.
+fn default_plus_drive_root(repo_root: Option<&Path>) -> Option<PathBuf> {
+    std::env::var_os("DIGI_PLUS_DRIVE")
+        .map(PathBuf::from)
+        .or_else(|| runtime_patch::find_root(repo_root).ok().map(|root| root.join("plus_drive")))
 }
 
 fn no_firmware<T>() -> Result<T, RpcError> {
@@ -615,7 +641,20 @@ impl Actor {
             patch_job: None,
             card_last: json!({"state": "idle"}),
             card_folder: None,
-            mirror: config.mirror_dir.map(Mirror::new),
+            mirror: None,
+            mirror_on: config.mirror_dir.is_some() || config.device_folders.as_ref().is_some_and(|f| f.sync),
+            mirror_first: config.mirror_dir,
+            device_cards: config.device_folders.is_some(),
+            folder_sync: config.device_folders.as_ref().is_some_and(|f| f.sync),
+            folders: match &config.device_folders {
+                Some(f) => DeviceFolders::new(
+                    f.root.clone().or_else(|| default_plus_drive_root(config.repo_root.as_deref())),
+                    f.choices.clone(),
+                ),
+                None => DeviceFolders::default(),
+            },
+            auto_card: None,
+            next_auto: None,
             auto_no: false,
             want_auto_no: false,
             remember_card: config.remember_card,
@@ -897,6 +936,7 @@ impl Actor {
         self.held_leds = None;
         self.epoch += 1;
         self.load_meter.reset();
+        self.mirror_select();
         self.mirror_reset();
     }
 
@@ -1036,6 +1076,9 @@ impl Actor {
         if next <= self.session {
             return Err("stale emulator session".into());
         }
+        // what the running firmware wrote goes to its own device's folder before the next firmware takes over
+        self.mirror_flush();
+        self.next_auto = None;
         self.cancel_card();
         self.audio = self.audio_default.clone();
         self.card_last = json!({"state": "idle"});
@@ -1093,6 +1136,20 @@ impl Actor {
 
     /// The first load that mounts a card image takes the startup `--card-folder`: that card's +Drive folder.
     fn adopt_card_folder(&mut self, card: Option<&PathBuf>) {
+        // A card `default_card` built from the device's folder: that folder is its +Drive folder.
+        self.auto_card = None;
+        if let Some((image, dir)) = self.next_auto.take()
+            && card == Some(&image)
+        {
+            self.card_folder = Some(CardFolder {
+                image: image.clone(),
+                dir: dir.clone(),
+                sync: self.folder_sync,
+                out: None,
+            });
+            self.auto_card = Some((image, dir));
+            return;
+        }
         let (Some(card), Some(source)) = (card, self.startup_card_folder.take()) else { return };
         eprintln!(
             "card: {} is the +Drive folder of this card; {}",
@@ -1128,19 +1185,69 @@ impl Actor {
         whole.then_some((last, paths))
     }
 
-    /// The card of an image loaded without a `card` parameter. A card is a DT2 SD card image: an image of another device never gets
-    /// one (opening a DN2 file in a DT2 session must not mount the DT2 card). A DT2 image gets the running DT2's card, else the card
-    /// remembered for this stock firmware (`stock`: the unpatched image when `bytes` is a patched one), else none.
-    fn default_card(&self, bytes: &[u8], stock: Option<&[u8]>) -> Option<PathBuf> {
-        if runtime_patch::device_short(bytes) != Some("dt2") {
-            return None;
-        }
+    /// The card of an image loaded without a `card` parameter, first match:
+    /// 1. the running card of the same device when the user chose it (samples picked in the app): it stays;
+    /// 2. a card built from the device's folder (`plus_drive/<device>/` or the user's choice) when the folder holds something the
+    ///    device's card takes: built again from the folder as it is now (cached by content), so a new folder applies at a load;
+    /// 3. a DT2 image: the running DT2's card, else the card remembered for this stock firmware. An image of another device never
+    ///    gets the DT2's card (opening a DN2 file in a DT2 session must not mount it).
+    /// `stock` is the unpatched image when `bytes` is a patched one: the card belongs to the stock firmware.
+    fn default_card(&mut self, bytes: &[u8], stock: Option<&[u8]>) -> Option<PathBuf> {
+        self.next_auto = None;
+        let device = runtime_patch::device_short(bytes)?;
         let running = self
             .loaded
             .as_ref()
-            .filter(|l| runtime_patch::device_short(&l.current) == Some("dt2"))
+            .filter(|l| runtime_patch::device_short(&l.current) == Some(device))
             .and_then(|l| l.card.clone());
+        let own = self.auto_card.as_ref().map(|(image, _)| image);
+        if let Some(card) = running.as_ref().filter(|card| Some(*card) != own) {
+            return Some(card.clone());
+        }
+        if let Some(card) = self.card_from_device_folder(device, stock.unwrap_or(bytes), stock.is_some()) {
+            return Some(card);
+        }
+        if device != "dt2" {
+            return None;
+        }
         running.or_else(|| self.remembered_card(stock.unwrap_or(bytes)).map(|(_, paths)| paths.image))
+    }
+
+    /// Build (or reuse) the card of `device`'s folder. A folder with nothing for the card, or a build that fails, gives no card (the
+    /// load goes on without it); the failure is printed.
+    fn card_from_device_folder(&mut self, device: &str, syx: &[u8], stock: bool) -> Option<PathBuf> {
+        if !self.device_cards {
+            return None;
+        }
+        let dir = self.folders.folder(device).filter(|d| d.is_dir())?;
+        let files = cards::device_files(device, &dir).ok().filter(|f| !f.is_empty())?;
+        // The card belongs to the stock firmware: a patched image that was not patched here names its base in its patch record.
+        let found;
+        let syx = if stock {
+            syx
+        } else {
+            let mut image = Loaded::stock(syx.to_vec(), None);
+            let _ = image.find_base();
+            found = image.base.unwrap_or_default();
+            &found
+        };
+        match cards::ensure_card(device, &self.run_dir, syx, &dir, &files, |_, _| {}) {
+            Ok((paths, cached, _)) => {
+                eprintln!(
+                    "card: {} {} from {} ({} files)",
+                    if cached { "reusing" } else { "built" },
+                    display_path(&paths.image),
+                    display_path(&dir),
+                    files.len()
+                );
+                self.next_auto = Some((paths.image.clone(), dir));
+                Some(paths.image)
+            }
+            Err(error) => {
+                eprintln!("card: no card from {}: {error}", display_path(&dir));
+                None
+            }
+        }
     }
 
     fn ui_restart(&mut self, next_session: u64) -> Result<Snapshot, String> {
@@ -1536,6 +1643,7 @@ impl Actor {
             "card.load" => self.rpc_card_load(&p, &reply),
             "card.status" => Ok(Some(self.card_status())),
             "card.folder" => self.rpc_card_folder().map(Some),
+            "card.folder_set" => self.rpc_card_folder_set(&p).map(Some),
             "card.sync" => self.rpc_card_sync().map(Some),
             "card.cancel" => Ok(Some(json!({"cancelled": self.cancel_card()}))),
             "quit" => {
@@ -1853,6 +1961,34 @@ impl Actor {
         Ok((base, overlay, range))
     }
 
+    /// The short id of the loaded device (`dt2`, `dn2`).
+    fn loaded_device(&self) -> Option<&'static str> {
+        let loaded = self.loaded.as_ref()?;
+        runtime_patch::device_short(&loaded.current).or_else(|| loaded.base.as_deref().and_then(runtime_patch::device_short))
+    }
+
+    /// The mirror writes to the folder of the loaded device: the user's choice, else `plus_drive/<device>/` (made if missing). A
+    /// change of folder starts a new mirror; the caller has flushed the old one to its own folder first.
+    fn mirror_select(&mut self) {
+        if !self.mirror_on {
+            return;
+        }
+        let Some(device) = self.loaded_device() else { return };
+        if let Some(dir) = self.mirror_first.take() {
+            self.folders.set_session(device, dir);
+        }
+        let Some(dir) = self.folders.folder(device) else {
+            self.mirror = None;
+            return;
+        };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            eprintln!("card: {}: {e}", dir.display());
+        }
+        if self.mirror.as_ref().map(|m| &m.dir) != Some(&dir) {
+            self.mirror = Some(Mirror::new(dir));
+        }
+    }
+
     /// A new runtime: the mirror starts from the store the card holds now (an image's, and what a soft reset carried over), and from the
     /// runtime's own write count.
     fn mirror_reset(&mut self) {
@@ -1892,7 +2028,7 @@ impl Actor {
     fn mirror_pass(&mut self) -> Result<(), String> {
         let now = Instant::now();
         let Some(dir) = self.mirror.as_ref().map(|m| m.dir.clone()) else {
-            return Err("no folder is set for the module store (--mirror-dir)".into());
+            return Err("no folder is set for the module store".into());
         };
         let outcome = (|| {
             let (base, overlay, range) = self.mirror_view()?;
@@ -1926,12 +2062,55 @@ impl Actor {
     }
 
     /// `card.folder`: the module store's folder: its path, the files under `digikit/` with size and sha256, the time of the last pass
-    /// (ms since the epoch) and what it did, and whether the card has writes the folder does not hold yet.
+    /// (ms since the epoch) and what it did, and whether the card has writes the folder does not hold yet. And the folder's place in
+    /// the device's choice: `device`, `default_folder`, `custom` (the user chose the folder), `chosen_missing` (a saved choice whose
+    /// folder is gone: the default is used), `next_folder` (what the next load uses) and `reload_needed` (it is not `folder`: a device
+    /// with a path filesystem takes the new folder when its card is built again, at the next load).
     fn rpc_card_folder(&mut self) -> RpcResult {
-        match &self.mirror {
-            Some(m) => Ok(m.status(plusdrive_format::mirror::folder_files(&m.dir))),
-            None => Ok(json!({"folder": null, "continuous": false, "files": [], "last_sync": null, "error": null})),
+        let mut status = match &self.mirror {
+            Some(m) => m.status(plusdrive_format::mirror::folder_files(&m.dir)),
+            None => json!({"folder": null, "continuous": false, "files": [], "last_sync": null, "error": null}),
+        };
+        if let Some(device) = self.loaded_device() {
+            let next = self.folders.folder(device);
+            status["device"] = device.into();
+            status["default_folder"] = self.folders.default_folder(device).map(|p| p.display().to_string()).into();
+            status["custom"] = self.folders.choice(device).is_some().into();
+            status["chosen_missing"] = self.folders.missing_choice(device).map(|p| p.display().to_string()).into();
+            status["next_folder"] = next.as_ref().map(|p| p.display().to_string()).into();
+            status["reload_needed"] = (self.mirror.as_ref().is_some_and(|m| Some(&m.dir) != next.as_ref())).into();
         }
+        Ok(status)
+    }
+
+    /// `card.folder_set {dir, device?}`: the user's folder for a device (the loaded one by default); no `dir`: back to
+    /// `plus_drive/<device>/`. Saved in the host's choices file. A device without a path filesystem (the DN2) mirrors to the new folder
+    /// at once; a device whose card is built from the folder (the DT2) takes it at the next load (`reload_needed`), and a mirror pass
+    /// into a folder that holds the user's files before they were read into the card would replace them. The answer is `card.folder`'s.
+    fn rpc_card_folder_set(&mut self, p: &Params) -> RpcResult {
+        let device = match p.opt_str("device")? {
+            Some(d) => d.to_string(),
+            None => self.loaded_device().map(str::to_string).ok_or_else(RpcError::no_firmware)?,
+        };
+        if !device_ok(&device) {
+            return Err(RpcError::bad_params(format!("not a device name: {device:?}")));
+        }
+        let dir = p.opt_str("dir")?.filter(|d| !d.is_empty()).map(PathBuf::from);
+        if dir.as_ref().is_some_and(|d| !d.is_absolute()) {
+            return Err(RpcError::bad_params("dir must be an absolute path"));
+        }
+        self.folders.set_choice(&device, dir.as_deref()).map_err(RpcError::bad_params)?;
+        if self.mirror_on && self.loaded_device() == Some(device.as_str()) {
+            let path_fs = self.card_layout().is_ok_and(|l| l.path_fs.is_some());
+            if !path_fs {
+                self.mirror_flush();
+                self.mirror_select();
+                self.mirror_reset();
+                // the outcome (or the error) is in the answer
+                let _ = self.mirror_pass();
+            }
+        }
+        self.rpc_card_folder()
     }
 
     /// `card.sync`: mirror the store now (no wait for the quiet period); the answer is `card.folder`'s.
@@ -2321,10 +2500,13 @@ impl Actor {
         let Some(loaded) = self.loaded.as_ref() else {
             return no_firmware();
         };
+        // The card stays when the user chose it; a card built from the device's folder is built again from the folder as it is now
+        // (a folder chosen in the Card panel applies here).
+        let own = self.auto_card.as_ref().map(|(image, _)| image);
         let params = json!({
             "bytes": true, "force": true, "start": "auto", "restart": true,
             "auto_no": p.opt_bool("auto_no")?.unwrap_or(false),
-            "card": loaded.card.as_ref().map(|c| c.display().to_string()),
+            "card": loaded.card.as_ref().filter(|c| Some(*c) != own).map(|c| c.display().to_string()),
         });
         let current = loaded.current.clone();
         self.firmware_load(&Params(&params), current, reply)
@@ -2358,6 +2540,10 @@ impl Actor {
         if bytes.len() > MAX_SYX {
             return Err(rejected("firmware image exceeds 32 MiB".into()));
         }
+        // What the running firmware wrote (a pending debounce) goes to its own device's folder before the next load switches the
+        // mirror to the folder of the device it loads.
+        self.mirror_flush();
+        self.next_auto = None;
         let started = Instant::now();
         let start = p.opt_str("start")?.unwrap_or("auto");
         if !matches!(start, "auto" | "snapshot" | "cold") {
@@ -2469,7 +2655,6 @@ impl Actor {
         } else {
             let loaded = self.loaded.as_ref().expect("loaded");
             let running = loaded.current_analysis.clone().expect("analysis");
-            let card = card_param.or_else(|| self.default_card(&bytes, loaded.base.as_deref()));
             let base_analysis = loaded.base_analysis.clone();
             let base_bytes = loaded.base.clone();
             let base_sha = loaded.base_sha.clone();
@@ -2480,6 +2665,8 @@ impl Actor {
             if !main_changed && !force {
                 self.load_hot(bytes, new, running, &mut report)?
             } else {
+                // not for a hot load: it keeps the running card
+                let card = card_param.or_else(|| self.default_card(&bytes, base_bytes.as_deref()));
                 let stock_main = base_analysis
                     .as_ref()
                     .is_some_and(|b| b.main_sha256() == new.main_sha256());
@@ -3291,7 +3478,7 @@ fn run_card_job(
         json!({"state": "working", "phase": "scanning", "message": "Reading the +Drive folder", "fraction": 0.0}),
     );
     let files = cards::list_files(&dir)?;
-    let (paths, card_cached, total) = cards::ensure_card(&run_dir, &syx, &dir, &files, |done, total| {
+    let (paths, card_cached, total) = cards::ensure_card("dt2", &run_dir, &syx, &dir, &files, |done, total| {
         set_status(
             status,
             json!({
@@ -3491,6 +3678,7 @@ impl Actor {
             outcome.and_then(|ready| self.install_card(&job.syx, &job.name, ready, seconds));
         match &result {
             Ok(report) => {
+                self.auto_card = None;
                 self.card_folder = report["card"].as_str().map(|image| CardFolder {
                     image: PathBuf::from(image),
                     dir: job.dir.clone(),

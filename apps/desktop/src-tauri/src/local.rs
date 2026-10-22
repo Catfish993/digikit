@@ -87,11 +87,19 @@ pub fn read(root: &str, rel: &str, head: Option<u64>) -> Result<Vec<u8>, String>
     Ok(out)
 }
 
-/// The folder dialog of the system; `None` when the user cancels. Starts at `start` when it is a folder.
+/// The folder dialog of the system; `None` when the user cancels. Starts at `start` when it is a folder; `title` is the dialog's
+/// title (default: the samples folder of the Transfer page).
 #[tauri::command]
-pub async fn local_pick_folder(app: tauri::AppHandle, start: Option<String>) -> Result<Option<String>, String> {
+pub async fn local_pick_folder(
+    app: tauri::AppHandle,
+    start: Option<String>,
+    title: Option<String>,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let mut dialog = app.dialog().file().set_title("Choose the folder with your samples");
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title(title.as_deref().unwrap_or("Choose the folder with your samples"));
     if let Some(dir) = start.filter(|s| Path::new(s).is_dir()) {
         dialog = dialog.set_directory(dir);
     }

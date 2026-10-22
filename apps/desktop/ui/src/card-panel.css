@@ -54,6 +54,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.card-panel .device {
+  margin: 0 0 -6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.card-panel .notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #2c2f35;
+}
+.card-panel .notice p {
+  margin: 0;
+  color: var(--ink-2, #a9adb4);
+  line-height: 1.4;
+}
 .card-panel .acts {
   display: flex;
   gap: 6px;

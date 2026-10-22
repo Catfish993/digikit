@@ -496,11 +496,6 @@ def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
     PANEL_STAMP.write_text(json.dumps({"digest": digest}) + "\n")
 
 
-def plus_drive_root() -> pathlib.Path:
-    """The folder that holds plus_drive/<device>/ (DIGI_PLUS_DRIVE, else the repository's)."""
-    return pathlib.Path(os.environ.get("DIGI_PLUS_DRIVE") or ROOT / "plus_drive")
-
-
 def plus_drive_files(root: pathlib.Path) -> list[pathlib.Path]:
     """Every regular file under `root` (relative paths, sorted); symbolic links and
     .DS_Store are left out, as the builder leaves them out."""
@@ -513,15 +508,6 @@ def plus_drive_files(root: pathlib.Path) -> list[pathlib.Path]:
             if name != ".DS_Store" and not path.is_symlink():
                 found.append(path.relative_to(root))
     return found
-
-
-def plus_drive_has_content(root: pathlib.Path, device: str) -> bool:
-    """Whether `root` holds anything the device's card can take: DN2 has no path
-    filesystem, only `.mmcfs/` and `digikit/` (the module store) apply."""
-    files = plus_drive_files(root)
-    if device == "dn2":
-        files = [f for f in files if f.parts[0] in (".mmcfs", "digikit")]
-    return bool(files)
 
 
 def plusdrive_card(
@@ -656,11 +642,6 @@ def main(args: list[str] | None = None) -> None:
     syx = syx_from_args(args)
     known = digi_env.device_for_syx(syx)
     device = known or "dn2"
-    if known and folder is None and "--card-image" not in args:
-        default = plus_drive_root() / device
-        # plus_drive/<device>/ is the +Drive when it holds something this device can use.
-        if default.is_dir() and plus_drive_has_content(default, device):
-            folder = default
     if folder is not None:
         if plus_drive is None and samples is None:
             print(f"+Drive: {folder}", file=sys.stderr)
@@ -687,12 +668,15 @@ def main(args: list[str] | None = None) -> None:
                 f"+Drive: changes on the card are exported to {folder} on exit (--no-sync turns it off)",
                 file=sys.stderr,
             )
-    # The module store is mirrored to a folder while the emulator runs (the Card panel: files, "Sync now"): the +Drive folder of a
-    # DT2 card, else plus_drive/<device>/ (the DN2 has no card built from a folder). --no-sync turns it off.
-    if known and not no_sync and "--mirror-dir" not in args:
-        mirror = folder if folder is not None else plus_drive_root() / device
-        mirror.mkdir(parents=True, exist_ok=True)
-        args = [*args, "--mirror-dir", str(mirror.resolve())]
+    # One folder per device, chosen by the app (Rust: the controller): plus_drive/<device>/ or the folder the user chose in the Card
+    # panel (kept per device in the app's data folder). On every load the controller builds the card from the loaded device's folder
+    # when it holds something the card takes, and mirrors the module store to it while the emulator runs (the Card panel: files,
+    # "Sync now"). --plus-drive/--samples name the folder of the first load instead (a card built here from it). --no-sync turns
+    # the mirror and the export on exit off.
+    if known and "--device-folders" not in args:
+        args = [*args, "--device-folders", *(["--no-card-sync"] if no_sync and folder is None else [])]
+    if folder is not None and not no_sync and "--mirror-dir" not in args:
+        args = [*args, "--mirror-dir", str(folder.resolve())]
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:
