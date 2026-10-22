@@ -13,6 +13,7 @@ use digi_control::{
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
 mod library;
+mod local;
 mod midi_port;
 use serde_json::Value;
 use std::sync::mpsc;
@@ -479,6 +480,7 @@ fn main() {
             .map(|path| std::fs::canonicalize(&path).unwrap_or(path)),
     };
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(host)
         .manage(midi_port::MidiPort::default())
@@ -500,6 +502,9 @@ fn main() {
             library::lib_read,
             library::sample_wasm,
             library::device_storage,
+            local::local_pick_folder,
+            local::local_list,
+            local::local_read,
             midi_port::midi_ports,
             midi_port::midi_open,
             midi_port::midi_close,

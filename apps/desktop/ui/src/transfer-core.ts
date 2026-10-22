@@ -4,9 +4,30 @@
 // The page only puts files on the card (upload and verify) and restarts the device. Which modules the device loads is its own
 // selection, made in SETTINGS > DIGIKIT > MODULES on the device and applied there.
 
+import { formatBytes } from '../../../web/src/modules/backend.ts';
 import type { Group, TransferEvent, TransferRow, TransferView } from '../../../web/src/modules/dktransfer.ts';
 export type { Group, TransferEvent, TransferRow, TransferView };
 export const GROUPS: Group[] = ['Machines', 'Effects', 'Tools'];
+
+// ---- the mode of the page ---------------------------------------------------------------------------------------------------------
+
+export type Mode = 'modules' | 'samples';
+export const MODES: { id: Mode; label: string }[] = [
+  { id: 'modules', label: 'Modules' },
+  { id: 'samples', label: 'Samples' },
+];
+/** The saved mode, or Modules when nothing (or something else) was saved. */
+export const parseMode = (v: unknown): Mode => MODES.find((m) => m.id === v)?.id ?? 'modules';
+
+/** The free space of a store: in GiB from 1 GiB up, else bytes, KiB or MiB. */
+export function freeText(bytes: number): string {
+  return bytes >= 2 ** 30 ? `${(bytes / 2 ** 30).toFixed(2)} GiB` : formatBytes(bytes);
+}
+
+/** The line of the On device column, the same in both modes: the target, the device, its runtime and the free space (left out when unknown). */
+export function infoLine(target: string, device: string, runtime: string, free: number | undefined): string {
+  return [target, device, `runtime ${runtime}`, ...(free === undefined ? [] : [`${freeText(free)} free`])].join(' · ');
+}
 
 /** The key of a row in the tick set. */
 export const rowKey = (r: TransferRow): string => r.id ?? r.path;
@@ -73,12 +94,26 @@ export function warningText(r: TransferRow): string {
   return r.warnings && r.warnings.length ? r.warnings.join('; ') : '';
 }
 
-/** The state words of a row: loaded, or on the card (or not). */
-export function stateText(r: TransferRow): string {
+/** The state of a library module as the "On your computer" list says it: what the device holds of it. */
+export function localStateText(r: TransferRow): string {
+  switch (r.on_card) {
+    case 'yes':
+      return 'on device';
+    case 'other version':
+      return 'different build on device — Install replaces it';
+    default:
+      return 'not on device';
+  }
+}
+
+/** The state of a file of the "On device" list: how it stands against the library (a loaded module says so first). A file that is only
+ * going there (the running install) has no state yet. */
+export function deviceStateText(r: TransferRow): string {
   const out: string[] = [];
   if (r.loaded) out.push('loaded');
-  else
-    out.push(r.on_card === 'yes' ? 'on card' : r.on_card === 'other version' ? 'other version on card' : 'not on card');
+  if (!r.id) out.push('only on device');
+  else if (r.on_card === 'yes') out.push('same as your computer');
+  else if (r.on_card === 'other version') out.push('differs from your computer');
   return out.join(', ');
 }
 

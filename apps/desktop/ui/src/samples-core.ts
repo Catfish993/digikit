@@ -1,20 +1,10 @@
-// The pure logic of the Samples tab of the Transfer page (no DOM, no Tauri): the tabs, the folder path and its breadcrumb, the rows of the
-// device's folder with the state of each upload, and the upload run over a samples backend (apps/web/src/modules/samples.ts).
+// The pure logic of the Samples mode of the Transfer page (no DOM, no Tauri): folder paths and breadcrumbs, the rows of the local folder and of
+// the device's folder with the state of each upload, and the upload run over a samples backend (apps/web/src/modules/samples.ts).
 // Written without TS-only runtime syntax so node can import it (apps/web/tests/samples-page.test.mjs).
-import { errorLine, formatBytes } from '../../../web/src/modules/backend.ts';
+import { errorLine } from '../../../web/src/modules/backend.ts';
 import type { Prepared } from '../../../web/src/modules/dksample.ts';
-import type { SampleEntry, SampleSpace, SamplesBackend } from '../../../web/src/modules/samples.ts';
+import type { SampleEntry, SamplesBackend } from '../../../web/src/modules/samples.ts';
 import type { RowStatus } from './transfer-core.ts';
-
-// ---- the tabs ---------------------------------------------------------------------------------------------------------------------
-
-export type TabId = 'modules' | 'samples';
-export const TABS: { id: TabId; label: string }[] = [
-  { id: 'modules', label: 'Modules' },
-  { id: 'samples', label: 'Samples' },
-];
-/** The saved tab, or Modules when nothing (or something else) was saved. */
-export const parseTab = (v: unknown): TabId => TABS.find((t) => t.id === v)?.id ?? 'modules';
 
 // ---- folders ----------------------------------------------------------------------------------------------------------------------
 
@@ -44,6 +34,70 @@ export function folderNameError(name: string, entries: SampleEntry[]): string {
   if (entries.some((e) => e.name === name)) return `${name} exists already.`;
   return '';
 }
+
+// ---- the local folder ("On your computer") ---------------------------------------------------------------------------------------
+
+/** What the native `local_list` returns for one level of the chosen folder. */
+export interface LocalEntry {
+  name: string;
+  kind: 'file' | 'folder';
+  size: number;
+}
+/** A file added by "Add files…" or a drop: kept in the list even when it is outside the chosen folder. */
+export interface Added {
+  name: string;
+  size: number;
+}
+export interface LocalRow {
+  /** The key of ticks and kinds: the path inside the chosen folder, or `+name` for an added file. */
+  key: string;
+  name: string;
+  /** The path inside the chosen folder (a folder row opens it); empty for an added file. */
+  path: string;
+  kind: 'file' | 'folder';
+  size: number;
+  added: boolean;
+  /** What the upload will do with a file, once its first bytes were read. */
+  sample?: Prepared['kind'];
+}
+
+/** The last part of a path (`/Users/em/samples` is `samples`; either separator). */
+export const baseName = (path: string): string => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+
+/** The breadcrumb of the local folder: the chosen folder by its name, then one crumb per level. */
+export const localCrumbs = (root: string, folder: string): Crumb[] => crumbs(folder, baseName(root));
+
+/** The rows of the local list: the folders, then the files of the open level by name, then the added files in the order they came. */
+export function localRows(
+  folder: string,
+  entries: LocalEntry[],
+  added: Added[],
+  kinds: Record<string, Prepared['kind']>,
+): LocalRow[] {
+  const rows: LocalRow[] = entries.map((e) => {
+    const path = joinPath(folder, e.name);
+    return { key: path, name: e.name, path, kind: e.kind, size: e.size, added: false, sample: kinds[path] };
+  });
+  rows.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'folder' ? -1 : 1));
+  for (const a of added)
+    rows.push({
+      key: `+${a.name}`,
+      name: a.name,
+      path: '',
+      kind: 'file',
+      size: a.size,
+      added: true,
+      sample: kinds[`+${a.name}`],
+    });
+  return rows;
+}
+
+/** The state text of a local row: what the upload will do with a file (nothing is said before its first bytes were read, and nothing of a folder). */
+export const localRowState = (r: LocalRow): string => (r.kind === 'file' && r.sample ? kindLabel(r.sample) : '');
+
+/** The ticked files, in list order (a folder is opened, not uploaded; ticks of rows that are gone are dropped). */
+export const pickedRows = (rows: LocalRow[], ticked: Set<string>): LocalRow[] =>
+  rows.filter((r) => r.kind === 'file' && ticked.has(r.key));
 
 // ---- uploads ----------------------------------------------------------------------------------------------------------------------
 
@@ -98,13 +152,13 @@ export function applyUpload(u: Uploads, e: UploadEvent): Uploads {
   }
 }
 
-/** What the page puts on a row or a local file: the label of what was done to the file. */
+/** What a local file will become on upload (the state text of its row). */
 export function kindLabel(kind: Upload['kind']): string {
   switch (kind) {
     case 'converted':
-      return 'WAV, converted';
+      return 'converted on upload';
     case 'native':
-      return 'native sample';
+      return 'as is';
     case 'unchanged':
       return "won't play as a sample";
     default:
@@ -132,9 +186,6 @@ export function uploadStatus(u: Upload | undefined): SampleStatus | undefined {
       return { kind: 'failed', message };
   }
 }
-
-/** The files of a run in the order they were added, for the local pane. */
-export const uploadList = (u: Uploads): Upload[] => Object.values(u);
 
 /** The uploads without the given device paths (their files were deleted). */
 export function dropUploads(u: Uploads, paths: string[]): Uploads {
@@ -180,12 +231,6 @@ export function sampleRows(folder: string, entries: SampleEntry[], uploads: Uplo
 /** The ticked rows of the folder, in list order (ticks of rows that are gone are dropped). Pending rows are not on the device. */
 export const deleteRows = (rows: SampleRow[], ticked: Set<string>): SampleRow[] =>
   rows.filter((r) => !r.pending && ticked.has(r.path));
-
-/** The free space line: "12.00 MiB free of 20480.00 MiB", or just the free part when the device does not give the total. */
-export function spaceText(s: SampleSpace | undefined): string {
-  if (!s) return '';
-  return s.total === null ? `${formatBytes(s.free)} free` : `${formatBytes(s.free)} free of ${formatBytes(s.total)}`;
-}
 
 /** The note under the list for a device whose samples go to the digikit store: its firmware cannot play them. `name` is the device's. */
 export const storeNote = (samples: string, name: string): string =>

@@ -528,6 +528,31 @@ export function hasCap(info: DkInfoFull, name: keyof typeof GCAP): boolean {
   return info.caps !== null && ((info.caps >>> GCAP[name]) & 1) === 1;
 }
 
+/** One CAPACITY entry: `limit` and `used` in the unit of the resource (KiB for STORE, bytes for ARENA and DSP_AREA). */
+export type CapacityEntry = { limit: number; used: number; largest: number };
+
+/**
+ * The free space of the store, in bytes: the one source for every page. INFO's `free_bytes` is a u32 that the runtime saturates at 4 GiB
+ * (a DN2 store is about 19 GiB), so it is only the answer of a runtime without CAPACITY. CAPACITY's STORE entry is in KiB.
+ */
+export function storeFree(
+  info: Pick<DkInfoFull, 'caps' | 'free_bytes'>,
+  cap: Record<string, CapacityEntry> | null,
+): { free: number; total: number | null } {
+  const st = cap?.STORE;
+  if (st) return { free: Math.max(0, st.limit - st.used) * 1024, total: st.limit * 1024 };
+  return { free: info.free_bytes, total: null };
+}
+
+/** `storeFree` for the device behind `s` (reads CAPACITY when the runtime has it). */
+export async function storeSpace(
+  s: Pick<DkSession, 'info' | 'capacity'>,
+  info?: DkInfoFull,
+): Promise<{ free: number; total: number | null }> {
+  const i = info ?? (await s.info());
+  return storeFree(i, hasCap(i, 'CAPACITY') ? await s.capacity() : null);
+}
+
 // ---- the firmware's own screenshot (stock MidiRpc type 0x04, docs/MIDI-SYSEX-RPC.md) ------------------------------------------------
 
 const RPC_HEADER = [0xf0, 0x00, 0x20, 0x3c, 0x10, 0x00];
@@ -718,10 +743,10 @@ export class DkSession {
   }
 
   /** CAPACITY (runtime 0.2.2): per resource `{limit, used, largest}`, keyed by the kind's name. */
-  async capacity(): Promise<Record<string, { limit: number; used: number; largest: number }>> {
+  async capacity(): Promise<Record<string, CapacityEntry>> {
     const b = await this.ok(GCMD.CAPACITY, 'capacity');
     const names = new Map(Object.entries(CAPACITY_KINDS).map(([n, k]) => [k as number, n]));
-    const out: Record<string, { limit: number; used: number; largest: number }> = {};
+    const out: Record<string, CapacityEntry> = {};
     for (let i = 0; i < b[1]; i++) {
       const at = 2 + 13 * i;
       out[names.get(b[at]) ?? `kind${b[at]}`] = {

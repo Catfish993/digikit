@@ -17,7 +17,12 @@ import {
   rowStatus,
   progressFraction,
   startProgress,
-  stateText,
+  deviceStateText,
+  freeText,
+  infoLine,
+  localStateText,
+  MODES,
+  parseMode,
   warningText,
 } from '../../desktop/ui/src/transfer-core.ts';
 
@@ -85,10 +90,6 @@ test('texts', () => {
   assert.equal(eventText({ event: 'done', restarted: true, loaded: ['x', 'y'] }), 'Restarted. Loaded: x, y');
   assert.equal(eventText({ event: 'done', restarted: true, loaded: [] }), 'Restarted. No module is loaded.');
   assert.equal(eventText({ event: 'error', message: 'paused' }), 'Error: paused');
-  assert.equal(stateText(view.modules[0]), 'loaded');
-  assert.equal(stateText(view.modules[1]), 'not on card');
-  assert.equal(stateText({ ...view.modules[1], on_card: 'yes' }), 'on card');
-  assert.equal(stateText({ ...view.modules[1], on_card: 'other version' }), 'other version on card');
   assert.equal(warningText(view.modules[2]), 'arena: needs 5, largest free 1');
   assert.equal(warningText(view.modules[0]), '');
 });
@@ -235,4 +236,48 @@ test('the delete progress: one step per path, active then done, text from the ev
   ev({ event: 'error', message: 'E_FULL' });
   assert.equal(p.modules[0].state, 'failed');
   assert.equal(progressFailed(p), true);
+});
+
+test('the state words: the left list says what the device holds, the right list how a file stands against the library', () => {
+  const [pluck, sine] = view.modules;
+  assert.equal(localStateText({ ...sine, on_card: 'no' }), 'not on device');
+  assert.equal(localStateText({ ...sine, on_card: 'yes' }), 'on device');
+  assert.equal(
+    localStateText({ ...sine, on_card: 'other version' }),
+    'different build on device — Install replaces it',
+  );
+  assert.equal(deviceStateText(pluck), 'loaded, same as your computer');
+  assert.equal(deviceStateText({ ...sine, on_card: 'yes' }), 'same as your computer');
+  assert.equal(deviceStateText({ ...sine, on_card: 'other version' }), 'differs from your computer');
+  assert.equal(deviceStateText(view.card_only[1]), 'only on device');
+  assert.equal(deviceStateText(view.card_only[0]), 'loaded, only on device');
+  assert.equal(deviceStateText(sine), '', 'a file that is still going there has no state yet');
+  // the old words are gone from every state
+  for (const r of [...view.modules, ...view.card_only])
+    for (const on_card of ['yes', 'no', 'other version'])
+      assert.doesNotMatch(localStateText({ ...r, on_card }) + deviceStateText({ ...r, on_card }), /on card/);
+});
+
+test('the mode of the page: Modules and Samples, Modules for anything unknown', () => {
+  assert.deepEqual(
+    MODES.map((m) => m.label),
+    ['Modules', 'Samples'],
+  );
+  assert.equal(parseMode('samples'), 'samples');
+  assert.equal(parseMode('modules'), 'modules');
+  assert.equal(parseMode(null), 'modules');
+  assert.equal(parseMode('card'), 'modules');
+});
+
+test('the device line: the free space in GiB from 1 GiB up, the same line for both modes', () => {
+  assert.equal(freeText(512), '512 B');
+  assert.equal(freeText(5 * 1024 * 1024), '5.00 MiB');
+  assert.equal(freeText(2 ** 30), '1.00 GiB');
+  assert.equal(freeText(19508 * 1024 * 1024), '19.05 GiB');
+  assert.equal(freeText(2 ** 32 - 1 + 1), '4.00 GiB');
+  assert.equal(
+    infoLine('Emulator', 'Digitone II', '0.4.1', 19508 * 1024 * 1024),
+    'Emulator · Digitone II · runtime 0.4.1 · 19.05 GiB free',
+  );
+  assert.equal(infoLine('Emulator', 'Digitakt II', '0.4.1', undefined), 'Emulator · Digitakt II · runtime 0.4.1');
 });

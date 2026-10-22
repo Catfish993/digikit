@@ -12,6 +12,7 @@ import {
   parseReply,
   restarted,
   splitMessages,
+  storeSpace,
 } from '../src/modules/dkupload-core.ts';
 import { CAP, CAPACITY_KINDS, CMD, LOG_KIND } from '../src/modules/gen_proto.ts';
 import {
@@ -63,7 +64,8 @@ class FakeDevice {
     this.staged = null;
     this.log = [{ seq: 1, kind: LOG_KIND.BOOT_START, flags: 0, args: [516, 2, 0, 0, 0] }];
     this.queue = [];
-    this.free = 1 << 20;
+    this.free = 1 << 20; // INFO's u32 free_bytes
+    this.storeKib = null; // CAPACITY's STORE limit in KiB (null: the entry is left out); 1024 KiB are used
     this.pending = 0; // after a RESTART: requests that are still answered by the old boot before the reset
   }
   reply(cmd, seq, status, body = new Uint8Array()) {
@@ -239,10 +241,11 @@ class FakeDevice {
           ),
         );
       }
-      case CMD.CAPACITY:
+      case CMD.CAPACITY: {
+        const store = this.storeKib === null ? [] : [[CAPACITY_KINDS.STORE], be32(this.storeKib), be32(1024), be32(0)];
         return ok(
           concat(
-            [1, 3],
+            [1, 3 + (this.storeKib === null ? 0 : 1)],
             [CAPACITY_KINDS.MODULES],
             be32(8),
             be32(this.loaded.length),
@@ -255,8 +258,10 @@ class FakeDevice {
             be32(1000),
             be32(0),
             be32(50),
+            ...store,
           ),
         );
+      }
       case CMD.LOG: {
         const from = new DataView(body.buffer, body.byteOffset).getUint32(0);
         const ev = this.log.filter((e) => e.seq >= from).slice(0, 3);
@@ -452,6 +457,23 @@ test('buildView reads the device: INFO, LIST, MODULES, CAPACITY and the headers 
   assert.equal(view.modules[0].on_card, 'yes');
   assert.deepEqual([view.card_only[0].group, view.card_only[0].version], ['Effects', '0.1.2']);
   assert.ok(dev.seen.includes('READ') && dev.seen.includes('MODULES') && dev.seen.includes('CAPACITY'));
+});
+
+test('free space above 4 GiB: INFO saturates at 2^32 - 1, CAPACITY STORE (KiB) does not, and the view uses it', async () => {
+  const dev = new FakeDevice();
+  dev.free = 0xffffffff; // what the runtime sends for a 19 GiB store
+  dev.storeKib = 20_000_000; // 19 GiB: more than a u32 holds in bytes
+  const s = session(dev);
+  assert.equal((await s.info()).free_bytes, 4294967295);
+  assert.deepEqual((await s.capacity()).STORE, { limit: 20_000_000, used: 1024, largest: 0 });
+  assert.deepEqual(await storeSpace(s), { free: (20_000_000 - 1024) * 1024, total: 20_000_000 * 1024 });
+  const view = await buildView(s, []);
+  assert.equal(view.free_bytes, (20_000_000 - 1024) * 1024);
+  assert.ok(view.free_bytes > 2 ** 32);
+  // a runtime without the STORE entry (or without CAPACITY): INFO's bytes
+  dev.storeKib = null;
+  assert.deepEqual(await storeSpace(s), { free: 4294967295, total: null });
+  assert.equal((await buildView(s, [])).free_bytes, 4294967295);
 });
 
 test('install: skip the same sha256, upload the rest with capped progress, VERIFY each, no SELECT', async () => {

@@ -1,21 +1,24 @@
-// The pure logic of the Samples tab of the desktop Transfer page (apps/desktop/ui/src/samples-core.ts): tabs, folders and breadcrumb, the
-// rows with their upload states, which files convert (the labels), and an upload run over a fake backend.
+// The pure logic of Samples mode of the desktop Transfer page (apps/desktop/ui/src/samples-core.ts): folders and breadcrumbs (device and local),
+// the rows with their upload states, the local rows and which files convert (the labels), and an upload run over a fake backend.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileGroups, nameInGroup } from '../../desktop/ui/src/card-core.ts';
+import { sourceKind } from '../src/modules/dksample.ts';
 import {
-  TABS,
   applyUpload,
   crumbs,
   deleteRows,
   dropUploads,
   folderNameError,
   joinPath,
+  baseName,
   kindLabel,
+  localCrumbs,
+  localRowState,
+  localRows,
   parentOf,
-  parseTab,
+  pickedRows,
   sampleRows,
-  spaceText,
   storeNote,
   uploadFiles,
   uploadStatus,
@@ -23,17 +26,6 @@ import {
 
 const file = (name, size = 10) => ({ name, kind: 'file', size });
 const folder = (name) => ({ name, kind: 'folder', size: 0 });
-
-test('the tabs: Modules and Samples, Modules for anything unknown', () => {
-  assert.deepEqual(
-    TABS.map((t) => t.label),
-    ['Modules', 'Samples'],
-  );
-  assert.equal(parseTab('samples'), 'samples');
-  assert.equal(parseTab('modules'), 'modules');
-  assert.equal(parseTab(null), 'modules');
-  assert.equal(parseTab('card'), 'modules');
-});
 
 test('folder paths and the breadcrumb', () => {
   assert.equal(joinPath('', 'kick'), 'kick');
@@ -151,13 +143,13 @@ test('events build the upload state, and a file that could not be prepared fails
 });
 
 test('which files convert: the label says what was done', () => {
-  assert.equal(kindLabel('converted'), 'WAV, converted');
-  assert.equal(kindLabel('native'), 'native sample');
+  assert.equal(kindLabel('converted'), 'converted on upload');
+  assert.equal(kindLabel('native'), 'as is');
   assert.equal(kindLabel('unchanged'), "won't play as a sample");
   assert.equal(kindLabel('none'), '');
 });
 
-test('delete: the ticked rows that are on the device; the space line; the store note', () => {
+test('delete: the ticked rows that are on the device; the store note', () => {
   const rows = sampleRows('', [folder('a'), file('b'), file('c')], {
     p: { folder: '', name: 'p', source: 'p', kind: 'native', state: 'waiting', sent: 0, bytes: 1, message: '' },
   });
@@ -165,9 +157,6 @@ test('delete: the ticked rows that are on the device; the space line; the store 
     deleteRows(rows, new Set(['c', 'a', 'p', 'gone'])).map((r) => r.path),
     ['a', 'c'],
   );
-  assert.equal(spaceText(undefined), '');
-  assert.equal(spaceText({ free: 2048, total: null }), '2.0 KiB free');
-  assert.equal(spaceText({ free: 1024 * 1024, total: 4 * 1024 * 1024 }), '1.00 MiB free of 4.00 MiB');
   assert.equal(
     storeNote('digikit', 'Digitone II'),
     "Stored for a future sampling engine; the Digitone II can't play samples yet.",
@@ -283,4 +272,69 @@ test('the Card panel groups the store files by top folder', () => {
   );
   assert.equal(nameInGroup('samples/drums/kick', 'samples'), 'drums/kick');
   assert.equal(nameInGroup('top.bin', ''), 'top.bin');
+});
+
+test('the local list: folders first, then files by name, then the added files; folders have no state; ticks pick files only', () => {
+  const entries = [file('snare.wav', 40), folder('z'), file('kick', 30), folder('a')];
+  const kinds = { 'drums/snare.wav': 'converted', 'drums/kick': 'native', '+x.txt': 'unchanged' };
+  const rows = localRows(
+    'drums',
+    entries,
+    [
+      { name: 'x.txt', size: 5 },
+      { name: 'loop.wav', size: 9 },
+    ],
+    kinds,
+  );
+  assert.deepEqual(
+    rows.map((r) => [r.key, r.kind, r.added]),
+    [
+      ['drums/a', 'folder', false],
+      ['drums/z', 'folder', false],
+      ['drums/kick', 'file', false],
+      ['drums/snare.wav', 'file', false],
+      ['+x.txt', 'file', true],
+      ['+loop.wav', 'file', true],
+    ],
+  );
+  assert.deepEqual(
+    rows.map(localRowState),
+    ['', '', 'as is', 'converted on upload', "won't play as a sample", ''],
+    'a file whose bytes were not read has no label yet',
+  );
+  assert.deepEqual(
+    pickedRows(rows, new Set(['drums/a', 'drums/snare.wav', '+loop.wav', 'gone'])).map((r) => r.key),
+    ['drums/snare.wav', '+loop.wav'],
+  );
+  assert.deepEqual(rows[0].path, 'drums/a');
+  assert.deepEqual(rows[4].path, '', 'an added file is not in the folder');
+});
+
+test('the local breadcrumb names the chosen folder; either path separator', () => {
+  assert.equal(baseName('/Users/em/samples'), 'samples');
+  assert.equal(baseName('/Users/em/samples/'), 'samples');
+  assert.equal(baseName('C:\\Users\\em\\samples'), 'samples');
+  assert.deepEqual(localCrumbs('/Users/em/samples', ''), [{ name: 'samples', path: '' }]);
+  assert.deepEqual(localCrumbs('/Users/em/samples', 'drums/808'), [
+    { name: 'samples', path: '' },
+    { name: 'drums', path: 'drums' },
+    { name: '808', path: 'drums/808' },
+  ]);
+});
+
+test('the label of a local file comes from its first 64 bytes and its size, as prepareUpload decides', () => {
+  const wav = new Uint8Array(64);
+  wav.set(Buffer.from('RIFF'), 0);
+  wav.set(Buffer.from('WAVE'), 8);
+  const native = new Uint8Array(64);
+  const v = new DataView(native.buffer);
+  v.setUint32(4, 100); // PCM bytes
+  v.setUint32(8, 48000);
+  native[0x14] = 0x7f;
+  assert.equal(sourceKind(wav, 5000), 'converted');
+  assert.equal(sourceKind(native, 0x40 + 100), 'native');
+  assert.equal(sourceKind(native, 0x40 + 100 + 16), 'native', 'with the trailer');
+  assert.equal(sourceKind(native, 0x40 + 99), 'unchanged', 'the size must match the header');
+  assert.equal(sourceKind(new Uint8Array(64), 64), 'unchanged');
+  assert.equal(sourceKind(new Uint8Array(3), 3), 'unchanged');
 });

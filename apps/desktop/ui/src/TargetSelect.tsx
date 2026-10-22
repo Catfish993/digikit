@@ -1,13 +1,18 @@
 // The target selector: the emulator, or a MIDI port with a device on it (Rust midir, midi_port.rs). Used in the headers of the Transfer and the
-// Remote pages. The list of ports is read when the page opens and with the rescan button; the port in use stays in the list.
-import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
+// Remote pages. The list of ports is read when the page opens and with the rescan button (a page with its own Refresh passes `reload`: the
+// list is read again when that number changes, and the button is left out); the port in use stays in the list.
+import { For, Show, createEffect, createSignal, on, onMount, type JSX } from 'solid-js';
 import { errorLine } from '@web/modules/backend';
 import { listMidiPorts } from './midi-transport';
 import { selectTarget, target, targetLabel, type Target } from './target';
 
 const VALUE_EMU = 'emulator';
 
-export default function TargetSelect(props: { disabled?: boolean; onError?: (m: string) => void }): JSX.Element {
+export default function TargetSelect(props: {
+  disabled?: boolean;
+  onError?: (m: string) => void;
+  reload?: () => number;
+}): JSX.Element {
   const [ports, setPorts] = createSignal<string[]>([]);
   const rescan = async () => {
     try {
@@ -17,6 +22,13 @@ export default function TargetSelect(props: { disabled?: boolean; onError?: (m: 
     }
   };
   onMount(() => void rescan());
+  createEffect(
+    on(
+      () => props.reload?.(),
+      () => void rescan(),
+      { defer: true },
+    ),
+  );
   const options = () => {
     const t = target();
     const names = ports();
@@ -46,15 +58,17 @@ export default function TargetSelect(props: { disabled?: boolean; onError?: (m: 
           </For>
         </select>
       </label>
-      <button
-        type="button"
-        class="act small"
-        disabled={props.disabled}
-        title="Look for MIDI ports again"
-        onClick={() => void rescan()}
-      >
-        Rescan
-      </button>
+      <Show when={!props.reload}>
+        <button
+          type="button"
+          class="act small"
+          disabled={props.disabled}
+          title="Look for MIDI ports again"
+          onClick={() => void rescan()}
+        >
+          Rescan
+        </button>
+      </Show>
       <Show when={target().kind === 'midi'}>
         <span class="dim">a real device</span>
       </Show>

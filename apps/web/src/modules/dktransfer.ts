@@ -4,7 +4,7 @@
 // the Python tool prints with --json. Written without TS-only runtime syntax so node can import it for the tests.
 //
 // The app does not build: its modules are built `.dkm` files of a folder (`mise run module:pack-all`).
-import { DkError, DkSession, HEADER_BYTES, fmtVersion, hasCap, hexOf } from './dkupload-core.ts';
+import { DkError, DkSession, HEADER_BYTES, fmtVersion, hasCap, hexOf, storeFree } from './dkupload-core.ts';
 import type { DkInfoFull } from './dkupload-core.ts';
 
 export type Group = 'Machines' | 'Effects' | 'Tools';
@@ -224,7 +224,7 @@ export async function buildView(s: DkSession, library: LibraryModule[]): Promise
   return {
     device: info.port,
     runtime: fmtVersion(info.runtime),
-    free_bytes: info.free_bytes,
+    free_bytes: storeFree(info, cap).free,
     loaded,
     ...mergeView(library, card, loaded, cap, headers),
   };

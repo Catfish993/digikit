@@ -1,0 +1,304 @@
+// Transfer page, Modules mode. On your computer: the built modules of the library folder (out/modules/<device>/, filled by `mise run
+// module:pack-all`) in their groups, and "Add .dkm" or a drop for a module from outside it. On device: what the card holds. The page speaks the
+// upload protocol itself, in TypeScript (apps/web/src/modules), over the selected target; no process is started and nothing is built. Install
+// uploads and verifies each ticked module on the card; that is all. The device's selection is the device's own: the user selects the module
+// in MODULES on the device, then applies and restarts there. Restart only restarts the device and reports what loaded. Delete removes the
+// ticked files from the card; a loaded module stays loaded until the restart.
+import { For, Show, type JSX } from 'solid-js';
+import { errorLine, formatBytes } from '@web/modules/backend';
+import {
+  ListRow,
+  LocalPane,
+  DevicePane,
+  createConfirm,
+  DeleteButton,
+  type ChipStatus,
+  type PageCtx,
+} from './TransferParts';
+import { transferBackend } from './transfer-backend';
+import {
+  applyEvent,
+  applyVerified,
+  available,
+  DONE_ON_CARD,
+  deleteDoneText,
+  deletePaths,
+  deviceStateText,
+  eventText,
+  installModules,
+  localStateText,
+  onDeviceWithPending,
+  rowKey,
+  rowStatus,
+  startProgress,
+  warningText,
+  type TransferEvent,
+  type TransferRow,
+} from './transfer-core';
+import {
+  delTicks,
+  lastView,
+  progress,
+  setDelTicks,
+  setLog,
+  setProgress,
+  setShowTests,
+  setTicks,
+  setVerified,
+  showTests,
+  ticks,
+  verified,
+} from './transfer-state';
+
+export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
+  const { busy, run, setError } = props.ctx;
+  let input: HTMLInputElement | undefined;
+
+  const onEvent = (e: TransferEvent) => {
+    const p = progress();
+    if (p) setProgress(applyEvent(p, e));
+    setVerified(applyVerified(verified(), e));
+    if (e.event !== 'result' && e.event !== 'progress') setLog((l) => [...l, eventText(e)]);
+  };
+  /** Run a transfer job with a progress bar: an error shows on the bar and is thrown on; `done` is the text after a success. */
+  const job = async (work: () => Promise<void>, done: () => string) => {
+    setLog([]);
+    try {
+      await work();
+    } catch (e) {
+      const p = progress();
+      if (p) setProgress({ ...p, message: errorLine(e) });
+      throw e;
+    }
+    const p = progress();
+    if (p) setProgress({ ...p, message: done() });
+  };
+  const install = () =>
+    run('Installing', async () => {
+      const v = lastView();
+      if (!v) return;
+      const modules = installModules(v, ticks());
+      setProgress(
+        startProgress(
+          modules,
+          false,
+          Object.fromEntries(v.modules.filter((r) => r.id).map((r) => [r.id as string, r.file_size])),
+        ),
+      );
+      await job(
+        () => transferBackend.install(modules, onEvent),
+        () => DONE_ON_CARD,
+      );
+      setTicks(new Set<string>());
+    });
+  const restart = () =>
+    run('Restarting', async () => {
+      setProgress(startProgress([], true));
+      setLog([]);
+      try {
+        await transferBackend.restart(onEvent);
+      } catch (e) {
+        const p = progress();
+        if (p) setProgress({ ...p, message: errorLine(e) });
+        throw e;
+      }
+      setVerified({});
+    });
+  const addFiles = (files: File[]) =>
+    run('Uploading', async () => {
+      const picked = files.filter((f) => /\.dkm$/i.test(f.name));
+      if (!picked.length) {
+        setError('Only .dkm files can be added.');
+        return;
+      }
+      const data = await Promise.all(
+        picked.map(async (f) => ({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) })),
+      );
+      setLog(await transferBackend.add(data));
+    });
+
+  const confirm = createConfirm();
+  const nDelete = () => {
+    const v = lastView();
+    return v ? deletePaths(v, delTicks()).length : 0;
+  };
+  const removeSelected = () =>
+    run('Deleting', async () => {
+      const v = lastView();
+      if (!v) return;
+      const paths = deletePaths(v, delTicks());
+      setProgress(startProgress(paths, false));
+      await job(
+        () => transferBackend.remove(paths, onEvent),
+        () => deleteDoneText(v, paths),
+      );
+      setDelTicks(new Set<string>());
+    });
+  const flip = (set: Set<string>, key: string) => {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  };
+
+  const label = (r: TransferRow) => r.label ?? r.name;
+  const ticked = () => {
+    const v = lastView();
+    return v ? installModules(v, ticks()).length : 0;
+  };
+  const status = (r: TransferRow): ChipStatus | undefined => {
+    const st = rowStatus(progress(), verified(), r.path);
+    return st?.kind === 'uploading' ? { kind: 'uploading', sent: st.sent, bytes: st.bytes } : st;
+  };
+
+  return (
+    <div class="cols">
+      <LocalPane
+        onDrop={(f) => void addFiles(f)}
+        actions={
+          <>
+            <input
+              ref={input}
+              type="file"
+              accept=".dkm"
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = Array.from(e.currentTarget.files ?? []);
+                e.currentTarget.value = '';
+                void addFiles(files);
+              }}
+            />
+            <button
+              type="button"
+              class="act small"
+              disabled={!!busy()}
+              title="Put a module from outside the library on the device"
+              onClick={() => input?.click()}
+            >
+              Add .dkm…
+            </button>
+            <span class="drop">or drop files</span>
+            <label class="tests">
+              <input type="checkbox" checked={showTests()} onChange={(e) => setShowTests(e.currentTarget.checked)} />{' '}
+              show test modules
+            </label>
+            <button
+              type="button"
+              class="act primary"
+              disabled={!!busy() || ticked() === 0}
+              title={
+                ticked()
+                  ? 'Build, upload and verify the ticked modules on the device; select them in MODULES on the device'
+                  : 'Tick a module to install'
+              }
+              onClick={() => void install()}
+            >
+              {busy() === 'Installing' ? 'Installing…' : ticked() ? `Install ${ticked()}` : 'Install'}
+            </button>
+          </>
+        }
+      >
+        <Show when={lastView()} fallback={<p class="empty">{busy() ? `${busy()}…` : 'No module list yet.'}</p>}>
+          {(v) => (
+            <For each={available(v(), showTests())}>
+              {(g) => (
+                <div class="group">
+                  <h4>{g.group}</h4>
+                  <Show
+                    when={g.rows.length}
+                    fallback={<p class="empty">{g.group === 'Effects' ? 'No run-time effects yet.' : 'None.'}</p>}
+                  >
+                    <ul class="rows">
+                      <For each={g.rows}>
+                        {(r) => (
+                          <ListRow
+                            check={{
+                              label: `Install ${label(r)}`,
+                              checked: ticks().has(rowKey(r)),
+                              disabled: !!busy(),
+                              onChange: () => setTicks(flip(ticks(), rowKey(r))),
+                            }}
+                            name={label(r)}
+                            title={r.id ?? r.path}
+                            tag={r.test ? 'test' : undefined}
+                            detail={r.version ?? ''}
+                            extra={formatBytes(r.file_size)}
+                            extraTitle={r.arena !== undefined ? `arena ${r.arena} B, DSP ${r.dsp} B` : ''}
+                            state={localStateText(r)}
+                            warn={warningText(r)}
+                          />
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                </div>
+              )}
+            </For>
+          )}
+        </Show>
+      </LocalPane>
+
+      <DevicePane
+        ctx={props.ctx}
+        actions={
+          <>
+            <DeleteButton
+              n={nDelete()}
+              busy={busy()}
+              confirming={confirm.confirming()}
+              title="Delete the ticked files from the device (a loaded module stays loaded until the next restart)"
+              onClick={() => confirm.click(() => void removeSelected())}
+            />
+            <button
+              type="button"
+              class="act"
+              disabled={!!busy() || !lastView()}
+              title="RESTART the device (it loads what its MODULES menu has selected)"
+              onClick={() => void restart()}
+            >
+              {busy() === 'Restarting' ? 'Restarting…' : 'Restart'}
+            </button>
+          </>
+        }
+      >
+        <Show when={lastView()}>
+          {(v) => (
+            <Show
+              when={onDeviceWithPending(v(), progress()).length}
+              fallback={<p class="empty">The device holds no modules.</p>}
+            >
+              <ul class="rows">
+                <For each={onDeviceWithPending(v(), progress())}>
+                  {(r) => (
+                    <ListRow
+                      check={
+                        r.on_card === 'no'
+                          ? undefined
+                          : {
+                              label: `Delete ${label(r)}`,
+                              checked: delTicks().has(r.path),
+                              disabled: !!busy(),
+                              onChange: () => {
+                                setDelTicks(flip(delTicks(), r.path));
+                                confirm.stop();
+                              },
+                            }
+                      }
+                      name={label(r)}
+                      title={`${r.path} · ${formatBytes(r.file_size)}`}
+                      tag={r.id ? undefined : 'not in the library'}
+                      detail={r.version ?? ''}
+                      state={deviceStateText(r)}
+                      status={status(r)}
+                    />
+                  )}
+                </For>
+              </ul>
+            </Show>
+          )}
+        </Show>
+      </DevicePane>
+    </div>
+  );
+}

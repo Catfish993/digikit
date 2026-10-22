@@ -10,10 +10,11 @@ import { FakeDrive, hashOf } from './fakedrive.mjs';
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const ZERO = '0'.repeat(64);
 const FOLDERS = 1 << 10;
+const CAPACITY = 1 << 6;
 
 /** The part of `DkSession` the digikit backend uses, on an in-memory store; `calls` records the commands. */
 class FakeStore {
-  constructor({ caps = FOLDERS, limitKib = 1000 } = {}) {
+  constructor({ caps = FOLDERS | CAPACITY, limitKib = 1000 } = {}) {
     this.caps = caps;
     this.limitKib = limitKib;
     this.files = new Map();
@@ -207,6 +208,13 @@ test('digikit without the FOLDERS capability: no mkdir, the host filters a full 
   store.files.set('modules/m.dkm', bytes(5));
   assert.deepEqual(await dev.list('drums'), [{ name: 'a', kind: 'file', size: 36 }]);
   assert.ok(store.calls.includes('list') && !store.calls.some((c) => c.startsWith('list samples')));
+});
+
+test('digikit: a store above 4 GiB reports its free space in bytes (KiB from CAPACITY, no 32-bit saturation)', async () => {
+  const { s } = session({ store: new FakeStore({ limitKib: 20_000_000 }) });
+  const space = await openSamples('digikit', { session: s }).space();
+  assert.deepEqual(space, { free: 20_000_000 * 1024, total: 20_000_000 * 1024 });
+  assert.ok(space.free > 2 ** 32);
 });
 
 test('digikit: a large file is verified in ranges and reports where the first one differs', async () => {

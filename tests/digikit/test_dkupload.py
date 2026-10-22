@@ -279,6 +279,8 @@ def test_capacity_decodes_the_entries_by_kind_name_and_prints_them():
         (k["MODULES"], 8, 3, 0),
         (k["ARENA"], 524288, 4096, 520000),
         (99, 1, 2, 3),
+        # a 19 GiB store: KiB fit a u32 where bytes (INFO's free_bytes, saturated at 2^32 - 1) do not
+        (k["STORE"], 20_000_000, 1024, 0),
     ]
 
     class Fake:
@@ -306,11 +308,14 @@ def test_capacity_decodes_the_entries_by_kind_name_and_prints_them():
         "MODULES": {"limit": 8, "used": 3, "largest": 0},
         "ARENA": {"limit": 524288, "used": 4096, "largest": 520000},
         "kind99": {"limit": 1, "used": 2, "largest": 3},
+        "STORE": {"limit": 20_000_000, "used": 1024, "largest": 0},
     }
+    assert cap["STORE"]["limit"] * 1024 > 2**32
     assert D.capacity_lines(cap) == [
         "capacity modules: 3/8",
         "capacity arena: 4096/524288  largest free 520000",
         "capacity kind99: 2/1  largest free 3",
+        "capacity store: 1024/20000000 KiB",
     ]
     assert D.CAP["CAPACITY"] == 6
 

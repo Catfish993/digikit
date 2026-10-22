@@ -81,15 +81,18 @@ export class Sample {
 
 const NATIVE_TRAILER = 16;
 
-/** Is `b` a native sample file (header: byte 0 is 0, byte 1 the stereo flag, +4 the PCM length, +8 the rate 48000, +0x14 is 0x7F), with or without the trailer? */
-export function isNative(b: Uint8Array): boolean {
-  if (b.length < 0x40 || b[0] !== 0 || b[1] > 1 || b[0x14] !== 0x7f) return false;
-  const v = new DataView(b.buffer, b.byteOffset, b.length);
+/** The native sample test on the first 0x40 bytes of a file of `size` bytes. */
+function nativeHead(h: Uint8Array, size: number): boolean {
+  if (h.length < 0x40 || h[0] !== 0 || h[1] > 1 || h[0x14] !== 0x7f) return false;
+  const v = new DataView(h.buffer, h.byteOffset, h.length);
   const body = v.getUint32(4);
-  return v.getUint32(8) === 48000 && (b.length === 0x40 + body || b.length === 0x40 + body + NATIVE_TRAILER);
+  return v.getUint32(8) === 48000 && (size === 0x40 + body || size === 0x40 + body + NATIVE_TRAILER);
 }
 
-const isWav = (b: Uint8Array) =>
+/** Is `b` a native sample file (header: byte 0 is 0, byte 1 the stereo flag, +4 the PCM length, +8 the rate 48000, +0x14 is 0x7F), with or without the trailer? */
+export const isNative = (b: Uint8Array): boolean => nativeHead(b, b.length);
+
+export const isWav = (b: Uint8Array) =>
   b.length >= 12 &&
   String.fromCharCode(...b.subarray(0, 4)) === 'RIFF' &&
   String.fromCharCode(...b.subarray(8, 12)) === 'WAVE';
@@ -104,6 +107,11 @@ export interface Prepared {
   /** What was done: converted from a WAV, a native file passed on, or any other file unchanged. */
   kind: 'converted' | 'native' | 'unchanged';
   info?: SampleInfo;
+}
+
+/** What `prepareUpload` will do with a file of `size` bytes, from its first 64 bytes: the page labels the local files with it without reading them in full. */
+export function sourceKind(head: Uint8Array, size: number): Prepared['kind'] {
+  return isWav(head) ? 'converted' : nativeHead(head, size) ? 'native' : 'unchanged';
 }
 
 /** What a file needs before it goes to the +Drive: a WAV is converted, a native sample and any other file go unchanged. */

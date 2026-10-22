@@ -1,4 +1,4 @@
-/* The Transfer page (TransferPage.tsx): fills the content area next to the sidebar. Tokens from the site (apps/web/src/styles/site.css). */
+/* The Transfer page (TransferPage.tsx, ModulesMode.tsx, SamplesMode.tsx): fills the content area next to the sidebar. Tokens from the site (apps/web/src/styles/site.css). */
 .transfer-page {
   flex: 1;
   min-height: 0;
@@ -11,9 +11,9 @@
   color: var(--ink, #eceae5);
   font-size: 13px;
 }
-.transfer-page.over {
+.transfer-page .col.over {
   outline: 2px dashed var(--amber, #f3b52c);
-  outline-offset: -8px;
+  outline-offset: 6px;
 }
 .transfer-page .head {
   display: flex;
@@ -57,8 +57,9 @@
 .transfer-page .colhead {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 8px;
 }
 .transfer-page .colhead h3 {
   margin: 0;
@@ -240,43 +241,13 @@
   border-color: #e5594d;
   color: #ffb4ab;
 }
-/* the two tabs of the Transfer page (TransferTabs.tsx) */
-.transfer-tabs {
-  flex: 1;
-  min-height: 0;
+/* the device line under the On device heading, and the folder paths */
+.transfer-page .devhead {
   display: flex;
-  flex-direction: column;
-  background: #0f1012;
-}
-.transfer-tabs nav {
-  display: flex;
-  gap: 4px;
-  padding: 10px 20px 0;
-  border-bottom: 1px solid var(--line, #24262b);
-}
-.transfer-tabs [role='tab'] {
-  padding: 6px 14px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--ink-3, #868b94);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.transfer-tabs [role='tab'].on {
-  color: var(--ink, #eceae5);
-  border-bottom-color: var(--amber, #f3b52c);
-}
-/* the Samples tab (SamplesPage.tsx) */
-.transfer-page .dropzone {
-  padding: 18px 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   margin-bottom: 8px;
-  border: 1px dashed #2c2f35;
-  border-radius: 8px;
-  color: var(--ink-3, #868b94);
-  font-size: 12px;
 }
 .transfer-page .crumbs {
   display: flex;

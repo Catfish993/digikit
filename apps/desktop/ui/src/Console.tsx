@@ -16,7 +16,7 @@ import {
 import CardPanel from './CardPanel';
 import RemotePage from './RemotePage';
 import { target } from './target';
-import TransferTabs from './TransferTabs';
+import TransferPage from './TransferPage';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 
 type Source = { path: string; name: string; bytes: number; modified_ms: number };
@@ -497,7 +497,7 @@ export default function Console() {
             <CardPanel visible={page() === 'emulator' && !!status()} />
           </div>
           <Show when={page() === 'transfer'}>
-            <TransferTabs />
+            <TransferPage />
           </Show>
           <Show when={page() === 'remote'}>
             <RemotePage fallbackDevice={device()} />
