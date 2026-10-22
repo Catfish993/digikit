@@ -30,6 +30,7 @@
     .equ PEEK_N, 0x2    /* [digikit] peek: number of ranges */
     .equ INPUT_BACKEND, 0x1    /* [input] backend (1 panel-uart; 0 none) */
     .equ PANEL_LINEAR, 0x6    /* [panel] linear_channels (code = channel * 8 + bit + 1) */
+    .equ PANEL_BUTTON_CHANNELS, 0x7    /* [panel] button_channels (the button decoder's tables: a key channel is below it) */
     .equ PANEL_ENCODERS, 0x9    /* [panel] encoders */
     .equ PANEL_EXC_N, 0x2    /* [panel.exceptions]: number of codes */
     .equ PANEL_EXC_CODE_0, 0x31    /* [panel.exceptions] code */

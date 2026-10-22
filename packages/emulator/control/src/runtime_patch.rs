@@ -227,7 +227,7 @@ mod tests {
             Outcome::AlreadyPatched => panic!("stock has no patch record"),
         };
         assert!(!first.cache_hit);
-        assert_eq!(first.modules.len(), 10);
+        assert_eq!(first.modules.len(), 12);
         assert!(first.cache_file.is_file());
         let record = verify::patch_record(&first.syx).unwrap().unwrap();
         assert_eq!(record.base_sha256, first.base_sha256);

@@ -171,7 +171,7 @@ rename/get-info/hash variants. ✝ = `FsRaw*`, see §6.)
   no-mod live capture of the display, drivable now over the `0x10` path. **[D]**
   **Checked on 1.17 in the emulator (2026-10-19, lane dkrun) [D]:** the handler is `FUN_401246a6`, its closure `FUN_40123a08` (copies 0x400 bytes
   from the pointer `DAT_402b659c`, the shadow buffer, then sets the done flag), the response constructor
-  `elektron::MidiRpcScreenshotResponse::ctor_dtor` at `0x401de056` (1.16: `0x401243c6`, `0x40123728`, `0x401ddc40`, `0x402b605c`). The reply payload (after the
+  `elektron::MidiRpcScreenshotResponse::ctor_dtor` at `0x401de056` **[C]** (corrected below: that is the parse-side constructor; 1.16: `0x401243c6`, `0x40123728`, `0x401ddc40`, `0x402b605c`). The reply payload (after the
   type byte `0x84`) is **1033 bytes: a 9-byte header `01 0080 0040 00000400` (format 1, u16 width 128, u16 height 64, u32 length 1024, big endian), then the
   1024 buffer bytes**; the buffer has the layout of the emulator's frame capture (`framebuffer.get`: byte `(7 - y/8) + 8 x`, bit `y mod 8`, so 8 bytes per
   column and the top 8 rows in byte 7 of the column). `tools/device/dkscreen.py` decodes it and writes a PNG (`--screenshot` for the device is that tool:
@@ -179,6 +179,10 @@ rename/get-info/hash variants. ✝ = `FsRaw*`, see §6.)
   and compares the 1024 bytes with the emulator's own frame capture of the same moment: equal on the main screen and after a key press. Not yet run on the
   device itself **[O]**. **DN2 1.12 in the emulator (2026-10-22, lane tasks-images) [D]:** the same request over `midi.usb.in` is answered with the same 9-byte header and 1024 bytes, equal to
   the frame capture on the main screen and after a key press (scenario `upload-screenshot`, now on both devices). The handler is the same stock command; no DN2-specific change was needed. A real DN2 is not checked **[O]**.
+  **[C] Constructors and DN2 facts [V] (second agent, 2026-10-22, hash-matched, static only, not run on hardware):** `0x401de056` (1.17) is the parse-side constructor of `MidiRpcScreenshotResponse`.
+  The handler builds the reply with `0x401d4710` through the Sp wrapper `0x401d47bc` (1.17). On DN2 1.12: handler `FUN_40125f9e`; closure `FUN_401253b0` (h_strict `e5b21c0f...`); shadow buffer
+  `DAT_402a10cc`, `0x400` bytes; build constructor `0x401bd5aa`; parse constructor `0x401c557a`; the same reply layout and the same `0x10` route. Product ids: DN2 `0x0d` / `0x15`, DT2
+  `0x0a` / `0x14`; this route does not use them.
 - **StorageSpace (`0x05`)**, **Query (`0x09`)** — read-only, layouts not
   decoded.
 

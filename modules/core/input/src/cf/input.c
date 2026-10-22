@@ -37,6 +37,7 @@ extern const u32 input_cfg[];
 #define CFG_ENCODERS 2
 #define CFG_EXC_N 3
 #define CFG_EXC 4 /* 8 x (code, channel, bit) */
+#define CFG_BUTTON_CH 28 /* the channels the button decoder has tables for */
 
 /* firmware (anchors by hash in the port files): the decoders, and the literals that locate their state */
 extern void input_fw_key(u32 channel, u32 mask);
@@ -86,14 +87,15 @@ static int panel_code(u32 code, u32 *ch, u32 *bit)
     if (code >= 1u && code <= linear * 8u) {
         *ch = (code - 1u) >> 3;
         *bit = (code - 1u) & 7u;
-        return 1;
+        return *ch < input_cfg[CFG_BUTTON_CH];
     }
     for (i = 0; i < n && i < 8u; i++) {
         const u32 *e = &input_cfg[CFG_EXC + 3u * i];
         if (e[0] == code) {
             *ch = e[1];
             *bit = e[2];
-            return 1;
+            /* the decoder has no bounds check on the channel: never pass one outside its tables */
+            return *ch < input_cfg[CFG_BUTTON_CH];
         }
     }
     return 0;

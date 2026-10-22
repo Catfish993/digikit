@@ -348,6 +348,7 @@ fn the_input_facts_are_the_device_files_panel() {
             "INPUT_BACKEND, 0x1 ",
             "PANEL_LINEAR, 0x6 ",
             "PANEL_ENCODERS, 0x9 ",
+            "PANEL_BUTTON_CHANNELS, 0x7 ",
         ]
         .into_iter()
         .chain(wants)
@@ -371,6 +372,13 @@ fn an_unknown_backend_or_a_bad_panel_exception_is_refused() {
         ),
         ("exceptions", "49 = [6, 1]", "49 = [3, 1]"),
         ("exceptions", "49 = [6, 1]", "49 = [6, 9]"),
+        // a channel at or above button_channels is outside the decoder's tables
+        ("exceptions", "49 = [6, 1]", "49 = [7, 1]"),
+        (
+            "button_channels",
+            "button_channels = 7",
+            "button_channels = 5",
+        ),
     ] {
         let bad = dt2.replace(from, to);
         assert_ne!(bad, dt2, "{what}: the test text did not change");

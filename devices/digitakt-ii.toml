@@ -147,6 +147,8 @@ backend = "panel-uart"
 # measured on this build with unicorn-reference-final:tools/panelsweep.py by reading the event
 # records the firmware emits.
 linear_channels = 6
+# The firmware's button decoder indexes its tables by channel with no bounds check: channels 0..6 are safe (finding 58). core/input refuses others.
+button_channels = 7
 encoders = 9
 
 # Channel 6 is not linear, and is not the same on the two products. Digitakt's

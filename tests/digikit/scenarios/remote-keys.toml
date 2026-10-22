@@ -1,5 +1,5 @@
 # The whole remote path (docs/plans/remote-control.md): digikit/remote's KEY presses open SETTINGS > DIGIKIT > ABOUT, checked by the rows the menu keeps (expect_text DK_ABOUT: the
-# runtime version); a TURN up and then back by 20 detents changes the main screen each time. On a free-running daemon booted with the `emulator` patch set,
+# runtime version); a TURN of 20 detents changes the main screen (polled: the value label goes after a few emulated seconds). On a free-running daemon booted with the `emulator` patch set,
 # where REMOTE is on at the boot. Both devices.
 [scenario]
 name = "remote-keys"

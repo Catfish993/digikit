@@ -62,6 +62,8 @@
 #define INPUT_BACKEND 1
 // [panel] linear_channels (code = channel * 8 + bit + 1)
 #define PANEL_LINEAR 6
+// [panel] button_channels (the button decoder's tables: a key channel is below it)
+#define PANEL_BUTTON_CHANNELS 7
 // [panel] encoders
 #define PANEL_ENCODERS 9
 // [panel.exceptions]: number of codes

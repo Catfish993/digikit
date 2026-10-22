@@ -47,6 +47,8 @@ struct InputDoc {
 #[derive(Deserialize)]
 struct PanelDoc {
     linear_channels: u64,
+    /// The channels the firmware's button decoder has tables for (it has no bounds check; docs/findings/58-panel-input-path.md): a key channel is below it.
+    button_channels: u64,
     encoders: u64,
     #[serde(default)]
     exceptions: BTreeMap<String, [u64; 2]>,
@@ -152,6 +154,7 @@ struct Entry {
 struct InputF {
     backend: u64,
     linear_channels: u64,
+    button_channels: u64,
     encoders: u64,
     /// (code, channel, bit)
     exceptions: Vec<[u64; 3]>,
@@ -390,14 +393,27 @@ fn input_facts(short: &str, i: Option<InputDoc>, p: Option<PanelDoc>) -> Result<
             "{short}: [panel.exceptions] lists at most {PANEL_EXC_MAX} codes"
         ));
     }
+    if p.linear_channels > p.button_channels
+        || p.button_channels > 16
+        || p.encoders == 0
+        || p.encoders > 16
+    {
+        return Err(err!(
+            "{short}: [panel] linear_channels <= button_channels <= 16 and encoders 1 to 16"
+        ));
+    }
     let mut exceptions = vec![];
     for (code, [ch, bit]) in &p.exceptions {
         let code: u64 = code
             .parse()
             .map_err(|_| err!("{short}: [panel.exceptions] key {code:?} is not a code"))?;
-        if code <= p.linear_channels * 8 || *bit > 7 || *ch < p.linear_channels {
+        if code <= p.linear_channels * 8
+            || *bit > 7
+            || *ch < p.linear_channels
+            || *ch >= p.button_channels
+        {
             return Err(err!(
-                "{short}: [panel.exceptions] {code} = [{ch}, {bit}]: a code above the linear ones, on a channel after them, bit 0 to 7"
+                "{short}: [panel.exceptions] {code} = [{ch}, {bit}]: a code above the linear ones, on a channel after them and below button_channels, bit 0 to 7"
             ));
         }
         exceptions.push([code, *ch, *bit]);
@@ -405,6 +421,7 @@ fn input_facts(short: &str, i: Option<InputDoc>, p: Option<PanelDoc>) -> Result<
     Ok(InputF {
         backend: backend as u64 + 1,
         linear_channels: p.linear_channels,
+        button_channels: p.button_channels,
         encoders: p.encoders,
         exceptions,
     })
@@ -831,6 +848,12 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
         inp.linear_channels,
         PerDevice,
         "[panel] linear_channels (code = channel * 8 + bit + 1)",
+    ));
+    v.push(c(
+        "PANEL_BUTTON_CHANNELS",
+        inp.button_channels,
+        PerDevice,
+        "[panel] button_channels (the button decoder's tables: a key channel is below it)",
     ));
     v.push(c(
         "PANEL_ENCODERS",
