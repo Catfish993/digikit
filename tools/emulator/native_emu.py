@@ -674,7 +674,11 @@ def main(args: list[str] | None = None) -> None:
     # "Sync now"). --plus-drive/--samples name the folder of the first load instead (a card built here from it). --no-sync turns
     # the mirror and the export on exit off.
     if known and "--device-folders" not in args:
-        args = [*args, "--device-folders", *(["--no-card-sync"] if no_sync and folder is None else [])]
+        args = [
+            *args,
+            "--device-folders",
+            *(["--no-card-sync"] if no_sync and folder is None else []),
+        ]
     if folder is not None and not no_sync and "--mirror-dir" not in args:
         args = [*args, "--mirror-dir", str(folder.resolve())]
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
