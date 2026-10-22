@@ -582,7 +582,7 @@ class Cdp {
   }
 }
 
-async function connect(url) {
+async function connect(_url) {
   for (let i = 0; i < 100; i++) {
     try {
       const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();

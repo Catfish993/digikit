@@ -56,7 +56,10 @@ test('the native file: header, big-endian PCM, trailer of zeros', { skip }, asyn
   const v = new DataView(c.file.buffer);
   assert.deepEqual([c.file[0], c.file[1], v.getUint32(4), v.getUint32(8), c.file[0x14]], [0, 0, 200, 48000, 0x7f]);
   assert.equal(v.getInt16(0x40 + 2 * 10), Math.round(Math.sin(10 / 7) * 0.5 * 32767));
-  assert.deepEqual([...c.file.subarray(c.file.length - 16)], Array.from({ length: 16 }, () => 0));
+  assert.deepEqual(
+    [...c.file.subarray(c.file.length - 16)],
+    Array.from({ length: 16 }, () => 0),
+  );
   assert.deepEqual(c.info, { srcRate: 48000, channels: 1, srcFrames: 100, frames: 100, dataLen: 200 });
 });
 

@@ -28,7 +28,6 @@ import {
   selectedRows,
   uploadItems,
   type LocalRow,
-  type SampleRow,
   type UploadItem,
 } from './samples-core';
 import {

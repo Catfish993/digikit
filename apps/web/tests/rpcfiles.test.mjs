@@ -76,7 +76,7 @@ test('write: chunks at sequential offsets, the byte count at close, the size wit
   assert.equal((await files.write('s/empty', new Uint8Array(0))).size, 0);
 });
 
-test('the chunk of a write: the default, the link\'s own (rpcChunk of the transport), or the one asked for', async () => {
+test("the chunk of a write: the default, the link's own (rpcChunk of the transport), or the one asked for", async () => {
   const writes = async (rpcChunk, options) => {
     const dev = new FakeDrive();
     if (rpcChunk !== undefined) dev.rpcChunk = rpcChunk;

@@ -14,7 +14,9 @@ import { connect } from './emu_midi.mjs';
 const [socketPath, ...flags] = process.argv.slice(2);
 const flag = (name, dflt) => (flags.includes(name) ? flags[flags.indexOf(name) + 1] : dflt);
 if (!socketPath) {
-  console.error('usage: node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P] [--check-sizes N,N,...]');
+  console.error(
+    'usage: node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P] [--check-sizes N,N,...]',
+  );
   process.exit(2);
 }
 const bytes = Number(flag('--bytes', 8_000_000));
@@ -62,7 +64,14 @@ const snap = async () => {
 const rate = (a, b) => {
   const wall = (b.t - a.t) / 1000;
   const busy = b.icount - a.icount - (b.idle - a.idle);
-  return { wall_s: +wall.toFixed(3), insn: b.icount - a.icount, busy_insn: busy, audio_s: b.audio === null ? null : +(b.audio - a.audio).toFixed(3), cf_cpu_s: +(b.cpu - a.cpu).toFixed(3), dsp_cpu_s: b.dsp === null ? null : +(b.dsp - a.dsp).toFixed(3) };
+  return {
+    wall_s: +wall.toFixed(3),
+    insn: b.icount - a.icount,
+    busy_insn: busy,
+    audio_s: b.audio === null ? null : +(b.audio - a.audio).toFixed(3),
+    cf_cpu_s: +(b.cpu - a.cpu).toFixed(3),
+    dsp_cpu_s: b.dsp === null ? null : +(b.dsp - a.dsp).toFixed(3),
+  };
 };
 
 // the transport of emu_midi.mjs, timed: where a request spends its wall time
@@ -94,7 +103,6 @@ const work = (r, bytes) => +((r.busy_insn - bg * r.audio_s) / bytes).toFixed(1);
 const session = new DkSession(t, { timeoutMs: 60000, chunk });
 const info = await session.info();
 const data = Uint8Array.from(randomBytes(bytes));
-const hostSha = await hexSha256(data);
 for (let run = 0; run < runs; run++) {
   for (const k of Object.keys(stat)) stat[k] = 0;
   const a = await snap();
@@ -112,7 +120,7 @@ for (let run = 0; run < runs; run++) {
       const got = await session.verify(path, off, part.length);
       if (got !== (await hexSha256(part))) ok = false;
     }
-  } catch (e) {
+  } catch {
     ok = false;
   }
   const d = await snap();
@@ -127,9 +135,27 @@ for (let run = 0; run < runs; run++) {
       put_error: putError,
       free_before: info.free_bytes,
       bg_insn_per_audio_s: Math.round(bg),
-      upload: { ...up, MBps: +(mb / up.wall_s).toFixed(3), insn_per_byte: +(up.insn / bytes).toFixed(1), work_insn_per_byte: work(up, bytes), busy_insn_per_byte: +(up.busy_insn / bytes).toFixed(1), rtf: up.audio_s === null ? null : +(up.audio_s / up.wall_s).toFixed(3) },
-      transport: { ...Object.fromEntries(Object.entries(putStat).map(([k, v]) => [k, Math.round(v)])), ms_per_chunk: +(up.wall_s * 1000 / nChunks).toFixed(1) },
-      verify: { ...ver, ok, MBps: +(mb / ver.wall_s).toFixed(3), insn_per_byte: +(ver.insn / bytes).toFixed(1), work_insn_per_byte: work(ver, bytes), busy_insn_per_byte: +(ver.busy_insn / bytes).toFixed(1), rtf: ver.audio_s === null ? null : +(ver.audio_s / ver.wall_s).toFixed(3) },
+      upload: {
+        ...up,
+        MBps: +(mb / up.wall_s).toFixed(3),
+        insn_per_byte: +(up.insn / bytes).toFixed(1),
+        work_insn_per_byte: work(up, bytes),
+        busy_insn_per_byte: +(up.busy_insn / bytes).toFixed(1),
+        rtf: up.audio_s === null ? null : +(up.audio_s / up.wall_s).toFixed(3),
+      },
+      transport: {
+        ...Object.fromEntries(Object.entries(putStat).map(([k, v]) => [k, Math.round(v)])),
+        ms_per_chunk: +((up.wall_s * 1000) / nChunks).toFixed(1),
+      },
+      verify: {
+        ...ver,
+        ok,
+        MBps: +(mb / ver.wall_s).toFixed(3),
+        insn_per_byte: +(ver.insn / bytes).toFixed(1),
+        work_insn_per_byte: work(ver, bytes),
+        busy_insn_per_byte: +(ver.busy_insn / bytes).toFixed(1),
+        rtf: ver.audio_s === null ? null : +(ver.audio_s / ver.wall_s).toFixed(3),
+      },
     }),
   );
   await session.delete(path).catch(() => {});
