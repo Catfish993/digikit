@@ -539,6 +539,11 @@ const SCENES = [
   { name: 'empty', q: 'mode=modules&dev=empty', size: WIDE },
   { name: 'empty-samples', q: 'mode=samples&dev=empty', size: WIDE },
   { name: 'error', q: 'mode=modules&dev=error', size: WIDE },
+  // ---- the Remote page against the Emulator page's faceplate: the same test pattern on the 128 x 64 screen ----
+  { name: 'remote-wide', q: 'page=remote', size: WIDE, steps: async (p) => p.wait(800) },
+  { name: 'remote-narrow', q: 'page=remote', size: MIN, steps: async (p) => p.wait(800) },
+  { name: 'emulator-faceplate-wide', q: 'page=emulator', size: WIDE },
+  { name: 'emulator-faceplate-narrow', q: 'page=emulator', size: MIN },
 ];
 
 if (args.includes('--list')) {

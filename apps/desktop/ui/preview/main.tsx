@@ -8,9 +8,32 @@ import '@web/styles/site.css';
 import '../src/console.css';
 import '../src/native.css';
 import { installNativeFeel } from '../src/native';
+import LivePanel from '@web/components/LivePanel';
+import { panels } from '@web/data/faceplates';
+import RemotePage from '../src/RemotePage';
 import TransferPage from '../src/TransferPage';
 import { setLocalFolder, setMode } from '../src/transfer-state';
+import { installRemoteMock, testPattern } from './remote-mock';
 import { SAMPLES_ROOT, control, sim } from './sim';
+
+// ?page=transfer (default) | remote | emulator: the Emulator page shows the faceplate only (the real one needs the emulator) with the same
+// markup as ../src/Console.tsx, to put its screen next to the Remote page's.
+const page = new URLSearchParams(location.search).get('page') ?? 'transfer';
+if (page === 'remote') installRemoteMock();
+const emulatorFaceplate = () => (
+  <div class="emu-row">
+    <main class="stage" aria-label="front panel">
+      <div class="surface">
+        <LivePanel
+          panel={panels.dn2}
+          runtime={() => undefined}
+          onError={() => {}}
+          ref={(api) => queueMicrotask(() => api.showFrame(testPattern()))}
+        />
+      </div>
+    </main>
+  </div>
+);
 
 installNativeFeel();
 setMode(sim.mode);
@@ -31,18 +54,24 @@ render(
           <button type="button" class="side toggle" aria-label="Collapse the sidebar">
             <span>«</span>
           </button>
-          <button type="button" class="side">
+          <button type="button" class={page === 'emulator' ? 'side on' : 'side'}>
             <span>Emulator</span>
           </button>
-          <button type="button" class="side on" aria-current="page">
+          <button type="button" class={page === 'transfer' ? 'side on' : 'side'}>
             <span>Transfer</span>
           </button>
-          <button type="button" class="side">
+          <button type="button" class={page === 'remote' ? 'side on' : 'side'}>
             <span>Remote</span>
           </button>
         </nav>
         <div class="content">
-          <TransferPage />
+          {page === 'remote' ? (
+            <RemotePage fallbackDevice="dn2" />
+          ) : page === 'emulator' ? (
+            emulatorFaceplate()
+          ) : (
+            <TransferPage />
+          )}
         </div>
       </div>
     </div>
