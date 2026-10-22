@@ -13,6 +13,7 @@ name = "plusdrive_format"
 path = "src/lib.rs"
 
 [dependencies]
+dksample = { path = "../../dksample" }
 emmc-card = { path = "../card" }
 device-profile = { path = "../device-profile" }
 dt2-firmware-loader = { path = "../loader" }

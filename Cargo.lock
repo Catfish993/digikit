@@ -1129,6 +1129,10 @@ name = "dkrt-sdk"
 version = "0.1.0"
 
 [[package]]
+name = "dksample"
+version = "0.1.0"
+
+[[package]]
 name = "dkupload"
 version = "0.1.0"
 dependencies = [
@@ -3162,6 +3166,7 @@ name = "plusdrive-format"
 version = "0.1.0"
 dependencies = [
  "device-profile",
+ "dksample",
  "dt2-firmware-loader",
  "emmc-card",
  "sha2",

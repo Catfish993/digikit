@@ -243,6 +243,12 @@ kind = "encoder"
 codes = [9]
 layout = "single"
 
+# Where the Transfer page puts content (docs/plans/storage.md): `samples` is "stock-rpc" (the device's own MidiRpc file commands: the +Drive, which its sample browser lists)
+# or "digikit" (the `samples/` folder of the digikit store, the runtime's SysEx); `modules` is "digikit" (the store's `modules/` folder).
+[storage]
+samples = "stock-rpc"
+modules = "digikit"
+
 # Where the card keeps things (finding 14 "MmcFs slots", finding 23 S6). Read by packages/emulator/device-profile and
 # used by the +Drive builder, reader and exporter (packages/emulator/plusdrive); sectors are 512 bytes. Every pool is
 # linear: slot n is at base_sector + n * stride_sectors, so the firmware's clamped formulas are base + stride * n.

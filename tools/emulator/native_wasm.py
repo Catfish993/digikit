@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Build the portable native runtime for the browser without changing toolchains.
 
-Writes four files:
+Writes five files:
   apps/web/public/patchkit.wasm
       The patch tool of packages/patchkit (C ABI, no firmware inside: ports and modules are passed in at run time).
   apps/web/public/dkupload.wasm
       The module upload protocol of packages/dkupload (C ABI, no firmware inside).
+  apps/web/public/dksample.wasm
+      The WAV to native sample converter of packages/dksample (plusdrive-format's, C ABI, no firmware inside).
   apps/web/public/emulator-core.wasm
       CF-only core (small), used for the normal boot.
   apps/web/.local/emulator-core-sharc.wasm
@@ -212,6 +214,7 @@ def build_small(name: str) -> None:
 
 build_patchkit()
 build_small("dkupload")
+build_small("dksample")
 if args.patchkit_only:
     raise SystemExit(0)
 

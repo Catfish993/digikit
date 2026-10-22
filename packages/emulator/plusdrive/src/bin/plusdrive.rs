@@ -1,13 +1,13 @@
 use device_profile::Registry;
 use plusdrive_format::{
-    EntryKind, ProjectSeed, TreeOptions, build_tree_image, card_layout, export::FileImage,
+    EntryKind, Fs, ProjectSeed, TreeOptions, build_tree_image, card_layout, export::FileImage,
     list_image, read_store, read_store_file, scan_folder, write_image_file,
 };
 use sha2::{Digest, Sha256};
 use std::{env, fs, path::PathBuf};
 
 fn usage() -> &'static str {
-    "usage: plusdrive build DIR -o NEW_IMAGE [--device dt2|dn2] [--syx FILE] [--no-project] [--capacity-blocks N] [--max-extent-pages N]\n       plusdrive ls IMAGE\n       plusdrive store ls IMAGE [--device dt2|dn2] [--cat PATH]\n       plusdrive export IMAGE [--overlay FILE] -o FOLDER [--out DIR] [--prune] [--with-working-project] [--device dt2|dn2]\n\nDIR is a plus_drive/<device> folder: files and folders map to the path filesystem (a .wav becomes a native\nsample named without the extension; any other file is copied byte for byte), .mmcfs/{projects,sounds,kits}/NNNN.bin\nare raw MmcFs slots, .mmcfs/boot/SSSSSS.bin are the project regions outside the pools (a boot copy replaces the\ngenerated boot project) and digikit/ goes to the module store (docs/design/digikit-store.md). A device without a\npath filesystem (DN2) takes only .mmcfs and digikit.\nThe card layout of --device (default dt2) comes from devices/*.toml [card].\nA boot project is seeded from a verified DT2 1.16 SysEx (--syx) when the folder holds a native sample."
+    "usage: plusdrive build DIR -o NEW_IMAGE [--device dt2|dn2] [--syx FILE] [--no-project] [--capacity-blocks N] [--max-extent-pages N]\n       plusdrive ls IMAGE\n       plusdrive fs ls IMAGE | fs cat IMAGE PATH\n       plusdrive store ls IMAGE [--device dt2|dn2] [--cat PATH]\n       plusdrive export IMAGE [--overlay FILE] -o FOLDER [--out DIR] [--prune] [--with-working-project] [--device dt2|dn2]\n\nDIR is a plus_drive/<device> folder: files and folders map to the path filesystem (a .wav becomes a native\nsample named without the extension; any other file is copied byte for byte), .mmcfs/{projects,sounds,kits}/NNNN.bin\nare raw MmcFs slots, .mmcfs/boot/SSSSSS.bin are the project regions outside the pools (a boot copy replaces the\ngenerated boot project) and digikit/ goes to the module store (docs/design/digikit-store.md). A device without a\npath filesystem (DN2) takes only .mmcfs and digikit.\nThe card layout of --device (default dt2) comes from devices/*.toml [card].\nA boot project is seeded from a verified DT2 1.16 SysEx (--syx) when the folder holds a native sample."
 }
 
 fn build(args: Vec<String>) -> Result<(), String> {
@@ -200,6 +200,42 @@ fn ls(path: PathBuf) -> Result<(), String> {
     }
     Ok(())
 }
+/// `plusdrive fs ls IMAGE`: the path filesystem (the +Drive) as `path`, size and `hash|1` (a folder: `/`); `plusdrive fs cat IMAGE PATH`: one
+/// file's bytes on stdout, the 16-byte trailer included (what the card holds; a RPC listing shows the size without it).
+fn fs_cmd(args: Vec<String>) -> Result<(), String> {
+    let (verb, image, path) = match args.as_slice() {
+        [v, i] if v == "ls" => (v, i, None),
+        [v, i, p] if v == "cat" => (v, i, Some(p.trim_start_matches('/').to_owned())),
+        _ => return Err(usage().into()),
+    };
+    let image = open_image(&PathBuf::from(image))?;
+    let fs = Fs::open(&image).map_err(|e| format!("no path filesystem: {e:?}"))?;
+    let walk = fs.walk();
+    let mut issues = Vec::new();
+    for node in &walk.nodes {
+        let name = String::from_utf8_lossy(&node.path).into_owned();
+        if verb == "ls" {
+            if node.record.is_dir() {
+                println!("{name}/\t0\t-");
+            } else {
+                println!("{name}\t{}\t{:08x}", node.record.size, node.record.hash);
+            }
+        } else if Some(&name) == path.as_ref() && !node.record.is_dir() {
+            let bytes = fs.read_content(&node.record, &mut issues)?;
+            use std::io::Write as _;
+            return std::io::stdout()
+                .write_all(&bytes)
+                .map_err(|e| e.to_string());
+        }
+    }
+    if verb == "cat" {
+        return Err(format!(
+            "{}: not in the path filesystem",
+            path.unwrap_or_default()
+        ));
+    }
+    Ok(())
+}
 fn main() {
     let mut args = env::args().skip(1);
     let command = args.next();
@@ -210,6 +246,7 @@ fn main() {
         Some("store") if rest.first().map(String::as_str) == Some("ls") => {
             store_ls(rest[1..].to_vec())
         }
+        Some("fs") => fs_cmd(rest),
         Some("ls") => {
             if rest.len() == 1 {
                 ls(PathBuf::from(&rest[0]))
