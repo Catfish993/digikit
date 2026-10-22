@@ -97,13 +97,15 @@ def group_of(contracts: dict[str, tuple[int, int]]) -> str:
 
 
 def candidates() -> list[str]:
-    """Module ids that can be run-time modules: not `core/*`, not a framework, and either `dynamic` or a raw ColdFire module."""
+    """Module ids that can be run-time modules: not `core/*`, not a framework, and `dynamic`, a raw ColdFire module or a service module
+    (`type = "service"`, a .dkm with the service contract, like digikit/remote). Machines and effects that are patched in (not `dynamic`)
+    and the effects without a ColdFire object do not pack to a .dkm: they stay out. The packer decides the rest (`repo_rows`)."""
     out = []
     for mid, d in sorted(modroots.manifests().items()):
         m = tomllib.loads((d / "module.toml").read_text())["module"]
         if mid.startswith("core/") or m.get("type") == "framework":
             continue
-        if m.get("dynamic") or m.get("type") == "raw":
+        if m.get("dynamic") or m.get("type") in ("raw", "service"):
             out.append(mid)
     return out
 
