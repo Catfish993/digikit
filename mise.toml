@@ -45,6 +45,10 @@ description = "Build a device's ready snapshot from the .syx alone: mise run emu
 
 # --- web panel ---
 
+[tasks."ui:preview"]
+run = "pnpm --filter @digi/desktop exec vite --config ui/preview/vite.config.ts"
+description = "Serve the desktop UI pages in a browser (http://127.0.0.1:5199/) over a fake device and a fake samples folder; the state is in the address (?dev=ok|empty|noreply|error|slow&folder=files|empty|none&speed=3&mode=modules|samples); screenshots: node tools/devtools/ui_shots.mjs"
+
 [tasks.web]
 run = "pnpm dev"
 description = "Build the browser core (WASM) and serve the web panel (astro dev)"

@@ -86,6 +86,15 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `uv run python -m tools.devtools.test_outcomes run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
 | `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` | Compares outcomes and skip reasons test by test, following git renames | After moving or refactoring tests |
 
+## Desktop UI preview (look at a page before calling it done)
+
+Type checks and node tests do not show a misaligned row or a notice that appears at the wrong time. `mise run ui:preview` serves the desktop pages
+(apps/desktop/ui) in a browser at http://127.0.0.1:5199/ without the Tauri app: `@tauri-apps/api` and the two backends are replaced by the
+modules of apps/desktop/ui/preview (a fake device with modules and sample folders, a samples folder of about 20 WAVs, and a pace for uploads). The
+state is in the address (`?dev=ok|empty|noreply|error|slow&folder=files|empty|none&speed=MiB/s&mode=modules|samples`) and in `window.__sim`.
+`node tools/devtools/ui_shots.mjs --out DIR [--prefix before] [scene ...]` drives headless Chromium through the scenes (`--list`) and writes one PNG
+each, at 1440x900 and at the window minimum (700 px wide). Look at the pictures; run it before and after a UI change.
+
 ## Digikit boot scenarios (`tests/digikit`)
 
 The runtime loads its module set at boot, so what must hold about a module set is tested as scenarios: a TOML file names the device,

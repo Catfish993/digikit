@@ -1,0 +1,268 @@
+// The fake world of the UI preview: a device (modules and a samples tree), a samples folder on the computer, and how fast and how well the
+// device answers. The state can be set from the address (`?dev=empty&folder=files&speed=1.5`, see PARAMS) and while the page runs
+// (`window.__sim.set({ dev: 'noreply' })`), so a screenshot script (tools/devtools/ui_shots.mjs) reaches each state without clicking.
+import type { SampleEntry } from '@web/modules/samples';
+import type { LocalEntry } from '../src/samples-core';
+import type { TransferRow, TransferView } from '../src/transfer-core';
+
+/** dev: ok (answers), empty (nothing stored), noreply (never answers: the wait notice), error (every read fails), slow (2.5 s per read).
+ *  folder: files (the samples folder of ~20 WAVs), empty, none (no folder chosen yet). speed: MiB/s of an upload. */
+export interface SimState {
+  dev: 'ok' | 'empty' | 'noreply' | 'error' | 'slow';
+  folder: 'files' | 'empty' | 'none';
+  speed: number;
+  paused: boolean;
+  mode: 'modules' | 'samples';
+}
+
+export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode'] as const;
+
+const query = new URLSearchParams(location.search);
+export const sim: SimState = {
+  dev: (query.get('dev') as SimState['dev']) ?? 'ok',
+  folder: (query.get('folder') as SimState['folder']) ?? 'files',
+  speed: Number(query.get('speed') ?? 3),
+  paused: query.get('paused') === '1',
+  mode: (query.get('mode') as SimState['mode']) ?? 'modules',
+};
+
+export const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** What a read of the device costs and whether it works: the states of the wait notice and the error line. */
+export async function deviceRead(): Promise<void> {
+  switch (sim.dev) {
+    case 'noreply': {
+      // a real session over the mocked emulator capture, which never answers: the request waits, Cancel works, a timeout follows
+      const { session } = await import('../src/target');
+      await (await session()).info();
+      return;
+    }
+    case 'error':
+      throw new Error('The card is not mounted (preview: dev=error).');
+    case 'slow':
+      return delay(2500);
+    default:
+      return delay(120);
+  }
+}
+
+// ---- modules ----------------------------------------------------------------------------------------------------------------------
+
+interface LibModule {
+  id: string;
+  label: string;
+  group: TransferRow['group'];
+  version: string;
+  size: number;
+  test?: boolean;
+  warn?: string;
+}
+const KiB = 1024;
+const MiB = 1024 * KiB;
+export const LIBRARY: LibModule[] = [
+  { id: 'sine', label: 'Sine', group: 'Machines', version: '0.3.1', size: 180 * KiB },
+  { id: 'pluck', label: 'Pluck', group: 'Machines', version: '0.2.0', size: 420 * KiB },
+  {
+    id: 'wavetable',
+    label: 'Wavetable Voyager with a rather long display name',
+    group: 'Machines',
+    version: '1.0.0',
+    size: 1.4 * MiB,
+  },
+  {
+    id: 'fm4',
+    label: 'FM 4-op',
+    group: 'Machines',
+    version: '0.9.2',
+    size: 640 * KiB,
+    warn: 'arena 1.9 MiB is close to the free 2.0 MiB',
+  },
+  { id: 'chorus', label: 'Chorus', group: 'Effects', version: '0.4.0', size: 260 * KiB },
+  { id: 'tuner', label: 'Tuner', group: 'Tools', version: '0.1.0', size: 90 * KiB },
+  { id: 'test-noise', label: 'Noise test', group: 'Machines', version: '0.0.1', size: 70 * KiB, test: true },
+];
+const pathOf = (id: string) => `modules/${id}.dkm`;
+
+interface DevFile {
+  path: string;
+  size: number;
+  /** The same bytes as the library's build. */
+  same: boolean;
+  loaded: boolean;
+}
+const device = new Map<string, DevFile>();
+function resetDevice(): void {
+  device.clear();
+  if (sim.dev === 'empty') return;
+  device.set(pathOf('sine'), { path: pathOf('sine'), size: 180 * KiB, same: true, loaded: true });
+  device.set(pathOf('pluck'), { path: pathOf('pluck'), size: 400 * KiB, same: false, loaded: false });
+  device.set(pathOf('chorus'), { path: pathOf('chorus'), size: 260 * KiB, same: true, loaded: false });
+  device.set('modules/old-experiment.dkm', {
+    path: 'modules/old-experiment.dkm',
+    size: 55 * KiB,
+    same: false,
+    loaded: false,
+  });
+}
+resetDevice();
+
+/** The merged list the Transfer page shows (`TransferView`), from the library and the device's files. */
+export function view(): TransferView {
+  if (sim.dev === 'empty' && device.size === 0) {
+    // nothing stored yet, but the library is there
+  }
+  const modules: TransferRow[] = LIBRARY.map((m) => {
+    const f = device.get(pathOf(m.id));
+    return {
+      id: m.id,
+      path: pathOf(m.id),
+      name: m.id,
+      label: m.label,
+      group: m.group,
+      test: !!m.test,
+      version: m.version,
+      file_size: m.size,
+      arena: 96 * KiB,
+      dsp: 0,
+      on_card: f ? (f.same ? 'yes' : 'other version') : 'no',
+      loaded: !!f?.loaded,
+      warnings: m.warn ? [m.warn] : undefined,
+    } as TransferRow;
+  });
+  const known = new Set(LIBRARY.map((m) => pathOf(m.id)));
+  const card_only: TransferRow[] = [...device.values()]
+    .filter((f) => !known.has(f.path))
+    .map((f) => ({
+      id: null,
+      path: f.path,
+      name: f.path.split('/').pop() as string,
+      group: 'Tools',
+      test: false,
+      version: null,
+      file_size: f.size,
+      on_card: 'yes',
+      loaded: f.loaded,
+    }));
+  return {
+    device: 'dt2',
+    runtime: '0.9.4',
+    free_bytes: 3.2 * 2 ** 30 - [...device.values()].reduce((a, f) => a + f.size, 0),
+    loaded: [...device.values()].filter((f) => f.loaded).map((f) => f.path),
+    modules,
+    card_only,
+  };
+}
+
+export const deviceFiles = device;
+export const libraryById = (id: string) => LIBRARY.find((m) => m.id === id);
+export { pathOf };
+
+// ---- samples ----------------------------------------------------------------------------------------------------------------------
+
+export const SAMPLES_ROOT = '/Users/em/Music/Samples';
+const WAVS = [
+  ['kick_808_long_tail', 2.4],
+  ['kick_punchy', 1.1],
+  ['snare_tight_01', 1.6],
+  ['snare_rimshot', 1.3],
+  ['hat_closed_a', 0.6],
+  ['hat_open_wide', 1.8],
+  ['clap_stack', 1.2],
+  ['tom_low', 2.2],
+  ['perc_conga_hi', 1.5],
+  ['perc_shaker_loop_120bpm', 3.9],
+  ['bass_sub_C1', 4.2],
+  ['bass_reese_growl_with_a_very_long_name_to_force_the_ellipsis_in_the_row_120bpm_Fm', 5.7],
+  ['lead_pluck_C3', 2.8],
+  ['pad_warm_swell', 6.1],
+  ['fx_riser_8bars', 5.2],
+  ['fx_impact_big', 3.3],
+  ['vox_chop_01', 1.9],
+  ['vox_chop_02', 2.1],
+  ['loop_amen_break_170', 4.6],
+  ['loop_dub_chords_90', 5.9],
+] as const;
+
+type Kind = 'converted' | 'native' | 'unchanged';
+interface LocalFile {
+  name: string;
+  size: number;
+  kind: Kind;
+}
+const top: LocalFile[] = [
+  ...WAVS.map(([n, mb]) => ({ name: `${n}.wav`, size: Math.round(mb * MiB), kind: 'converted' as Kind })),
+  { name: 'amen_slices.dksmp', size: Math.round(2.0 * MiB), kind: 'native' },
+  { name: 'notes.txt', size: 812, kind: 'unchanged' },
+];
+const subs: Record<string, LocalFile[]> = {
+  Drums: ['808_kick_a', '808_kick_b', '808_snare', '808_hat'].map((n) => ({
+    name: `${n}.wav`,
+    size: 900 * KiB,
+    kind: 'converted' as Kind,
+  })),
+  Vocals: ['ooh', 'aah', 'hey'].map((n) => ({ name: `${n}.wav`, size: 1.4 * MiB, kind: 'converted' as Kind })),
+};
+let added: LocalFile[] = [];
+
+const levelFiles = (rel: string): LocalFile[] => (rel === '' ? [...top, ...added] : (subs[rel] ?? []));
+
+/** The `local_list` of the preview's folder at `rel`. */
+export function listLocal(rel: string): LocalEntry[] {
+  if (sim.folder === 'empty') return [];
+  const folders: LocalEntry[] = rel === '' ? Object.keys(subs).map((name) => ({ name, kind: 'folder', size: 0 })) : [];
+  return [...folders, ...levelFiles(rel).map((f) => ({ name: f.name, kind: 'file' as const, size: f.size }))];
+}
+export const localKindOf = (rel: string): Kind | undefined => {
+  const i = rel.lastIndexOf('/');
+  return levelFiles(i < 0 ? '' : rel.slice(0, i)).find((f) => f.name === rel.slice(i + 1))?.kind;
+};
+export const localSizeOf = (rel: string): number => {
+  const i = rel.lastIndexOf('/');
+  return levelFiles(i < 0 ? '' : rel.slice(0, i)).find((f) => f.name === rel.slice(i + 1))?.size ?? 0;
+};
+
+// the device's sample folders
+const tree = new Map<string, SampleEntry[]>();
+function resetTree(): void {
+  tree.clear();
+  if (sim.dev === 'empty') return;
+  tree.set('', [
+    { name: 'Drums', kind: 'folder', size: 0 },
+    { name: 'Loops', kind: 'folder', size: 0 },
+    { name: 'init_tone', kind: 'file', size: 482 * KiB },
+  ]);
+  tree.set('Drums', [
+    { name: '808_kick_a', kind: 'file', size: 900 * KiB },
+    { name: 'snare_tight_01', kind: 'file', size: 1.6 * MiB },
+    { name: 'hat_closed_a', kind: 'file', size: 0.6 * MiB },
+  ]);
+  tree.set('Loops', [{ name: 'loop_amen_break_170', kind: 'file', size: 4.6 * MiB }]);
+}
+resetTree();
+export const sampleTree = tree;
+
+// ---- control from outside -----------------------------------------------------------------------------------------------------------
+
+/** What `window.__sim` offers a script. */
+export const control = {
+  sim,
+  /** Change the state; `dev` and `folder` reset what they stand for. */
+  set(next: Partial<SimState>): void {
+    Object.assign(sim, next);
+    if (next.dev) {
+      resetDevice();
+      resetTree();
+    }
+  },
+  /** A file appears in the samples folder (the folder poll or the focus read must show it). */
+  addLocal(name: string, size = 1.5 * MiB): void {
+    added = [...added, { name, size, kind: name.endsWith('.wav') ? 'converted' : 'unchanged' }];
+  },
+  /** A file of the top level disappears. */
+  removeLocal(name: string): void {
+    const i = top.findIndex((f) => f.name === name);
+    if (i >= 0) top.splice(i, 1);
+    added = added.filter((f) => f.name !== name);
+  },
+  counts: { localList: 0, deviceRead: 0 },
+};
