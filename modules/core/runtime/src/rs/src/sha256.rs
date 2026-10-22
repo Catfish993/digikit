@@ -11,11 +11,33 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
+// The four sigma functions of FIPS 180-4 written as `(x ^ x >> a ^ x >> b) >> c ^ (x ^ x << d ^ x << e) << f`: the XOR of three rotations is the
+// XOR of three right shifts and three left shifts, and each triple is one shifted value of a two-step sum (the rotations of a word do not
+// overlap, so the OR of a rotation is the XOR). A ColdFire has no rotate: a rotation is two shifts, a move and an OR, and the factored form
+// takes about a quarter fewer instructions.
+/// Σ1(e) = rotr 6 ^ rotr 11 ^ rotr 25.
 #[inline(always)]
-fn rotr(x: u32, n: u32) -> u32 {
-    (x >> n) | (x << (32 - n))
+fn big1(e: u32) -> u32 {
+    ((e ^ (e >> 5) ^ (e >> 19)) >> 6) ^ ((e ^ (e << 14) ^ (e << 19)) << 7)
+}
+/// Σ0(a) = rotr 2 ^ rotr 13 ^ rotr 22.
+#[inline(always)]
+fn big0(a: u32) -> u32 {
+    ((a ^ (a >> 11) ^ (a >> 20)) >> 2) ^ ((a ^ (a << 9) ^ (a << 20)) << 10)
+}
+/// σ0(x) = rotr 7 ^ rotr 18 ^ shr 3.
+#[inline(always)]
+fn small0(x: u32) -> u32 {
+    ((x ^ (x >> 4) ^ (x >> 15)) >> 3) ^ ((x ^ (x << 11)) << 14)
+}
+/// σ1(y) = rotr 17 ^ rotr 19 ^ shr 10.
+#[inline(always)]
+fn small1(y: u32) -> u32 {
+    ((y ^ (y >> 7) ^ (y >> 9)) >> 10) ^ ((y ^ (y << 2)) << 13)
 }
 
+/// `repr(C)`: `h` first and 4-byte aligned, so `buf` (offset 32) is too, and `block` reads its words whole.
+#[repr(C)]
 pub struct Sha {
     h: [u32; 8],
     buf: [u8; 64],
@@ -42,10 +64,19 @@ impl Sha {
     unsafe fn block(&mut self, p: *const u8) {
         let mut w = [0u32; 16];
         let mut i = 0;
-        while i < 16 {
-            let q = p.add(i * 4);
-            w[i] = ((*q as u32) << 24) | ((*q.add(1) as u32) << 16) | ((*q.add(2) as u32) << 8) | (*q.add(3) as u32);
-            i += 1;
+        if cfg!(target_endian = "big") && (p as usize) & 3 == 0 {
+            // the ColdFire is big-endian: a long read is the message word (4 instructions a word less than four byte reads)
+            let q = p as *const u32;
+            while i < 16 {
+                w[i] = *q.add(i);
+                i += 1;
+            }
+        } else {
+            while i < 16 {
+                let q = p.add(i * 4);
+                w[i] = ((*q as u32) << 24) | ((*q.add(1) as u32) << 16) | ((*q.add(2) as u32) << 8) | (*q.add(3) as u32);
+                i += 1;
+            }
         }
         let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = self.h;
         let k = K.as_ptr();
@@ -53,11 +84,11 @@ impl Sha {
         macro_rules! rnd {
             ($a:ident, $b:ident, $c:ident, $d:ident, $e:ident, $f:ident, $g:ident, $h:ident, $kw:expr, $w:expr) => {{
                 let t1 = $h
-                    .wrapping_add(rotr($e, 6) ^ rotr($e, 11) ^ rotr($e, 25))
+                    .wrapping_add(big1($e))
                     .wrapping_add(($e & $f) ^ (!$e & $g))
                     .wrapping_add(*k.add($kw))
                     .wrapping_add($w);
-                let t2 = (rotr($a, 2) ^ rotr($a, 13) ^ rotr($a, 22)).wrapping_add(($a & $b) ^ ($a & $c) ^ ($b & $c));
+                let t2 = big0($a).wrapping_add(($a & $b) ^ ($a & $c) ^ ($b & $c));
                 $d = $d.wrapping_add(t1);
                 $h = t1.wrapping_add(t2);
             }};
@@ -68,9 +99,9 @@ impl Sha {
                 let x = w[($j + 1) & 15];
                 let y = w[($j + 14) & 15];
                 w[$j] = w[$j]
-                    .wrapping_add(rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3))
+                    .wrapping_add(small0(x))
                     .wrapping_add(w[($j + 9) & 15])
-                    .wrapping_add(rotr(y, 17) ^ rotr(y, 19) ^ (y >> 10));
+                    .wrapping_add(small1(y));
             }};
         }
         // 16 rounds from round `$r`; `$s` is 1 when the schedule words are made first

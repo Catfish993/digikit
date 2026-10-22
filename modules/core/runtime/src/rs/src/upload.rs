@@ -119,6 +119,23 @@ fn up() -> &'static mut Up {
 unsafe fn unpack(src: *const u8, n: usize, dst: *mut u8) -> usize {
     let mut i = 0;
     let mut o = 0;
+    // whole groups (a collector and seven bytes) with the shifts as constants: about a third of the instructions of the loop below,
+    // which every byte of a DATA chunk went through
+    while i + 8 <= n {
+        let c = *src.add(i) as u32;
+        let s = src.add(i + 1);
+        let d = dst.add(o);
+        *d = (*s & 0x7f) | (((c << 1) & 0x80) as u8);
+        *d.add(1) = (*s.add(1) & 0x7f) | (((c << 2) & 0x80) as u8);
+        *d.add(2) = (*s.add(2) & 0x7f) | (((c << 3) & 0x80) as u8);
+        *d.add(3) = (*s.add(3) & 0x7f) | (((c << 4) & 0x80) as u8);
+        *d.add(4) = (*s.add(4) & 0x7f) | (((c << 5) & 0x80) as u8);
+        *d.add(5) = (*s.add(5) & 0x7f) | (((c << 6) & 0x80) as u8);
+        *d.add(6) = (*s.add(6) & 0x7f) | (((c << 7) & 0x80) as u8);
+        i += 8;
+        o += 7;
+    }
+    // the last, short group
     while i < n {
         let c = *src.add(i);
         i += 1;
