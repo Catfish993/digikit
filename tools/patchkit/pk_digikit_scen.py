@@ -181,6 +181,9 @@ class Ctx:
         self.store = pk_device.store_of(
             self.env.device
         )  # the store area of this device
+        self.live_card: str | None = (
+            None  # the card file of the last `live_boot` (the DT2's)
+        )
         self.store_writes: set[int] = set()
         self.all_writes: set[int] = set()
         self.used_cards: set[str] = set()
@@ -1372,6 +1375,7 @@ def live_boot(c: Ctx, tag: str = "", patch_set: str | None = None) -> tuple[Any,
             samples = H.OUT / "samples"
             card_check.make_samples(samples)
             card = emu.call("card.load", dir=str(samples))["card"]
+            c.live_card = card
             emu.load(syx, runtime=True, start="auto", card=card, patch_set=patch_set)
         else:
             emu.load(syx, runtime=True, start="auto", patch_set=patch_set)
@@ -1479,6 +1483,98 @@ def run_live_svc(c: Ctx) -> None:
         c.check("a command nobody registered is E_PROTO", status == -60, str(status))
     finally:
         emu.__exit__(None, None, None)
+
+
+def run_live_samples(c: Ctx) -> None:
+    """A sample sent to the +Drive over the stock MidiRpc file commands by the TypeScript client (tools/devtools/samples_live.mjs, which also
+    converts a WAV with dksample.wasm and checks the firmware's content hash against the host's), on a free-running Digitakt II. Then the card:
+    the guest's writes laid over the card, read by `plusdrive fs`, hold the file the card builder makes of the same WAV, the host's bytes plus the
+    firmware's 16-byte trailer, with the hash the firmware reported in the record."""
+    import subprocess
+
+    from tools.emulator import card_overlay
+
+    out = c.work / "samples-out"
+    emu, _mirror = live_boot(c, "-samples")
+    try:
+        r = subprocess.run(
+            ["node", "tools/devtools/samples_live.mjs", emu.path, "--out", str(out)],
+            capture_output=True, text=True, cwd=ROOT, timeout=600,
+        )  # fmt: skip
+        lines = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        for ln in lines:
+            if "check" in ln:
+                c.check(f"client: {ln['check']}", ln["ok"], ln["detail"])
+        info = next((ln for ln in lines if "hash" in ln), {})
+        c.check(
+            "the client ran to the end and every check held",
+            r.returncode == 0 and bool(info),
+            r.stderr[-300:],
+        )
+        c.report["firmware_hash"] = info.get("hash")
+        c.report["compared"] = info.get("compared")
+        ov = c.work / "samples.ov.bin"
+        emu.call("card.overlay", path=str(ov))
+    finally:
+        emu.__exit__(None, None, None)
+    tools = c.env.tools
+    after = c.work / "samples-after.img"
+    card_overlay.apply(Path(c.live_card or ""), ov, after)
+
+    def cat(
+        image: Path, path: str
+    ) -> Any:  # the bytes of a file: `tools.run` returns text
+        return subprocess.run(
+            [str(tools.plusdrive), "fs", "cat", str(image), path],
+            capture_output=True, cwd=ROOT, env=python_env(),
+        )  # fmt: skip
+
+    got = cat(after, "/live/test")
+    sent = (out / "sent-test.bin").read_bytes()
+    c.check(
+        "the card holds the bytes sent plus a 16-byte zero trailer",
+        got.returncode == 0 and got.stdout == sent + bytes(16),
+        f"{len(got.stdout)} bytes, sent {len(sent)}",
+    )
+    folder = c.work / "built" / "plus_drive" / "dt2"
+    folder.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(out / "test.wav", folder / "test.wav")
+    built = c.work / "built.img"
+    b = tools.run(
+        tools.plusdrive, "build", folder, "-o", built, "--device", "dt2", "--no-project"
+    )
+    want = cat(built, "/test")
+    c.check(
+        "the card equals the file the +Drive build makes of the same WAV",
+        b.returncode == 0
+        and want.returncode == 0
+        and got.stdout == want.stdout
+        and len(want.stdout) > 0x50,
+        f"{len(got.stdout)} vs {len(want.stdout)} bytes {b.stderr[-200:]}",
+    )
+    ls = tools.run(tools.plusdrive, "fs", "ls", after)
+    row = next(
+        (
+            ln.split("\t")
+            for ln in ls.stdout.splitlines()
+            if ln.startswith("live/test\t")
+        ),
+        [],
+    )
+    c.check(
+        "the record's hash|1 and size (without the trailer) are the ones the client saw",
+        len(row) == 3
+        and int(row[2], 16) == info.get("hash")
+        and int(row[1]) == len(sent) + 16,
+        str(row),
+    )
+    c.check(
+        "the card keeps no deleted file (renamed.txt) and the text file is gone",
+        not any(
+            ln.startswith("live/notes.txt") or ln.startswith("live/renamed.txt")
+            for ln in ls.stdout.splitlines()
+        ),
+    )
 
 
 def run_live_input(c: Ctx) -> None:
@@ -1810,6 +1906,8 @@ def run_live(c: Ctx) -> None:
 
     if c.table().get("part") == "svc":
         return run_live_svc(c)
+    if c.table().get("part") == "samples":
+        return run_live_samples(c)
     if c.table().get("part") == "input":
         return run_live_input(c)
     if c.table().get("part") == "remote":

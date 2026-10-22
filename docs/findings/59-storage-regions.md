@@ -47,6 +47,17 @@ addressable sectors in the whitelist, 32 GB parts). Where the firmware writes, a
 **[C]** The claim in finding 23 S6 and `docs/design/digikit-store.md` that `0x38000..0x3E000` is "above every kit pool, below the sample area" and so free: it is below the 0x800000 line the crafted Data API reaches, and
 12 MiB cannot hold samples. The version 3 store (`docs/design/digikit-store.md`) uses the areas above. Nothing in the repository places a store at `0x500000` or `0x600000`; those numbers were only ever in conversation.
 
+## DT2 sample upload over MidiRpc, run in the emulator (step 4)
+
+Scenario `samples-live` (DT2 1.17, free-running daemon, `tools/devtools/samples_live.mjs` drives the TypeScript client over the control socket; 24 checks, 58 s). **[D]** run once; nothing here is **[V]**.
+
+- **[D]** A 44.1 kHz WAV converted by `dksample.wasm` (4410 frames become 4800), sent in three chunks to `/live/test`, closed with the byte count, is listed by ReadDir with the size sent and read by
+  `plusdrive fs cat` from the guest's card writes: the bytes sent plus 16 zero bytes, equal to the file `plusdrive build` makes of the same WAV.
+- **[D]** The firmware's `hash|1` (ReadDir, GetFileInfoV2, the card record) is `content_hash(bytes sent ++ 16 zero bytes) | 1`. The host computes the same over what it sent. A changed byte on the host side, and a path the device does not have, report failed.
+  What is compared: the firmware's hash of the stored file with the host's hash of the bytes sent and the zero trailer. The trailer of a file written over MidiRpc is zeros in the emulator; on a real device it is **[O]** (a trailer with other bytes would make every verify fail, and the fallback is a read-back).
+- **[C]** `OpenFileForWrite` needs the leading slash (a bare name fails and leaves a folder); finding 25's and `docs/MIDI-SYSEX-RPC.md` section 11's "no leading slash" holds only inside a folder. Details in section 12 there.
+- **[O]** `ReadFileV1` answered status 0 for every layout tried, so no read-back exists; the hash check does not need one.
+
 ## Open
 
 - **[O]** The `StorageSpace` reply length (17 bytes here, 20 seen once on a real device): settle it with a capture (`docs/MIDI-SYSEX-RPC.md`, section 12).

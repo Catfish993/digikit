@@ -27,7 +27,11 @@ Facts: `docs/findings/59-storage-regions.md`, `docs/MIDI-SYSEX-RPC.md` section 1
    sample): the hash now runs as the chunks arrive and END compares it; the block function is unrolled (about 120 instructions a byte); VERIFY reads the card and takes a range, so a host checks a large file in
    pieces. A folder entry is dropped when something is stored inside it (folders with files are implied). Scenario `upload-folders` (both devices): MKDIR, prefix paging (40 entries), a streamed 6 MiB upload,
    delete frees space and the next file takes the first gap, CAPACITY STORE, ranged VERIFY, +Drive round trip.
-4. [ ] DT2 samples: the TS MidiRpc file client, the wasm WAV converter, a DT2 scenario.
+4. [x] DT2 samples: the TS MidiRpc file client (`apps/web/src/modules/rpcfiles.ts`, over `DkSession.rpc`), the converter and hash as one crate (`packages/dksample`, shared by `plusdrive-format`, built to
+   `apps/web/public/dksample.wasm`; `apps/web/src/modules/dksample.ts`), profile `[storage]` (`samples = "stock-rpc"` DT2, `"digikit"` DN2, `modules = "digikit"`; `Registry::storage`), `plusdrive fs ls|cat`,
+   scenario `samples-live` (full tier; `tools/devtools/samples_live.mjs`), node tests `rpcfiles` and `dksample`. Decisions: a WAV is converted, a native file goes without its trailer, any other file unchanged. The upload is
+   verified by the firmware's `hash|1` against the host's hash over the bytes sent and a 16-byte zero trailer (proved in the emulator, not on a device). Findings: leading slash needed, one writer, no ReadFileV1 yet
+   (finding 59, `docs/MIDI-SYSEX-RPC.md` section 12). Not done: the on-device sample browser check (needs menu navigation, not cheap), the page using the client (step 6).
 5. [ ] DN2 samples through the store, and a scenario.
 6. [ ] Workbench Samples tab and the backend choice; the Card panel.
 7. [ ] Proofs on both devices (module install, load, delete in the new area; the capacity check with a small emulated card), this plan, the cookbook.

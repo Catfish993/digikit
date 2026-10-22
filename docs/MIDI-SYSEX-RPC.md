@@ -492,30 +492,32 @@ debug console dispatch       0x400cae8c ; #WRITE name table 0x400cab40
 
 ## 12. The FsSample file commands on the DT2 1.17 (the +Drive over MidiRpc) **[D]**
 
-Decoded statically on DT2 1.17 (2026-10-22, lane tasks-images, plan `docs/plans/storage.md`, finding 59) and cross-read with earlier write logs. Not run on a real device **[O]**; nothing here is **[V]**.
+Decoded statically on DT2 1.17 (2026-10-22, lane tasks-images, plan `docs/plans/storage.md`, finding 59) and cross-read with earlier write logs. Run once in the emulator (scenario `samples-live`, the TypeScript client `apps/web/src/modules/rpcfiles.ts`): the corrections below are marked **[C]**, the runs **[D]**. Not run on a real device **[O]**; nothing here is **[V]**.
 These are the commands the Transfer app uses to put samples into the +Drive (the ekFS path filesystem on the card, `0x5D8000..0x2DF017F`). Framing is section 11: `F0 00 20 3C 10 00 <8-in-7 body> F7`, body
 `seq16 00 00 type payload`; the reply type is `type | 0x80`. All integers are big-endian. **In every FsSample reply the status byte 1 means OK.** A path is a C-string of under 256 bytes.
 
 | Command | Type | Request payload | Reply payload |
 | --- | --- | --- | --- |
-| ReadDir | `0x10` | C-string path | repeated entries to the end of the message: `u32 hash\|1`, `u32 size-16`, `u8 flag`, `u8 type` (`'D'` or `'F'`), C-string name; `.` and `..` are skipped |
-| StorageSpace | `0x05` | `u8 drive` | `u8 status`, `u64 free`, `u64 total` (17 bytes here; 20 was seen once on a real device, settle with a capture **[O]**) |
+| ReadDir | `0x10` | C-string path | **no status byte**; repeated entries to the end of the message: `u32 hash\|1`, `u32 size-16`, `u8 flag`, `u8 type` (`'D'` or `'F'`), C-string name; `.` and `..` are skipped |
+| StorageSpace | `0x05` | `u8 drive` | `u8 status`, `u64 free`, `u64 total` (17 bytes here; 20 was seen once on a real device, settle with a capture **[O]**). **[D]** Drive 1 is the +Drive; drive 0 answers status 0 |
 | CreateDir | `0x11` | path (`mkdir -p`) | `u8 status` |
 | DeleteDir | `0x12` | path (empty directories only) | `u8 status` |
 | DeleteFile | `0x20` | path | `u8 status` |
 | RenameFile | `0x21` | old path, new path (two C-strings) | `u8 status` |
-| GetFileInfo | `0x22`, `0x28` | path | found, `size-16`, id or hash |
-| OpenFileForRead | `0x30` | path | `u8 status`, `u32 id`, `u32 size-16` |
-| CloseFileReader | `0x31` | `u32 handle` | `u32 id`, `u32 size-16` |
-| ReadFileV1 | `0x32` | `u32 handle`, `u32 offset` (sequential), `u32 len` | `u8 status`, `u32 handle`, `u32 offset`, `u32 len`, `u32 pos`, data |
-| OpenFileForWrite | `0x40` | `u32` (any value), then the name with no leading slash | `u8 status`, `u32 handle` |
-| CloseFileWriter | `0x41` | `u32 handle` **and** `u32` data byte count | `u8 status`, `u32 id`, `u32 size-16` |
+| GetFileInfo | `0x22`, `0x28` | path | `0x28`: `u8 found` (1 = a file), `u32 size-16`, `u32 hash\|1` **[D]**; not found: `0` and zeros |
+| OpenFileForRead | `0x30` | path | `u8 status`, `u32 id`, `u32 size-16` **[D]** (the id is the record id) |
+| CloseFileReader | `0x31` | `u32 handle` | `u32 id`, `u32 size-16`, **no status byte** **[D]**; it ignores the handle |
+| ReadFileV1 | `0x32` | `u32 handle`, `u32 offset` (sequential), `u32 len` | `u8 status`, `u32 handle`, `u32 offset`, `u32 len`, `u32 pos`, data. **[O]** In the emulator it answered status 0 and no data for every handle (the open's id, 0 to 8), offset order and length tried, on a factory file and on a file written over MidiRpc; the layout is not settled and the client has no read |
+| OpenFileForWrite | `0x40` | `u32` (any value), then the path **with a leading slash** | `u8 status`, `u32 handle` |
+| CloseFileWriter | `0x41` | `u32 handle` **and** `u32` data byte count | `u8 status`, `u32 id`, `u32 size-16` (**[D]** the id is the record id, not the hash; the size is the byte count sent) |
 | WriteFileV1 | `0x42` | `u32 handle`, `u32 len`, `u32 offset` (sequential), data | `u8 status`, `u32 pos` |
 
-- **"size-16"** is the size of the data without the 16-byte trailer the firmware appends when it closes a file (it also hashes the file; the hash is the file's id).
+- **"size-16"** is the size of the data without the 16-byte trailer the firmware appends when it closes a file. It also hashes the file (read back from the card) and keeps `hash|1` in the record; `ReadDir` and `GetFileInfoV2` report it. **[D]** The hash is `content_hash(bytes sent ++ 16 zero bytes) | 1`: the trailer of a file written over MidiRpc is zeros, so the host can compute it (`packages/dksample`, `verifyWritten` in `rpcfiles.ts`). A different byte changes it.
 - **The close request.** `CloseFileWriter` takes the handle **and** the number of data bytes written. Earlier tools sent only the handle; the length check then fails and the close returns an error status. **[C]** to
   any tool that closes with the handle alone.
-- **An idle writer** (no `WriteFileV1` for 20 s) is closed by the firmware's own timer, and a half-written file is what the filesystem then holds.
+- **An idle writer** (no `WriteFileV1` for 20 s) is closed by the firmware's own timer, and a half-written file is what the filesystem then holds. Whether an abandoned writer blocks the next open until the timer runs out is **[O]** (not tried); the client closes a writer it abandons, to be safe.
+- **Paths [C] [D].** `OpenFileForWrite` of a bare name (`kick`) answers status 0 and makes a *folder* of that name; `/kick` and `/drums/kick` (the leading slash) work, with the folder made first (`CreateDir`, `mkdir -p`). The earlier "no leading slash, a name with a slash gets status 6" is wrong for 1.17 in the emulator. Non-ASCII names were not tried with a slash **[O]**. Overwriting a file keeps its record id. `RenameFile` moves between folders; `DeleteDir` of a non-empty folder and `DeleteFile` of a missing path answer status 0.
+- **Chunks [D].** WriteFileV1 with 2048, 4096 and 16384 data bytes all worked in the emulator (the limit is about 100 KiB, finding 42). What suits the real USB path is **[O]**.
 - **The sample format** is not converted by the firmware: the host sends the native file. A native sample is a 0x40-byte header (byte 1 = stereo flag, `+4` the length, `+8` the rate 48000, `+0x14` `0x7F`),
-  big-endian 16-bit PCM, and the 16-byte trailer the close adds. `packages/emulator/plusdrive/src/wav.rs` is the converter (WAV in, native file out).
+  big-endian 16-bit PCM, and the 16-byte trailer the close adds. `packages/dksample` is the converter (WAV in, native file out; `plusdrive-format` uses it, and `apps/web/public/dksample.wasm` is it for the browser and the desktop webview). A native file given to the client with its trailer goes without it.
 - **The sample browser** on the device lists every file in the +Drive with no filter. That is why the digikit modules are not stored there (`docs/design/digikit-store.md`).

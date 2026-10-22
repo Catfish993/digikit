@@ -1,0 +1,14 @@
+# A sample sent to the +Drive over the stock MidiRpc file commands (docs/MIDI-SYSEX-RPC.md section 12) by the TypeScript client (apps/web/src/modules/rpcfiles.ts) and the
+# wasm WAV converter (packages/dksample), on a free-running Digitakt II (the desktop app's setup). The client compares the firmware's content hash with the host's; the card,
+# read by `plusdrive fs`, holds the file the +Drive build makes of the same WAV (docs/plans/storage.md, step 4). Needs apps/web/public/dksample.wasm
+# (`uv run python -m tools.emulator.native_wasm --patchkit-only`) and node.
+[scenario]
+name = "samples-live"
+kind = "live"
+devices = ["dt2"]
+tier = "full"
+
+[live]
+part = "samples"
+modules = []
+settle_s = 12

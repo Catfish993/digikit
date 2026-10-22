@@ -502,16 +502,16 @@ export interface DkSessionOptions {
   chunk?: number;
 }
 
-const u32 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 4).getUint32(0);
+export const u32 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 4).getUint32(0);
 const u16 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 2).getUint16(0);
-const be32 = (n: number) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+export const be32 = (n: number) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
 const text = new TextEncoder();
 const cstr = (b: Uint8Array, at: number): [string, number] => {
   const end = b.indexOf(0, at);
   if (end < 0) throw new DkError({ error: 'malformed reply: string without NUL', kind: 'protocol' });
   return [new TextDecoder().decode(b.subarray(at, end)), end + 1];
 };
-const concat = (...parts: Uint8Array[]): Uint8Array => {
+export const concat = (...parts: Uint8Array[]): Uint8Array => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const p of parts) {
@@ -756,7 +756,12 @@ export class DkSession {
     return hexOf(b);
   }
   /** Is the file on the card the bytes of `data`? One ranged VERIFY per `piece` bytes, compared with the hash of the same range. */
-  async verifyFile(path: string, data: Uint8Array, piece = 1 << 20, onProgress: (done: number, total: number) => void = () => {}): Promise<boolean> {
+  async verifyFile(
+    path: string,
+    data: Uint8Array,
+    piece = 1 << 20,
+    onProgress: (done: number, total: number) => void = () => {},
+  ): Promise<boolean> {
     if (data.length === 0) return (await this.verify(path)) === (await hexSha256(data));
     for (let off = 0; off < data.length; off += piece) {
       const part = data.subarray(off, Math.min(data.length, off + piece));
@@ -839,26 +844,31 @@ export class DkSession {
   async remoteRelease(): Promise<void> {
     await this.ok(SERVICE_CMD.REMOTE_RELEASE, 'remote release');
   }
-  /** The firmware's own Screenshot (stock MidiRpc 0x04): the 1024 bytes of the OLED shadow buffer (`screenPixel`), taking its turn with the other requests. */
-  screen(): Promise<Uint8Array> {
+  /**
+   * One stock MidiRpc request and the payload of the reply of the same type, taking its turn with the other requests. It is sent once: a write that
+   * timed out may have been done, so the caller decides (`RpcFiles` does not repeat one).
+   */
+  rpc(type: number, payload: Uint8Array = new Uint8Array(), timeoutMs: number = this.timeoutMs): Promise<Uint8Array> {
     const next = this.turn.then(async () => {
-      const seq = this.takeSeq();
-      await this.t.send(rpcRequest(RPC_SCREENSHOT, seq));
-      const deadline = Date.now() + this.timeoutMs;
+      await this.t.send(rpcRequest(type, this.takeSeq(), payload));
+      const deadline = Date.now() + timeoutMs;
       for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
         const raw = await this.t.recv(left);
         if (!raw) break;
         const r = parseRpcReply(raw);
-        if (r && r[0] === RPC_SCREENSHOT) {
-          const shot = decodeScreen(r[1]);
-          if (shot) return shot.slice();
-          throw new DkError({ error: 'screen: unexpected Screenshot reply', kind: 'protocol' });
-        }
+        if (r && r[0] === type) return r[1].slice();
       }
-      throw new DkError({ error: 'no screenshot from the device', kind: 'timeout' });
+      throw new DkError({ error: `no reply to MidiRpc ${type.toString(16)} from the device`, kind: 'timeout' });
     });
     this.turn = next.catch(() => {});
     return next;
+  }
+
+  /** The firmware's own Screenshot (stock MidiRpc 0x04): the 1024 bytes of the OLED shadow buffer (`screenPixel`), taking its turn with the other requests. */
+  async screen(): Promise<Uint8Array> {
+    const shot = decodeScreen(await this.rpc(RPC_SCREENSHOT));
+    if (!shot) throw new DkError({ error: 'screen: unexpected Screenshot reply', kind: 'protocol' });
+    return shot.slice();
   }
 
   /** Upload one file (BEGIN, DATA chunks one after the other, END). `onProgress(sent, total)` follows each acknowledged chunk. */
