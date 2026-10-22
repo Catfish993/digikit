@@ -88,6 +88,7 @@ export const LIBRARY: LibModule[] = [
   },
   { id: 'chorus', label: 'Chorus', group: 'Effects', version: '0.4.0', size: 260 * KiB },
   { id: 'tuner', label: 'Tuner', group: 'Tools', version: '0.1.0', size: 90 * KiB },
+  { id: 'remote', label: 'Remote control', group: 'Tools', version: '0.1.0', size: 1032 },
   { id: 'test-noise', label: 'Noise test', group: 'Machines', version: '0.0.1', size: 70 * KiB, test: true },
 ];
 const pathOf = (id: string) => `modules/${id}.dkm`;
