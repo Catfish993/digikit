@@ -53,6 +53,7 @@ out/runs/verify/<stamp>/<step>.log. Exits 1 when any step failed.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import subprocess
@@ -286,6 +287,21 @@ FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
 # A change to the routing itself selects every step and the whole python plan: a routing bug
 # would otherwise drop coverage without anyone seeing it.
 SELF_BROAD = ("tools/devtools/verify.py", "tools/devtools/verify_route.py")
+# Paths that cannot change what the patchkit smoke matrix runs: the desktop console UI (TS, TSX, CSS, its
+# preview harness and tests), the web components and styles, the web node tests, and documentation. The
+# smoke step is skipped only when EVERY changed file matches one of these glob patterns (fnmatch; `*`
+# crosses `/`); one other file keeps it, so the matrix goldens cannot rot behind UI-only changes.
+# Left out on purpose: apps/web/src/pages and layouts (they read the gallery module data and the patch
+# page), apps/web/src/{patch,runtime,modules,data} (patchkit wasm, protocol client), apps/desktop/src-tauri,
+# and everything under tools/, modules/, packages/, devices/, sdk/, tests/ and the firmware tooling.
+UI_ONLY: tuple[str, ...] = (
+    "apps/desktop/ui/*",
+    "apps/web/src/components/*",
+    "apps/web/src/styles/*",
+    "apps/web/tests/*.mjs",
+    "docs/*",
+    "*.md",
+)
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
@@ -561,6 +577,13 @@ def python_tests(files: list[str], full: bool) -> list[str]:
     return [path for path, _ in python_test_plan(files, full)]
 
 
+def ui_only(files: list[str]) -> bool:
+    """Whether every changed file matches UI_ONLY (no file: False)."""
+    return bool(files) and all(
+        any(fnmatch.fnmatchcase(path, pattern) for pattern in UI_ONLY) for path in files
+    )
+
+
 def steps_for(files: list[str]) -> tuple[str, ...]:
     """The steps the changed files need, in gate order."""
     wanted: set[str] = set()
@@ -572,7 +595,9 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
             and any(path.startswith(triggers) for _, triggers, _ in PY_SUITES)
         ):
             wanted.add("python-tests")
-    if wanted:  # the patchkit smoke matrix runs whenever the gate runs anything (docs-only: nothing)
+    # the patchkit smoke matrix runs whenever the gate runs anything, except for UI-only change sets
+    # (docs-only: nothing at all)
+    if wanted and not ui_only(files):
         wanted.add("smoke")
     return tuple(s for s in STEPS if s in wanted)
 
@@ -1225,6 +1250,8 @@ def explain(
             note = f"  [{origin[path]}]" if origin and path in origin else ""
             print(f"  {path} -> {label} -> {', '.join(wanted) or 'no steps'}{note}")
     print(f"steps: {', '.join(steps) or 'nothing to run'}")
+    if per_file and steps and "smoke" not in steps and ui_only(files):
+        print("smoke: skipped, UI-only change")
     if "rust-tests" in steps:
         scope = ", ".join(rust_packages) if rust_packages else "whole workspace"
         print(f"rust-tests packages: {scope}")
