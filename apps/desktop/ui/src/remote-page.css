@@ -4,8 +4,8 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 0 12px;
+  gap: 6px;
+  padding: 10px 0 0;
   overflow-y: auto;
   background: #0f1012;
   color: var(--ink, #eceae5);
@@ -25,7 +25,8 @@
   flex: 1;
 }
 .remote-page .meta,
-.remote-page .dim {
+.remote-page .hint,
+.remote-page .head .dim {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--ink-3, #868b94);
@@ -41,6 +42,8 @@
   margin: 0;
   color: #ff8d7a;
 }
+/* `.dim` only inside the header: PanelArt's `.silk.dim` legends (the dotted Track/Mute brackets) once took a page-wide `.dim` rule (mono,
+   11.5px) and drew as large white dots. */
 /* The faceplate: the Emulator page's own .stage and .surface (console.css), so the panel has the same size and place. The stage takes the
    height the rows around it leave; it keeps room for a readable panel when the window is low and the page scrolls instead. */
 .remote-page .stage {
@@ -48,25 +51,8 @@
 }
 .remote-page .head,
 .remote-page .note,
-.remote-page .err,
-.remote-page .encoders,
-.remote-page .hint {
+.remote-page .err {
   margin-inline: 20px;
-}
-.remote-page .encoders {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  justify-content: center;
-}
-.remote-page .enc {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.remote-page .hint {
-  margin: 0;
-  text-align: center;
 }
 .remote-page .act {
   height: 26px;

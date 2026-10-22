@@ -42,7 +42,7 @@ setLocalFolder(sim.folder === 'none' ? '' : SAMPLES_ROOT);
 
 render(
   () => (
-    <div class="console">
+    <div class="console" style={{ '--accent': panels.dn2.accent, '--func-legend': panels.dn2.func_legend }}>
       <header class="topbar">
         <span class="path">
           UI preview: fake device (state in the address: ?dev=ok|empty|noreply|error|slow &amp; folder=files|empty|none
