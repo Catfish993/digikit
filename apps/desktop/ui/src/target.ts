@@ -2,6 +2,7 @@
 // uses the one selected here. The protocol client is the same in both cases (`DkSession`); only the transport differs.
 import { createSignal } from 'solid-js';
 import { DkSession } from '@web/modules/dkupload-core';
+import { instrument } from './activity';
 import { EmuUsbTransport, emulatorMode } from './desktop-transport';
 import { closeMidiPort, MidiPortTransport, openMidiPort } from './midi-transport';
 
@@ -36,6 +37,7 @@ export async function selectTarget(next: Target): Promise<void> {
   if (next.kind === 'midi') await openMidiPort(next.port);
   else if (opened) await closeMidiPort();
   opened = next.kind === 'midi' ? next.port : undefined;
+  cancelPending();
   shared = undefined;
   setTargetSignal(next);
   try {
@@ -50,17 +52,22 @@ export async function session(): Promise<DkSession> {
   const t = target();
   if (t.kind === 'emulator') {
     if ((await emulatorMode()) === 'paused') throw new Error(PAUSED);
-    return (shared ??= new DkSession(new EmuUsbTransport(), { timeoutMs: 6000 }));
+    return (shared ??= new DkSession(instrument(new EmuUsbTransport()), { timeoutMs: 6000 }));
   }
   if (opened !== t.port) {
     await openMidiPort(t.port);
     opened = t.port;
     shared = undefined;
   }
-  return (shared ??= new DkSession(new MidiPortTransport(), { timeoutMs: 6000 }));
+  return (shared ??= new DkSession(instrument(new MidiPortTransport()), { timeoutMs: 6000 }));
 }
 
 /** Drop the session (a failed port, a restarted device): the next request makes a new one. */
 export function resetSession(): void {
   shared = undefined;
+}
+
+/** Give up on every request of the session that waits for the device (the Cancel button); each fails with the `cancelled` error. */
+export function cancelPending(): void {
+  shared?.cancelPending();
 }

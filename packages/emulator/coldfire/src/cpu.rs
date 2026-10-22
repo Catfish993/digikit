@@ -147,14 +147,18 @@ pub enum Stop {
 ///
 /// Invalidation: every one of `Cpu`'s own memory-write call sites (there
 /// are exactly four: `write_at`'s memory arm, `push32`, `exception`'s frame
-/// push, and `MovemStore`) evicts the whole 4 KiB page a write landed in
-/// before issuing the write. Coarse -- a write anywhere in the page evicts
-/// every cached instruction in it, not just the touched word -- but exact
-/// per-instruction tracking would need a second index from byte address to
-/// the instructions overlapping it, for no benefit here (self-modifying
-/// code is rare and this only costs a re-decode, never a wrong answer).
-/// External DMA writes are invalidated by the machine owner through
-/// [`Cpu::invalidate_external_write`] before the next instruction executes.
+/// push, and `MovemStore`) clears the cached instructions that overlap the
+/// bytes a write touches before issuing the write: those that start up to 4
+/// bytes before it (an instruction is at most 6 bytes) through its last byte,
+/// which can be on the page before. A write to data that shares a page with
+/// code (a counter beside a loop) leaves the rest of the page cached. It used
+/// to evict the whole 4 KiB page, and re-creating one is a 64 KiB allocation
+/// and fill: the digikit health module's idle loop (`addq.l #1,counter; bra.s`
+/// with the counter in its own code page) evicted its page on every pass that
+/// was not skipped, millions of times a second during a SysEx upload, 16 % of
+/// the controller thread. External DMA writes are invalidated by the machine
+/// owner through [`Cpu::invalidate_external_write`] before the next
+/// instruction executes; those evict whole pages.
 const DC_PAGE_BITS: u32 = 12;
 const DC_PAGE_SIZE: u32 = 1 << DC_PAGE_BITS;
 const DC_PAGE_MASK: u32 = DC_PAGE_SIZE - 1;
@@ -180,9 +184,17 @@ impl DecodePage {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 struct DecodeCache {
     pages: Box<[Option<(u32, DecodePage)>]>,
+}
+
+/// The cache is not machine state: two cores that run the same code are equal whichever instructions each has decoded so far (a write that
+/// leaves its page cached, or a skipped idle pass that never decoded the loop's branch, must not make them differ).
+impl PartialEq for DecodeCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl Default for DecodeCache {
@@ -220,36 +232,80 @@ impl DecodeCache {
         entry.as_mut().unwrap().1.slots[slot] = Some(insn);
     }
 
-    /// Whether a write of `len` bytes (1-8) at `addr` would evict a cached
-    /// page, i.e. whether `invalidate(addr, len)` would change anything.
+    /// The first even offset at which a cached instruction can overlap a write of `len` bytes at `addr`: an instruction is 2, 4 or 6 bytes
+    /// and starts on an even address, so the one that reaches `addr` starts at `addr - 5` or later.
     #[inline]
-    fn covers(&self, addr: u32, len: u32) -> bool {
-        let last = addr.wrapping_add(len - 1);
-        let p0 = addr & !DC_PAGE_MASK;
-        let p1 = last & !DC_PAGE_MASK;
-        matches!(&self.pages[Self::page_index(p0)], Some((tag, _)) if *tag == p0)
-            || (p1 != p0
-                && matches!(&self.pages[Self::page_index(p1)], Some((tag, _)) if *tag == p1))
+    fn first_start(addr: u32) -> u32 {
+        addr.wrapping_sub(4) & !1
     }
 
-    /// Evict every decoded instruction in the 4 KiB page(s) a write of
-    /// `len` bytes (1-8: a byte/word/long EA write or an 8-byte exception
-    /// frame push) at `addr` touched -- at most 2 pages, when the write
-    /// straddles a page boundary.
+    /// Is some page of the starts a write of `len` bytes (1-8) at `addr` can touch cached? The usual case (data that no code shares a page
+    /// with) is one tag compare, as for a whole-page eviction.
+    #[inline]
+    fn page_cached(&self, addr: u32, len: u32) -> bool {
+        let lo = Self::first_start(addr);
+        let hi = addr.wrapping_add(len - 1);
+        let (p_lo, p_hi) = (lo & !DC_PAGE_MASK, hi & !DC_PAGE_MASK);
+        matches!(&self.pages[Self::page_index(p_lo)], Some((tag, _)) if *tag == p_lo)
+            || (p_hi != p_lo
+                && matches!(&self.pages[Self::page_index(p_hi)], Some((tag, _)) if *tag == p_hi))
+    }
+
+    /// Whether a write of `len` bytes (1-8) at `addr` would clear a cached instruction, i.e. whether `invalidate(addr, len)` would change
+    /// anything.
+    #[inline]
+    fn covers(&self, addr: u32, len: u32) -> bool {
+        if !self.page_cached(addr, len) {
+            return false;
+        }
+        let hi = addr.wrapping_add(len - 1) & !1;
+        let mut s = Self::first_start(addr);
+        loop {
+            let page = s & !DC_PAGE_MASK;
+            if let Some((tag, entries)) = &self.pages[Self::page_index(page)]
+                && *tag == page
+                && entries.slots[((s & DC_PAGE_MASK) >> 1) as usize].is_some()
+            {
+                return true;
+            }
+            if s == hi {
+                return false;
+            }
+            s = s.wrapping_add(2);
+        }
+    }
+
+    /// Clear the cached instructions a write of `len` bytes (1-8: a byte/word/long EA write or an 8-byte exception frame push) at
+    /// `addr` overlaps (see `first_start`); the page stays.
     #[inline]
     fn invalidate(&mut self, addr: u32, len: u32) {
-        let last = addr.wrapping_add(len - 1);
-        let p0 = addr & !DC_PAGE_MASK;
-        let p1 = last & !DC_PAGE_MASK;
-        let i0 = Self::page_index(p0);
-        if matches!(&self.pages[i0], Some((tag, _)) if *tag == p0) {
-            self.pages[i0] = None;
+        if !self.page_cached(addr, len) {
+            return;
         }
-        if p1 != p0 {
-            let i1 = Self::page_index(p1);
-            if matches!(&self.pages[i1], Some((tag, _)) if *tag == p1) {
-                self.pages[i1] = None;
+        let hi = addr.wrapping_add(len - 1) & !1;
+        let mut s = Self::first_start(addr);
+        loop {
+            let page = s & !DC_PAGE_MASK;
+            if let Some((tag, entries)) = &mut self.pages[Self::page_index(page)]
+                && *tag == page
+            {
+                entries.slots[((s & DC_PAGE_MASK) >> 1) as usize] = None;
             }
+            if s == hi {
+                break;
+            }
+            s = s.wrapping_add(2);
+        }
+    }
+
+    /// Evict the 4 KiB page that holds `page` (an address in it), for a write by something other than the CPU (DMA, a host-side poke),
+    /// whose extent can be any size.
+    #[inline]
+    fn invalidate_page(&mut self, page: u32) {
+        let page = page & !DC_PAGE_MASK;
+        let i = Self::page_index(page);
+        if matches!(&self.pages[i], Some((tag, _)) if *tag == page) {
+            self.pages[i] = None;
         }
     }
 }
@@ -331,10 +387,8 @@ pub struct Cpu {
     pub last_unimplemented: Option<Form>,
     /// Perf step 1's pre-decode cache; see `DecodeCache`'s doc comment. Not
     /// architectural state -- reset (`Cpu::new`/`reset`) always starts it
-    /// empty -- but included in the derived `PartialEq`/`Clone` like any
-    /// other field (no caller compares/clones a `Cpu` mid-run today; if one
-    /// starts to, an equality check that looks past this field would need
-    /// a manual `impl PartialEq` instead of the derive).
+    /// empty -- so `DecodeCache` compares equal to any other; it is cloned
+    /// with the rest (no caller clones a `Cpu` mid-run today).
     decode_cache: DecodeCache,
     /// Perf step 3's deferred N/Z/V; see `PendingNzv`'s doc comment. Not
     /// architectural state, same reasoning as `decode_cache`: always
@@ -560,7 +614,7 @@ impl Cpu {
         let last = addr.wrapping_add((len - 1) as u32) & !DC_PAGE_MASK;
         let mut page = first;
         loop {
-            self.decode_cache.invalidate(page, 1);
+            self.decode_cache.invalidate_page(page);
             if page == last {
                 break;
             }

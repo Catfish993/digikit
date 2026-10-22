@@ -19,7 +19,6 @@ const SETTINGS: u64 = 8;
 const YES: u64 = 10;
 const NO: u64 = 12;
 const PROJECT_SLOT_0: u64 = 0x58000;
-const STORE: u64 = 0x38000;
 
 fn wav(frequency: f64) -> Vec<u8> {
     let data: Vec<u8> = (0..2400)
@@ -181,11 +180,12 @@ fn a_saved_project_survives_quit_export_rebuild_and_boot() {
     let on_card = read_image(&image2, PROJECT_SLOT_0, project.len());
     assert_eq!(on_card, project, "project slot 0 on the new card");
     // The module store is on it too.
+    let area = plusdrive_format::card_layout("dt2").unwrap().store.unwrap();
     let store = plusdrive_format::read_store(
         &plusdrive_format::export::FileImage::open(&image2).unwrap(),
-        STORE,
-        0x6000,
-        0x3dffd,
+        area.first_sector,
+        area.store_limit(),
+        area.header_b(),
     )
     .unwrap()
     .expect("module store");

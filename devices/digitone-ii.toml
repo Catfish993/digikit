@@ -239,11 +239,18 @@ kind = "encoder"
 codes = [9]
 layout = "single"
 
+# Where the Transfer page puts content (docs/plans/storage.md): `samples` is "stock-rpc" (the device's own MidiRpc file commands: the +Drive, which its sample browser lists)
+# or "digikit" (the `samples/` folder of the digikit store, the runtime's SysEx); `modules` is "digikit" (the store's `modules/` folder).
+[storage]
+samples = "digikit"
+modules = "digikit"
+
 # Where the card keeps things (finding 14 "MmcFs slots", finding 23 S6). Read by packages/emulator/device-profile and
 # used by the +Drive builder, reader and exporter (packages/emulator/plusdrive); sectors are 512 bytes. DN2 1.11 has the
 # same project pool and records as the DT2 and smaller sound and kit slots, and no path filesystem (finding 23 S3).
 [card]
 header_sector = 0x0
+total_sectors = 0x2e1a000   # the card the firmware whitelists (the pSLC 32 GB part, finding 14); the store runs to its end
 table_sector = 0x800       # three WRITE-PROTECT bitmaps (bit set = padlock), 400 bytes (finding 35)
 
 # Projects: FUN_4012d7c2, block = ((slot + 0xb) & 0xff) << 15, as on the DT2.
@@ -290,12 +297,13 @@ sectors = 0x8000
 
 # No [card.path_fs]: no folder filesystem was found in the DN2 1.11 MAIN OS.
 
-# Module store: same range as the DT2 (finding 23 S6).
+# Module and sample store (docs/design/digikit-store.md, version 3): sectors [first_sector, end_sector). DN2: from 0x800000 (above everything the Data API reaches, and nothing stock writes at 0x458000 or above: finding 59) to the card end, about 22 GiB.
+# The last selection_sectors sectors hold the runtime's selection record; header copy B is the sector before them.
 [card.store]
-first_sector = 0x38000
-end_sector = 0x3e000
+first_sector = 0x800000
+end_sector = 0x2e1a000
 selection_sectors = 2      # the last two sectors: the digikit selection record (docs/design/digikit-store.md)
-header_b_sector = 0x3dffd  # store header copy B (version 2): the sector before the selection record; the store's files end before it
+header_b_sector = 0x2e19ffd  # store header copy B: the sector before the selection record; the store's files end before it
 
 # How a module's machines map onto this device (packages/patchkit/src/typed.rs lowers the typed sections of a
 # module.toml with it; `patchkit gen` writes the constants a DSP routine needs). Finding 02 (own pages) and 06.

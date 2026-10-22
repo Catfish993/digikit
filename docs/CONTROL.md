@@ -75,7 +75,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `cpu.exceptions` | `cpu_exceptions` | `call` |
 | `diagnostics` | | `call` |
 | `audio.report` | `audio` | `call` |
-| `state.digest` | `state_digest` | `call` |
+| `state.digest {arch?}` | `state_digest` | `call` |
 | `state.save {path}`, `state.load {path}` | `state_save`, `state_load` | `call` |
 | `pcm.tap` (`start`, `report`, `capture`, `capture_stop`) | `pcm_start`, `pcm_report` | `call` |
 | `cf.profile` | | `call`; only with the `cf-profile` feature |
@@ -128,6 +128,11 @@ a ColdFire-only daemon. The digikit ColdFire-only rigs (`tools/patchkit/pk_dkrt_
 their first cold boot at the main panel, keyed by the daemon binary, the image, the card and the environment, and restore it
 (about 0.3 s instead of a 6 s boot) for every later rig of the same key and for `reset()`.
 
+`state.digest {"arch": true}` leaves out the three counters of how the instructions were run (interpreted, idle skipped, RAM clear
+skipped): two runs that reach the same guest state by different paths (one instruction at a time, the batched loop, the idle skip) have
+the same digest. It is the oracle for a change to those paths: boot paused to a fixed `icount`, queue input, `run_until` fixed counts,
+compare the digests of a daemon built before the change with one built after.
+
 `--dsp zero --cf-snapshot FILE` (on `digi-emud` and the app) starts without a DSP: SSI paced, the DSPI2 peer
 answers zeros, the ColdFire state restored from the snapshot (about 2.2x real time). `status.dsp` is `"zero"`,
 `"sharc"` or `"none"`. `run_until {frames|audio_s}` is refused (no DSP session); `elapsed`, `icount` and `step`
@@ -157,7 +162,11 @@ instructions) apart (the optional params `chunk`, 1 to 384, and `period` change 
 the callback is the SysEx assembler, so the firmware's USB packet split is not in the path); `midi.usb.out` returns what the firmware passed to its USB transmit function (`FUN_40004734`, the
 MidiRpc replies as plain MIDI bytes). The first `midi.usb.in` or `midi.usb.out` starts the capture. A `.syx` MidiRpc request
 from `tools/device/devrpc.py build_request` goes in as it is. Errors: bad params when the image's USB callback cannot be
-resolved (known: DT2 1.16 and 1.17, DN2 1.11 and 1.12).
+resolved (known: DT2 1.16 and 1.17, DN2 1.11 and 1.12). While the next call is not due, or is due and waits for the interrupt mask
+(the audio interrupt), the batched fast path and the analytic idle skip run as they do with no input queued, up to the instruction at
+which the call is handed over (they ran one instruction at a time with any USB input queued, 135 ns an instruction; finding 43, "Upload speed"). The
+instruction at which each call is handed over, and the guest state, are the same (`state.digest {"arch": true}` equal at every checked point).
+The DIN input (`midi.in`) still keeps the one-instruction loop while bytes are queued.
 
 `pcm.tap` needs the coupled-audio build and a DSP session. `capture` and `capture_stop` have no wrapper.
 

@@ -154,10 +154,11 @@ def test_menu_calls_the_runtime_by_symbol():
 
 
 def test_the_menu_and_the_runtime_share_the_store_reader():
-    """One reader (`dkrt_sdk::store`): neither crate has its own table or header parser."""
+    """One reader (`dkrt_sdk::store`, used by the runtime): the menu asks the runtime for the list (`dkrt_store_list`) and has no table or header parser."""
     menu = (MODULE / "src/rs/src/lib.rs").read_text()
     rt = (ROOT / "modules/core/runtime/src/rs/src").glob("*.rs")
-    assert "store::open" in menu and 'b"DKST"' not in menu and "0x444b_5354" not in menu
+    assert "dkrt_store_list" in menu and "dkrt_store_read_sector" in menu
+    assert 'b"DKST"' not in menu and "0x444b_5354" not in menu and "store::" not in menu
     assert not any("0x444b_5354" in f.read_text() for f in rt)
 
 

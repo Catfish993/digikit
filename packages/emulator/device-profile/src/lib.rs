@@ -54,6 +54,17 @@ pub struct DeviceProfile {
     /// RAM the emulator keeps across a soft reset (`[digikit] keep_base`, `keep_bytes`): the digikit runtime's crash record. The real
     /// device may or may not keep it **[O]** (docs/findings/46-digikit-debug.md); this is the model.
     pub keep_ram: Option<(u32, u32)>,
+    /// Which backend takes samples and modules (`[storage]`), for the Transfer page.
+    pub storage: Option<StorageProfile>,
+}
+
+/// `[storage]`: the backend of each kind of content. `samples`: "stock-rpc" (the device's MidiRpc file commands) or "digikit" (the digikit store).
+/// `modules`: "digikit".
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StorageProfile {
+    pub samples: String,
+    pub modules: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -187,6 +198,7 @@ struct SourceDocument {
     panel: Option<SourcePanel>,
     card: Option<CardLayout>,
     digikit: Option<SourceDigikit>,
+    storage: Option<StorageProfile>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -307,6 +319,7 @@ impl Registry {
                 keep_ram: parsed
                     .digikit
                     .and_then(|k| Some((k.keep_base?, k.keep_bytes?))),
+                storage: parsed.storage,
             });
         }
         Ok(Self { devices })
@@ -379,6 +392,14 @@ impl Registry {
             .iter()
             .find(|d| d.short == device)
             .and_then(|d| d.card.as_ref())
+    }
+
+    /// The `[storage]` backends of a device named by its short id.
+    pub fn storage(&self, device: &str) -> Option<&StorageProfile> {
+        self.devices
+            .iter()
+            .find(|d| d.short == device)
+            .and_then(|d| d.storage.as_ref())
     }
 
     /// The RAM range `(base, bytes)` a soft reset keeps in the emulator's model, for a device named by its short id.
@@ -790,20 +811,42 @@ mod tests {
             );
             assert!(layout.regions.iter().all(|r| r.sectors == 0x8000));
             let store = layout.store.as_ref().unwrap();
-            assert_eq!((store.first_sector, store.end_sector), (0x38000, 0x3e000));
+            assert_eq!(store.end_sector, layout.total_sectors);
+            assert_eq!(store.header_b(), store.end_sector - 3);
+            assert!(
+                store.first_sector > 0x457fff,
+                "the store lies above the MmcFs write guard"
+            );
         }
+        let registry = Registry::embedded().unwrap();
+        assert_eq!(registry.storage("dt2").unwrap().samples, "stock-rpc");
+        assert_eq!(registry.storage("dn2").unwrap().samples, "digikit");
+        assert!(
+            ["dt2", "dn2"]
+                .iter()
+                .all(|d| registry.storage(d).unwrap().modules == "digikit")
+        );
         assert_eq!(dt2.path_fs.as_ref().unwrap().superblock_sector, 0x5d8000);
         assert!(dn2.path_fs.is_none());
     }
 
     #[test]
     fn a_card_layout_with_overlapping_parts_is_rejected() {
-        let bad = DT2.replace("first_sector = 0x38000", "first_sector = 0x35000");
+        // the store starts inside the path filesystem (it ends at 0x2df0180)
+        let bad = DT2.replace("first_sector = 0x2df1000", "first_sector = 0x2df0000");
         let error = Registry::parse(&[("dt2", &bad)]).unwrap_err().to_string();
         assert!(
             error.contains("[card]") && error.contains("overlaps"),
             "{error}"
         );
+        // the store runs past the card, or header B is not the sector before the selection record
+        let bad = DT2.replace(
+            "end_sector = 0x2e1a000\nselection",
+            "end_sector = 0x2e1b000\nselection",
+        );
+        assert!(Registry::parse(&[("dt2", &bad)]).is_err());
+        let bad = DT2.replace("header_b_sector = 0x2e19ffd", "header_b_sector = 0x2e19ff0");
+        assert!(Registry::parse(&[("dt2", &bad)]).is_err());
         let bad = DT2.replace("bitmap_bytes = 16", "bitmap_bytes = 8");
         assert!(Registry::parse(&[("dt2", &bad)]).is_err());
     }

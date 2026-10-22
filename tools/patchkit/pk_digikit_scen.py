@@ -178,6 +178,12 @@ class Ctx:
         self.report: dict[str, Any] = {"scenario": scen.name, "image": image}
         self.imgs: dict[str, B.Img] = {}
         self.totals = {"emulators": 0, "write_events": 0, "flush_hits": 0}
+        self.store = pk_device.store_of(
+            self.env.device
+        )  # the store area of this device
+        self.live_card: str | None = (
+            None  # the card file of the last `live_boot` (the DT2's)
+        )
         self.store_writes: set[int] = set()
         self.all_writes: set[int] = set()
         self.used_cards: set[str] = set()
@@ -251,15 +257,22 @@ class Ctx:
         laid over a `base` card file (the card a scenario left behind). FOREIGN: sector images (absolute sector -> 512-byte multiple)
         written over the card, bytes that are not ours in the store range. Returns the cached file."""
         h = hashlib.sha256(self.image.encode())
+        # the store format and area are part of the key: a card built for another area or version is not this card
+        h.update(b"store-v3.1" + repr(self.store).encode())
         store_dir = self.env.folder / "digikit"
-        for f in sorted(x for x in store_dir.rglob("*") if x.is_file()):
-            h.update(str(f.relative_to(store_dir)).encode() + f.read_bytes())
+        for f in sorted(store_dir.rglob("*")):
+            if f.is_file():
+                h.update(str(f.relative_to(store_dir)).encode() + f.read_bytes())
+            elif f.is_dir() and not any(
+                f.iterdir()
+            ):  # an empty folder is a folder entry of the store
+                h.update(b"dir:" + str(f.relative_to(store_dir)).encode())
         a, b = recs if recs else (None, None)
         if recs is None and selection is not None:
             # a card laid over a base keeps the base's sticky machine types, as the menu's SELECT does (the new record is not a fresh card's)
             tmap = None
             if base is not None:
-                cur = B.current(B.records_in(base, b""))
+                cur = B.current(B.records_in(base, b"", self.env.device))
                 tmap = cur["map"] if cur else None
             a = b = B.make_record(selection, seq, counter, flags, stable_blocks, tmap)
         for x in (a, b):
@@ -280,7 +293,7 @@ class Ctx:
             else:
                 tmp = self.env.card(None, tag=key)
             if a is not None or b is not None:
-                B.write_record_sectors(tmp, a, b)
+                B.write_record_sectors(tmp, a, b, self.env.device)
             if foreign:
                 with open(tmp, "r+b") as f:
                     for s, data in sorted(foreign.items()):
@@ -346,7 +359,7 @@ class Ctx:
             str(t),
         )
         self.check("flush check over every boot: no hit", t["flush_hits"] == 0, str(t))
-        stray = sorted(self.store_writes - {B.SECTOR_A, B.SECTOR_B})
+        stray = sorted(self.store_writes - {self.store.sel_a, self.store.sel_b})
         self.check(
             "card writes in the store range: only the two selection sectors",
             not stray,
@@ -355,7 +368,7 @@ class Ctx:
         outside = sorted(
             x
             for x in self.all_writes
-            if x < FIRMWARE_FIRST and x not in (B.SECTOR_A, B.SECTOR_B)
+            if x < FIRMWARE_FIRST and x not in (self.store.sel_a, self.store.sel_b)
         )
         self.check(
             "card writes elsewhere: only the firmware's own working project and project slots (sectors from 0x50000)",
@@ -373,7 +386,7 @@ class Ctx:
             str(t),
         )
         self.check("flush check over every boot: no hit", t["flush_hits"] == 0, str(t))
-        lo, hi = B.STORE_FIRST, B.STORE_FIRST + B.STORE_SECTORS
+        lo, hi = self.store.first, self.store.end
         writes = self.all_writes | self.store_writes
         outside = sorted(
             x
@@ -1362,6 +1375,7 @@ def live_boot(c: Ctx, tag: str = "", patch_set: str | None = None) -> tuple[Any,
             samples = H.OUT / "samples"
             card_check.make_samples(samples)
             card = emu.call("card.load", dir=str(samples))["card"]
+            c.live_card = card
             emu.load(syx, runtime=True, start="auto", card=card, patch_set=patch_set)
         else:
             emu.load(syx, runtime=True, start="auto", patch_set=patch_set)
@@ -1448,9 +1462,13 @@ def run_live_svc(c: Ctx) -> None:
         c.check(
             "a 150-byte body", status == 0 and body == bytes(range(150)), f"{status}"
         )
-        status, body = up.request(echo, bytes(200))
+        status, body = up.request(echo, bytes(range(250)))
         c.check(
-            "a body over 160 bytes is refused (E_MSG)",
+            "a 250-byte body", status == 0 and body == bytes(range(250)), f"{status}"
+        )
+        status, body = up.request(echo, bytes(300))
+        c.check(
+            "a body over 256 bytes is refused (E_MSG)",
             status == -50,
             f"{status}",
         )
@@ -1463,6 +1481,145 @@ def run_live_svc(c: Ctx) -> None:
         )
         status, _ = up.request(0x3D)
         c.check("a command nobody registered is E_PROTO", status == -60, str(status))
+    finally:
+        emu.__exit__(None, None, None)
+
+
+def run_live_samples(c: Ctx) -> None:
+    """A sample sent to the +Drive over the stock MidiRpc file commands by the TypeScript client (tools/devtools/samples_live.mjs, which also
+    converts a WAV with dksample.wasm and checks the firmware's content hash against the host's), on a free-running Digitakt II. Then the card:
+    the guest's writes laid over the card, read by `plusdrive fs`, hold the file the card builder makes of the same WAV, the host's bytes plus the
+    firmware's 16-byte trailer, with the hash the firmware reported in the record."""
+    import subprocess
+
+    from tools.emulator import card_overlay
+
+    out = c.work / "samples-out"
+    emu, _mirror = live_boot(c, "-samples")
+    try:
+        r = subprocess.run(
+            ["node", "tools/devtools/samples_live.mjs", emu.path, "--out", str(out)],
+            capture_output=True, text=True, cwd=ROOT, timeout=600,
+        )  # fmt: skip
+        lines = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        for ln in lines:
+            if "check" in ln:
+                c.check(f"client: {ln['check']}", ln["ok"], ln["detail"])
+        info = next((ln for ln in lines if "hash" in ln), {})
+        c.check(
+            "the client ran to the end and every check held",
+            r.returncode == 0 and bool(info),
+            r.stderr[-300:],
+        )
+        c.report["firmware_hash"] = info.get("hash")
+        c.report["compared"] = info.get("compared")
+        ov = c.work / "samples.ov.bin"
+        emu.call("card.overlay", path=str(ov))
+    finally:
+        emu.__exit__(None, None, None)
+    tools = c.env.tools
+    after = c.work / "samples-after.img"
+    card_overlay.apply(Path(c.live_card or ""), ov, after)
+
+    def cat(
+        image: Path, path: str
+    ) -> Any:  # the bytes of a file: `tools.run` returns text
+        return subprocess.run(
+            [str(tools.plusdrive), "fs", "cat", str(image), path],
+            capture_output=True, cwd=ROOT, env=python_env(),
+        )  # fmt: skip
+
+    got = cat(after, "/live/test")
+    sent = (out / "sent-test.bin").read_bytes()
+    c.check(
+        "the card holds the bytes sent plus a 16-byte zero trailer",
+        got.returncode == 0 and got.stdout == sent + bytes(16),
+        f"{len(got.stdout)} bytes, sent {len(sent)}",
+    )
+    folder = c.work / "built" / "plus_drive" / "dt2"
+    folder.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(out / "test.wav", folder / "test.wav")
+    built = c.work / "built.img"
+    b = tools.run(
+        tools.plusdrive, "build", folder, "-o", built, "--device", "dt2", "--no-project"
+    )
+    want = cat(built, "/test")
+    c.check(
+        "the card equals the file the +Drive build makes of the same WAV",
+        b.returncode == 0
+        and want.returncode == 0
+        and got.stdout == want.stdout
+        and len(want.stdout) > 0x50,
+        f"{len(got.stdout)} vs {len(want.stdout)} bytes {b.stderr[-200:]}",
+    )
+    ls = tools.run(tools.plusdrive, "fs", "ls", after)
+    row = next(
+        (
+            ln.split("\t")
+            for ln in ls.stdout.splitlines()
+            if ln.startswith("live/test\t")
+        ),
+        [],
+    )
+    c.check(
+        "the record's hash|1 and size (without the trailer) are the ones the client saw",
+        len(row) == 3
+        and int(row[2], 16) == info.get("hash")
+        and int(row[1]) == len(sent) + 16,
+        str(row),
+    )
+    c.check(
+        "the card keeps no deleted file (renamed.txt) and the text file is gone",
+        not any(
+            ln.startswith("live/notes.txt") or ln.startswith("live/renamed.txt")
+            for ln in ls.stdout.splitlines()
+        ),
+    )
+
+
+def run_live_samples_store(c: Ctx) -> None:
+    """A sample sent into the `samples/` folder of the digikit store by the TypeScript samples API (tools/devtools/samples_store_live.mjs, which also
+    converts a WAV with dksample.wasm, checks VERIFY against the host's sha256, a delete, and a RESTART), on a free-running emulator whose profile
+    says `[storage] samples = "digikit"`. Then the card mirror: the folder the emulator keeps of the store holds the file the client sent."""
+    import subprocess
+
+    out = c.work / "samples-store-out"
+    storage = pk_device.load(c.env.device)["storage"]["samples"]
+    c.check(
+        'the device profile says [storage] samples = "digikit"',
+        storage == "digikit",
+        storage,
+    )
+    emu, mirror = live_boot(c, "-samples-store")
+    try:
+        r = subprocess.run(
+            ["node", "tools/devtools/samples_store_live.mjs", emu.path, "--out", str(out),
+             "--storage", storage, "--total-kib", str(c.store.limit // 2)],
+            capture_output=True, text=True, cwd=ROOT, timeout=900,
+        )  # fmt: skip
+        lines = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        for ln in lines:
+            if "check" in ln:
+                c.check(f"client: {ln['check']}", ln["ok"], ln["detail"])
+        res = next((ln for ln in lines if "sha256" in ln), {})
+        c.check(
+            "the client ran to the end and every check held",
+            r.returncode == 0 and bool(res),
+            r.stderr[-300:],
+        )
+        c.report["compared"] = res.get("compared")
+        synced = emu.call("card.sync")
+        mirrored = mirror / "digikit" / "samples" / "drums" / "test"
+        sent = (
+            (out / "stored-test.bin").read_bytes()
+            if (out / "stored-test.bin").is_file()
+            else b""
+        )
+        c.check(
+            "the card mirror holds the file the client sent (samples/drums/test)",
+            bool(sent) and mirrored.is_file() and mirrored.read_bytes() == sent,
+            f"{mirrored} {synced.get('files')}",
+        )
     finally:
         emu.__exit__(None, None, None)
 
@@ -1796,6 +1953,10 @@ def run_live(c: Ctx) -> None:
 
     if c.table().get("part") == "svc":
         return run_live_svc(c)
+    if c.table().get("part") == "samples":
+        return run_live_samples(c)
+    if c.table().get("part") == "samples-store":
+        return run_live_samples_store(c)
     if c.table().get("part") == "input":
         return run_live_input(c)
     if c.table().get("part") == "remote":

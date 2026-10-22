@@ -119,9 +119,21 @@ def crumb_text(w: int) -> str:
 # kind -> (name, argument names): `KINDS` and `GUARD_KINDS` come from sdk/sdk.toml (`dklog_kinds.py`). The argument words are as
 # `modules/core/runtime/src/rs/src` writes them; docs/findings/46-digikit-debug.md.
 K = {name: kid for kid, (name, _) in KINDS.items()}
-CARD_STATES = {0: "unknown", 1: "ours", 2: "blank", 3: "foreign", 4: "unreadable"}
+CARD_STATES = {
+    0: "unknown",
+    1: "ours",
+    2: "blank",
+    3: "foreign",
+    4: "unreadable",
+    5: "too small",
+}
 SAFE_REASONS = {1: "counter", 2: "key", 3: "flag"}
-REFUSAL = {1: "outside the store range", 2: "card read-only", 3: "claim failed"}
+REFUSAL = {
+    1: "outside the store range",
+    2: "card read-only",
+    3: "claim failed",
+    4: "card too small",
+}
 REGS = [f"d{i}" for i in range(8)] + [f"a{i}" for i in range(8)]
 VECTORS = {
     2: "access error",

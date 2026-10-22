@@ -107,8 +107,8 @@ def test_formatting_helpers():
     ]
     h |= {
         "flags": hp.F_MODULE | hp.F_CPU | hp.F_DSP | hp.F_HEAP | hp.F_STORE,
-        "store_used": 1536,
-        "store_free": 12578816,
+        "store_used": 2,  # KiB
+        "store_free": 12284,
         "cpu_x10": 370,
         "dsp_avg_x10": 520,
         "dsp_max_x10": 610,
@@ -125,7 +125,7 @@ def test_formatting_helpers():
         "LARGEST 4.1 MB",
         "ARENA FREE 511 KB",
         "DSP FREE 508 KB",
-        "STORE USED 1 KB",
+        "STORE USED 2 KB",
         "STORE FREE 11.9 MB",
     ]
 

@@ -34,7 +34,7 @@ Python API for the scenario suite (lane C builds on it; everything below is impo
         rig.restart()          # dkrt_restart, then the emulator's soft reset; returns when the new boot is ready
         rig.select_type(16, 7) # the machine list on the panel (DT2); rig.note(wav, B.M.TRIG_FRAME) plays TRIG 1, returns the PCM
     B.make_record(paths, seq=1, counter=0, flags=0)     # the 512 bytes of one record copy (the layout of docs/design/digikit-store.md)
-    B.write_record_sectors(card, copy_a, copy_b)        # raw sector images over the two record sectors of a card file
+    B.write_record_sectors(card, copy_a, copy_b, "dt2")  # raw sector images over the two record sectors of a card file of a device
 
 The record layout is in docs/design/digikit-store.md; the runtime's own view of the same bytes is `dkrt_sdk::sel`.
 """
@@ -76,10 +76,7 @@ RUNTIME_VERSION = (
 )
 SEL_MAGIC, SEL_VERSION = 0x444B534C, 1
 SEL_MAX, SEL_PATH = pk_device.contract_max()["sel_max"], 56
-_STORE = pk_device.store()  # devices/*.toml [card.store], the same on every device
-STORE_FIRST, STORE_SECTORS = _STORE.first, _STORE.sectors
-SECTOR_A, SECTOR_B = _STORE.sel_a, _STORE.sel_b
-HEADER_B = _STORE.header_b  # store header copy B (version 2)
+# The store area differs per device (devices/*.toml [card.store]): `pk_device.store_of(device)` has first, sectors, sel_a, sel_b and header_b (all absolute).
 CMD_CARD_PROBE, CMD_DEBUG = 7, 8
 CARD_FIELDS = [
     "state",
@@ -92,7 +89,14 @@ CARD_FIELDS = [
     "claims",
     "writes",
 ]  # DKRT_CARD of core/runtime (card.rs CardInfo)
-CARD_NAMES = {0: "unknown", 1: "ours", 2: "blank", 3: "foreign", 4: "unreadable"}
+CARD_NAMES = {
+    0: "unknown",
+    1: "ours",
+    2: "blank",
+    3: "foreign",
+    4: "unreadable",
+    5: "too small",
+}
 CRASH_FIELDS = [
     "found",
     "pc",
@@ -202,10 +206,13 @@ def parse_record(b: bytes) -> dict[str, Any] | None:
     }
 
 
-def write_record_sectors(card: Path, a: bytes | None, b: bytes | None) -> None:
-    """Write raw 512-byte sector images over the two record sectors of a card image file (None leaves one alone)."""
+def write_record_sectors(
+    card: Path, a: bytes | None, b: bytes | None, device: str
+) -> None:
+    """Write raw 512-byte sector images over the two record sectors of a card image file of DEVICE (None leaves one alone)."""
+    s = pk_device.store_of(device)
     with open(card, "r+b") as f:
-        for sector, data in ((SECTOR_A, a), (SECTOR_B, b)):
+        for sector, data in ((s.sel_a, a), (s.sel_b, b)):
             if data is not None:
                 f.seek(sector * 512)
                 f.write(data)
@@ -219,14 +226,19 @@ def current(recs: list[dict[str, Any] | None]) -> dict[str, Any] | None:
     return a
 
 
-def records_in(card_file: Path, overlay: bytes) -> list[dict[str, Any] | None]:
-    """The two record copies of a card image with an overlay (the bytes the guest wrote) laid over it."""
+def records_in(
+    card_file: Path, overlay: bytes, device: str
+) -> list[dict[str, Any] | None]:
+    """The two record copies of a card image of DEVICE with an overlay (the bytes the guest wrote) laid over it."""
     rec = 8 + 64 + 512
+    s = pk_device.store_of(device)
+    sel_a, sel_b = s.sel_a, s.sel_b
     secs: dict[int, bytearray] = {}
     with open(card_file, "rb") as f:
-        for sector in (SECTOR_A, SECTOR_B):
+        for sector in (sel_a, sel_b):
             f.seek(sector * 512)
-            secs[sector] = bytearray(f.read(512))
+            # a card image that ends before the area (no store built into it) reads as zeros there, as the emulated card does
+            secs[sector] = bytearray(f.read(512).ljust(512, b"\0"))
     for i in range(0, len(overlay), rec):
         sector = struct.unpack_from("<Q", overlay, i)[0]
         if sector in secs:
@@ -234,7 +246,7 @@ def records_in(card_file: Path, overlay: bytes) -> list[dict[str, Any] | None]:
             for j in range(512):
                 if mask[j // 8] & (1 << (j % 8)):
                     secs[sector][j] = body[j]
-    return [parse_record(bytes(secs[SECTOR_A])), parse_record(bytes(secs[SECTOR_B]))]
+    return [parse_record(bytes(secs[sel_a])), parse_record(bytes(secs[sel_b]))]
 
 
 @dataclass
@@ -255,7 +267,9 @@ class Env:
         self.tools = tools or Tools()
         work.mkdir(parents=True, exist_ok=True)
         self.folder = work / "plus_drive"
-        (self.folder / "digikit" / "modules").mkdir(parents=True, exist_ok=True)
+        (self.folder / "digikit").mkdir(
+            parents=True, exist_ok=True
+        )  # `digikit/modules` is made by the first pack
         self.stock = config.stock(DEVICE_SYX[image])
         self.cards = 0
 
@@ -265,6 +279,7 @@ class Env:
 
     def pack(self, module: str, file: str) -> Path:
         out = self.folder / "digikit" / "modules" / file
+        out.parent.mkdir(parents=True, exist_ok=True)
         self.tools.patchkit_run("pack", module, "--device", self.device, "-o", out)
         return out
 
@@ -275,6 +290,7 @@ class Env:
         src = specs / f"{file}.toml"
         src.write_text(spec)
         out = self.folder / "digikit" / "modules" / file
+        out.parent.mkdir(parents=True, exist_ok=True)
         self.tools.patchkit_run("synth-dkm", src, "--device", self.device, "-o", out)
         return out
 
@@ -294,7 +310,7 @@ class Env:
         build_card(self.tools, self.folder, path, self.stock, self.device)
         if selection is not None:
             rec = make_record(selection, seq, counter, flags, stable_blocks)
-            write_record_sectors(path, rec, rec)
+            write_record_sectors(path, rec, rec, self.device)
         return path
 
     def boot(
@@ -535,13 +551,13 @@ class BootRig(M.Rig):
         """The two copies as the card holds them now (the overlay of the running daemon over the image)."""
         ov = self.work / f"{self.tag}.sel-overlay.bin"
         self.emu.call("card.overlay", path=str(ov))
-        return records_in(self.card_path, ov.read_bytes())
+        return records_in(self.card_path, ov.read_bytes(), self.env.device)
 
     def card_store_writes(self) -> list[int]:
         """The sectors in the store range that the guest has written."""
         ov = self.work / f"{self.tag}.all-overlay.bin"
         self.emu.call("card.overlay", path=str(ov))
-        return arena_safety.card_store_hits(ov)
+        return arena_safety.card_store_hits(ov, self.env.device)
 
     def set_selection(self, paths: list[str]) -> int:
         return self.post(CMD_SELECT, "\0".join(paths) + "\0\0")
@@ -984,7 +1000,7 @@ class Proof:
             cases = cases[:2]
         for name, a, b, want_loaded, want_seq, want_copy in cases:
             card = e.card(None, tag="cut")
-            write_record_sectors(card, a, b)
+            write_record_sectors(card, a, b, e.device)
             with self.rig(self.run_img, card, "cut") as rig:
                 info = rig.boot_info()
                 self.check(
@@ -1088,7 +1104,8 @@ class Proof:
             self.check(
                 "flush check over every boot: no hit", wt["flush_hits"] == 0, str(wt)
             )
-            stray = sorted(self.store_writes - {SECTOR_A, SECTOR_B})
+            sel = pk_device.store_of(self.image[:3])
+            stray = sorted(self.store_writes - {sel.sel_a, sel.sel_b})
             self.check(
                 "the only store-range sectors the guest wrote are the two record sectors",
                 not stray,

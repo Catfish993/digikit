@@ -12,6 +12,7 @@ import {
   parseReply,
   restarted,
   splitMessages,
+  storeSpace,
 } from '../src/modules/dkupload-core.ts';
 import { CAP, CAPACITY_KINDS, CMD, LOG_KIND } from '../src/modules/gen_proto.ts';
 import {
@@ -53,6 +54,7 @@ const ST = { E_STATE: -53, E_NOFILE: -59, E_HASH: -56, E_FULL: -52, E_OFFSET: -5
 class FakeDevice {
   constructor() {
     this.files = new Map();
+    this.dirs = new Set(); // folders with nothing in them
     this.selection = [];
     this.seen = []; // the commands received, by name
     this.corrupt = false; // VERIFY answers a wrong hash
@@ -62,7 +64,8 @@ class FakeDevice {
     this.staged = null;
     this.log = [{ seq: 1, kind: LOG_KIND.BOOT_START, flags: 0, args: [516, 2, 0, 0, 0] }];
     this.queue = [];
-    this.free = 1 << 20;
+    this.free = 1 << 20; // INFO's u32 free_bytes
+    this.storeKib = null; // CAPACITY's STORE limit in KiB (null: the entry is left out); 1024 KiB are used
     this.pending = 0; // after a RESTART: requests that are still answered by the old boot before the reset
   }
   reply(cmd, seq, status, body = new Uint8Array()) {
@@ -116,11 +119,28 @@ class FakeDevice {
       }
       case CMD.LIST: {
         const first = new DataView(body.buffer, body.byteOffset).getUint32(0);
-        const all = [...this.files].sort(([a], [b]) => (a < b ? -1 : 1));
+        const prefix = body.length > 4 ? Buffer.from(body.subarray(4, body.length - 1)).toString() : '';
+        const all = [...this.files, ...[...this.dirs].map((d) => [d, new Uint8Array(0), true])]
+          .filter(([p]) => p.startsWith(prefix))
+          .sort(([a], [b]) => (a < b ? -1 : 1));
         const page = all.slice(first, first + this.pageSize);
         return ok(
-          concat(be32(all.length), [page.length], ...page.map(([p, d]) => concat(cs(p), be32(d.length), sha(d)))),
+          concat(
+            be32(all.length),
+            [page.length],
+            ...page.map(([p, d, dir]) => concat(cs(p), be32(d.length), dir ? new Uint8Array(32) : sha(d))),
+          ),
         );
+      }
+      case CMD.MKDIR: {
+        const [path] = this.pathOf(body);
+        if ([...this.files.keys()].some((f) => f === path || path.startsWith(`${f}/`))) return err(-51);
+        const exists = [...this.dirs, ...this.files.keys()].some((f) => f === path || f.startsWith(`${path}/`));
+        if (!exists) {
+          for (const d of this.dirs) if (path.startsWith(`${d}/`)) this.dirs.delete(d);
+          this.dirs.add(path);
+        }
+        return ok();
       }
       case CMD.BEGIN: {
         const [path, at] = this.pathOf(body);
@@ -144,12 +164,13 @@ class FakeDevice {
         if (!st) return err(ST.E_STATE);
         this.staged = null;
         if (st.data.length !== st.size || hex(sha(st.data)) !== hex(st.sha)) return err(ST.E_HASH);
+        for (const d of this.dirs) if (st.path.startsWith(`${d}/`)) this.dirs.delete(d);
         this.files.set(st.path, st.data);
         return ok();
       }
       case CMD.DELETE: {
         const [path] = this.pathOf(body);
-        return this.files.delete(path) ? ok() : err(ST.E_NOFILE);
+        return this.files.delete(path) || this.dirs.delete(path) ? ok() : err(ST.E_NOFILE);
       }
       case CMD.READ: {
         const [path, at] = this.pathOf(body);
@@ -161,9 +182,17 @@ class FakeDevice {
         return ok(concat(be32(f.length), f.subarray(off, off + len)));
       }
       case CMD.VERIFY: {
-        const [path] = this.pathOf(body);
+        const [path, at] = this.pathOf(body);
         const f = this.files.get(path);
         if (!f) return err(ST.E_NOFILE);
+        if (body.length > at) {
+          const dv = new DataView(body.buffer, body.byteOffset);
+          const off = dv.getUint32(at);
+          const len = dv.getUint32(at + 4);
+          if (off % 512 !== 0 || off >= f.length) return err(ST.E_OFFSET);
+          if (len === 0 || len > f.length - off) return err(-55);
+          return ok(sha(f.subarray(off, off + len)));
+        }
         return ok(this.corrupt ? sha(concat(f, [1])) : sha(f));
       }
       case CMD.SELECT: {
@@ -212,10 +241,11 @@ class FakeDevice {
           ),
         );
       }
-      case CMD.CAPACITY:
+      case CMD.CAPACITY: {
+        const store = this.storeKib === null ? [] : [[CAPACITY_KINDS.STORE], be32(this.storeKib), be32(1024), be32(0)];
         return ok(
           concat(
-            [1, 3],
+            [1, 3 + (this.storeKib === null ? 0 : 1)],
             [CAPACITY_KINDS.MODULES],
             be32(8),
             be32(this.loaded.length),
@@ -228,8 +258,10 @@ class FakeDevice {
             be32(1000),
             be32(0),
             be32(50),
+            ...store,
           ),
         );
+      }
       case CMD.LOG: {
         const from = new DataView(body.buffer, body.byteOffset).getUint32(0);
         const ev = this.log.filter((e) => e.seq >= from).slice(0, 3);
@@ -427,6 +459,23 @@ test('buildView reads the device: INFO, LIST, MODULES, CAPACITY and the headers 
   assert.ok(dev.seen.includes('READ') && dev.seen.includes('MODULES') && dev.seen.includes('CAPACITY'));
 });
 
+test('free space above 4 GiB: INFO saturates at 2^32 - 1, CAPACITY STORE (KiB) does not, and the view uses it', async () => {
+  const dev = new FakeDevice();
+  dev.free = 0xffffffff; // what the runtime sends for a 19 GiB store
+  dev.storeKib = 20_000_000; // 19 GiB: more than a u32 holds in bytes
+  const s = session(dev);
+  assert.equal((await s.info()).free_bytes, 4294967295);
+  assert.deepEqual((await s.capacity()).STORE, { limit: 20_000_000, used: 1024, largest: 0 });
+  assert.deepEqual(await storeSpace(s), { free: (20_000_000 - 1024) * 1024, total: 20_000_000 * 1024 });
+  const view = await buildView(s, []);
+  assert.equal(view.free_bytes, (20_000_000 - 1024) * 1024);
+  assert.ok(view.free_bytes > 2 ** 32);
+  // a runtime without the STORE entry (or without CAPACITY): INFO's bytes
+  dev.storeKib = null;
+  assert.deepEqual(await storeSpace(s), { free: 4294967295, total: null });
+  assert.equal((await buildView(s, [])).free_bytes, 4294967295);
+});
+
 test('install: skip the same sha256, upload the rest with capped progress, VERIFY each, no SELECT', async () => {
   const dev = new FakeDevice();
   const pluck = dkm('digikit/pluck', { machine: 1, size: 900 });
@@ -530,4 +579,50 @@ test('restart: RESTART, wait for the new boot in the log, then report what MODUL
   assert.ok(dev.seen.filter((c) => c === 'LOG').length >= 2);
   assert.equal(dev.log.length, 1);
   assert.equal(dev.log[0].kind, LOG_KIND.BOOT_START);
+});
+
+test('LIST by prefix pages through the matches; MKDIR makes a folder entry that a file replaces', async () => {
+  const dev = new FakeDevice();
+  const s = session(dev);
+  await s.put('modules/a.dkm', dkm('a'));
+  await s.put('samples/one.wav', new Uint8Array(1500).fill(1));
+  await s.put('samples/two.wav', new Uint8Array(700).fill(2));
+  await s.put('samples/three.wav', new Uint8Array(900).fill(3));
+  await s.mkdir('samples/empty');
+  await s.mkdir('samples/empty'); // exists: ok
+  const under = await s.list('samples/');
+  assert.deepEqual(
+    under.map((e) => [e.path, e.size]),
+    [
+      ['samples/empty', 0],
+      ['samples/one.wav', 1500],
+      ['samples/three.wav', 900],
+      ['samples/two.wav', 700],
+    ],
+  );
+  assert.equal(under[0].sha256, '0'.repeat(64));
+  assert.equal((await s.list()).length, 5);
+  await s.put('samples/empty/x.wav', new Uint8Array(512));
+  assert.deepEqual(
+    (await s.list('samples/empty')).map((e) => e.path),
+    ['samples/empty/x.wav'],
+  );
+  await assert.rejects(s.mkdir('modules/a.dkm'), (e) => e instanceof DkError && e.status === 'E_PATH');
+  await s.delete('samples/one.wav');
+  assert.equal((await s.list('samples/')).length, 3);
+});
+
+test('VERIFY of a range, and verifyFile in pieces', async () => {
+  const dev = new FakeDevice();
+  const s = session(dev);
+  const data = new Uint8Array(5000).map((_, i) => (i * 7) & 255);
+  await s.put('samples/a.wav', data);
+  assert.equal(await s.verify('samples/a.wav'), hex(sha(data)));
+  assert.equal(await s.verify('samples/a.wav', 1024, 2000), hex(sha(data.subarray(1024, 3024))));
+  assert.equal(await s.verifyFile('samples/a.wav', data, 1024), true);
+  const other = data.slice();
+  other[4999] ^= 1;
+  assert.equal(await s.verifyFile('samples/a.wav', other, 1024), false);
+  await assert.rejects(s.verify('samples/a.wav', 100, 10), (e) => e instanceof DkError && e.status === 'E_OFFSET');
+  assert.equal(await s.verifyFile('samples/a.wav', new Uint8Array(0), 1024), false); // the file is not empty
 });

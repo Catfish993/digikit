@@ -99,7 +99,7 @@ cites **[D]**, and the same offset is used. On the instrument the DN2's slot row
 Measured on a DN2 unit (OS 1.11) by dn2_firmware_explore, with a read-only USB probe (PEEK of the ColdFire's record copy at
 `0x800053a4`):
 
-- **The layout** (2026-10-07, one note held at a time, 10 to 20 reads each, `docs/waverider-pages34.md` there). The 32 rows
+- **The layout** (2026-10-07, one note held at a time, 10 to 20 reads each, `waverider-pages34.md` in its docs folder). The 32 rows
   of `0x54` bytes are the 32 samples of the block. Each row is 28 channels of 24 bits. Channels 0 to 19 are tracks 7 to 16,
   one stereo pair each (track t on channels 2 (t - 7) and 2 (t - 7) + 1).
 - **The other channels.** Channels 20 to 25 are three stereo buses that follow the effect sends. Channels 26 and 27 hold a

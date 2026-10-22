@@ -75,17 +75,22 @@ test('lost reply and lost request are retried', { skip }, async () => {
   assert.ok(files.every((f) => f.size === d.length));
 });
 
-test('E_FULL carries the free bytes; repack frees space; progress and cancel', { skip }, async () => {
+test('E_FULL carries the free bytes; delete frees space; repack; progress and cancel', { skip }, async () => {
   const { c } = await setup(100_000);
   const a = data(30_000, 1),
-    b = data(30_000, 2);
+    b = data(30_000, 2),
+    big = data(40_000, 3);
   await c.put('modules/a.dkm', a);
   await c.put('modules/b.dkm', b);
+  // a replacement takes the old file's space (store format 3)
   await c.put('modules/a.dkm', a);
-  await assert.rejects(c.put('modules/b.dkm', b), (e) => e.status === 'E_FULL' && e.freeBytes > 0);
+  await c.put('modules/b.dkm', b);
+  await assert.rejects(c.put('modules/big.dkm', big), (e) => e.status === 'E_FULL' && e.freeBytes > 0);
+  await c.delete('modules/a.dkm');
+  await c.put('modules/big.dkm', big);
   const listing = await c.list();
-  const lib = [{ path: 'modules/a.dkm', sha256: await hexSha256(a) }];
-  assert.deepEqual(repackMissing(listing, lib), ['modules/b.dkm']);
+  const lib = [{ path: 'modules/b.dkm', sha256: await hexSha256(b) }];
+  assert.deepEqual(repackMissing(listing, lib), ['modules/big.dkm']);
   await c.repack([
     { path: 'modules/a.dkm', data: a },
     { path: 'modules/b.dkm', data: b },

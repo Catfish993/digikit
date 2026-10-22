@@ -6,7 +6,7 @@ Runs a MAIN OS image in the native emulator (`regions_probe`) with a panel/MIDI 
   * the firmware's CPU stores and DMA never touch the module RAM `cf.expansion` (write-watch, from the first CACR
     write; docs/INSTRUMENTATION.md) and the canary pattern filled into it survives;
   * the card sectors the firmware wrote (the copy-on-write overlay) include none of the module store
-    (sectors 0x38000-0x3E000).
+    (the device's `[card.store]` area, docs/design/digikit-store.md).
 
     uv run python -m tools.coldfire.arena_safety run IMAGE SCRIPT [--card IMG] [--out DIR] [--watch-limit N]
     uv run python -m tools.coldfire.arena_safety list
@@ -35,13 +35,13 @@ from tools.firmware import config
 from tools.patchkit import pk_device
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-# The module store (docs/findings/23-digikit-runtime-spikes.md S6): sectors, hi exclusive.
-_STORE = pk_device.store()
-CARD_STORE = (
-    _STORE.first,
-    _STORE.first + _STORE.sectors,
-)  # devices/*.toml [card.store]
 SECTOR_RECORD = 8 + 64 + 512
+
+
+def card_store(device: str) -> tuple[int, int]:
+    """The module store area of a device (docs/design/digikit-store.md; devices/*.toml [card.store]): sectors, hi exclusive."""
+    s = pk_device.store_of(device)
+    return (s.first, s.end)
 
 
 def expansion(image: str) -> tuple[int, int]:
@@ -74,10 +74,12 @@ def parse_overlay(data: bytes) -> list[int]:
 
 
 def card_store_hits(
-    sectors, lo: int = CARD_STORE[0], hi: int = CARD_STORE[1]
+    sectors, device: str = "dt2", lo: int | None = None, hi: int | None = None
 ) -> list[int]:
-    """Sectors of the card overlay that lie in [lo, hi): the module store. `sectors` is a list of sector numbers, bytes
-    of an overlay file, or a path to one. An empty result is the pass."""
+    """Sectors of the card overlay that lie in [lo, hi) (default: the module store area of DEVICE). `sectors` is a list of sector
+    numbers, bytes of an overlay file, or a path to one. An empty result is the pass."""
+    if lo is None or hi is None:
+        lo, hi = card_store(device)
     if isinstance(sectors, (str, os.PathLike)):
         sectors = pathlib.Path(sectors).read_bytes()
     if isinstance(sectors, (bytes, bytearray)):
@@ -250,7 +252,7 @@ def run(
     )
     sectors = parse_overlay(overlay)
     facts["card_sectors"] = len(sectors)
-    facts["card_store_hits"] = card_store_hits(sectors)
+    facts["card_store_hits"] = card_store_hits(sectors, image[:3])
     facts["card_ranges"] = sector_ranges(sectors)
     facts["project_slots_touched"] = project_slots(sectors)
     facts["pc_hits"] = {r["pc"]: r["hits"] for r in lines if "pc" in r}
@@ -457,19 +459,20 @@ def table(results: list[dict]) -> str:
 def static_check(image: str, with_cf: bool = True) -> dict:
     """The static arena check of one image: every absolute reference the MAIN OS code makes into `cf.expansion` (cached
     view and the +0x08000000 uncached alias), and every immediate that looks like a sector or byte address of the module
-    store (CARD_STORE, as a sector number and as a byte offset), by a linear sweep (tools/coldfire/refscan.py), plus
+    store (the image's device area, as a sector number and as a byte offset), by a linear sweep (tools/coldfire/refscan.py), plus
     the call and data references into the range that the Ghidra-derived database knows (cf.py refs_to; skipped when the
     database is absent). A sweep cannot see computed addresses: `hits` empty is a lower bound, not a proof."""
     from tools.coldfire import refscan
 
     lo, hi = expansion(image)
+    store_lo, store_hi = card_store(image[:3])
     main = regions.load_main(image)
     base = regions.MAIN_BASE
     out: dict = {"image": image, "range": [lo, hi], "views": {}, "store": {}}
     for name, a, b, minv in (
         ("cached", lo, hi, 0x10000),
         ("uncached", lo + regions.ALIAS, hi + regions.ALIAS, 0x10000),
-        ("store_sector", CARD_STORE[0], CARD_STORE[1], 0x10000),
+        ("store_sector", store_lo, store_hi, 0x10000),
     ):
         hits, n, covered, swept = refscan.scan(
             main, base, base, base + len(main), a, b, minv
@@ -612,8 +615,13 @@ def main(argv=None) -> int:
     st.add_argument("--no-cf", action="store_true")
     c = sub.add_parser("card-check")
     c.add_argument("overlay")
-    c.add_argument("--lo", type=lambda s: int(s, 0), default=CARD_STORE[0])
-    c.add_argument("--hi", type=lambda s: int(s, 0), default=CARD_STORE[1])
+    c.add_argument(
+        "--device",
+        default="dt2",
+        help="the device whose store area is checked (default dt2)",
+    )
+    c.add_argument("--lo", type=lambda s: int(s, 0), default=None)
+    c.add_argument("--hi", type=lambda s: int(s, 0), default=None)
     a = ap.parse_args(argv)
     if a.cmd == "list":
         for n in sorted(SCRIPTS_BY_NAME):
@@ -627,10 +635,12 @@ def main(argv=None) -> int:
             pathlib.Path(a.json).write_text(json.dumps(res, indent=1))
         return 0
     if a.cmd == "card-check":
-        hits = card_store_hits(a.overlay, a.lo, a.hi)
+        lo, hi = card_store(a.device)
+        lo, hi = lo if a.lo is None else a.lo, hi if a.hi is None else a.hi
+        hits = card_store_hits(a.overlay, a.device, lo, hi)
         print(
             "sectors in [%#x, %#x): %d %s"
-            % (a.lo, a.hi, len(hits), "PASS" if not hits else "FAIL")
+            % (lo, hi, len(hits), "PASS" if not hits else "FAIL")
         )
         return 1 if hits else 0
     if a.cmd == "suite":

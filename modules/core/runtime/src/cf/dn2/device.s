@@ -1,4 +1,4 @@
-/* core/runtime: the device object. The id, the name and the PEEK ranges are the device file's (digitone-ii.toml [digikit] id, name and peek) through
+/* core/runtime: the device object. The id, the name, the store area and the PEEK ranges are the device file's (digitone-ii.toml [digikit] id, name and peek) through
  * build/gen/device-dn2.inc, which `patchkit gen` writes. */
     .include "device-dn2.inc"
     .section .rodata
@@ -16,3 +16,10 @@ dkrt_peek_n:
 dkrt_peek_ranges:
     .long PEEK_LO_0, PEEK_HI_0, PEEK_LO_1, PEEK_HI_1
     .long PEEK_LO_2, PEEK_HI_2, PEEK_LO_3, PEEK_HI_3
+    /* the store area (docs/design/digikit-store.md): the first card sector and the number of sectors, [card.store] */
+    .globl dkrt_store_first
+dkrt_store_first:
+    .long STORE_FIRST
+    .globl dkrt_store_sectors
+dkrt_store_sectors:
+    .long STORE_SECTORS

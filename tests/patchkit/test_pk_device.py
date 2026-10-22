@@ -21,18 +21,19 @@ def module(mid: str) -> dict:
 
 
 def test_the_store_geometry_is_the_device_files() -> None:
-    s = pk_device.store()
     for dev in pk_device.digikit_devices():
+        s = pk_device.store_of(dev)
         card = pk_device.load(dev)["card"]["store"]
         assert s.first == card["first_sector"]
         assert s.first + s.sectors == card["end_sector"]
         assert s.header_b == card["header_b_sector"]
         assert (s.sel_a, s.sel_b) == (card["end_sector"] - 2, card["end_sector"] - 1)
         assert card["selection_sectors"] == 2
-    from tools.patchkit import pk_dkrt, pk_dkrt_boot
-
-    assert (s.sel_a, s.sel_b) == (pk_dkrt.SECTOR_A, pk_dkrt.SECTOR_B)
-    assert (s.first, s.header_b) == (pk_dkrt_boot.STORE_FIRST, pk_dkrt_boot.HEADER_B)
+        # the store lies above the MmcFs write guard and ends with the card (finding 59)
+        assert s.first > 0x457FFF
+        assert s.end == pk_device.load(dev)["card"]["total_sectors"]
+    # the two devices have different areas: the runtime reads its own from the device object
+    assert pk_device.store_of("dt2").first != pk_device.store_of("dn2").first
 
 
 def test_dynreg_reserves_one_machine_row_per_run_time_type() -> None:

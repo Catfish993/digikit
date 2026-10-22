@@ -17,7 +17,12 @@ import {
   rowStatus,
   progressFraction,
   startProgress,
-  stateText,
+  deviceTags,
+  freeText,
+  infoLine,
+  localTags,
+  MODES,
+  parseMode,
   warningText,
 } from '../../desktop/ui/src/transfer-core.ts';
 
@@ -85,10 +90,6 @@ test('texts', () => {
   assert.equal(eventText({ event: 'done', restarted: true, loaded: ['x', 'y'] }), 'Restarted. Loaded: x, y');
   assert.equal(eventText({ event: 'done', restarted: true, loaded: [] }), 'Restarted. No module is loaded.');
   assert.equal(eventText({ event: 'error', message: 'paused' }), 'Error: paused');
-  assert.equal(stateText(view.modules[0]), 'loaded');
-  assert.equal(stateText(view.modules[1]), 'not on card');
-  assert.equal(stateText({ ...view.modules[1], on_card: 'yes' }), 'on card');
-  assert.equal(stateText({ ...view.modules[1], on_card: 'other version' }), 'other version on card');
   assert.equal(warningText(view.modules[2]), 'arena: needs 5, largest free 1');
   assert.equal(warningText(view.modules[0]), '');
 });
@@ -203,8 +204,9 @@ test('delete: the ticked card files, the button label, the done text', () => {
   // a file that is not on the card (an Available row) or gone since is dropped
   assert.deepEqual(deletePaths(view, new Set(['modules/sine.dkm', 'modules/gone.dkm'])), []);
   assert.equal(deleteLabel(0, false), 'Delete');
-  assert.equal(deleteLabel(2, false), 'Delete 2');
-  assert.equal(deleteLabel(2, true), 'Confirm delete 2');
+  assert.equal(deleteLabel(2, false), 'Delete (2)');
+  assert.equal(deleteLabel(2, true), 'Confirm delete (2)');
+  assert.equal(deleteLabel(0, true), 'Delete', 'nothing ticked: no count and nothing to confirm');
   assert.equal(deleteDoneText(view, ['modules/junk.dkm']), 'Deleted 1 file.');
   // pluck is loaded: it stays loaded until the restart
   assert.equal(
@@ -235,4 +237,57 @@ test('the delete progress: one step per path, active then done, text from the ev
   ev({ event: 'error', message: 'E_FULL' });
   assert.equal(p.modules[0].state, 'failed');
   assert.equal(progressFailed(p), true);
+});
+
+test('the tags: only what says something; the usual state has none', () => {
+  const [pluck, sine0] = view.modules;
+  const sine = { ...sine0, test: false };
+  const texts = (tags) => tags.map((t) => t.text);
+  // On your computer: what the device holds of a module, a test build, a fit warning
+  assert.deepEqual(texts(localTags({ ...sine, on_card: 'no' })), [], 'not on the device is the usual state');
+  assert.deepEqual(texts(localTags({ ...sine, on_card: 'yes' })), ['on device']);
+  assert.deepEqual(texts(localTags({ ...sine, on_card: 'other version' })), ['differs']);
+  assert.match(localTags({ ...sine, on_card: 'other version' })[0].title, /Install replaces it/);
+  assert.deepEqual(texts(localTags({ ...sine0, test: true, on_card: 'yes' })), ['test', 'on device']);
+  const fit = localTags({ ...sine, warnings: ['arena 2 MiB is more than the free 1 MiB'] });
+  assert.deepEqual(
+    [fit[0].text, fit[0].tone, fit[0].title],
+    ['fit', 'warn', 'arena 2 MiB is more than the free 1 MiB'],
+  );
+  // On device: loaded first, then how the file stands against the library
+  assert.deepEqual(texts(deviceTags(pluck)), ['loaded'], 'the same as the library is not said');
+  assert.deepEqual(texts(deviceTags({ ...sine, on_card: 'yes' })), []);
+  assert.deepEqual(texts(deviceTags({ ...sine, on_card: 'other version' })), ['differs']);
+  assert.deepEqual(texts(deviceTags(view.card_only[1])), ['not in library']);
+  assert.deepEqual(texts(deviceTags(view.card_only[0])), ['loaded', 'not in library']);
+  assert.deepEqual(texts(deviceTags(sine)), [], 'a file that is still going there has no tag yet');
+  // no tag says "card"
+  for (const r of [...view.modules, ...view.card_only])
+    for (const on_card of ['yes', 'no', 'other version'])
+      for (const t of [...localTags({ ...r, on_card }), ...deviceTags({ ...r, on_card })])
+        assert.doesNotMatch(t.text + (t.title ?? ''), /on card/);
+});
+
+test('the mode of the page: Modules and Samples, Modules for anything unknown', () => {
+  assert.deepEqual(
+    MODES.map((m) => m.label),
+    ['Modules', 'Samples'],
+  );
+  assert.equal(parseMode('samples'), 'samples');
+  assert.equal(parseMode('modules'), 'modules');
+  assert.equal(parseMode(null), 'modules');
+  assert.equal(parseMode('card'), 'modules');
+});
+
+test('the device line: the free space in GiB from 1 GiB up, the same line for both modes', () => {
+  assert.equal(freeText(512), '512 B');
+  assert.equal(freeText(5 * 1024 * 1024), '5.00 MiB');
+  assert.equal(freeText(2 ** 30), '1.00 GiB');
+  assert.equal(freeText(19508 * 1024 * 1024), '19.05 GiB');
+  assert.equal(freeText(2 ** 32 - 1 + 1), '4.00 GiB');
+  assert.equal(
+    infoLine('Emulator', 'Digitone II', '0.4.1', 19508 * 1024 * 1024),
+    'Emulator · Digitone II · runtime 0.4.1 · 19.05 GiB free',
+  );
+  assert.equal(infoLine('Emulator', 'Digitakt II', '0.4.1', undefined), 'Emulator · Digitakt II · runtime 0.4.1');
 });

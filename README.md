@@ -1,7 +1,7 @@
 # digikit
 
 digikit adds new machines and effects to the Elektron **Digitakt II** and **Digitone II**. It patches your own copy of
-the stock firmware with a small runtime. The runtime loads modules from the device's +Drive, so you can add or change
+the stock firmware with a small runtime. The runtime loads modules from its own area on the device's card, so you can add or change
 a machine without flashing again. An emulator runs the real firmware on your computer, so you can test everything
 before it goes near the device.
 
@@ -11,8 +11,11 @@ before it goes near the device.
 
 ## Features
 
-- **Runtime on the device:** a SETTINGS > DIGIKIT menu, modules loaded from the +Drive at boot, upload over USB, and a
+- **Runtime on the device:** a SETTINGS > DIGIKIT menu, modules loaded from the card at boot, upload over USB, and a
   debug log you can follow on your computer.
+- **Storage:** the runtime keeps modules (and, on the Digitone II, samples) in a store of its own on the card, in an
+  area the stock firmware never uses (the Digitakt II's is 82 MiB, the Digitone II's about 22 GiB). Samples for the
+  Digitakt II go to its +Drive over USB. The workbench's Transfer page has a Modules and a Samples tab for both.
 - **Run-time machines:** new machine types next to the stock ones, with their own parameters and DSP code. A safety
   guard mutes a misbehaving machine instead of silencing the whole device.
 - **Emulator:** the real firmware (ColdFire and SHARC DSP) runs on your computer, with the front panel, display and audio.
@@ -63,7 +66,7 @@ With the runtime flashed and the Digitakt connected over USB:
 mise run dk:run -- digikit/pluck --port Digitakt --seconds 60
 ```
 
-This builds the module, uploads it to the +Drive, selects it, restarts the Digitakt and shows the log. Then pick
+This builds the module, uploads it to the store, selects it, restarts the Digitakt and shows the log. Then pick
 **PLUCK** as the machine of a track. You can also tick modules by hand in SETTINGS > DIGIKIT > MODULES and choose
 APPLY & RESTART.
 
@@ -73,7 +76,7 @@ Useful while testing:
 mise run dk:log -- --port Digitakt follow                       # follow the debug log (saved under out/runs/device-logs/)
 mise run dk:log -- --port Digitakt level debug                  # log more: levels error, warn, info (default), debug, trace
 mise run dk:screen -- --port Digitakt out/runs/shots/screen.png # a screenshot of the display
-mise run dk:store -- --port Digitakt ls                         # the modules on the +Drive
+mise run dk:store -- --port Digitakt ls                         # the files of the store
 ```
 
 ## Run the emulator

@@ -201,6 +201,10 @@ class Rig:
                 ProofError
             ):  # nor the store-peek sector (the card read of the store's header DMAs into it)
                 holes.append((sym(plan, "core/runtime", "DKRT_STORE_PEEK"), 512))
+            with contextlib.suppress(
+                ProofError
+            ):  # the fingerprint sector of a store list
+                holes.append((sym(plan, "core/runtime", "DKRT_STORE_FP"), 512))
             ranges, at = [], lo
             for start, size in sorted(holes):
                 if start > at:  # adjacent holes leave no range between them

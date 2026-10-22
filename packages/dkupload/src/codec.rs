@@ -10,8 +10,8 @@ pub const MAX_REQUEST_WIRE: usize = 40 * 1024;
 pub const MAX_REPLY_WIRE: usize = 1024;
 
 pub use crate::gen_proto::{
-    CMD_ABORT, CMD_BEGIN, CMD_CLEAR, CMD_DATA, CMD_DELETE, CMD_END, CMD_INFO, CMD_LIST, CMD_READ,
-    CMD_VERIFY,
+    CMD_ABORT, CMD_BEGIN, CMD_CLEAR, CMD_DATA, CMD_DELETE, CMD_END, CMD_INFO, CMD_LIST, CMD_MKDIR,
+    CMD_READ, CMD_VERIFY,
 };
 pub const CLEAR_MAGIC: u32 = 0x434c_5221;
 
@@ -94,11 +94,11 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
 }
 
-/// The store's path rules: 1 to 87 bytes, `/` separated, no empty, `.` or `..` part, no NUL.
+/// The store's path rules: 1 to 159 bytes, `/` separated, no empty, `.` or `..` part, no NUL.
 pub fn path_ok(path: &str) -> bool {
     let b = path.as_bytes();
     !b.is_empty()
-        && b.len() <= 87
+        && b.len() <= 159
         && !b.contains(&0)
         && path
             .split('/')
@@ -153,6 +153,6 @@ mod tests {
     fn paths() {
         assert!(path_ok("modules/a.dkm"));
         assert!(!path_ok("") && !path_ok("a//b") && !path_ok("../a") && !path_ok("a/./b"));
-        assert!(path_ok(&"x".repeat(87)) && !path_ok(&"x".repeat(88)));
+        assert!(path_ok(&"x".repeat(159)) && !path_ok(&"x".repeat(160)));
     }
 }

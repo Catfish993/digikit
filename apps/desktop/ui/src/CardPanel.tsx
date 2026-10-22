@@ -5,7 +5,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { For, Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
 import { errorLine, formatBytes } from '@web/modules/backend';
-import { fileRows, shortFolder, statusText, type CardFolder } from './card-core';
+import { fileGroups, fileRows, nameInGroup, shortFolder, statusText, type CardFolder } from './card-core';
 import { cardRefresh } from './card-state';
 import './card-panel.css';
 
@@ -117,18 +117,30 @@ export default function CardPanel(props: { visible: boolean }): JSX.Element {
           </div>
           <Show
             when={card() && fileRows(card()!).length}
-            fallback={<p class="empty">{card()?.continuous ? 'No module files in the folder.' : ''}</p>}
+            fallback={<p class="empty">{card()?.continuous ? 'No files in the folder.' : ''}</p>}
           >
-            <ul class="files">
-              <For each={fileRows(card()!)}>
-                {(f) => (
-                  <li title={`${f.path}\nsha256 ${f.sha256}`}>
-                    <span class="name">{f.path.replace(/^modules\//, '')}</span>
-                    <span class="size">{formatBytes(f.bytes)}</span>
-                  </li>
-                )}
-              </For>
-            </ul>
+            <For each={fileGroups(card()!)}>
+              {(g) => (
+                <div class="group">
+                  <Show when={g.folder}>
+                    <h4 title={`${g.files.length} file${g.files.length === 1 ? '' : 's'}`}>
+                      <span>{g.folder}/</span>
+                      <span class="size">{formatBytes(g.bytes)}</span>
+                    </h4>
+                  </Show>
+                  <ul class="files">
+                    <For each={g.files}>
+                      {(f) => (
+                        <li title={`${f.path}\nsha256 ${f.sha256}`}>
+                          <span class="name">{nameInGroup(f.path, g.folder)}</span>
+                          <span class="size">{formatBytes(f.bytes)}</span>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </div>
+              )}
+            </For>
           </Show>
           <Show when={card()}>
             <p class="status" classList={{ bad: !!card()?.error }}>

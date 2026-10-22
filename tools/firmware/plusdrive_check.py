@@ -11,7 +11,7 @@ WAV that becomes a native sample), builds the card image with `plusdrive build`
 (packages/emulator/boot/examples/plusdrive_check.rs, about 15 s) and calls the
 firmware's mount flag, directory iterator, name lookup and file open, size and
 read. The listings, sizes and SHA-256 sums must equal the folder's. The fixture's
-`digikit/` files go to the module store (sectors 0x38000-0x3E000, not to the path
+`digikit/` files go to the module store (the device's `[card.store]` area, not to the path
 filesystem); the firmware's block read must return the store
 header, the table and each file's bytes. With --dn2 a Digitone II 1.12 boots a
 card that holds only `digikit/` files and the firmware's block read
@@ -44,7 +44,6 @@ from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_device  # noqa: E402
 
 MANY = 700
-STORE_FIRST = pk_device.store().first  # devices/*.toml [card.store]
 
 
 def block_read(syx: pathlib.Path) -> int:
@@ -70,10 +69,6 @@ SELECTION = [
     "modules/test.dkm",
     "big.bin",
 ]  # digikit/selection.txt of the fixture: the runtime's selection record
-SELECTION_SECTORS = (
-    0x3DFFE,
-    0x3DFFF,
-)  # copy A and B, the last two sectors of the store range
 
 
 def expected_selection(paths: list[str]) -> bytes:
@@ -139,7 +134,7 @@ def store_listing(
     )  # fmt: skip
     rows = {}
     for line in done.stdout.splitlines():
-        if line.startswith("#"):
+        if line.startswith("#") or line.endswith("\tfolder"):
             continue
         path, first, size, sha = line.split("\t")
         rows[path] = (int(first), int(size), sha)
@@ -161,6 +156,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     device = "dn2" if args.dn2 else "dt2"
+    area = pk_device.store_of(
+        device
+    )  # devices/*.toml [card.store]: the area differs per device
+    STORE_FIRST = area.first
+    SELECTION_SECTORS = (
+        area.sel_a,
+        area.sel_b,
+    )  # copy A and B, the last two sectors of the area
     # The DT2 probe's filesystem addresses (plusdrive_check.rs) are DT2 1.17; the block read comes from the port file.
     syx = args.syx or digi_env.firmware_for(device)
     if digi_env.device_for_syx(syx) != device:
@@ -230,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         failures = judge(results, plain)
         failures += judge_store(
-            results, image, listing, store, expect_store == got_store
+            results, image, listing, store, expect_store == got_store, area
         )
         for op in ops:
             row = results.get(op, {})
@@ -249,7 +252,9 @@ def main(argv: list[str] | None = None) -> int:
             shutil.rmtree(work, ignore_errors=True)
 
 
-def judge_store(results, image, listing, store, listing_ok) -> list[str]:
+def judge_store(results, image, listing, store, listing_ok, area) -> list[str]:
+    STORE_FIRST = area.first
+    SELECTION_SECTORS = (area.sel_a, area.sel_b)
     """The firmware's block read returns the store's header, table and files, equal to the image file and the folder."""
     bad = []
     if not listing_ok:

@@ -586,6 +586,7 @@ fn store_pass(
     let size = range.store_limit();
     let read = |img: &dyn RandomAccessRead, what: &str, report: &mut Report| {
         let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        let mut dirs: Vec<String> = Vec::new();
         match crate::read_store(img, range.first_sector, size, range.header_b()) {
             Ok(None) => {}
             Err(e) => report.issues.push(format!("module store ({what}): {e}")),
@@ -601,6 +602,10 @@ fn store_pass(
                         ));
                         continue;
                     }
+                    if entry.is_dir {
+                        dirs.push(entry.path.clone());
+                        continue;
+                    }
                     match crate::read_store_file(img, range.first_sector, entry) {
                         Ok(bytes) => {
                             files.insert(entry.path.clone(), bytes);
@@ -610,10 +615,19 @@ fn store_pass(
                 }
             }
         }
-        files
+        (files, dirs)
     };
-    let built = read(base, "as built", report);
-    let now = read(view, "now", report);
+    let (built, built_dirs) = read(base, "as built", report);
+    let (now, now_dirs) = read(view, "now", report);
+    // a folder with nothing in it that the card made: the folder exists on disk too
+    for d in &now_dirs {
+        if !built_dirs.contains(d) {
+            let to = folder.join("digikit").join(d);
+            if !to.exists() {
+                fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            }
+        }
+    }
     let on_disk = |rel: &str| fs::read(folder.join("digikit").join(rel)).ok();
     for (path, bytes) in &now {
         let rel = format!("digikit/{path}");
@@ -779,7 +793,14 @@ mod tests {
                 sample: wav_to_native(w, WavLimits::default()).unwrap(),
             })
             .collect();
-        build_sample_image(samples).unwrap().image
+        // the whole card: the store is at its end
+        crate::build_sample_image_with_capacity(samples, dt2_layout().total_sectors as u32)
+            .unwrap()
+            .image
+    }
+
+    fn area() -> device_profile::StoreLayout {
+        dt2_layout().store.unwrap()
     }
 
     #[test]
@@ -838,13 +859,14 @@ mod tests {
         let mut image = card_of(&[("kick.wav", wav(3000, 1))]);
         let store = crate::encode_store(
             vec![crate::StoreFile {
+                dir: false,
                 path: "sub/m.dkm".into(),
                 bytes: b"module".to_vec(),
             }],
-            0x6000,
+            area().store_limit(),
         )
         .unwrap();
-        image.write_at(0x38000 * 512, &store).unwrap();
+        image.write_at(area().first_sector * 512, &store).unwrap();
         let mut options = Options::new(root.join("out"));
         options.stamp = Some("t1".into());
         let report = export(&image, &[], &folder, &dt2_layout(), &options).unwrap();
@@ -1104,11 +1126,12 @@ mod tests {
             files
                 .iter()
                 .map(|(p, b)| crate::StoreFile {
+                    dir: false,
                     path: (*p).into(),
                     bytes: b.to_vec(),
                 })
                 .collect(),
-            0x5ffd,
+            area().store_limit(),
         )
         .unwrap();
         if seq != 1 {
@@ -1138,7 +1161,7 @@ mod tests {
             });
         }
         overlay.push(CardOverlaySector {
-            sector: 0x3dffd,
+            sector: area().header_b(),
             written: [0xff; 64],
             data: bytes[..512].try_into().unwrap(),
         });
@@ -1147,9 +1170,11 @@ mod tests {
 
     fn built_store(image: &mut SparseImage, files: &[(&str, &[u8])]) -> u64 {
         let bytes = store_bytes(files, 1);
-        image.write_at(0x38000 * 512, &bytes).unwrap();
-        image.write_at(0x3dffd * 512, &bytes[..512]).unwrap();
-        0x38000
+        image.write_at(area().first_sector * 512, &bytes).unwrap();
+        image
+            .write_at(area().header_b() * 512, &bytes[..512])
+            .unwrap();
+        area().first_sector
     }
 
     #[test]

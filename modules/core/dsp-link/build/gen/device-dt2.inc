@@ -5,15 +5,15 @@
 // [digikit] name, NUL padded, as a big-endian word
 #define DEVICE_NAME_WORD 1685336576
 // [card.store] first_sector
-#define STORE_FIRST 229376
+#define STORE_FIRST 48173056
 // [card.store] end_sector - first_sector
-#define STORE_SECTORS 24576
+#define STORE_SECTORS 167936
 // [card.store] header_b_sector - first_sector (store header copy B, relative to the store)
-#define STORE_HEADER_B 24573
+#define STORE_HEADER_B 167933
 // [card.store] end_sector - 2 (selection record copy A, absolute)
-#define STORE_SEL_A 253950
+#define STORE_SEL_A 48340990
 // [card.store] end_sector - 1 (selection record copy B, absolute)
-#define STORE_SEL_B 253951
+#define STORE_SEL_B 48340991
 // core/machines types.toml dynamic_first
 #define DYN_TYPE_FIRST 16
 // core/machines types.toml last

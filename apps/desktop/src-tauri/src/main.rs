@@ -13,6 +13,7 @@ use digi_control::{
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
 mod library;
+mod local;
 mod midi_port;
 use serde_json::Value;
 use std::sync::mpsc;
@@ -73,7 +74,13 @@ async fn send_json(
 /// the working directory (the repository root under `mise run workbench`); the
 /// webview cannot save `<a download>` links.
 #[tauri::command]
-fn emu_save_diagnostics(name: String, json: String) -> Result<String, String> {
+async fn emu_save_diagnostics(name: String, json: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || save_diagnostics(&name, &json))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn save_diagnostics(name: &str, json: &str) -> Result<String, String> {
     let dir = std::env::current_dir()
         .map_err(|e| e.to_string())?
         .join("out/native/diagnostics");
@@ -94,10 +101,16 @@ fn emu_save_diagnostics(name: String, json: String) -> Result<String, String> {
 /// The startup .syx: its path, size and modification time (milliseconds since the epoch), or null
 /// when the app was started without one.
 #[tauri::command]
-fn emu_source_info(host: State<'_, Host>) -> Result<Option<Value>, String> {
-    let Some(path) = &host.source else {
+async fn emu_source_info(host: State<'_, Host>) -> Result<Option<Value>, String> {
+    let Some(path) = host.source.clone() else {
         return Ok(None);
     };
+    tauri::async_runtime::spawn_blocking(move || source_info(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn source_info(path: &std::path::Path) -> Result<Option<Value>, String> {
     let fail = |error: &dyn std::fmt::Display| format!("{}: {error}", path.display());
     let metadata = std::fs::metadata(path).map_err(|e| fail(&e))?;
     let modified = metadata.modified().map_err(|e| fail(&e))?;
@@ -479,6 +492,7 @@ fn main() {
             .map(|path| std::fs::canonicalize(&path).unwrap_or(path)),
     };
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(host)
         .manage(midi_port::MidiPort::default())
@@ -498,11 +512,17 @@ fn main() {
             card_open_folder,
             library::lib_scan,
             library::lib_read,
+            library::sample_wasm,
+            library::device_storage,
+            local::local_pick_folder,
+            local::local_list,
+            local::local_read,
             midi_port::midi_ports,
             midi_port::midi_open,
             midi_port::midi_close,
             midi_port::midi_send,
-            midi_port::midi_recv
+            midi_port::midi_recv,
+            midi_port::midi_cancel
         ])
         .build(tauri::generate_context!())
         .expect("tauri build error");
@@ -527,7 +547,10 @@ async fn card_open_folder(app: tauri::AppHandle, host: State<'_, Host>) -> Resul
     })
     .await
     .map_err(|e| e.to_string())??;
-    std::fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+    let made = folder.clone();
+    tauri::async_runtime::spawn_blocking(move || std::fs::create_dir_all(&made).map_err(|e| format!("{}: {e}", made.display())))
+        .await
+        .map_err(|e| e.to_string())??;
     app.opener().open_path(folder.display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -535,6 +558,35 @@ async fn card_open_folder(app: tauri::AppHandle, host: State<'_, Host>) -> Resul
 mod cli_tests {
     use super::*;
     use desktop_runtime::{AudioMode, AudioOptions};
+
+    /// Tauri runs a plain `fn` command on the main thread: any wait or file read there freezes the window. Every command is `async`
+    /// (its blocking work goes to `spawn_blocking`).
+    #[test]
+    fn every_command_is_async() {
+        let sources = [
+            ("main.rs", include_str!("main.rs")),
+            ("library.rs", include_str!("library.rs")),
+            ("local.rs", include_str!("local.rs")),
+            ("midi_port.rs", include_str!("midi_port.rs")),
+        ];
+        let mut found = 0;
+        for (file, text) in sources {
+            let lines: Vec<&str> = text.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                if line.trim() != "#[tauri::command]" {
+                    continue;
+                }
+                found += 1;
+                let next = lines[i + 1..].iter().find(|l| !l.trim_start().starts_with("///") && !l.trim_start().starts_with("#["));
+                let next = next.expect("a function follows").trim_start();
+                assert!(
+                    next.starts_with("async fn ") || next.starts_with("pub async fn "),
+                    "{file}: a command on the main thread: {next}"
+                );
+            }
+        }
+        assert!(found >= 20, "the scan found {found} commands");
+    }
 
     fn parse(args: &[&str]) -> Result<StartupArgs, String> {
         cli::parse_values(

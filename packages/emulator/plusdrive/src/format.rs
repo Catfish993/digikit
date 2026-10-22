@@ -22,15 +22,16 @@ pub const CONTENT_AREA_SECTOR: u64 = 0x5ee180;
 pub const HASH_TABLE_SECTOR: u64 = 0x5ee980;
 pub const RESERVED_PAGES: u32 = 0x78;
 pub const DEFAULT_CAPACITY_BLOCKS: u32 = 0x0076_0000;
-pub const NATIVE_HEADER_SIZE: usize = 0x40;
-pub const NATIVE_TRAILER_SIZE: usize = 0x10;
+// The native sample file and the content hash are the converter crate's (one copy for the card builder and the browser).
+pub use dksample::{
+    NATIVE_HEADER_SIZE, NATIVE_TRAILER_SIZE, build_native_sample, content_hash, hashlittle,
+};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum FormatError {
     NameTooLong,
     DirectoryTooLarge,
     TooManyEntries,
-    InvalidPcmLength,
     InvalidProjectHeaderSize,
 }
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -52,74 +53,6 @@ fn put16(out: &mut [u8], at: usize, v: u16) {
 }
 fn put32(out: &mut [u8], at: usize, v: u32) {
     out[at..at + 4].copy_from_slice(&v.to_be_bytes());
-}
-fn rot(x: u32, n: u32) -> u32 {
-    x.rotate_left(n)
-}
-fn mix(mut a: u32, mut b: u32, mut c: u32, k0: u32, k1: u32, k2: u32) -> (u32, u32, u32) {
-    c = c.wrapping_add(k2);
-    let t2 = k1.wrapping_add(b).wrapping_add(c);
-    let u1 = rot(c, 4) ^ (k0.wrapping_add(a).wrapping_sub(c));
-    let t3 = t2.wrapping_add(u1);
-    let u2 = k1.wrapping_add(b).wrapping_sub(u1) ^ rot(u1, 6);
-    let t4 = t3.wrapping_add(u2);
-    let u3 = t2.wrapping_sub(u2) ^ rot(u2, 8);
-    let t2b = t4.wrapping_add(u3);
-    let u4 = t3.wrapping_sub(u3) ^ rot(u3, 16);
-    a = t2b.wrapping_add(u4);
-    let u5 = t4.wrapping_sub(u4) ^ rot(u4, 19);
-    b = a.wrapping_add(u5);
-    c = t2b.wrapping_sub(u5) ^ rot(u5, 4);
-    (a, b, c)
-}
-fn finalise(a: u32, b: u32, c: u32) -> u32 {
-    let u1 = (b ^ c).wrapping_sub(rot(b, 14));
-    let u2 = (u1 ^ a).wrapping_sub(rot(u1, 11));
-    let u3 = (u2 ^ b).wrapping_sub(rot(u2, 25));
-    let u4 = (u3 ^ u1).wrapping_sub(rot(u3, 16));
-    let a2 = (u4 ^ u2).wrapping_sub(rot(u4, 4));
-    let b2 = (a2 ^ u3).wrapping_sub(rot(a2, 14));
-    (b2 ^ u4).wrapping_sub(rot(b2, 24))
-}
-fn tail(data: &[u8]) -> u32 {
-    let mut b = [0; 4];
-    b[..data.len()].copy_from_slice(data);
-    u32::from_be_bytes(b)
-}
-/// Firmware lookup3 variant: big-endian words, no length seed, empty tail unfinalized.
-pub fn hashlittle(data: &[u8], initval: u32) -> u32 {
-    let mut a = initval.wrapping_add(0xdeadbeef);
-    let mut b = a;
-    let mut c = a;
-    if data.is_empty() {
-        return c;
-    }
-    let mut off = 0;
-    let mut n = data.len();
-    while n > 12 {
-        let k0 = u32::from_be_bytes(data[off..off + 4].try_into().unwrap());
-        let k1 = u32::from_be_bytes(data[off + 4..off + 8].try_into().unwrap());
-        let k2 = u32::from_be_bytes(data[off + 8..off + 12].try_into().unwrap());
-        (a, b, c) = mix(a, b, c, k0, k1, k2);
-        off += 12;
-        n -= 12;
-    }
-    if n <= 4 {
-        a = a.wrapping_add(tail(&data[off..]));
-    } else if n <= 8 {
-        a = a.wrapping_add(u32::from_be_bytes(data[off..off + 4].try_into().unwrap()));
-        b = b.wrapping_add(tail(&data[off + 4..]));
-    } else {
-        a = a.wrapping_add(u32::from_be_bytes(data[off..off + 4].try_into().unwrap()));
-        b = b.wrapping_add(u32::from_be_bytes(
-            data[off + 4..off + 8].try_into().unwrap(),
-        ));
-        c = c.wrapping_add(tail(&data[off + 8..]));
-    }
-    finalise(a, b, c)
-}
-pub fn content_hash(data: &[u8]) -> u32 {
-    hashlittle(data, 0x43fa243a_u32.wrapping_sub(0xdeadbeef))
 }
 pub fn name_hash(name: &[u8]) -> u32 {
     let (mut cur, mut prev) = (0x12a3fe2d_u32, 0x37abe8f9_u32);
@@ -351,21 +284,6 @@ pub fn build_directory(
         by_id: index(&ids)?,
     })
 }
-pub fn build_native_sample(pcm_be16: &[u8], stereo: bool) -> Result<Vec<u8>, FormatError> {
-    if pcm_be16.len() % if stereo { 4 } else { 2 } != 0 {
-        return Err(FormatError::InvalidPcmLength);
-    }
-    let len = u32::try_from(pcm_be16.len()).map_err(|_| FormatError::InvalidPcmLength)?;
-    let mut out = vec![0; NATIVE_HEADER_SIZE];
-    out[1] = u8::from(stereo);
-    put32(&mut out, 4, len);
-    put32(&mut out, 8, 48000);
-    out[0x14] = 0x7f;
-    out.extend_from_slice(pcm_be16);
-    out.resize(out.len() + NATIVE_TRAILER_SIZE, 0);
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

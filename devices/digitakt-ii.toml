@@ -243,11 +243,18 @@ kind = "encoder"
 codes = [9]
 layout = "single"
 
+# Where the Transfer page puts content (docs/plans/storage.md): `samples` is "stock-rpc" (the device's own MidiRpc file commands: the +Drive, which its sample browser lists)
+# or "digikit" (the `samples/` folder of the digikit store, the runtime's SysEx); `modules` is "digikit" (the store's `modules/` folder).
+[storage]
+samples = "stock-rpc"
+modules = "digikit"
+
 # Where the card keeps things (finding 14 "MmcFs slots", finding 23 S6). Read by packages/emulator/device-profile and
 # used by the +Drive builder, reader and exporter (packages/emulator/plusdrive); sectors are 512 bytes. Every pool is
 # linear: slot n is at base_sector + n * stride_sectors, so the firmware's clamped formulas are base + stride * n.
 [card]
 header_sector = 0x0        # MmcFs header, magic 0xbeef_bace
+total_sectors = 0x2e1a000   # the card the firmware whitelists (the pSLC 32 GB part, finding 14); the store runs to its end
 table_sector = 0x800       # three WRITE-PROTECT bitmaps (bit set = padlock), 400 bytes (FUN_40130f9a clears them; setters FUN_40130234, FUN_4013011e, FUN_40132c6c; finding 35)
 
 # Projects, 16 MiB, 128 slots: FUN_4012eef2, block = ((slot + 0xb) & 0xff) << 15 (a slot > 0x7f is clamped to 0x7f).
@@ -298,14 +305,15 @@ sectors = 0x8000
 # The folder (path) filesystem: superblock magic 0x656b4653 (finding 14); it runs to the end of the card.
 [card.path_fs]
 superblock_sector = 0x5d8000
+end_sector = 0x2df0180      # superblock + the erase of FUN_4015a440 (0x2818180 sectors); the allocator stops at page 0xA0080 (finding 59)
 
-# Module store (docs/design/digikit-store.md): above every kit pool, below the project records, outside every erase
-# range; the firmware never writes it (finding 23 S6: a choice with 0x2000 sectors of margin, not a measurement).
+# Module and sample store (docs/design/digikit-store.md, version 3): sectors [first_sector, end_sector). DT2: after the +Drive (it ends at 0x2DF0180: finding 59), 82 MiB.
+# The last selection_sectors sectors hold the runtime's selection record; header copy B is the sector before them.
 [card.store]
-first_sector = 0x38000
-end_sector = 0x3e000
+first_sector = 0x2df1000
+end_sector = 0x2e1a000
 selection_sectors = 2      # the last two sectors: the digikit selection record (docs/design/digikit-store.md)
-header_b_sector = 0x3dffd  # store header copy B (version 2): the sector before the selection record; the store's files end before it
+header_b_sector = 0x2e19ffd  # store header copy B: the sector before the selection record; the store's files end before it
 
 # How a module's machines map onto this device (packages/patchkit/src/typed.rs lowers the typed sections of a
 # module.toml with it; `patchkit gen` writes the constants a DSP routine needs). Finding 02; modules/machines/pluck/src/dsp.

@@ -2,7 +2,8 @@
 """Upload, list and delete the files of the digikit module store over USB MIDI SysEx (docs/design/digikit-upload.md).
 
     uv run python -m tools.device.dkupload --emu info                       # the running emulator (out/native/run/current.json)
-    uv run python -m tools.device.dkupload --emu ls
+    uv run python -m tools.device.dkupload --emu ls [PREFIX]               # the store's entries (a folder with nothing in it: size 0)
+    uv run python -m tools.device.dkupload --emu mkdir samples/drums
     uv run python -m tools.device.dkupload --emu modules                   # the loaded modules: ranges, contracts, assigned types, guard faults
     uv run python -m tools.device.dkupload --emu put build/m.dkm modules/m.dkm
     uv run python -m tools.device.dkupload --emu rm modules/m.dkm
@@ -13,7 +14,7 @@
     uv run python -m tools.device.dkupload --emu remote key 10             # press and release a key (the device file's panel code); --hold S keeps it down
     uv run python -m tools.device.dkupload --emu remote turn 1 -5          # turn encoder 1 by -5 detents
 
-`put FILE [PATH]` stores FILE at PATH (default: `modules/<file name>`) in chunks of at most 32 KiB, two requests in flight, and
+`put FILE [PATH]` streams FILE (read from disk in chunks, so a large sample is not held in memory) to PATH (default: `modules/<file name>`) in chunks of at most 32 KiB, two requests in flight, and
 checks the file's sha256 on the device (END reads the staged file back from the card). It changes only the module store; an uploaded
 module appears in DIGIKIT > MODULES and loads after APPLY & RESTART (or `tools.device.dkrun`, which also selects and restarts).
 
@@ -47,6 +48,7 @@ from tools.device.dkproto import (
     CMD_LIST,
     CMD_LOG,
     CMD_LOGCFG,
+    CMD_MKDIR,
     CMD_MODULES,
     CMD_PEEK,
     CMD_READ,
@@ -323,12 +325,14 @@ class Uploader:
             "log_newest": newest,
         }
 
-    def ls(self) -> list[tuple[str, int, str]]:
-        """Every file of the store: (path, size, sha256 hex), in the store's order."""
+    def ls(self, prefix: str | None = None) -> list[tuple[str, int, str]]:
+        """Every file of the store, or (`prefix`, runtime 0.3.0, capability FOLDERS) the entries whose path starts with it: (path, size, sha256 hex),
+        in the store's order. A folder with nothing in it is listed with size 0 and a zero sha256."""
         out: list[tuple[str, int, str]] = []
         first = 0
+        tail = prefix.encode() + b"\0" if prefix else b""
         while True:
-            b = self._ok(CMD_LIST, "ls", struct.pack(">I", first))
+            b = self._ok(CMD_LIST, "ls", struct.pack(">I", first) + tail)
             total, n = struct.unpack_from(">IB", b, 0)
             at = 5
             for _ in range(n):
@@ -520,13 +524,43 @@ class Uploader:
             raise UploadError(-50, "read: malformed reply")
         return struct.unpack_from(">I", b, 0)[0], b[4:]
 
-    def verify(self, path: str) -> str:
+    def verify(
+        self, path: str, offset: int | None = None, length: int | None = None
+    ) -> str:
         """VERIFY (runtime 0.2.4, capability VERIFY): the sha256 (hex) of a store file, computed by the device from a fresh read of the card.
-        Raises `UploadError`: E_NOFILE, E_READ."""
-        b = self._ok(CMD_VERIFY, "verify", path.encode() + b"\0")
+        With `offset` (a multiple of 512) and `length` (runtime 0.3.0): of that range of the file, so a large file is checked in pieces (the
+        device spends about 120 ColdFire instructions a byte: a request for all of a large file can outlast the host's timeout).
+        Raises `UploadError`: E_NOFILE, E_READ, E_OFFSET, E_LENGTH."""
+        body = path.encode() + b"\0"
+        if offset is not None:
+            body += struct.pack(">II", offset, length or 0)
+        b = self._ok(CMD_VERIFY, "verify", body)
         if len(b) != 32:
             raise UploadError(-50, "verify: malformed reply")
         return b.hex()
+
+    def verify_file(
+        self,
+        path: str,
+        src: Path,
+        piece: int = 1 << 20,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> bool:
+        """Is the file on the card the bytes of `src`? One VERIFY per `piece` bytes (default 1 MiB), each compared with the hash of the same
+        range of `src`; stops at the first difference."""
+        size = src.stat().st_size
+        if size == 0:
+            return self.verify(path) == hashlib.sha256(b"").hexdigest()
+        with src.open("rb") as f:
+            for off in range(0, size, piece):
+                n = min(piece, size - off)
+                f.seek(off)
+                want = hashlib.sha256(f.read(n)).hexdigest()
+                if self.verify(path, off, n) != want:
+                    return False
+                if progress:
+                    progress(off + n, size)
+        return True
 
     def header(self, path: str) -> bytes:
         """The first 0xa0 bytes of a store file (a .dkm header; fewer for a shorter file)."""
@@ -550,6 +584,10 @@ class Uploader:
     def rm(self, path: str) -> None:
         self._ok(CMD_DELETE, "rm", path.encode() + b"\0")
 
+    def mkdir(self, path: str) -> None:
+        """MKDIR (runtime 0.3.0, capability FOLDERS): make a folder. Ok when it exists; E_PATH when the path is a file or inside one."""
+        self._ok(CMD_MKDIR, "mkdir", path.encode() + b"\0")
+
     def clear(self) -> None:
         self._ok(CMD_CLEAR, "clear", struct.pack(">I", CLEAR_MAGIC))
 
@@ -562,15 +600,52 @@ class Uploader:
     ) -> None:
         """Store `data` at `path`: BEGIN, DATA chunks with up to `depth` in flight, END. Raises `UploadError` at the first bad
         status (an open upload is then left for the caller to ABORT)."""
-        self.begin(path, len(data), sha256 or hashlib.sha256(data).digest())
+        self._put(
+            path,
+            len(data),
+            lambda off, n: data[off : off + n],
+            sha256 or hashlib.sha256(data).digest(),
+            progress,
+        )
+
+    def put_file(
+        self,
+        path: str,
+        src: Path,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> None:
+        """`put` from a file on disk without holding it in memory (a sample can be hundreds of MB): one pass for the sha256, one for the chunks."""
+        h = hashlib.sha256()
+        size = 0
+        with src.open("rb") as f:
+            while block := f.read(1 << 20):
+                h.update(block)
+                size += len(block)
+            f.seek(0)
+
+            def read_at(off: int, n: int) -> bytes:
+                f.seek(off)
+                return f.read(n)
+
+            self._put(path, size, read_at, h.digest(), progress)
+
+    def _put(
+        self,
+        path: str,
+        size: int,
+        read_at: Callable[[int, int], bytes],
+        sha256: bytes,
+        progress: Callable[[int, int], None] | None,
+    ) -> None:
+        self.begin(path, size, sha256)
         inflight: list[int] = []
         sent = 0
-        offsets = list(range(0, len(data), self.chunk))
+        offsets = list(range(0, size, self.chunk))
         done = 0
         while done < len(offsets):
             while sent < len(offsets) and len(inflight) < self.depth:
                 off = offsets[sent]
-                body = struct.pack(">I", off) + data[off : off + self.chunk]
+                body = struct.pack(">I", off) + read_at(off, self.chunk)
                 inflight.append(self.post(CMD_DATA, body))
                 sent += 1
             seq = inflight.pop(0)
@@ -579,7 +654,7 @@ class Uploader:
                 raise UploadError(status, f"data at {offsets[done]}", rb)
             done += 1
             if progress:
-                progress(min(len(data), offsets[done - 1] + self.chunk), len(data))
+                progress(min(size, offsets[done - 1] + self.chunk), size)
         self.end()
 
 
@@ -588,7 +663,10 @@ def capacity_lines(cap: dict[str, dict[str, int]]) -> list[str]:
     out = []
     for k, v in cap.items():
         tail = f"  largest free {v['largest']}" if v["largest"] else ""
-        out.append(f"capacity {k.lower()}: {v['used']}/{v['limit']}{tail}")
+        unit = (
+            " KiB" if k == "STORE" else ""
+        )  # the store is counted in KiB: it can be 22 GiB
+        out.append(f"capacity {k.lower()}: {v['used']}/{v['limit']}{unit}{tail}")
     return out
 
 
@@ -663,7 +741,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info")
-    sub.add_parser("ls")
+    p = sub.add_parser("ls", help="the store's entries (only those under PREFIX)")
+    p.add_argument("prefix", nargs="?")
+    p = sub.add_parser("mkdir", help="make a folder in the store")
+    p.add_argument("path")
     sub.add_parser("modules")
     p = sub.add_parser("put")
     p.add_argument("file", type=Path)
@@ -708,18 +789,19 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("capacity: not reported by this runtime (needs 0.2.2)")
         elif args.cmd == "ls":
-            for path, size, sha in up.ls():
+            for path, size, sha in up.ls(args.prefix):
                 print(f"{path}\t{size}\t{sha}")
+        elif args.cmd == "mkdir":
+            up.mkdir(args.path)
         elif args.cmd == "modules":
             for line in modules_lines(up.modules()):
                 print(line)
         elif args.cmd == "put":
-            data = args.file.read_bytes()
             path = args.path or f"modules/{args.file.name}"
             t0 = time.monotonic()
-            up.put(path, data)
+            up.put_file(path, args.file)
             print(
-                f"{path}: {len(data)} bytes in {time.monotonic() - t0:.1f} s (sha256 checked on the device)"
+                f"{path}: {args.file.stat().st_size} bytes in {time.monotonic() - t0:.1f} s (sha256 checked on the device)"
             )
         elif args.cmd == "read":
             data = read_range(up, args.path, args.offset, args.length)

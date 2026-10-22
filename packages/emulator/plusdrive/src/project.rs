@@ -101,10 +101,7 @@ fn extract(seed: ProjectSeed<'_>) -> Result<Vec<u8>, ProjectError> {
         return Err(ProjectError::UnsupportedContract);
     }
     let at = stream_offset(seed.main);
-    let stream = seed
-        .main
-        .get(at..)
-        .ok_or(ProjectError::StreamOutOfBounds)?;
+    let stream = seed.main.get(at..).ok_or(ProjectError::StreamOutOfBounds)?;
     let length = word(stream, 0).ok_or(ProjectError::InvalidStreamHeader)? as usize;
     let sum = word(stream, 4).ok_or(ProjectError::InvalidStreamHeader)?;
     let end = 8usize
@@ -364,7 +361,11 @@ mod tests {
         let main_of = |file: &str| {
             let syx = std::fs::read(format!("../../../firmware/{file}")).ok()?;
             let parsed = dt2_firmware_loader::parse(&syx).ok()?;
-            parsed.sections.into_iter().find(|s| s.id == 3).map(|s| s.bytes)
+            parsed
+                .sections
+                .into_iter()
+                .find(|s| s.id == 3)
+                .map(|s| s.bytes)
         };
         let Some(b) = main_of("Digitakt_II_OS1.17.syx") else {
             return;

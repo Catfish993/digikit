@@ -260,33 +260,36 @@ fn errors_full_hash_path_state() {
 }
 
 #[test]
-fn repack_frees_space() {
+fn replace_and_delete_free_space() {
     let mut s = session(100_000);
     let a = data(30_000, 1);
     let b = data(30_000, 2);
     put(&mut s, "modules/a.dkm", a.clone()).unwrap();
     put(&mut s, "modules/b.dkm", b.clone()).unwrap();
-    // Replacing a keeps its old data until CLEAR: a replacement fits once, the next one does not.
+    // a replacement takes the old file's space (store format 3 reuses space): it fits as often as it is sent
     put(&mut s, "modules/a.dkm", a.clone()).unwrap();
+    put(&mut s, "modules/b.dkm", b.clone()).unwrap();
+    let c = data(40_000, 3);
     assert!(matches!(
-        put(&mut s, "modules/b.dkm", b.clone()),
+        put(&mut s, "modules/c.dkm", c.clone()),
         Err(Error::Device {
             status: Status::Full,
             ..
         })
     ));
+    // a delete frees the file's space
+    let free_before = s.info().unwrap().free_bytes;
+    s.delete("modules/a.dkm").unwrap();
+    assert!(s.info().unwrap().free_bytes >= free_before + 30_000);
+    put(&mut s, "modules/c.dkm", c).unwrap();
+    // what the repack looks for: store entries the library does not have
     let listing = s.list().unwrap();
-    let lib = vec![("modules/a.dkm".to_string(), sha256(&a))];
+    let lib = vec![("modules/b.dkm".to_string(), sha256(&b))];
     assert_eq!(
         repack_missing(&listing, &lib),
-        vec!["modules/b.dkm".to_string()]
+        vec!["modules/c.dkm".to_string()]
     );
-    let lib = vec![
-        ("modules/a.dkm".to_string(), sha256(&a)),
-        ("modules/b.dkm".to_string(), sha256(&b)),
-    ];
-    assert!(repack_missing(&listing, &lib).is_empty());
-    let free_before = s.info().unwrap().free_bytes;
+    // a repack puts the library in an empty store
     s.repack(
         vec![
             ("modules/a.dkm".into(), a.clone()),
@@ -295,8 +298,81 @@ fn repack_frees_space() {
         &mut |_, _| true,
     )
     .unwrap();
-    assert!(s.info().unwrap().free_bytes > free_before);
-    put(&mut s, "modules/b.dkm", b).unwrap();
+    let names: Vec<_> = s.list().unwrap().into_iter().map(|e| e.path).collect();
+    assert_eq!(names, ["modules/a.dkm", "modules/b.dkm"]);
+}
+
+#[test]
+fn verify_by_range_checks_large_files_in_pieces() {
+    let mut s = session(1 << 20);
+    let d = data(5000, 7);
+    put(&mut s, "samples/a.wav", d.clone()).unwrap();
+    assert_eq!(s.verify("samples/a.wav").unwrap(), sha256(&d));
+    assert_eq!(
+        s.verify_range("samples/a.wav", 1024, 2000).unwrap(),
+        sha256(&d[1024..3024])
+    );
+    assert_eq!(
+        s.verify_range("samples/a.wav", 4608, 392).unwrap(),
+        sha256(&d[4608..])
+    );
+    for (off, len, want) in [
+        (100, 10, Status::Offset),
+        (5120, 1, Status::Offset),
+        (512, 0, Status::Length),
+        (512, 4489, Status::Length),
+    ] {
+        assert!(
+            matches!(
+                s.verify_range("samples/a.wav", off, len),
+                Err(Error::Device { status, .. }) if status == want
+            ),
+            "{off} {len}"
+        );
+    }
+}
+
+#[test]
+fn folders_list_by_prefix_and_mkdir() {
+    let mut s = session(1 << 20);
+    put(&mut s, "modules/a.dkm", data(1000, 1)).unwrap();
+    s.mkdir("samples").unwrap();
+    s.mkdir("samples/drums").unwrap();
+    s.mkdir("samples/drums").unwrap(); // exists: ok
+    // only the innermost folder entry is kept
+    let all: Vec<_> = s.list().unwrap().into_iter().map(|e| e.path).collect();
+    assert_eq!(all, ["modules/a.dkm", "samples/drums"]);
+    let under: Vec<_> = s
+        .list_prefix("samples/")
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.path, e.size))
+        .collect();
+    assert_eq!(under, [("samples/drums".to_string(), 0)]);
+    // a file inside the folder: its folder entry goes
+    put(&mut s, "samples/drums/kick.wav", data(2000, 2)).unwrap();
+    let under: Vec<_> = s
+        .list_prefix("samples/")
+        .unwrap()
+        .into_iter()
+        .map(|e| e.path)
+        .collect();
+    assert_eq!(under, ["samples/drums/kick.wav"]);
+    // a folder over a file, or inside one, is refused; an implied folder exists
+    for bad in [
+        "modules/a.dkm".to_string(),
+        format!("{}/x", "modules/a.dkm"),
+    ] {
+        assert!(matches!(
+            s.mkdir(&bad),
+            Err(Error::Device {
+                status: Status::Path,
+                ..
+            })
+        ));
+    }
+    s.mkdir("samples/drums").unwrap();
+    assert!(s.list_prefix("nothing/").unwrap().is_empty());
 }
 
 #[test]

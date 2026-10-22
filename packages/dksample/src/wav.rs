@@ -1,5 +1,5 @@
 //! Bounded RIFF/WAVE conversion to the native 48 kHz sample wrapper.
-use crate::{FormatError, build_native_sample};
+use crate::{NativeError, build_native_sample};
 
 pub const MAX_SOURCE_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_OUTPUT_PCM: usize = 128 * 1024 * 1024;
@@ -28,11 +28,11 @@ pub enum WavError {
     UnsupportedEncoding,
     NonFinite,
     OutputTooLarge,
-    Format(FormatError),
+    Native(NativeError),
 }
-impl From<FormatError> for WavError {
-    fn from(e: FormatError) -> Self {
-        Self::Format(e)
+impl From<NativeError> for WavError {
+    fn from(e: NativeError) -> Self {
+        Self::Native(e)
     }
 }
 #[derive(Debug, Clone, Eq, PartialEq)]

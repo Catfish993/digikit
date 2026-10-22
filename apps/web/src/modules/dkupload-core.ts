@@ -46,7 +46,27 @@ export interface DkProgress {
 /** Send one whole SysEx message; receive the next one from the device, or null after the timeout. */
 export interface DkTransport {
   send(msg: Uint8Array): void | Promise<void>;
-  recv(timeoutMs: number): Promise<Uint8Array | null>;
+  /** `signal`: when it aborts, a transport that can (a native wait) ends the wait early and returns null; the session does not rely on it. */
+  recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null>;
+  /**
+   * Data bytes of one stock MidiRpc write request (WriteFileV1) this link takes, when it takes more than `RPC_CHUNK` (rpcfiles.ts): the
+   * emulator's USB has no packet limit, and a request costs the stock firmware about 6 ms of model time of its own whatever its size, besides
+   * 2.3 us a byte (finding 43, upload speed).
+   * A link to a device leaves it out.
+   */
+  readonly rpcChunk?: number;
+}
+
+const cancelledError = () => new DkError({ error: 'cancelled', kind: 'cancelled' });
+
+/** `p`, or a rejection with the cancelled error as soon as `signal` aborts (the abandoned `p` is left to end by itself). */
+function abortable<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(cancelledError());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(cancelledError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    p.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
 }
 
 export class DkError extends Error {
@@ -502,16 +522,16 @@ export interface DkSessionOptions {
   chunk?: number;
 }
 
-const u32 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 4).getUint32(0);
+export const u32 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 4).getUint32(0);
 const u16 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 2).getUint16(0);
-const be32 = (n: number) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+export const be32 = (n: number) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
 const text = new TextEncoder();
 const cstr = (b: Uint8Array, at: number): [string, number] => {
   const end = b.indexOf(0, at);
   if (end < 0) throw new DkError({ error: 'malformed reply: string without NUL', kind: 'protocol' });
   return [new TextDecoder().decode(b.subarray(at, end)), end + 1];
 };
-const concat = (...parts: Uint8Array[]): Uint8Array => {
+export const concat = (...parts: Uint8Array[]): Uint8Array => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const p of parts) {
@@ -526,6 +546,31 @@ const bytesOfHex = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => p
 /** Does the device have the capability `name` (a key of `CAP`)? From the INFO `caps` word; a runtime without one has none of these. */
 export function hasCap(info: DkInfoFull, name: keyof typeof GCAP): boolean {
   return info.caps !== null && ((info.caps >>> GCAP[name]) & 1) === 1;
+}
+
+/** One CAPACITY entry: `limit` and `used` in the unit of the resource (KiB for STORE, bytes for ARENA and DSP_AREA). */
+export type CapacityEntry = { limit: number; used: number; largest: number };
+
+/**
+ * The free space of the store, in bytes: the one source for every page. INFO's `free_bytes` is a u32 that the runtime saturates at 4 GiB
+ * (a DN2 store is about 19 GiB), so it is only the answer of a runtime without CAPACITY. CAPACITY's STORE entry is in KiB.
+ */
+export function storeFree(
+  info: Pick<DkInfoFull, 'caps' | 'free_bytes'>,
+  cap: Record<string, CapacityEntry> | null,
+): { free: number; total: number | null } {
+  const st = cap?.STORE;
+  if (st) return { free: Math.max(0, st.limit - st.used) * 1024, total: st.limit * 1024 };
+  return { free: info.free_bytes, total: null };
+}
+
+/** `storeFree` for the device behind `s` (reads CAPACITY when the runtime has it). */
+export async function storeSpace(
+  s: Pick<DkSession, 'info' | 'capacity'>,
+  info?: DkInfoFull,
+): Promise<{ free: number; total: number | null }> {
+  const i = info ?? (await s.info());
+  return storeFree(i, hasCap(i, 'CAPACITY') ? await s.capacity() : null);
 }
 
 // ---- the firmware's own screenshot (stock MidiRpc type 0x04, docs/MIDI-SYSEX-RPC.md) ------------------------------------------------
@@ -576,11 +621,18 @@ export class DkSession {
   private retries: number;
   private chunk: number;
   private turn: Promise<unknown> = Promise.resolve();
+  /** Aborted by `cancelPending`: the requests made before it (waiting for a reply or for their turn) fail with kind `cancelled`. */
+  private ctl = new AbortController();
   constructor(transport: DkTransport, options: DkSessionOptions = {}) {
     this.t = transport;
     this.timeoutMs = options.timeoutMs ?? 6000;
     this.retries = options.retries ?? 2;
     this.chunk = options.chunk ?? MAX_CHUNK;
+  }
+
+  /** The transport's `rpcChunk`: how much data one MidiRpc write may carry on this link, or undefined (use the default). */
+  get rpcChunk(): number | undefined {
+    return this.t.rpcChunk;
   }
 
   private takeSeq(): number {
@@ -589,22 +641,34 @@ export class DkSession {
     return s;
   }
 
+  /**
+   * Give up on every request that is waiting for a reply or for its turn (the user pressed Cancel): each fails at once with a `DkError` of
+   * kind `cancelled`. Requests made afterwards are not affected. A request that was already sent may still be answered; its reply is ignored.
+   */
+  cancelPending(): void {
+    const old = this.ctl;
+    this.ctl = new AbortController();
+    old.abort();
+  }
+
   /** One request and its reply (any status), after the requests queued before it. A timeout sends the request again with a new seq. */
   request(cmd: number, body: Uint8Array = new Uint8Array(), quick = false): Promise<RawReply> {
-    const next = this.turn.then(() => this.exchange(cmd, body, quick));
+    const signal = this.ctl.signal;
+    const next = this.turn.then(() => this.exchange(cmd, body, quick, signal));
     this.turn = next.catch(() => {});
     return next;
   }
 
-  private async exchange(cmd: number, body: Uint8Array, quick: boolean): Promise<RawReply> {
+  private async exchange(cmd: number, body: Uint8Array, quick: boolean, signal: AbortSignal): Promise<RawReply> {
     const retries = quick ? 0 : this.retries;
     const timeoutMs = quick ? Math.min(this.timeoutMs, QUICK_TIMEOUT_MS) : this.timeoutMs;
     for (let attempt = 0; attempt <= retries; attempt++) {
+      if (signal.aborted) throw cancelledError();
       const seq = this.takeSeq();
-      await this.t.send(frame(cmd, seq, body));
+      await abortable(Promise.resolve(this.t.send(frame(cmd, seq, body))), signal);
       const deadline = Date.now() + timeoutMs;
       for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
-        const raw = await this.t.recv(left);
+        const raw = await abortable(this.t.recv(left, signal), signal);
         if (!raw) break;
         const r = parseReply(raw);
         if (r && r.seq === seq && r.cmd === cmd) return r;
@@ -648,10 +712,15 @@ export class DkSession {
     };
   }
 
-  async list(): Promise<DkEntry[]> {
+  /**
+   * The store's entries, or (`prefix`, runtime 0.3.0, capability FOLDERS) those whose path starts with it. A folder with nothing in it is an
+   * entry of size 0 and a zero sha256.
+   */
+  async list(prefix?: string): Promise<DkEntry[]> {
     const out: DkEntry[] = [];
+    const tail = prefix ? concat(text.encode(prefix), Uint8Array.of(0)) : new Uint8Array();
     for (;;) {
-      const b = await this.ok(GCMD.LIST, 'ls', be32(out.length));
+      const b = await this.ok(GCMD.LIST, 'ls', concat(be32(out.length), tail));
       const total = u32(b, 0);
       const n = b[4];
       let at = 5;
@@ -662,6 +731,11 @@ export class DkSession {
       }
       if (n === 0 || out.length >= total) return out;
     }
+  }
+
+  /** MKDIR (runtime 0.3.0): make a folder. Ok when it exists; E_PATH when the path is a file or inside one. */
+  async mkdir(path: string): Promise<void> {
+    await this.ok(GCMD.MKDIR, 'mkdir', concat(text.encode(path), Uint8Array.of(0)));
   }
 
   async delete(path: string): Promise<void> {
@@ -708,10 +782,10 @@ export class DkSession {
   }
 
   /** CAPACITY (runtime 0.2.2): per resource `{limit, used, largest}`, keyed by the kind's name. */
-  async capacity(): Promise<Record<string, { limit: number; used: number; largest: number }>> {
+  async capacity(): Promise<Record<string, CapacityEntry>> {
     const b = await this.ok(GCMD.CAPACITY, 'capacity');
     const names = new Map(Object.entries(CAPACITY_KINDS).map(([n, k]) => [k as number, n]));
-    const out: Record<string, { limit: number; used: number; largest: number }> = {};
+    const out: Record<string, CapacityEntry> = {};
     for (let i = 0; i < b[1]; i++) {
       const at = 2 + 13 * i;
       out[names.get(b[at]) ?? `kind${b[at]}`] = {
@@ -733,11 +807,32 @@ export class DkSession {
   async header(path: string): Promise<Uint8Array> {
     return (await this.read(path, 0, HEADER_BYTES)).bytes;
   }
-  /** VERIFY (runtime 0.2.4): the sha256 (hex) of a store file, computed by the device from a fresh read of the card. */
-  async verify(path: string): Promise<string> {
-    const b = await this.ok(GCMD.VERIFY, 'verify', concat(text.encode(path), Uint8Array.of(0)));
+  /**
+   * VERIFY (runtime 0.2.4): the sha256 (hex) of a store file, computed by the device from a fresh read of the card. With `offset` (a multiple of
+   * 512) and `length` (runtime 0.3.0): of that range, so a large file is checked in pieces (the device spends about 120 ColdFire instructions a
+   * byte: a request for all of a large file can outlast the timeout).
+   */
+  async verify(path: string, offset?: number, length?: number): Promise<string> {
+    let body = concat(text.encode(path), Uint8Array.of(0));
+    if (offset !== undefined) body = concat(body, be32(offset), be32(length ?? 0));
+    const b = await this.ok(GCMD.VERIFY, 'verify', body);
     if (b.length !== 32) throw new DkError({ error: 'verify: malformed reply', kind: 'protocol' });
     return hexOf(b);
+  }
+  /** Is the file on the card the bytes of `data`? One ranged VERIFY per `piece` bytes, compared with the hash of the same range. */
+  async verifyFile(
+    path: string,
+    data: Uint8Array,
+    piece = 1 << 20,
+    onProgress: (done: number, total: number) => void = () => {},
+  ): Promise<boolean> {
+    if (data.length === 0) return (await this.verify(path)) === (await hexSha256(data));
+    for (let off = 0; off < data.length; off += piece) {
+      const part = data.subarray(off, Math.min(data.length, off + piece));
+      if ((await this.verify(path, off, part.length)) !== (await hexSha256(part))) return false;
+      onProgress(off + part.length, data.length);
+    }
+    return true;
   }
   /** SELECT (runtime 0.0.4): replace the selection record (what the next boot loads). */
   async select(paths: string[]): Promise<void> {
@@ -813,26 +908,33 @@ export class DkSession {
   async remoteRelease(): Promise<void> {
     await this.ok(SERVICE_CMD.REMOTE_RELEASE, 'remote release');
   }
-  /** The firmware's own Screenshot (stock MidiRpc 0x04): the 1024 bytes of the OLED shadow buffer (`screenPixel`), taking its turn with the other requests. */
-  screen(): Promise<Uint8Array> {
+  /**
+   * One stock MidiRpc request and the payload of the reply of the same type, taking its turn with the other requests. It is sent once: a write that
+   * timed out may have been done, so the caller decides (`RpcFiles` does not repeat one).
+   */
+  rpc(type: number, payload: Uint8Array = new Uint8Array(), timeoutMs: number = this.timeoutMs): Promise<Uint8Array> {
+    const signal = this.ctl.signal;
     const next = this.turn.then(async () => {
-      const seq = this.takeSeq();
-      await this.t.send(rpcRequest(RPC_SCREENSHOT, seq));
-      const deadline = Date.now() + this.timeoutMs;
+      if (signal.aborted) throw cancelledError();
+      await abortable(Promise.resolve(this.t.send(rpcRequest(type, this.takeSeq(), payload))), signal);
+      const deadline = Date.now() + timeoutMs;
       for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
-        const raw = await this.t.recv(left);
+        const raw = await abortable(this.t.recv(left, signal), signal);
         if (!raw) break;
         const r = parseRpcReply(raw);
-        if (r && r[0] === RPC_SCREENSHOT) {
-          const shot = decodeScreen(r[1]);
-          if (shot) return shot.slice();
-          throw new DkError({ error: 'screen: unexpected Screenshot reply', kind: 'protocol' });
-        }
+        if (r && r[0] === type) return r[1].slice();
       }
-      throw new DkError({ error: 'no screenshot from the device', kind: 'timeout' });
+      throw new DkError({ error: `no reply to MidiRpc ${type.toString(16)} from the device`, kind: 'timeout' });
     });
     this.turn = next.catch(() => {});
     return next;
+  }
+
+  /** The firmware's own Screenshot (stock MidiRpc 0x04): the 1024 bytes of the OLED shadow buffer (`screenPixel`), taking its turn with the other requests. */
+  async screen(): Promise<Uint8Array> {
+    const shot = decodeScreen(await this.rpc(RPC_SCREENSHOT));
+    if (!shot) throw new DkError({ error: 'screen: unexpected Screenshot reply', kind: 'protocol' });
+    return shot.slice();
   }
 
   /** Upload one file (BEGIN, DATA chunks one after the other, END). `onProgress(sent, total)` follows each acknowledged chunk. */

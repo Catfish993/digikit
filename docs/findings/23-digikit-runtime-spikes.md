@@ -201,6 +201,7 @@ while the card is read (time per 32 KiB page **[O]**).
   DT2 also reads a factory table at 0x458000 and has the path filesystem from 0x5D8000 to 0x2DF0180.
 - Highest sector in normal use: DN2 0x456259, DT2 0x2DF0180. Format trims only fixed regions; nothing depends on
   the card's size beyond the whitelist check.
+- **[C] Superseded by finding 59 (2026-10-22):** the store moves to the areas above the +Drive (DT2) and above `0x800000` (DN2); the range below was reachable by a crafted Data-API request and too small for samples. What follows is the earlier proposal.
 - Proposed module store: sectors 0x38000-0x3E000 (12 MiB) on both devices: above every kit pool, below the
   project records, outside every erase range, with 0x2000 sectors of margin on each side (a choice, not a
   measurement).

@@ -33,9 +33,6 @@ from tools.patchkit import pk_dkrt_machine as M
 from tools.patchkit import pk_harness as H
 
 E_NOSTORE, E_INUSE, E_PEEK = -61, -62, -63
-FIRST, SECTORS = B.STORE_FIRST, B.STORE_SECTORS
-END = FIRST + SECTORS
-HEADER_B = B.HEADER_B  # absolute sector of store header copy B
 
 
 def uploader(rig: Any) -> DK.Uploader:
@@ -65,12 +62,92 @@ def about_rows(rig: Any, plan: Any) -> list[str]:
 # ---- card -------------------------------------------------------------------------------------------------------------------
 
 
+def run_card_small(c: Any) -> None:
+    """A card smaller than the store area (the emulator's `small` identity reports 0x3B0000 sectors, below both devices' areas): the runtime
+    has no store (state too small), nothing is read or written there, uploads answer E_NOSTORE, the log says so, and the boot goes on."""
+    img = c.image_for(B.RT, "run")
+    card = c.work / "small-card.img"
+    card.write_bytes(
+        bytes(1 << 20)
+    )  # blank; the identity, not the file, sets the capacity
+    mod = "modules/x.dkm"
+    with c.rig(
+        img, card, "small", {"DIGI_CARD_IDENTITY": "small"}, cf_only=True
+    ) as rig:
+        ci = rig.card_info()
+        c.check(
+            "small card: the check says too small; nothing refused, claimed or written",
+            ci["state_name"] == "too small"
+            and (ci["refused"], ci["claims"], ci["writes"]) == (0, 0, 0),
+            str(ci),
+        )
+        b = rig.boot_info()
+        c.check(
+            "small card: the boot goes on (no module selected, no safe mode, UI loop reached)",
+            b["safe"] == 0 and b["count"] == 0 and b["ui_reached"] == 1,
+            str(b),
+        )
+        evs = events(rig)
+        chk = [e for e in evs if e[2] == L.K["CARD_CHECK"]]
+        c.check(
+            "small card: the log has one error event for the check (state too small)",
+            len(chk) == 1 and chk[0][3] & 1 and chk[0][4][0] == 5,
+            str(chk),
+        )
+        up = uploader(rig)
+        info = up.info()
+        ops = [
+            up.request(
+                DK.CMD_BEGIN, mod.encode() + b"\0" + struct.pack(">I", 10) + bytes(32)
+            )[0],
+            up.request(DK.CMD_DELETE, mod.encode() + b"\0")[0],
+            up.request(DK.CMD_MKDIR, b"samples\0")[0],
+            up.request(DK.CMD_CLEAR, struct.pack(">I", DK.CLEAR_MAGIC))[0],
+            up.request(DK.CMD_LIST, struct.pack(">I", 0))[0],
+        ]
+        c.check(
+            "small card: INFO answers; BEGIN, DELETE, MKDIR, CLEAR and LIST answer E_NOSTORE",
+            ops == [E_NOSTORE] * 5,
+            f"{info} {ops}",
+        )
+        cap = up.capacity()
+        c.check(
+            "small card: CAPACITY reports a store of 0 KiB",
+            cap["STORE"]["limit"] == 0 and cap["STORE"]["used"] == 0,
+            str(cap.get("STORE")),
+        )
+        r_sel = rig.set_selection([mod])
+        r_probe = rig.probe_write(c.store.first + 5, 512)
+        ci = rig.card_info()
+        c.check(
+            "small card: a selection and a write in the area are refused (E_CARD_RO), counted as too small",
+            (r_sel, r_probe) == (B.E_CARD_RO, B.E_CARD_RO) and ci["writes"] == 0,
+            f"{(r_sel, r_probe)} {ci}",
+        )
+        c.check(
+            "small card: the runtime wrote nothing in the store range",
+            rig.card_store_writes() == [],
+            str(rig.card_store_writes()),
+        )
+        c.done(rig)
+    # the stock firmware formats this blank card (writes below the store area), so the store-range check above is the one that counts
+    t = c.totals
+    c.check(
+        "write-watch on cf.expansion: no stray write; flush check: no hit",
+        t["write_events"] == 0 and t["emulators"] > 0 and t["flush_hits"] == 0,
+        str(t),
+    )
+
+
 def run_card(c: Any) -> None:
+    if c.table().get("part") == "small":
+        return run_card_small(c)
     from tools.coldfire import digikit_menu_proof as D
     from tools.patchkit.pk_digikit_project import card_after
 
     img = c.image_for(B.RT, "run")
     menu_img = c.image_for(f"{B.RT},core/digikit-menu", "menu")
+    FIRST, END = c.store.first, c.store.end  # the store area of this device
     pat = bytes(
         (i * 7 + 3) & 0xFF for i in range(512)
     )  # a sector that is neither all 0x00 nor all 0xFF
@@ -81,7 +158,7 @@ def run_card(c: Any) -> None:
     # a valid selection record and nothing else in the range makes the area ours; with blank header sectors it is an empty store, with foreign
     # bytes in both header sectors it is not (these two come before the first pack, like the cards above)
     selonly = c.card([])
-    selforeign = c.card([], foreign={FIRST: pat, FIRST + B.HEADER_B: pat})
+    selforeign = c.card([], foreign={FIRST: pat, c.store.header_b: pat})
     mod = c.pack("test/c-demo", "a.dkm")
     ours = c.card([mod])
     plan = D.Plan(menu_img.plan)
@@ -684,6 +761,7 @@ def part_modules(c: Any, img: Any) -> None:
             "PAGE_ROWS": lim.page_rows,
             "FX_SLOTS": lim.fx_slots,
             "MAP_ENTRIES": pk_device.contract_max()["map_entries"],
+            "STORE": c.store.limit // 2,  # KiB
         }
         c.check(
             "INFO sets the CAPACITY capability, and CAPACITY lists every kind with the device file's limit",

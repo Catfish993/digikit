@@ -43,7 +43,7 @@ binary, device, every file's relative path and bytes).
   rewrites it from the boot copy at every start; `--with-working-project` adds it). `.mmcfs/projects/` cannot collide with these regions: slots
   end before them.
 - **`digikit/`** (top level only) is not copied to the path filesystem: every file under it, recursively, goes to the
-  module store (`docs/design/digikit-store.md`), on DT2 and DN2. More than the store holds (12 MiB) is an error.
+  module store (`docs/design/digikit-store.md`), on DT2 and DN2. More than the area holds (`[card.store]`; 82 MiB on the DT2) is an error.
 - **DN2 has no path filesystem**: only `.mmcfs/` and `digikit/` apply; every other file is reported and skipped, and the
   image carries no path filesystem structures. DN2 pool addresses are from the 1.11 decompile.
 - **The card layout is device data**: `[card]` in `devices/<device>.toml` (pool base sector, stride, slot count and size,

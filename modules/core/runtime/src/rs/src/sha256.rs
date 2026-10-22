@@ -1,4 +1,4 @@
-//! SHA-256 (FIPS 180-4), streaming, 32-bit lengths only (module files are at most 64 KiB).
+//! SHA-256 (FIPS 180-4), streaming, 32-bit lengths only (a store file is at most 4 GiB - 1).
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -11,6 +11,33 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
+// The four sigma functions of FIPS 180-4 written as `(x ^ x >> a ^ x >> b) >> c ^ (x ^ x << d ^ x << e) << f`: the XOR of three rotations is the
+// XOR of three right shifts and three left shifts, and each triple is one shifted value of a two-step sum (the rotations of a word do not
+// overlap, so the OR of a rotation is the XOR). A ColdFire has no rotate: a rotation is two shifts, a move and an OR, and the factored form
+// takes about a quarter fewer instructions.
+/// Σ1(e) = rotr 6 ^ rotr 11 ^ rotr 25.
+#[inline(always)]
+fn big1(e: u32) -> u32 {
+    ((e ^ (e >> 5) ^ (e >> 19)) >> 6) ^ ((e ^ (e << 14) ^ (e << 19)) << 7)
+}
+/// Σ0(a) = rotr 2 ^ rotr 13 ^ rotr 22.
+#[inline(always)]
+fn big0(a: u32) -> u32 {
+    ((a ^ (a >> 11) ^ (a >> 20)) >> 2) ^ ((a ^ (a << 9) ^ (a << 20)) << 10)
+}
+/// σ0(x) = rotr 7 ^ rotr 18 ^ shr 3.
+#[inline(always)]
+fn small0(x: u32) -> u32 {
+    ((x ^ (x >> 4) ^ (x >> 15)) >> 3) ^ ((x ^ (x << 11)) << 14)
+}
+/// σ1(y) = rotr 17 ^ rotr 19 ^ shr 10.
+#[inline(always)]
+fn small1(y: u32) -> u32 {
+    ((y ^ (y >> 7) ^ (y >> 9)) >> 10) ^ ((y ^ (y << 2)) << 13)
+}
+
+/// `repr(C)`: `h` first and 4-byte aligned, so `buf` (offset 32) is too, and `block` reads its words whole.
+#[repr(C)]
 pub struct Sha {
     h: [u32; 8],
     buf: [u8; 64],
@@ -19,7 +46,7 @@ pub struct Sha {
 }
 
 impl Sha {
-    pub fn new() -> Sha {
+    pub const fn new() -> Sha {
         Sha {
             h: [
                 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
@@ -31,58 +58,95 @@ impl Sha {
         }
     }
 
+    /// One 64-byte block. Unrolled by hand (the rounds rename the eight variables instead of moving them, the message schedule is a ring of 16
+    /// words in place, no index is checked): a ColdFire has no rotate and few registers, and a loop over `[u32; 64]` took about 1000 instructions
+    /// a byte, which for a sample of several MiB was minutes of the MIDI task.
     unsafe fn block(&mut self, p: *const u8) {
-        let mut w = [0u32; 64];
+        let mut w = [0u32; 16];
         let mut i = 0;
-        while i < 16 {
-            let q = p.add(i * 4);
-            w[i] = ((*q as u32) << 24)
-                | ((*q.add(1) as u32) << 16)
-                | ((*q.add(2) as u32) << 8)
-                | (*q.add(3) as u32);
-            i += 1;
+        if cfg!(target_endian = "big") && (p as usize) & 3 == 0 {
+            // the ColdFire is big-endian: a long read is the message word (4 instructions a word less than four byte reads)
+            let q = p as *const u32;
+            while i < 16 {
+                w[i] = *q.add(i);
+                i += 1;
+            }
+        } else {
+            while i < 16 {
+                let q = p.add(i * 4);
+                w[i] = ((*q as u32) << 24) | ((*q.add(1) as u32) << 16) | ((*q.add(2) as u32) << 8) | (*q.add(3) as u32);
+                i += 1;
+            }
         }
-        while i < 64 {
-            let a = w[i - 15];
-            let b = w[i - 2];
-            let s0 = ((a >> 7) | (a << 25)) ^ ((a >> 18) | (a << 14)) ^ (a >> 3);
-            let s1 = ((b >> 17) | (b << 15)) ^ ((b >> 19) | (b << 13)) ^ (b >> 10);
-            w[i] = w[i - 16]
-                .wrapping_add(s0)
-                .wrapping_add(w[i - 7])
-                .wrapping_add(s1);
-            i += 1;
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = self.h;
+        let k = K.as_ptr();
+        // one round: the new `d` and `h`; the caller passes the variables in the rotated order
+        macro_rules! rnd {
+            ($a:ident, $b:ident, $c:ident, $d:ident, $e:ident, $f:ident, $g:ident, $h:ident, $kw:expr, $w:expr) => {{
+                let t1 = $h
+                    .wrapping_add(big1($e))
+                    .wrapping_add(($e & $f) ^ (!$e & $g))
+                    .wrapping_add(*k.add($kw))
+                    .wrapping_add($w);
+                let t2 = big0($a).wrapping_add(($a & $b) ^ ($a & $c) ^ ($b & $c));
+                $d = $d.wrapping_add(t1);
+                $h = t1.wrapping_add(t2);
+            }};
         }
-        let mut v = self.h;
-        i = 0;
-        while i < 64 {
-            let e = v[4];
-            let a = v[0];
-            let s1 = ((e >> 6) | (e << 26)) ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7));
-            let ch = (e & v[5]) ^ (!e & v[6]);
-            let t1 = v[7]
-                .wrapping_add(s1)
-                .wrapping_add(ch)
-                .wrapping_add(K[i])
-                .wrapping_add(w[i]);
-            let s0 = ((a >> 2) | (a << 30)) ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10));
-            let maj = (a & v[1]) ^ (a & v[2]) ^ (v[1] & v[2]);
-            let t2 = s0.wrapping_add(maj);
-            v[7] = v[6];
-            v[6] = v[5];
-            v[5] = v[4];
-            v[4] = v[3].wrapping_add(t1);
-            v[3] = v[2];
-            v[2] = v[1];
-            v[1] = v[0];
-            v[0] = t1.wrapping_add(t2);
-            i += 1;
+        // the schedule word j (0..16) of this group of 16: w[j] += s0(w[j+1]) + w[j+9] + s1(w[j+14]) (indices mod 16)
+        macro_rules! sched {
+            ($j:expr) => {{
+                let x = w[($j + 1) & 15];
+                let y = w[($j + 14) & 15];
+                w[$j] = w[$j]
+                    .wrapping_add(small0(x))
+                    .wrapping_add(w[($j + 9) & 15])
+                    .wrapping_add(small1(y));
+            }};
         }
-        i = 0;
-        while i < 8 {
-            self.h[i] = self.h[i].wrapping_add(v[i]);
-            i += 1;
+        // 16 rounds from round `$r`; `$s` is 1 when the schedule words are made first
+        macro_rules! sixteen {
+            ($r:expr, $s:expr) => {{
+                macro_rules! step {
+                    ($j:expr, $a:ident, $b:ident, $c:ident, $d:ident, $e:ident, $f:ident, $g:ident, $h:ident) => {{
+                        if $s == 1 {
+                            sched!($j);
+                        }
+                        rnd!($a, $b, $c, $d, $e, $f, $g, $h, $r + $j, w[$j]);
+                    }};
+                }
+                step!(0, a, b, c, d, e, f, g, h);
+                step!(1, h, a, b, c, d, e, f, g);
+                step!(2, g, h, a, b, c, d, e, f);
+                step!(3, f, g, h, a, b, c, d, e);
+                step!(4, e, f, g, h, a, b, c, d);
+                step!(5, d, e, f, g, h, a, b, c);
+                step!(6, c, d, e, f, g, h, a, b);
+                step!(7, b, c, d, e, f, g, h, a);
+                step!(8, a, b, c, d, e, f, g, h);
+                step!(9, h, a, b, c, d, e, f, g);
+                step!(10, g, h, a, b, c, d, e, f);
+                step!(11, f, g, h, a, b, c, d, e);
+                step!(12, e, f, g, h, a, b, c, d);
+                step!(13, d, e, f, g, h, a, b, c);
+                step!(14, c, d, e, f, g, h, a, b);
+                step!(15, b, c, d, e, f, g, h, a);
+            }};
         }
+        sixteen!(0, 0);
+        let mut r = 16usize;
+        while r < 64 {
+            sixteen!(r, 1);
+            r += 16;
+        }
+        self.h[0] = self.h[0].wrapping_add(a);
+        self.h[1] = self.h[1].wrapping_add(b);
+        self.h[2] = self.h[2].wrapping_add(c);
+        self.h[3] = self.h[3].wrapping_add(d);
+        self.h[4] = self.h[4].wrapping_add(e);
+        self.h[5] = self.h[5].wrapping_add(f);
+        self.h[6] = self.h[6].wrapping_add(g);
+        self.h[7] = self.h[7].wrapping_add(h);
     }
 
     /// Feed `n` bytes from `p`.

@@ -7,15 +7,24 @@ import type { DkTransport } from '@web/modules/dkupload-core';
 export const listMidiPorts = () => invoke<string[]>('midi_ports');
 export const openMidiPort = (name: string) => invoke<void>('midi_open', { name });
 export const closeMidiPort = () => invoke<void>('midi_close');
+/** End the pending `recv` on the native side now (it answers as if its time had run out). */
+const cancelMidiRecv = () => invoke<void>('midi_cancel');
 
 export class MidiPortTransport implements DkTransport {
   async send(msg: Uint8Array): Promise<void> {
     await invoke('midi_send', msg);
   }
 
-  /** The next complete message the device sent, or null after `timeoutMs`. */
-  async recv(timeoutMs: number): Promise<Uint8Array | null> {
-    const got = await invoke<ArrayBuffer>('midi_recv', { timeoutMs: Math.max(1, Math.round(timeoutMs)) });
-    return got.byteLength ? new Uint8Array(got) : null;
+  /** The next complete message the device sent, or null after `timeoutMs` or when `signal` aborts (the native wait ends too). */
+  async recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null> {
+    if (signal?.aborted) return null;
+    const onAbort = () => void cancelMidiRecv().catch(() => {});
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      const got = await invoke<ArrayBuffer>('midi_recv', { timeoutMs: Math.max(1, Math.round(timeoutMs)) });
+      return got.byteLength ? new Uint8Array(got) : null;
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+    }
   }
 }

@@ -4,9 +4,30 @@
 // The page only puts files on the card (upload and verify) and restarts the device. Which modules the device loads is its own
 // selection, made in SETTINGS > DIGIKIT > MODULES on the device and applied there.
 
+import { formatBytes } from '../../../web/src/modules/backend.ts';
 import type { Group, TransferEvent, TransferRow, TransferView } from '../../../web/src/modules/dktransfer.ts';
 export type { Group, TransferEvent, TransferRow, TransferView };
 export const GROUPS: Group[] = ['Machines', 'Effects', 'Tools'];
+
+// ---- the mode of the page ---------------------------------------------------------------------------------------------------------
+
+export type Mode = 'modules' | 'samples';
+export const MODES: { id: Mode; label: string }[] = [
+  { id: 'modules', label: 'Modules' },
+  { id: 'samples', label: 'Samples' },
+];
+/** The saved mode, or Modules when nothing (or something else) was saved. */
+export const parseMode = (v: unknown): Mode => MODES.find((m) => m.id === v)?.id ?? 'modules';
+
+/** The free space of a store: in GiB from 1 GiB up, else bytes, KiB or MiB. */
+export function freeText(bytes: number): string {
+  return bytes >= 2 ** 30 ? `${(bytes / 2 ** 30).toFixed(2)} GiB` : formatBytes(bytes);
+}
+
+/** The line of the On device column, the same in both modes: the target, the device, its runtime and the free space (left out when unknown). */
+export function infoLine(target: string, device: string, runtime: string, free: number | undefined): string {
+  return [target, device, `runtime ${runtime}`, ...(free === undefined ? [] : [`${freeText(free)} free`])].join(' · ');
+}
 
 /** The key of a row in the tick set. */
 export const rowKey = (r: TransferRow): string => r.id ?? r.path;
@@ -73,13 +94,40 @@ export function warningText(r: TransferRow): string {
   return r.warnings && r.warnings.length ? r.warnings.join('; ') : '';
 }
 
-/** The state words of a row: loaded, or on the card (or not). */
-export function stateText(r: TransferRow): string {
-  const out: string[] = [];
-  if (r.loaded) out.push('loaded');
-  else
-    out.push(r.on_card === 'yes' ? 'on card' : r.on_card === 'other version' ? 'other version on card' : 'not on card');
-  return out.join(', ');
+/** A small label after a row's name: `tone` colours it (`ok` green, `warn` amber, `dim` grey); `title` is its tooltip. */
+export interface RowTag {
+  text: string;
+  title?: string;
+  tone: 'ok' | 'warn' | 'dim';
+}
+
+/** The tags of a library module in the "On your computer" list: a test module, what the device holds of it, a fit warning. Nothing is said
+ * of a module that is not on the device (that is the usual state), and nothing of a fit that has no warning. */
+export function localTags(r: TransferRow): RowTag[] {
+  const out: RowTag[] = [];
+  if (r.test) out.push({ text: 'test', tone: 'dim' });
+  if (r.on_card === 'yes') out.push({ text: 'on device', tone: 'ok' });
+  else if (r.on_card === 'other version')
+    out.push({ text: 'differs', title: 'A different build is on the device; Install replaces it', tone: 'warn' });
+  const w = warningText(r);
+  if (w) out.push({ text: 'fit', title: w, tone: 'warn' });
+  return out;
+}
+
+/** The tags of a file of the "On device" list: a loaded module says so first; a file the library does not have, and one that differs from
+ * the library's build. A file that matches the library has no tag (that is the usual state), and one that is only going there has none yet. */
+export function deviceTags(r: TransferRow): RowTag[] {
+  const out: RowTag[] = [];
+  if (r.loaded) out.push({ text: 'loaded', title: 'Loaded by the device until the next restart', tone: 'ok' });
+  if (!r.id)
+    out.push({
+      text: 'not in library',
+      title: 'Only on the device: no built module of your library matches',
+      tone: 'dim',
+    });
+  else if (r.on_card === 'other version')
+    out.push({ text: 'differs', title: 'Differs from the build in your library', tone: 'warn' });
+  return out;
 }
 
 /** Per store path: what VERIFY said after the last install. */
@@ -197,6 +245,28 @@ export function progressFailed(p: Progress): boolean {
   return p.restart === 'failed' || p.modules.some((m) => m.state === 'failed');
 }
 
+/** What the bar along the bottom shows, the same for an install, a delete, a restart and a samples upload. */
+export interface BarInfo {
+  /** The overall fraction, 0 to 1 (the bar). */
+  fraction: number;
+  failed: boolean;
+  message: string;
+  /** Bytes of files sent so far and in all (the speed and the time left come from these; 0 in all: no bytes in this job). */
+  sent: number;
+  total: number;
+}
+
+/** The bar of an install, delete or restart. */
+export function modulesBar(p: Progress): BarInfo {
+  let sent = 0;
+  let total = 0;
+  for (const m of p.modules) {
+    total += m.bytes;
+    sent += m.state === 'ok' ? m.bytes : m.state === 'upload' || m.state === 'verify' ? m.sent : 0;
+  }
+  return { fraction: progressFraction(p), failed: progressFailed(p), message: p.message || 'Starting…', sent, total };
+}
+
 /** What one file's row shows while an install runs: its upload bar, "verifying", or the result. */
 export type RowStatus =
   { kind: 'uploading'; sent: number; bytes: number } | { kind: 'verifying' } | { kind: 'ok' } | { kind: 'failed' };
@@ -250,11 +320,12 @@ export function deletePaths(view: TransferView, ticked: Set<string>): string[] {
     .map((r) => r.path);
 }
 
+/** A button label with the count in parentheses: "Upload (3)"; no count when nothing is ticked. */
+export const countLabel = (label: string, n: number): string => (n > 0 ? `${label} (${n})` : label);
+
 /** The label of the Delete button: the count, and "Confirm" on the first click. */
-export function deleteLabel(n: number, confirming: boolean): string {
-  if (n === 0) return 'Delete';
-  return confirming ? `Confirm delete ${n}` : `Delete ${n}`;
-}
+export const deleteLabel = (n: number, confirming: boolean): string =>
+  n > 0 && confirming ? countLabel('Confirm delete', n) : countLabel('Delete', n);
 
 /** The text after a delete job: a module that was loaded stays loaded until the restart (DELETE does not touch the device's selection). */
 export function deleteDoneText(view: TransferView, paths: string[]): string {
