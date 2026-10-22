@@ -135,7 +135,7 @@ class FakeDevice {
         if ([...this.files.keys()].some((f) => f === path || path.startsWith(`${f}/`))) return err(-51);
         const exists = [...this.dirs, ...this.files.keys()].some((f) => f === path || f.startsWith(`${path}/`));
         if (!exists) {
-          for (const d of [...this.dirs]) if (path.startsWith(`${d}/`)) this.dirs.delete(d);
+          for (const d of this.dirs) if (path.startsWith(`${d}/`)) this.dirs.delete(d);
           this.dirs.add(path);
         }
         return ok();
@@ -162,7 +162,7 @@ class FakeDevice {
         if (!st) return err(ST.E_STATE);
         this.staged = null;
         if (st.data.length !== st.size || hex(sha(st.data)) !== hex(st.sha)) return err(ST.E_HASH);
-        for (const d of [...this.dirs]) if (st.path.startsWith(`${d}/`)) this.dirs.delete(d);
+        for (const d of this.dirs) if (st.path.startsWith(`${d}/`)) this.dirs.delete(d);
         this.files.set(st.path, st.data);
         return ok();
       }

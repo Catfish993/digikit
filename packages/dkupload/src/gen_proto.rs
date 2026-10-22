@@ -67,7 +67,7 @@ pub const CAPK_STORE: u8 = 12;
 /// The command ranges a module may register, as (first, last, guarded).
 /// The third field: the runtime refuses the range's commands while the REMOTE switch is off.
 pub const RANGES: [(u8, u8, bool); 2] = [
-    (0x38, 0x3d, true),  // remote
+    (0x38, 0x3d, true), // remote
     (0x3e, 0x3f, false), // remote_state
 ];
 pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);

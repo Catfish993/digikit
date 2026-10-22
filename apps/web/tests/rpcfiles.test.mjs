@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DkSession, decode8in7 } from '../src/modules/dkupload-core.ts';
-import { RPC_FILE, RpcFiles, TRAILER, pathBytes, putVerified, verifyWritten } from '../src/modules/rpcfiles.ts';
+import { RPC_FILE, RpcFiles, pathBytes, putVerified, verifyWritten } from '../src/modules/rpcfiles.ts';
 import { FakeDrive, hashOf } from './fakedrive.mjs';
 
 const setup = (opts) => {
