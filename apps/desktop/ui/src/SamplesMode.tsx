@@ -1,12 +1,15 @@
-// Transfer page, Samples mode. On your computer: a folder of samples (chosen once, remembered; one level shown with a breadcrumb) and the files
-// added by hand or dropped (kept in the list even when they are outside the folder). On device: the device's sample folders. The backend is the
+// Transfer page, Samples mode, a file explorer on both sides. On your computer: a folder of samples (chosen once, remembered; one level shown
+// with a breadcrumb) and the files added by hand or dropped (kept in the list even when they are outside the folder). On device: the device's
+// sample folders. Rows are selected like in Finder (click, Shift, Cmd or Ctrl, a marquee, Cmd+A, Esc; the tick is the selection), a folder
+// opens with a double click or Enter, "Up" and the breadcrumb go back. Upload sends the selected rows, a folder with everything in it and its
+// structure kept, into the open device folder; so does a drag of the rows onto the device pane or onto one of its folders. The backend is the
 // one the device profile names (`[storage] samples`: the stock MidiRpc file commands or the digikit store; samples-backend.ts), so the mode is
 // the same on every device. A WAV is converted to the native sample file before it goes; a native sample goes as it is; any other file is
 // uploaded unchanged. Each upload is verified against the bytes sent. The page speaks the protocol in TypeScript over the selected target; the
 // local files come through the native `local_*` commands (local.rs); no process is started.
 import { For, Show, createSignal, type JSX } from 'solid-js';
 import { errorLine, formatBytes } from '@web/modules/backend';
-import { openDeviceSamples, labelOf, pickFolder, readLocalFile } from './samples-backend';
+import { openDeviceSamples, labelOf, listLocalAt, pickFolder, readLocalFile } from './samples-backend';
 import {
   applyUpload,
   crumbs,
@@ -14,14 +17,19 @@ import {
   dropUploads,
   folderNameError,
   joinPath,
+  foldersFromOutside,
   localCrumbs,
   localRowTags,
   localRows,
-  pickedRows,
+  noFoldersMessage,
+  parentOf,
+  planUpload,
   sampleRows,
-  storeNote,
-  uploadFiles,
+  selectedRows,
+  uploadItems,
+  type LocalRow,
   type SampleRow,
+  type UploadItem,
 } from './samples-core';
 import {
   Crumbs,
@@ -30,9 +38,14 @@ import {
   ListRow,
   LocalPane,
   SelectAll,
+  UpRow,
   createConfirm,
+  writing,
+  droppedFiles,
   type PageCtx,
 } from './TransferParts';
+import { createPaneSelect } from './pane-select';
+import { ROWS_TYPE, dropFolder } from './select-core';
 import { noteActivity } from './activity';
 import { countLabel } from './transfer-core';
 import SplitPane from './SplitPane';
@@ -75,13 +88,18 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
       addedFiles().map((f) => ({ name: f.name, size: f.size })),
       localKinds(),
     );
-  const picked = () => pickedRows(lrows(), localTicks());
-  const flip = (set: Set<string>, key: string) => {
-    const next = new Set(set);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    return next;
-  };
+  const picked = () => selectedRows(lrows(), localTicks());
+  const lsel = createPaneSelect({
+    keys: () => lrows().map((r) => r.key),
+    selected: localTicks,
+    set: setLocalTicks,
+    disabled: () => writing(busy()),
+    open: (key) => {
+      const r = lrows().find((x) => x.key === key);
+      if (r?.kind === 'folder') openLocal(r.path);
+    },
+    up: () => localPath() && openLocal(parentOf(localPath())),
+  });
 
   const choose = async () => {
     try {
@@ -96,13 +114,14 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
     }
   };
   const openLocal = (path: string) => {
-    if (busy()) return;
+    if (writing(busy())) return;
     setLocalPath(path);
     setLocalTicks(new Set<string>());
     void run('Reading', async () => {});
   };
   /** Files added by hand join the list (same name: the newer one) and are ticked; their first bytes tell what the upload will do. */
-  const addFiles = (files: File[]) => {
+  const addFiles = (files: File[], folders = 0) => {
+    if (folders) setError(foldersFromOutside(folders));
     if (!files.length) return;
     const names = new Set(files.map((f) => f.name));
     setAddedFiles((old) => [...old.filter((f) => !names.has(f.name)), ...files]);
@@ -112,30 +131,87 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
         if (k) setLocalKinds((all) => ({ ...all, [`+${f.name}`]: k }));
       });
   };
-  const upload = () =>
-    run('Uploading', async () => {
+  /** Send `items` (and make `mkdirs` first) into the device; the bar counts them all. */
+  const send = async (mkdirs: string[], items: UploadItem[]): Promise<boolean> => {
+    let done = false;
+    await run('Uploading', async () => {
       const o = await openDeviceSamples();
-      const rows = picked();
-      const data = await Promise.all(
-        rows.map(async (r) => ({
-          name: r.name,
-          data: r.added
-            ? new Uint8Array(await (addedFiles().find((f) => f.name === r.name) as File).arrayBuffer())
-            : await readLocalFile(r.path),
-        })),
-      );
+      if (mkdirs.length && !(await o.backend.canMkdir())) throw new Error(noFoldersMessage(o.name));
       setNote('');
       setUploadBase(uploads());
-      await uploadFiles(o.backend, o.prepare, sampleFolder(), data, (e) => {
+      await uploadItems(o.backend, o.prepare, mkdirs, items, (e) => {
         noteActivity();
         setUploads((u) => applyUpload(u, e));
       });
-      setLocalTicks(new Set<string>());
+      done = true;
     });
+    return done;
+  };
+  const itemOf = (folder: string, name: string, size: number, read: () => Promise<Uint8Array>): UploadItem => ({
+    folder,
+    name,
+    size,
+    read,
+  });
+  /** A read (a window that got the focus, the light poll) ends within moments; a drop that lands in it waits for the end. */
+  const whenIdle = async () => {
+    for (let i = 0; i < 200 && busy() === 'Reading'; i++) await new Promise((r) => setTimeout(r, 50));
+  };
+  /** Upload local rows (files, and folders with everything in them) into the device folder `target`. */
+  const uploadRows = async (rows: LocalRow[], target: string) => {
+    await whenIdle();
+    if (!rows.length || busy()) return;
+    let plan;
+    try {
+      plan = await planUpload(rows, target, listLocalAt);
+    } catch (e) {
+      setError(errorLine(e));
+      return;
+    }
+    const items = plan.files.map((f) =>
+      itemOf(f.folder, f.name, f.size, async () =>
+        f.added
+          ? new Uint8Array(await (addedFiles().find((a) => a.name === f.name) as File).arrayBuffer())
+          : await readLocalFile(f.rel),
+      ),
+    );
+    // the selection stays when the run could not start (no folders on the device, a link that is gone)
+    if (await send(plan.mkdirs, items)) setLocalTicks(new Set<string>());
+  };
+  const upload = () => void uploadRows(picked(), sampleFolder());
+  /** Files dragged in from outside onto the device pane go straight into the folder they were dropped on. */
+  const uploadDropped = async (files: File[], target: string) => {
+    await whenIdle();
+    if (!files.length || busy()) return;
+    await send(
+      [],
+      files.map((f) => itemOf(target, f.name, f.size, async () => new Uint8Array(await f.arrayBuffer()))),
+    );
+  };
+  const onDeviceDrop = (kind: 'rows' | 'files', folder: string | undefined, e: DragEvent) => {
+    const target = dropFolder(folder, sampleFolder());
+    if (kind === 'files') {
+      const d = droppedFiles(e);
+      if (d.folders) setError(foldersFromOutside(d.folders));
+      void uploadDropped(d.files, target);
+      return;
+    }
+    let keys: string[] = [];
+    try {
+      keys = JSON.parse(e.dataTransfer?.getData(ROWS_TYPE) ?? '[]') as string[];
+    } catch {
+      // not our drag
+    }
+    const wanted = new Set(keys);
+    void uploadRows(
+      lrows().filter((r) => wanted.has(r.key)),
+      target,
+    );
+  };
 
   // ---- On device -------------------------------------------------------------------------------------------------------------------
   const open = (folder: string) => {
-    if (busy()) return;
+    if (writing(busy())) return;
     setSampleFolder(folder);
     setSampleTicks(new Set<string>());
     setNote('');
@@ -173,23 +249,35 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
       }
       setNote(`Deleted ${gone.length} item${gone.length === 1 ? '' : 's'}.`);
     });
-  const toggle = (r: SampleRow) => {
-    setSampleTicks(flip(sampleTicks(), r.path));
-    confirm.stop();
-  };
+  const dsel = createPaneSelect({
+    keys: () =>
+      rows()
+        .filter((r) => !r.pending)
+        .map((r) => r.path),
+    selected: sampleTicks,
+    set: (next) => {
+      setSampleTicks(next);
+      confirm.stop();
+    },
+    disabled: () => writing(busy()),
+    open: (key) => {
+      const r = rows().find((x) => x.path === key);
+      if (r?.kind === 'folder' && !r.pending) open(r.path);
+    },
+    up: () => sampleFolder() && open(parentOf(sampleFolder())),
+  });
 
   return (
     <SplitPane id="transfer">
       <LocalPane
         onDrop={addFiles}
+        select={lsel}
         selectAll={
           <SelectAll
-            label="Select all files to upload"
-            keys={lrows()
-              .filter((r) => r.kind === 'file')
-              .map((r) => r.key)}
+            label="Select all to upload"
+            keys={lrows().map((r) => r.key)}
             ticked={localTicks()}
-            disabled={!!busy()}
+            disabled={writing(busy())}
             onChange={setLocalTicks}
           />
         }
@@ -231,8 +319,8 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
               disabled={!!busy() || picked().length === 0 || !deviceInfo()}
               title={
                 picked().length
-                  ? 'Convert, upload and verify the ticked files into the open folder of the device'
-                  : 'Tick a file to upload'
+                  ? 'Convert, upload and verify the selected files and folders into the open folder of the device'
+                  : 'Select a file or a folder to upload'
               }
               onClick={() => void upload()}
             >
@@ -245,9 +333,16 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
           <Crumbs
             items={localCrumbs(localFolder(), localPath())}
             current={localPath()}
-            disabled={!!busy()}
+            disabled={writing(busy())}
             label="Folder on your computer"
             onOpen={openLocal}
+          />
+        </Show>
+        <Show when={localFolder() && localPath()}>
+          <UpRow
+            disabled={writing(busy())}
+            title="Go up one folder (Backspace)"
+            onUp={() => openLocal(parentOf(localPath()))}
           />
         </Show>
         <Show
@@ -264,19 +359,21 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
             <For each={lrows()}>
               {(r) => (
                 <ListRow
-                  check={
-                    r.kind === 'file'
-                      ? {
-                          label: `Upload ${r.name}`,
-                          checked: localTicks().has(r.key),
-                          disabled: !!busy(),
-                          onChange: () => setLocalTicks(flip(localTicks(), r.key)),
-                        }
-                      : undefined
-                  }
+                  rowKey={r.key}
+                  selected={localTicks().has(r.key)}
+                  onSelect={(e) => lsel.click(r.key, e)}
+                  check={{
+                    label: `Upload ${r.name}`,
+                    checked: localTicks().has(r.key),
+                    disabled: writing(busy()),
+                    onChange: () => lsel.tick(r.key),
+                  }}
                   name={r.name}
                   title={r.added ? `${r.name} (added)` : r.path}
-                  open={r.kind === 'folder' ? { disabled: !!busy(), onOpen: () => openLocal(r.path) } : undefined}
+                  folder={
+                    r.kind === 'folder' ? { disabled: writing(busy()), onOpen: () => openLocal(r.path) } : undefined
+                  }
+                  drag={writing(busy()) ? undefined : (e) => lsel.dragStart(r.key, e)}
                   tags={localRowTags(r)}
                   size={r.kind === 'file' ? formatBytes(r.size) : ''}
                 />
@@ -288,6 +385,8 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
 
       <DevicePane
         ctx={props.ctx}
+        select={dsel}
+        drop={{ onDrop: onDeviceDrop, disabled: () => writing(busy()) || !deviceInfo() }}
         selectAll={
           <SelectAll
             label="Select all to delete"
@@ -295,7 +394,7 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
               .filter((r) => !r.pending)
               .map((r) => r.path)}
             ticked={sampleTicks()}
-            disabled={!!busy()}
+            disabled={writing(busy())}
             onChange={(next) => {
               setSampleTicks(next);
               confirm.stop();
@@ -313,7 +412,7 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
               n={nDelete()}
               busy={busy()}
               confirming={confirm.confirming()}
-              title="Delete the ticked files and empty folders from the device"
+              title="Delete the selected files and empty folders from the device"
               onClick={() => confirm.click(() => void removeSelected())}
             />
           </>
@@ -322,10 +421,18 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
         <Crumbs
           items={crumbs(sampleFolder())}
           current={sampleFolder()}
-          disabled={!!busy()}
+          disabled={writing(busy())}
           label="Folder on the device"
           onOpen={open}
         />
+        <Show when={sampleFolder()}>
+          <UpRow
+            disabled={writing(busy())}
+            title="Go up one folder (Backspace); a drop here goes into that folder"
+            dropPath={parentOf(sampleFolder())}
+            onUp={() => open(parentOf(sampleFolder()))}
+          />
+        </Show>
         <Show when={naming()}>
           <form
             class="newfolder"
@@ -352,15 +459,23 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
               <For each={rows()}>
                 {(r) => (
                   <ListRow
+                    rowKey={r.pending ? undefined : r.path}
+                    selected={sampleTicks().has(r.path)}
+                    onSelect={r.pending ? undefined : (e) => dsel.click(r.path, e)}
                     check={{
                       label: `Delete ${r.name}`,
                       checked: sampleTicks().has(r.path),
-                      disabled: !!busy() || r.pending,
-                      onChange: () => toggle(r),
+                      disabled: writing(busy()) || r.pending,
+                      onChange: () => dsel.tick(r.path),
                     }}
                     name={r.name}
                     title={r.path}
-                    open={r.kind === 'folder' ? { disabled: !!busy(), onOpen: () => open(r.path) } : undefined}
+                    folder={
+                      r.kind === 'folder'
+                        ? { disabled: writing(busy()) || r.pending, onOpen: () => open(r.path) }
+                        : undefined
+                    }
+                    dropPath={r.kind === 'folder' && !r.pending ? r.path : undefined}
                     size={r.kind === 'file' ? formatBytes(r.size) : ''}
                     status={r.status}
                   />
@@ -368,9 +483,6 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
               </For>
             </ul>
           </Show>
-        </Show>
-        <Show when={deviceInfo() && storeNote(deviceInfo()!.samples, deviceInfo()!.name)}>
-          <p class="empty note">{storeNote(deviceInfo()!.samples, deviceInfo()!.name)}</p>
         </Show>
         <Show when={note()}>
           <p class="empty note">{note()}</p>

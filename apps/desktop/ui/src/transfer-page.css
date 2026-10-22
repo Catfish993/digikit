@@ -11,9 +11,39 @@
   color: var(--ink, #eceae5);
   font-size: 13px;
 }
+/* a pane is an explorer list: it takes the keys (Cmd+A, Esc, arrows), the marquee is drawn in it, and the rows that are dragged to it light it up */
+.transfer-page .col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  /* the frame of a drop target is the pane's own border: an outline would pass under the sticky header */
+  border: 2px dashed transparent;
+  border-radius: 8px;
+  margin: -2px;
+}
+.transfer-page .col > * {
+  flex: none;
+}
+/* the list fills the rest of the pane, so that there is always empty space to start a marquee in */
+.transfer-page .col > .listarea {
+  flex: 1 0 auto;
+  min-height: 120px;
+  padding-bottom: 32px;
+}
 .transfer-page .col.over {
-  outline: 2px dashed var(--amber, #f3b52c);
-  outline-offset: 6px;
+  border-color: var(--amber, #f3b52c);
+  background: rgba(243, 181, 44, 0.05);
+}
+.transfer-page .col.over .colhead {
+  background: #1a1813;
+}
+.transfer-page .marquee {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  border: 1px solid var(--amber, #f3b52c);
+  background: rgba(243, 181, 44, 0.13);
 }
 .transfer-page .head {
   display: flex;
@@ -102,8 +132,11 @@
   align-items: center;
   gap: 10px;
   min-height: 26px;
-  padding: 2px 0;
+  padding: 2px 6px;
   border-bottom: 1px solid var(--line, #24262b);
+  scroll-margin-top: 44px;
+  -webkit-user-select: none;
+  user-select: none;
   font-family: var(--font-mono);
   font-size: 12.5px;
   white-space: nowrap;
@@ -111,6 +144,46 @@
 }
 .transfer-page .rows li:last-child {
   border-bottom: 0;
+}
+/* a selected row (the tick is the selection); grey when the pane does not have the keyboard */
+.transfer-page .rows li.sel {
+  background: rgba(243, 181, 44, 0.16);
+}
+.transfer-page .col:not(:focus-within) .rows li.sel {
+  background: rgba(255, 255, 255, 0.08);
+}
+/* a folder that the dragged rows would land in */
+.transfer-page .rows li.dropon {
+  background: rgba(243, 181, 44, 0.3);
+  box-shadow: inset 0 0 0 2px var(--amber, #f3b52c);
+}
+.transfer-page .rows li[draggable='true'] {
+  -webkit-user-drag: element;
+}
+.transfer-page .rows.uprows {
+  border-bottom: 0;
+}
+.transfer-page .rows li.uprow {
+  cursor: pointer;
+  color: var(--ink-2, #a9adb4);
+}
+.transfer-page .rows .upbtn {
+  color: inherit;
+  cursor: pointer;
+}
+.transfer-page .rows li.uprow:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+/* the picture that follows the pointer while rows are dragged (an element of the page body, set by pane-select.ts) */
+.dragchip {
+  position: fixed;
+  top: -200px;
+  left: 0;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: #f3b52c;
+  color: #1d1403;
+  font: 500 12px var(--font-mono, monospace);
 }
 .transfer-page .rows .tick {
   width: 14px;
@@ -391,12 +464,8 @@
   color: var(--ink, #eceae5);
   font: inherit;
 }
-.transfer-page .rows .nm.link {
+.transfer-page .rows .nm.dir {
   color: var(--amber, #f3b52c);
-  cursor: pointer;
-}
-.transfer-page .rows .nm.link:hover:not(:disabled) {
-  text-decoration: underline;
 }
 .transfer-page .tests {
   display: inline-flex;

@@ -13,10 +13,12 @@ import {
   SelectAll,
   createConfirm,
   DeleteButton,
+  writing,
   type ChipStatus,
   type PageCtx,
 } from './TransferParts';
 import { noteActivity } from './activity';
+import { createPaneSelect } from './pane-select';
 import SplitPane from './SplitPane';
 import { transferBackend } from './transfer-backend';
 import {
@@ -138,13 +140,6 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
       );
       setDelTicks(new Set<string>());
     });
-  const flip = (set: Set<string>, key: string) => {
-    const next = new Set(set);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    return next;
-  };
-
   const label = (r: TransferRow) => r.label ?? r.name;
   const ticked = () => {
     const v = lastView();
@@ -163,6 +158,22 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
           .map((r) => r.path)
       : [];
   };
+  // the same selection model as the Samples lists: click, Shift, Cmd or Ctrl, a marquee, Cmd+A, Esc (no folders here)
+  const lsel = createPaneSelect({
+    keys: localKeys,
+    selected: ticks,
+    set: setTicks,
+    disabled: () => writing(busy()),
+  });
+  const dsel = createPaneSelect({
+    keys: deviceKeys,
+    selected: delTicks,
+    set: (next) => {
+      setDelTicks(next);
+      confirm.stop();
+    },
+    disabled: () => writing(busy()),
+  });
   const status = (r: TransferRow): ChipStatus | undefined => {
     const st = rowStatus(progress(), verified(), r.path);
     return st?.kind === 'uploading' ? { kind: 'uploading', sent: st.sent, bytes: st.bytes } : st;
@@ -172,6 +183,7 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
     <SplitPane id="transfer">
       <LocalPane
         onDrop={(f) => void addFiles(f)}
+        select={lsel}
         selectAll={
           <SelectAll
             label="Select all modules to install"
@@ -239,11 +251,14 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                       <For each={g.rows}>
                         {(r) => (
                           <ListRow
+                            rowKey={rowKey(r)}
+                            selected={ticks().has(rowKey(r))}
+                            onSelect={r.id ? (e) => lsel.click(rowKey(r), e) : undefined}
                             check={{
                               label: `Install ${label(r)}`,
                               checked: ticks().has(rowKey(r)),
-                              disabled: !!busy(),
-                              onChange: () => setTicks(flip(ticks(), rowKey(r))),
+                              disabled: writing(busy()),
+                              onChange: () => lsel.tick(rowKey(r)),
                             }}
                             name={label(r)}
                             title={r.id ?? r.path}
@@ -265,6 +280,7 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
 
       <DevicePane
         ctx={props.ctx}
+        select={dsel}
         selectAll={
           <SelectAll
             label="Select all files to delete"
@@ -308,17 +324,17 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                 <For each={onDeviceWithPending(v(), progress())}>
                   {(r) => (
                     <ListRow
+                      rowKey={r.on_card === 'no' ? undefined : r.path}
+                      selected={delTicks().has(r.path)}
+                      onSelect={r.on_card === 'no' ? undefined : (e) => dsel.click(r.path, e)}
                       check={
                         r.on_card === 'no'
                           ? undefined
                           : {
                               label: `Delete ${label(r)}`,
                               checked: delTicks().has(r.path),
-                              disabled: !!busy(),
-                              onChange: () => {
-                                setDelTicks(flip(delTicks(), r.path));
-                                confirm.stop();
-                              },
+                              disabled: writing(busy()),
+                              onChange: () => dsel.tick(r.path),
                             }
                       }
                       name={label(r)}

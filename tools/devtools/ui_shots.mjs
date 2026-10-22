@@ -93,6 +93,340 @@ const SCENES = [
     },
   },
   { name: 'samples-no-folder', q: 'mode=samples&folder=none', size: WIDE },
+
+  // ---- the explorer: selection, navigation, upload of folders, drag and drop (Samples mode) ----
+  {
+    name: 'explorer-folders-selectable',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('loops', { pane: 0 });
+      p.say(`click on a folder selects it: ${JSON.stringify(await p.selected(0))} (expect ["loops/"])`);
+    },
+  },
+  {
+    name: 'explorer-select-all-folders',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.eval('document.querySelector(\'input[aria-label="Select all to upload"]\').click()');
+      await p.wait(200);
+      const n = (await p.selected(0)).length;
+      const folders = (await p.selected(0)).filter((x) => x.endsWith('/')).length;
+      p.say(`header box: ${n} rows selected, ${folders} of them folders (expect all rows, 6 folders)`);
+    },
+  },
+  {
+    name: 'explorer-shift-range',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('hat_closed_a.wav');
+      await p.clickRow('tom_low.wav', { mods: 8 });
+      p.say(`shift-click range: ${JSON.stringify(await p.selected(0))}`);
+    },
+  },
+  {
+    name: 'explorer-cmd-toggle',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('Drums');
+      await p.clickRow('kick_punchy.wav', { mods: 4 });
+      await p.clickRow('snare_rimshot.wav', { mods: 4 });
+      await p.clickRow('kick_punchy.wav', { mods: 4 });
+      p.say(`cmd-click toggles (kick_punchy added then removed): ${JSON.stringify(await p.selected(0))}`);
+    },
+  },
+  {
+    name: 'explorer-marquee',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('Drums', { pane: 0, clicks: 2 });
+      await p.wait(500);
+      const [x1, y1] = await p.blank(0, 0.7, 10);
+      const [, y2] = await p.rowAt('808_kick_b.wav', 0);
+      await p.dragPath(x1, y1, x1 - 260, y2 - 4, { release: false });
+      p.say(
+        `marquee held: ${JSON.stringify(await p.selected(0))} (expect 808_kick_b, 808_snare, 808_hat... the rows it touches)`,
+      );
+    },
+  },
+  {
+    name: 'explorer-marquee-additive-device',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('init_tone', { pane: 1 });
+      const [x1, y1] = await p.blank(1, 0.7, 10);
+      const [, y2] = await p.rowAt('Loops', 1);
+      await p.dragPath(x1, y1, x1 - 200, y2 + 2, { mods: 4 });
+      p.say(
+        `device pane, cmd + marquee keeps the first selection: ${JSON.stringify(await p.selected(1))} (expect Loops/ and init_tone)`,
+      );
+    },
+  },
+  {
+    name: 'explorer-marquee-autoscroll',
+    q: 'mode=samples',
+    size: [1440, 520],
+    steps: async (p) => {
+      // press in the blank space below the long list, drag to the top edge and hold there: the pane scrolls up and the selection grows
+      await p.eval("document.querySelectorAll('section.col')[0].scrollTop = 99999");
+      await p.wait(300);
+      const [x1, y1] = await p.blank(0, 0.7, 10);
+      const rect = await p.eval(
+        '(() => { const r = document.querySelectorAll("section.col")[0].getBoundingClientRect(); return [r.top, r.bottom]; })()',
+      );
+      await p.mouse('mouseMoved', x1, y1);
+      await p.mouse('mousePressed', x1, y1);
+      await p.mouse('mouseMoved', x1 - 120, y1 - 100);
+      await p.mouse('mouseMoved', x1 - 120, rect[0] + 70);
+      await p.wait(1200);
+      const top = await p.eval('document.querySelectorAll("section.col")[0].scrollTop');
+      p.say(
+        `held near the top edge for 1.2 s: pane scrollTop ${top} (started at the bottom), ${(await p.selected(0)).length} rows selected`,
+      );
+    },
+  },
+  {
+    name: 'explorer-keys',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('kick_punchy.wav');
+      await p.key('a', { mods: 4, code: 'KeyA', vk: 65 });
+      const all = (await p.selected(0)).length;
+      await p.key('Escape', { code: 'Escape', vk: 27 });
+      const none = (await p.selected(0)).length;
+      await p.key('a', { mods: 2, code: 'KeyA', vk: 65 });
+      const ctrl = (await p.selected(0)).length;
+      p.say(`Cmd+A: ${all} rows; Esc: ${none}; Ctrl+A: ${ctrl} (expect all, 0, all)`);
+      await p.eval("document.querySelectorAll('section.col')[1].focus()");
+      await p.key('a', { mods: 4, code: 'KeyA', vk: 65 });
+      p.say(
+        `Cmd+A in the device pane selects there: ${(await p.selected(1)).length} rows; the computer pane keeps ${(await p.selected(0)).length}`,
+      );
+    },
+  },
+  {
+    name: 'explorer-navigate',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      const crumb = () =>
+        p.eval(
+          "[...document.querySelectorAll('nav.crumbs')[0].querySelectorAll('button')].map((b) => b.textContent.trim()).join(' / ')",
+        );
+      await p.clickRow('loops', { clicks: 2 });
+      await p.wait(400);
+      await p.clickRow('breaks', { clicks: 2 });
+      await p.wait(400);
+      p.say(`double-click twice: ${await crumb()} (expect Samples / loops / breaks)`);
+      await p.key('ArrowUp', { mods: 4, code: 'ArrowUp', vk: 38 });
+      await p.wait(400);
+      p.say(`Cmd+Up: ${await crumb()} (expect Samples / loops)`);
+      await p.clickRow('breaks');
+      await p.key('Enter', { code: 'Enter', vk: 13 });
+      await p.wait(400);
+      p.say(`select a folder + Enter: ${await crumb()} (expect Samples / loops / breaks)`);
+      await p.key('Backspace', { code: 'Backspace', vk: 8 });
+      await p.wait(400);
+      p.say(`Backspace: ${await crumb()}`);
+      await p.click(/^↑ Up$/);
+      await p.wait(400);
+      p.say(`Up row: ${await crumb()} (expect Samples)`);
+      await p.clickRow('loops', { clicks: 2 });
+      await p.wait(400);
+      await p.click('Samples');
+      await p.wait(400);
+      p.say(`breadcrumb: ${await crumb()}`);
+      await p.clickRow('loops', { clicks: 2 });
+      await p.wait(400);
+      await p.clickRow('breaks', { clicks: 2 });
+      await p.wait(500);
+    },
+  },
+  {
+    name: 'explorer-navigate-device',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('Drums', { pane: 1, clicks: 2 });
+      await p.wait(500);
+      const here = await p.eval(
+        "[...document.querySelectorAll('nav.crumbs')[1].querySelectorAll('button')].map((b) => b.textContent.trim()).join(' / ')",
+      );
+      p.say(`device pane after a double-click on Drums: ${here} (an Up row is shown)`);
+    },
+  },
+  {
+    name: 'explorer-upload-folder-running',
+    q: 'mode=samples&speed=1.5',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('loops', { pane: 0 });
+      await p.click(/^Upload/);
+      await p.wait(4500);
+    },
+  },
+  {
+    name: 'explorer-upload-folder-done',
+    q: 'mode=samples&speed=12',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('loops', { pane: 0 });
+      await p.click(/^Upload/);
+      await p.wait(9000);
+      await p.clickRow('loops', { pane: 1, clicks: 2 });
+      await p.wait(600);
+      await p.clickRow('breaks', { pane: 1, clicks: 2 });
+      await p.wait(600);
+      const list = await p.eval(
+        `[...document.querySelectorAll('section.col')[1].querySelectorAll('li .nm')].map((n) => n.textContent.trim()).join(', ')`,
+      );
+      p.say(`device folder loops/breaks after the upload: ${list}`);
+    },
+  },
+  {
+    name: 'explorer-upload-multi-folders',
+    q: 'mode=samples&speed=20',
+    size: WIDE,
+    steps: async (p) => {
+      // two folders and a file together (Presets holds an empty folder: it is made too)
+      await p.clickRow('MIDI');
+      await p.clickRow('Presets', { mods: 4 });
+      await p.clickRow('notes.txt', { mods: 4 });
+      await p.click(/^Upload/);
+      await p.wait(5000);
+      const names = await p.eval(
+        `[...document.querySelectorAll('section.col')[1].querySelectorAll('li .nm')].map((n) => n.textContent.trim()).join(', ')`,
+      );
+      p.say(`device top level after: ${names}`);
+      await p.clickRow('Presets', { pane: 1, clicks: 2 });
+      await p.wait(600);
+      const sub = await p.eval(
+        `[...document.querySelectorAll('section.col')[1].querySelectorAll('li .nm')].map((n) => n.textContent.trim()).join(', ')`,
+      );
+      p.say(`device Presets/: ${sub} (expect empty/, kit_a.json, kit_b.json)`);
+    },
+  },
+  {
+    name: 'explorer-no-folders-backend',
+    q: 'mode=samples&mkdir=0',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('loops');
+      await p.click(/^Upload/);
+      await p.wait(800);
+    },
+  },
+  {
+    name: 'explorer-drag-over-pane',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('hat_closed_a.wav');
+      await p.clickRow('hat_open_wide.wav', { mods: 8 });
+      p.say(
+        `drag types: ${await p.dnd('hat_closed_a.wav', 'pane', { drop: false })} (rows of the selection travel along)`,
+      );
+    },
+  },
+  {
+    name: 'explorer-drag-over-folder',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('Drums', { pane: 0 });
+      await p.clickRow('Vocals', { pane: 0, mods: 4 });
+      await p.dnd('Drums', 'Loops', { drop: false });
+    },
+  },
+  {
+    name: 'explorer-drop-on-folder',
+    q: 'mode=samples&speed=6',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('hat_closed_a.wav');
+      await p.clickRow('hat_open_wide.wav', { mods: 8 });
+      await p.dnd('hat_closed_a.wav', 'Loops', { drop: true });
+      await p.wait(700);
+      await p.wait(3000);
+      await p.clickRow('Loops', { pane: 1, clicks: 2 });
+      await p.wait(600);
+      const list = await p.eval(
+        `[...document.querySelectorAll('section.col')[1].querySelectorAll('li .nm')].map((n) => n.textContent.trim()).join(', ')`,
+      );
+      p.say(`device Loops/ after the drop on it: ${list}`);
+    },
+  },
+  {
+    name: 'explorer-drop-folder-on-pane',
+    q: 'mode=samples&speed=20',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('Drums');
+      p.say(`drag types: ${await p.dnd('Drums', 'pane', { drop: true })}`);
+      await p.wait(3500);
+      p.say(`error line: ${JSON.stringify(await p.eval("document.querySelector('.err')?.textContent ?? ''"))}`);
+    },
+  },
+  {
+    name: 'explorer-drop-finder-files',
+    q: 'mode=samples&speed=20',
+    size: WIDE,
+    steps: async (p) => {
+      await p.dnd(null, 'pane', { drop: false, files: ['from_finder_a.wav', 'from_finder_b.wav'] });
+      await p.wait(300);
+      await p.eval(
+        "document.querySelectorAll('section.col')[1].dispatchEvent(new Event('dragleave', { bubbles: true }))",
+      );
+      await p.dnd(null, 'pane', { drop: true, files: ['from_finder_a.wav', 'from_finder_b.wav'] });
+      await p.wait(3500);
+    },
+  },
+  {
+    name: 'explorer-no-text-selection',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      // a drag over the names must not select text, and no row text is selectable
+      const [x1, y1] = await p.rowAt('kick_punchy.wav', 0, 0.1);
+      const [x2, y2] = await p.rowAt('tom_low.wav', 0, 0.6);
+      await p.dragPath(x1, y1, x2, y2, { release: true });
+      const sel = await p.eval('getSelection().toString()');
+      const us = await p.eval("getComputedStyle(document.querySelector('.rows li .nm')).userSelect");
+      p.say(
+        `selected text after dragging over names: ${JSON.stringify(sel)} (expect ""), user-select of a name: ${us} (expect none)`,
+      );
+    },
+  },
+  {
+    name: 'explorer-modules',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      await p.clickRow('Sine');
+      await p.clickRow('FM 4-op', { mods: 8 });
+      await p.clickRow('Tuner', { mods: 4 });
+      p.say(`modules, shift then cmd: ${JSON.stringify(await p.selected(0))}`);
+      await p.clickRow('Sine', { pane: 1 });
+      await p.clickRow('Pluck', { pane: 1, mods: 4 });
+      p.say(`device pane: ${JSON.stringify(await p.selected(1))}`);
+    },
+  },
+  {
+    name: 'explorer-narrow',
+    q: 'mode=samples',
+    size: MIN,
+    steps: async (p) => {
+      await p.clickRow('Drums');
+      await p.clickRow('Vocals', { mods: 4 });
+      await p.clickRow('kick_punchy.wav', { mods: 4 });
+    },
+  },
   {
     name: 'noreply',
     q: 'mode=modules&dev=noreply',
@@ -277,16 +611,100 @@ function pageApi(cdp) {
     wait: sleep,
     async click(text) {
       const src = text instanceof RegExp ? text.source : `^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
-      const ok = await evaluate(
-        `(() => { const re = new RegExp(${JSON.stringify(src)}); const b = [...document.querySelectorAll('button')].find((x) => re.test(x.textContent.trim()) && !x.disabled); if (b) b.click(); return !!b; })()`,
-      );
-      if (!ok) throw new Error(`no enabled button ${src}`);
+      // a button is disabled while the page reads (a window focus starts a read): try for up to 3 s
+      for (let i = 0; i < 30; i++) {
+        const ok = await evaluate(
+          `(() => { const re = new RegExp(${JSON.stringify(src)}); const b = [...document.querySelectorAll('button')].find((x) => re.test(x.textContent.trim()) && !x.disabled); if (b) b.click(); return !!b; })()`,
+        );
+        if (ok) return;
+        await sleep(100);
+      }
+      throw new Error(`no enabled button ${src}`);
     },
     async tick(labelSrc) {
       const n = await evaluate(
         `(() => { const re = new RegExp(${JSON.stringify(labelSrc)}); const xs = [...document.querySelectorAll('input[type=checkbox]')].filter((x) => re.test(x.getAttribute('aria-label') ?? '') && !x.checked && !x.disabled); xs.forEach((x) => x.click()); return xs.length; })()`,
       );
       if (!n) throw new Error(`no checkbox ${labelSrc}`);
+    },
+    /** The centre of the row whose name is `name` ("loops/" for a folder) in pane 0 (computer) or 1 (device): [x, y] in the viewport. */
+    async rowAt(name, pane = 0, fx = 0.4) {
+      const box = await evaluate(
+        `(() => { const sec = document.querySelectorAll('section.col')[${pane}]; const li = [...sec.querySelectorAll('li')].find((l) => { const t = l.querySelector('.nm')?.textContent.trim(); return t === ${JSON.stringify(name)} || t === ${JSON.stringify(name + '/')}; }); if (!li) return null; li.scrollIntoView({ block: 'nearest' }); const r = li.getBoundingClientRect(); return [r.x + r.width * ${fx}, r.y + r.height / 2]; })()`,
+      );
+      if (!box) throw new Error(`no row ${name} in pane ${pane}`);
+      return box;
+    },
+    /** A point in the empty space below the list of pane 0 or 1 (dy pixels above the bottom of the list area). */
+    async blank(pane = 0, fx = 0.5, dy = 14) {
+      const box = await evaluate(
+        `(() => { const sec = document.querySelectorAll('section.col')[${pane}]; const r = sec.querySelector('.listarea').getBoundingClientRect(); const s = sec.getBoundingClientRect(); return [r.x + r.width * ${fx}, Math.min(r.bottom, s.bottom) - ${dy}]; })()`,
+      );
+      return box;
+    },
+    async mouse(type, x, y, { mods = 0, clicks = 1, button = 'left' } = {}) {
+      await cdp.send('Input.dispatchMouseEvent', {
+        type,
+        x,
+        y,
+        button: type === 'mouseMoved' ? 'none' : button,
+        buttons: type === 'mouseReleased' ? 0 : 1,
+        clickCount: type === 'mouseMoved' ? 0 : clicks,
+        modifiers: mods,
+      });
+    },
+    /** A click on a row by name: mods are the CDP bits (alt 1, ctrl 2, meta 4, shift 8); clicks 2 is a double click. */
+    async clickRow(name, { pane = 0, mods = 0, clicks = 1 } = {}) {
+      const [x, y] = await api.rowAt(name, pane);
+      for (let n = 1; n <= clicks; n++) {
+        await api.mouse('mouseMoved', x, y);
+        await api.mouse('mousePressed', x, y, { mods, clicks: n });
+        await api.mouse('mouseReleased', x, y, { mods, clicks: n });
+      }
+      await sleep(250);
+    },
+    /** Press and drag from (x1, y1) to (x2, y2) in steps; `release` false leaves the button down (for a picture of the marquee). */
+    async dragPath(x1, y1, x2, y2, { mods = 0, release = true, steps = 12 } = {}) {
+      await api.mouse('mouseMoved', x1, y1);
+      await api.mouse('mousePressed', x1, y1, { mods });
+      for (let i = 1; i <= steps; i++)
+        await api.mouse('mouseMoved', x1 + ((x2 - x1) * i) / steps, y1 + ((y2 - y1) * i) / steps, { mods });
+      if (release) await api.mouse('mouseReleased', x2, y2, { mods });
+      await sleep(250);
+    },
+    async key(key, { mods = 0, code = '', vk = 0 } = {}) {
+      const base = { key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: mods };
+      await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+      await sleep(250);
+    },
+    /** How many rows are selected (class sel) in pane 0 or 1, and their names. */
+    async selected(pane = 0) {
+      return evaluate(
+        `(() => { const sec = document.querySelectorAll('section.col')[${pane}]; return [...sec.querySelectorAll('li.sel .nm')].map((n) => n.textContent.trim()); })()`,
+      );
+    },
+    /** A drag of rows from pane 0 as the browser sends it, with synthetic events: start on the row `from`, then over `target` (a row name in
+     * pane 1, or "pane" for the empty space of pane 1); `drop` false stops over it (for a picture), true drops. */
+    async dnd(from, target, { drop = true, files = null } = {}) {
+      return evaluate(`(async () => {
+        const secs = document.querySelectorAll('section.col');
+        const rowOf = (sec, name) => [...sec.querySelectorAll('li')].find((l) => { const t = l.querySelector('.nm')?.textContent.trim(); return t === name || t === name + '/'; });
+        const dt = new DataTransfer();
+        const ev = (type, el, x, y) => el.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y, relatedTarget: null }));
+        if (${JSON.stringify(files)}) for (const n of ${JSON.stringify(files)}) dt.items.add(new File([new Uint8Array(2000)], n, { type: 'audio/wav' }));
+        else { const li = rowOf(secs[0], ${JSON.stringify(from)}); const r = li.getBoundingClientRect(); ev('dragstart', li, r.x + 20, r.y + 5); }
+        const tgt = ${JSON.stringify(target)};
+        let el, r;
+        if (tgt === 'pane') { el = secs[1].querySelector('.listarea'); r = el.getBoundingClientRect(); }
+        else { el = rowOf(secs[1], tgt); r = el.getBoundingClientRect(); }
+        const x = r.x + 40, y = tgt === 'pane' ? r.bottom - 12 : r.y + 5;
+        ev('dragenter', el, x, y); ev('dragover', el, x, y);
+        await new Promise((res) => setTimeout(res, 80));
+        ev('dragover', el, x, y);
+        if (${drop}) ev('drop', el, x, y);
+        return dt.types.join(',');
+      })()`);
     },
     async hover(selector) {
       const box = await evaluate(

@@ -14,9 +14,11 @@ export interface SimState {
   speed: number;
   paused: boolean;
   mode: 'modules' | 'samples';
+  /** The device storage can make folders (mkdir=0: it cannot). */
+  mkdir: boolean;
 }
 
-export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode'] as const;
+export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir'] as const;
 
 const query = new URLSearchParams(location.search);
 export const sim: SimState = {
@@ -25,6 +27,7 @@ export const sim: SimState = {
   speed: Number(query.get('speed') ?? 3),
   paused: query.get('paused') === '1',
   mode: (query.get('mode') as SimState['mode']) ?? 'modules',
+  mkdir: query.get('mkdir') !== '0',
 };
 
 export const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -195,27 +198,54 @@ interface LocalFile {
   size: number;
   kind: Kind;
 }
-const top: LocalFile[] = [
-  ...WAVS.map(([n, mb]) => ({ name: `${n}.wav`, size: Math.round(mb * MiB), kind: 'converted' as Kind })),
-  { name: 'amen_slices.dksmp', size: Math.round(2.0 * MiB), kind: 'native' },
-  { name: 'notes.txt', size: 812, kind: 'unchanged' },
-];
-const subs: Record<string, LocalFile[]> = {
-  Drums: ['808_kick_a', '808_kick_b', '808_snare', '808_hat'].map((n) => ({
-    name: `${n}.wav`,
-    size: 900 * KiB,
-    kind: 'converted' as Kind,
-  })),
-  Vocals: ['ooh', 'aah', 'hey'].map((n) => ({ name: `${n}.wav`, size: 1.4 * MiB, kind: 'converted' as Kind })),
-};
+const wavs = (names: string[], kb: number): LocalFile[] =>
+  names.map((n) => ({ name: `${n}.wav`, size: Math.round(kb * KiB), kind: 'converted' as Kind }));
+/** The folders of the chosen folder: each path holds its files; its subfolders are the paths one level below it ('' is the top). */
+const dirs = new Map<string, LocalFile[]>([
+  [
+    '',
+    [
+      ...WAVS.map(([n, mb]) => ({ name: `${n}.wav`, size: Math.round(mb * MiB), kind: 'converted' as Kind })),
+      { name: 'amen_slices.dksmp', size: Math.round(2.0 * MiB), kind: 'native' as Kind },
+      { name: 'notes.txt', size: 812, kind: 'unchanged' as Kind },
+    ],
+  ],
+  ['Drums', wavs(['808_kick_a', '808_kick_b', '808_snare', '808_hat'], 900)],
+  ['Vocals', wavs(['ooh', 'aah', 'hey'], 1400)],
+  ['loops', wavs(['amen_170', 'dub_chords_90', 'funk_guitar_105'], 3200)],
+  ['loops/breaks', wavs(['think_break', 'apache_break', 'funky_drummer'], 2600)],
+  ['loops/breaks/chopped', wavs(['think_01', 'think_02'], 700)],
+  [
+    'MIDI',
+    [
+      { name: 'bassline_a.mid', size: 2 * KiB, kind: 'unchanged' as Kind },
+      { name: 'bassline_b.mid', size: 3 * KiB, kind: 'unchanged' as Kind },
+      { name: 'drums_swing.mid', size: 5 * KiB, kind: 'unchanged' as Kind },
+    ],
+  ],
+  ['one-shots', wavs(['clap_a', 'clap_b', 'rim', 'cowbell', 'zap'], 180)],
+  ['one-shots/vox', wavs(['yeah', 'uh'], 240)],
+  [
+    'Presets',
+    [
+      { name: 'kit_a.json', size: 6 * KiB, kind: 'unchanged' as Kind },
+      { name: 'kit_b.json', size: 7 * KiB, kind: 'unchanged' as Kind },
+    ],
+  ],
+  ['Presets/empty', []],
+]);
 let added: LocalFile[] = [];
 
-const levelFiles = (rel: string): LocalFile[] => (rel === '' ? [...top, ...added] : (subs[rel] ?? []));
+const levelFiles = (rel: string): LocalFile[] =>
+  rel === '' ? [...(dirs.get('') ?? []), ...added] : (dirs.get(rel) ?? []);
+const parentDir = (rel: string) => rel.split('/').slice(0, -1).join('/');
 
 /** The `local_list` of the preview's folder at `rel`. */
 export function listLocal(rel: string): LocalEntry[] {
   if (sim.folder === 'empty') return [];
-  const folders: LocalEntry[] = rel === '' ? Object.keys(subs).map((name) => ({ name, kind: 'folder', size: 0 })) : [];
+  const folders: LocalEntry[] = [...dirs.keys()]
+    .filter((d) => d !== '' && parentDir(d) === rel)
+    .map((d) => ({ name: d.split('/').pop() as string, kind: 'folder' as const, size: 0 }));
   return [...folders, ...levelFiles(rel).map((f) => ({ name: f.name, kind: 'file' as const, size: f.size }))];
 }
 export const localKindOf = (rel: string): Kind | undefined => {
@@ -266,6 +296,7 @@ export const control = {
   },
   /** A file of the top level disappears. */
   removeLocal(name: string): void {
+    const top = dirs.get('') ?? [];
     const i = top.findIndex((f) => f.name === name);
     if (i >= 0) top.splice(i, 1);
     added = added.filter((f) => f.name !== name);

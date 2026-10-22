@@ -4,7 +4,8 @@ import { For, Show, createEffect, createSignal, type JSX } from 'solid-js';
 import TargetSelect from './TargetSelect';
 import { target, targetLabel } from './target';
 import { fmtRate } from './rate-core';
-import { selectState, toggleAll } from './select-core';
+import type { PaneSelect } from './pane-select';
+import { dragKind, selectState, toggleAll } from './select-core';
 import { deleteLabel, infoLine, type RowTag } from './transfer-core';
 import { deviceInfo, liveRate } from './transfer-state';
 
@@ -72,11 +73,21 @@ function Tag(props: { tag: RowTag }): JSX.Element {
 
 export interface ListRowProps {
   check?: { label: string; checked: boolean; disabled: boolean; onChange: () => void };
+  /** The key of the row in the pane's selection (the marquee finds the row by it). */
+  rowKey?: string;
+  /** The row is selected (the tick is the selection). */
+  selected?: boolean;
+  /** A click on the row (not on the tick): the pane's click rules. */
+  onSelect?: (e: MouseEvent) => void;
   name: string;
   /** The tooltip of the name. */
   title?: string;
-  /** A folder: the name is a link that opens it. */
-  open?: { disabled: boolean; onOpen: () => void };
+  /** A folder: its name ends with a slash, and a double click opens it. */
+  folder?: { disabled: boolean; onOpen: () => void };
+  /** The row can be dragged out (the local rows). */
+  drag?: (e: DragEvent) => void;
+  /** A drop on this row goes into this folder of the device (a device folder row). */
+  dropPath?: string;
   /** Small labels after the name; only what says something (a usual state has none). */
   tags?: RowTag[];
   /** The version (modules), a dim column before the size. */
@@ -88,10 +99,27 @@ export interface ListRowProps {
   status?: ChipStatus;
 }
 
-/** One row of a list in either column, always one line: tick, name with its tags, version, the bar or chip of a transfer, size. */
+/** The folder of the device that a drag is over (a folder row, or the Up row), or undefined; the row shows it as the drop target. */
+const [dropHover, setDropHover] = createSignal<string>();
+
+/** One row of a list in either column, always one line: tick, name with its tags, version, the bar or chip of a transfer, size. A click selects
+ * it (Finder's rules), a double click opens a folder, and the text is not selectable. */
 export function ListRow(props: ListRowProps): JSX.Element {
   return (
-    <li>
+    <li
+      data-key={props.rowKey}
+      data-drop={props.dropPath}
+      classList={{ sel: !!props.selected, dropon: props.dropPath !== undefined && dropHover() === props.dropPath }}
+      draggable={props.drag ? true : undefined}
+      onDragStart={(e) => props.drag?.(e)}
+      onClick={(e) => {
+        if (props.onSelect && !(e.target as Element).closest('input, button')) props.onSelect(e);
+      }}
+      onDblClick={(e) => {
+        if (props.folder && !props.folder.disabled && !(e.target as Element).closest('input, button'))
+          props.folder.onOpen();
+      }}
+    >
       <Show when={props.check} fallback={<span class="tick" />}>
         {(c) => (
           <input
@@ -104,20 +132,9 @@ export function ListRow(props: ListRowProps): JSX.Element {
         )}
       </Show>
       <span class="name">
-        <Show
-          when={props.open}
-          fallback={
-            <span class="nm" title={props.title}>
-              {props.name}
-            </span>
-          }
-        >
-          {(o) => (
-            <button type="button" class="nm link" disabled={o().disabled} title={props.title} onClick={o().onOpen}>
-              {props.name}/
-            </button>
-          )}
-        </Show>
+        <span class="nm" classList={{ dir: !!props.folder }} title={props.title}>
+          {props.folder ? `${props.name}/` : props.name}
+        </span>
         <For each={props.tags ?? []}>{(t) => <Tag tag={t} />}</For>
       </span>
       <Show when={props.version}>
@@ -128,6 +145,27 @@ export function ListRow(props: ListRowProps): JSX.Element {
         {props.size ?? ''}
       </span>
     </li>
+  );
+}
+
+/** The first row of a list inside a folder: "↑ Up" goes to the parent. A file dropped on it goes into the parent (`dropPath`). */
+export function UpRow(props: { disabled: boolean; onUp: () => void; dropPath?: string; title: string }): JSX.Element {
+  return (
+    <ul class="rows uprows">
+      <li
+        class="uprow"
+        data-drop={props.dropPath}
+        classList={{ dropon: props.dropPath !== undefined && dropHover() === props.dropPath }}
+        onClick={() => !props.disabled && props.onUp()}
+      >
+        <span class="tick" />
+        <span class="name">
+          <button type="button" class="nm upbtn" disabled={props.disabled} title={props.title}>
+            ↑ Up
+          </button>
+        </span>
+      </li>
+    </ul>
   );
 }
 
@@ -231,12 +269,46 @@ export function DeleteButton(props: {
   );
 }
 
-/** The left column: what is on the computer. `actions` are its controls (they sit in its header); a drop on it adds files. */
+/** The files of a drop from outside and how many folders it held (a folder arrives as an empty "file"; its contents cannot be read here). */
+export function droppedFiles(e: DragEvent): { files: File[]; folders: number } {
+  const dt = e.dataTransfer;
+  const items = Array.from(dt?.items ?? []);
+  const folders = items.filter((i) => i.kind === 'file' && i.webkitGetAsEntry?.()?.isDirectory).length;
+  const files = items.length
+    ? items.flatMap((i) => {
+        const f = i.kind === 'file' && !i.webkitGetAsEntry?.()?.isDirectory ? i.getAsFile() : null;
+        return f ? [f] : [];
+      })
+    : Array.from(dt?.files ?? []);
+  return { files, folders };
+}
+
+/** The marquee the pane draws while a drag over empty space selects rows. */
+function Marquee(props: { select?: PaneSelect }): JSX.Element {
+  return (
+    <Show when={props.select?.box()}>
+      {(b) => (
+        <div
+          class="marquee"
+          style={{ left: `${b().x}px`, top: `${b().y}px`, width: `${b().w}px`, height: `${b().h}px` }}
+        />
+      )}
+    </Show>
+  );
+}
+
+/** The handlers that make a pane an explorer list: focus for the keys, the marquee, and Cmd+A. */
+const selectProps = (sel?: PaneSelect) =>
+  sel ? { ref: sel.ref, tabindex: 0, onKeyDown: sel.onKeyDown, onPointerDown: sel.onPointerDown } : {};
+
+/** The left column: what is on the computer. `actions` are its controls (they sit in its header); files dropped on it from outside add files.
+ * `select` makes it an explorer list (click, Shift, Cmd, marquee, keys). */
 export function LocalPane(props: {
   /** The select-all checkbox, before the heading. */
   selectAll: JSX.Element;
   actions: JSX.Element;
-  onDrop: (files: File[]) => void;
+  onDrop: (files: File[], folders: number) => void;
+  select?: PaneSelect;
   children: JSX.Element;
 }): JSX.Element {
   const [over, setOver] = createSignal(false);
@@ -245,15 +317,22 @@ export function LocalPane(props: {
       class="col"
       classList={{ over: over() }}
       aria-label="On your computer"
+      {...selectProps(props.select)}
       onDragOver={(e) => {
+        // only files from outside are taken here; the rows of this list are dragged to the other pane
+        if (dragKind(e.dataTransfer?.types) !== 'files') return;
         e.preventDefault();
         setOver(true);
       }}
-      onDragLeave={() => setOver(false)}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      }}
       onDrop={(e) => {
+        if (dragKind(e.dataTransfer?.types) !== 'files') return;
         e.preventDefault();
         setOver(false);
-        props.onDrop(Array.from(e.dataTransfer?.files ?? []));
+        const d = droppedFiles(e);
+        props.onDrop(d.files, d.folders);
       }}
     >
       <div class="colhead">
@@ -263,7 +342,8 @@ export function LocalPane(props: {
         </div>
         <div class="acts">{props.actions}</div>
       </div>
-      {props.children}
+      <div class="listarea">{props.children}</div>
+      <Marquee select={props.select} />
     </section>
   );
 }
@@ -273,15 +353,58 @@ export function writing(busy: string): boolean {
   return busy !== '' && busy !== 'Reading';
 }
 
-/** The right column: the target, the device and its list. Everything about the target is here: the selector, the info line and the buttons. */
+/** What a drop on the right column carries: rows of the local list (our own drag) or files from outside, and the device folder it was dropped
+ * on (undefined: the open folder). */
+export interface DeviceDrop {
+  onDrop: (kind: 'rows' | 'files', folder: string | undefined, e: DragEvent) => void;
+  /** A drop is not taken while a job runs. */
+  disabled: () => boolean;
+}
+
+/** The right column: the target, the device and its list. Everything about the target is here: the selector, the info line and the buttons.
+ * `drop` takes uploads dragged onto it (the pane, or one of its folder rows or the Up row, which light up). */
 export function DevicePane(props: {
   ctx: PageCtx;
   selectAll: JSX.Element;
   actions: JSX.Element;
+  select?: PaneSelect;
+  drop?: DeviceDrop;
   children: JSX.Element;
 }): JSX.Element {
+  const [over, setOver] = createSignal(false);
+  const clear = () => {
+    setOver(false);
+    setDropHover(undefined);
+  };
+  const taken = (e: DragEvent) =>
+    props.drop && !props.drop.disabled() ? dragKind(e.dataTransfer?.types) : ('none' as const);
+  const folderOf = (e: DragEvent): string | undefined =>
+    (e.target as Element | null)?.closest?.('[data-drop]')?.getAttribute('data-drop') ?? undefined;
   return (
-    <section class="col" aria-label="On device">
+    <section
+      class="col"
+      classList={{ over: over() && dropHover() === undefined }}
+      aria-label="On device"
+      {...selectProps(props.select)}
+      onDragOver={(e) => {
+        if (taken(e) === 'none') return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        setOver(true);
+        setDropHover(folderOf(e));
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) clear();
+      }}
+      onDrop={(e) => {
+        const kind = taken(e);
+        if (kind === 'none') return;
+        e.preventDefault();
+        const folder = folderOf(e);
+        clear();
+        props.drop?.onDrop(kind, folder, e);
+      }}
+    >
       <div class="colhead">
         <div class="hl">
           {props.selectAll}
@@ -295,7 +418,8 @@ export function DevicePane(props: {
           {(d) => <span class="meta">{infoLine(targetLabel(target()), d().name, d().runtime, d().free)}</span>}
         </Show>
       </div>
-      {props.children}
+      <div class="listarea">{props.children}</div>
+      <Marquee select={props.select} />
     </section>
   );
 }

@@ -109,6 +109,10 @@ export async function labelOf(read: () => Promise<Uint8Array>, size: number): Pr
   }
 }
 
+/** One level of the chosen folder at `rel` (the listing only; an upload of a folder walks the folders with it). */
+export const listLocalAt = (rel: string): Promise<LocalEntry[]> =>
+  invoke<LocalEntry[]>('local_list', { root: localFolder(), rel });
+
 /** The open level of the chosen folder as it is now (the listing only, no file is read): the light poll compares it with what the page shows.
  * Undefined when no folder is chosen or it cannot be listed. */
 export async function listLocalNow(): Promise<LocalEntry[] | undefined> {

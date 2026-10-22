@@ -39,7 +39,7 @@ const backend: SamplesBackend = {
     return { free: 3.1 * 2 ** 30, total: 4 * 2 ** 30 };
   },
   async canMkdir() {
-    return true;
+    return sim.mkdir;
   },
   async mkdir(folder: string) {
     await delay(200);
@@ -116,7 +116,7 @@ export async function readSamples(): Promise<void> {
   control.counts.deviceRead++;
   const { name, runtime, samples } = await openDeviceSamples();
   setSampleEntries(await backend.list(sampleFolder()));
-  setDeviceInfo({ name, runtime, samples, canMkdir: true, free: (await backend.space()).free });
+  setDeviceInfo({ name, runtime, samples, canMkdir: sim.mkdir, free: (await backend.space()).free });
 }
 
 // ---- the local folder -------------------------------------------------------------------------------------------------------------
@@ -138,6 +138,12 @@ export async function labelOf(read: () => Promise<Uint8Array>, size: number): Pr
   } catch {
     return undefined;
   }
+}
+
+/** One level of the folder at `rel` (what an upload of a folder walks). */
+export async function listLocalAt(rel: string): Promise<LocalEntry[]> {
+  await delay(20);
+  return listLocal(rel);
 }
 
 /** The open level as it is now (the listing only); counted, so a test can see how often the poll asks. */

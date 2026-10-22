@@ -7,7 +7,26 @@ import { instrument } from '../../desktop/ui/src/activity.ts';
 import { createRate, etaSeconds, fmtEta, fmtRate, statsLine } from '../../desktop/ui/src/rate-core.ts';
 import { FOCUS_GAP_MS, canAutoRefresh, focusReadDue, listingChanged } from '../../desktop/ui/src/refresh-core.ts';
 import { applyUpload, samplesBar } from '../../desktop/ui/src/samples-core.ts';
-import { selectState, toggleAll } from '../../desktop/ui/src/select-core.ts';
+import {
+  MARQUEE_SLOP,
+  ROWS_TYPE,
+  clickSelect,
+  dragKeys,
+  dragKind,
+  dropFolder,
+  edgeScroll,
+  keepVisible,
+  keyCommand,
+  marqueeKeys,
+  marqueeSelection,
+  modsOf,
+  moveSelect,
+  rangeKeys,
+  selectEverything,
+  selectState,
+  tickSelect,
+  toggleAll,
+} from '../../desktop/ui/src/select-core.ts';
 import { countLabel, applyEvent, modulesBar, startProgress } from '../../desktop/ui/src/transfer-core.ts';
 import { WAIT_QUIET_MS, createActivity, waitShown } from '../../desktop/ui/src/wait-core.ts';
 
@@ -204,4 +223,124 @@ test('the bottom bar of a samples upload: only what this run touched, one messag
   bar = samplesBar(u, base, false);
   assert.deepEqual([bar.failed, bar.message], [true, '2 of 3 uploaded, 1 failed.']);
   assert.equal(samplesBar(u, base, false).sent, 4000, 'the bytes of a failed file are not counted as sent');
+});
+
+// ---- the selection of a list, like a file explorer (select-core.ts) ----------------------------------------------------------------------
+
+const KEYS = ['a', 'b', 'c', 'd', 'e', 'f'];
+const NONE = { shift: false, mod: false };
+const sorted = (s) => [...s.selected].sort();
+
+test('click: one row; Cmd or Ctrl toggles; Shift takes the range from the anchor; Shift and Cmd add the range', () => {
+  let s = clickSelect(KEYS, new Set(), undefined, 'b', NONE);
+  assert.deepEqual([sorted(s), s.anchor], [['b'], 'b']);
+  s = clickSelect(KEYS, s.selected, s.anchor, 'd', { shift: true, mod: false });
+  assert.deepEqual([sorted(s), s.anchor], [['b', 'c', 'd'], 'b'], 'the anchor stays for the next Shift');
+  s = clickSelect(KEYS, s.selected, s.anchor, 'f', { shift: true, mod: false });
+  assert.deepEqual(sorted(s), ['b', 'c', 'd', 'e', 'f'], 'the range replaces the selection');
+  s = clickSelect(KEYS, s.selected, s.anchor, 'a', { shift: true, mod: false });
+  assert.deepEqual(sorted(s), ['a', 'b'], 'a range upwards');
+  // Cmd toggles one row and moves the anchor
+  s = clickSelect(KEYS, new Set(['a']), 'a', 'c', { shift: false, mod: true });
+  assert.deepEqual([sorted(s), s.anchor], [['a', 'c'], 'c']);
+  s = clickSelect(KEYS, s.selected, s.anchor, 'a', { shift: false, mod: true });
+  assert.deepEqual(sorted(s), ['c']);
+  // Shift and Cmd: the range is added to what is selected
+  s = clickSelect(KEYS, new Set(['a']), 'c', 'e', { shift: true, mod: true });
+  assert.deepEqual(sorted(s), ['a', 'c', 'd', 'e']);
+  // a plain click on a selected row among many selects only it (Finder does too)
+  s = clickSelect(KEYS, new Set(['a', 'b', 'c']), 'a', 'b', NONE);
+  assert.deepEqual(sorted(s), ['b']);
+  // Shift without an anchor (or one that is gone): just the clicked row
+  s = clickSelect(KEYS, new Set(), undefined, 'c', { shift: true, mod: false });
+  assert.deepEqual([sorted(s), s.anchor], [['c'], 'c']);
+  s = clickSelect(KEYS, new Set(['x']), 'x', 'c', { shift: true, mod: false });
+  assert.deepEqual(sorted(s), ['c']);
+  assert.deepEqual(modsOf({ shiftKey: true, metaKey: false, ctrlKey: true }), { shift: true, mod: true });
+  assert.deepEqual(modsOf({ shiftKey: false, metaKey: true, ctrlKey: false }), { shift: false, mod: true });
+});
+
+test('the tick of a row toggles that row only; select everything; ticks of rows that are gone are dropped', () => {
+  assert.deepEqual(sorted(tickSelect(new Set(['a']), 'b')), ['a', 'b']);
+  assert.deepEqual(sorted(tickSelect(new Set(['a', 'b']), 'a')), ['b']);
+  assert.deepEqual([...selectEverything(KEYS)], KEYS, 'folders and files alike: the keys are all the rows');
+  assert.deepEqual([...keepVisible(['a', 'b'], new Set(['b', 'x']))], ['b']);
+  assert.deepEqual(rangeKeys(KEYS, 'd', 'b'), ['b', 'c', 'd']);
+  assert.deepEqual(rangeKeys(KEYS, undefined, 'b'), ['b']);
+  assert.deepEqual(rangeKeys(KEYS, 'x', 'b'), ['b']);
+  assert.deepEqual(rangeKeys(KEYS, 'a', 'x'), []);
+});
+
+test('the marquee: the rows the band touches; Shift or Cmd keeps the selection from before; no band is a click that clears', () => {
+  const rows = KEYS.map((key, i) => ({ key, top: i * 26, bottom: i * 26 + 25 }));
+  assert.deepEqual(marqueeKeys(rows, 30, 60), ['b', 'c'], 'a band that touches the edge of a row takes it');
+  assert.deepEqual(marqueeKeys(rows, 60, 30), ['b', 'c'], 'either direction');
+  assert.deepEqual(marqueeKeys(rows, 300, 400), [], 'below the last row');
+  assert.deepEqual(marqueeKeys(rows, -10, 5), ['a'], 'above the first row');
+  assert.deepEqual(marqueeKeys(rows, 0, 1000), KEYS);
+  assert.deepEqual([...marqueeSelection(new Set(['a']), ['c', 'd'], false)], ['c', 'd']);
+  assert.deepEqual([...marqueeSelection(new Set(['a']), ['c', 'd'], true)], ['a', 'c', 'd']);
+  assert.ok(MARQUEE_SLOP > 0, 'a press that hardly moves is a click');
+});
+
+test('the marquee scrolls the pane near its top and bottom edge, faster the closer the pointer is, not in the middle', () => {
+  assert.equal(edgeScroll(300, 100, 500), 0);
+  assert.ok(edgeScroll(110, 100, 500) < 0, 'near the top: up');
+  assert.ok(edgeScroll(490, 100, 500) > 0, 'near the bottom: down');
+  assert.ok(edgeScroll(100, 100, 500) < edgeScroll(120, 100, 500), 'closer to the edge: faster up');
+  assert.ok(edgeScroll(500, 100, 500) > edgeScroll(480, 100, 500));
+  assert.equal(edgeScroll(50, 100, 500), -24, 'beyond the edge: the top speed');
+  assert.equal(edgeScroll(900, 100, 500), 24);
+});
+
+test('keys: Cmd or Ctrl+A all, Esc clear, Cmd/Ctrl+Up and Backspace up, Enter and Cmd/Ctrl+Down open, the arrows move', () => {
+  const k = (key, o = {}) => keyCommand({ key, metaKey: false, ctrlKey: false, shiftKey: false, ...o });
+  assert.deepEqual(k('a', { metaKey: true }), { type: 'all' });
+  assert.deepEqual(k('a', { ctrlKey: true }), { type: 'all' });
+  assert.equal(k('a'), undefined, 'a plain A is not a command');
+  assert.deepEqual(k('Escape'), { type: 'clear' });
+  assert.deepEqual(k('Backspace'), { type: 'up' });
+  assert.deepEqual(k('ArrowUp', { metaKey: true }), { type: 'up' });
+  assert.deepEqual(k('ArrowUp', { ctrlKey: true }), { type: 'up' });
+  assert.deepEqual(k('Enter'), { type: 'open' });
+  assert.deepEqual(k('ArrowDown', { metaKey: true }), { type: 'open' });
+  assert.deepEqual(k('ArrowDown'), { type: 'move', delta: 1, extend: false });
+  assert.deepEqual(k('ArrowUp', { shiftKey: true }), { type: 'move', delta: -1, extend: true });
+  assert.equal(k('x'), undefined);
+});
+
+test('arrows move the selection by one row; Shift extends from the anchor; the ends hold', () => {
+  const m = (anchor, cursor, delta, extend) => moveSelect(KEYS, anchor, cursor, delta, extend);
+  let s = m(undefined, undefined, 1, false);
+  assert.deepEqual([sorted(s), s.cursor], [['a'], 'a'], 'nothing selected: down starts at the top');
+  s = m(undefined, undefined, -1, false);
+  assert.deepEqual([sorted(s), s.cursor], [['f'], 'f'], 'up starts at the bottom');
+  s = m('b', 'b', 1, false);
+  assert.deepEqual([sorted(s), s.anchor, s.cursor], [['c'], 'c', 'c']);
+  s = m('b', 'b', 1, true);
+  s = m(s.anchor, s.cursor, 1, true);
+  assert.deepEqual([sorted(s), s.anchor, s.cursor], [['b', 'c', 'd'], 'b', 'd']);
+  s = m(s.anchor, s.cursor, -1, true);
+  assert.deepEqual(sorted(s), ['b', 'c'], 'Shift back shrinks the range');
+  assert.deepEqual(sorted(m('f', 'f', 1, false)), ['f'], 'the bottom holds');
+  assert.deepEqual(sorted(m('a', 'a', -1, false)), ['a'], 'the top holds');
+  assert.equal(moveSelect([], undefined, undefined, 1, false), undefined);
+});
+
+test('a drag carries the whole selection when it starts on a selected row, else just that row (which becomes the selection)', () => {
+  const sel = new Set(['d', 'b']);
+  assert.deepEqual(dragKeys(KEYS, sel, 'd'), { keys: ['b', 'd'], selected: new Set(['d', 'b']) }, 'list order');
+  assert.deepEqual(dragKeys(KEYS, sel, 'e'), { keys: ['e'], selected: new Set(['e']) });
+  assert.deepEqual(dragKeys(KEYS, new Set(), 'a'), { keys: ['a'], selected: new Set(['a']) });
+});
+
+test('drop targets: the folder row the drop is on, else the open folder; rows of our list or files from outside, nothing else', () => {
+  assert.equal(dropFolder('drums/808', 'drums'), 'drums/808');
+  assert.equal(dropFolder('', 'drums'), '', 'the Up row of a folder one level down is the top');
+  assert.equal(dropFolder(undefined, 'drums'), 'drums');
+  assert.equal(dragKind([ROWS_TYPE, 'text/plain']), 'rows');
+  assert.equal(dragKind(['Files']), 'files');
+  assert.equal(dragKind(['text/plain']), 'none');
+  assert.equal(dragKind(undefined), 'none');
+  assert.equal(dragKind(['Files', ROWS_TYPE]), 'rows', 'our own drag wins');
 });

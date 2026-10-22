@@ -102,9 +102,9 @@ export function localRowTags(r: LocalRow): RowTag[] {
   return out;
 }
 
-/** The ticked files, in list order (a folder is opened, not uploaded; ticks of rows that are gone are dropped). */
-export const pickedRows = (rows: LocalRow[], ticked: Set<string>): LocalRow[] =>
-  rows.filter((r) => r.kind === 'file' && ticked.has(r.key));
+/** The selected rows (files and folders), in list order (a selection of rows that are gone is dropped). */
+export const selectedRows = (rows: LocalRow[], selected: ReadonlySet<string>): LocalRow[] =>
+  rows.filter((r) => selected.has(r.key));
 
 // ---- uploads ----------------------------------------------------------------------------------------------------------------------
 
@@ -126,13 +126,24 @@ export interface Upload {
 export type Uploads = Record<string, Upload>;
 
 export type UploadEvent =
-  | { event: 'prepared'; folder: string; name: string; source: string; kind: Prepared['kind']; bytes: number }
+  | { event: 'queued'; folder: string; name: string; bytes: number }
+  | {
+      event: 'prepared';
+      folder: string;
+      name: string;
+      source: string;
+      kind: Prepared['kind'];
+      bytes: number;
+      /** The name the file was queued under (the local name; a WAV loses its extension on the device). */
+      queued?: string;
+    }
   | { event: 'progress'; folder: string; name: string; sent: number; bytes: number }
   | { event: 'verifying'; folder: string; name: string }
   | { event: 'verified'; folder: string; name: string; ok: boolean; message: string }
   | { event: 'failed'; folder: string; name: string; source?: string; message: string };
 
-/** The uploads after one more event (a new object). */
+/** The uploads after one more event (a new object). A queued file has the size of the local file and the local name; `prepared` gives it the
+ * name and size it has on the device, in the same place of the list. */
 export function applyUpload(u: Uploads, e: UploadEvent): Uploads {
   const key = joinPath(e.folder, e.name);
   const base: Upload = u[key] ?? {
@@ -146,8 +157,15 @@ export function applyUpload(u: Uploads, e: UploadEvent): Uploads {
     message: '',
   };
   switch (e.event) {
-    case 'prepared':
-      return { ...u, [key]: { ...base, source: e.source, kind: e.kind, bytes: e.bytes, state: 'waiting' } };
+    case 'queued':
+      return { ...u, [key]: { ...base, bytes: e.bytes, state: 'waiting' } };
+    case 'prepared': {
+      const next: Upload = { ...base, source: e.source, kind: e.kind, bytes: e.bytes, state: 'waiting' };
+      const was = e.queued !== undefined && e.queued !== e.name ? joinPath(e.folder, e.queued) : '';
+      if (!was || !(was in u)) return { ...u, [key]: next };
+      // the queued entry becomes this one without moving
+      return Object.fromEntries(Object.entries(u).map(([k, v]) => (k === was ? [key, next] : [k, v])));
+    }
     case 'progress':
       return { ...u, [key]: { ...base, state: 'uploading', sent: e.sent, bytes: e.bytes } };
     case 'verifying':
@@ -256,7 +274,27 @@ export interface SampleRow {
   status?: SampleStatus;
 }
 
-/** The rows of `folder`: folders first, then files, each by name; the files of an upload run that the listing does not hold are rows too. */
+/** The state of a folder that an upload run writes into, from the uploads inside it: a bar while anything is going, else failed when one
+ * failed, else verified. Undefined when none of its uploads were touched. */
+export function folderStatus(uploads: Uploads, folder: string): SampleStatus | undefined {
+  const inside = Object.values(uploads).filter((u) => u.folder === folder || u.folder.startsWith(`${folder}/`));
+  if (!inside.length) return undefined;
+  const open = inside.filter((u) => u.state !== 'ok' && u.state !== 'failed');
+  if (open.length) {
+    const bytes = inside.reduce((a, u) => a + u.bytes, 0);
+    const sent = inside.reduce((a, u) => a + (u.state === 'ok' || u.state === 'verifying' ? u.bytes : u.sent), 0);
+    return open.every((u) => u.state === 'waiting')
+      ? { kind: 'waiting', message: '' }
+      : { kind: 'uploading', sent, bytes, message: '' };
+  }
+  const bad = inside.filter((u) => u.state === 'failed');
+  return bad.length
+    ? { kind: 'failed', message: `${bad.length} of ${inside.length} files failed` }
+    : { kind: 'ok', message: `${inside.length} file${inside.length === 1 ? '' : 's'} verified` };
+}
+
+/** The rows of `folder`: folders first, then files, each by name. The files of an upload run that the listing does not hold are rows too, and
+ * so is a folder that the run is filling (made on the device, not listed yet); a folder row shows the state of the uploads inside it. */
 export function sampleRows(folder: string, entries: SampleEntry[], uploads: Uploads): SampleRow[] {
   const rows: SampleRow[] = entries.map((e) => {
     const path = joinPath(folder, e.name);
@@ -266,13 +304,23 @@ export function sampleRows(folder: string, entries: SampleEntry[], uploads: Uplo
       kind: e.kind,
       size: e.size,
       pending: false,
-      status: e.kind === 'file' ? uploadStatus(uploads[path]) : undefined,
+      status: e.kind === 'file' ? uploadStatus(uploads[path]) : folderStatus(uploads, path),
     };
   });
   const have = new Set(rows.map((r) => r.path));
+  const prefix = folder ? `${folder}/` : '';
   for (const [path, u] of Object.entries(uploads)) {
-    if (u.folder === folder && !have.has(path))
-      rows.push({ name: u.name, path, kind: 'file', size: u.bytes, pending: true, status: uploadStatus(u) });
+    if (u.folder === folder) {
+      if (!have.has(path))
+        rows.push({ name: u.name, path, kind: 'file', size: u.bytes, pending: true, status: uploadStatus(u) });
+    } else if (u.folder.startsWith(prefix)) {
+      const name = u.folder.slice(prefix.length).split('/')[0];
+      const sub = joinPath(folder, name);
+      if (!have.has(sub)) {
+        have.add(sub);
+        rows.push({ name, path: sub, kind: 'folder', size: 0, pending: true, status: folderStatus(uploads, sub) });
+      }
+    }
   }
   return rows.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'folder' ? -1 : 1));
 }
@@ -281,48 +329,152 @@ export function sampleRows(folder: string, entries: SampleEntry[], uploads: Uplo
 export const deleteRows = (rows: SampleRow[], ticked: Set<string>): SampleRow[] =>
   rows.filter((r) => !r.pending && ticked.has(r.path));
 
-/** The note under the list for a device whose samples go to the digikit store: its firmware cannot play them. `name` is the device's. */
-export const storeNote = (samples: string, name: string): string =>
-  samples === 'digikit' ? `Stored for a future sampling engine; the ${name} can't play samples yet.` : '';
+// ---- the plan of an upload --------------------------------------------------------------------------------------------------------
+
+/** One file of an upload plan: where it goes on the device, and where it comes from (`rel` inside the chosen folder, or a file added by hand). */
+export interface PlannedFile {
+  /** The device folder it goes into. */
+  folder: string;
+  /** Its local name (a WAV loses its extension on the device). */
+  name: string;
+  size: number;
+  /** The path inside the chosen folder; empty for an added file (found by `name`). */
+  rel: string;
+  added: boolean;
+}
+export interface UploadPlan {
+  /** Device folders to make, parents before the folders inside them; each once. */
+  mkdirs: string[];
+  files: PlannedFile[];
+}
+
+/** A folder that nests deeper than this, or a plan of more files than `MAX_PLAN_FILES`, is refused (a link loop inside the folder would
+ * otherwise never end). */
+export const MAX_PLAN_DEPTH = 24;
+export const MAX_PLAN_FILES = 20000;
+
+/**
+ * What uploading the selected rows into the device folder `target` means. A file goes into `target`; a folder is made inside it and its
+ * contents follow, recursively, with the structure kept (`list` reads one level of the chosen folder). Folders are made before what they hold
+ * and parents before children; a folder is listed folders first, then files by name, the order of the list. An empty folder is made too.
+ */
+export async function planUpload(
+  rows: readonly Pick<LocalRow, 'kind' | 'name' | 'path' | 'size' | 'added'>[],
+  target: string,
+  list: (rel: string) => Promise<LocalEntry[]>,
+): Promise<UploadPlan> {
+  const mkdirs: string[] = [];
+  const files: PlannedFile[] = [];
+  const walk = async (rel: string, dest: string, depth: number) => {
+    if (depth > MAX_PLAN_DEPTH)
+      throw new Error(`${rel}: folders nest more than ${MAX_PLAN_DEPTH} levels deep (a link loop?)`);
+    const entries = [...(await list(rel))].sort((a, b) =>
+      a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'folder' ? -1 : 1,
+    );
+    for (const e of entries) {
+      if (e.kind === 'folder') {
+        const sub = joinPath(dest, e.name);
+        mkdirs.push(sub);
+        await walk(joinPath(rel, e.name), sub, depth + 1);
+      } else {
+        files.push({ folder: dest, name: e.name, size: e.size, rel: joinPath(rel, e.name), added: false });
+        if (files.length > MAX_PLAN_FILES)
+          throw new Error(`more than ${MAX_PLAN_FILES} files: choose a smaller folder`);
+      }
+    }
+  };
+  for (const r of rows) {
+    if (r.kind === 'file') {
+      files.push({ folder: target, name: r.name, size: r.size, rel: r.path, added: r.added });
+    } else {
+      const dest = joinPath(target, r.name);
+      mkdirs.push(dest);
+      await walk(r.path, dest, 1);
+    }
+  }
+  return { mkdirs: [...new Set(mkdirs)], files };
+}
+
+/** What the page says about folders dragged in from outside the app (only their names reach the page, not what is in them). */
+export const foldersFromOutside = (n: number): string =>
+  `${n === 1 ? 'A folder' : `${n} folders`} dragged in from outside cannot be uploaded: choose it with "Choose folder…", then drag it from the list.`;
+
+/** What the page says when the device's storage cannot make folders and the selection holds a folder. */
+export const noFoldersMessage = (device: string): string =>
+  `The ${device} storage has no folders, so a folder cannot be uploaded with its structure. Select the files and upload them one by one.`;
 
 // ---- an upload run ----------------------------------------------------------------------------------------------------------------
 
 /** What `prepareUpload` of dksample.ts is, with the wasm bound. */
 export type Prepare = (name: string, bytes: Uint8Array) => Prepared;
 
+/** One file to send: its device folder, its local name and size, and how to read it (read only when its turn comes). */
+export interface UploadItem {
+  folder: string;
+  name: string;
+  size: number;
+  read: () => Promise<Uint8Array>;
+}
+
+const under = (folder: string, parent: string) => folder === parent || folder.startsWith(`${parent}/`);
+
 /**
- * Put the files into `folder`: each is prepared (a WAV converted), then sent with its progress, then verified against what was sent. A file that
- * cannot be prepared fails alone; a failed send stops the run (the device or the link is gone) and the files after it fail as not sent.
- * Every step is an event; nothing throws.
+ * Make the folders (those that the device does not have yet), then put the files: each is read, prepared (a WAV converted), sent with its
+ * progress, then verified against what was sent. Every file is queued first, so the global bar knows the whole run. A file that cannot be read
+ * or prepared fails alone; a folder that cannot be made fails the files inside it; a failed send stops the run (the device or the link is gone)
+ * and the files after it fail as not sent. Every step is an event; nothing throws.
  */
-export async function uploadFiles(
-  backend: SamplesBackend,
+export async function uploadItems(
+  backend: Pick<SamplesBackend, 'put' | 'verify'> & Partial<Pick<SamplesBackend, 'list' | 'mkdir'>>,
   prepare: Prepare,
-  folder: string,
-  files: { name: string; data: Uint8Array }[],
+  mkdirs: readonly string[],
+  items: readonly UploadItem[],
   emit: (e: UploadEvent) => void,
 ): Promise<void> {
-  const ready: Prepared[] = [];
-  for (const f of files) {
+  for (const it of items) emit({ event: 'queued', folder: it.folder, name: it.name, bytes: it.size });
+  const lost = new Map<string, string>();
+  for (const dir of mkdirs) {
+    const parent = parentOf(dir);
+    const inLost = [...lost.keys()].find((l) => under(dir, l));
+    if (inLost) {
+      lost.set(dir, lost.get(inLost) as string);
+      continue;
+    }
     try {
-      const p = prepare(f.name, f.data);
-      ready.push(p);
-      emit({ event: 'prepared', folder, name: p.name, source: f.name, kind: p.kind, bytes: p.stored.length });
+      const have = await backend.list?.(parent);
+      if (!have?.some((e) => e.name === dir.split('/').pop() && e.kind === 'folder')) await backend.mkdir?.(dir);
     } catch (e) {
-      emit({ event: 'failed', folder, name: f.name, source: f.name, message: errorLine(e) });
+      lost.set(dir, `the folder ${dir} could not be made: ${errorLine(e)}`);
     }
   }
   let stopped = '';
-  for (const p of ready) {
-    if (stopped) {
-      emit({ event: 'failed', folder, name: p.name, message: `not sent: ${stopped}` });
+  for (const it of items) {
+    const { folder } = it;
+    const why = [...lost.entries()].find(([dir]) => under(folder, dir))?.[1];
+    if (why || stopped) {
+      emit({ event: 'failed', folder, name: it.name, source: it.name, message: `not sent: ${why ?? stopped}` });
+      continue;
+    }
+    let p: Prepared;
+    try {
+      p = prepare(it.name, await it.read());
+      emit({
+        event: 'prepared',
+        folder,
+        name: p.name,
+        source: it.name,
+        kind: p.kind,
+        bytes: p.stored.length,
+        queued: it.name,
+      });
+    } catch (e) {
+      emit({ event: 'failed', folder, name: it.name, source: it.name, message: errorLine(e) });
       continue;
     }
     try {
       await backend.put(folder, p, (sent, bytes) => emit({ event: 'progress', folder, name: p.name, sent, bytes }));
     } catch (e) {
-      const message = errorLine(e);
-      emit({ event: 'failed', folder, name: p.name, message });
+      emit({ event: 'failed', folder, name: p.name, message: errorLine(e) });
       stopped = `the upload of ${p.name} failed`;
       continue;
     }
@@ -335,3 +487,19 @@ export async function uploadFiles(
     }
   }
 }
+
+/** Put the files into one `folder` (no folders to make). */
+export const uploadFiles = (
+  backend: Pick<SamplesBackend, 'put' | 'verify'>,
+  prepare: Prepare,
+  folder: string,
+  files: { name: string; data: Uint8Array }[],
+  emit: (e: UploadEvent) => void,
+): Promise<void> =>
+  uploadItems(
+    backend,
+    prepare,
+    [],
+    files.map((f) => ({ folder, name: f.name, size: f.data.length, read: async () => f.data })),
+    emit,
+  );

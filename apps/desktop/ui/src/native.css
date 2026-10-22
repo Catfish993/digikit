@@ -34,8 +34,7 @@ pre,
 .alert,
 .log,
 .path,
-.folder,
-.rows .name:not(button) {
+.folder {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -47,8 +46,7 @@ pre,
 #app .alert,
 #app .log,
 #app .path,
-#app .folder,
-#app .rows .name:not(button) {
+#app .folder {
   cursor: text;
 }
 /* a mouse click does not leave a ring; the keyboard still does (the :focus-visible rule of the site styles) */

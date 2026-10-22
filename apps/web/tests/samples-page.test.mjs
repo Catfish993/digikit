@@ -17,10 +17,14 @@ import {
   localRowTags,
   localRows,
   parentOf,
-  pickedRows,
+  folderStatus,
+  foldersFromOutside,
+  noFoldersMessage,
+  planUpload,
   sampleRows,
-  storeNote,
+  selectedRows,
   uploadFiles,
+  uploadItems,
   uploadStatus,
 } from '../../desktop/ui/src/samples-core.ts';
 
@@ -150,7 +154,7 @@ test('which files convert: the label says what was done', () => {
   assert.equal(kindTag('none'), undefined);
 });
 
-test('delete: the ticked rows that are on the device; the store note', () => {
+test('delete: the selected rows that are on the device', () => {
   const rows = sampleRows('', [folder('a'), file('b'), file('c')], {
     p: { folder: '', name: 'p', source: 'p', kind: 'native', state: 'waiting', sent: 0, bytes: 1, message: '' },
   });
@@ -158,11 +162,6 @@ test('delete: the ticked rows that are on the device; the store note', () => {
     deleteRows(rows, new Set(['c', 'a', 'p', 'gone'])).map((r) => r.path),
     ['a', 'c'],
   );
-  assert.equal(
-    storeNote('digikit', 'Digitone II'),
-    "Stored for a future sampling engine; the Digitone II can't play samples yet.",
-  );
-  assert.equal(storeNote('stock-rpc', 'Digitakt II'), '');
 });
 
 /** A backend that keeps what it is given; `failPut` names a file whose put throws, `failVerify` one whose verify says no. */
@@ -241,11 +240,11 @@ test('a failed send stops the run: the files after it are marked not sent', asyn
     [
       ['one', 'ok'],
       ['two', 'failed'],
-      ['three', 'failed'],
+      ['three.wav', 'failed'],
     ],
   );
   assert.match(u['drums/two'].message, /E_FULL: no space/);
-  assert.equal(u['drums/three'].message, 'not sent: the upload of two failed');
+  assert.equal(u['drums/three.wav'].message, 'not sent: the upload of two failed');
   assert.deepEqual(b.calls, ['put drums/one', 'verify drums/one', 'put drums/two']);
 });
 
@@ -275,7 +274,7 @@ test('the Card panel groups the store files by top folder', () => {
   assert.equal(nameInGroup('top.bin', ''), 'top.bin');
 });
 
-test('the local list: folders first, then files by name, then the added files; folders have no state; ticks pick files only', () => {
+test('the local list: folders first, then files by name, then the added files; folders have no kind tag; the selection takes folders too', () => {
   const entries = [file('snare.wav', 40), folder('z'), file('kick', 30), folder('a')];
   const kinds = { 'drums/snare.wav': 'converted', 'drums/kick': 'native', '+x.txt': 'unchanged' };
   const rows = localRows(
@@ -304,8 +303,9 @@ test('the local list: folders first, then files by name, then the added files; f
     'a file whose bytes were not read has no kind tag yet; an added file says so',
   );
   assert.deepEqual(
-    pickedRows(rows, new Set(['drums/a', 'drums/snare.wav', '+loop.wav', 'gone'])).map((r) => r.key),
-    ['drums/snare.wav', '+loop.wav'],
+    selectedRows(rows, new Set(['drums/a', 'drums/snare.wav', '+loop.wav', 'gone'])).map((r) => r.key),
+    ['drums/a', 'drums/snare.wav', '+loop.wav'],
+    'folders are selectable like files; a selection of rows that are gone is dropped',
   );
   assert.deepEqual(rows[0].path, 'drums/a');
   assert.deepEqual(rows[4].path, '', 'an added file is not in the folder');
@@ -338,4 +338,230 @@ test('the label of a local file comes from its first 64 bytes and its size, as p
   assert.equal(sourceKind(native, 0x40 + 99), 'unchanged', 'the size must match the header');
   assert.equal(sourceKind(new Uint8Array(64), 64), 'unchanged');
   assert.equal(sourceKind(new Uint8Array(3), 3), 'unchanged');
+});
+
+// ---- the explorer: the plan of an upload with folders, the queue, the folder rows ----------------------------------------------------
+
+/** A local tree for the plan: path -> entries of that level. */
+const tree = {
+  '': [folder('loops'), folder('empty'), file('a.wav', 5)],
+  loops: [file('z.wav', 3), folder('breaks'), file('b.wav', 4)],
+  'loops/breaks': [file('x.wav', 1), folder('deep')],
+  'loops/breaks/deep': [file('y.wav', 2)],
+  empty: [],
+};
+const lister =
+  (log = []) =>
+  async (rel) => {
+    log.push(rel);
+    return tree[rel] ?? [];
+  };
+const row = (kind, name, path = name, size = 0, added = false) => ({ kind, name, path, size, added });
+
+test('the plan of an upload: a folder is made inside the open device folder, its contents follow, parents before children, structure kept', async () => {
+  const log = [];
+  const plan = await planUpload([row('folder', 'loops'), row('file', 'a.wav', 'a.wav', 5)], 'drums', lister(log));
+  assert.deepEqual(plan.mkdirs, ['drums/loops', 'drums/loops/breaks', 'drums/loops/breaks/deep']);
+  assert.deepEqual(
+    plan.files.map((f) => [f.folder, f.name, f.rel]),
+    [
+      ['drums/loops/breaks/deep', 'y.wav', 'loops/breaks/deep/y.wav'],
+      ['drums/loops/breaks', 'x.wav', 'loops/breaks/x.wav'],
+      ['drums/loops', 'b.wav', 'loops/b.wav'],
+      ['drums/loops', 'z.wav', 'loops/z.wav'],
+      ['drums', 'a.wav', 'a.wav'],
+    ],
+    'depth first, as the list reads: in each folder, its folders come before its files, each by name',
+  );
+  assert.deepEqual(log, ['loops', 'loops/breaks', 'loops/breaks/deep']);
+});
+
+test('the plan: an empty folder is made, a file goes to the target, an added file keeps its flag, the top is the target', async () => {
+  const plan = await planUpload([row('folder', 'empty'), row('file', 'f.wav', '', 7, true)], '', lister());
+  assert.deepEqual(plan.mkdirs, ['empty']);
+  assert.deepEqual(
+    plan.files.map((f) => [f.folder, f.name, f.added, f.size]),
+    [['', 'f.wav', true, 7]],
+  );
+  const none = await planUpload([], 'x', lister());
+  assert.deepEqual(none, { mkdirs: [], files: [] });
+});
+
+test('the plan refuses a link loop and a huge folder with a clear message', async () => {
+  const loop = async () => [folder('again'), file('f.wav')];
+  await assert.rejects(planUpload([row('folder', 'a')], '', loop), /nest more than \d+ levels/);
+  const many = async () => Array.from({ length: 21000 }, (_, i) => file(`f${i}.wav`));
+  await assert.rejects(planUpload([row('folder', 'big')], '', many), /more than \d+ files/);
+});
+
+test('messages: no folders on the device, a folder dragged in from outside', () => {
+  assert.match(noFoldersMessage('Digitone II'), /Digitone II storage has no folders/);
+  assert.match(foldersFromOutside(1), /^A folder dragged in from outside/);
+  assert.match(foldersFromOutside(3), /^3 folders dragged in/);
+});
+
+/** A backend that has folders: `list` answers from `have` (folder path -> names), `mkdir` is recorded. */
+const folderBackend = (have = { '': [] }, failMkdir = '') => {
+  const calls = [];
+  const base = fakeBackend();
+  return {
+    calls,
+    put: async (f, p, o) => {
+      calls.push(`put ${f}/${p.name}`);
+      return base.put(f, p, o);
+    },
+    verify: base.verify,
+    async list(f) {
+      calls.push(`list ${f}`);
+      return (have[f] ?? []).map((name) => ({ name, kind: 'folder', size: 0 }));
+    },
+    async mkdir(f) {
+      calls.push(`mkdir ${f}`);
+      if (f === failMkdir) throw new Error('{"error":"E_FULL: no space","kind":"device"}');
+    },
+  };
+};
+const item = (folderPath, name, size = 10) => ({
+  folder: folderPath,
+  name,
+  size,
+  read: async () => new Uint8Array(size),
+});
+const runItems = async (backend, mkdirs, items) => {
+  let u = {};
+  const events = [];
+  await uploadItems(backend, prepare, mkdirs, items, (e) => {
+    events.push(e.event);
+    u = applyUpload(u, e);
+  });
+  return { u, events };
+};
+
+test('an upload of folders: every file is queued first (the bar knows the whole run), folders are made in order, a folder that exists is not made again', async () => {
+  const b = folderBackend({ '': ['loops'], loops: [] });
+  const { u, events } = await runItems(
+    b,
+    ['loops', 'loops/breaks'],
+    [item('loops/breaks', 'x.wav'), item('loops', 'b.wav', 20)],
+  );
+  assert.deepEqual(events.slice(0, 2), ['queued', 'queued']);
+  assert.deepEqual(b.calls.slice(0, 4), ['list ', 'list loops', 'mkdir loops/breaks', 'put loops/breaks/x']);
+  assert.ok(!b.calls.includes('mkdir loops'), 'loops is on the device already');
+  assert.deepEqual(
+    Object.values(u).map((x) => [x.folder, x.name, x.state, x.bytes]),
+    [
+      ['loops/breaks', 'x', 'ok', 10],
+      ['loops', 'b', 'ok', 20],
+    ],
+    'a WAV was queued as x.wav and is x on the device, in the same place of the list',
+  );
+});
+
+test('a folder that cannot be made fails the files inside it (and below) and nothing else', async () => {
+  const b = folderBackend({ '': [] }, 'loops/breaks');
+  const { u } = await runItems(
+    b,
+    ['loops', 'loops/breaks', 'loops/breaks/deep'],
+    [item('loops/breaks/deep', 'y.wav'), item('loops', 'b.wav'), item('loops/breaks', 'x.wav')],
+  );
+  const state = (key) => [u[key].state, u[key].message];
+  assert.deepEqual(state('loops/b').slice(0, 1), ['ok']);
+  assert.equal(u['loops/breaks/deep/y.wav'].state, 'failed');
+  assert.match(
+    u['loops/breaks/deep/y.wav'].message,
+    /not sent: the folder loops\/breaks could not be made: E_FULL: no space/,
+  );
+  assert.equal(u['loops/breaks/x.wav'].state, 'failed');
+  assert.ok(!b.calls.includes('mkdir loops/breaks/deep'), 'a folder inside a lost one is not tried');
+  assert.ok(!b.calls.includes('put loops/breaks/x'));
+});
+
+test('a file that cannot be read fails alone and the run goes on', async () => {
+  const b = folderBackend();
+  const bad = {
+    folder: 'd',
+    name: 'gone.wav',
+    size: 1,
+    read: async () => Promise.reject(new Error('gone.wav: no such file')),
+  };
+  const { u } = await runItems(b, [], [bad, item('d', 'ok.wav')]);
+  assert.equal(u['d/gone.wav'].state, 'failed');
+  assert.match(u['d/gone.wav'].message, /no such file/);
+  assert.equal(u['d/ok'].state, 'ok');
+});
+
+test('events: a queued file takes the name and size it has on the device in place; queued bytes count until then', () => {
+  let u = {};
+  u = applyUpload(u, { event: 'queued', folder: 'd', name: 'a.wav', bytes: 100 });
+  u = applyUpload(u, { event: 'queued', folder: 'd', name: 'b.wav', bytes: 50 });
+  assert.deepEqual([u['d/a.wav'].state, u['d/a.wav'].bytes, u['d/a.wav'].kind], ['waiting', 100, 'none']);
+  u = applyUpload(u, {
+    event: 'prepared',
+    folder: 'd',
+    name: 'a',
+    source: 'a.wav',
+    kind: 'converted',
+    bytes: 90,
+    queued: 'a.wav',
+  });
+  assert.deepEqual(Object.keys(u), ['d/a', 'd/b.wav'], 'the entry keeps its place');
+  assert.deepEqual([u['d/a'].bytes, u['d/a'].kind], [90, 'converted']);
+  // a name that does not change (notes.txt) stays under its key
+  u = applyUpload(u, {
+    event: 'prepared',
+    folder: 'd',
+    name: 'b.wav',
+    source: 'b.wav',
+    kind: 'unchanged',
+    bytes: 50,
+    queued: 'b.wav',
+  });
+  assert.deepEqual(Object.keys(u), ['d/a', 'd/b.wav']);
+});
+
+test('a folder row: pending while an upload fills it, with the state of the uploads inside it', () => {
+  const up = (path, state, sent, bytes) => {
+    const i = path.lastIndexOf('/');
+    return {
+      folder: path.slice(0, i),
+      name: path.slice(i + 1),
+      source: path,
+      kind: 'converted',
+      state,
+      sent,
+      bytes,
+      message: '',
+    };
+  };
+  const uploads = {
+    'loops/a': up('loops/a', 'ok', 10, 10),
+    'loops/breaks/x': up('loops/breaks/x', 'uploading', 5, 20),
+    'loops/breaks/deep/y': up('loops/breaks/deep/y', 'waiting', 0, 10),
+  };
+  // not listed yet: a pending folder row (once, even with many files inside)
+  const top = sampleRows('', [file('init')], uploads);
+  assert.deepEqual(
+    top.map((r) => [r.name, r.kind, r.pending]),
+    [
+      ['loops', 'folder', true],
+      ['init', 'file', false],
+    ],
+  );
+  assert.deepEqual(top[0].status, { kind: 'uploading', sent: 15, bytes: 40, message: '' });
+  // inside it: the files of this level and the folders below, each with its own state
+  const inside = sampleRows('loops', [folder('breaks'), file('a', 10)], uploads);
+  assert.deepEqual(
+    inside.map((r) => [r.name, r.kind, r.pending, r.status?.kind]),
+    [
+      ['breaks', 'folder', false, 'uploading'],
+      ['a', 'file', false, 'ok'],
+    ],
+  );
+  // an upload of another folder does not make rows here
+  assert.deepEqual(sampleRows('other', [], uploads), []);
+  assert.equal(folderStatus(uploads, 'nothing'), undefined);
+  assert.equal(folderStatus({ 'f/a': up('f/a', 'waiting', 0, 5) }, 'f').kind, 'waiting');
+  assert.equal(folderStatus({ 'f/a': up('f/a', 'ok', 5, 5) }, 'f').kind, 'ok');
+  const mixed = folderStatus({ 'f/a': up('f/a', 'ok', 5, 5), 'f/b': up('f/b', 'failed', 0, 5) }, 'f');
+  assert.deepEqual([mixed.kind, mixed.message], ['failed', '1 of 2 files failed']);
 });

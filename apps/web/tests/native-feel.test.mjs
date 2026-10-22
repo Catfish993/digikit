@@ -35,6 +35,8 @@ test('native.css makes every selectable selector selectable, and the rest of the
     css.indexOf('/* selectable text */'),
     css.indexOf('}', css.indexOf('/* selectable text */')),
   );
+  assert.ok(!SELECTABLE.some((s) => s.includes('.rows')), 'the names of the list rows are not selectable text');
+  assert.ok(!css.includes('.rows .name'), 'native.css does not make list rows selectable');
   for (const s of SELECTABLE) assert.ok(selectable.includes(s), `${s} is not in the selectable rule of native.css`);
   assert.match(selectable, /user-select: text/);
   assert.match(rule('body {\n  cursor'), /user-select: none/);

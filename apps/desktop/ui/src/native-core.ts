@@ -1,6 +1,6 @@
 // The rules of the app's native feel, without the DOM: where text may be selected and copied, and which clicks keep the browser's context
 // menu. `SELECTABLE` is also written out in native.css (a node test checks that every selector is there); everything else in the app
-// is not selectable. Node tests: apps/web/tests/native-feel.test.mjs.
+// is not selectable (not the file names of the lists: rows are selected as rows, never as text). Node tests: apps/web/tests/native-feel.test.mjs.
 
 /** Where text is for copying: text fields, log and console output, paths, error messages. Add `class="selectable"` to anything else. */
 export const SELECTABLE = [
@@ -14,7 +14,6 @@ export const SELECTABLE = [
   '.log',
   '.path',
   '.folder',
-  '.rows .name:not(button)',
 ] as const;
 
 /** What the page does not drag away (a link or an image dragged out of the window). */
