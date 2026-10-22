@@ -498,6 +498,8 @@ fn main() {
             card_open_folder,
             library::lib_scan,
             library::lib_read,
+            library::sample_wasm,
+            library::device_storage,
             midi_port::midi_ports,
             midi_port::midi_open,
             midi_port::midi_close,

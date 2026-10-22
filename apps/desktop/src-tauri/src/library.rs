@@ -82,6 +82,45 @@ pub async fn lib_read(device: String, path: String) -> Result<tauri::ipc::Respon
         .map_err(|e| e.to_string())?
 }
 
+/// The converter of the Samples tab (`apps/web/public/dksample.wasm`, built by `uv run python -m tools.emulator.native_wasm --patchkit-only`),
+/// as raw bytes. The page cannot import it: the file is a build product, not in the repository.
+#[tauri::command]
+pub async fn sample_wasm() -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let path = root()?.join("apps/web/public/dksample.wasm");
+        std::fs::read(&path)
+            .map(tauri::ipc::Response::new)
+            .map_err(|e| format!("{}: {e} (build it: uv run python -m tools.emulator.native_wasm --patchkit-only)", path.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// What the device profile says about content (`[storage]`): the device's name and the backend of its samples.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct DeviceStorage {
+    pub name: String,
+    pub samples: String,
+}
+
+/// The `[storage]` of a device (`dt2`, `dn2`) from `devices/*.toml`.
+pub fn storage_of(device: &str) -> Result<DeviceStorage, String> {
+    let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
+    let profile = registry
+        .devices()
+        .iter()
+        .find(|d| d.short == device)
+        .ok_or_else(|| format!("no device profile for {device:?}"))?;
+    let storage = profile.storage.as_ref().ok_or_else(|| format!("the {} profile has no [storage]", profile.name))?;
+    Ok(DeviceStorage { name: profile.name.clone(), samples: storage.samples.clone() })
+}
+
+/// Where the device keeps samples: read from its profile, so the page names no device.
+#[tauri::command]
+pub async fn device_storage(device: String) -> Result<DeviceStorage, String> {
+    tauri::async_runtime::spawn_blocking(move || storage_of(&device)).await.map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +151,15 @@ mod tests {
         assert!(scan(&root, "../x").is_err());
         assert_eq!(read(&root, "dt2", "digikit/pluck.dkm").unwrap(), b"PLUCK");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_storage_comes_from_the_profile() {
+        let dt2 = storage_of("dt2").unwrap();
+        assert_eq!((dt2.name.as_str(), dt2.samples.as_str()), ("Digitakt II", "stock-rpc"));
+        let dn2 = storage_of("dn2").unwrap();
+        assert_eq!((dn2.name.as_str(), dn2.samples.as_str()), ("Digitone II", "digikit"));
+        assert!(storage_of("nothing").is_err());
     }
 
     #[test]

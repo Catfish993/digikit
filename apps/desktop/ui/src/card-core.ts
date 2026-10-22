@@ -50,3 +50,27 @@ export function shortFolder(folder: string | null): string {
 export function fileRows(c: CardFolder): CardFile[] {
   return [...c.files].sort((a, b) => a.path.localeCompare(b.path));
 }
+
+/** A top folder of the store and its files. */
+export interface CardGroup {
+  /** `modules`, `samples`, ... ('' for a file at the top). */
+  folder: string;
+  files: CardFile[];
+  bytes: number;
+}
+
+/** The files grouped by top folder, folders by name (the mirror lists the whole store flat). */
+export function fileGroups(c: CardFolder): CardGroup[] {
+  const by = new Map<string, CardFile[]>();
+  for (const f of fileRows(c)) {
+    const slash = f.path.indexOf('/');
+    const folder = slash < 0 ? '' : f.path.slice(0, slash);
+    by.set(folder, [...(by.get(folder) ?? []), f]);
+  }
+  return [...by]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([folder, files]) => ({ folder, files, bytes: files.reduce((n, f) => n + f.bytes, 0) }));
+}
+
+/** The name of a file inside its group: the path without the top folder. */
+export const nameInGroup = (path: string, folder: string): string => (folder ? path.slice(folder.length + 1) : path);
