@@ -2,6 +2,7 @@
 // uses the one selected here. The protocol client is the same in both cases (`DkSession`); only the transport differs.
 import { createSignal } from 'solid-js';
 import { DkSession } from '@web/modules/dkupload-core';
+import { instrument } from './activity';
 import { EmuUsbTransport, emulatorMode } from './desktop-transport';
 import { closeMidiPort, MidiPortTransport, openMidiPort } from './midi-transport';
 
@@ -51,14 +52,14 @@ export async function session(): Promise<DkSession> {
   const t = target();
   if (t.kind === 'emulator') {
     if ((await emulatorMode()) === 'paused') throw new Error(PAUSED);
-    return (shared ??= new DkSession(new EmuUsbTransport(), { timeoutMs: 6000 }));
+    return (shared ??= new DkSession(instrument(new EmuUsbTransport()), { timeoutMs: 6000 }));
   }
   if (opened !== t.port) {
     await openMidiPort(t.port);
     opened = t.port;
     shared = undefined;
   }
-  return (shared ??= new DkSession(new MidiPortTransport(), { timeoutMs: 6000 }));
+  return (shared ??= new DkSession(instrument(new MidiPortTransport()), { timeoutMs: 6000 }));
 }
 
 /** Drop the session (a failed port, a restarted device): the next request makes a new one. */

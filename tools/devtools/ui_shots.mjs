@@ -119,6 +119,89 @@ const SCENES = [
       await p.wait(4500);
     },
   },
+  {
+    name: 'samples-scrolled-narrow',
+    q: 'mode=samples',
+    size: MIN,
+    steps: async (p) => {
+      // the left pane scrolls alone: the right pane and the divider stay, the header sticks to the top of its pane
+      await p.eval("document.querySelector('.split > section').scrollTop = 300");
+      await p.wait(300);
+      const tops = await p.eval('[...document.querySelectorAll(".split > section")].map((e) => e.scrollTop)');
+      const handle = await p.eval(
+        '(() => { const h = document.querySelector(".split-handle").getBoundingClientRect(); const s = document.querySelector(".split").getBoundingClientRect(); return [h.top - s.top, s.bottom - h.bottom]; })()',
+      );
+      p.say(
+        `pane scrollTop ${JSON.stringify(tops)}; divider insets from the split box top/bottom ${JSON.stringify(handle)}`,
+      );
+    },
+  },
+  {
+    name: 'auto-refresh',
+    q: 'mode=samples&speed=0.3',
+    size: WIDE,
+    steps: async (p) => {
+      const counts = () => p.eval('JSON.stringify(window.__sim.counts)');
+      const has = (name) => p.eval(`document.body.innerText.includes(${JSON.stringify(name)})`);
+      await p.wait(1500);
+      const c0 = JSON.parse(await counts());
+      await p.wait(7000);
+      const c1 = JSON.parse(await counts());
+      p.say(
+        `idle 7 s: local polls +${c1.localPoll - c0.localPoll} (expect 2), device reads +${c1.deviceRead - c0.deviceRead} (expect 0)`,
+      );
+      await p.eval("window.__sim.addLocal('new_file_xyz.wav')");
+      await p.wait(4500);
+      p.say(`file added on disk: shown after the poll = ${await has('new_file_xyz.wav')} (expect true)`);
+      const c2 = JSON.parse(await counts());
+      await p.eval("window.dispatchEvent(new Event('focus'))");
+      await p.wait(1500);
+      const c3 = JSON.parse(await counts());
+      p.say(
+        `focus: device reads +${c3.deviceRead - c2.deviceRead} (expect 1), local reads +${c3.localList - c2.localList} (expect 1)`,
+      );
+      await p.eval("window.dispatchEvent(new Event('focus'))");
+      await p.eval("document.dispatchEvent(new Event('visibilitychange'))");
+      await p.wait(1200);
+      const c4 = JSON.parse(await counts());
+      p.say(
+        `focus + visibilitychange together: device reads +${c4.deviceRead - c3.deviceRead} (expect 1 or 0: one read answers both)`,
+      );
+      // a job: nothing reads while it runs, and the file that appears meanwhile shows after the job
+      await p.tick('^Upload (perc_shaker|pad_warm)');
+      await p.click(/^Upload/);
+      await p.wait(800);
+      const c5 = JSON.parse(await counts());
+      await p.eval("window.__sim.addLocal('during_upload.wav')");
+      await p.eval("window.dispatchEvent(new Event('focus'))");
+      await p.wait(6000);
+      const c6 = JSON.parse(await counts());
+      p.say(
+        `during the upload (6 s): device reads +${c6.deviceRead - c5.deviceRead}, local polls +${c6.localPoll - c5.localPoll}, local reads +${c6.localList - c5.localList} (expect 0, 0, 0); new file shown yet = ${await has('during_upload.wav')} (expect false)`,
+      );
+    },
+  },
+  {
+    name: 'samples-done',
+    q: 'mode=samples&speed=8',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Upload (kick_punchy|hat_closed_a)');
+      await p.click(/^Upload/);
+      await p.wait(4000);
+    },
+  },
+  {
+    name: 'delete-confirm',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Delete (Pluck|Chorus)$');
+      await p.click(/^Delete/);
+      await p.wait(300);
+    },
+  },
+  { name: 'slow-not-waiting', q: 'mode=modules&dev=slow', size: WIDE, steps: async (p) => p.wait(0) },
   { name: 'empty', q: 'mode=modules&dev=empty', size: WIDE },
   { name: 'empty-samples', q: 'mode=samples&dev=empty', size: WIDE },
   { name: 'error', q: 'mode=modules&dev=error', size: WIDE },
@@ -190,6 +273,7 @@ function pageApi(cdp) {
   };
   const api = {
     eval: evaluate,
+    say: (m) => console.log(`  ${m}`),
     wait: sleep,
     async click(text) {
       const src = text instanceof RegExp ? text.source : `^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
@@ -263,6 +347,11 @@ try {
   }
 } finally {
   chrome.kill();
-  fs.rmSync(profile, { recursive: true, force: true });
+  await sleep(500);
+  try {
+    fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch {
+    // Chromium may still be writing its profile in the temp folder; the system cleans it up
+  }
 }
 process.exit(0);

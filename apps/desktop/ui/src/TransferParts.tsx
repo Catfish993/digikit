@@ -1,10 +1,12 @@
 // The parts of the Transfer page that Modules mode and Samples mode share: the two columns with their headers, the list row with its
 // progress bar or verified/failed chip, the breadcrumb, and the two-click Delete button.
-import { For, Show, createSignal, type JSX } from 'solid-js';
+import { For, Show, createEffect, createSignal, type JSX } from 'solid-js';
 import TargetSelect from './TargetSelect';
 import { target, targetLabel } from './target';
-import { deleteLabel, infoLine } from './transfer-core';
-import { deviceInfo } from './transfer-state';
+import { fmtRate } from './rate-core';
+import { selectState, toggleAll } from './select-core';
+import { deleteLabel, infoLine, type RowTag } from './transfer-core';
+import { deviceInfo, liveRate } from './transfer-state';
 
 /** What the page gives each mode: the one busy action, and the error line. */
 export interface PageCtx {
@@ -12,7 +14,7 @@ export interface PageCtx {
   /** Run `f` as the page's one busy action; an error shows, and both sides are read again either way. */
   run: (what: string, f: () => Promise<void>) => Promise<void>;
   setError: (m: string) => void;
-  /** Changes when Refresh was pressed (the target selector reads the MIDI ports again). */
+  /** Changes when the page reads by itself (the target selector reads the MIDI ports again). */
   reload: () => number;
 }
 
@@ -26,13 +28,17 @@ export interface ChipStatus {
 
 export function Chip(props: { status: ChipStatus }): JSX.Element {
   const pct = () => (props.status.bytes ? Math.round((100 * (props.status.sent ?? 0)) / props.status.bytes) : 0);
+  const rate = () => {
+    const r = liveRate();
+    return r ? fmtRate(r) : '';
+  };
   return (
     <>
       <Show when={props.status.kind === 'waiting'}>
-        <span class="check wait">waiting</span>
+        <span class="check idle">waiting</span>
       </Show>
       <Show when={props.status.kind === 'verifying'}>
-        <span class="check wait">verifying…</span>
+        <span class="check idle">verifying…</span>
       </Show>
       <Show when={props.status.kind === 'ok'}>
         <span class="check ok" title={props.status.message}>
@@ -45,12 +51,22 @@ export function Chip(props: { status: ChipStatus }): JSX.Element {
         </span>
       </Show>
       <Show when={props.status.kind === 'uploading'}>
-        <span class="up">
+        <span class="up" title={rate() ? `${pct()}% · ${rate()}` : `${pct()}%`}>
           <progress max={props.status.bytes} value={props.status.sent} />
-          <span class="dim">{pct()}%</span>
+          <span class="pct">{pct()}%</span>
+          <span class="rate">{rate()}</span>
         </span>
       </Show>
     </>
+  );
+}
+
+/** The small label after a name (`test`, `on device`, `WAV→`). */
+function Tag(props: { tag: RowTag }): JSX.Element {
+  return (
+    <span class="rtag" classList={{ [props.tag.tone]: true }} title={props.tag.title}>
+      {props.tag.text}
+    </span>
   );
 }
 
@@ -61,22 +77,22 @@ export interface ListRowProps {
   title?: string;
   /** A folder: the name is a link that opens it. */
   open?: { disabled: boolean; onOpen: () => void };
-  /** A short note after the name (`test`, `added`). */
-  tag?: string;
-  /** The version (modules) or the size (samples); `extra` is a second dim column. */
-  detail?: string;
-  extra?: string;
-  extraTitle?: string;
-  state?: string;
-  warn?: string;
+  /** Small labels after the name; only what says something (a usual state has none). */
+  tags?: RowTag[];
+  /** The version (modules), a dim column before the size. */
+  version?: string;
+  /** The size, right-aligned. */
+  size?: string;
+  /** The tooltip of the size. */
+  sizeTitle?: string;
   status?: ChipStatus;
 }
 
-/** One row of a list in either column: tick, name, version or size, state text, then the bar or chip of a transfer. */
+/** One row of a list in either column, always one line: tick, name with its tags, version, the bar or chip of a transfer, size. */
 export function ListRow(props: ListRowProps): JSX.Element {
   return (
-    <li classList={{ warn: !!props.warn }}>
-      <Show when={props.check}>
+    <li>
+      <Show when={props.check} fallback={<span class="tick" />}>
         {(c) => (
           <input
             type="checkbox"
@@ -87,37 +103,58 @@ export function ListRow(props: ListRowProps): JSX.Element {
           />
         )}
       </Show>
-      <Show
-        when={props.open}
-        fallback={
-          <span class="name" title={props.title}>
-            {props.name}
-            <Show when={props.tag}>
-              <em> {props.tag}</em>
-            </Show>
-          </span>
-        }
-      >
-        {(o) => (
-          <button type="button" class="name link" disabled={o().disabled} title={props.title} onClick={o().onOpen}>
-            {props.name}/
-          </button>
-        )}
-      </Show>
-      <span class="dim">{props.detail ?? ''}</span>
-      <Show when={props.extra !== undefined}>
-        <span class="dim" title={props.extraTitle}>
-          {props.extra}
-        </span>
-      </Show>
-      <Show when={props.state && props.status?.kind !== 'uploading'}>
-        <span class="state">{props.state}</span>
-      </Show>
-      <Show when={props.warn}>
-        <span class="fit">{props.warn}</span>
+      <span class="name">
+        <Show
+          when={props.open}
+          fallback={
+            <span class="nm" title={props.title}>
+              {props.name}
+            </span>
+          }
+        >
+          {(o) => (
+            <button type="button" class="nm link" disabled={o().disabled} title={props.title} onClick={o().onOpen}>
+              {props.name}/
+            </button>
+          )}
+        </Show>
+        <For each={props.tags ?? []}>{(t) => <Tag tag={t} />}</For>
+      </span>
+      <Show when={props.version}>
+        <span class="vers">{props.version}</span>
       </Show>
       <Show when={props.status}>{(st) => <Chip status={st()} />}</Show>
+      <span class="size" title={props.sizeTitle}>
+        {props.size ?? ''}
+      </span>
     </li>
+  );
+}
+
+/** The select-all checkbox of a pane header: none, some (the dash) or all of `keys`, the visible rows that can be ticked. */
+export function SelectAll(props: {
+  label: string;
+  keys: string[];
+  ticked: Set<string>;
+  disabled: boolean;
+  onChange: (next: Set<string>) => void;
+}): JSX.Element {
+  let box: HTMLInputElement | undefined;
+  const state = () => selectState(props.keys, props.ticked);
+  createEffect(() => {
+    if (box) box.indeterminate = state() === 'some';
+  });
+  return (
+    <input
+      ref={box}
+      type="checkbox"
+      class="all"
+      aria-label={props.label}
+      title={state() === 'all' ? 'Clear the selection' : 'Select all'}
+      checked={state() === 'all'}
+      disabled={props.disabled || props.keys.length === 0}
+      onChange={() => props.onChange(toggleAll(props.keys, props.ticked))}
+    />
   );
 }
 
@@ -196,6 +233,8 @@ export function DeleteButton(props: {
 
 /** The left column: what is on the computer. `actions` are its controls (they sit in its header); a drop on it adds files. */
 export function LocalPane(props: {
+  /** The select-all checkbox, before the heading. */
+  selectAll: JSX.Element;
   actions: JSX.Element;
   onDrop: (files: File[]) => void;
   children: JSX.Element;
@@ -218,9 +257,11 @@ export function LocalPane(props: {
       }}
     >
       <div class="colhead">
-        <h3>On your computer</h3>
-        <span class="sp" />
-        {props.actions}
+        <div class="hl">
+          {props.selectAll}
+          <h3>On your computer</h3>
+        </div>
+        <div class="acts">{props.actions}</div>
       </div>
       {props.children}
     </section>
@@ -233,13 +274,20 @@ export function writing(busy: string): boolean {
 }
 
 /** The right column: the target, the device and its list. Everything about the target is here: the selector, the info line and the buttons. */
-export function DevicePane(props: { ctx: PageCtx; actions: JSX.Element; children: JSX.Element }): JSX.Element {
+export function DevicePane(props: {
+  ctx: PageCtx;
+  selectAll: JSX.Element;
+  actions: JSX.Element;
+  children: JSX.Element;
+}): JSX.Element {
   return (
     <section class="col" aria-label="On device">
       <div class="colhead">
-        <h3>On device</h3>
-        <span class="sp" />
-        {props.actions}
+        <div class="hl">
+          {props.selectAll}
+          <h3>On device</h3>
+        </div>
+        <div class="acts">{props.actions}</div>
       </div>
       <div class="devhead">
         <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />

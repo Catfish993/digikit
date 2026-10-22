@@ -4,7 +4,7 @@
 import { errorLine } from '../../../web/src/modules/backend.ts';
 import type { Prepared } from '../../../web/src/modules/dksample.ts';
 import type { SampleEntry, SamplesBackend } from '../../../web/src/modules/samples.ts';
-import type { RowStatus } from './transfer-core.ts';
+import type { BarInfo, RowStatus, RowTag } from './transfer-core.ts';
 
 // ---- folders ----------------------------------------------------------------------------------------------------------------------
 
@@ -92,8 +92,15 @@ export function localRows(
   return rows;
 }
 
-/** The state text of a local row: what the upload will do with a file (nothing is said before its first bytes were read, and nothing of a folder). */
-export const localRowState = (r: LocalRow): string => (r.kind === 'file' && r.sample ? kindLabel(r.sample) : '');
+/** The tags of a local row: what the upload will do with a file (nothing is said before its first bytes were read, and nothing of a folder),
+ * and "added" for a file added by hand. */
+export function localRowTags(r: LocalRow): RowTag[] {
+  const out: RowTag[] = [];
+  const kind = r.kind === 'file' && r.sample ? kindTag(r.sample) : undefined;
+  if (kind) out.push(kind);
+  if (r.added) out.push({ text: 'added', title: 'Added by hand, from outside the folder', tone: 'dim' });
+  return out;
+}
 
 /** The ticked files, in list order (a folder is opened, not uploaded; ticks of rows that are gone are dropped). */
 export const pickedRows = (rows: LocalRow[], ticked: Set<string>): LocalRow[] =>
@@ -152,17 +159,17 @@ export function applyUpload(u: Uploads, e: UploadEvent): Uploads {
   }
 }
 
-/** What a local file will become on upload (the state text of its row). */
-export function kindLabel(kind: Upload['kind']): string {
+/** What a local file will become on upload, as a small tag: a WAV is converted, a native sample goes as it is, anything else is not a sample. */
+export function kindTag(kind: Upload['kind']): RowTag | undefined {
   switch (kind) {
     case 'converted':
-      return 'converted on upload';
+      return { text: 'WAV→', title: 'Converted to the native sample file on upload', tone: 'dim' };
     case 'native':
-      return 'as is';
+      return { text: 'native', title: 'A native sample file: uploaded as it is', tone: 'dim' };
     case 'unchanged':
-      return "won't play as a sample";
+      return { text: 'other', title: "Won't play as a sample", tone: 'dim' };
     default:
-      return '';
+      return undefined;
   }
 }
 
@@ -185,6 +192,48 @@ export function uploadStatus(u: Upload | undefined): SampleStatus | undefined {
     case 'failed':
       return { kind: 'failed', message };
   }
+}
+
+/** The bar of an upload run: the uploads that this run touched (`base` is what `uploads` held when the run started; an entry that is the very
+ * same object was not touched). `running`: the run is still going, so the message names the file. No entry: no bar (undefined). */
+export function samplesBar(uploads: Uploads, base: Uploads, running: boolean): BarInfo | undefined {
+  const mine = Object.entries(uploads).filter(([key, u]) => base[key] !== u);
+  if (!mine.length) return undefined;
+  let sent = 0;
+  let total = 0;
+  let finished = 0;
+  let ok = 0;
+  let failed = 0;
+  for (const [, u] of mine) {
+    total += u.bytes;
+    if (u.state === 'ok') {
+      ok++;
+      sent += u.bytes;
+      finished += u.bytes;
+    } else if (u.state === 'failed') {
+      failed++;
+      sent += u.sent;
+      finished += u.bytes;
+    } else if (u.state === 'verifying') {
+      sent += u.bytes;
+      finished += u.bytes;
+    } else if (u.state === 'uploading') {
+      sent += u.sent;
+      finished += u.sent;
+    }
+  }
+  const n = mine.length;
+  const current = mine.find(([, u]) => u.state === 'uploading' || u.state === 'verifying')?.[1];
+  const plural = (k: number) => `${k} file${k === 1 ? '' : 's'}`;
+  let message: string;
+  if (running)
+    message = current
+      ? `${current.state === 'verifying' ? 'Verifying' : 'Uploading'} ${current.name} (${ok + failed + 1} of ${n})`
+      : 'Preparing…';
+  else if (failed) message = `${ok} of ${n} uploaded, ${failed} failed.`;
+  else message = `Uploaded ${plural(ok)}, verified.`;
+  const fraction = total ? Math.min(1, finished / total) : running ? 0 : 1;
+  return { fraction: running ? fraction : failed ? fraction : 1, failed: failed > 0, message, sent, total };
 }
 
 /** The uploads without the given device paths (their files were deleted). */

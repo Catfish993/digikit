@@ -69,3 +69,7 @@ export const [sampleFolder, setSampleFolder] = createSignal('');
 export const [sampleEntries, setSampleEntries] = createSignal<SampleEntry[]>();
 export const [sampleTicks, setSampleTicks] = createSignal<Set<string>>(new Set());
 export const [uploads, setUploads] = createSignal<Uploads>({});
+/** The uploads as they were when the running (or last) samples upload started: the bar counts what changed since. */
+export const [uploadBase, setUploadBase] = createSignal<Uploads>({});
+/** The smoothed speed of the running transfer in bytes per second (the bottom bar sets it; the rows of the file being sent show it). */
+export const [liveRate, setLiveRate] = createSignal<number>();

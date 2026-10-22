@@ -17,10 +17,10 @@ import {
   rowStatus,
   progressFraction,
   startProgress,
-  deviceStateText,
+  deviceTags,
   freeText,
   infoLine,
-  localStateText,
+  localTags,
   MODES,
   parseMode,
   warningText,
@@ -204,8 +204,9 @@ test('delete: the ticked card files, the button label, the done text', () => {
   // a file that is not on the card (an Available row) or gone since is dropped
   assert.deepEqual(deletePaths(view, new Set(['modules/sine.dkm', 'modules/gone.dkm'])), []);
   assert.equal(deleteLabel(0, false), 'Delete');
-  assert.equal(deleteLabel(2, false), 'Delete 2');
-  assert.equal(deleteLabel(2, true), 'Confirm delete 2');
+  assert.equal(deleteLabel(2, false), 'Delete (2)');
+  assert.equal(deleteLabel(2, true), 'Confirm delete (2)');
+  assert.equal(deleteLabel(0, true), 'Delete', 'nothing ticked: no count and nothing to confirm');
   assert.equal(deleteDoneText(view, ['modules/junk.dkm']), 'Deleted 1 file.');
   // pluck is loaded: it stays loaded until the restart
   assert.equal(
@@ -238,24 +239,33 @@ test('the delete progress: one step per path, active then done, text from the ev
   assert.equal(progressFailed(p), true);
 });
 
-test('the state words: the left list says what the device holds, the right list how a file stands against the library', () => {
-  const [pluck, sine] = view.modules;
-  assert.equal(localStateText({ ...sine, on_card: 'no' }), 'not on device');
-  assert.equal(localStateText({ ...sine, on_card: 'yes' }), 'on device');
-  assert.equal(
-    localStateText({ ...sine, on_card: 'other version' }),
-    'different build on device — Install replaces it',
+test('the tags: only what says something; the usual state has none', () => {
+  const [pluck, sine0] = view.modules;
+  const sine = { ...sine0, test: false };
+  const texts = (tags) => tags.map((t) => t.text);
+  // On your computer: what the device holds of a module, a test build, a fit warning
+  assert.deepEqual(texts(localTags({ ...sine, on_card: 'no' })), [], 'not on the device is the usual state');
+  assert.deepEqual(texts(localTags({ ...sine, on_card: 'yes' })), ['on device']);
+  assert.deepEqual(texts(localTags({ ...sine, on_card: 'other version' })), ['differs']);
+  assert.match(localTags({ ...sine, on_card: 'other version' })[0].title, /Install replaces it/);
+  assert.deepEqual(texts(localTags({ ...sine0, test: true, on_card: 'yes' })), ['test', 'on device']);
+  const fit = localTags({ ...sine, warnings: ['arena 2 MiB is more than the free 1 MiB'] });
+  assert.deepEqual(
+    [fit[0].text, fit[0].tone, fit[0].title],
+    ['fit', 'warn', 'arena 2 MiB is more than the free 1 MiB'],
   );
-  assert.equal(deviceStateText(pluck), 'loaded, same as your computer');
-  assert.equal(deviceStateText({ ...sine, on_card: 'yes' }), 'same as your computer');
-  assert.equal(deviceStateText({ ...sine, on_card: 'other version' }), 'differs from your computer');
-  assert.equal(deviceStateText(view.card_only[1]), 'only on device');
-  assert.equal(deviceStateText(view.card_only[0]), 'loaded, only on device');
-  assert.equal(deviceStateText(sine), '', 'a file that is still going there has no state yet');
-  // the old words are gone from every state
+  // On device: loaded first, then how the file stands against the library
+  assert.deepEqual(texts(deviceTags(pluck)), ['loaded'], 'the same as the library is not said');
+  assert.deepEqual(texts(deviceTags({ ...sine, on_card: 'yes' })), []);
+  assert.deepEqual(texts(deviceTags({ ...sine, on_card: 'other version' })), ['differs']);
+  assert.deepEqual(texts(deviceTags(view.card_only[1])), ['not in library']);
+  assert.deepEqual(texts(deviceTags(view.card_only[0])), ['loaded', 'not in library']);
+  assert.deepEqual(texts(deviceTags(sine)), [], 'a file that is still going there has no tag yet');
+  // no tag says "card"
   for (const r of [...view.modules, ...view.card_only])
     for (const on_card of ['yes', 'no', 'other version'])
-      assert.doesNotMatch(localStateText({ ...r, on_card }) + deviceStateText({ ...r, on_card }), /on card/);
+      for (const t of [...localTags({ ...r, on_card }), ...deviceTags({ ...r, on_card })])
+        assert.doesNotMatch(t.text + (t.title ?? ''), /on card/);
 });
 
 test('the mode of the page: Modules and Samples, Modules for anything unknown', () => {

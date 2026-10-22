@@ -15,7 +15,7 @@ import {
   folderNameError,
   joinPath,
   localCrumbs,
-  localRowState,
+  localRowTags,
   localRows,
   pickedRows,
   sampleRows,
@@ -23,7 +23,18 @@ import {
   uploadFiles,
   type SampleRow,
 } from './samples-core';
-import { Crumbs, DevicePane, DeleteButton, ListRow, LocalPane, createConfirm, type PageCtx } from './TransferParts';
+import {
+  Crumbs,
+  DevicePane,
+  DeleteButton,
+  ListRow,
+  LocalPane,
+  SelectAll,
+  createConfirm,
+  type PageCtx,
+} from './TransferParts';
+import { noteActivity } from './activity';
+import { countLabel } from './transfer-core';
 import SplitPane from './SplitPane';
 import {
   addedFiles,
@@ -43,6 +54,7 @@ import {
   setLocalTicks,
   setSampleFolder,
   setSampleTicks,
+  setUploadBase,
   setUploads,
   uploads,
 } from './transfer-state';
@@ -113,7 +125,11 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
         })),
       );
       setNote('');
-      await uploadFiles(o.backend, o.prepare, sampleFolder(), data, (e) => setUploads((u) => applyUpload(u, e)));
+      setUploadBase(uploads());
+      await uploadFiles(o.backend, o.prepare, sampleFolder(), data, (e) => {
+        noteActivity();
+        setUploads((u) => applyUpload(u, e));
+      });
       setLocalTicks(new Set<string>());
     });
 
@@ -166,6 +182,17 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
     <SplitPane id="transfer">
       <LocalPane
         onDrop={addFiles}
+        selectAll={
+          <SelectAll
+            label="Select all files to upload"
+            keys={lrows()
+              .filter((r) => r.kind === 'file')
+              .map((r) => r.key)}
+            ticked={localTicks()}
+            disabled={!!busy()}
+            onChange={setLocalTicks}
+          />
+        }
         actions={
           <>
             <input
@@ -209,7 +236,7 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
               }
               onClick={() => void upload()}
             >
-              {busy() === 'Uploading' ? 'Uploading…' : picked().length ? `Upload ${picked().length}` : 'Upload'}
+              {busy() === 'Uploading' ? 'Uploading…' : countLabel('Upload', picked().length)}
             </button>
           </>
         }
@@ -250,9 +277,8 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
                   name={r.name}
                   title={r.added ? `${r.name} (added)` : r.path}
                   open={r.kind === 'folder' ? { disabled: !!busy(), onOpen: () => openLocal(r.path) } : undefined}
-                  tag={r.added ? 'added' : undefined}
-                  detail={r.kind === 'file' ? formatBytes(r.size) : ''}
-                  state={localRowState(r)}
+                  tags={localRowTags(r)}
+                  size={r.kind === 'file' ? formatBytes(r.size) : ''}
                 />
               )}
             </For>
@@ -262,6 +288,20 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
 
       <DevicePane
         ctx={props.ctx}
+        selectAll={
+          <SelectAll
+            label="Select all to delete"
+            keys={rows()
+              .filter((r) => !r.pending)
+              .map((r) => r.path)}
+            ticked={sampleTicks()}
+            disabled={!!busy()}
+            onChange={(next) => {
+              setSampleTicks(next);
+              confirm.stop();
+            }}
+          />
+        }
         actions={
           <>
             <Show when={deviceInfo()?.canMkdir}>
@@ -321,8 +361,7 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
                     name={r.name}
                     title={r.path}
                     open={r.kind === 'folder' ? { disabled: !!busy(), onOpen: () => open(r.path) } : undefined}
-                    detail={r.kind === 'file' ? formatBytes(r.size) : ''}
-                    state={r.status?.kind === 'failed' ? r.status.message.split('\n')[0] : ''}
+                    size={r.kind === 'file' ? formatBytes(r.size) : ''}
                     status={r.status}
                   />
                 )}

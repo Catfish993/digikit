@@ -12,9 +12,9 @@ import {
   folderNameError,
   joinPath,
   baseName,
-  kindLabel,
+  kindTag,
   localCrumbs,
-  localRowState,
+  localRowTags,
   localRows,
   parentOf,
   pickedRows,
@@ -143,10 +143,11 @@ test('events build the upload state, and a file that could not be prepared fails
 });
 
 test('which files convert: the label says what was done', () => {
-  assert.equal(kindLabel('converted'), 'converted on upload');
-  assert.equal(kindLabel('native'), 'as is');
-  assert.equal(kindLabel('unchanged'), "won't play as a sample");
-  assert.equal(kindLabel('none'), '');
+  assert.equal(kindTag('converted').text, 'WAV→');
+  assert.equal(kindTag('native').text, 'native');
+  assert.equal(kindTag('unchanged').text, 'other');
+  assert.equal(kindTag('unchanged').title, "Won't play as a sample");
+  assert.equal(kindTag('none'), undefined);
 });
 
 test('delete: the ticked rows that are on the device; the store note', () => {
@@ -298,9 +299,9 @@ test('the local list: folders first, then files by name, then the added files; f
     ],
   );
   assert.deepEqual(
-    rows.map(localRowState),
-    ['', '', 'as is', 'converted on upload', "won't play as a sample", ''],
-    'a file whose bytes were not read has no label yet',
+    rows.map((r) => localRowTags(r).map((t) => t.text)),
+    [[], [], ['native'], ['WAV→'], ['other', 'added'], ['added']],
+    'a file whose bytes were not read has no kind tag yet; an added file says so',
   );
   assert.deepEqual(
     pickedRows(rows, new Set(['drums/a', 'drums/snare.wav', '+loop.wav', 'gone'])).map((r) => r.key),

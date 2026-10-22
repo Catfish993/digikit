@@ -2,6 +2,7 @@
 // device answers. The state can be set from the address (`?dev=empty&folder=files&speed=1.5`, see PARAMS) and while the page runs
 // (`window.__sim.set({ dev: 'noreply' })`), so a screenshot script (tools/devtools/ui_shots.mjs) reaches each state without clicking.
 import type { SampleEntry } from '@web/modules/samples';
+import { noteActivity } from '../src/activity';
 import type { LocalEntry } from '../src/samples-core';
 import type { TransferRow, TransferView } from '../src/transfer-core';
 
@@ -40,7 +41,12 @@ export async function deviceRead(): Promise<void> {
     case 'error':
       throw new Error('The card is not mounted (preview: dev=error).');
     case 'slow':
-      return delay(2500);
+      // slow but alive: the device keeps answering in small pieces, so nothing says "Waiting for ..."
+      for (let i = 0; i < 12; i++) {
+        await delay(200);
+        noteActivity();
+      }
+      return;
     default:
       return delay(120);
   }
@@ -264,5 +270,5 @@ export const control = {
     if (i >= 0) top.splice(i, 1);
     added = added.filter((f) => f.name !== name);
   },
-  counts: { localList: 0, deviceRead: 0 },
+  counts: { localList: 0, localPoll: 0, deviceRead: 0 },
 };

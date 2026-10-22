@@ -10,29 +10,31 @@ import {
   ListRow,
   LocalPane,
   DevicePane,
+  SelectAll,
   createConfirm,
   DeleteButton,
   type ChipStatus,
   type PageCtx,
 } from './TransferParts';
+import { noteActivity } from './activity';
 import SplitPane from './SplitPane';
 import { transferBackend } from './transfer-backend';
 import {
   applyEvent,
   applyVerified,
   available,
+  countLabel,
   DONE_ON_CARD,
   deleteDoneText,
   deletePaths,
-  deviceStateText,
+  deviceTags,
   eventText,
   installModules,
-  localStateText,
+  localTags,
   onDeviceWithPending,
   rowKey,
   rowStatus,
   startProgress,
-  warningText,
   type TransferEvent,
   type TransferRow,
 } from './transfer-core';
@@ -56,6 +58,7 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
   let input: HTMLInputElement | undefined;
 
   const onEvent = (e: TransferEvent) => {
+    noteActivity();
     const p = progress();
     if (p) setProgress(applyEvent(p, e));
     setVerified(applyVerified(verified(), e));
@@ -147,6 +150,19 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
     const v = lastView();
     return v ? installModules(v, ticks()).length : 0;
   };
+  /** The rows that the select-all boxes tick: every visible library module, and every file of the device that can be deleted. */
+  const localKeys = () => {
+    const v = lastView();
+    return v ? available(v, showTests()).flatMap((g) => g.rows.filter((r) => r.id).map(rowKey)) : [];
+  };
+  const deviceKeys = () => {
+    const v = lastView();
+    return v
+      ? onDeviceWithPending(v, progress())
+          .filter((r) => r.on_card !== 'no')
+          .map((r) => r.path)
+      : [];
+  };
   const status = (r: TransferRow): ChipStatus | undefined => {
     const st = rowStatus(progress(), verified(), r.path);
     return st?.kind === 'uploading' ? { kind: 'uploading', sent: st.sent, bytes: st.bytes } : st;
@@ -156,6 +172,15 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
     <SplitPane id="transfer">
       <LocalPane
         onDrop={(f) => void addFiles(f)}
+        selectAll={
+          <SelectAll
+            label="Select all modules to install"
+            keys={localKeys()}
+            ticked={ticks()}
+            disabled={!!busy()}
+            onChange={setTicks}
+          />
+        }
         actions={
           <>
             <input
@@ -195,7 +220,7 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
               }
               onClick={() => void install()}
             >
-              {busy() === 'Installing' ? 'Installing…' : ticked() ? `Install ${ticked()}` : 'Install'}
+              {busy() === 'Installing' ? 'Installing…' : countLabel('Install', ticked())}
             </button>
           </>
         }
@@ -222,12 +247,10 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                             }}
                             name={label(r)}
                             title={r.id ?? r.path}
-                            tag={r.test ? 'test' : undefined}
-                            detail={r.version ?? ''}
-                            extra={formatBytes(r.file_size)}
-                            extraTitle={r.arena !== undefined ? `arena ${r.arena} B, DSP ${r.dsp} B` : ''}
-                            state={localStateText(r)}
-                            warn={warningText(r)}
+                            tags={localTags(r)}
+                            version={r.version ?? ''}
+                            size={formatBytes(r.file_size)}
+                            sizeTitle={r.arena !== undefined ? `arena ${r.arena} B, DSP ${r.dsp} B` : ''}
                           />
                         )}
                       </For>
@@ -242,6 +265,18 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
 
       <DevicePane
         ctx={props.ctx}
+        selectAll={
+          <SelectAll
+            label="Select all files to delete"
+            keys={deviceKeys()}
+            ticked={delTicks()}
+            disabled={!!busy()}
+            onChange={(next) => {
+              setDelTicks(next);
+              confirm.stop();
+            }}
+          />
+        }
         actions={
           <>
             <DeleteButton
@@ -287,10 +322,10 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                             }
                       }
                       name={label(r)}
-                      title={`${r.path} · ${formatBytes(r.file_size)}`}
-                      tag={r.id ? undefined : 'not in the library'}
-                      detail={r.version ?? ''}
-                      state={deviceStateText(r)}
+                      title={r.path}
+                      tags={deviceTags(r)}
+                      version={r.version ?? ''}
+                      size={formatBytes(r.file_size)}
                       status={status(r)}
                     />
                   )}

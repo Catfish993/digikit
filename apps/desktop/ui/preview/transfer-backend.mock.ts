@@ -1,6 +1,7 @@
 // The Modules backend of the preview (replaces ../src/transfer-backend.ts): the library and the device come from sim.ts; an install, a delete
 // and a restart emit the same events as dktransfer.ts, paced by `sim.speed`.
 import type { TransferEvent, TransferView } from '@web/modules/dktransfer';
+import { noteActivity } from '../src/activity';
 import { PAUSED } from '../src/target';
 import { LIBRARY, delay, deviceFiles, deviceRead, libraryById, pathOf, sim, view, control } from './sim';
 
@@ -12,6 +13,7 @@ async function pace(bytes: number, emit: (sent: number) => void): Promise<void> 
   for (let sent = 0; sent < bytes;) {
     await delay(100);
     sent = Math.min(bytes, sent + Math.round(step * (0.85 + 0.3 * Math.abs(Math.sin(sent / step)))));
+    noteActivity();
     emit(sent);
   }
 }

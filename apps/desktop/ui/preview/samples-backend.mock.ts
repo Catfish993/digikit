@@ -1,5 +1,6 @@
 // The Samples backend of the preview (replaces ../src/samples-backend.ts): the folder on the computer and the device's sample folders come
 // from sim.ts. Same exports as the real module; an upload is paced by `sim.speed` through the real `uploadFiles` of samples-core.ts.
+import { noteActivity } from '../src/activity';
 import { sourceKind, type Prepared } from '@web/modules/dksample';
 import type { SampleEntry, SamplesBackend } from '@web/modules/samples';
 import { joinPath, type LocalEntry, type Prepare } from '../src/samples-core';
@@ -65,6 +66,7 @@ const backend: SamplesBackend = {
     for (let sent = 0; sent < total;) {
       await delay(100);
       sent = Math.min(total, sent + Math.round(step * (0.85 + 0.3 * Math.abs(Math.sin(sent / step)))));
+      noteActivity();
       onProgress?.(sent, total);
     }
     const f = clean(folder);
@@ -136,6 +138,13 @@ export async function labelOf(read: () => Promise<Uint8Array>, size: number): Pr
   } catch {
     return undefined;
   }
+}
+
+/** The open level as it is now (the listing only); counted, so a test can see how often the poll asks. */
+export async function listLocalNow(): Promise<LocalEntry[] | undefined> {
+  if (!localFolder() || sim.folder === 'none') return undefined;
+  control.counts.localPoll++;
+  return listLocal(localPath());
 }
 
 /** Read the open level of the chosen folder and label its files; the same effects as the real `readLocal`. */

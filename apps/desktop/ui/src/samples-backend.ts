@@ -109,6 +109,17 @@ export async function labelOf(read: () => Promise<Uint8Array>, size: number): Pr
   }
 }
 
+/** The open level of the chosen folder as it is now (the listing only, no file is read): the light poll compares it with what the page shows.
+ * Undefined when no folder is chosen or it cannot be listed. */
+export async function listLocalNow(): Promise<LocalEntry[] | undefined> {
+  if (!localFolder()) return undefined;
+  try {
+    return await invoke<LocalEntry[]>('local_list', { root: localFolder(), rel: localPath() });
+  } catch {
+    return undefined;
+  }
+}
+
 /** Read the open level of the chosen folder and label its files. No folder chosen: an empty list. */
 export async function readLocal(): Promise<void> {
   if (!localFolder()) {
