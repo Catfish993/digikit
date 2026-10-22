@@ -56,6 +56,11 @@ parser.add_argument(
     help="build only public/patchkit.wasm",
 )
 parser.add_argument(
+    "--dksample-only",
+    action="store_true",
+    help="build only public/dksample.wasm (`mise run workbench` runs this first)",
+)
+parser.add_argument(
     "--no-fast",
     action="store_true",
     help="leave the fast tier (feature fast-wasm, off until the page turns it on) out of the coupled core",
@@ -212,6 +217,9 @@ def build_small(name: str) -> None:
     print(f"{name}.wasm: {dest.stat().st_size} bytes")
 
 
+if args.dksample_only:
+    build_small("dksample")
+    raise SystemExit(0)
 build_patchkit()
 build_small("dkupload")
 build_small("dksample")

@@ -27,7 +27,7 @@ description = "Install the Python and web dependencies"
 
 [tasks.workbench]
 alias = "wb"
-depends = ["module:pack-all"]
+depends = ["module:pack-all", "wasm:dksample"]
 run = "uv run python -m tools.emulator.native_emu"
 description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready); the digikit runtime is patched into a stock firmware unless `-- --no-runtime` (the header checkbox Boot with digikit runtime decides for Open and Reload); `-- --build-only` builds without launching. The +Drive is plus_drive/<device>/ when it exists (`-- --plus-drive DIR` picks another folder, `--samples DIR` is the same option; the firmware's changes are exported back to the folder on exit, `-- --no-sync` turns that off)"
 
@@ -64,6 +64,10 @@ description = "Run the web panel's audio-health tests (node --test)"
 [tasks."web:wasm"]
 run = "uv run python -m tools.emulator.native_wasm"
 description = "Build only the browser emulator core (WASM); the coupled core goes through wasm-opt -O3 (--wasm-opt= turns it off)"
+
+[tasks."wasm:dksample"]
+run = "uv run python -m tools.emulator.native_wasm --dksample-only"
+description = "Build only apps/web/public/dksample.wasm, the WAV to native sample converter the workbench's Samples tab needs (`mise run workbench` runs it first; cargo skips the work when nothing changed)"
 
 [tasks."web:bench"]
 run = "uv run python -m tools.devtools.benchlock run --exclusive -- node tools/devtools/browser_bench.mjs"

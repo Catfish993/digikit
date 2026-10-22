@@ -6,7 +6,7 @@ Runs a MAIN OS image in the native emulator (`regions_probe`) with a panel/MIDI 
   * the firmware's CPU stores and DMA never touch the module RAM `cf.expansion` (write-watch, from the first CACR
     write; docs/INSTRUMENTATION.md) and the canary pattern filled into it survives;
   * the card sectors the firmware wrote (the copy-on-write overlay) include none of the module store
-    (sectors 0x38000-0x3E000).
+    (the device's `[card.store]` area, docs/design/digikit-store.md).
 
     uv run python -m tools.coldfire.arena_safety run IMAGE SCRIPT [--card IMG] [--out DIR] [--watch-limit N]
     uv run python -m tools.coldfire.arena_safety list

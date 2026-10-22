@@ -100,7 +100,7 @@ from the menu. No hardware flashing until everything works in the emulator.
 
 ### Load sequence
 
-1. Read the module from the store (card sectors 0x38000-0x3E000) with the firmware's block read function (DT2
+1. Read the module from the store (the device's `[card.store]` area) with the firmware's block read function (DT2
    `FUN_4012deda`, DN2 `FUN_4012c59a`).
 2. Check the header, sha256, runtime version and that every import resolves. Nothing is written before this
    passes.
@@ -144,7 +144,7 @@ unloaded while running.
   the same calling convention as gcc except 8-byte struct results; the repo's libgcc helpers are 68020 code.
 - [x] S4b A DSP channel of our own. Result: the unused tail of the per-block frame on both devices (DT2 698 bytes,
   DN2 60 bytes per block), with a full-frame borrow as a faster, muted option.
-- [x] S6 Card use. Result: a module store at sectors 0x38000-0x3E000 on both devices; FsRaw is not dispatched
+- [x] S6 Card use. Result: a module store at sectors 0x38000-0x3E000 on both devices (superseded 2026-10-22 by the per-device areas of store version 3, finding 59); FsRaw is not dispatched
   on either device.
 - [x] S5 Instrumentation. Result: write-watch and flush check in the emulator; a DT2 boot shows 0 writes into
   `cf.expansion` and 0 flush hits.
@@ -181,7 +181,7 @@ after the next boot.
 - [x] Static check of the arena with tools/coldfire/refscan.py and tools/coldfire/cf.py (`arena_safety static IMAGE`): no absolute
   reference into `cf.expansion` (either view) or to the module store sectors on dt2-1.16/1.17 and dn2-1.11/1.12; coverage
   96.6 to 96.8 %; every hit read as a constant or data (finding 25). Computed addresses are covered by the dynamic runs only.
-- [x] The card overlay after each scenario has no sector in the module store (0x38000-0x3E000).
+- [x] The card overlay after each scenario has no sector in the module store (then 0x38000-0x3E000; today the device's `[card.store]` area, same check).
 
 - [x] DT2 1.17 and DN2 1.12 suites, the 1.16/1.11 re-run, and one suite per image with `core/runtime` patched in (ALLOW_PC = its
   range): all PASS, 0 write events (finding 25, second pass).

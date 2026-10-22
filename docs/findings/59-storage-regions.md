@@ -58,7 +58,16 @@ Scenario `samples-live` (DT2 1.17, free-running daemon, `tools/devtools/samples_
 - **[C]** `OpenFileForWrite` needs the leading slash (a bare name fails and leaves a folder); finding 25's and `docs/MIDI-SYSEX-RPC.md` section 11's "no leading slash" holds only inside a folder. Details in section 12 there.
 - **[O]** `ReadFileV1` answered status 0 for every layout tried, so no read-back exists; the hash check does not need one.
 
+## Proof of the new area and of the size check, run in the emulator (step 7)
+
+- **[D]** Module install, restart, load and delete in the per-device area run in `transfer-live` on both devices (quick tier): the file is listed in `modules/`, MODULES shows the module after the restart, the
+  mirror folder holds it with the card's sha256, a delete removes it everywhere and the next boot skips the missing path. Full tier: `upload-ops`, `upload-folders`, the power-cut scenarios.
+- **[D]** A card smaller than the area (`card-small`, both devices, the emulator's `small` identity with 0x3B0000 sectors): the runtime's check reads the area's last sector, the firmware's block read refuses it (`start < capacity`,
+  above), the state is "too small" (5), the log gets one error event, uploads answer E_NOSTORE, CAPACITY STORE is 0 KiB, writes inside the area answer E_CARD_RO, nothing is written there, the boot reaches the UI.
+  The emulator's capacity comes from the identity, not from the image file, so this proves the runtime's reaction and the firmware's refusal, not the real cards' capacity (open, below).
+
 ## Open
 
 - **[O]** The `StorageSpace` reply length (17 bytes here, 20 seen once on a real device): settle it with a capture (`docs/MIDI-SYSEX-RPC.md`, section 12).
 - **[O]** None of the above is checked on a real card. A second agent has not read the guard and the layout from the image bytes (**[V]** is for that).
+- **[O]** The real eMMC capacity of a DT2 and a DN2 (0x2E1A000 is assumed from the whitelist), that the stock firmware never writes either area on a used device, where the DT2's +Drive allocator really stops, the DT2 sample browser listing an uploaded file, the RPC chunk size on real USB, and whether a real device's trailer of a file written over MidiRpc is zeros. The list with the checks: `docs/plans/storage.md`, "Needs Em's real devices".

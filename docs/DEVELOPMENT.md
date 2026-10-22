@@ -63,6 +63,7 @@ The files go to `out/snapshots/<device>-audio-ready-cold-*`. Git ignores them.
 
 ```sh
 mise run workbench                # build once and run (`mise run workbench -- --build-only` builds only)
+mise run wasm:dksample            # only public/dksample.wasm (the workbench runs it first; 0.3 s when unchanged)
 mise run workbench -- --cf-only --plus-drive DIR firmware/Digitakt_II_OS1.17.syx   # a +Drive folder (default: plus_drive/<device>/; --samples is the same option)
 mise run workbench -- --dsp-patch FILE  # overlay a DSP patch (DN2 audio)
 mise run workbench -- --cf-only   # ColdFire only: no DSP, no audio

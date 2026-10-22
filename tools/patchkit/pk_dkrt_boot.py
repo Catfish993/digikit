@@ -89,7 +89,14 @@ CARD_FIELDS = [
     "claims",
     "writes",
 ]  # DKRT_CARD of core/runtime (card.rs CardInfo)
-CARD_NAMES = {0: "unknown", 1: "ours", 2: "blank", 3: "foreign", 4: "unreadable"}
+CARD_NAMES = {
+    0: "unknown",
+    1: "ours",
+    2: "blank",
+    3: "foreign",
+    4: "unreadable",
+    5: "too small",
+}
 CRASH_FIELDS = [
     "found",
     "pc",
