@@ -227,6 +227,11 @@ export function LocalPane(props: {
   );
 }
 
+/** A job that writes to the device (the target cannot change under it); reading and waiting can be left by choosing another target. */
+export function writing(busy: string): boolean {
+  return busy !== '' && busy !== 'Reading';
+}
+
 /** The right column: the target, the device and its list. Everything about the target is here: the selector, the info line and the buttons. */
 export function DevicePane(props: { ctx: PageCtx; actions: JSX.Element; children: JSX.Element }): JSX.Element {
   return (
@@ -237,7 +242,7 @@ export function DevicePane(props: { ctx: PageCtx; actions: JSX.Element; children
         {props.actions}
       </div>
       <div class="devhead">
-        <TargetSelect disabled={!!props.ctx.busy()} onError={props.ctx.setError} reload={props.ctx.reload} />
+        <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
         <Show when={deviceInfo()}>
           {(d) => <span class="meta">{infoLine(targetLabel(target()), d().name, d().runtime, d().free)}</span>}
         </Show>

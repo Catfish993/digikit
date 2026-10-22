@@ -57,8 +57,13 @@ export default function TransferPage(): JSX.Element {
   const [error, setError] = createSignal('');
   const [reload, setReload] = createSignal(0);
 
+  // a read asked for while another job runs (another target, mode or Refresh during a wait) runs when that job ends
+  let readAgain = false;
   const run = async (what: string, f: () => Promise<void>) => {
-    if (busy()) return;
+    if (busy()) {
+      if (what === 'Reading') readAgain = true;
+      return;
+    }
     setBusy(what);
     setError('');
     // after a cancel or a "no reply" the device is not asked again at once (that would wait the whole time a second time)
@@ -76,6 +81,10 @@ export default function TransferPage(): JSX.Element {
           if (!error()) setError(failureLine(e, targetLabel(target())));
         }
       setBusy('');
+      if (readAgain) {
+        readAgain = false;
+        void run('Reading', async () => {});
+      }
       // the Card panel reads the folder now and again after the emulator's quiet period (the folder follows the card about 2 s later)
       bumpCardRefresh();
       window.setTimeout(bumpCardRefresh, 2500);
