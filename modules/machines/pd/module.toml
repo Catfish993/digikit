@@ -1,0 +1,65 @@
+[module]
+id = "fadedlimes/pd"
+version = "0.1.0"
+name = "Phase Dist"
+category = "machines"
+type = "machine"
+author = "fadedlimes"
+status = "experimental"
+summary = "Phase distortion (Casio CZ lineage): a piecewise-linear curve warps the phase a sine is read through. Three curves -- saw, square and the resonant one -- with a continuous amount, on two detuned oscillators."
+dynamic = false
+ports = ["dt2-1.16", "dt2-1.17"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "unsupported"
+"dn2-1.12" = "unsupported"
+
+[[object]]
+path = "build/pd-dsp.dko.json"
+sources = ["src/dsp/pd.s"]
+place = "dsp.l2"
+
+[[voice]]
+machine = "pd"
+render = "_pd_render"
+note_on = "_pd_note_on"
+desc = "_pd_desc"
+
+# SAMPLE's TUNE (0xca) and LEV (0xd1) at the ends; the voice's own knobs on the three slots that deliver (1, 4, 6).
+[[machine]]
+id = "pd"
+name = "Phase Dist"
+short = "PD"
+clone_of = 0
+knobs = [0xca, "pd_amount", 0, 0, "pd_curve", 0, "pd_detune", 0xd1]
+
+[[param]]
+id = "pd_amount"
+name = "Distortion"
+short = "PD"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x0000
+
+[[param]]
+id = "pd_curve"
+name = "Curve"
+short = "CURVE"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x0000
+
+[[param]]
+id = "pd_detune"
+name = "Detune"
+short = "DET"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x2800

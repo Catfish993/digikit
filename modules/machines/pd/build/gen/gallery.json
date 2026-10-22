@@ -1,0 +1,148 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 25,
+              "stock": 202
+            },
+            {
+              "param": "pd_amount",
+              "slot": 26
+            },
+            null,
+            null,
+            {
+              "param": "pd_curve",
+              "slot": 29
+            },
+            null,
+            {
+              "param": "pd_detune",
+              "slot": 31
+            },
+            {
+              "slot": 32,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Phase Dist",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "PD",
+          "type": 14
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "pd_amount",
+              "slot": 1
+            },
+            null,
+            null,
+            {
+              "param": "pd_curve",
+              "slot": 4
+            },
+            null,
+            {
+              "param": "pd_detune",
+              "slot": 6
+            },
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Phase Dist",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "PD",
+          "type": 14
+        }
+      },
+      "id": "pd",
+      "name": "Phase Dist",
+      "short": "PD"
+    }
+  ],
+  "module": "fadedlimes/pd",
+  "params": {
+    "dn2": [
+      {
+        "default": 0,
+        "id": "pd_amount",
+        "max": 32512,
+        "min": 0,
+        "name": "Distortion",
+        "short": "PD",
+        "slot": 26,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "pd_curve",
+        "max": 32512,
+        "min": 0,
+        "name": "Curve",
+        "short": "CURVE",
+        "slot": 29,
+        "template": 209
+      },
+      {
+        "default": 10240,
+        "id": "pd_detune",
+        "max": 32512,
+        "min": 0,
+        "name": "Detune",
+        "short": "DET",
+        "slot": 31,
+        "template": 209
+      }
+    ],
+    "dt2": [
+      {
+        "default": 0,
+        "id": "pd_amount",
+        "max": 32512,
+        "min": 0,
+        "name": "Distortion",
+        "short": "PD",
+        "slot": 1,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "pd_curve",
+        "max": 32512,
+        "min": 0,
+        "name": "Curve",
+        "short": "CURVE",
+        "slot": 4,
+        "template": 209
+      },
+      {
+        "default": 10240,
+        "id": "pd_detune",
+        "max": 32512,
+        "min": 0,
+        "name": "Detune",
+        "short": "DET",
+        "slot": 6,
+        "template": 209
+      }
+    ]
+  }
+}
