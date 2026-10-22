@@ -22,6 +22,8 @@ pub struct MockDevice {
     used: u64,
     /// Sorted by path.
     pub files: Vec<(String, Vec<u8>)>,
+    /// Folders with nothing in them (made by MKDIR); a file stored inside one removes it.
+    pub dirs: Vec<String>,
     upload: Option<Upload>,
     pub safe_mode: bool,
     pub no_store: bool,
@@ -42,6 +44,7 @@ impl MockDevice {
             capacity,
             used: 0,
             files: Vec::new(),
+            dirs: Vec::new(),
             upload: None,
             safe_mode: false,
             no_store: false,
@@ -117,17 +120,29 @@ impl MockDevice {
             }
             _ if self.no_store && cmd != CMD_ABORT => r(Status::NoStore),
             CMD_LIST => {
-                if body.len() < 4 {
+                if body.len() < 4
+                    || (body.len() > 4 && (body.len() < 6 || body[body.len() - 1] != 0))
+                {
                     return r(Status::Msg);
                 }
                 let first = u32::from_be_bytes([body[0], body[1], body[2], body[3]]) as usize;
+                let prefix = (body.len() > 4).then(|| &body[4..body.len() - 1]);
+                // files and empty folders, in the store's order (the mock's: by path)
+                let mut all: Vec<(&str, usize, [u8; 32])> = self
+                    .files
+                    .iter()
+                    .map(|(p, d)| (p.as_str(), d.len(), sha256(d)))
+                    .chain(self.dirs.iter().map(|p| (p.as_str(), 0, [0u8; 32])))
+                    .filter(|(p, _, _)| prefix.is_none_or(|x| p.as_bytes().starts_with(x)))
+                    .collect();
+                all.sort_by(|a, b| a.0.cmp(b.0));
                 let mut entries = Vec::new();
                 let mut n = 0u8;
-                for (p, d) in self.files.iter().skip(first) {
+                for (p, size, sha) in all.iter().skip(first) {
                     let mut e = p.as_bytes().to_vec();
                     e.push(0);
-                    e.extend((d.len() as u32).to_be_bytes());
-                    e.extend(sha256(d));
+                    e.extend((*size as u32).to_be_bytes());
+                    e.extend(sha);
                     // 1 KiB on the wire: status + total + n (6 bytes) plus the entries, packed 8 for 7.
                     if encode(cmd, true, 0, &[&[0u8; 6][..], &entries, &e].concat()).len()
                         > MAX_REPLY_WIRE
@@ -138,7 +153,7 @@ impl MockDevice {
                     entries.extend(e);
                     n += 1;
                 }
-                let mut b = (self.files.len() as u32).to_be_bytes().to_vec();
+                let mut b = (all.len() as u32).to_be_bytes().to_vec();
                 b.push(n);
                 b.extend(entries);
                 Self::reply(cmd, seq, Status::Ok, &b)
@@ -210,10 +225,16 @@ impl MockDevice {
                 if sha256(&up.data) != up.sha {
                     return r(Status::Hash);
                 }
-                self.used += up.size.div_ceil(512) as u64 * 512;
                 self.files.retain(|(p, _)| *p != up.path);
+                // a folder entry goes when something is stored inside it
+                self.dirs.retain(|d| !up.path.starts_with(&format!("{d}/")));
                 self.files.push((up.path, up.data));
                 self.files.sort_by(|a, b| a.0.cmp(&b.0));
+                self.used = self
+                    .files
+                    .iter()
+                    .map(|(_, d)| d.len().div_ceil(512) as u64 * 512)
+                    .sum();
                 r(Status::Ok)
             }
             CMD_DELETE => {
@@ -226,13 +247,50 @@ impl MockDevice {
                 if !path_ok(path) {
                     return r(Status::Path);
                 }
-                let before = self.files.len();
+                let before = self.files.len() + self.dirs.len();
                 self.files.retain(|(p, _)| p != path);
-                if self.files.len() == before {
+                self.dirs.retain(|p| p != path);
+                if self.files.len() + self.dirs.len() == before {
                     r(Status::NoFile)
                 } else {
+                    // the space of a deleted file is free again
+                    self.used = self
+                        .files
+                        .iter()
+                        .map(|(_, d)| d.len().div_ceil(512) as u64 * 512)
+                        .sum();
                     r(Status::Ok)
                 }
+            }
+            CMD_MKDIR => {
+                let Some(nul) = body.iter().position(|&b| b == 0) else {
+                    return r(Status::Msg);
+                };
+                let Ok(path) = std::str::from_utf8(&body[..nul]) else {
+                    return r(Status::Path);
+                };
+                if nul + 1 != body.len() || !path_ok(path) {
+                    return r(Status::Path);
+                }
+                let inside = format!("{path}/");
+                let in_file = self
+                    .files
+                    .iter()
+                    .any(|(p, _)| p == path || path.starts_with(&format!("{p}/")));
+                if in_file {
+                    return r(Status::Path);
+                }
+                let exists = self
+                    .dirs
+                    .iter()
+                    .any(|d| d == path || d.starts_with(&inside))
+                    || self.files.iter().any(|(p, _)| p.starts_with(&inside));
+                if !exists {
+                    // a folder that gets a folder inside it has something in it: only the innermost entry is kept
+                    self.dirs.retain(|d| !path.starts_with(&format!("{d}/")));
+                    self.dirs.push(path.into());
+                }
+                r(Status::Ok)
             }
             CMD_READ => {
                 let Some(nul) = body.iter().position(|&b| b == 0) else {
@@ -267,7 +325,7 @@ impl MockDevice {
                 let Some(nul) = body.iter().position(|&b| b == 0) else {
                     return r(Status::Msg);
                 };
-                if body.len() != nul + 1 {
+                if body.len() != nul + 1 && body.len() != nul + 1 + 8 {
                     return r(Status::Msg);
                 }
                 let Ok(path) = std::str::from_utf8(&body[..nul]) else {
@@ -276,10 +334,21 @@ impl MockDevice {
                 if !path_ok(path) {
                     return r(Status::Path);
                 }
-                match self.files.iter().find(|(p, _)| p == path) {
-                    Some((_, d)) => Self::reply(cmd, seq, Status::Ok, &sha256(d)),
-                    None => r(Status::NoFile),
+                let Some((_, d)) = self.files.iter().find(|(p, _)| p == path) else {
+                    return r(Status::NoFile);
+                };
+                if body.len() == nul + 1 {
+                    return Self::reply(cmd, seq, Status::Ok, &sha256(d));
                 }
+                let at = u32::from_be_bytes(body[nul + 1..nul + 5].try_into().unwrap()) as usize;
+                let len = u32::from_be_bytes(body[nul + 5..].try_into().unwrap()) as usize;
+                if !at.is_multiple_of(512) || at >= d.len() {
+                    return r(Status::Offset);
+                }
+                if len == 0 || len > d.len() - at {
+                    return r(Status::Length);
+                }
+                Self::reply(cmd, seq, Status::Ok, &sha256(&d[at..at + len]))
             }
             CMD_ABORT => {
                 self.upload = None;

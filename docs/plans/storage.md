@@ -21,7 +21,12 @@ Facts: `docs/findings/59-storage-regions.md`, `docs/MIDI-SYSEX-RPC.md` section 1
 
 1. [x] Findings: `docs/findings/59-storage-regions.md`, the file-command table in `docs/MIDI-SYSEX-RPC.md` section 12.
 2. [x] Store v3: format doc, profile areas, runtime, builder, reader, exporter, mirror, CLI, tests; retire the old area. Runtime 0.3.0. Decisions: the table is sorted by first sector and streamed (no entry limit), free space is reused (first fit), E_FULL carries the sum of the free space, the ownership check reads the markers and the first 1 MiB, empty folders are not built from a folder (the runtime makes folder entries in step 3), HEALTH store figures are KiB.
-3. [ ] Streaming upload of large files, LIST per folder, delete frees space, INFO/CAPACITY report store free and total; TS `DkSession` and Python.
+3. [x] Large files, folders on the wire, free space: LIST by prefix (paged), MKDIR (0x18), VERIFY by range, CAPACITY kind STORE in KiB, capability bit 10 `FOLDERS`; host clients in Python
+   (`Uploader.ls(prefix)`, `mkdir`, `put_file`, `verify_file`), Rust (`Session::list_prefix`, `mkdir`, `verify_range`, the mock follows) and TypeScript (`DkSession.list(prefix)`, `mkdir`, `verify`, `verifyFile`).
+   Decisions: DATA already went straight to the card (32 KiB chunks, nothing staged), but END read the whole file back and hashed it with a loop that cost about 1000 ColdFire instructions a byte (minutes for a
+   sample): the hash now runs as the chunks arrive and END compares it; the block function is unrolled (about 120 instructions a byte); VERIFY reads the card and takes a range, so a host checks a large file in
+   pieces. A folder entry is dropped when something is stored inside it (folders with files are implied). Scenario `upload-folders` (both devices): MKDIR, prefix paging (40 entries), a streamed 6 MiB upload,
+   delete frees space and the next file takes the first gap, CAPACITY STORE, ranged VERIFY, +Drive round trip.
 4. [ ] DT2 samples: the TS MidiRpc file client, the wasm WAV converter, a DT2 scenario.
 5. [ ] DN2 samples through the store, and a scenario.
 6. [ ] Workbench Samples tab and the backend choice; the Card panel.

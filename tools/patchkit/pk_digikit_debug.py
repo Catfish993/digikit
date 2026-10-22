@@ -682,6 +682,7 @@ def part_modules(c: Any, img: Any) -> None:
             "PAGE_ROWS": lim.page_rows,
             "FX_SLOTS": lim.fx_slots,
             "MAP_ENTRIES": pk_device.contract_max()["map_entries"],
+            "STORE": c.store.limit // 2,  # KiB
         }
         c.check(
             "INFO sets the CAPACITY capability, and CAPACITY lists every kind with the device file's limit",

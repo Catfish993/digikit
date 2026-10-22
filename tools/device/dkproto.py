@@ -15,6 +15,7 @@ CMD: dict[str, int] = {
     "ABORT": 0x15,
     "READ": 0x16,
     "VERIFY": 0x17,
+    "MKDIR": 0x18,
     "LOG": 0x20,
     "PEEK": 0x21,
     "LOGCFG": 0x22,
@@ -33,6 +34,7 @@ CMD_CLEAR = 0x14
 CMD_ABORT = 0x15
 CMD_READ = 0x16
 CMD_VERIFY = 0x17
+CMD_MKDIR = 0x18
 CMD_LOG = 0x20
 CMD_PEEK = 0x21
 CMD_LOGCFG = 0x22
@@ -118,6 +120,7 @@ CAP: dict[str, int] = {
     "READ": 7,
     "VERIFY": 8,
     "SERVICE_CMDS": 9,
+    "FOLDERS": 10,
 }
 
 RANGES: dict[str, tuple[int, int]] = {
@@ -139,4 +142,5 @@ CAPACITY_KINDS: dict[str, int] = {
     "PAGE_ROWS": 9,
     "FX_SLOTS": 10,
     "MAP_ENTRIES": 11,
+    "STORE": 12,
 }

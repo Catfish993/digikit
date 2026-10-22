@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! cargo run -p dkupload --example emu_session -- SOCKET [--chunk N] [--period N] [--drop N] [--budget N] [--depth-one] CMD ARGS
-//!   info | ls | put FILE PATH | rm PATH | clear | badhash FILE PATH
+//!   info | ls [PREFIX] | mkdir PATH | verify PATH [OFFSET LENGTH] | put FILE PATH | rm PATH | clear | badhash FILE PATH
 //! ```
 //!
 //! One JSON object per line on stdout, with `stepped` (emulated instructions stepped while waiting). `--drop N` throws away
@@ -197,7 +197,17 @@ fn main() {
             json!({"protocol": i.protocol, "runtime_version": i.runtime_version, "port": i.port, "free_bytes": i.free_bytes,
                    "max_chunk": i.max_chunk, "safe_mode": i.safe_mode(), "upload_open": i.upload_open()})
         }),
+        "ls" if args.len() > 1 => s.list_prefix(&arg(1)).map(entries),
         "ls" => s.list().map(entries),
+        "mkdir" => s.mkdir(&arg(1)).map(|_| json!({})),
+        "verify" => {
+            let (off, len) = (arg(2).parse::<u32>(), arg(3).parse::<u32>());
+            match (off, len) {
+                (Ok(o), Ok(l)) => s.verify_range(&arg(1), o, l),
+                _ => s.verify(&arg(1)),
+            }
+            .map(|sha| json!(proto::hex(&sha)))
+        }
         "rm" => s.delete(&arg(1)).map(|_| json!({})),
         "clear" => s.clear().map(|_| json!({})),
         "put" | "badhash" => {

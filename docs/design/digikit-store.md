@@ -60,7 +60,7 @@ table: entry_count entries of 256 bytes, sorted by (first_sector, path in byte o
 
 Rules: a path is 1 to 159 bytes of printable text (0x20 to 0x7E, no NUL), with no empty, `.` or `..` part; two entries may not have the same path; a path that is a
 file may not also be the folder of another entry (`a` and `a/b`). A **folder entry** (kind 1, size 0) exists only for a folder with nothing in it (made by the
-host); a folder that has files is implied by their paths. A file or folder with no data (an empty file, a folder) has `first_sector` 0 and takes no sector; it sorts before every file with data. A file is at
+host with MKDIR; the commit that stores a file or a folder inside it drops it, and a folder whose last file is deleted is gone, since folders with files are implied); a folder that has files is implied by their paths. A file or folder with no data (an empty file, a folder) has `first_sector` 0 and takes no sector; it sorts before every file with data. A file is at
 most 4 GiB - 1 bytes; each file starts on a sector boundary and takes `ceil(size / 512)` sectors.
 
 A header copy is **usable** when its magic, version, CRC, area and counts hold (`table_sectors` = ceil(count / 2), the table and `used_sectors` inside the area). A reader

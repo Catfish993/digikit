@@ -752,6 +752,10 @@ pub unsafe fn commit(
         let r = scan(io, lay, cur, buf_in, cap, |_, e| {
             match edit {
                 Edit::Insert(ne) => {
+                    // a folder entry is for a folder with nothing in it: it goes when a file or folder is stored inside it
+                    if *e.add(O_KIND) == KIND_DIR && relation(e, ne) == 2 {
+                        return true;
+                    }
                     if cstr_eq(e, ne) {
                         removed = Some(entry_of(e));
                         return true;

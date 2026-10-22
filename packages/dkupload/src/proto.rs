@@ -296,6 +296,19 @@ pub fn parse_list(body: &[u8]) -> Result<ListPage, Error> {
     Ok(ListPage { total, entries })
 }
 
+/// The body of LIST: `u32 first`, then optionally a prefix and NUL (1 to 159 bytes, no NUL inside; a trailing `/` is allowed).
+pub fn list_body(first: u32, prefix: Option<&str>) -> Result<Vec<u8>, Error> {
+    let mut b = first.to_be_bytes().to_vec();
+    if let Some(p) = prefix {
+        if p.is_empty() || p.len() > 159 || p.as_bytes().contains(&0) {
+            return Err(Error::Request(format!("not a store prefix: {p:?}")));
+        }
+        b.extend(p.as_bytes());
+        b.push(0);
+    }
+    Ok(b)
+}
+
 pub fn path_body(path: &str) -> Result<Vec<u8>, Error> {
     if !path_ok(path) {
         return Err(Error::Request(format!("not a store path: {path:?}")));

@@ -34,6 +34,14 @@ addressable sectors in the whitelist, 32 GB parts). Where the firmware writes, a
 - **[D] DN2 FORMAT** trims to `0x457FFF` and nothing after it, so a store at `0x800000` survives a format.
 - **[D] The +Drive on the DT2** ends at page `0xA0080`: `0x5D8000 + 0x2818180 = 0x2DF0180`. The first store sector `0x2DF1000` leaves `0xE80` sectors (1.8 MiB) of margin.
 
+## Cost of a large upload on the ColdFire (step 3)
+
+- **[D] The runtime's SHA-256 was about 1000 ColdFire instructions a byte** (emulator, `upload-folders`: VERIFY of 1 MiB took 1.06e9 instructions with the card read costing under 1e6). A 6 MiB file's END, which read the file
+  back and hashed it, ran out the host's 4e9-instruction wait. An unrolled block function with an in-place 16-word schedule and no checked index gives about 120 instructions a byte (1.27e8 for 1 MiB) **[D]**.
+  The hash now runs as the DATA chunks arrive (one MiB of DATA: 2.18e8 instructions, END 4e5), so END costs the same for any size. VERIFY still reads the card; it takes a range (runtime 0.3.0), so a host checks a large file in pieces.
+  On the device's clock (not measured) 120 instructions a byte is the figure to scale from.
+- **[D] DATA already wrote straight to the card**: the 32 KiB chunk goes through the upload buffer to the file's extent and nothing is staged whole, so the file size is limited by the store's free space only (a 6 MiB file ran on both devices).
+
 ## What this retires
 
 **[C]** The claim in finding 23 S6 and `docs/design/digikit-store.md` that `0x38000..0x3E000` is "above every kit pool, below the sample area" and so free: it is below the 0x800000 line the crafted Data API reaches, and

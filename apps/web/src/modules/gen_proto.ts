@@ -15,6 +15,7 @@ export const CMD = {
   ABORT: 0x15,
   READ: 0x16,
   VERIFY: 0x17,
+  MKDIR: 0x18,
   LOG: 0x20,
   PEEK: 0x21,
   LOGCFG: 0x22,
@@ -104,6 +105,7 @@ export const CAP = {
   READ: 7,
   VERIFY: 8,
   SERVICE_CMDS: 9,
+  FOLDERS: 10,
 } as const;
 
 /** The command numbers a module may register: [first, last]. */
@@ -127,6 +129,7 @@ export const CAPACITY_KINDS = {
   PAGE_ROWS: 9,
   FX_SLOTS: 10,
   MAP_ENTRIES: 11,
+  STORE: 12,
 } as const;
 
 /** The `kind` of a LOG event. */

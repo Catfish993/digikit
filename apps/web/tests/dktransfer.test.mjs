@@ -53,6 +53,7 @@ const ST = { E_STATE: -53, E_NOFILE: -59, E_HASH: -56, E_FULL: -52, E_OFFSET: -5
 class FakeDevice {
   constructor() {
     this.files = new Map();
+    this.dirs = new Set(); // folders with nothing in them
     this.selection = [];
     this.seen = []; // the commands received, by name
     this.corrupt = false; // VERIFY answers a wrong hash
@@ -116,11 +117,28 @@ class FakeDevice {
       }
       case CMD.LIST: {
         const first = new DataView(body.buffer, body.byteOffset).getUint32(0);
-        const all = [...this.files].sort(([a], [b]) => (a < b ? -1 : 1));
+        const prefix = body.length > 4 ? Buffer.from(body.subarray(4, body.length - 1)).toString() : '';
+        const all = [...this.files, ...[...this.dirs].map((d) => [d, new Uint8Array(0), true])]
+          .filter(([p]) => p.startsWith(prefix))
+          .sort(([a], [b]) => (a < b ? -1 : 1));
         const page = all.slice(first, first + this.pageSize);
         return ok(
-          concat(be32(all.length), [page.length], ...page.map(([p, d]) => concat(cs(p), be32(d.length), sha(d)))),
+          concat(
+            be32(all.length),
+            [page.length],
+            ...page.map(([p, d, dir]) => concat(cs(p), be32(d.length), dir ? new Uint8Array(32) : sha(d))),
+          ),
         );
+      }
+      case CMD.MKDIR: {
+        const [path] = this.pathOf(body);
+        if ([...this.files.keys()].some((f) => f === path || path.startsWith(`${f}/`))) return err(-51);
+        const exists = [...this.dirs, ...this.files.keys()].some((f) => f === path || f.startsWith(`${path}/`));
+        if (!exists) {
+          for (const d of [...this.dirs]) if (path.startsWith(`${d}/`)) this.dirs.delete(d);
+          this.dirs.add(path);
+        }
+        return ok();
       }
       case CMD.BEGIN: {
         const [path, at] = this.pathOf(body);
@@ -144,12 +162,13 @@ class FakeDevice {
         if (!st) return err(ST.E_STATE);
         this.staged = null;
         if (st.data.length !== st.size || hex(sha(st.data)) !== hex(st.sha)) return err(ST.E_HASH);
+        for (const d of [...this.dirs]) if (st.path.startsWith(`${d}/`)) this.dirs.delete(d);
         this.files.set(st.path, st.data);
         return ok();
       }
       case CMD.DELETE: {
         const [path] = this.pathOf(body);
-        return this.files.delete(path) ? ok() : err(ST.E_NOFILE);
+        return this.files.delete(path) || this.dirs.delete(path) ? ok() : err(ST.E_NOFILE);
       }
       case CMD.READ: {
         const [path, at] = this.pathOf(body);
@@ -161,9 +180,17 @@ class FakeDevice {
         return ok(concat(be32(f.length), f.subarray(off, off + len)));
       }
       case CMD.VERIFY: {
-        const [path] = this.pathOf(body);
+        const [path, at] = this.pathOf(body);
         const f = this.files.get(path);
         if (!f) return err(ST.E_NOFILE);
+        if (body.length > at) {
+          const dv = new DataView(body.buffer, body.byteOffset);
+          const off = dv.getUint32(at);
+          const len = dv.getUint32(at + 4);
+          if (off % 512 !== 0 || off >= f.length) return err(ST.E_OFFSET);
+          if (len === 0 || len > f.length - off) return err(-55);
+          return ok(sha(f.subarray(off, off + len)));
+        }
         return ok(this.corrupt ? sha(concat(f, [1])) : sha(f));
       }
       case CMD.SELECT: {
@@ -530,4 +557,50 @@ test('restart: RESTART, wait for the new boot in the log, then report what MODUL
   assert.ok(dev.seen.filter((c) => c === 'LOG').length >= 2);
   assert.equal(dev.log.length, 1);
   assert.equal(dev.log[0].kind, LOG_KIND.BOOT_START);
+});
+
+test('LIST by prefix pages through the matches; MKDIR makes a folder entry that a file replaces', async () => {
+  const dev = new FakeDevice();
+  const s = session(dev);
+  await s.put('modules/a.dkm', dkm('a'));
+  await s.put('samples/one.wav', new Uint8Array(1500).fill(1));
+  await s.put('samples/two.wav', new Uint8Array(700).fill(2));
+  await s.put('samples/three.wav', new Uint8Array(900).fill(3));
+  await s.mkdir('samples/empty');
+  await s.mkdir('samples/empty'); // exists: ok
+  const under = await s.list('samples/');
+  assert.deepEqual(
+    under.map((e) => [e.path, e.size]),
+    [
+      ['samples/empty', 0],
+      ['samples/one.wav', 1500],
+      ['samples/three.wav', 900],
+      ['samples/two.wav', 700],
+    ],
+  );
+  assert.equal(under[0].sha256, '0'.repeat(64));
+  assert.equal((await s.list()).length, 5);
+  await s.put('samples/empty/x.wav', new Uint8Array(512));
+  assert.deepEqual(
+    (await s.list('samples/empty')).map((e) => e.path),
+    ['samples/empty/x.wav'],
+  );
+  await assert.rejects(s.mkdir('modules/a.dkm'), (e) => e instanceof DkError && e.status === 'E_PATH');
+  await s.delete('samples/one.wav');
+  assert.equal((await s.list('samples/')).length, 3);
+});
+
+test('VERIFY of a range, and verifyFile in pieces', async () => {
+  const dev = new FakeDevice();
+  const s = session(dev);
+  const data = new Uint8Array(5000).map((_, i) => (i * 7) & 255);
+  await s.put('samples/a.wav', data);
+  assert.equal(await s.verify('samples/a.wav'), hex(sha(data)));
+  assert.equal(await s.verify('samples/a.wav', 1024, 2000), hex(sha(data.subarray(1024, 3024))));
+  assert.equal(await s.verifyFile('samples/a.wav', data, 1024), true);
+  const other = data.slice();
+  other[4999] ^= 1;
+  assert.equal(await s.verifyFile('samples/a.wav', other, 1024), false);
+  await assert.rejects(s.verify('samples/a.wav', 100, 10), (e) => e instanceof DkError && e.status === 'E_OFFSET');
+  assert.equal(await s.verifyFile('samples/a.wav', new Uint8Array(0), 1024), false); // the file is not empty
 });

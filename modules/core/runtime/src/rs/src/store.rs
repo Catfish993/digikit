@@ -157,12 +157,22 @@ pub fn figures_stale() {
 /// a store may use in all, the sectors used, and what a new file may still take. Sets `HEALTH_STORE` when a usable header was read; a card with no
 /// store leaves them 0.
 pub unsafe fn figures(o: &mut DkrtHealth) {
-    let lay = layout();
-    o.store_total = lay.limit() / 2;
+    o.store_total = layout().limit() / 2;
     o.store_used = 0;
     o.store_free = 0;
+    if let Some((used, free)) = seen() {
+        o.store_used = used;
+        o.store_free = free;
+        o.flags |= HEALTH_STORE;
+    }
+}
+
+/// (used KiB, free KiB) of the store from the headers (read again only after an upload wrote one), or `None`: no store (a card smaller than the area,
+/// or no usable header).
+pub unsafe fn seen() -> Option<(u32, u32)> {
+    let lay = layout();
     if crate::card::state() == CARD_TOO_SMALL {
-        return;
+        return None;
     }
     if core::ptr::read_volatile(addr_of!(STORE_DIRTY)) {
         // clear first: a header written while we read leaves the flag set for the next refresh
@@ -175,11 +185,7 @@ pub unsafe fn figures(o: &mut DkrtHealth) {
             Err(_) => None,
         };
     }
-    if let Some((used, free)) = STORE_SEEN {
-        o.store_used = used;
-        o.store_free = free;
-        o.flags |= HEALTH_STORE;
-    }
+    STORE_SEEN
 }
 
 /// `dkrt_store_list(prefix, out, max)`: the files whose path starts with `prefix` (NUL-terminated, e.g. `modules/`), in path order, at most `max`

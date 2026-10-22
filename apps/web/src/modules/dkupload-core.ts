@@ -648,10 +648,15 @@ export class DkSession {
     };
   }
 
-  async list(): Promise<DkEntry[]> {
+  /**
+   * The store's entries, or (`prefix`, runtime 0.3.0, capability FOLDERS) those whose path starts with it. A folder with nothing in it is an
+   * entry of size 0 and a zero sha256.
+   */
+  async list(prefix?: string): Promise<DkEntry[]> {
     const out: DkEntry[] = [];
+    const tail = prefix ? concat(text.encode(prefix), Uint8Array.of(0)) : new Uint8Array();
     for (;;) {
-      const b = await this.ok(GCMD.LIST, 'ls', be32(out.length));
+      const b = await this.ok(GCMD.LIST, 'ls', concat(be32(out.length), tail));
       const total = u32(b, 0);
       const n = b[4];
       let at = 5;
@@ -662,6 +667,11 @@ export class DkSession {
       }
       if (n === 0 || out.length >= total) return out;
     }
+  }
+
+  /** MKDIR (runtime 0.3.0): make a folder. Ok when it exists; E_PATH when the path is a file or inside one. */
+  async mkdir(path: string): Promise<void> {
+    await this.ok(GCMD.MKDIR, 'mkdir', concat(text.encode(path), Uint8Array.of(0)));
   }
 
   async delete(path: string): Promise<void> {
@@ -733,11 +743,27 @@ export class DkSession {
   async header(path: string): Promise<Uint8Array> {
     return (await this.read(path, 0, HEADER_BYTES)).bytes;
   }
-  /** VERIFY (runtime 0.2.4): the sha256 (hex) of a store file, computed by the device from a fresh read of the card. */
-  async verify(path: string): Promise<string> {
-    const b = await this.ok(GCMD.VERIFY, 'verify', concat(text.encode(path), Uint8Array.of(0)));
+  /**
+   * VERIFY (runtime 0.2.4): the sha256 (hex) of a store file, computed by the device from a fresh read of the card. With `offset` (a multiple of
+   * 512) and `length` (runtime 0.3.0): of that range, so a large file is checked in pieces (the device spends about 120 ColdFire instructions a
+   * byte: a request for all of a large file can outlast the timeout).
+   */
+  async verify(path: string, offset?: number, length?: number): Promise<string> {
+    let body = concat(text.encode(path), Uint8Array.of(0));
+    if (offset !== undefined) body = concat(body, be32(offset), be32(length ?? 0));
+    const b = await this.ok(GCMD.VERIFY, 'verify', body);
     if (b.length !== 32) throw new DkError({ error: 'verify: malformed reply', kind: 'protocol' });
     return hexOf(b);
+  }
+  /** Is the file on the card the bytes of `data`? One ranged VERIFY per `piece` bytes, compared with the hash of the same range. */
+  async verifyFile(path: string, data: Uint8Array, piece = 1 << 20, onProgress: (done: number, total: number) => void = () => {}): Promise<boolean> {
+    if (data.length === 0) return (await this.verify(path)) === (await hexSha256(data));
+    for (let off = 0; off < data.length; off += piece) {
+      const part = data.subarray(off, Math.min(data.length, off + piece));
+      if ((await this.verify(path, off, part.length)) !== (await hexSha256(part))) return false;
+      onProgress(off + part.length, data.length);
+    }
+    return true;
   }
   /** SELECT (runtime 0.0.4): replace the selection record (what the next boot loads). */
   async select(paths: string[]): Promise<void> {

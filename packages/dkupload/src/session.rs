@@ -76,15 +76,30 @@ impl<T: Transport> Session<T> {
 
     /// All entries, paged.
     pub fn list(&mut self) -> Result<Vec<Entry>, Error> {
+        self.list_under(None)
+    }
+
+    /// The entries whose path starts with `prefix` (runtime 0.3.0, capability `CAP_FOLDERS`), paged. A folder with nothing in it is an entry of size 0.
+    pub fn list_prefix(&mut self, prefix: &str) -> Result<Vec<Entry>, Error> {
+        self.list_under(Some(prefix))
+    }
+
+    fn list_under(&mut self, prefix: Option<&str>) -> Result<Vec<Entry>, Error> {
         let mut out: Vec<Entry> = Vec::new();
         loop {
-            let page = parse_list(&self.request(CMD_LIST, &(out.len() as u32).to_be_bytes())?)?;
+            let body = list_body(out.len() as u32, prefix)?;
+            let page = parse_list(&self.request(CMD_LIST, &body)?)?;
             let got = page.entries.len();
             out.extend(page.entries);
             if got == 0 || out.len() as u32 >= page.total {
                 return Ok(out);
             }
         }
+    }
+
+    /// MKDIR (runtime 0.3.0, capability `CAP_FOLDERS`): make a folder. Ok when it exists; `Path` when the path is a file or inside one.
+    pub fn mkdir(&mut self, path: &str) -> Result<(), Error> {
+        self.request(CMD_MKDIR, &path_body(path)?).map(drop)
     }
 
     /// READ (runtime 0.2.4, capability `CAP_READ`): (file size, the bytes) of a store file from `offset`. The device returns at
@@ -98,6 +113,22 @@ impl<T: Transport> Session<T> {
     /// Errors: `NoFile`, `Read`.
     pub fn verify(&mut self, path: &str) -> Result<[u8; 32], Error> {
         let body = self.request(CMD_VERIFY, &path_body(path)?)?;
+        body.try_into()
+            .map_err(|_| Error::Protocol("verify: the reply is not 32 bytes".into()))
+    }
+
+    /// VERIFY of a range (runtime 0.3.0): the sha256 of `length` bytes from `offset` (a multiple of 512), so a large file is checked in pieces.
+    /// Errors: `NoFile`, `Read`, `Offset`, `Length`.
+    pub fn verify_range(
+        &mut self,
+        path: &str,
+        offset: u32,
+        length: u32,
+    ) -> Result<[u8; 32], Error> {
+        let mut b = path_body(path)?;
+        b.extend(offset.to_be_bytes());
+        b.extend(length.to_be_bytes());
+        let body = self.request(CMD_VERIFY, &b)?;
         body.try_into()
             .map_err(|_| Error::Protocol("verify: the reply is not 32 bytes".into()))
     }

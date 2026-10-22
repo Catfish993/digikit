@@ -411,6 +411,73 @@ def test_verify_request_and_reply():
     assert D.STATUS[e.value.status] == "E_NOFILE"
 
 
+def test_folders_prefix_lists_ranged_verify_and_a_streamed_put(tmp_path):
+    """Runtime 0.3.0: LIST with a prefix, MKDIR, VERIFY of a range, STORE in KiB, and `put_file` reads the file in pieces."""
+    import hashlib
+    import struct
+
+    from tools.device.midisniff import unpack_8in7
+    from tools.firmware.build import encode_8in7
+
+    assert D.CMD_MKDIR == 0x18 and D.CAP["FOLDERS"] == 10
+    assert D.dkproto.CAPACITY_KINDS["STORE"] == 12
+    seen: list[tuple[int, bytes]] = []
+    entries = [("samples/a.wav", 5, b"\x11" * 32), ("samples/b", 0, bytes(32))]
+
+    class Fake:
+        def __init__(self):
+            self.queue: list[bytes] = []
+
+        def send(self, msg):
+            cmd, body = msg[5], unpack_8in7(msg[7:-1])
+            seen.append((cmd, body))
+            if cmd == D.CMD_LIST:
+                first = struct.unpack(">I", body[:4])[0]
+                out = struct.pack(">IB", len(entries), len(entries) - first)
+                for p, n, h in entries[first:]:
+                    out += p.encode() + b"\0" + struct.pack(">I", n) + h
+                out = b"\0" + out
+            elif cmd == D.CMD_VERIFY:
+                out = b"\0" + hashlib.sha256(body).digest()
+            else:
+                out = b"\0"
+            self.queue.append(
+                msg[:4] + bytes([1, cmd | 0x40, msg[6]]) + encode_8in7(out) + b"\xf7"
+            )
+
+        def recv(self):
+            return self.queue.pop(0)
+
+    up = D.Uploader(Fake())
+    assert [p for p, _, _ in up.ls("samples/")] == ["samples/a.wav", "samples/b"]
+    assert seen[-1] == (D.CMD_LIST, struct.pack(">I", 0) + b"samples/\0")
+    up.ls()
+    assert seen[-1] == (D.CMD_LIST, struct.pack(">I", 0))  # no prefix: the old body
+    up.mkdir("samples/new")
+    assert seen[-1] == (D.CMD_MKDIR, b"samples/new\0")
+    up.verify("samples/a.wav", 512, 100)
+    assert seen[-1] == (D.CMD_VERIFY, b"samples/a.wav\0" + struct.pack(">II", 512, 100))
+    assert D.capacity_lines({"STORE": {"limit": 1000, "used": 10, "largest": 0}}) == [
+        "capacity store: 10/1000 KiB"
+    ]
+    # put_file: BEGIN carries the size and the sha256 of the whole file; the chunks are read from disk
+    src = tmp_path / "s.bin"
+    data = bytes(range(256)) * 300  # 76,800 bytes: three chunks of 32 KiB
+    src.write_bytes(data)
+    seen.clear()
+    up.put_file("samples/s.bin", src)
+    cmds = [c for c, _ in seen]
+    assert cmds[0] == D.CMD_BEGIN and cmds[-1] == D.CMD_END
+    assert (
+        seen[0][1]
+        == b"samples/s.bin\0"
+        + struct.pack(">I", len(data))
+        + hashlib.sha256(data).digest()
+    )
+    got = b"".join(b[4:] for c, b in seen if c == D.CMD_DATA)
+    assert got == data
+
+
 def test_service_command_ranges_and_capability_are_generated():
     from tools.device import dkproto
 

@@ -743,7 +743,13 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
     let (vrows, vused) = dsp::rows_counts();
     let [mach, param, page] = registry::counts();
     let stage = STAGE_BYTES as u32;
-    let entries: [(u8, u32, u32, u32); 11] = [
+    // the store: its area in KiB (0 when the card is too small for it), and what the headers say is used (a card with no header: nothing)
+    let st_total = if card::state() == CARD_TOO_SMALL { 0 } else { store::layout().limit() / 2 };
+    let st_used = match store::seen() {
+        Some((used, _)) => used,
+        None => 0,
+    };
+    let entries: [(u8, u32, u32, u32); 12] = [
         (CAPK_MODULES, MAX_MODULES as u32, mods, 0),
         (CAPK_SELECTION, dkrt_sdk::SEL_MAX as u32, boot::selected(), 0),
         (CAPK_ARENA, arena, arena - af, al),
@@ -755,6 +761,7 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
         (CAPK_PAGE_ROWS, page.0, page.1, 0),
         (CAPK_FX_SLOTS, dkrt_sdk::device::LIMIT_FX_SLOTS, 0, 0),
         (CAPK_MAP_ENTRIES, dkrt_sdk::sel::MAP_N as u32, assign::map_used(), 0),
+        (CAPK_STORE, st_total, st_used, 0),
     ];
     let mut k = 0;
     while k < entries.len() && (k as u32) < max {

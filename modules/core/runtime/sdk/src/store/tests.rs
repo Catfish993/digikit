@@ -179,6 +179,41 @@ fn the_table_is_sorted_by_first_sector_then_path_and_a_path_is_replaced() {
     assert_eq!(current(&mut w).count, 5);
 }
 
+/// Commit an insert of the folder entry `path`.
+fn mkdir(w: &mut Work, path: &str) -> Result<Committed, i32> {
+    let cur = current(w);
+    let mut e = [0u8; ENTRY];
+    let p = cstr(path);
+    unsafe { encode_entry(p.as_ptr(), &entry(0, 0, KIND_DIR), e.as_mut_ptr()) };
+    unsafe { commit(&IO, &LAY, &cur, w.a.0.as_mut_ptr(), w.b.0.as_mut_ptr(), 1024, w.s.0.as_mut_ptr(), Edit::Insert(e.as_ptr()), &[]) }
+}
+
+#[test]
+fn a_folder_entry_goes_when_something_is_stored_inside_it() {
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    mkdir(&mut w, "samples").unwrap();
+    mkdir(&mut w, "samples/drums").unwrap();
+    mkdir(&mut w, "other").unwrap();
+    // a folder inside a folder makes the outer one implied: only the innermost folder entry is kept
+    let p: Vec<_> = paths(&mut w).into_iter().map(|x| x.0).collect();
+    assert_eq!(p, ["other", "samples/drums"]);
+    // a file in samples/drums/: its folder entry goes, the unrelated one stays
+    insert(&mut w, "samples/drums/kick.wav", 10, 1000, &[]).unwrap();
+    let p: Vec<_> = paths(&mut w).into_iter().map(|x| x.0).collect();
+    assert_eq!(p, ["other", "samples/drums/kick.wav"]);
+    // a name that only starts like a folder is not inside it: "other" stays when "others/x" is stored
+    insert(&mut w, "others/x", 20, 10, &[]).unwrap();
+    assert_eq!(paths(&mut w).len(), 3);
+    // the table is intact
+    assert!(state(&mut w).is_ok());
+    // deleting the last file leaves no folder entry: the folder was implied
+    remove(&mut w, "samples/drums/kick.wav").unwrap();
+    let p: Vec<_> = paths(&mut w).into_iter().map(|x| x.0).collect();
+    assert_eq!(p, ["other", "others/x"]);
+}
+
 #[test]
 fn a_remove_drops_the_entry_and_the_space_is_used_again() {
     let _g = lock();

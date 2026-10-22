@@ -426,6 +426,277 @@ def _selection_untouched(c: Any) -> None:
     )
 
 
+# ---- folders and large files ------------------------------------------------------------------------------------------------
+
+
+def card_ls(
+    c: Any, rig: Any, base: Path, tag: str
+) -> tuple[dict[str, tuple[int, int, str]], set[str], str]:
+    """The store of BASE with the guest's writes laid over it, as `plusdrive store ls` prints it: ({path: (first sector, size, sha256)}, the
+    folders with nothing in them, the header line). The bytes of a file are `card_view`'s."""
+    from tools.patchkit.pk_digikit_project import card_after
+
+    ov = rig.work / f"{tag}.ov.bin"
+    rig.emu.call("card.overlay", path=str(ov))
+    after = card_after(c, base, ov)
+    tools = c.env.tools
+    r = tools.run(tools.plusdrive, "store", "ls", after, "--device", c.device)
+    files: dict[str, tuple[int, int, str]] = {}
+    dirs: set[str] = set()
+    head = f"error: {r.stderr.strip()}" if r.returncode else ""
+    for line in r.stdout.splitlines():
+        if line.startswith("#"):
+            head = line
+        elif line.endswith("\tfolder"):
+            dirs.add(line.split("\t")[0].rstrip("/"))
+        else:
+            path, first, size, sh = line.split("\t")
+            files[path] = (int(first), int(size), sh)
+    return files, dirs, head
+
+
+def run_folders(c: Any) -> None:
+    """Folders, LIST by prefix, MKDIR, CAPACITY's STORE entry, a streamed upload of several MiB (DATA goes straight to the card), a delete that frees
+    its space for the next file, and LIST paging; each step compared with the card as the plusdrive reader sees it."""
+    img = c.image_for(B.RT, "run")
+    base = c.card(None)
+    zero = "0" * 64
+    files: dict[str, bytes] = {}
+    with c.rig(img, base, "folders", cf_only=True) as rig:
+        apply_cap(c, rig, img)
+        up = D.Uploader(transport(rig))
+        info = up.info()
+        c.check(
+            "INFO: capability FOLDERS", D.has_cap(info, "FOLDERS"), str(info["caps"])
+        )
+        cap = up.capacity().get("STORE")
+        total_kib = c.store.limit // 2
+        c.check(
+            "CAPACITY: a STORE entry with the area's size in KiB, nothing used yet, largest 0",
+            cap is not None
+            and cap["limit"] == total_kib
+            and cap["used"] == 0
+            and cap["largest"] == 0,
+            str(cap),
+        )
+
+        step = 0
+
+        def check(label: str, dirs: set[str]) -> dict[str, tuple[int, int, str]]:
+            nonlocal step
+            step += 1
+            rows, rdirs, head = card_ls(c, rig, base, f"fold-{step}")
+            got = {p: (s, h) for p, s, h in up.ls() if h != zero or s != 0}
+            want = {p: (len(b), sha(b).hex()) for p, b in files.items()}
+            c.check(
+                f"{label}: LIST equals the files sent",
+                got == want,
+                f"{got} want {want}",
+            )
+            c.check(
+                f"{label}: the card, read by plusdrive, lists the same files and sizes",
+                {p: (r[1], r[2]) for p, r in rows.items()} == want,
+                head,
+            )
+            listed = {
+                p for p, s, h in up.ls() if h == zero and s == 0 and p not in files
+            }
+            c.check(
+                f"{label}: folders with nothing in them: LIST = the card",
+                listed == dirs == rdirs,
+                f"{listed} {dirs} {rdirs}",
+            )
+            return rows
+
+        c.check(
+            "LIST under samples/ of an empty store: nothing", up.ls("samples/") == []
+        )
+        up.mkdir("samples")
+        up.mkdir("samples/drums")
+        up.mkdir("samples/drums")  # exists: ok
+        check(
+            "two MKDIR (the outer folder has a folder in it: one entry)",
+            {"samples/drums"},
+        )
+        for bad, want in [("a//b", -51), ("../x", -51), ("a/", -51)]:
+            st, _ = up.request(D.CMD_MKDIR, bad.encode() + b"\0")
+            c.check(f"MKDIR {bad!r}: E_PATH", st == want, str(st))
+        st, _ = up.request(D.CMD_MKDIR, b"\0")
+        c.check("MKDIR with an empty path: E_MSG", st == -50, str(st))
+        st, _ = up.request(D.CMD_MKDIR, b"x")
+        c.check("MKDIR with no NUL: E_MSG or E_PATH", st in (-50, -51), str(st))
+        st, _ = up.request(D.CMD_LIST, struct.pack(">I", 0) + b"sam")
+        c.check("LIST with a prefix and no NUL: E_MSG", st == -50, str(st))
+
+        # what one MiB costs the device (instructions the emulator ran while the host waited): the DATA requests, and END (which does not read the file back)
+        probe = blob(1 << 20, 20)
+        t0 = up.t.stepped
+        up.begin("probe.bin", len(probe), sha(probe))
+        for off in range(0, len(probe), D.MAX_CHUNK):
+            st, _ = up.request(
+                D.CMD_DATA, struct.pack(">I", off) + probe[off : off + D.MAX_CHUNK]
+            )
+        t1 = up.t.stepped
+        up.end()
+        t2 = up.t.stepped
+        c.report["instructions_per_MiB_of_DATA"] = t1 - t0
+        c.report["instructions_for_END_after_1_MiB"] = t2 - t1
+        up.rm("probe.bin")
+        up.begin("probe.bin", len(probe), sha(probe))
+        for off in range(0, len(probe), D.MAX_CHUNK):
+            up.request(
+                D.CMD_DATA, struct.pack(">I", off) + probe[off : off + D.MAX_CHUNK]
+            )
+        up.end()
+        t4 = up.t.stepped
+        up.verify("probe.bin")
+        c.report["instructions_for_VERIFY_of_1_MiB"] = up.t.stepped - t4
+        c.check(
+            "cost of 1 MiB (instructions): DATA, END, VERIFY",
+            True,
+            f"{t1 - t0} {t2 - t1} {up.t.stepped - t4}",
+        )
+        up.rm("probe.bin")
+        c.check(
+            "END of a 1 MiB file takes far less than its DATA (the hash was made as the data came)",
+            t2 - t1 < (t1 - t0) // 4,
+            f"{t1 - t0} {t2 - t1}",
+        )
+
+        # a streamed upload: the file is several MiB, far over the 64 KiB staging buffer, and goes to the card as it arrives
+        free0 = up.info()["free_bytes"]
+        mib = int(c.table().get("big_mib", 6))
+        big = blob(mib * 1024 * 1024 + 77, 21)
+        files["samples/drums/big.wav"] = big
+        st = put_status(up, "samples/drums/big.wav", big)
+        c.check(
+            f"put a {mib} MiB file under a folder entry (DATA chunks of 32 KiB straight to the card)",
+            st == 0,
+            str(st),
+        )
+        free1 = up.info()["free_bytes"]
+        c.check(
+            "INFO: the free bytes fell by the file's sectors (and the table room)",
+            0 < free0 - free1 <= len(big) + 2 * 512 + 512,
+            f"{free0} -> {free1}",
+        )
+        cap1 = up.capacity()["STORE"]
+        c.check(
+            "CAPACITY: STORE used grew by the file in KiB",
+            cap1["limit"] == total_kib and mib * 1024 <= cap1["used"] <= mib * 1024 + 8,
+            str(cap1),
+        )
+        rows = check("big upload (the folder entry is gone)", set())
+        src = rig.work / "big.bin"
+        src.write_bytes(big)
+        c.check(
+            f"VERIFY by ranges: the device hashes the {mib} MiB file from the card in 1 MiB pieces, each equal to the host's",
+            up.verify_file("samples/drums/big.wav", src),
+        )
+        c.check(
+            "VERIFY of the last, short range (not a whole sector)",
+            up.verify("samples/drums/big.wav", len(big) // 512 * 512, len(big) % 512)
+            == sha(big[len(big) // 512 * 512 :]).hex(),
+        )
+        for off, ln, want in [
+            (100, 10, -54),
+            (len(big) + 512, 1, -54),
+            (512, 0, -55),
+            (512, len(big), -55),
+        ]:
+            st, _ = up.request(
+                D.CMD_VERIFY, b"samples/drums/big.wav\0" + struct.pack(">II", off, ln)
+            )
+            c.check(f"VERIFY range ({off}, {ln}): refused", st == want, str(st))
+        big_first = rows["samples/drums/big.wav"][0]
+
+        # a delete frees the space and the next file of the size takes it again (first fit)
+        up.rm("samples/drums/big.wav")
+        del files["samples/drums/big.wav"]
+        check("delete", set())
+        c.check(
+            "the delete gave the free bytes back (the folder was implied: no entry is left)",
+            free0
+            <= up.info()["free_bytes"]
+            <= free0 + 1024,  # the empty table needs no sector
+            f"{up.info()['free_bytes']} vs {free0}",
+        )
+        cap2 = up.capacity()["STORE"]
+        c.check("CAPACITY: STORE used fell again", cap2["used"] < 16, str(cap2))
+        files["samples/second.wav"] = blob(mib * 1024 * 1024 + 77, 22)
+        up.put("samples/second.wav", files["samples/second.wav"])
+        rows = check("a file of the same size", set())
+        c.check(
+            "the new file took the first gap, which holds the space the deleted one left (it starts at or before it)",
+            rows["samples/second.wav"][0] <= big_first,
+            f"{rows['samples/second.wav'][0]} vs {big_first}",
+        )
+
+        # a hole in the middle: three files, delete the middle one, a smaller file goes into the hole
+        for i, n in enumerate([100_000, 100_000, 100_000]):
+            files[f"holes/f{i}.bin"] = blob(n, 30 + i)
+            up.put(f"holes/f{i}.bin", files[f"holes/f{i}.bin"])
+        rows = check("three files in a row", set())
+        mid = rows["holes/f1.bin"][0]
+        up.rm("holes/f1.bin")
+        del files["holes/f1.bin"]
+        files["holes/small.bin"] = blob(50_000, 33)
+        up.put("holes/small.bin", files["holes/small.bin"])
+        rows = check("a smaller file after a delete in the middle", set())
+        small = rows["holes/small.bin"][0]
+        c.check(
+            "the smaller file went into the hole between f0 and f2",
+            rows["holes/f0.bin"][0] < small
+            and small + 98 <= rows["holes/f2.bin"][0]
+            and small <= mid,
+            f"{small} (f0 {rows['holes/f0.bin'][0]}, hole {mid}, f2 {rows['holes/f2.bin'][0]})",
+        )
+
+        # MKDIR against files, implied folders and folder entries; DELETE of folders
+        for bad in ["holes/f0.bin", "holes/f0.bin/x"]:
+            st, _ = up.request(D.CMD_MKDIR, bad.encode() + b"\0")
+            c.check(
+                f"MKDIR {bad!r} (a file, or inside one): E_PATH", st == -51, str(st)
+            )
+        up.mkdir("holes")  # implied by the files in it: ok, no entry
+        check("MKDIR of an implied folder makes no entry", set())
+        up.mkdir("tmp/x")
+        check("MKDIR tmp/x", {"tmp/x"})
+        st, _ = up.request(D.CMD_BEGIN, b"tmp/x\0" + struct.pack(">I", 1) + bytes(32))
+        c.check("BEGIN over a folder entry: E_PATH", st == -51, str(st))
+        st, _ = up.request(D.CMD_DELETE, b"holes\0")
+        c.check(
+            "DELETE of an implied folder: E_NOFILE (delete its files)",
+            st == -59,
+            str(st),
+        )
+        up.rm("tmp/x")
+        check("DELETE of a folder entry", set())
+
+        # LIST paging: many entries, several replies
+        for i in range(40):
+            files[f"many/s{i:02d}.wav"] = blob(1 + i, 100 + i)
+            up.put(f"many/s{i:02d}.wav", files[f"many/s{i:02d}.wav"])
+        check("forty small files", set())
+        got = up.ls("many/")
+        c.check(
+            "LIST under many/: forty entries in several pages",
+            sorted(p for p, _, _ in got)
+            == sorted(p for p in files if p.startswith("many/"))
+            and len(got) == 40,
+            f"{len(got)}",
+        )
+        c.check("LIST under a prefix nobody has: nothing", up.ls("zzz/") == [])
+        c.check(
+            "LIST with the prefix `m` finds many/ and nothing else",
+            {p.split("/")[0] for p, _, _ in up.ls("m")} == {"many"},
+        )
+        roundtrip(c, rig, base, files)
+        c.report["device_requests"] = len(up.log)
+        c.done(rig)
+    c.common_checks_upload()
+
+
 # ---- power cuts ------------------------------------------------------------------------------------------------------------------
 
 
@@ -713,6 +984,27 @@ def run_rust(c: Any) -> None:
             str(rl),
         )
         check("Python put next to the Rust ones")
+
+        # folders and ranges through the Rust host: LIST by prefix, MKDIR, VERIFY of a range
+        r = host(rig, "mkdir", "samples/drums")
+        c.check("the Rust host: MKDIR", r.get("ok") is True, str(r))
+        c.check(
+            "the Rust host: LIST by prefix lists the folder entry and nothing else; the Python tool sees the same",
+            [e["path"] for e in host(rig, "ls", "samples/")["result"]]
+            == ["samples/drums"]
+            and [p for p, _, _ in up.ls("samples/")] == ["samples/drums"],
+        )
+        ln = min(1000, len(files[mod]) - 512)
+        r = host(rig, "verify", mod, "512", str(ln))
+        c.check(
+            "the Rust host: VERIFY of a range equals the Python tool's and the bytes sent",
+            r.get("ok") is True
+            and r["result"]
+            == up.verify(mod, 512, ln)
+            == sha(files[mod][512 : 512 + ln]).hex(),
+            str(r),
+        )
+        up.rm("samples/drums")
 
         # replace
         a2 = blob(1000, 42)
@@ -1141,6 +1433,7 @@ def run_screenshot(c: Any) -> None:
 PARTS = {
     "screenshot": run_screenshot,
     "ops": run_ops,
+    "folders": run_folders,
     "quick": lambda c: run_ops(c, quick=True),
     "cut": run_cut,
     "stock": run_stock,

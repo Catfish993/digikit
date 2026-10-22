@@ -54,6 +54,8 @@ struct Up {
     path: [u8; 160],
     size: u32,
     sha: [u8; 32],
+    /// The sha256 of the bytes received so far (DATA feeds it, END compares it with `sha`: a large file is not read back from the card).
+    run: Sha,
     /// Next expected byte offset.
     next: u32,
     last_off: u32,
@@ -68,6 +70,7 @@ static mut UP: Up = Up {
     path: [0; 160],
     size: 0,
     sha: [0; 32],
+    run: Sha::new(),
     next: 0,
     last_off: 0,
     last_len: 0,
@@ -408,7 +411,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     wr32(rb.add(21), newest);
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
-    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS);
+    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS);
     reply(CMD_INFO, seq, OK, 33)
 }
 
@@ -529,26 +532,56 @@ unsafe fn path_ok(p: *const u8, max: usize) -> Option<usize> {
     store::path_ok(p, max)
 }
 
-/// LIST: body `u32 first` (an entry index). Reply: `u32 count` (all entries), `u8 n`, then per entry `path NUL, u32 size, sha256[32]`, as many as fit,
-/// from entry `first` on, in table order (by first sector: a host sorts for display). A folder with no file in it has size 0 and a zero sha256.
+/// LIST: body `u32 first`, then optionally `prefix NUL` (1 to 159 bytes, e.g. `samples/`). Without a prefix: `first` is an entry index, `count` all
+/// entries. With one: only the entries whose path starts with it (files, and folders with nothing in them), `first` indexes those and `count` is how many
+/// there are. Reply: `u32 count`, `u8 n`, then per entry `path NUL, u32 size, sha256[32]`, as many as fit, in table order (by first sector: a host sorts
+/// for display). A folder with no file in it has size 0 and a zero sha256.
 unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
-    if blen < 4 {
+    if blen < 4 || (blen > 4 && (blen < 6 || blen > 4 + 160 || *body.add(blen - 1) != 0)) {
         return reply(CMD_LIST, seq, E_MSG, 0);
     }
     let first = rd32(body);
+    let prefix = if blen > 4 { body.add(4) } else { core::ptr::null() };
+    let mut plen = 0usize;
+    if blen > 4 {
+        plen = blen - 5;
+        let mut i = 0;
+        while i < plen {
+            if *prefix.add(i) == 0 {
+                return reply(CMD_LIST, seq, E_MSG, 0);
+            }
+            i += 1;
+        }
+    }
     let t = match state(buf) {
         Ok(t) => t,
         Err(e) => return reply(CMD_LIST, seq, e, 0),
     };
     let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
-    wr32(rb, t.h.count);
     let mut at = 5usize;
     let mut n = 0u32;
-    let r = store::scan_from(&io(), &lay(), &t.h, first, buf.add(IN_AT), TBL_CAP, |_, e| {
+    let mut seen = 0u32; // entries matching so far (prefix lists)
+    let mut full = false;
+    let from = if plen == 0 { first } else { 0 };
+    let r = store::scan_from(&io(), &lay(), &t.h, from, buf.add(IN_AT), TBL_CAP, |_, e| {
+        if plen != 0 {
+            let mut i = 0;
+            while i < plen {
+                if *e.add(i) != *prefix.add(i) {
+                    return true;
+                }
+                i += 1;
+            }
+            seen += 1;
+            if seen <= first || full {
+                return true;
+            }
+        }
         let pl = store::path_len(e);
         let need = pl + 1 + 4 + 32;
         if at + need > REPLY_BODY_MAX - 1 {
-            return false;
+            full = true;
+            return plen != 0; // a prefix list goes on to count the rest
         }
         let en = store::entry_of(e);
         copy(rb.add(at), e, pl);
@@ -562,8 +595,54 @@ unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
     if r != OK {
         return reply(CMD_LIST, seq, pe(r), 0);
     }
+    wr32(rb, if plen == 0 { t.h.count } else { seen });
     *rb.add(4) = n as u8;
     reply(CMD_LIST, seq, OK, at)
+}
+
+/// MKDIR: make the folder `path NUL` (a folder entry with nothing in it). Ok when it already exists (a folder entry, or implied by files inside it);
+/// `E_PATH` when the path is a file or lies inside one. A folder entry is dropped when a file is stored inside the folder. An upload in progress is aborted.
+unsafe fn cmd_mkdir(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    up().open = false;
+    if !card::writable() {
+        return reply(CMD_MKDIR, seq, if card::state() == CARD_TOO_SMALL { E_NOSTORE } else { E_INUSE }, 0);
+    }
+    match path_ok(body, blen) {
+        Some(n) if n + 1 == blen => {}
+        _ => return reply(CMD_MKDIR, seq, if blen < 2 { E_MSG } else { E_PATH }, 0),
+    }
+    let t = match state(buf) {
+        Ok(t) => t,
+        Err(e) => return reply(CMD_MKDIR, seq, e, 0),
+    };
+    let mut exists = false;
+    let mut conflict = false;
+    let r = store::scan(&io(), &lay(), &t.h, buf.add(IN_AT), TBL_CAP, |_, e| {
+        let rel = store::relation(body, e);
+        if rel == 3 || (rel == 1 && store::entry_of(e).kind == KIND_FILE) {
+            conflict = true;
+        } else if rel == 1 || rel == 2 {
+            exists = true;
+        }
+        !conflict
+    });
+    if r != OK {
+        return reply(CMD_MKDIR, seq, pe(r), 0);
+    }
+    if conflict {
+        return reply(CMD_MKDIR, seq, E_PATH, 0);
+    }
+    if exists {
+        return reply(CMD_MKDIR, seq, OK, 0);
+    }
+    if !sync_headers(buf, &t) {
+        return reply(CMD_MKDIR, seq, E_WRITE, 0);
+    }
+    let mut ent = [0u8; store::ENTRY];
+    let e = Entry { first: 0, size: 0, kind: KIND_DIR, sha: [0; 32] };
+    store::encode_entry(body, &e, ent.as_mut_ptr());
+    let r = do_commit(buf, &t.h, Edit::Insert(ent.as_ptr()), None);
+    reply(CMD_MKDIR, seq, r, 0)
 }
 
 unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
@@ -632,6 +711,7 @@ unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32
     copy(u.path.as_mut_ptr(), body, pl);
     u.size = size;
     copy(u.sha.as_mut_ptr(), body.add(pl + 5), 32);
+    u.run = Sha::new();
     u.next = 0;
     u.have_last = false;
     u.last_off = 0;
@@ -675,6 +755,7 @@ unsafe fn cmd_data(seq: u32, buf: *mut u8, blen: usize) -> i32 {
     u.last_off = off;
     u.last_len = len;
     u.next = end as u32;
+    u.run.update(data, len);
     reply(CMD_DATA, seq, OK, 0)
 }
 
@@ -708,11 +789,9 @@ unsafe fn cmd_end(seq: u32, buf: *mut u8) -> i32 {
     if u.next != u.size {
         return reply(CMD_END, seq, E_LENGTH, 0);
     }
-    // read the staged file back from the card and check its sha256
+    // the hash of the bytes received (DATA fed it as they came: END does not read a large file back from the card; VERIFY does)
     let mut got = [0u8; 32];
-    if !sha_of(buf, u.start, u.size, got.as_mut_ptr()) {
-        return reply(CMD_END, seq, E_READ, 0);
-    }
+    core::mem::replace(&mut u.run, Sha::new()).finish(got.as_mut_ptr());
     let mut i = 0;
     while i < 32 {
         if got[i] != u.sha[i] {
@@ -810,18 +889,31 @@ unsafe fn cmd_read(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
     reply(CMD_READ, seq, OK, 4 + len as usize)
 }
 
-/// VERIFY: path NUL. Reads the file back from the card, in chunks, and replies its sha256 (32 bytes): what END checks for a staged file,
-/// asked for any file of the store. E_NOFILE: not in the store; E_READ: the card did not read.
+/// VERIFY: `path NUL`, optionally then `u32 offset, u32 length`. Reads the file (or that range of it) back from the card, in chunks, and replies its
+/// sha256 (32 bytes): what a host compares with its own hash to know that the bytes on the card are the bytes it sent. The cost is about 120 ColdFire
+/// instructions a byte, so a large file is checked in ranges (the offset is a multiple of 512). Errors: E_NOFILE, E_READ, E_OFFSET (not a multiple of
+/// 512, or at or past the end), E_LENGTH (0, or past the end of the file), E_MSG, E_PATH.
 unsafe fn cmd_verify(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
-    match path_ok(body, blen) {
-        Some(n) if n + 1 == blen => {}
+    let pl = match path_ok(body, blen) {
+        Some(n) if n + 1 == blen || n + 1 + 8 == blen => n,
         _ => return reply(CMD_VERIFY, seq, if blen < 2 { E_MSG } else { E_PATH }, 0),
-    }
+    };
     let f = match file_of(buf, body) {
         Ok(f) => f,
         Err(e) => return reply(CMD_VERIFY, seq, e, 0),
     };
-    if !sha_of(buf, f.first, f.size, (addr_of_mut!(RBODY) as *mut u8).add(1)) {
+    let (mut off, mut len) = (0u32, f.size);
+    if blen > pl + 1 {
+        off = rd32(body.add(pl + 1));
+        len = rd32(body.add(pl + 5));
+        if off & 511 != 0 || off >= f.size {
+            return reply(CMD_VERIFY, seq, E_OFFSET, 0);
+        }
+        if len == 0 || len as u64 > (f.size - off) as u64 {
+            return reply(CMD_VERIFY, seq, E_LENGTH, 0);
+        }
+    }
+    if !sha_of(buf, f.first + off / 512, len, (addr_of_mut!(RBODY) as *mut u8).add(1)) {
         return reply(CMD_VERIFY, seq, E_READ, 0);
     }
     reply(CMD_VERIFY, seq, OK, 32)
@@ -1160,6 +1252,9 @@ unsafe fn h_data(seq: u32, buf: *mut u8, _body: *const u8, blen: usize) -> i32 {
 unsafe fn h_end(seq: u32, buf: *mut u8, _body: *const u8, _blen: usize) -> i32 {
     cmd_end(seq, buf)
 }
+unsafe fn h_mkdir(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_mkdir(seq, buf, body, blen)
+}
 unsafe fn h_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     cmd_delete(seq, buf, body, blen)
 }
@@ -1193,7 +1288,7 @@ unsafe fn h_restart(seq: u32, _buf: *mut u8, _body: *const u8, _blen: usize) -> 
 }
 
 /// The built-in commands, looked up one after the other (a jump table is not ColdFire code).
-static CMDS: [Cmd; 17] = [
+static CMDS: [Cmd; 18] = [
     Cmd { cmd: CMD_INFO, flags: NOLOG, h: h_info },
     Cmd { cmd: CMD_LIST, flags: 0, h: h_list },
     Cmd { cmd: CMD_MODULES, flags: NOLOG, h: h_modules },
@@ -1202,6 +1297,7 @@ static CMDS: [Cmd; 17] = [
     Cmd { cmd: CMD_DATA, flags: BIG, h: h_data },
     Cmd { cmd: CMD_END, flags: 0, h: h_end },
     Cmd { cmd: CMD_DELETE, flags: 0, h: h_delete },
+    Cmd { cmd: CMD_MKDIR, flags: 0, h: h_mkdir },
     Cmd { cmd: CMD_READ, flags: NOLOG, h: h_read },
     Cmd { cmd: CMD_VERIFY, flags: NOLOG, h: h_verify },
     Cmd { cmd: CMD_CLEAR, flags: 0, h: h_clear },

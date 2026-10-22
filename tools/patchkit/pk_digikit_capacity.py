@@ -47,7 +47,13 @@ def _ranges_ok(mods: list[dict], key_off: str, key_len: str, lo: int, hi: int) -
 
 
 def _cap_ok(
-    cap: dict, m: dict, g: P.Geometry, lim: Any, rows: int, selected: int
+    cap: dict,
+    m: dict,
+    g: P.Geometry,
+    lim: Any,
+    rows: int,
+    selected: int,
+    store_kib: int,
 ) -> bool:
     """The CAPACITY reply against MODULES (what is used) and the device file (what the limits are)."""
     arena = g.arena_hi - g.arena_lo
@@ -63,6 +69,7 @@ def _cap_ok(
         "PAGE_ROWS": (lim.page_rows, None, 0),
         "FX_SLOTS": (lim.fx_slots, 0, 0),
         "MAP_ENTRIES": (pk_device.contract_max()["map_entries"], None, 0),
+        "STORE": (store_kib, None, 0),  # the area in KiB (devices/*.toml [card.store])
     }
     return set(cap) == set(want) and all(
         (cap[k]["limit"], cap[k]["largest"]) == (v[0], v[2])
@@ -119,7 +126,7 @@ def boot_checks(
         rows |= x["rows"]
     c.check(
         f"{tag}: CAPACITY agrees with MODULES (modules, arena, DSP area, voice rows, selection) and with the profile (every limit)",
-        _cap_ok(cap, m, g, lim, rows, len(names)),
+        _cap_ok(cap, m, g, lim, rows, len(names), c.store.limit // 2),
         str(cap),
     )
     bad = up.peek(M.sym(rig.plan, "core/runtime", "DKRT_TABLE_BAD"), 1)[0]

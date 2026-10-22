@@ -71,7 +71,7 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
     # the record (4 tests) and the version 3 store: format, table stream, free space, power cuts, header copies, a read against a commit (finding 43), the card-write range (finding 46)
-    assert r.returncode == 0 and "18 passed; 0 failed" in r.stdout, r.stdout
+    assert r.returncode == 0 and "19 passed; 0 failed" in r.stdout, r.stdout
 
 
 def test_the_store_profile_reserves_the_two_record_sectors():
