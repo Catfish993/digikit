@@ -1,0 +1,91 @@
+{
+  "about": "Test vectors of the fit rule (docs/plans/what-fits.md): dkrt_sdk::fit (Rust), apps/web/src/modules/dkfit.ts and tools/device/dkfit.py read this file and must give the same answers. needs: the declared needs of a .dkm (names of [dkm.needs] in sdk/sdk.toml, plus file_size); missing = 0. caps: a CAPACITY reply as [limit, used, largest] per kind (names of [capacity.kinds]), laid over caps_base. want: null (fits) or [resource, need, free] of the first short resource; for a set: null or [index, resource, need, free].",
+  "caps_base": {
+    "MODULES": [8, 0, 0],
+    "SELECTION": [8, 0, 0],
+    "ARENA": [524288, 0, 524272],
+    "STAGE": [65536, 0, 65536],
+    "DSP_AREA": [524288, 0, 524284],
+    "MACHINE_ROWS": [8, 0, 0],
+    "VOICE_ROWS": [8, 0, 0],
+    "PARAM_ROWS": [16, 0, 0],
+    "PAGE_ROWS": [0, 0, 0],
+    "FX_SLOTS": [0, 0, 0]
+  },
+  "cases": [
+    {"name": "a small ColdFire module", "needs": {"file_size": 300, "ARENA": 48}, "want": null},
+    {
+      "name": "a machine with DSP code (pluck-like)",
+      "needs": {"file_size": 2308, "ARENA": 32, "ARENA_XFER": 1392, "DSP_AREA": 265600, "DSP_ALIGN": 8, "MACHINE_ROWS": 1, "VOICE_ROWS": 1, "PARAM_ROWS": 4},
+      "want": null
+    },
+    {"name": "the DSP range is the largest free range", "needs": {"ARENA": 32, "DSP_AREA": 524284, "DSP_ALIGN": 8}, "want": null},
+    {"name": "one byte over the largest free range", "needs": {"ARENA": 32, "DSP_AREA": 524288, "DSP_ALIGN": 8}, "want": ["DSP_AREA", 524288, 524284]},
+    {"name": "alignment 64 costs up to 56 bytes: it still fits", "needs": {"DSP_AREA": 524224, "DSP_ALIGN": 64}, "want": null},
+    {
+      "name": "alignment 64 costs up to 56 bytes: one short",
+      "needs": {"DSP_AREA": 524224, "DSP_ALIGN": 64},
+      "caps": {"DSP_AREA": [524288, 0, 524279]},
+      "want": ["DSP_AREA", 524280, 524279]
+    },
+    {"name": "the DSP area is limited by limit - used as well as by largest", "needs": {"DSP_AREA": 128, "DSP_ALIGN": 8}, "caps": {"DSP_AREA": [1000, 900, 500]}, "want": ["DSP_AREA", 128, 100]},
+    {"name": "used DSP area leaves less than the largest range says", "needs": {"DSP_AREA": 258688, "DSP_ALIGN": 8}, "caps": {"DSP_AREA": [524288, 265600, 258684]}, "want": ["DSP_AREA", 258688, 258684]},
+    {"name": "the arena holds the block and the DSP image's block at once", "needs": {"ARENA": 300000, "ARENA_XFER": 300000}, "want": ["ARENA", 600000, 524288]},
+    {"name": "the arena: a block larger than the largest free block", "needs": {"ARENA": 2000}, "caps": {"ARENA": [524288, 100000, 1000]}, "want": ["ARENA", 2000, 1016]},
+    {"name": "the arena: a block exactly as large as the largest free block (its payload plus the 16-byte header)", "needs": {"ARENA": 1016}, "caps": {"ARENA": [524288, 100000, 1000]}, "want": null},
+    {"name": "no free module record", "needs": {"ARENA": 32}, "caps": {"MODULES": [8, 8, 0]}, "want": ["MODULES", 1, 0]},
+    {"name": "no free selection path", "needs": {"ARENA": 32}, "caps": {"SELECTION": [8, 8, 0]}, "want": ["SELECTION", 1, 0]},
+    {"name": "a file larger than the staging buffer", "needs": {"file_size": 65537, "ARENA": 32}, "want": ["STAGE", 65537, 65536]},
+    {"name": "a file as large as the staging buffer", "needs": {"file_size": 65536, "ARENA": 32}, "want": null},
+    {"name": "voice rows", "needs": {"VOICE_ROWS": 2}, "caps": {"VOICE_ROWS": [8, 7, 0]}, "want": ["VOICE_ROWS", 2, 1]},
+    {"name": "machine rows", "needs": {"MACHINE_ROWS": 9}, "want": ["MACHINE_ROWS", 9, 8]},
+    {"name": "parameter rows", "needs": {"PARAM_ROWS": 3}, "caps": {"PARAM_ROWS": [16, 14, 0]}, "want": ["PARAM_ROWS", 3, 2]},
+    {"name": "page rows on a device that has none", "needs": {"PAGE_ROWS": 1}, "want": ["PAGE_ROWS", 1, 0]},
+    {"name": "page rows on a device that has them", "needs": {"PAGE_ROWS": 1}, "caps": {"PAGE_ROWS": [8, 7, 0]}, "want": null},
+    {"name": "effect slots (there are none)", "needs": {"FX_SLOTS": 1}, "want": ["FX_SLOTS", 1, 0]},
+    {
+      "name": "the first short resource is reported: the module record before the DSP area",
+      "needs": {"DSP_AREA": 524288, "DSP_ALIGN": 8, "PARAM_ROWS": 17},
+      "caps": {"MODULES": [8, 8, 0]},
+      "want": ["MODULES", 1, 0]
+    },
+    {"name": "the first short resource is reported: the DSP area before the arena", "needs": {"ARENA": 600000, "DSP_AREA": 524288, "DSP_ALIGN": 8}, "want": ["DSP_AREA", 524288, 524284]},
+    {"name": "the first short resource is reported: the arena before the rows", "needs": {"ARENA": 600000, "PARAM_ROWS": 17}, "want": ["ARENA", 600000, 524288]}
+  ],
+  "sets": [
+    {
+      "name": "three small modules fit",
+      "needs": [{"ARENA": 48}, {"ARENA": 48}, {"ARENA": 48}],
+      "want": null
+    },
+    {
+      "name": "two pluck-like modules: the second finds half the DSP area",
+      "needs": [
+        {"file_size": 2308, "ARENA": 32, "ARENA_XFER": 1392, "DSP_AREA": 265600, "DSP_ALIGN": 8, "MACHINE_ROWS": 1, "VOICE_ROWS": 1, "PARAM_ROWS": 4},
+        {"file_size": 2308, "ARENA": 32, "ARENA_XFER": 1392, "DSP_AREA": 265600, "DSP_ALIGN": 8, "MACHINE_ROWS": 1, "VOICE_ROWS": 1, "PARAM_ROWS": 4}
+      ],
+      "want": [1, "DSP_AREA", 265600, 258684]
+    },
+    {
+      "name": "nine modules: the ninth has no module record",
+      "needs": [{"ARENA": 48, "times": 9}],
+      "want": [8, "MODULES", 1, 0]
+    },
+    {
+      "name": "the arena sums the blocks and the DSP images' blocks",
+      "needs": [{"ARENA": 200000, "ARENA_XFER": 100000}, {"ARENA": 200000, "ARENA_XFER": 100000}],
+      "want": [1, "ARENA", 300000, 224288]
+    },
+    {
+      "name": "machine rows are taken in turn",
+      "needs": [{"ARENA": 48, "MACHINE_ROWS": 2, "times": 5}],
+      "want": [4, "MACHINE_ROWS", 2, 0]
+    },
+    {
+      "name": "the capacity left by modules already loaded is the start",
+      "caps": {"MODULES": [8, 7, 0]},
+      "needs": [{"ARENA": 48, "times": 2}],
+      "want": [1, "MODULES", 1, 0]
+    }
+  ]
+}
