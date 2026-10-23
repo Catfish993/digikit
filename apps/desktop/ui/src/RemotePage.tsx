@@ -6,6 +6,7 @@ import { Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import LivePanel, { type LivePanelApi } from '@web/components/LivePanel';
 import { panels } from '@web/data/faceplates';
 import type { DkSession, RemoteState } from '@web/modules/dkupload-core';
+import MemoryPanel from './MemoryPanel';
 import { deviceOfPort, remoteNotice, remoteRuntime } from './remote-core';
 import TargetSelect from './TargetSelect';
 import { cancelPending, resetSession, session, target, targetLabel } from './target';
@@ -101,17 +102,20 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
           {screenError()}
         </p>
       </Show>
-      {/* the same markup as the Emulator page's faceplate (Console.tsx), so the screen has the same place and scale */}
-      <main
-        class="stage"
-        aria-label={`${panel().name} front panel`}
-        title={HINT}
-        style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}
-      >
-        <div class="surface">
-          <LivePanel panel={panel()} runtime={() => runtime} onError={setScreenError} ref={(api) => (live = api)} />
-        </div>
-      </main>
+      {/* the same markup as the Emulator page's faceplate (Console.tsx), so the screen has the same place and scale; the Memory panel is beside it */}
+      <div class="remote-row">
+        <main
+          class="stage"
+          aria-label={`${panel().name} front panel`}
+          title={HINT}
+          style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}
+        >
+          <div class="surface">
+            <LivePanel panel={panel()} runtime={() => runtime} onError={setScreenError} ref={(api) => (live = api)} />
+          </div>
+        </main>
+        <MemoryPanel visible session={session} where={() => targetLabel(target())} track={target} />
+      </div>
     </section>
   );
 }

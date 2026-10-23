@@ -28,6 +28,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---- the scenes ---------------------------------------------------------------------------------------------------------------------
 const WIDE = [1440, 900];
 const MIN = [700, 600];
+/** The Memory panel remembers open or closed in localStorage, which outlives a scene: open it. */
+const openMemory = (p) =>
+  p.eval(
+    "(() => { const b = document.querySelector('.memory-panel .card-toggle'); if (b && b.getAttribute('aria-expanded') === 'false') b.click(); })()",
+  );
 /** Page helpers: `p.eval(js)`, `p.click(text)`, `p.tick(labelRegexSource)`, `p.hover(selector)`, `p.wait(ms)`. */
 const SCENES = [
   { name: 'modules', q: 'mode=modules', size: WIDE },
@@ -66,6 +71,21 @@ const SCENES = [
       await p.tick('^Install (Wavetable|FM|Pluck)');
       await p.click(/^Install/);
       await p.wait(2500);
+    },
+  },
+  {
+    // the won't-fit tag's tooltip says what is short in the user-facing names; the storage line is under the device line (storage only)
+    name: 'modules-fit-tooltips',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      p.say(
+        'fit tooltips: ' +
+          (await p.eval(
+            "JSON.stringify([...document.querySelectorAll('.transfer-page .tag.warn, .transfer-page [title]')].map((e) => e.title).filter((t) => /short|fits/.test(t)))",
+          )),
+      );
+      p.say('storage line: ' + (await p.eval("document.querySelector('.devhead .storage')?.textContent")));
     },
   },
   { name: 'modules-narrow', q: 'mode=modules', size: MIN },
@@ -617,6 +637,69 @@ const SCENES = [
     steps: async (p) => {
       await p.click('Choose folder…');
       await p.wait(700);
+    },
+  },
+  // ---- the Memory panel (preview/memory-backend.mock.ts): bars per resource, segments per loaded module; mem=pluck|full|empty|dsp ----
+  {
+    // a Digitone II with Pluck and Remote control loaded and one module that is not in the library ("other")
+    name: 'memory-dn2',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(700);
+      p.say(
+        'segment titles: ' +
+          (await p.eval(
+            "JSON.stringify([...document.querySelectorAll('.memory-panel .seg:not(.free)')].slice(0, 6).map((e) => e.title))",
+          )),
+      );
+    },
+  },
+  { name: 'memory-dn2-full', q: 'page=emulator&card=dn2&mem=full', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'memory-dn2-dsp-full', q: 'page=emulator&card=dn2&mem=dsp', size: WIDE, steps: async (p) => p.wait(700) },
+  // the Digitakt II has no page rows: no Pages bar
+  { name: 'memory-dt2', q: 'page=emulator&card=dt2&mem=pluck', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'memory-empty', q: 'page=emulator&card=dn2&mem=empty', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'memory-narrow', q: 'page=emulator&card=dn2&mem=pluck', size: MIN, steps: async (p) => p.wait(700) }, // closed by default at this width
+  {
+    name: 'memory-narrow-open',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: MIN,
+    steps: async (p) => {
+      await p.wait(400);
+      await openMemory(p);
+      await p.wait(400);
+    },
+  },
+  {
+    name: 'memory-remote',
+    q: 'page=remote&card=dn2&mem=full',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(500);
+      await openMemory(p);
+      await p.wait(500);
+    },
+  },
+  {
+    name: 'memory-remote-narrow',
+    q: 'page=remote&card=dn2&mem=full',
+    size: MIN,
+    steps: async (p) => {
+      await p.wait(500);
+      await openMemory(p);
+      await p.wait(500);
+    },
+  },
+  {
+    name: 'memory-collapsed',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(500);
+      await openMemory(p);
+      await p.eval("document.querySelector('.memory-panel .card-toggle').click()");
+      await p.wait(300);
     },
   },
   { name: 'emulator-faceplate-wide', q: 'page=emulator', size: WIDE },

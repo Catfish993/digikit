@@ -15,8 +15,9 @@ import {
 } from '@web/runtime/runtime';
 import CardPanel from './CardPanel';
 import { bumpCardRefresh } from './card-state';
+import MemoryPanel from './MemoryPanel';
 import RemotePage from './RemotePage';
-import { target } from './target';
+import { emulatorSession, target } from './target';
 import TransferPage from './TransferPage';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 
@@ -159,8 +160,9 @@ export default function Console() {
       update({ type: 'snapshot', snapshot: await start(r) });
       setPaused(false);
       await refreshInfo();
-      // another firmware may be another device: its card folder
+      // another firmware may be another device: its card folder and its memory (the runtime needs a moment to load its modules)
       bumpCardRefresh();
+      window.setTimeout(bumpCardRefresh, 2500);
     } catch (e) {
       setError(message(e));
     }
@@ -256,6 +258,7 @@ export default function Console() {
       setPaused(false);
       await refreshInfo();
       bumpCardRefresh();
+      window.setTimeout(bumpCardRefresh, 2500);
     } catch (e) {
       setError(message(e));
     }
@@ -498,6 +501,11 @@ export default function Console() {
                 <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
               </div>
             </main>
+            <MemoryPanel
+              visible={page() === 'emulator' && !!status()}
+              session={emulatorSession}
+              where={() => 'the emulator'}
+            />
             <CardPanel visible={page() === 'emulator' && !!status()} reload={restart} />
           </div>
           <Show when={page() === 'transfer'}>

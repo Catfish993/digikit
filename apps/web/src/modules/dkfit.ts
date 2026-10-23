@@ -142,8 +142,8 @@ const LABEL: Record<string, string> = {
   STAGE: 'file',
   MODULES: 'module records',
   SELECTION: 'selection paths',
-  DSP_AREA: 'DSP area',
-  ARENA: 'memory',
+  DSP_AREA: 'DSP memory',
+  ARENA: 'CPU memory',
   VOICE_ROWS: 'voice rows',
   MACHINE_ROWS: 'machine rows',
   PARAM_ROWS: 'parameter rows',
@@ -151,11 +151,20 @@ const LABEL: Record<string, string> = {
   FX_SLOTS: 'effect slots',
 };
 
-/** One line for a person: `DSP area 400 KiB needed, 254 KiB free`. */
+/** One line for a person: `DSP memory 400 KiB needed, 254 KiB free`. */
 export function describeShort(s: Short): string {
   const label = LABEL[s.resource] ?? s.resource;
   if (s.resource === 'STAGE') return `${label} ${fmtSize(s.need, true)} needed, ${fmtSize(s.free, false)} at most`;
   if (s.resource === 'DSP_AREA' || s.resource === 'ARENA')
     return `${label} ${fmtSize(s.need, true)} needed, ${fmtSize(s.free, false)} free`;
   return `${label} ${s.need} needed, ${s.free} free`;
+}
+
+/** How much a short resource is over, for a tooltip: `CPU memory 3 KiB short` (rounded up), `parameter rows 2 short`, `file 5 KiB too large`. */
+export function describeShortBy(s: Short): string {
+  const label = LABEL[s.resource] ?? s.resource;
+  const over = Math.max(s.need - s.free, 0);
+  if (s.resource === 'STAGE') return `${label} ${fmtSize(over, true)} too large`;
+  if (s.resource === 'DSP_AREA' || s.resource === 'ARENA') return `${label} ${fmtSize(over, true)} short`;
+  return `${label} ${over} short`;
 }

@@ -455,6 +455,10 @@
   gap: 6px 12px;
   margin-bottom: 8px;
 }
+/* Modules mode: the storage line takes a line of its own under the device line */
+.transfer-page .devhead .storage {
+  flex-basis: 100%;
+}
 .transfer-page .crumbs {
   display: flex;
   align-items: center;

@@ -11,6 +11,7 @@ import { installNativeFeel } from '../src/native';
 import LivePanel from '@web/components/LivePanel';
 import { panels } from '@web/data/faceplates';
 import CardPanel from '../src/CardPanel';
+import MemoryPanel from '../src/MemoryPanel';
 import RemotePage from '../src/RemotePage';
 import TransferPage from '../src/TransferPage';
 import { setLocalFolder, setMode } from '../src/transfer-state';
@@ -34,6 +35,7 @@ const emulatorFaceplate = () => (
         />
       </div>
     </main>
+    <MemoryPanel visible session={() => Promise.resolve({} as never)} where={() => 'the emulator'} />
     <CardPanel visible reload={reloadCard} />
   </div>
 );

@@ -278,7 +278,6 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                               tags={localTags(r)}
                               version={r.version ?? ''}
                               size={formatBytes(r.file_size)}
-                              sizeTitle={r.arena !== undefined ? `arena ${r.arena} B, DSP ${r.dsp} B` : ''}
                             />
                           )}
                         </For>

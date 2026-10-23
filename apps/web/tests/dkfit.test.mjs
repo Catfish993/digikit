@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { describeShort, emptyCaps, fitsNow, fitsSet, take } from '../src/modules/dkfit.ts';
+import { describeShort, describeShortBy, emptyCaps, fitsNow, fitsSet, take } from '../src/modules/dkfit.ts';
 
 const V = JSON.parse(readFileSync(new URL('../../../sdk/fit-vectors.json', import.meta.url), 'utf8'));
 
@@ -50,7 +50,24 @@ test('a short resource reads as a line', () => {
   assert.equal(describeShort({ resource: 'STAGE', need: 70000, free: 65536 }), 'file 69 KiB needed, 64 KiB at most');
   assert.equal(
     describeShort({ resource: 'DSP_AREA', need: 409600, free: 260096 }),
-    'DSP area 400 KiB needed, 254 KiB free',
+    'DSP memory 400 KiB needed, 254 KiB free',
   );
   assert.equal(describeShort({ resource: 'PARAM_ROWS', need: 3, free: 2 }), 'parameter rows 3 needed, 2 free');
+});
+
+test('the fit tooltip says what is short in the user-facing names', () => {
+  assert.equal(describeShortBy({ resource: 'ARENA', need: 5120, free: 2049 }), 'CPU memory 3 KiB short');
+  assert.equal(
+    describeShortBy({ resource: 'DSP_AREA', need: 300 * 1024, free: 260 * 1024 }),
+    'DSP memory 40 KiB short',
+  );
+  assert.equal(describeShortBy({ resource: 'DSP_AREA', need: 400, free: 50 }), 'DSP memory 350 bytes short');
+  assert.equal(describeShortBy({ resource: 'PARAM_ROWS', need: 3, free: 1 }), 'parameter rows 2 short');
+  assert.equal(describeShortBy({ resource: 'STAGE', need: 70000, free: 65536 }), 'file 5 KiB too large');
+  // the older names are gone from every line
+  for (const r of ['ARENA', 'DSP_AREA'])
+    assert.doesNotMatch(
+      describeShortBy({ resource: r, need: 9999, free: 1 }) + describeShort({ resource: r, need: 9999, free: 1 }),
+      /arena|area|RAM/i,
+    );
 });

@@ -71,3 +71,14 @@ export function resetSession(): void {
 export function cancelPending(): void {
   shared?.cancelPending();
 }
+
+let emulator: DkSession | undefined;
+/**
+ * A session with the emulator whatever the selected target is (the Emulator page's Memory panel is about the emulator). While the target is the
+ * emulator it is the shared session, so its requests take turns with the pages'; with a MIDI target it has a session of its own.
+ */
+export async function emulatorSession(): Promise<DkSession> {
+  if (target().kind === 'emulator') return session();
+  if ((await emulatorMode()) === 'paused') throw new Error(PAUSED);
+  return (emulator ??= new DkSession(instrument(new EmuUsbTransport()), { timeoutMs: 6000 }));
+}
