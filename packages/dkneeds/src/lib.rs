@@ -11,7 +11,7 @@
 //! allocates: it runs in the DIGIKIT menu.
 //!
 //! What is not checked: the file's sha256 (the loader does), the device and the runtime version, names, imports, relocations and the contents of
-//! the records. The only input the answer needs from outside is the device's limits, which [`Needs`] is compared with elsewhere (`dkrt_sdk::fit`).
+//! the records. The only input the answer needs from outside is the device's limits, which [`Needs`] is compared with elsewhere (`dkrt_fit`).
 #![no_std]
 
 /// Magic of a `.dkm`, "DKMF".
