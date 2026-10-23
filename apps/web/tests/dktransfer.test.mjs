@@ -14,7 +14,7 @@ import {
   splitMessages,
   storeSpace,
 } from '../src/modules/dkupload-core.ts';
-import { CAP, CAPACITY_KINDS, CMD, LOG_KIND } from '../src/modules/gen_proto.ts';
+import { CAP, CAPACITY_KINDS, CMD, DKM_FORMAT, DKM_HEADER, LOG_KIND } from '../src/modules/gen_proto.ts';
 import {
   PROGRESS_EVENTS,
   buildView,
@@ -37,14 +37,16 @@ const cs = (s) => concat(Buffer.from(s), Uint8Array.of(0));
 function dkm(name, { machine = 0, fx = 0, service = 1, size = 700, dsp = 0, version = 0x000102, salt = 0 } = {}) {
   const b = new Uint8Array(size);
   b.set([0x44, 0x4b, 0x4d, 0x46], 0);
+  new DataView(b.buffer).setUint32(4, DKM_FORMAT);
   new DataView(b.buffer).setUint32(8, size);
+  new DataView(b.buffer).setUint32(0x0c, DKM_HEADER);
   new DataView(b.buffer).setUint32(0x34, version);
   b.set([1, 1, machine, 0, fx, 0, service, 0], 0x38);
   b.set(Buffer.from(name), 0x40);
   new DataView(b.buffer).setUint32(0x64, 100);
   new DataView(b.buffer).setUint32(0x68, 20);
   new DataView(b.buffer).setUint32(0x9c, dsp);
-  for (let i = 0xa0; i < size; i++) b[i] = (i * 31 + salt) & 255;
+  for (let i = DKM_HEADER; i < size; i++) b[i] = (i * 31 + salt) & 255;
   return b;
 }
 
@@ -333,8 +335,8 @@ test('session: info with caps, list in pages, modules, capacity, read, verify, s
     DSP_AREA: { limit: 1000, used: 0, largest: 50 },
   });
   const h = await s.header('modules/b.dkm');
-  assert.equal(h.length, 0xa0);
-  assert.deepEqual(h, dev.files.get('modules/b.dkm').subarray(0, 0xa0));
+  assert.equal(h.length, DKM_HEADER);
+  assert.deepEqual(h, dev.files.get('modules/b.dkm').subarray(0, DKM_HEADER));
   assert.equal(await s.verify('modules/b.dkm'), hex(sha(dev.files.get('modules/b.dkm'))));
   await s.select(['modules/a.dkm', 'modules/c.dkm']);
   assert.deepEqual(dev.selection, ['modules/a.dkm', 'modules/c.dkm']);

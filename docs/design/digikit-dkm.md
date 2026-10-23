@@ -23,9 +23,9 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | Offset | Size | Field |
 | --- | --- | --- |
 | 0x00 | 4 | magic `DKMF` (0x444b4d46) |
-| 0x04 | 4 | format version = 1 |
+| 0x04 | 4 | format version = 2 (`[dkm] format` in sdk/sdk.toml; the loader refuses another number with `E_FORMAT`; version 1 had a 0xa0-byte header with no needs block) |
 | 0x08 | 4 | file size in bytes |
-| 0x0c | 4 | header size = 0xa0 |
+| 0x0c | 4 | header size = 0xd0 (`[dkm] header`) |
 | 0x10 | 32 | sha256 of the whole file with these 32 bytes read as zeros |
 | 0x30 | 4 | `runtime_min`: informational, the runtime version the module was built for (packed semantic version; informational; `dkrt_sdk::RUNTIME_VERSION`, now 0.1.0); since runtime 0.1.0 the loader does not refuse on it (the contract bytes at 0x38 decide) |
 | 0x34 | 4 | module version, `major << 16 \| minor << 8 \| patch` |
@@ -47,6 +47,16 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x94 | 4 | `register_size` (0: none) |
 | 0x98 | 4 | `dsp_off`: offset of the DSP section (0: none) |
 | 0x9c | 4 | `dsp_size`: its size in bytes |
+| 0xa0 | 4 | needs: `ARENA` (see Needs) |
+| 0xa4 | 4 | needs: `ARENA_XFER` |
+| 0xa8 | 4 | needs: `DSP_AREA` |
+| 0xac | 4 | needs: `DSP_ALIGN` |
+| 0xb0 | 4 | needs: `MACHINE_ROWS` |
+| 0xb4 | 4 | needs: `VOICE_ROWS` |
+| 0xb8 | 4 | needs: `PARAM_ROWS` |
+| 0xbc | 4 | needs: `PAGE_ROWS` |
+| 0xc0 | 4 | needs: `FX_SLOTS` |
+| 0xc4 | 12 | reserved (0) |
 
 After the header, in this order, each table where its offset says: imports, relocations, slot bindings, the `register` records,
 the DSP section (16-byte aligned), padding to 16, then the image. A file with a DSP section carries the machine contract at 0x38 (a section of version 2; runtime 5 and later also load version 1).
@@ -73,6 +83,30 @@ the DSP section (16-byte aligned), padding to 16, then the image. A file with a 
 Exports by name (symbols of the object): `dkm_init(const Api *) -> i32` (0 = ok), `dkm_fini(const Api *)`,
 `dkm_slot_N(const Api *)`. At least one must exist. `init` runs once after the copy, relocation and cache flush; if it returns
 non-zero the load is undone (`E_INIT`).
+
+## Needs
+
+The needs block (0xa0 to 0xc3) says what a load takes of each resource, so that a host or the DIGIKIT menu can tell before a load whether the
+module fits. The packer computes it from the file's own tables with the loader's arithmetic; the loader does not read it (it checks the real
+tables). The offsets and the version are defined once, in `[dkm]` and `[dkm.needs]` of `sdk/sdk.toml`; `patchkit gen` writes them for the
+runtime and menu (`dkrt_sdk::proto::DKM_*`), the host client (`gen_proto.rs`, `gen_proto.ts`, `dkproto.py`). Names that are capacity kinds
+(`[capacity.kinds]`) are in the unit of that kind's CAPACITY entry, so "fits" is need <= limit - used, with the largest free block for the arena and
+the DSP area.
+
+| Field | Meaning |
+| --- | --- |
+| `ARENA` | the arena bytes the loaded module keeps: `(image_size + bss_size)` rounded up to 16, plus the 16-byte block header |
+| `ARENA_XFER` | arena bytes held only while the DSP code is sent: the same for the relocated DSP image (its `image_size`); 0 without a DSP section |
+| `DSP_AREA` | the DSP range: `align8(image + bss)` plus the voice states (`voices * align8(state_bytes)` per version 3 voice record), rounded up to the 64-byte granule; 0 without a DSP section |
+| `DSP_ALIGN` | the range's placement alignment (the DSP section's `align`): the range starts at the next multiple of it, so up to `DSP_ALIGN - 8` bytes of the free range can be lost; 0 without a DSP section |
+| `MACHINE_ROWS`, `PARAM_ROWS`, `PAGE_ROWS` | the number of records of that kind in the `register` records |
+| `VOICE_ROWS` | the number of voice records of the DSP section |
+| `FX_SLOTS` | effect slots; 0 (no run-time effects) |
+
+A module also takes one module record and one selection path, and its file must fit the staging buffer (the file size is at 0x08).
+`tests/digikit/scenarios/needs-*.toml` (`tools/patchkit/pk_digikit_capacity.py run_needs`) loads every run-time module and fixture that packs
+for the device alone on a ColdFire-only rig and compares CAPACITY and MODULES with the declared needs; `isolation-*` does the same after a
+coupled load (rows of a DSP module come in after the DSP acknowledges). `patchkit dkm-info` prints the block.
 
 ## DSP section
 
@@ -135,7 +169,7 @@ type 0's (finding 30). A machine that clones SAMPLE, like `pluck`, is right alre
 ## What the loader checks, in order (nothing is written to the arena before the last one)
 
 1. Store: header, table checksum, the path, the table's sha256 of the file (`E_NOT_FOUND`, `E_BAD_STORE`, `E_SHA`, `E_TOO_BIG`).
-2. Magic, format 1, size fields equal the file (`E_FORMAT`); the file's own sha256 (`E_SHA`).
+2. Magic, format 2, header size 0xd0, size fields equal the file (`E_FORMAT`); the file's own sha256 (`E_SHA`).
 3. Contracts (0x38): for each contract the module declares (major not 0), its major equals the runtime's and its minor is not above the runtime's (`E_CONTRACT`: built for another SDK contract, rebuild the module). `runtime_min` is not checked.
 4. Name, alignment, table bounds, reloc kinds and offsets, slot numbers and function offsets (`E_FORMAT`).
 5. Every import resolves (`E_IMPORT`); every slot it binds is free (`E_SLOT`); no module of that name is loaded (`E_LOADED`); a

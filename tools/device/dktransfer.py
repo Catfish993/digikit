@@ -17,7 +17,7 @@ dev tooling; the app starts no process.
 marked), with group (machine, fx or service contract in the packed header: Machines, Effects, Tools), version, sizes, build state
 (`unchanged` = the committed objects carry the hash of their sources; `needs build`), whether the file is on the card (LIST, same sha256),
 whether it is loaded (MODULES), and whether it fits (CAPACITY; a warning only). Card files that match no repo module are listed with
-their group, read from the 0xa0-byte header (READ, runtime 0.2.4).
+their group, read from the header (READ, runtime 0.2.4).
 
 `install MOD...` (it emits `progress` events with the bytes sent of each upload, at most about ten per file) builds only the modules whose objects changed, packs them, uploads the files the card does not have (same sha256),
 VERIFYs each file on the card (the device hashes it from a fresh read). That is all: the device's selection is not touched, because
@@ -222,7 +222,7 @@ def merge(
     headers: dict[str, bytes | None],
 ) -> dict[str, Any]:
     """The `list` result from its parts: the repo rows (`repo_rows`), the card's LIST, the names MODULES reports loaded, CAPACITY (or None),
-    and the header bytes of the card files (`headers`: path -> 0xa0 bytes, None when unreadable)."""
+    and the header bytes of the card files (`headers`: path -> header bytes, None when unreadable)."""
     on_card = {p: (n, h) for p, n, h in card}
     mine = []
     seen = set()

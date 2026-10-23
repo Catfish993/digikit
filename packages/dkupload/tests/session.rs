@@ -413,7 +413,10 @@ fn read_ranges_and_errors() {
         s.read("modules/a.dkm", 5, 20).unwrap(),
         (2560, d[5..25].to_vec())
     );
-    assert_eq!(s.header("modules/a.dkm").unwrap(), d[..0xa0]);
+    assert_eq!(
+        s.header("modules/a.dkm").unwrap(),
+        d[..proto::HEADER_BYTES as usize]
+    );
     // the device caps a reply at 768 bytes and stops at the end of the file
     assert_eq!(s.read("modules/a.dkm", 0, 5000).unwrap().1, d[..768]);
     assert_eq!(s.read("modules/a.dkm", 2500, 100).unwrap().1, d[2500..]);

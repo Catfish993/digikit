@@ -10,14 +10,26 @@ use crate::link;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAGIC: u32 = 0x444b_4d46; // "DKMF"
-pub const FORMAT: u32 = 1;
-pub const HEADER: usize = 0xa0;
 pub const NONE: u32 = 0xffff_ffff;
 pub const SLOTS: u32 = 8;
 pub const NAME_LEN: usize = 32;
 pub const IMPORT_LEN: usize = 32;
 /// Largest module file the v0 runtime stages (its staging buffer).
 pub const MAX_FILE: usize = 64 * 1024;
+/// The format number and header size, and the header offsets of the declared needs: `[dkm]` of sdk/sdk.toml.
+pub fn layout() -> &'static crate::sdkgen::DkmLayout {
+    static L: std::sync::OnceLock<crate::sdkgen::DkmLayout> = std::sync::OnceLock::new();
+    L.get_or_init(crate::sdkgen::embedded_dkm)
+}
+/// The format number the packer writes and the loader accepts.
+pub fn format() -> u32 {
+    layout().format
+}
+/// The header size in bytes.
+pub fn header() -> usize {
+    layout().header as usize
+}
+
 /// The runtime version this packer targets (`dkrt_sdk::RUNTIME_VERSION`), packed major << 16 | minor << 8 | patch, from sdk/sdk.toml.
 pub fn runtime_version() -> u32 {
     crate::sdkgen::embedded_runtime()
@@ -26,6 +38,96 @@ pub fn runtime_version() -> u32 {
 /// A packed runtime version as "major.minor.patch" (a plain integer below 256 from an old runtime reads as 0.0.N).
 pub fn fmt_runtime(v: u32) -> String {
     format!("{}.{}.{}", v >> 16, v >> 8 & 255, v & 255)
+}
+
+/// What a load takes of each resource, declared in the header at the offsets of `[dkm.needs]` (sdk/sdk.toml). The packer computes it from
+/// the file's own tables with the loader's arithmetic; a host or the DIGIKIT menu compares it with the CAPACITY figures before a load.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Needs {
+    /// the arena block of image + bss (payload rounded to 16, plus the block header)
+    pub arena: u32,
+    /// the arena block of the relocated DSP image, held while it is sent
+    pub arena_xfer: u32,
+    /// DSP area bytes: image, bss and voice states, rounded to the granule
+    pub dsp_area: u32,
+    pub dsp_align: u32,
+    pub machine_rows: u32,
+    pub voice_rows: u32,
+    pub param_rows: u32,
+    pub page_rows: u32,
+    pub fx_slots: u32,
+}
+
+/// The arena's block header (`arena.rs`).
+pub const ARENA_HDR: u32 = 16;
+
+/// The arena bytes a block of N payload bytes takes: N rounded to 16 and the header.
+pub fn arena_block(n: u32) -> u32 {
+    n.div_ceil(16) * 16 + ARENA_HDR
+}
+
+impl Needs {
+    /// The needs of a file with an image of `image` bytes, `bss` bytes, these `register` records and this DSP section (both may be empty).
+    pub fn of(image: usize, bss: u32, reg: &[u8], dsp: &[u8]) -> Result<Needs> {
+        let mut n = Needs {
+            arena: arena_block(image as u32 + bss),
+            ..Needs::default()
+        };
+        (n.param_rows, n.machine_rows, n.page_rows) = record_counts(reg);
+        if !dsp.is_empty() {
+            let s = crate::dkmdsp::DspSection::parse(dsp)?;
+            n.arena_xfer = arena_block(s.image.len() as u32);
+            n.dsp_area = s.range_len();
+            n.dsp_align = s.align;
+            n.voice_rows = s.voices.len() as u32;
+        }
+        Ok(n)
+    }
+
+    /// (name in `[dkm.needs]`, value) of every field.
+    pub fn fields(&self) -> [(&'static str, u32); 9] {
+        [
+            ("ARENA", self.arena),
+            ("ARENA_XFER", self.arena_xfer),
+            ("DSP_AREA", self.dsp_area),
+            ("DSP_ALIGN", self.dsp_align),
+            ("MACHINE_ROWS", self.machine_rows),
+            ("VOICE_ROWS", self.voice_rows),
+            ("PARAM_ROWS", self.param_rows),
+            ("PAGE_ROWS", self.page_rows),
+            ("FX_SLOTS", self.fx_slots),
+        ]
+    }
+
+    fn offset(name: &str) -> usize {
+        *layout()
+            .needs
+            .get(name)
+            .unwrap_or_else(|| panic!("sdk/sdk.toml [dkm.needs] has no {name}")) as usize
+    }
+
+    /// Write the fields into a header.
+    fn write(&self, f: &mut [u8]) {
+        for (name, v) in self.fields() {
+            put(f, Self::offset(name), v);
+        }
+    }
+
+    /// Read the fields of a header (at least `header()` bytes).
+    pub fn read(h: &[u8]) -> Needs {
+        let g = |name| get(h, Self::offset(name));
+        Needs {
+            arena: g("ARENA"),
+            arena_xfer: g("ARENA_XFER"),
+            dsp_area: g("DSP_AREA"),
+            dsp_align: g("DSP_ALIGN"),
+            machine_rows: g("MACHINE_ROWS"),
+            voice_rows: g("VOICE_ROWS"),
+            param_rows: g("PARAM_ROWS"),
+            page_rows: g("PAGE_ROWS"),
+            fx_slots: g("FX_SLOTS"),
+        }
+    }
 }
 
 // header field offsets
@@ -115,24 +217,33 @@ pub fn pack(obj: &Dko, o: &Options) -> Result<Vec<u8>> {
 /// The image of a data-only module: `dkm_init` is `moveq #0,d0; rts`. The `register` records do the work.
 const STUB_IMAGE: [u8; 4] = [0x70, 0x00, 0x4e, 0x75];
 
-/// Do the `register` records hold a machine record? (A data-only machine module has no DSP section but is a machine.) Walks the records
-/// by their kind and length words; a malformed table is not one (the loader refuses it with E_FORMAT).
-fn has_machine_record(reg: &[u8]) -> bool {
+/// How many (param, machine, page) records the `register` records hold. Walks the records by their kind and length words; it stops at a
+/// malformed one (the loader refuses the table with E_FORMAT).
+fn record_counts(reg: &[u8]) -> (u32, u32, u32) {
     let w = |at: usize| -> Option<usize> {
         let b = reg.get(at..at + 4)?;
         Some(u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize)
     };
+    let mut n = (0, 0, 0);
     let mut at = crate::register::HEADER;
     while let (Some(kind), Some(len)) = (w(at), w(at + 4)) {
-        if kind == crate::register::KIND_MACHINE as usize {
-            return true;
+        match kind as u32 {
+            crate::register::KIND_PARAM => n.0 += 1,
+            crate::register::KIND_MACHINE => n.1 += 1,
+            crate::register::KIND_PAGE => n.2 += 1,
+            _ => {}
         }
         if len < 8 {
-            return false;
+            break;
         }
         at += len;
     }
-    false
+    n
+}
+
+/// Do the `register` records hold a machine record? (A data-only machine module has no DSP section but is a machine.)
+fn has_machine_record(reg: &[u8]) -> bool {
+    record_counts(reg).1 > 0
 }
 
 /// Pack an object (or none: a data-only module) with `register` records (see [`register`]).
@@ -143,17 +254,28 @@ pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> 
 /// Pack an object (or none), `register` records and a DSP section (see [`crate::dkmdsp`]; empty: none). A file with a DSP section
 /// needs a runtime of version [`RUNTIME_DSP`] or later.
 pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Result<Vec<u8>> {
-    pack_full_max(obj, reg, dsp, o, MAX_FILE)
+    pack_inner(obj, reg, dsp, o, MAX_FILE, true)
 }
 
-/// [`pack_full`] with another file size limit: `dkm_synth` makes files over the staging buffer on purpose (the capacity tests of the
-/// runtime's `E_TOO_BIG`).
+/// [`pack_full`] with another file size limit, for files the loader must refuse: `dkm_synth` makes files over the staging buffer on purpose
+/// (the capacity tests of the runtime's `E_TOO_BIG`) and DSP sections it cannot parse (`E_DSP_FORMAT`, which have no declared DSP needs).
 pub fn pack_full_max(
     obj: Option<&Dko>,
     reg: &[u8],
     dsp: &[u8],
     o: &Options,
     max_file: usize,
+) -> Result<Vec<u8>> {
+    pack_inner(obj, reg, dsp, o, max_file, false)
+}
+
+fn pack_inner(
+    obj: Option<&Dko>,
+    reg: &[u8],
+    dsp: &[u8],
+    o: &Options,
+    max_file: usize,
+    strict: bool,
 ) -> Result<Vec<u8>> {
     if let Some(obj) = obj {
         obj.require_isa_checked()?;
@@ -288,7 +410,7 @@ pub fn pack_full_max(
         return Err(err!("a section needs alignment over 16 (the arena's)"));
     }
 
-    let import_off = HEADER;
+    let import_off = header();
     let reloc_off = import_off + imports.len() * IMPORT_LEN;
     let slot_off = reloc_off + relocs.len() * 8;
     let reg_off = slot_off + slots.len() * 8;
@@ -303,9 +425,9 @@ pub fn pack_full_max(
     }
     let mut f = vec![0u8; total];
     put(&mut f, 0, MAGIC);
-    put(&mut f, 4, FORMAT);
+    put(&mut f, 4, format());
     put(&mut f, H_SIZE, total as u32);
-    put(&mut f, H_HDRSIZE, HEADER as u32);
+    put(&mut f, H_HDRSIZE, header() as u32);
     put(
         &mut f,
         H_RUNTIME,
@@ -368,6 +490,13 @@ pub fn pack_full_max(
         f[dsp_off..dsp_off + dsp.len()].copy_from_slice(dsp);
     }
     f[image_off..].copy_from_slice(&image);
+    let needs = Needs::of(image.len(), linked.bss_size as u32, reg, dsp);
+    // a section the loader refuses (synthetic files only) declares no DSP needs
+    let needs = match needs {
+        Err(_) if !strict => Needs::of(image.len(), linked.bss_size as u32, reg, &[])?,
+        n => n?,
+    };
+    needs.write(&mut f);
     let sha = file_sha(&f);
     f[H_SHA..H_SHA + 32].copy_from_slice(&sha);
     Ok(f)
@@ -391,11 +520,13 @@ pub struct Dkm {
     pub register: Vec<u8>,
     /// The DSP section, as bytes (empty: none); parse it with [`crate::dkmdsp::DspSection::parse`].
     pub dsp: Vec<u8>,
+    /// The declared needs (the header's needs block).
+    pub needs: Needs,
 }
 
 impl Dkm {
     /// The size breakdown of a file of `total` bytes: `<total> bytes (image <n>, bss <n>, reloc <n>, import <n>, registry <n>, dsp <n>)`.
-    /// The file is the 0xa0-byte header, the import, reloc and slot tables, the registry, the DSP section and the image, in
+    /// The file is the header, the import, reloc and slot tables, the registry, the DSP section and the image, in
     /// that order, with padding to 16 before the DSP section and the image. So `total` = header + slots (8 bytes each,
     /// not listed) + padding (under 32) + image + reloc (8 bytes each) + import (32 bytes each) + registry + dsp; `bss` is
     /// memory the loader adds, not file bytes.
@@ -413,13 +544,13 @@ impl Dkm {
 
     /// Parse and check a file the way the runtime does: magic, sizes, bounds, sha256.
     pub fn parse(f: &[u8]) -> Result<Dkm> {
-        if f.len() < HEADER || get(f, 0) != MAGIC {
+        if f.len() < header() || get(f, 0) != MAGIC {
             return Err(err!("not a .dkm file (magic)"));
         }
-        if get(f, 4) != FORMAT {
+        if get(f, 4) != format() {
             return Err(err!("format {} is not supported", get(f, 4)));
         }
-        if get(f, H_SIZE) as usize != f.len() || get(f, H_HDRSIZE) as usize != HEADER {
+        if get(f, H_SIZE) as usize != f.len() || get(f, H_HDRSIZE) as usize != header() {
             return Err(err!("size fields do not match the file"));
         }
         if file_sha(f) != f[H_SHA..H_SHA + 32] {
@@ -488,6 +619,7 @@ impl Dkm {
             slots,
             register: rng(get(f, H_REG_OFF) as usize, get(f, H_REG_SIZE) as usize)?.to_vec(),
             dsp: rng(get(f, H_DSP_OFF) as usize, get(f, H_DSP_SIZE) as usize)?.to_vec(),
+            needs: Needs::read(f),
         })
     }
 
@@ -580,6 +712,28 @@ mod tests {
     }
     const FORMAT_DKO: u32 = crate::dko::FORMAT;
 
+    /// A DSP section of an 8-byte image with BSS bytes of bss and one version 3 voice with `voices` states of 20 bytes (0: version 2).
+    fn dsp_section(bss: u32, voices: u32) -> Vec<u8> {
+        crate::dkmdsp::DspSection {
+            device: 1,
+            image: vec![0; 8],
+            bss,
+            align: 16,
+            imports: vec![],
+            relocs: vec![],
+            voices: vec![crate::dkmdsp::Voice {
+                type_no: 17,
+                entry: 0,
+                note_on: 0,
+                state_bytes: if voices == 0 { 0 } else { 20 },
+                clear_bytes: 0,
+                voices,
+                ranges: [0; 8],
+            }],
+        }
+        .encode()
+    }
+
     fn opts() -> Options {
         Options {
             name: "test/x".into(),
@@ -645,11 +799,12 @@ mod tests {
         // ColdFire code with slots and init, no DSP section: api and service
         let f = pack(&object(), &opts()).unwrap();
         assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 1, 0]);
-        // with a DSP section: machine too (the section's bytes are not parsed by pack)
-        let f = pack_full(Some(&object()), &[], &[0u8; 16], &opts()).unwrap();
+        // with a DSP section: machine too
+        let dsp = dsp_section(0, 0);
+        let f = pack_full(Some(&object()), &[], &dsp, &opts()).unwrap();
         assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 1, 0]);
         // a data-only module with a DSP section: machine, no service
-        let f = pack_full(None, &[], &[0u8; 16], &opts()).unwrap();
+        let f = pack_full(None, &[], &dsp, &opts()).unwrap();
         assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 0, 0]);
         // a data-only module without DSP code: api only
         let f = pack_with(None, &[], &opts()).unwrap();
@@ -674,6 +829,79 @@ mod tests {
         assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 0, 0]);
         let f = pack_with(None, &table(&[param]), &opts()).unwrap();
         assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn the_header_declares_the_needs() {
+        // ColdFire only: the arena block of image + bss (12); no DSP, no records
+        let f = pack(&object(), &opts()).unwrap();
+        let d = Dkm::parse(&f).unwrap();
+        assert_eq!(get(&f, 4), format());
+        assert_eq!(get(&f, H_HDRSIZE) as usize, header());
+        let want = Needs {
+            arena: arena_block(d.image.len() as u32 + 12),
+            ..Needs::default()
+        };
+        assert_eq!(d.needs, want);
+        assert_eq!(d.needs.arena % 16, 0);
+        // a DSP section: image 8, bss 100, three states of 20 (rounded to 24): 8 + 100 -> 112, + 72 = 184, granule 192; the relocated image is a block of 8
+        let f = pack_full(Some(&object()), &[], &dsp_section(100, 3), &opts()).unwrap();
+        let n = Dkm::parse(&f).unwrap().needs;
+        assert_eq!(
+            (n.dsp_area, n.dsp_align, n.voice_rows, n.arena_xfer),
+            (192, 16, 1, arena_block(8))
+        );
+        // without state (version 2) the voice adds nothing: 8 + 100 = 108 -> 112 -> granule 128
+        let f = pack_full(Some(&object()), &[], &dsp_section(100, 0), &opts()).unwrap();
+        assert_eq!(Dkm::parse(&f).unwrap().needs.dsp_area, 128);
+        // register records: the counts of each kind
+        let rec = |kind: u32, len: usize| {
+            let mut r = kind.to_be_bytes().to_vec();
+            r.extend((len as u32).to_be_bytes());
+            r.resize(len, 0);
+            r
+        };
+        let mut t = vec![0u8; crate::register::HEADER];
+        for r in [
+            rec(crate::register::KIND_PARAM, crate::register::LEN_PARAM),
+            rec(crate::register::KIND_PARAM, crate::register::LEN_PARAM),
+            rec(crate::register::KIND_MACHINE, crate::register::LEN_MACHINE),
+            rec(crate::register::KIND_PAGE, crate::register::LEN_PAGE),
+        ] {
+            t.extend(r);
+        }
+        let f = pack_with(None, &t, &opts()).unwrap();
+        let n = Dkm::parse(&f).unwrap().needs;
+        assert_eq!(
+            (n.param_rows, n.machine_rows, n.page_rows, n.fx_slots),
+            (2, 1, 1, 0)
+        );
+    }
+
+    #[test]
+    fn the_needs_layout_matches_the_sdk_fields() {
+        // every field of `Needs` has an offset in [dkm.needs], none shares one, and all lie in the header behind the fixed fields
+        let names: Vec<&str> = Needs::default().fields().iter().map(|f| f.0).collect();
+        let mut keys: Vec<&str> = layout().needs.keys().map(|k| k.as_str()).collect();
+        keys.sort();
+        let mut want = names.clone();
+        want.sort();
+        assert_eq!(keys, want);
+        // distinct values land at distinct offsets
+        let n = Needs {
+            arena: 1,
+            arena_xfer: 2,
+            dsp_area: 3,
+            dsp_align: 4,
+            machine_rows: 5,
+            voice_rows: 6,
+            param_rows: 7,
+            page_rows: 8,
+            fx_slots: 9,
+        };
+        let mut h = vec![0u8; header()];
+        n.write(&mut h);
+        assert_eq!(Needs::read(&h), n);
     }
 
     #[test]

@@ -9,6 +9,7 @@ import {
   CAP as GCAP,
   CAPACITY_KINDS,
   CMD as GCMD,
+  DKM_HEADER,
   LOAD_STATUS,
   LOG_KIND,
   PROTO_VERSION,
@@ -803,7 +804,7 @@ export class DkSession {
     if (b.length < 4) throw new DkError({ error: 'read: malformed reply', kind: 'protocol' });
     return { size: u32(b, 0), bytes: b.subarray(4) };
   }
-  /** The first 0xa0 bytes of a store file (a .dkm header). */
+  /** The first `HEADER_BYTES` of a store file (a .dkm header). */
   async header(path: string): Promise<Uint8Array> {
     return (await this.read(path, 0, HEADER_BYTES)).bytes;
   }
@@ -997,7 +998,7 @@ export class DkSession {
 }
 
 /** The size of a .dkm header (docs/design/digikit-dkm.md). */
-export const HEADER_BYTES = 0xa0;
+export const HEADER_BYTES = DKM_HEADER;
 /** The most bytes one READ returns. */
 export const READ_MAX = 768;
 

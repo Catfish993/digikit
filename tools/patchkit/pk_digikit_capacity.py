@@ -336,6 +336,85 @@ def run_capacity(c: Any) -> None:
     c.common_checks_upload(project_writes_ok=True)
 
 
+# ---- declared needs: what a module's header says it takes is what the loader takes ---------------------------------------------
+
+
+def run_needs(c: Any) -> None:
+    """The needs a packed module declares in its header (`[dkm.needs]` in sdk/sdk.toml; the menu and the hosts say from them whether a module
+    fits) equal what the runtime takes of each resource when it loads the module. Every module that packs for the device (`dktransfer.candidates`,
+    the repository's run-time modules and the fixtures, less `[debug] exclude`: the fixtures that fault on purpose; `[debug] static` names the core modules patched in for the ones that import from them) is loaded alone on a
+    ColdFire-only rig and CAPACITY and MODULES are read: the arena block of image and bss (and, with DSP code, the block of the DSP image, which
+    stays until a transfer that a ColdFire-only rig never makes), the DSP range, the voice rows, and for a module with no DSP code the machine,
+    parameter and page rows. The registry rows of a DSP module come after the DSP acknowledges: `isolation-*` checks them on a coupled boot."""
+    from tools.device import dktransfer as T
+    from tools.device import dkupload as DKU
+
+    skip = set(c.table().get("exclude", []))
+    # `static`: core modules patched in besides the runtime, for the modules that import from them (core/input)
+    img = c.image_for(",".join([B.RT, *c.table().get("static", [])]), "run")
+    found: list[tuple[str, str]] = []
+    packs: list[str] = []
+    for mid in T.candidates():
+        if mid in skip:
+            continue
+        file = mid.replace("/", "-") + ".dkm"
+        try:
+            found.append((mid, c.pack(mid, file)))
+        except Exception:  # noqa: BLE001  a module that has no object for this device does not pack
+            continue
+        packs.append(mid)
+    c.check(
+        "modules pack for this device (the run-time modules and the fixtures, less the excluded)",
+        len(found) >= 8,
+        str(packs),
+    )
+    c.report["needs"] = {}
+
+    def one(mid: str, path: str) -> None:
+        data = (c.env.folder / "digikit" / path).read_bytes()
+        n = DKU.dkm_needs(data)
+        card = c.card([path])
+        with c.rig(img, card, "needs-" + mid.replace("/", "-"), cf_only=True) as rig:
+            res = rig.boot_info()["results"]
+            up = D.uploader(rig)
+            cap = up.capacity()
+            mods = up.modules()["modules"]
+            used = {k: v["used"] for k, v in cap.items()}
+            loaded = bool(res) and res[0] in (0, B.E_LOADING)
+            dsp = n["DSP_AREA"] != 0
+            want = {
+                "ARENA": n["ARENA"] + n["ARENA_XFER"],
+                "DSP_AREA": n["DSP_AREA"],
+                "VOICE_ROWS": n["VOICE_ROWS"],
+            }
+            if (
+                not dsp
+            ):  # a DSP module's registry rows come after the DSP's acknowledgement
+                want |= {
+                    "MACHINE_ROWS": n["MACHINE_ROWS"],
+                    "PARAM_ROWS": n["PARAM_ROWS"],
+                    "PAGE_ROWS": n["PAGE_ROWS"],
+                }
+            got = {k: used[k] for k in want}
+            rec = mods[0] if mods else None
+            rec_ok = (
+                rec is not None
+                and P.block(rec["cf_size"]) == n["ARENA"]
+                and rec["dsp_len"] == n["DSP_AREA"]
+                and bin(rec["rows"]).count("1") == n["VOICE_ROWS"]
+            )
+            c.check(
+                f"{mid}: loaded, and the resources taken (CAPACITY, MODULES) are its declared needs {n}",
+                loaded and got == want and rec_ok,
+                f"result {res}, taken {got}, declared {want}, record {rec}",
+            )
+            c.report["needs"][mid] = {"declared": n, "taken": got}
+            c.done(rig)
+
+    c.parallel(*[functools.partial(one, mid, path) for mid, path in found])
+    c.common_checks_upload(project_writes_ok=True)
+
+
 # ---- the full set: every limit used at once, behind a reference module ---------------------------------------------------------
 
 
@@ -442,6 +521,25 @@ def run_isolation(c: Any) -> None:
                 rig.select(hint)
             pcm = rig.note(c.work / f"{key}.wav", trig)
             after = rig.dsp_bytes(base, len(want))
+            if key == "alone":
+                # the DSP part is done: the arena holds the module's block only (the DSP image's copy is freed) and every row is in the registry
+                n = DK.dkm_needs(ref_bytes)
+                kinds = (
+                    "ARENA",
+                    "DSP_AREA",
+                    "MACHINE_ROWS",
+                    "VOICE_ROWS",
+                    "PARAM_ROWS",
+                    "PAGE_ROWS",
+                    "FX_SLOTS",
+                )
+                cap = D.uploader(rig).capacity()
+                took = {k: cap[k]["used"] for k in kinds}
+                c.check(
+                    "alone: after the load the runtime holds exactly the reference's declared needs (arena block, DSP range, machine, voice, parameter, page rows, FX slots)",
+                    took == {k: n[k] for k in kinds},
+                    f"taken {took}, declared {n}",
+                )
             c.check(
                 f"{key}: the reference's DSP bytes in L2 equal its packed image relocated at its range, before and after the note",
                 before == want and after == want,

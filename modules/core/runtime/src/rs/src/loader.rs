@@ -7,10 +7,11 @@ use crate::{
     Module, MAX_MODULES,
 };
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
+use dkrt_sdk::proto::{DKM_FORMAT, DKM_HEADER};
 use dkrt_sdk::*;
 
 const MAGIC: u32 = 0x444b_4d46; // "DKMF"
-const HEADER: u32 = 0xa0;
+const HEADER: u32 = DKM_HEADER;
 const NONE: u32 = 0xffff_ffff;
 const SPIN: u32 = 2_000_000;
 
@@ -118,7 +119,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     let size = found.size;
 
     // ---- checks (nothing is written outside the staging buffer) ----
-    if size < HEADER || rd32(f) != MAGIC || rd32(f.add(4)) != 1 {
+    if size < HEADER || rd32(f) != MAGIC || rd32(f.add(4)) != DKM_FORMAT {
         return E_FORMAT;
     }
     if rd32(f.add(H_SIZE)) != size || rd32(f.add(H_HDRSIZE)) != HEADER {

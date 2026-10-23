@@ -76,7 +76,7 @@ export function groupOf(c: HeaderInfo['contracts']): Group {
   return 'Tools';
 }
 
-/** The header fields of a .dkm (its first 0xa0 bytes); null when the bytes are not one. */
+/** The header fields of a .dkm (its first `HEADER_BYTES`); null when the bytes are not one. */
 export function headerInfo(h: Uint8Array): HeaderInfo | null {
   if (h.length < HEADER_BYTES || MAGIC.some((b, i) => h[i] !== b)) return null;
   const v = new DataView(h.buffer, h.byteOffset, h.length);

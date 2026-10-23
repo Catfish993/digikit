@@ -22,6 +22,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from tools.device import dkproto, dkupload
 from tools.patchkit import pk_device
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,7 +35,9 @@ E_SEL_PATH, E_SEL_COUNT = -40, -41
 LOADED = "loaded"
 
 HDR = 16  # the arena's block header (arena.rs)
-DKM_HEADER = 0xA0  # a .dkm with no tables: the file is the header, then the image
+DKM_HEADER = (
+    dkproto.DKM_HEADER
+)  # a .dkm with no tables: the file is the header, then the image
 DSP_GRANULE = 64  # the DSP area is handed out in 64-byte granules (dsp.rs)
 MAX_VOICES = 8  # voices in one DSP section (dsp.rs)
 CODE = 4  # the synthetic module's code: moveq #0,d0; rts
@@ -368,14 +371,13 @@ def cases(g: Geometry) -> list[Case]:
 
 @dataclass(frozen=True)
 class Usage:
-    """What a packed module takes of each resource, read from its file (the loader's own arithmetic)."""
+    """What a packed module takes of each resource: the needs it declares in its header (docs/design/digikit-dkm.md; the scenario
+    `capacity-*` proves they are what the loader takes)."""
 
     name: str
-    cf_total: int  # image + bss: the arena block is `block(cf_total)`
-    dsp_image: int  # bytes of the DSP image (its relocated copy is an arena block until the transfer ends); 0: no DSP section
-    dsp_len: (
-        int  # bytes of the DSP range: image + bss + voice states, rounded to a granule
-    )
+    arena: int  # the module's arena block
+    arena_xfer: int  # the arena block of its relocated DSP image (held until the transfer ends); 0: no DSP section
+    dsp_len: int  # bytes of the DSP range (a multiple of the granule); 0: none
     dsp_align: int
     rows: int  # DSP voice rows
     machines: int
@@ -384,42 +386,18 @@ class Usage:
 
 
 def usage(dkm: bytes) -> Usage:
-    """The resources a packed module takes (`dsp.rs extent`, `registry.rs`)."""
-
-    def be(o: int, b: bytes = dkm) -> int:
-        return int.from_bytes(b[o : o + 4], "big")
-
-    name = dkm[0x40:0x60].split(b"\0")[0].decode()
-    counts = {1: 0, 2: 0, 3: 0}  # KIND_PARAM, KIND_MACHINE, KIND_PAGE
-    reg_off, reg_size = be(0x90), be(0x94)
-    if reg_size:
-        at = 16
-        for _ in range(be(reg_off + 12)):
-            kind, length = be(reg_off + at), be(reg_off + at + 4)
-            counts[kind] += 1
-            at += length
-    dsp_off, dsp_size = be(0x98), be(0x9C)
-    image = align = length = rows = 0
-    if dsp_size:
-        s = dkm[dsp_off : dsp_off + dsp_size]
-        image, bss, align, rows = be(0x0C, s), be(0x10, s), be(0x14, s), be(0x30, s)
-        stride = {1: 16, 2: 48, 3: 64}[be(4, s)]
-        extent = (image + bss + 7) & ~7
-        if stride == 64:
-            for i in range(rows):
-                v = be(0x2C, s) + stride * i
-                extent += be(v + 52, s) * ((be(v + 12, s) + 7) & ~7)
-        length = (extent + DSP_GRANULE - 1) & ~(DSP_GRANULE - 1)
+    """The resources a packed module takes, as its header declares them."""
+    n = dkupload.dkm_needs(dkm)
     return Usage(
-        name,
-        be(0x64) + be(0x68),
-        image,
-        length,
-        align,
-        rows,
-        counts[2],
-        counts[1],
-        counts[3],
+        dkm[0x40:0x60].split(b"\0")[0].decode(),
+        n["ARENA"],
+        n["ARENA_XFER"],
+        n["DSP_AREA"],
+        n["DSP_ALIGN"],
+        n["VOICE_ROWS"],
+        n["MACHINE_ROWS"],
+        n["PARAM_ROWS"],
+        n["PAGE_ROWS"],
     )
 
 
@@ -490,9 +468,7 @@ def full_set(g: Geometry, refs: list[Usage]) -> list[Mod]:
         )
     )
     # every raw block is `block(CODE)`; V's and D's DSP images keep an arena copy of `block(64)` each (as does every reference's)
-    used = sum(
-        block(r.cf_total) + (block(r.dsp_image) if r.dsp_image else 0) for r in refs
-    )
+    used = sum(r.arena + r.arena_xfer for r in refs)
     used += 3 * block(CODE) + 2 * block(64)
     f_total = g.arena_free - used - HDR
     if f_total < CODE:

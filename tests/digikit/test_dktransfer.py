@@ -15,7 +15,7 @@ def header(
 ):
     h = bytearray(D.HEADER_BYTES)
     h[:4] = b"DKMF"
-    struct.pack_into(">II", h, 8, size, 0xA0)
+    struct.pack_into(">II", h, 8, size, D.HEADER_BYTES)
     struct.pack_into(">I", h, 0x34, 0x000102)
     h[0x38:0x40] = bytes([*api, *machine, *fx, *service])
     h[0x40 : 0x40 + len(name)] = name.encode()

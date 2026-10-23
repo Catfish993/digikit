@@ -558,6 +558,15 @@ plan.json {}",
                 d.bss,
                 d.align
             );
+            println!(
+                "needs     {}",
+                d.needs
+                    .fields()
+                    .iter()
+                    .map(|(n, v)| format!("{} {v}", n.to_lowercase()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             println!("relocs    {}", d.relocs.len());
             println!("imports   {}", d.imports.join(", "));
             println!("init      {:?}  fini {:?}", d.init, d.fini);

@@ -144,3 +144,17 @@ CAPACITY_KINDS: dict[str, int] = {
     "MAP_ENTRIES": 11,
     "STORE": 12,
 }
+
+DKM_FORMAT = 2
+DKM_HEADER = 0xD0
+DKM_NEEDS: dict[str, int] = {
+    "ARENA": 0xA0,
+    "ARENA_XFER": 0xA4,
+    "DSP_AREA": 0xA8,
+    "DSP_ALIGN": 0xAC,
+    "MACHINE_ROWS": 0xB0,
+    "VOICE_ROWS": 0xB4,
+    "PARAM_ROWS": 0xB8,
+    "PAGE_ROWS": 0xBC,
+    "FX_SLOTS": 0xC0,
+}
