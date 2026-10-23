@@ -22,6 +22,8 @@ TYPED = [
     "tools/patchkit/pk_digikit_memaudit.py",
     "tools/patchkit/pk_capacity.py",
     "tools/patchkit/pk_digikit_capacity.py",
+    "tools/device/dkfit.py",
+    "tools/device/dkneeds.py",
     "tools/patchkit/pk_device.py",
     "tools/patchkit/pk_modaudit.py",
     "tools/patchkit/pk_package.py",

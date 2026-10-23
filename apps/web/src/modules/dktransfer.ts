@@ -5,6 +5,7 @@
 //
 // The app does not build: its modules are built `.dkm` files of a folder (`mise run module:pack-all`).
 import { DkError, DkSession, HEADER_BYTES, fmtVersion, hasCap, hexOf, storeFree } from './dkupload-core.ts';
+import { describeShort, emptyCaps, fitsNow, type Caps, type Needs } from './dkfit.ts';
 import type { DkEntry, DkInfoFull } from './dkupload-core.ts';
 
 export type Group = 'Machines' | 'Effects' | 'Tools';
@@ -21,6 +22,8 @@ export interface TransferRow {
   file_size: number;
   arena?: number;
   dsp?: number;
+  /** What a load of the module takes, inferred from its contents (docs/design/digikit-dkm.md, "Needs are inferred"); `file_size` is its size. */
+  needs?: Needs;
   on_card: 'yes' | 'no' | 'other version';
   loaded: boolean;
   fits?: boolean | null;
@@ -33,6 +36,8 @@ export interface TransferView {
   runtime: string;
   free_bytes: number;
   loaded: string[];
+  /** CAPACITY of the device (null: it has none): the figures the fit of each module is judged by. */
+  capacity?: Caps | null;
   modules: TransferRow[];
   card_only: TransferRow[];
 }
@@ -50,12 +55,11 @@ export interface HeaderInfo {
   contracts: { api: [number, number]; machine: [number, number]; fx: [number, number]; service: [number, number] };
   group: Group;
   size: number;
-  arena: number;
-  dsp: number;
 }
 
-/** A built module of the library folder: its header fields, its hash and its bytes. */
+/** A built module of the library folder: its header fields, its needs (none when the loader would refuse the file), its hash and its bytes. */
 export interface LibraryModule extends HeaderInfo {
+  needs: Needs | null;
   /** The module id (the header's name: `digikit/pluck`). */
   id: string;
   label: string;
@@ -88,21 +92,24 @@ export function headerInfo(h: Uint8Array): HeaderInfo | null {
     contracts,
     group: groupOf(contracts),
     size: v.getUint32(8),
-    arena: v.getUint32(0x64) + v.getUint32(0x68),
-    dsp: v.getUint32(0x9c),
   };
 }
 
 /** The store path of a module id. */
 export const modulePath = (id: string): string => `modules/${id.split('/').pop()}.dkm`;
 
-/** A `LibraryModule` from the bytes of a built .dkm; null when they are not one. */
-export async function libraryModule(bytes: Uint8Array): Promise<LibraryModule | null> {
+/** A `LibraryModule` from the bytes of a built .dkm; null when they are not one. `needsOf` infers the needs from the whole file (`DkNeeds.of`, dkneeds.ts:
+ * patchkit.wasm); without it the module has none and no fit verdict. */
+export async function libraryModule(
+  bytes: Uint8Array,
+  needsOf?: (file: Uint8Array) => Needs | null,
+): Promise<LibraryModule | null> {
   const h = headerInfo(bytes.subarray(0, HEADER_BYTES));
   if (!h) return null;
   const sha = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
   return {
     ...h,
+    needs: needsOf?.(bytes) ?? null,
     id: h.name,
     label: h.name.split('/').pop() ?? h.name,
     test: h.name.startsWith('test/'),
@@ -115,20 +122,19 @@ export async function libraryModule(bytes: Uint8Array): Promise<LibraryModule | 
 
 export const GROUP_ORDER: Group[] = ['Machines', 'Effects', 'Tools'];
 
-/** What would not fit on the target (CAPACITY). Only a warning: the device refuses a load that does not fit. */
-export function fitWarnings(
-  row: { loaded: boolean; arena?: number; dsp?: number },
-  cap: Record<string, { limit: number; used: number; largest: number }> | null,
-): string[] {
-  if (!cap || row.loaded) return [];
-  const out: string[] = [];
-  const m = cap.MODULES;
-  if (m && m.used >= m.limit) out.push(`no free module record (${m.used}/${m.limit})`);
-  const a = cap.ARENA;
-  if (a && (row.arena ?? 0) > a.largest) out.push(`arena: needs ${row.arena} bytes, largest free ${a.largest}`);
-  const d = cap.DSP_AREA;
-  if (d && (row.dsp ?? 0) > d.largest) out.push(`DSP area: needs ${row.dsp} bytes, largest free ${d.largest}`);
-  return out;
+/**
+ * What would not fit on the target (CAPACITY): `[]` when it fits next to what is loaded now (the fit rule, dkfit.ts), else one line that says what is
+ * short and whether the module fits the device when the loaded ones are left out (the next boot loads the selection into an empty runtime).
+ * Only a warning: the device refuses a load that does not fit.
+ */
+export function fitWarnings(row: { loaded: boolean; needs?: Needs }, cap: Caps | null): string[] {
+  if (!cap || row.loaded || !row.needs) return [];
+  const now = fitsNow(row.needs, cap);
+  if (!now) return [];
+  const alone = fitsNow(row.needs, emptyCaps(cap)) === null;
+  return [
+    `${describeShort(now)}${alone ? '; fits when the modules loaded now are not selected' : '; more than this device has'}`,
+  ];
 }
 
 /** The list from its parts: the library, the card's LIST, the names MODULES reports loaded, CAPACITY (or null), and the header bytes of the card files. */
@@ -136,7 +142,7 @@ export function mergeView(
   library: LibraryModule[],
   card: { path: string; size: number; sha256: string }[],
   loaded: string[],
-  cap: Record<string, { limit: number; used: number; largest: number }> | null,
+  cap: Caps | null,
   headers: Record<string, Uint8Array | null>,
 ): Pick<TransferView, 'modules' | 'card_only'> {
   const onCard = new Map(card.map((c) => [c.path, c]));
@@ -153,8 +159,9 @@ export function mergeView(
       test: m.test,
       version: m.version,
       file_size: m.file_size,
-      arena: m.arena,
-      dsp: m.dsp,
+      arena: m.needs?.ARENA,
+      dsp: m.needs?.DSP_AREA,
+      needs: m.needs ?? undefined,
       on_card: !have ? 'no' : have.size === m.file_size && have.sha256 === m.sha256 ? 'yes' : 'other version',
       loaded: loaded.includes(m.name),
     };
@@ -235,6 +242,7 @@ export async function buildView(s: DkSession, library: LibraryModule[]): Promise
     runtime: fmtVersion(info.runtime),
     free_bytes: storeFree(info, cap).free,
     loaded,
+    capacity: cap,
     ...mergeView(library, card, loaded, cap, headers),
   };
 }

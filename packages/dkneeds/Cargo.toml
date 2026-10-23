@@ -1,0 +1,15 @@
+[package]
+name = "dkneeds"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/ElekLabs/digikit"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "What a .dkm takes of the device (arena, DSP area, rows), inferred from the file's own contents: one no_std implementation for the runtime, the DIGIKIT menu, patchkit and its wasm"
+
+[lib]
+name = "dkneeds"
+path = "src/lib.rs"
+
+# No dependencies: it builds for ColdFire (the runtime and the menu, through dkrt-sdk), the host and wasm32.
+[dependencies]

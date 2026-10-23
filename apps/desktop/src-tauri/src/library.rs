@@ -96,6 +96,20 @@ pub async fn sample_wasm() -> Result<tauri::ipc::Response, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// The needs reader of the Transfer page: `apps/web/public/patchkit.wasm` (`pk_needs`, the Rust code that infers what a `.dkm` takes of the device;
+/// built by `uv run python -m tools.emulator.native_wasm --patchkit-only`), as raw bytes.
+#[tauri::command]
+pub async fn patchkit_wasm() -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let path = root()?.join("apps/web/public/patchkit.wasm");
+        std::fs::read(&path)
+            .map(tauri::ipc::Response::new)
+            .map_err(|e| format!("{}: {e} (build it: uv run python -m tools.emulator.native_wasm --patchkit-only)", path.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// What the device profile says about content (`[storage]`): the device's name and the backend of its samples.
 #[derive(Serialize, Debug, PartialEq)]
 pub struct DeviceStorage {

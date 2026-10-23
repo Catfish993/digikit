@@ -216,6 +216,18 @@ pub unsafe extern "C" fn pk_check(
     set(check_bundle(fw, bundle).map(|j| (vec![], j)))
 }
 
+/// What a load of a `.dkm` takes (arena, DSP area, rows), inferred from the file's contents (`dkneeds`, the code the device's menu runs): JSON
+/// `{file_size, ARENA, ARENA_XFER, DSP_AREA, DSP_ALIGN, MACHINE_ROWS, VOICE_ROWS, PARAM_ROWS, PAGE_ROWS, FX_SLOTS}` in `pk_plan_*`, or the reason in
+/// `pk_err_*` (1) for a file the loader would refuse.
+///
+/// # Safety
+/// The range must be readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pk_needs(dkm: *const u8, dkm_len: usize) -> i32 {
+    let dkm = unsafe { slice(dkm, dkm_len) };
+    set(crate::dkm::needs_json(dkm).map(|j| (vec![], j.to_string())))
+}
+
 /// Verify an image (and, if `base_len` is not 0, against that stock image); the report JSON is in `pk_plan_*`.
 ///
 /// # Safety

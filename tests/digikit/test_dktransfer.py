@@ -40,6 +40,34 @@ def test_header_groups():
     assert T.header_info(b"DKMF") is None
 
 
+def test_repo_rows_carry_the_needs_inferred_from_the_packed_file(tmp_path):
+    from tools.patchkit import patchkit as PK
+
+    def pack(mid, device):
+        out = tmp_path / f"{mid.replace('/', '-')}.dkm"
+        assert PK.run(["pack", mid, "--device", device, "-o", str(out)]).returncode == 0
+        return out
+
+    rows = {
+        r["id"]: r
+        for r in T.repo_rows(
+            "dt2",
+            ["digikit/pluck", "digikit/remote"],
+            pack=pack,
+            status=lambda m: "unchanged",
+        )
+    }
+    pluck, remote = rows["digikit/pluck"], rows["digikit/remote"]
+    # the machine with DSP code takes a DSP range and a voice row; the row's arena and dsp are what a load takes, from the same needs
+    assert pluck["needs"]["DSP_AREA"] > 0 and pluck["needs"]["VOICE_ROWS"] >= 1
+    assert (pluck["arena"], pluck["dsp"]) == (
+        pluck["needs"]["ARENA"],
+        pluck["needs"]["DSP_AREA"],
+    )
+    assert pluck["needs"]["file_size"] == pluck["file_size"]
+    assert remote["needs"]["DSP_AREA"] == 0 and remote["needs"]["ARENA"] > 0
+
+
 def row(
     mid, group="Machines", build="unchanged", size=500, arena=120, dsp=64, sha="aa"
 ):
@@ -47,6 +75,7 @@ def row(
         "id": mid, "name": mid, "label": mid, "group": group, "test": mid.startswith("test/"),
         "path": f"modules/{mid.split('/')[-1]}.dkm", "sha256": sha, "file_size": size, "arena": arena,
         "dsp": dsp, "build": build, "version": "0.1.0", "dkm": "x",
+        "needs": {"file_size": size, "ARENA": arena, "DSP_AREA": dsp, "DSP_ALIGN": 8 if dsp else 0},
     }  # fmt: skip
 
 
@@ -84,12 +113,13 @@ def test_merge_state_groups_and_fit():
     assert by["digikit/pluck"]["on_card"] == "yes" and by["digikit/pluck"]["loaded"]
     assert by["digikit/tool"]["on_card"] == "other version"
     assert by["test/sine"]["on_card"] == "no" and by["test/sine"]["test"]
-    # a loaded module fits by definition; the others are checked against CAPACITY (dsp 64 > largest 50)
+    # a loaded module fits by definition; the others are checked against CAPACITY (dsp 64 > largest 50), and the warning says whether the
+    # module fits the device alone (the next boot starts empty)
     assert by["digikit/pluck"]["fits"] is True
-    assert (
-        by["test/sine"]["fits"] is False
-        and "DSP area" in by["test/sine"]["warnings"][0]
-    )
+    assert by["test/sine"]["fits"] is False
+    assert by["test/sine"]["warnings"] == [
+        "DSP area 64 bytes needed, 50 bytes free; fits when the modules loaded now are not selected"
+    ]
     assert by["digikit/tool"]["fits"] is True
     extra = {r["path"]: r for r in v["card_only"]}
     assert (
@@ -100,6 +130,9 @@ def test_merge_state_groups_and_fit():
         extra["modules/junk.dkm"]["known"] is False
         and not extra["modules/junk.dkm"]["loaded"]
     )
+    # a module larger than the whole device
+    huge = {**rows[0], "needs": {**rows[0]["needs"], "DSP_AREA": 2000}, "loaded": False}
+    assert T.fit_warnings(huge, CAP)[0].endswith("more than this device has")
     # no CAPACITY: no verdict
     assert T.merge(rows, [], [], None, {})["modules"][0]["fits"] is None
 

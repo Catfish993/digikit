@@ -2,6 +2,8 @@
 // device answers. The state can be set from the address (`?dev=empty&folder=files&speed=1.5`, see PARAMS) and while the page runs
 // (`window.__sim.set({ dev: 'noreply' })`), so a screenshot script (tools/devtools/ui_shots.mjs) reaches each state without clicking.
 import type { SampleEntry } from '@web/modules/samples';
+import type { Caps, Needs } from '@web/modules/dkfit';
+import { fitWarnings } from '@web/modules/dktransfer';
 import { noteActivity } from '../src/activity';
 import type { LocalEntry } from '../src/samples-core';
 import type { TransferRow, TransferView } from '../src/transfer-core';
@@ -64,32 +66,67 @@ interface LibModule {
   version: string;
   size: number;
   test?: boolean;
-  warn?: string;
+  /** What a load of the module takes (a machine with DSP code: arena, DSP area, rows). */
+  needs: Needs;
 }
 const KiB = 1024;
 const MiB = 1024 * KiB;
+/** Needs of a machine (`dsp` bytes of DSP area; 0: a module with no DSP code) or a tool. */
+const need = (size: number, dsp = 0, rows = dsp ? 1 : 0): Needs => ({
+  file_size: size,
+  ARENA: 4096,
+  ARENA_XFER: dsp ? 2048 : 0,
+  DSP_AREA: dsp,
+  DSP_ALIGN: dsp ? 8 : 0,
+  MACHINE_ROWS: rows,
+  VOICE_ROWS: rows,
+  PARAM_ROWS: rows * 4,
+});
 export const LIBRARY: LibModule[] = [
-  { id: 'sine', label: 'Sine', group: 'Machines', version: '0.3.1', size: 180 * KiB },
-  { id: 'pluck', label: 'Pluck', group: 'Machines', version: '0.2.0', size: 420 * KiB },
+  {
+    id: 'sine',
+    label: 'Sine',
+    group: 'Machines',
+    version: '0.3.1',
+    size: 18 * KiB,
+    needs: need(18 * KiB, 200 * KiB),
+  },
+  {
+    id: 'pluck',
+    label: 'Pluck',
+    group: 'Machines',
+    version: '0.2.0',
+    size: 42 * KiB,
+    needs: need(42 * KiB, 259 * KiB),
+  },
   {
     id: 'wavetable',
     label: 'Wavetable Voyager with a rather long display name',
     group: 'Machines',
     version: '1.0.0',
-    size: 1.4 * MiB,
+    size: 60 * KiB,
+    needs: need(60 * KiB, 420 * KiB),
   },
   {
     id: 'fm4',
     label: 'FM 4-op',
     group: 'Machines',
     version: '0.9.2',
-    size: 640 * KiB,
-    warn: 'arena 1.9 MiB is close to the free 2.0 MiB',
+    size: 61 * KiB,
+    needs: need(61 * KiB, 600 * KiB),
   },
-  { id: 'chorus', label: 'Chorus', group: 'Effects', version: '0.4.0', size: 260 * KiB },
-  { id: 'tuner', label: 'Tuner', group: 'Tools', version: '0.1.0', size: 90 * KiB },
-  { id: 'remote', label: 'Remote control', group: 'Tools', version: '0.1.0', size: 1032 },
-  { id: 'test-noise', label: 'Noise test', group: 'Machines', version: '0.0.1', size: 70 * KiB, test: true },
+  { id: 'chorus', label: 'Chorus', group: 'Effects', version: '0.4.0', size: 26 * KiB, needs: need(26 * KiB) },
+  { id: 'tuner', label: 'Tuner', group: 'Tools', version: '0.1.0', size: 9 * KiB, needs: need(9 * KiB) },
+  { id: 'remote', label: 'Remote control', group: 'Tools', version: '0.1.0', size: 1032, needs: need(1032) },
+  {
+    id: 'test-noise',
+    label: 'Noise test',
+    group: 'Machines',
+    version: '0.0.1',
+    size: 7 * KiB,
+    test: true,
+    needs: need(7 * KiB, 100 * KiB),
+  },
 ];
 const pathOf = (id: string) => `modules/${id}.dkm`;
 
@@ -104,26 +141,55 @@ const device = new Map<string, DevFile>();
 function resetDevice(): void {
   device.clear();
   if (sim.dev === 'empty') return;
-  device.set(pathOf('sine'), { path: pathOf('sine'), size: 180 * KiB, same: true, loaded: true });
-  device.set(pathOf('pluck'), { path: pathOf('pluck'), size: 400 * KiB, same: false, loaded: false });
-  device.set(pathOf('chorus'), { path: pathOf('chorus'), size: 260 * KiB, same: true, loaded: false });
+  device.set(pathOf('sine'), { path: pathOf('sine'), size: 18 * KiB, same: true, loaded: true });
+  device.set(pathOf('pluck'), { path: pathOf('pluck'), size: 40 * KiB, same: false, loaded: false });
+  device.set(pathOf('chorus'), { path: pathOf('chorus'), size: 26 * KiB, same: true, loaded: false });
   device.set('modules/old-experiment.dkm', {
     path: 'modules/old-experiment.dkm',
-    size: 55 * KiB,
+    size: 5 * KiB,
     same: false,
     loaded: false,
   });
 }
 resetDevice();
 
+/** CAPACITY of a Digitakt II with the loaded files' modules in it. */
+function capacity(): Caps {
+  const used = { ARENA: 0, DSP_AREA: 0, MACHINE_ROWS: 0, VOICE_ROWS: 0, PARAM_ROWS: 0, n: 0 };
+  for (const f of device.values()) {
+    const m = f.loaded ? LIBRARY.find((l) => pathOf(l.id) === f.path) : undefined;
+    if (!m) continue;
+    used.n++;
+    used.ARENA += (m.needs.ARENA ?? 0) + (m.needs.ARENA_XFER ?? 0);
+    used.DSP_AREA += m.needs.DSP_AREA ?? 0;
+    used.MACHINE_ROWS += m.needs.MACHINE_ROWS ?? 0;
+    used.VOICE_ROWS += m.needs.VOICE_ROWS ?? 0;
+    used.PARAM_ROWS += m.needs.PARAM_ROWS ?? 0;
+  }
+  const c = (limit: number, u: number, largest = limit - u) => ({ limit, used: u, largest });
+  return {
+    MODULES: c(8, used.n, 0),
+    SELECTION: c(8, used.n, 0),
+    ARENA: c(524288, used.ARENA, 524272 - used.ARENA),
+    STAGE: c(65536, 0, 65536),
+    DSP_AREA: c(524288, used.DSP_AREA, 524284 - used.DSP_AREA),
+    MACHINE_ROWS: c(8, used.MACHINE_ROWS, 0),
+    VOICE_ROWS: c(8, used.VOICE_ROWS, 0),
+    PARAM_ROWS: c(16, used.PARAM_ROWS, 0),
+    PAGE_ROWS: c(0, 0, 0),
+    FX_SLOTS: c(0, 0, 0),
+  };
+}
+
 /** The merged list the Transfer page shows (`TransferView`), from the library and the device's files. */
 export function view(): TransferView {
+  const cap = capacity();
   if (sim.dev === 'empty' && device.size === 0) {
     // nothing stored yet, but the library is there
   }
   const modules: TransferRow[] = LIBRARY.map((m) => {
     const f = device.get(pathOf(m.id));
-    return {
+    const row = {
       id: m.id,
       path: pathOf(m.id),
       name: m.id,
@@ -132,12 +198,15 @@ export function view(): TransferView {
       test: !!m.test,
       version: m.version,
       file_size: m.size,
-      arena: 96 * KiB,
-      dsp: 0,
+      arena: m.needs.ARENA,
+      dsp: m.needs.DSP_AREA,
+      needs: m.needs,
       on_card: f ? (f.same ? 'yes' : 'other version') : 'no',
       loaded: !!f?.loaded,
-      warnings: m.warn ? [m.warn] : undefined,
     } as TransferRow;
+    row.warnings = fitWarnings(row as { loaded: boolean; needs?: Needs }, cap);
+    row.fits = row.warnings.length === 0;
+    return row;
   });
   const known = new Set(LIBRARY.map((m) => pathOf(m.id)));
   const card_only: TransferRow[] = [...device.values()]
@@ -158,6 +227,7 @@ export function view(): TransferView {
     runtime: '0.9.4',
     free_bytes: 3.2 * 2 ** 30 - [...device.values()].reduce((a, f) => a + f.size, 0),
     loaded: [...device.values()].filter((f) => f.loaded).map((f) => f.path),
+    capacity: cap,
     modules,
     card_only,
   };

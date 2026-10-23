@@ -28,6 +28,25 @@ pub fn fmt_runtime(v: u32) -> String {
     format!("{}.{}.{}", v >> 16, v >> 8 & 255, v & 255)
 }
 
+pub use dkneeds::Needs;
+
+/// What a load of the file takes of each resource, inferred from the file's own contents (the register records, the DSP section and the
+/// sizes the loader reads: `dkneeds`, the code the runtime's menu runs on the device). Nothing in the file declares it.
+pub fn needs(f: &[u8]) -> Result<Needs> {
+    dkneeds::needs_of(&mut &f[..]).map_err(|e| err!("{}", e.text()))
+}
+
+/// The needs of a file as JSON, for the command line and the wasm export: `file_size` and the CAPACITY names of [`Needs::fields`].
+pub fn needs_json(f: &[u8]) -> Result<serde_json::Value> {
+    let n = needs(f)?;
+    let mut o = serde_json::Map::new();
+    o.insert("file_size".into(), n.file_size.into());
+    for (name, v) in n.fields() {
+        o.insert(name.into(), v.into());
+    }
+    Ok(serde_json::Value::Object(o))
+}
+
 // header field offsets
 pub const H_SIZE: usize = 0x08;
 pub const H_HDRSIZE: usize = 0x0c;
@@ -674,6 +693,139 @@ mod tests {
         assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 0, 0]);
         let f = pack_with(None, &table(&[param]), &opts()).unwrap();
         assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 0, 0]);
+    }
+
+    /// A DSP section of an 8-byte image with BSS bytes of bss and one version 3 voice with `voices` states of 20 bytes (0: version 2).
+    fn dsp_section(bss: u32, voices: u32) -> Vec<u8> {
+        crate::dkmdsp::DspSection {
+            device: 1,
+            image: vec![0; 8],
+            bss,
+            align: 16,
+            imports: vec![],
+            relocs: vec![],
+            voices: vec![crate::dkmdsp::Voice {
+                type_no: 17,
+                entry: 0,
+                note_on: 0,
+                state_bytes: if voices == 0 { 0 } else { 20 },
+                clear_bytes: 0,
+                voices,
+                ranges: [0; 8],
+            }],
+        }
+        .encode()
+    }
+
+    #[test]
+    fn the_needs_are_inferred_from_the_packed_file() {
+        // the file declares nothing: the header is the format 1 header
+        let f = pack(&object(), &opts()).unwrap();
+        assert_eq!(get(&f, 4), super::FORMAT);
+        assert_eq!(get(&f, H_HDRSIZE) as usize, HEADER);
+        // ColdFire only: the arena block of image + bss (12); no DSP, no records
+        let d = Dkm::parse(&f).unwrap();
+        let n = needs(&f).unwrap();
+        assert_eq!(n.file_size as usize, f.len());
+        assert_eq!(n.arena, (d.image.len() as u32 + 12).div_ceil(16) * 16 + 16);
+        assert_eq!(n.arena % 16, 0);
+        assert_eq!(
+            Needs {
+                file_size: n.file_size,
+                arena: n.arena,
+                ..Needs::default()
+            },
+            n
+        );
+        // a DSP section: image 8, bss 100, three states of 20 (rounded to 24): 8 + 100 -> 112, + 72 = 184, granule 192; the relocated image is a block of 8
+        let f = pack_full(Some(&object()), &[], &dsp_section(100, 3), &opts()).unwrap();
+        let n = needs(&f).unwrap();
+        assert_eq!(
+            (n.dsp_area, n.dsp_align, n.voice_rows, n.arena_xfer),
+            (192, 16, 1, 32)
+        );
+        // `DspSection::range_len`, the packer's own account of the range, agrees
+        let s = crate::dkmdsp::DspSection::parse(&Dkm::parse(&f).unwrap().dsp).unwrap();
+        assert_eq!(s.range_len(), n.dsp_area);
+        // without state (version 2) the voice adds nothing: 8 + 100 = 108 -> 112 -> granule 128
+        let f = pack_full(Some(&object()), &[], &dsp_section(100, 0), &opts()).unwrap();
+        assert_eq!(needs(&f).unwrap().dsp_area, 128);
+        // register records: the counts of each kind
+        let rec = |kind: u32, len: usize| {
+            let mut r = kind.to_be_bytes().to_vec();
+            r.extend((len as u32).to_be_bytes());
+            r.resize(len, 0);
+            r
+        };
+        let mut t = vec![0u8; crate::register::HEADER];
+        t[0..4].copy_from_slice(&0x444b_5247u32.to_be_bytes());
+        t[4..8].copy_from_slice(&1u32.to_be_bytes());
+        t[12..16].copy_from_slice(&4u32.to_be_bytes());
+        for r in [
+            rec(crate::register::KIND_PARAM, crate::register::LEN_PARAM),
+            rec(crate::register::KIND_PARAM, crate::register::LEN_PARAM),
+            rec(crate::register::KIND_MACHINE, crate::register::LEN_MACHINE),
+            rec(crate::register::KIND_PAGE, crate::register::LEN_PAGE),
+        ] {
+            t.extend(r);
+        }
+        let f = pack_with(None, &t, &opts()).unwrap();
+        let n = needs(&f).unwrap();
+        assert_eq!(
+            (n.param_rows, n.machine_rows, n.page_rows, n.fx_slots),
+            (2, 1, 1, 0)
+        );
+        // a file of another format has none, and the JSON names the CAPACITY kinds
+        let mut g = f.clone();
+        put(&mut g, 4, 2);
+        assert!(needs(&g).is_err());
+        let j = needs_json(&f).unwrap();
+        assert_eq!(j["PARAM_ROWS"], 2);
+        assert_eq!(j["file_size"], f.len());
+    }
+
+    #[test]
+    fn dkneeds_reads_the_formats_the_packer_writes() {
+        // dkneeds has its own copies of the constants of the files it reads (it has no dependency): they are the packer's
+        assert_eq!(dkneeds::MAGIC, MAGIC);
+        assert_eq!(dkneeds::FORMAT, super::FORMAT);
+        assert_eq!(dkneeds::HEADER as usize, HEADER);
+        for (a, b) in [
+            (dkneeds::H_SIZE, H_SIZE),
+            (dkneeds::H_HDRSIZE, H_HDRSIZE),
+            (dkneeds::H_IMAGE_OFF, H_IMAGE_OFF),
+            (dkneeds::H_IMAGE_SIZE, H_IMAGE_SIZE),
+            (dkneeds::H_BSS, H_BSS),
+            (dkneeds::H_ALIGN, H_ALIGN),
+            (dkneeds::H_RELOC_OFF, H_RELOC_OFF),
+            (dkneeds::H_RELOC_N, H_RELOC_N),
+            (dkneeds::H_IMPORT_OFF, H_IMPORT_OFF),
+            (dkneeds::H_IMPORT_N, H_IMPORT_N),
+            (dkneeds::H_SLOT_OFF, H_SLOT_OFF),
+            (dkneeds::H_SLOT_N, H_SLOT_N),
+            (dkneeds::H_REG_OFF, H_REG_OFF),
+            (dkneeds::H_REG_SIZE, H_REG_SIZE),
+            (dkneeds::H_DSP_OFF, H_DSP_OFF),
+            (dkneeds::H_DSP_SIZE, H_DSP_SIZE),
+        ] {
+            assert_eq!(a as usize, b);
+        }
+        use crate::register as r;
+        assert_eq!(dkneeds::REG_HEADER as usize, r::HEADER);
+        assert_eq!(dkneeds::KIND_PARAM, r::KIND_PARAM);
+        assert_eq!(dkneeds::KIND_MACHINE, r::KIND_MACHINE);
+        assert_eq!(dkneeds::KIND_PAGE, r::KIND_PAGE);
+        assert_eq!(dkneeds::LEN_PARAM as usize, r::LEN_PARAM);
+        assert_eq!(dkneeds::LEN_MACHINE as usize, r::LEN_MACHINE);
+        assert_eq!(dkneeds::LEN_PAGE as usize, r::LEN_PAGE);
+        assert_eq!(dkneeds::MAX_RECORDS as usize, r::MAX_RECORDS);
+        use crate::dkmdsp as d;
+        assert_eq!(dkneeds::DSP_MAGIC, d::MAGIC);
+        assert_eq!(dkneeds::DSP_HEADER as usize, d::HEADER);
+        assert_eq!(dkneeds::MAX_RELOCS as usize, d::MAX_RELOCS);
+        assert_eq!(dkneeds::MAX_IMPORTS as usize, d::MAX_IMPORTS);
+        assert_eq!(dkneeds::MAX_VOICES as usize, d::MAX_VOICES);
+        assert_eq!(dkneeds::GRANULE, d::GRANULE);
     }
 
     #[test]

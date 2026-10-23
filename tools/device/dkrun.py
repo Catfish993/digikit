@@ -25,7 +25,9 @@ from pathlib import Path
 from typing import Any
 
 from tools import python_env
+from tools.device import dkfit as F
 from tools.device import dklog as L
+from tools.device import dkneeds as N
 from tools.device import dkupload as D
 from tools.patchkit import modroots
 
@@ -235,6 +237,25 @@ def module_results(
         sleep(0.5)
 
 
+def check_fit(up: D.Uploader, info: dict[str, Any], data: bytes) -> str | None:
+    """Why the packed module DATA will not load on the device, or None. `run` selects it as the only module of the next boot, which loads it into
+    an empty runtime: its needs, inferred from the file (`patchkit needs`, docs/design/digikit-dkm.md), against the device's limits (CAPACITY; the
+    fit rule, dkfit.py). A file that has no needs is one the loader refuses. A device without CAPACITY, or one that does not answer it, gets no
+    verdict on the limits."""
+    try:
+        needs = N.needs_of(data)
+    except N.NeedsError as e:
+        return f"the file is not one the loader accepts: {e}"
+    if not D.has_cap(info, "CAPACITY"):
+        return None
+    try:
+        caps = up.capacity()
+    except D.UploadError:
+        return None
+    short = F.fits_now(needs, F.empty_caps(caps))
+    return F.describe(short) if short else None
+
+
 def run(
     up: D.Uploader,
     module: str,
@@ -248,8 +269,9 @@ def run(
     restart: bool = True,
     emit: Callable[[str, dict[str, Any] | None], None] | None = None,
     dkm: Path | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
-    """The whole sequence. UP talks to the device now; CONNECT returns an uploader after the restart (default: the same one);
+    """The whole sequence (a module that will not fit is refused before the upload, unless FORCE). UP talks to the device now; CONNECT returns an uploader after the restart (default: the same one);
     WAIT_BOOT (the emulator) returns when the guest has booted again. Returns a summary dict."""
     out: dict[str, Any] = {}
     info = up.info()
@@ -265,6 +287,15 @@ def run(
         dkm = build_pack(module, dev, build)
         say(f"packed {dkm.name} ({time.monotonic() - t0:.1f} s)")
     data = dkm.read_bytes()
+    why = check_fit(up, info, data)
+    if why and not force:
+        raise RunError(
+            f"{module} will not fit this device: {why} (--force uploads it anyway)"
+        )
+    if why:
+        say(
+            f"WARNING {module} will not fit this device: {why}; uploading anyway (--force)"
+        )
     path = module_path(module)
     out["path"] = path
     out["uploaded"] = upload_if_changed(up, path, data)
@@ -356,6 +387,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--no-restart", action="store_true", help="stop after SELECT")
     ap.add_argument(
+        "--force",
+        action="store_true",
+        help="upload the module even when its needs do not fit the device (or the file is not one the loader accepts); the boot then refuses it",
+    )
+    ap.add_argument(
         "--out",
         type=Path,
         help="also write the followed events here (JSON lines, as dklog follow)",
@@ -413,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
             not args.no_build,
             not args.no_restart,
             emit,
+            force=args.force,
         )
     except (RunError, D.UploadError, TimeoutError) as e:
         print(f"error: {e}", file=sys.stderr)

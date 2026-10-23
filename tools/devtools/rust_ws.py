@@ -35,6 +35,8 @@ CLEAN_CRATES = [
     "coldfire",
     "device-profile",
     "digiemu-desktop",
+    "dkneeds",
+    "dkrt-fit",
     "dt2-firmware-loader",
     "live-audio",
     "patchkit",

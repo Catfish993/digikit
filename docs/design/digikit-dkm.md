@@ -74,6 +74,46 @@ Exports by name (symbols of the object): `dkm_init(const Api *) -> i32` (0 = ok)
 `dkm_slot_N(const Api *)`. At least one must exist. `init` runs once after the copy, relocation and cache flush; if it returns
 non-zero the load is undone (`E_INIT`).
 
+## Needs are inferred from the contents
+
+A module does not say what a load of it takes of the device. The needs are worked out from the file's own contents, by one function, `needs_of(source)` of
+the crate `packages/dkneeds` (no_std, no dependency). Why: a module that reported its own needs could misreport them, by mistake or on purpose, and every reader
+(the menu, the host app, the tools) would have to trust it; a contributed or hand-built `.dkm` has no field to lie in. The runtime enforces the same limits when it
+loads (its loader reads the real tables), so the inferred needs are the answer before the load, never the check itself. There is no needs block in the header: the header is the 0xa0-byte
+header of format 1, and every format 1 file has needs.
+
+`needs_of` reads the file through a byte source (`dkneeds::Bytes`: a size and a read at an offset), so the device can feed it from store sector reads without staging the file and a host from a
+slice. It reads, and checks as the loader checks (bounds, counts; a file the loader refuses for its format has no needs, never a crash):
+
+- the header: magic, format 1, the size fields against the file, the image size and offset, `bss`, alignment, and the reloc, import and slot tables in the file;
+- the `register` table: its header (magic, count at most 32) and each record's kind and length word (the loader's walk: the length of its kind, the table ends where the last record does);
+- the DSP section: its header (magic, version 1 to 3, the sizes, the table bounds and counts) and, for a version 3 section, the `state_bytes` and `voices` words of each voice record.
+
+It does not read the image, the tables' entries, the records' bodies or the DSP image, and it does not check the file's sha256 (the loader does).
+
+| Need | Meaning |
+| --- | --- |
+| `file_size` | the file's size: it must fit the staging buffer |
+| `ARENA` | the arena bytes the loaded module keeps: `(image_size + bss_size)` rounded up to 16, plus the 16-byte block header |
+| `ARENA_XFER` | arena bytes held only while the DSP code is sent: the same for the relocated DSP image (its `image_size`); 0 without a DSP section |
+| `DSP_AREA` | the DSP range: `align8(image + bss)` plus the voice states (`voices * align8(state_bytes)` per version 3 voice record), rounded up to the 64-byte granule; 0 without a DSP section |
+| `DSP_ALIGN` | the range's placement alignment (the DSP section's `align`): the range starts at the next multiple of it, so up to `DSP_ALIGN - 8` bytes of the free range can be lost; 0 without a DSP section |
+| `MACHINE_ROWS`, `PARAM_ROWS`, `PAGE_ROWS` | the number of records of that kind in the `register` records |
+| `VOICE_ROWS` | the number of voice records of the DSP section |
+| `FX_SLOTS` | effect slots; 0 (the runtime loads no effects yet) |
+
+Names that are capacity kinds (`[capacity.kinds]` of `sdk/sdk.toml`) are in the unit of that kind's CAPACITY entry, so "fits" is need <= limit - used, with the largest free block for the arena and the DSP area.
+
+Who calls it: the DIGIKIT menu (`modules/core/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
+`patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`, `pk_capacity`). The arithmetic exists once.
+
+The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit`, `dkfit.ts`, `dkfit.py`, vectors in `sdk/fit-vectors.json`; the compare is written three times, the needs once): the staging buffer holds the file, a module record and a selection path are free,
+the DSP range (with up to `DSP_ALIGN - 8` bytes for alignment) is at most the largest free range, the arena holds the module's block and the block of its DSP image together (each block at most the largest free block), and every row count is at most
+limit - used. A kind that a device's CAPACITY lacks is not judged.
+`tests/digikit/scenarios/inferred-needs-*.toml` (`tools/patchkit/pk_digikit_capacity.py run_inferred_needs`) loads every run-time module and fixture that packs
+for the device alone on a ColdFire-only rig and compares CAPACITY and MODULES with `needs_of` of the file; `isolation-*` does the same after a
+coupled load (rows of a DSP module come in after the DSP acknowledges). The Rust tests of `dkneeds` cover the arithmetic and malformed files (truncated sections, absurd counts, every cut of a file).
+
 ## DSP section
 
 A run-time machine can bring its own SHARC+ code (finding 32). `patchkit pack MODULE --device dt2|dn2` links the module's DSP object

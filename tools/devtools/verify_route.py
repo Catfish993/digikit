@@ -61,6 +61,16 @@ DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "__init__": (),
     "dkupload": ("upload", "menu", "debug", "crash", "card"),
     "dkrun": ("menu",),
+    "dkfit": (
+        "menu",
+        "live",
+        "debug",
+    ),  # the fit rule: dktransfer and dkrun use it, the `fits` part of the debug scenarios
+    "dkneeds": (
+        "menu",
+        "live",
+        "debug",
+    ),  # the needs of a .dkm, from `patchkit needs`: dktransfer, dkrun, the `inferred-needs` and `fits` parts of the debug scenarios
     "dktransfer": ("menu", "live"),
     "dkpackall": (),  # a dev task: the files the workbench reads
     "dkscreen": ("upload",),

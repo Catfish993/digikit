@@ -41,6 +41,24 @@ const SCENES = [
     },
   },
   {
+    // fit: Sine is loaded on the fake device (200 KiB of the DSP area), so Wavetable does not fit next to it (the tag says so, the tooltip why) and FM 4-op is more than
+    // the device has; the line above the list is the ticked modules together against the empty device: Pluck and Wavetable (679 KiB) are too much for the 512 KiB area
+    name: 'modules-fit-ticked',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Install (Pluck|Wavetable)');
+    },
+  },
+  {
+    name: 'modules-fit-one',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Install Pluck$');
+    },
+  },
+  {
     name: 'modules-uploading',
     q: 'mode=modules&speed=0.4',
     size: WIDE,

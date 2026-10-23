@@ -25,6 +25,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
                                          the spec keys are in packages/patchkit/src/dkmsynth.rs)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
+  needs   [--json] FILE.dkm...           what a load of each file takes (arena, DSP area, rows), inferred from its contents; `-` reads stdin;
+                                         --json: one object, file -> the needs or {\"error\": text}; exit 1 when a file has none
   dkm-dsp-image FILE BASE [NAME=VALUE..]  the relocated DSP image of a .dkm at the L2 byte address BASE (hex)
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
   list                                   modules under modules/ and ports under devices/ports/
@@ -538,6 +540,50 @@ plan.json {}",
             let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
             write(&out, &patchkit::dkmsynth::synth(&spec, &dev, &models)?)?;
         }
+        "needs" => {
+            let json = rest.iter().any(|a| a == "--json");
+            let files: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();
+            if files.is_empty() {
+                return Err(Error(USAGE.into()));
+            }
+            let mut out = serde_json::Map::new();
+            let mut failed = false;
+            for f in files {
+                let raw = if f == "-" {
+                    let mut b = vec![];
+                    std::io::Read::read_to_end(&mut std::io::stdin(), &mut b)
+                        .map_err(|e| Error(format!("stdin: {e}")))?;
+                    b
+                } else {
+                    read(f)?
+                };
+                let v = patchkit::dkm::needs_json(&raw).unwrap_or_else(|e| {
+                    failed = true;
+                    serde_json::json!({ "error": e.0 })
+                });
+                if !json {
+                    match patchkit::dkm::needs(&raw) {
+                        Ok(n) => println!(
+                            "{f}: file_size {}, {}",
+                            n.file_size,
+                            n.fields()
+                                .iter()
+                                .map(|(k, v)| format!("{} {v}", k.to_lowercase()))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                        Err(e) => println!("{f}: no needs: {}", e.0),
+                    }
+                }
+                out.insert(f.clone(), v);
+            }
+            if json {
+                println!("{}", serde_json::Value::Object(out));
+            }
+            if failed {
+                std::process::exit(1);
+            }
+        }
         "dkm-info" => {
             let raw = read(need(rest)?)?;
             let file_len = raw.len();
@@ -558,6 +604,17 @@ plan.json {}",
                 d.bss,
                 d.align
             );
+            match patchkit::dkm::needs(&raw) {
+                Ok(n) => println!(
+                    "needs     {}",
+                    n.fields()
+                        .iter()
+                        .map(|(n, v)| format!("{} {v}", n.to_lowercase()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                Err(e) => println!("needs     none ({})", e.0),
+            }
             println!("relocs    {}", d.relocs.len());
             println!("imports   {}", d.imports.join(", "));
             println!("init      {:?}  fini {:?}", d.init, d.fini);
