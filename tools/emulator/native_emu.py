@@ -139,11 +139,14 @@ def second_core(device: str) -> tuple[list[str], pathlib.Path | None]:
     other = "dt2" if device == "dn2" else "dn2"
     paths = digi_env.ready_inputs(device=other)
     missing = [label for label, path in paths.items() if not path.is_file()]
-    gen = pathlib.Path(
-        os.environ.get("SHARC_GEN_DIR_2")
-        or digi_env.generated_dir(image=paths["DSP image"])
+    # Not `digi_env.generated_dir`: SHARC_GEN_DIR names the first core and would win over the image's registered one.
+    gen = (
+        pathlib.Path(os.environ["SHARC_GEN_DIR_2"])
+        if os.environ.get("SHARC_GEN_DIR_2")
+        else digi_env.gen_for_image(paths["DSP image"])
+        or (digi_env.DEFAULT_GENERATED if other == "dn2" else None)
     )
-    if missing or not gen.is_dir():
+    if missing or gen is None or not gen.is_dir():
         print(
             f"second core: no {other.upper()} inputs (missing {', '.join(missing) or 'generated core'}); one core only",
             file=sys.stderr,
