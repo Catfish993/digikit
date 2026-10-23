@@ -10,6 +10,8 @@ export interface DeviceInfo {
   name: string;
   runtime: string;
   free?: number;
+  /** Modules mode: the storage line under the device line (storageLine); the free space is in it, not in the device line. */
+  storage?: string;
   samples: string;
   canMkdir: boolean;
 }

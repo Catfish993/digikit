@@ -456,13 +456,13 @@ test('header, library module, the merged list', async () => {
   assert.deepEqual([by['test/sine'].on_card, by['test/sine'].fits, by['test/sine'].test], ['no', false, true]); // DSP 400 > largest 50
   assert.match(
     by['test/sine'].warnings[0],
-    /DSP area 400 bytes needed, 50 bytes free; fits when the modules loaded now are not selected/,
+    /DSP memory 350 bytes short; fits when the modules loaded now are not selected/,
   );
   // more than the device has at all: no way out by deselecting
   const huge = await libraryModule(dkm('test/huge', { machine: 1, dsp: 2000, size: 800 }), needsOf);
   assert.match(
     mergeView([huge], [], [], cap, {}).modules[0].warnings[0],
-    /DSP area .* needed, .* free; more than this device has/,
+    /DSP memory .* short; more than this device has/,
   );
   // a capacity without a kind (an older runtime) does not judge it
   assert.equal(mergeView(library, [], [], { MODULES: cap.MODULES }, {}).modules[1].fits, true);

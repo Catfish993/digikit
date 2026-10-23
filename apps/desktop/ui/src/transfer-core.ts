@@ -30,6 +30,13 @@ export function infoLine(target: string, device: string, runtime: string, free: 
   return [target, device, `runtime ${runtime}`, ...(free === undefined ? [] : [`${freeText(free)} free`])].join(' · ');
 }
 
+/** The storage line of Modules mode, under the device line: the module files on the card (the rows of the list) and the free space of the store. Storage only: no memory. */
+export function storageLine(view: TransferView): string {
+  const rows = onDevice(view);
+  const bytes = rows.reduce((n, r) => n + r.file_size, 0);
+  return `Modules: ${rows.length} file${rows.length === 1 ? '' : 's'}, ${formatBytes(bytes)} · ${freeText(view.free_bytes)} free`;
+}
+
 /** The key of a row in the tick set. */
 export const rowKey = (r: TransferRow): string => r.id ?? r.path;
 

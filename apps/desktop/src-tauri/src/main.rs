@@ -465,6 +465,8 @@ fn main() {
         });
     // Mount the last card again at start (not for scenarios, which must not depend on earlier runs).
     config.remember_card = startup.scenario.is_none();
+    // A ColdFire-only runtime (a DT2 opened in a DN2-audio session) runs at the wall clock, not at the CPU's speed.
+    config.pace_free = true;
     let run_dir_for_staging = run_dir.clone();
     config.on_quit = Some(Box::new(|| {
         // Let the socket thread write the reply first.

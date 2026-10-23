@@ -393,6 +393,8 @@ const NO_NEEDS: Needs = Needs { file_size: 0, arena: 0, arena_xfer: 0, dsp_area:
 /// 1 when the row's module does not fit next to the ticked ones (`refit`), and the first short resource.
 static mut WONT: [u8; MAX_ENT] = [0; MAX_ENT];
 static mut SHORT: [Short; MAX_ENT] = [Short { kind: 0, need: 0, free: 0 }; MAX_ENT];
+/// The load line of the ticked set (`refit`): the DSP and the CPU memory, `DSP 85% CPU 1%`; empty when nothing is ticked.
+static mut LOAD_LINE: Text = Text::new();
 /// One 512-byte, 16-byte aligned firmware heap block the card DMA fills with a file's header sector.
 static mut HDR: *mut u8 = null_mut();
 /// The saved selection as the runtime gave it, and this boot's info (safe mode, results).
@@ -571,7 +573,20 @@ unsafe fn refit() {
     let n = dkrt_capacity(caps.as_mut_ptr(), CAP_MAX as u32) as usize;
     let caps = &mut caps[..n];
     fit::empty(caps);
+    LOAD_LINE.clear();
     for pass in 0..2 {
+        if pass == 1 {
+            // the ticked modules that fit are taken: the DSP and CPU memory of the limits they leave
+            let mut any = false;
+            for i in 0..NENT {
+                any |= TICK[i] != 0;
+            }
+            if any {
+                let mut buf = [0u8; fit::LINE_MAX];
+                let n = fit::load_line(caps, &mut buf);
+                LOAD_LINE.s(&buf[..n]);
+            }
+        }
         for i in 0..NENT {
             if HAS_NEEDS[i] == 0 || NOK[i] != 0 || (TICK[i] != 0) != (pass == 0) {
                 continue;
@@ -604,7 +619,7 @@ fn size_k(t: &mut Text, n: u32) {
 }
 
 /// The names of the CAPACITY kinds a fit can be short of, by kind number (0 and the kinds that cannot be short: empty).
-const SHORT_NAME: [&str; 13] = ["", "MODULES", "SELECTED", "RAM", "FILE", "DSP", "MACHINES", "VOICES", "PARAMS", "PAGES", "FX", "", ""];
+const SHORT_NAME: [&str; 13] = ["", "MODULES", "SELECTED", "CPU", "FILE", "DSP", "MACHINES", "VOICES", "PARAMS", "PAGES", "FX", "", ""];
 
 /// What is short, in K for bytes and as numbers for rows and slots (the need rounded up, what is free rounded down): `DSP 400K > 254K FREE`, in a
 /// popup (28 characters fit with `NO FIT: `); `compact` for the list's RESULT row (about 18 characters fit): `DSP 400K>254K`.
@@ -967,6 +982,10 @@ unsafe fn fill_load() {
             lrow(m, &t.b, if NOK[i] != 0 { A_NOP } else { A_TOGGLE + i as u32 });
         }
         DK_OFFER = differs() as u32;
+        // the memory the ticked set takes, directly above APPLY & RESTART (or where it would be)
+        if LOAD_LINE.n > 0 {
+            lrow(m, &LOAD_LINE.b, A_NOP);
+        }
         if DK_OFFER != 0 {
             lrow(m, if ARMED != 0 { b"CONFIRM RESTART\0" } else { b"APPLY & RESTART\0" }, A_APPLY);
         }
@@ -1124,7 +1143,7 @@ pub static mut DK_MEM_N: u32 = 0;
 /// Left out: the staging buffer, the selection, the effect slots and the map entries (they say nothing a user can act on).
 const MEM_KINDS: [(u8, &[u8], u8); 7] = [
     (CAPK_DSP_AREA, b"DSP   ", 1),
-    (CAPK_ARENA, b"ARENA ", 1),
+    (CAPK_ARENA, b"CPU   ", 1),
     (CAPK_MODULES, b"MODS  ", 0),
     (CAPK_MACHINE_ROWS, b"MACH  ", 0),
     (CAPK_VOICE_ROWS, b"VOICE ", 0),
@@ -1285,7 +1304,7 @@ unsafe fn fill_health() {
     }
     hrow(m, &t, 3);
     let mut t = Text::new();
-    t.s(b"ARENA FREE ");
+    t.s(b"CPU FREE ");
     size_text(&mut t, h.arena_free);
     hrow(m, &t, 4);
     let mut t = Text::new();

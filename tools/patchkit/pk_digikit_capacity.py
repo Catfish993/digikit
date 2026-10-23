@@ -504,6 +504,9 @@ def run_fits(c: Any) -> None:
             : len(names)
         ]
 
+    def need_file(k: int) -> dict[str, int]:
+        return N.needs_of(files[k])
+
     def shot(rig: Any, name: str) -> None:
         """The OLED as a PNG in the scenario's work folder (`--keep`): to look at the rows."""
         from tools.control.digi_client import oled_png
@@ -529,6 +532,11 @@ def run_fits(c: Any) -> None:
             and got[names.index("huge.dkm")][3] == "x",
             f"{got} vs {want}",
         )
+        c.check(
+            "MODULES, nothing ticked: no load line (the list holds the module rows only)",
+            w(rig, "DK_LOAD_N") == len(names),
+            f"{w(rig, 'DK_LOAD_N')} rows",
+        )
         first = names.index("half-a.dkm")
         second = names.index("half-b.dkm")
         for _ in range(first):
@@ -542,6 +550,24 @@ def run_fits(c: Any) -> None:
             got == want and got[first][:4] == "[X] " and got[second][:4] == "[ ]x",
             f"{got} vs {want}",
         )
+        # the load line: the DSP and CPU memory of the limits with the ticked modules taken out, directly above APPLY & RESTART
+        want_line = F.load_line(F.take(need_file(first), F.empty_caps(cap)))
+        n_rows = w(rig, "DK_LOAD_N")
+        below = [text(rig, "DK_LOAD", i) for i in range(len(names), n_rows)]
+        c.check(
+            "MODULES, one half-size module ticked: the load line (DSP and CPU) is directly above APPLY & RESTART",
+            below[:2] == [want_line, "APPLY & RESTART"]
+            and want_line.startswith("DSP ")
+            and " CPU " in want_line
+            and len(want_line) <= 18,
+            f"{below} vs line {want_line!r}",
+        )
+        # the list scrolled to the bottom: the load line over APPLY & RESTART (the cursor goes down over the rows and back)
+        for _ in range(n_rows - 1 - first):
+            tap(rig, "DOWN", 200)
+        shot(rig, "ticked-apply")
+        for _ in range(n_rows - 1 - first):
+            tap(rig, "UP", 200)
         for _ in range(second - first):
             tap(rig, "DOWN", 200)
         shots = w(rig, "DK_POPUPS")
@@ -571,6 +597,23 @@ def run_fits(c: Any) -> None:
             and got_rows[-1] == line
             and rows(rig) == fit_rows(names, files, {first}, cap),
             f"popup {popup!r}, last row {got_rows[-1]!r}, want {line!r}",
+        )
+        c.check(
+            "the refused selection leaves the load line as it was",
+            got_rows[len(names)] == want_line
+            and got_rows[len(names) + 1] == "APPLY & RESTART",
+            f"{got_rows[len(names) :]} vs {want_line!r}",
+        )
+        # untick it: the line goes with the last tick
+        for _ in range(second - first):
+            tap(rig, "UP", 200)
+        tap(rig, "YES", 500)
+        after = [text(rig, "DK_LOAD", i) for i in range(w(rig, "DK_LOAD_N"))]
+        c.check(
+            "unticking the last module takes the load line away again",
+            after[: len(names)] == fit_rows(names, files, set(), cap)
+            and len(after) == len(names),
+            f"{after}",
         )
         c.checks += rig.checks
         c.done(rig)

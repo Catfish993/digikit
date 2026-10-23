@@ -49,6 +49,16 @@
 .remote-page .stage {
   min-height: 260px;
 }
+/* the faceplate and the Memory panel side by side, as the Emulator page's .emu-row */
+.remote-page .remote-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.remote-page .remote-row > .stage {
+  flex: 1;
+  min-width: 0;
+}
 .remote-page .head,
 .remote-page .note,
 .remote-page .err {

@@ -1,6 +1,7 @@
 extern crate std;
 
 use super::*;
+use std::format;
 use std::string::String;
 use std::{vec, vec::Vec};
 
@@ -336,4 +337,65 @@ fn empty_is_the_capacity_of_a_runtime_that_has_loaded_nothing() {
             (b.kind, b.limit, b.used, b.largest)
         );
     }
+}
+
+/// A capacity from (kind, limit, used) triples.
+fn cap_of(entries: &[(u8, u32, u32)]) -> Vec<DkrtCap> {
+    entries
+        .iter()
+        .map(|&(k, limit, used)| DkrtCap {
+            kind: k as u32,
+            limit,
+            used,
+            largest: limit.saturating_sub(used),
+        })
+        .collect()
+}
+
+fn line(caps: &[DkrtCap]) -> String {
+    let mut out = [0u8; LINE_MAX];
+    let n = load_line(caps, &mut out);
+    String::from_utf8(out[..n].to_vec()).unwrap()
+}
+
+#[test]
+fn the_load_line_on_the_vectors() {
+    let v = vectors();
+    for case in v["load_lines"].as_array().unwrap() {
+        let c = caps(&case["caps"], None);
+        assert_eq!(
+            line(&c),
+            case["want"].as_str().unwrap(),
+            "{}",
+            case["name"].as_str().unwrap()
+        );
+        assert!(line(&c).len() <= LINE_MAX);
+    }
+}
+
+#[test]
+fn the_load_line_of_a_selection_is_the_empty_capacity_with_the_ticked_modules_taken() {
+    // the same path as the menu's `refit`: limits, nothing used, then each ticked module taken in turn
+    let v = vectors();
+    let mut c = caps(&v["caps_base"], None);
+    empty(&mut c);
+    assert!(!line(&c).is_empty());
+    let n = Needs {
+        arena: 32,
+        arena_xfer: 1392,
+        dsp_area: 265600,
+        dsp_align: 64,
+        voice_rows: 1,
+        machine_rows: 1,
+        ..Needs::default()
+    };
+    take(&n, &mut c);
+    let dsp = c.iter().find(|e| e.kind == CAPK_DSP_AREA as u32).unwrap();
+    // 265656 of the limit, rounded up
+    let want = (dsp.used * 100).div_ceil(dsp.limit);
+    assert!(
+        line(&c).starts_with(&format!("DSP {want}%")),
+        "{}",
+        line(&c)
+    );
 }

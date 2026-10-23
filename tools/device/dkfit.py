@@ -113,15 +113,39 @@ def fits_set(
     return None
 
 
+# the resources the load line shows, in this order, with the label the device shows (dkrt_fit `LINE`)
+LINE = (
+    ("DSP_AREA", "DSP"),
+    ("ARENA", "CPU"),
+)
+
+
+def _percent(used: int, limit: int) -> int:
+    """USED as a percent of LIMIT, rounded up: a set that takes anything never reads 0 %, and a resource reads 100 % only when it is full."""
+    return -(-min(used, limit) * 100 // limit)
+
+
+def load_line(caps: Caps) -> str:
+    """The load line of the DIGIKIT menu's MODULES page (`load_line` of modules/core/runtime/fit): always the DSP memory and then the CPU memory of CAPS, which is
+    the capacity once the ticked modules are taken out of an empty one, as `DSP 52% CPU 1%`; a resource that CAPS lacks or that has no limit is left out."""
+    parts = []
+    for kind, label in LINE:
+        c = caps.get(kind)
+        if c is None or c["limit"] == 0:
+            continue
+        parts.append(f"{label} {_percent(c['used'], c['limit'])}%")
+    return " ".join(parts)
+
+
 def describe(short: Short) -> str:
-    """One line for a person: `DSP area 400 KiB needed, 254 KiB free`."""
+    """One line for a person: `DSP memory 400 KiB needed, 254 KiB free`."""
     name, need, free = short
     label = {
         "STAGE": "file",
         "MODULES": "module records",
         "SELECTION": "selection paths",
-        "DSP_AREA": "DSP area",
-        "ARENA": "memory",
+        "DSP_AREA": "DSP memory",
+        "ARENA": "CPU memory",
         "VOICE_ROWS": "voice rows",
         "MACHINE_ROWS": "machine rows",
         "PARAM_ROWS": "parameter rows",
@@ -141,7 +165,7 @@ def menu_line(short: Short, compact: bool = False) -> str:
     label = {
         "MODULES": "MODULES",
         "SELECTION": "SELECTED",
-        "ARENA": "RAM",
+        "ARENA": "CPU",
         "STAGE": "FILE",
         "DSP_AREA": "DSP",
         "MACHINE_ROWS": "MACHINES",

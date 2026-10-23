@@ -1096,7 +1096,7 @@ def memory_rows(cap: dict[str, dict[str, int]]) -> list[str]:
     out = []
     for kind, label, pct in (
         ("DSP_AREA", "DSP   ", True),
-        ("ARENA", "ARENA ", True),
+        ("ARENA", "CPU   ", True),
         ("MODULES", "MODS  ", False),
         ("MACHINE_ROWS", "MACH  ", False),
         ("VOICE_ROWS", "VOICE ", False),
@@ -1139,6 +1139,11 @@ def check_memory_page(c: Ctx, rig: B.BootRig, plan: Any) -> None:
             rig.w(base + 24 * i + 4 * k).to_bytes(4, "big") for k in range(6)
         )
         got.append(raw.split(b"\0")[0].decode("latin-1"))
+    from tools.control.digi_client import oled_png
+
+    (c.work / "memory-page.png").write_bytes(
+        oled_png(rig.s.frame()[1])
+    )  # with `--keep`: to look at the labels
     cap = DK.Uploader(U.transport(rig)).capacity()
     want = memory_rows(cap)
     c.check(

@@ -109,7 +109,7 @@ def expected_lines(h: dict) -> list[str]:
         )
     )
     out.append("LARGEST " + (size_text(h["heap_largest"]) if f & F_HEAP else "--"))
-    out.append("ARENA FREE " + size_text(h["arena_free"]))
+    out.append("CPU FREE " + size_text(h["arena_free"]))
     out.append(
         "DSP FREE " + (size_text(h["dsp_area_free"]) if h["dsp_area_total"] else "--")
     )

@@ -23,6 +23,7 @@ import {
   localTags,
   MODES,
   parseMode,
+  storageLine,
   tickedFit,
   warningText,
 } from '../../desktop/ui/src/transfer-core.ts';
@@ -327,7 +328,23 @@ test('the ticked modules together: the sum rule against the device limits, in li
   });
   const two = tickedFit(v, new Set(['a', 'b']));
   assert.equal(two.tone, 'warn');
-  assert.match(two.text, /^b does not fit with the ticked modules before it: DSP area 293 KiB needed, 219 KiB free$/);
+  assert.match(two.text, /^b does not fit with the ticked modules before it: DSP memory 293 KiB needed, 219 KiB free$/);
   const alone = tickedFit({ ...v, modules: [m('big', 600000)] }, new Set(['big']));
-  assert.match(alone.text, /^big does not fit the device: DSP area 586 KiB needed, 511 KiB free$/);
+  assert.match(alone.text, /^big does not fit the device: DSP memory 586 KiB needed, 511 KiB free$/);
+});
+
+test('the storage line of Modules mode: files on the card, their size and the free space; no memory wording', () => {
+  // three files of 100 bytes on the card (pluck, effect, junk), 1000 bytes free
+  assert.equal(storageLine(view), 'Modules: 3 files, 300 B · 1000 B free');
+  assert.equal(
+    storageLine({ ...view, modules: [], card_only: [view.card_only[0]], free_bytes: 3.5 * 2 ** 30 }),
+    'Modules: 1 file, 100 B · 3.50 GiB free',
+  );
+  assert.equal(
+    storageLine({ ...view, modules: [], card_only: [], free_bytes: 2 ** 30 }),
+    'Modules: 0 files, 0 B · 1.00 GiB free',
+  );
+  assert.doesNotMatch(storageLine(view), /arena|memory|DSP|RAM/i);
+  // free space is in the storage line, not in the device line, in Modules mode
+  assert.equal(infoLine('Emulator', 'Digitakt II', '0.4.1', undefined), 'Emulator · Digitakt II · runtime 0.4.1');
 });

@@ -5,7 +5,7 @@
 //
 // The app does not build: its modules are built `.dkm` files of a folder (`mise run module:pack-all`).
 import { DkError, DkSession, HEADER_BYTES, fmtVersion, hasCap, hexOf, storeFree } from './dkupload-core.ts';
-import { describeShort, emptyCaps, fitsNow, type Caps, type Needs } from './dkfit.ts';
+import { describeShortBy, emptyCaps, fitsNow, type Caps, type Needs } from './dkfit.ts';
 import type { DkEntry, DkInfoFull } from './dkupload-core.ts';
 
 export type Group = 'Machines' | 'Effects' | 'Tools';
@@ -133,7 +133,7 @@ export function fitWarnings(row: { loaded: boolean; needs?: Needs }, cap: Caps |
   if (!now) return [];
   const alone = fitsNow(row.needs, emptyCaps(cap)) === null;
   return [
-    `${describeShort(now)}${alone ? '; fits when the modules loaded now are not selected' : '; more than this device has'}`,
+    `${describeShortBy(now)}${alone ? '; fits when the modules loaded now are not selected' : '; more than this device has'}`,
   ];
 }
 

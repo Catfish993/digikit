@@ -1,6 +1,6 @@
 # What fits: tell the user before a load whether a module will load (plan, 2026-10-23)
 
-Status: all five steps built on the lane branch, then reworked to infer the needs instead of declaring them (results: docs/findings/60-what-fits.md).
+Status: all five steps built on the lane branch (merged), then reworked to infer the needs instead of declaring them (results: docs/findings/60-what-fits.md). Follow-up on the lane branch memory-panel (below): storage-only Transfer page, a Memory panel, a load line on the device, new labels.
 Lane `tasks-images`, base main 38dfbe4a.
 
 Today a selection that is too big is refused at boot and shown afterwards (a RESULT row, the log error `E_DSP_NOSPACE`). The user should see it before
@@ -39,3 +39,18 @@ selecting or installing. Em's brief for the runtime UI: load and unload, health,
   Machine type numbers (the sticky map) and a module's own `init` allocations are not modelled.
 - The device list has no room for more than about 18 characters a row (finding 60): names are cut to 8 characters.
 - The menu reads the needs of every file each time MODULES opens (about one sector read per file; finding 60). A cache across opens is not needed at this cost.
+
+## Follow-up: the Memory panel, the load line, the labels (approved by Em, 2026-10-23)
+
+1. **The Transfer page is storage only.** Modules mode keeps each row's file size and adds one storage line to the On device column, `Modules: <n> files, <size> · <free> free` (the store's free space,
+   GiB from 1 GiB). No memory wording is left there except the fit tag, whose tooltip uses the new names: `CPU memory 3 KiB short`, `DSP memory 40 KiB short`.
+2. **The Memory panel** (`MemoryPanel.tsx`, `memory-core.ts`, `memory-backend.ts` in `apps/desktop/ui/src`): a collapsible panel in the Card panel's look, under the Card panel in one right-hand column of the Emulator page (`SidePanels.tsx`; both collapsible, a closed one keeps its title bar,
+   the column shrinks to a rail when both are closed) and in the same column of the Remote page (the target there is the emulator or a MIDI port). One bar per resource the device limits (DSP memory, CPU memory, Machines, Parameters, Pages where the device has page rows, Modules), split into one
+   segment per loaded module, coloured by the module's type (machine, effect, tool; the site's `--amber`, `--teal`, `--ok`), then free space. What `used` holds beyond the known modules is one `Other`
+   segment; hover a segment for the module and its amount; `used / limit` at the end of the bar (KiB for bytes). The data is CAPACITY and MODULES of the device and `needs_of` (patchkit.wasm) of the matching
+   library file; a module takes its own arena block only (the block of its DSP image is freed after the transfer: finding 60). The panel reads when it is shown, when a Transfer job ends, after a restart, on focus
+   and with its Refresh button, one read at a time over the target's one session (`read-gate-core.ts`, `session-core.ts`); a hidden or collapsed panel reads nothing. Nothing pending or ticked is drawn.
+3. **The load line on the device** (`dkrt_fit::load_line`, above APPLY & RESTART, mirrored in `DK_LOAD`): the DSP and the CPU memory of the ticked set, always these two, `DSP 85% CPU 1%`. Test vectors in `sdk/fit-vectors.json`
+   (`load_lines`), the Rust and Python rules, and the `fits-dt2` / `fits-dn2` scenarios.
+4. **Labels.** Desktop: `CPU memory` (the arena) and `DSP memory` (the DSP area); device: `CPU` and `DSP` (the MEMORY page's `ARENA` row is `CPU`, the fit texts say `CPU` for `RAM`). The protocol and code names stay (CAPACITY kind
+   `ARENA`, `arena.rs`, `DSP_AREA`).

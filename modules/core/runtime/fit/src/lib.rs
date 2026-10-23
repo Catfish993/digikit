@@ -136,5 +136,59 @@ pub fn take(n: &Needs, caps: &mut [DkrtCap]) {
     use_(CAPK_FX_SLOTS, n.fx_slots);
 }
 
+/// The resources the load line shows, in this order, with the label the device shows: the two a user can act on (DSP memory, CPU memory).
+/// The module records, the row tables, the staging buffer, the selection paths, the voice rows and the effect slots are not shown.
+const LINE: [(u8, &[u8]); 2] = [(CAPK_DSP_AREA, b"DSP"), (CAPK_ARENA, b"CPU")];
+/// The longest load line: two labels of three letters, two percents of four characters and a space between.
+pub const LINE_MAX: usize = 17;
+
+/// `used` as a percent of `limit`, rounded up: a set that takes anything never reads 0 %, and a resource reads 100 % only when it is full.
+/// (u32 arithmetic only: the limits of these resources are at most 2^19, so `used * 100` fits; the module has no 64-bit helpers.)
+fn percent(used: u32, limit: u32) -> u32 {
+    used.min(limit)
+        .saturating_mul(100)
+        .saturating_add(limit - 1)
+        / limit
+}
+
+/// The load line of a selection (the MODULES page, above APPLY & RESTART): `DSP 52% CPU 1%`, always the DSP memory and then the CPU memory of
+/// `caps`, which is the capacity once the ticked modules are taken out of an empty one (`empty`, `take`). A resource the capacity lacks or that has
+/// no limit is left out. Writes into `out` and returns the length (0 when the capacity has neither).
+pub fn load_line(caps: &[DkrtCap], out: &mut [u8; LINE_MAX]) -> usize {
+    let mut n = 0;
+    let mut put = |bytes: &[u8]| {
+        for &b in bytes {
+            out[n] = b;
+            n += 1;
+        }
+    };
+    let mut first = true;
+    for &(kind, label) in LINE.iter() {
+        let Some(c) = cap(caps, kind) else {
+            continue;
+        };
+        if c.limit == 0 {
+            continue;
+        }
+        if !first {
+            put(b" ");
+        }
+        first = false;
+        put(label);
+        put(b" ");
+        let p = percent(c.used, c.limit);
+        if p >= 100 {
+            put(b"100");
+        } else {
+            if p >= 10 {
+                put(&[b'0' + (p / 10) as u8]);
+            }
+            put(&[b'0' + (p % 10) as u8]);
+        }
+        put(b"%");
+    }
+    n
+}
+
 #[cfg(test)]
 mod tests;
