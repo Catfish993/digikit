@@ -45,6 +45,23 @@ use crate::{
 pub const MAX_SYX: usize = 32 * 1024 * 1024;
 /// Guest instructions NO is held when the controller closes the boot modal.
 const NO_HOLD: u64 = 2_000_000;
+/// Guest instructions per emulated second (the ColdFire oracle clock).
+const CF_IPS: f64 = 132_000_000.0;
+/// How far a paced runtime may lag the wall clock before its stretch starts again, in seconds.
+const PACE_SLACK_S: f64 = 0.05;
+
+/// Pacing of a free-running runtime without audio: after `wall_s` seconds of wall clock a runtime that executed `executed` instructions
+/// (`None`: its count went back) is ahead of the clock (`Some(true)`: wait), on time or a little behind (`Some(false)`: step), or
+/// lagging by more than the slack (`None`: start the stretch again).
+fn pace_ahead(wall_s: f64, executed: Option<u64>) -> Option<bool> {
+    let seconds = executed? as f64 / CF_IPS;
+    if seconds + PACE_SLACK_S < wall_s {
+        None
+    } else {
+        Some(seconds > wall_s)
+    }
+}
+
 /// Most guest instructions a cold boot may take before it is called stuck.
 const BOOT_LIMIT: u64 = 3_000_000_000;
 
@@ -287,6 +304,11 @@ pub struct Config {
     /// again when a DT2 firmware is loaded without a card (the desktop app;
     /// off for scenarios and tests, which must not depend on earlier runs).
     pub remember_card: bool,
+    /// Free running without a DSP audio session (a ColdFire-only runtime, as a DT2 opened in a session that has the DN2's audio inputs)
+    /// waits for the wall clock: one emulated second per second. Without it such a runtime runs as fast as the CPU allows (about 20 times
+    /// real time), and a mouse click on the faceplate lasts seconds of emulated time: the firmware sees a long press, so SETTINGS opens
+    /// nothing. The desktop app sets it; the daemon and the tests keep the full speed.
+    pub pace_free: bool,
     /// The +Drive folder the startup card (`firmware.load`'s `card`) was built from: `card.export` writes
     /// there, and with `sync` a quit does so too.
     pub card_folder: Option<CardSource>,
@@ -321,6 +343,7 @@ impl Config {
             events: Events::default(),
             on_quit: None,
             remember_card: false,
+            pace_free: false,
             card_folder: None,
             mirror_dir: None,
             device_folders: None,
@@ -552,6 +575,10 @@ struct Actor {
     /// `firmware.load {auto_no}`: press NO once the runtime it installs is ready.
     want_auto_no: bool,
     remember_card: bool,
+    /// `Config::pace_free`.
+    pace_free: bool,
+    /// The wall clock and the emulated instruction count at the start of the current paced stretch (see `must_wait_for_clock`).
+    pace_anchor: Option<(Instant, u64)>,
     /// Taken by the first load that mounts a card image.
     startup_card_folder: Option<CardSource>,
     repo_root: Option<PathBuf>,
@@ -658,6 +685,8 @@ impl Actor {
             auto_no: false,
             want_auto_no: false,
             remember_card: config.remember_card,
+            pace_free: config.pace_free,
+            pace_anchor: None,
             startup_card_folder: config.card_folder,
             repo_root: config.repo_root,
             runtime_info: None,
@@ -731,6 +760,33 @@ impl Actor {
         }
     }
 
+    /// Whether a free-running runtime without DSP audio is ahead of the wall clock (`Config::pace_free`). The paced stretch starts at the
+    /// first check and again after any pause, job or clock rebase; a stretch that fell more than `PACE_SLACK_S` behind (a slow host, a
+    /// long command) starts again instead of catching up in a burst.
+    fn must_wait_for_clock(&mut self) -> bool {
+        let paced = self.pace_free
+            && self.mode == Mode::Free
+            && self.job.is_none()
+            && self.runtime.as_ref().is_some_and(|r| !r.has_audio());
+        let elapsed = match self.runtime.as_ref() {
+            Some(r) if paced => r.elapsed_instructions(),
+            _ => {
+                self.pace_anchor = None;
+                return false;
+            }
+        };
+        let now = Instant::now();
+        let (start, base) = *self.pace_anchor.get_or_insert((now, elapsed));
+        match pace_ahead(now.duration_since(start).as_secs_f64(), elapsed.checked_sub(base)) {
+            Some(ahead) => ahead,
+            // the clock went back (rebased) or the stretch lags: start a new one
+            None => {
+                self.pace_anchor = Some((now, elapsed));
+                false
+            }
+        }
+    }
+
     fn run(mut self) {
         while !self.quit {
             self.poll_card();
@@ -746,8 +802,10 @@ impl Actor {
             let busy = self.runtime.is_some()
                 && (self.job.is_some() || (self.mode == Mode::Free && !carding));
             let command = if busy {
-                if self.job.is_none() && self.runtime.as_ref().is_some_and(Runtime::audio_ahead) {
-                    // Free running with the audio queue at its target: wait for
+                if self.job.is_none()
+                    && (self.runtime.as_ref().is_some_and(Runtime::audio_ahead) || self.must_wait_for_clock())
+                {
+                    // Free running with the audio queue at its target, or (no audio) ahead of the wall clock: wait for
                     // a command instead of stepping.
                     match self.rx.recv_timeout(std::time::Duration::from_millis(1)) {
                         Ok(command) => Some(command),
@@ -3831,6 +3889,21 @@ fn summarize_audio(runtime: &mut Runtime) -> Value {
         "source_audio_seconds": report["source_audio_seconds"],
         "dsp_tiers": report["dsp_tiers"],
     })
+}
+
+#[cfg(test)]
+mod pace_tests {
+    use super::{CF_IPS, pace_ahead};
+
+    #[test]
+    fn pacing_waits_when_ahead_steps_when_on_time_and_restarts_when_lagging() {
+        let seconds = |s: f64| Some((s * CF_IPS) as u64);
+        assert_eq!(pace_ahead(1.0, seconds(1.5)), Some(true));
+        assert_eq!(pace_ahead(1.0, seconds(1.0)), Some(false));
+        assert_eq!(pace_ahead(1.0, seconds(0.97)), Some(false));
+        assert_eq!(pace_ahead(1.0, seconds(0.5)), None);
+        assert_eq!(pace_ahead(1.0, None), None);
+    }
 }
 
 #[cfg(all(test, feature = "coupled-audio"))]

@@ -21,6 +21,10 @@ lists what is implemented. The design, including parts that are not built, is in
 | Desktop app | `mise run workbench` | On by default. `--no-control` turns it off. Prints `control socket: <path>` to stderr. |
 | Daemon `digi-emud` | `mise run emu:serve` | No window. Starts paused: a client steps it or sets `run.mode free`. `--free` runs it live. |
 
+The desktop app free-runs a runtime that has no DSP audio (ColdFire only, as a DT2 opened in a session started with the DN2's audio inputs) at the wall clock
+(`Config::pace_free`); the daemon keeps full speed (about 20 times real time). Unpaced, a mouse click on the faceplate lasted seconds of emulated time and the
+DT2 firmware read SETTINGS as a long press (it opens only on a press shorter than about 0.5 emulated seconds).
+
 Coupled DSP audio in the daemon needs `--auto-coupled` and the ready inputs; see [PATCHING.md](PATCHING.md).
 Startup flags are shared by both servers (`packages/emulator/control/src/cli.rs`): `--control`, `--no-control`, `--paused`,
 `--run-dir DIR`, `--card-image FILE` (with `--card-folder DIR`: the +Drive folder the image was built from; the firmware's changes are exported to it on exit; `--no-card-sync` turns the export off), `--device-folders` (one card folder per device, below), `--mirror-dir DIR` (the folder of the first loaded device), `--scenario NAME_OR_FILE`, `--report PATH`, `--no-audio` and the coupled-audio
