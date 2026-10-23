@@ -42,6 +42,7 @@
     {"name": "parameter rows", "needs": {"PARAM_ROWS": 3}, "caps": {"PARAM_ROWS": [16, 14, 0]}, "want": ["PARAM_ROWS", 3, 2]},
     {"name": "page rows on a device that has none", "needs": {"PAGE_ROWS": 1}, "want": ["PAGE_ROWS", 1, 0]},
     {"name": "page rows on a device that has them", "needs": {"PAGE_ROWS": 1}, "caps": {"PAGE_ROWS": [8, 7, 0]}, "want": null},
+    {"name": "a kind the capacity lacks is not judged", "needs": {"PAGE_ROWS": 3, "FX_SLOTS": 1}, "caps": {"PAGE_ROWS": null, "FX_SLOTS": null}, "want": null},
     {"name": "effect slots (there are none)", "needs": {"FX_SLOTS": 1}, "want": ["FX_SLOTS", 1, 0]},
     {
       "name": "the first short resource is reported: the module record before the DSP area",

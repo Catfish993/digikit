@@ -38,7 +38,6 @@ export function needsOf(h: Uint8Array): Needs {
   return out;
 }
 
-const cap = (caps: Caps, kind: string) => caps[kind] ?? { limit: 0, used: 0, largest: 0 };
 const free = (c: { limit: number; used: number }) => Math.max(c.limit - c.used, 0);
 
 /** DSP area bytes with the room a placement can lose to alignment (up to ALIGN - 8 bytes). */
@@ -50,7 +49,8 @@ export function dspNeed(n: Needs): number {
 /** null when the module fits the capacity, else the first short resource. */
 export function fitsNow(n: Needs, caps: Caps): Short | null {
   for (const kind of ORDER) {
-    const c = cap(caps, kind);
+    const c = caps[kind];
+    if (!c) continue; // a kind the capacity lacks (an older runtime): not judged
     let need: number;
     let room: number;
     if (kind === 'STAGE') {
@@ -148,7 +148,8 @@ const LABEL: Record<string, string> = {
 /** One line for a person: `DSP area 400 KiB needed, 254 KiB free`. */
 export function describeShort(s: Short): string {
   const label = LABEL[s.resource] ?? s.resource;
-  if (s.resource === 'STAGE' || s.resource === 'DSP_AREA' || s.resource === 'ARENA')
+  if (s.resource === 'STAGE') return `${label} ${fmtSize(s.need, true)} needed, ${fmtSize(s.free, false)} at most`;
+  if (s.resource === 'DSP_AREA' || s.resource === 'ARENA')
     return `${label} ${fmtSize(s.need, true)} needed, ${fmtSize(s.free, false)} free`;
   return `${label} ${s.need} needed, ${s.free} free`;
 }

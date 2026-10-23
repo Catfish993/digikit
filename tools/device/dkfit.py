@@ -4,7 +4,7 @@ The rule is written three times and kept equal by one set of vectors (sdk/fit-ve
 menu), apps/web/src/modules/dkfit.ts (the host app) and this file (dev tools: `dk run`, `module:check`).
 
 `needs` is `dkupload.dkm_needs(header)` plus `file_size`; `caps` is `Uploader.capacity()`: kind name -> {limit, used, largest}.
-`fits_now` returns None, or the first short resource as (name, need, free). `take` returns the capacity left once the module is loaded, and
+`fits_now` returns None, or the first short resource as (name, need, free); a kind that CAPS lacks is not judged. `take` returns the capacity left once the module is loaded, and
 `fits_set` loads several in turn (the sum rule: it takes each module's needs and does not model fragmentation, so it is conservative).
 """
 
@@ -33,10 +33,6 @@ ORDER = (
 ROWS = ("VOICE_ROWS", "MACHINE_ROWS", "PARAM_ROWS", "PAGE_ROWS", "FX_SLOTS")
 
 
-def _cap(caps: Caps, kind: str) -> dict[str, int]:
-    return caps.get(kind) or {"limit": 0, "used": 0, "largest": 0}
-
-
 def _free(c: dict[str, int]) -> int:
     return max(c["limit"] - c["used"], 0)
 
@@ -50,7 +46,9 @@ def dsp_need(needs: dict[str, int]) -> int:
 def fits_now(needs: dict[str, int], caps: Caps) -> Short | None:
     """None when the module fits the capacity, else (resource, need, free) of the first short resource."""
     for kind in ORDER:
-        c = _cap(caps, kind)
+        c = caps.get(kind)
+        if c is None:  # a kind the capacity lacks (an older runtime): not judged
+            continue
         if kind == "STAGE":
             need, free = needs.get("file_size", 0), c["largest"]
         elif kind in ("MODULES", "SELECTION"):
@@ -130,7 +128,8 @@ def describe(short: Short) -> str:
         "FX_SLOTS": "effect slots",
     }[name]
     if name in ("STAGE", "DSP_AREA", "ARENA"):
-        return f"{label} {_size(need, True)} needed, {_size(free, False)} free"
+        room = "at most" if name == "STAGE" else "free"
+        return f"{label} {_size(need, True)} needed, {_size(free, False)} {room}"
     return f"{label} {need} needed, {free} free"
 
 
@@ -168,8 +167,10 @@ def _size(n: int, up: bool) -> str:
 
 
 def vector_caps(base: dict[str, Any], over: dict[str, Any] | None) -> Caps:
-    """The capacity of a vector: BASE ([limit, used, largest] per kind) with OVER laid over it."""
+    """The capacity of a vector: BASE ([limit, used, largest] per kind) with OVER laid over it (null: the kind is left out)."""
     merged = {**base, **(over or {})}
     return {
-        k: {"limit": v[0], "used": v[1], "largest": v[2]} for k, v in merged.items()
+        k: {"limit": v[0], "used": v[1], "largest": v[2]}
+        for k, v in merged.items()
+        if v is not None  # null in OVER: the kind is left out
     }

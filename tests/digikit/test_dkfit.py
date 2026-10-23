@@ -56,6 +56,7 @@ def test_a_short_resource_reads_as_a_line():
     )
     assert F.describe(("ARENA", 1025, 1535)) == "memory 2 KiB needed, 1 KiB free"
     assert F.describe(("PARAM_ROWS", 3, 2)) == "parameter rows 3 needed, 2 free"
+    assert F.describe(("STAGE", 70000, 65536)) == "file 69 KiB needed, 64 KiB at most"
 
 
 def test_empty_caps_on_the_vector():

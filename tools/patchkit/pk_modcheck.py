@@ -66,9 +66,64 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
     return paths, env
 
 
+def device_caps(dev: str) -> dict[str, dict[str, int]]:
+    """CAPACITY of an empty device DEV as its device file sets the limits (nothing used): what a module must fit to load on it alone."""
+    from tools.patchkit import pk_device
+
+    lim = pk_device.limits(dev)
+    sel = pk_device.contract_max()["modules"]
+
+    def cap(limit: int, largest: int = 0) -> dict[str, int]:
+        return {"limit": limit, "used": 0, "largest": largest}
+
+    return {
+        "MODULES": cap(lim.modules),
+        "SELECTION": cap(sel),
+        "ARENA": cap(lim.arena_bytes),
+        "STAGE": cap(lim.stage_bytes, lim.stage_bytes),
+        "DSP_AREA": cap(lim.dsp_area_bytes),
+        "MACHINE_ROWS": cap(lim.machine_rows),
+        "VOICE_ROWS": cap(lim.machine_rows),
+        "PARAM_ROWS": cap(lim.param_rows),
+        "PAGE_ROWS": cap(lim.page_rows),
+        "FX_SLOTS": cap(lim.fx_slots),
+    }
+
+
+def needs_lines(dkm: bytes, dev: str) -> list[str]:
+    """The declared needs of a packed module (docs/design/digikit-dkm.md) and whether it fits the empty device DEV (the fit rule, tools/device/dkfit.py)."""
+    from tools.device import dkfit, dkupload
+
+    n = {**dkupload.dkm_needs(dkm), "file_size": len(dkm)}
+    shown = ", ".join(
+        f"{label} {n[k]}"
+        for label, k in (
+            ("arena", "ARENA"),
+            ("arena while the DSP code is sent", "ARENA_XFER"),
+            ("DSP area", "DSP_AREA"),
+            ("machines", "MACHINE_ROWS"),
+            ("voices", "VOICE_ROWS"),
+            ("params", "PARAM_ROWS"),
+            ("pages", "PAGE_ROWS"),
+        )
+        if n[k]
+    )
+    caps = device_caps(dev)
+    short = dkfit.fits_now(n, dkfit.empty_caps(caps))
+    verdict = (
+        "fits an empty device"
+        if short is None
+        else f"DOES NOT FIT even an empty device: {dkfit.describe(short)}"
+    )
+    return [
+        f"{dev}: needs    {shown or 'nothing but its code'}",
+        f"{dev}: fits     {verdict}",
+    ]
+
+
 def size_lines(mid: str, devices: list[str]) -> list[str]:
-    """The `size` line of `patchkit pack` for module MID, once per device (design rule D5). A module that does not pack
-    (no ColdFire object, or several, e.g. a patched-in module) gets a "not packed" line with the reason."""
+    """The `size` line of `patchkit pack` for module MID, once per device (design rule D5), then its declared needs and whether it fits an
+    empty device. A module that does not pack (no ColdFire object, or several, e.g. a patched-in module) gets a "not packed" line with the reason."""
     from tools.patchkit import patchkit
 
     lines: list[str] = []
@@ -89,6 +144,7 @@ def size_lines(mid: str, devices: list[str]) -> list[str]:
                 for ln in r.stdout.splitlines()
                 if ln.startswith("size ")
             ]
+            lines += needs_lines(out.read_bytes(), dev)
     return lines
 
 

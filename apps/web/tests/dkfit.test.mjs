@@ -9,7 +9,11 @@ const V = JSON.parse(readFileSync(new URL('../../../sdk/fit-vectors.json', impor
 
 const capsOf = (over) => {
   const merged = { ...V.caps_base, ...(over ?? {}) };
-  return Object.fromEntries(Object.entries(merged).map(([k, [limit, used, largest]]) => [k, { limit, used, largest }]));
+  return Object.fromEntries(
+    Object.entries(merged)
+      .filter(([, v]) => v !== null)
+      .map(([k, [limit, used, largest]]) => [k, { limit, used, largest }]),
+  );
 };
 
 for (const c of V.cases) {
@@ -54,6 +58,7 @@ test('needsOf reads the header at the offsets of [dkm.needs]', () => {
 });
 
 test('a short resource reads as a line', () => {
+  assert.equal(describeShort({ resource: 'STAGE', need: 70000, free: 65536 }), 'file 69 KiB needed, 64 KiB at most');
   assert.equal(
     describeShort({ resource: 'DSP_AREA', need: 409600, free: 260096 }),
     'DSP area 400 KiB needed, 254 KiB free',

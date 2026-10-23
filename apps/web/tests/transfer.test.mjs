@@ -23,6 +23,7 @@ import {
   localTags,
   MODES,
   parseMode,
+  tickedFit,
   warningText,
 } from '../../desktop/ui/src/transfer-core.ts';
 
@@ -252,7 +253,13 @@ test('the tags: only what says something; the usual state has none', () => {
   const fit = localTags({ ...sine, warnings: ['arena 2 MiB is more than the free 1 MiB'] });
   assert.deepEqual(
     [fit[0].text, fit[0].tone, fit[0].title],
-    ['fit', 'warn', 'arena 2 MiB is more than the free 1 MiB'],
+    ["won't fit", 'warn', 'arena 2 MiB is more than the free 1 MiB'],
+  );
+  assert.deepEqual(texts(localTags({ ...sine, fits: true })), ['fits'], 'a module that fits says so');
+  assert.deepEqual(
+    texts(localTags({ ...sine, fits: true, loaded: true, on_card: 'yes' })),
+    ['on device'],
+    'a loaded one says nothing of fit',
   );
   // On device: loaded first, then how the file stands against the library
   assert.deepEqual(texts(deviceTags(pluck)), ['loaded'], 'the same as the library is not said');
@@ -290,4 +297,37 @@ test('the device line: the free space in GiB from 1 GiB up, the same line for bo
     'Emulator · Digitone II · runtime 0.4.1 · 19.05 GiB free',
   );
   assert.equal(infoLine('Emulator', 'Digitakt II', '0.4.1', undefined), 'Emulator · Digitakt II · runtime 0.4.1');
+});
+
+test('the ticked modules together: the sum rule against the device limits, in list order', () => {
+  const caps = {
+    MODULES: { limit: 8, used: 3, largest: 0 }, // what is loaded now does not count: the next boot starts empty
+    SELECTION: { limit: 8, used: 3, largest: 0 },
+    ARENA: { limit: 524288, used: 9000, largest: 100 },
+    STAGE: { limit: 65536, used: 0, largest: 65536 },
+    DSP_AREA: { limit: 524288, used: 400000, largest: 100 },
+  };
+  const m = (id, dsp) =>
+    row(id, 'Machines', { label: id, needs: { file_size: 900, ARENA: 64, DSP_AREA: dsp, DSP_ALIGN: 8 } });
+  const v = {
+    device: 'dt2',
+    runtime: '0.3.0',
+    free_bytes: 0,
+    loaded: [],
+    capacity: caps,
+    card_only: [],
+    modules: [m('a', 300000), m('b', 300000), m('c', 1000)],
+  };
+  assert.equal(tickedFit({ ...v, capacity: null }, new Set(['a'])), null, 'no CAPACITY, no verdict');
+  assert.equal(tickedFit(v, new Set()), null, 'nothing ticked');
+  assert.deepEqual(tickedFit(v, new Set(['a'])), { text: 'The ticked module fits the device.', tone: 'ok' });
+  assert.deepEqual(tickedFit(v, new Set(['a', 'c'])), {
+    text: 'The 2 ticked modules fit the device together.',
+    tone: 'ok',
+  });
+  const two = tickedFit(v, new Set(['a', 'b']));
+  assert.equal(two.tone, 'warn');
+  assert.match(two.text, /^b does not fit with the ticked modules before it: DSP area 293 KiB needed, 219 KiB free$/);
+  const alone = tickedFit({ ...v, modules: [m('big', 600000)] }, new Set(['big']));
+  assert.match(alone.text, /^big does not fit the device: DSP area 586 KiB needed, 511 KiB free$/);
 });

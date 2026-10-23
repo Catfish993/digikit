@@ -170,6 +170,9 @@ fn caps(base: &Value, over: Option<&Value>) -> Vec<DkrtCap> {
     let mut out: Vec<DkrtCap> = vec![];
     for (name, v) in base.as_object().unwrap() {
         let v = over.and_then(|o| o.get(name)).unwrap_or(v);
+        if v.is_null() {
+            continue; // the kind is left out
+        }
         let a = v.as_array().unwrap();
         out.push(DkrtCap {
             kind: kind(name) as u32,

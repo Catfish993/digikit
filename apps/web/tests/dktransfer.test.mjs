@@ -14,7 +14,7 @@ import {
   splitMessages,
   storeSpace,
 } from '../src/modules/dkupload-core.ts';
-import { CAP, CAPACITY_KINDS, CMD, DKM_FORMAT, DKM_HEADER, LOG_KIND } from '../src/modules/gen_proto.ts';
+import { CAP, CAPACITY_KINDS, CMD, DKM_FORMAT, DKM_HEADER, DKM_NEEDS, LOG_KIND } from '../src/modules/gen_proto.ts';
 import {
   PROGRESS_EVENTS,
   buildView,
@@ -46,6 +46,10 @@ function dkm(name, { machine = 0, fx = 0, service = 1, size = 700, dsp = 0, vers
   new DataView(b.buffer).setUint32(0x64, 100);
   new DataView(b.buffer).setUint32(0x68, 20);
   new DataView(b.buffer).setUint32(0x9c, dsp);
+  // the declared needs: the arena block of image 100 and bss 20, and the DSP area of a module that has DSP code
+  new DataView(b.buffer).setUint32(DKM_NEEDS.ARENA, 120);
+  new DataView(b.buffer).setUint32(DKM_NEEDS.DSP_AREA, dsp);
+  new DataView(b.buffer).setUint32(DKM_NEEDS.DSP_ALIGN, dsp ? 8 : 0);
   for (let i = DKM_HEADER; i < size; i++) b[i] = (i * 31 + salt) & 255;
   return b;
 }
@@ -419,6 +423,7 @@ test('header, library module, the merged list', async () => {
     { path: 'modules/junk.dkm', size: 9, sha256: 'bb' },
   ];
   const headers = { 'modules/other.dkm': dkm('someone/effect', { fx: 1, size: 700 }), 'modules/junk.dkm': null };
+  // the device has 1000 bytes of DSP area, 50 of them in one free piece (a loaded module sits in the rest)
   const cap = {
     MODULES: { limit: 8, used: 1, largest: 0 },
     ARENA: { limit: 1000, used: 0, largest: 300 },
@@ -436,7 +441,18 @@ test('header, library module, the merged list', async () => {
   );
   assert.equal(by['digikit/tool'].on_card, 'other version');
   assert.deepEqual([by['test/sine'].on_card, by['test/sine'].fits, by['test/sine'].test], ['no', false, true]); // DSP 400 > largest 50
-  assert.match(by['test/sine'].warnings[0], /DSP area/);
+  assert.match(
+    by['test/sine'].warnings[0],
+    /DSP area 400 bytes needed, 50 bytes free; fits when the modules loaded now are not selected/,
+  );
+  // more than the device has at all: no way out by deselecting
+  const huge = await libraryModule(dkm('test/huge', { machine: 1, dsp: 2000, size: 800 }));
+  assert.match(
+    mergeView([huge], [], [], cap, {}).modules[0].warnings[0],
+    /DSP area .* needed, .* free; more than this device has/,
+  );
+  // a capacity without a kind (an older runtime) does not judge it
+  assert.equal(mergeView(library, [], [], { MODULES: cap.MODULES }, {}).modules[1].fits, true);
   const extra = Object.fromEntries(v.card_only.map((r) => [r.path, r]));
   assert.deepEqual(
     [extra['modules/other.dkm'].group, extra['modules/other.dkm'].loaded, extra['modules/other.dkm'].name],

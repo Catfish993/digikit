@@ -45,6 +45,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from tools.device import dkfit as F
 from tools.device import dkrun as R
 from tools.device import dkupload as D
 from tools.patchkit import modroots
@@ -71,16 +72,16 @@ def header_info(h: bytes) -> dict[str, Any] | None:
         k: (h[0x38 + 2 * i], h[0x39 + 2 * i])
         for i, k in enumerate(("api", "machine", "fx", "service"))
     }
-    image, bss = struct.unpack_from(">II", h, 0x64)
-    dsp = struct.unpack_from(">I", h, 0x9C)[0]
+    needs = {**D.dkm_needs(h), "file_size": size}
     return {
         "name": h[0x40:0x60].split(b"\0")[0].decode("ascii", "replace"),
         "version": D.fmt_runtime(version),
         "contracts": contracts,
         "group": group_of(contracts),
         "size": size,
-        "arena": image + bss,
-        "dsp": dsp,
+        "arena": needs["ARENA"],
+        "dsp": needs["DSP_AREA"],
+        "needs": needs,
     }
 
 
@@ -198,20 +199,21 @@ def repo_rows(
 def fit_warnings(
     row: dict[str, Any], cap: dict[str, dict[str, int]] | None
 ) -> list[str]:
-    """What would not fit on the target (CAPACITY). Only a warning: the device refuses a load that does not fit."""
-    if cap is None or row["loaded"]:
+    """What would not fit on the target (CAPACITY): none when the module fits next to what is loaded now (the fit rule, dkfit.py), else one line
+    that says what is short and whether the module fits the device when the loaded ones are left out (the next boot loads the selection into an
+    empty runtime). Only a warning: the device refuses a load that does not fit."""
+    if cap is None or row["loaded"] or "needs" not in row:
         return []
-    out = []
-    m = cap.get("MODULES")
-    if m and m["used"] >= m["limit"]:
-        out.append(f"no free module record ({m['used']}/{m['limit']})")
-    a = cap.get("ARENA")
-    if a and row["arena"] > a["largest"]:
-        out.append(f"arena: needs {row['arena']} bytes, largest free {a['largest']}")
-    d = cap.get("DSP_AREA")
-    if d and row["dsp"] > d["largest"]:
-        out.append(f"DSP area: needs {row['dsp']} bytes, largest free {d['largest']}")
-    return out
+    short = F.fits_now(row["needs"], cap)
+    if short is None:
+        return []
+    alone = F.fits_now(row["needs"], F.empty_caps(cap)) is None
+    why = (
+        "fits when the modules loaded now are not selected"
+        if alone
+        else "more than this device has"
+    )
+    return [f"{F.describe(short)}; {why}"]
 
 
 def merge(

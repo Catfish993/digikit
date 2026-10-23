@@ -86,14 +86,14 @@ const ORDER: [u8; 10] = [
     CAPK_FX_SLOTS,
 ];
 
-/// The entry of `kind` (all zero when the capacity has none: a resource the device does not have).
-fn cap(caps: &[DkrtCap], kind: u8) -> DkrtCap {
+/// The entry of `kind`; None when the capacity has none (an older runtime without that kind): it is not judged.
+fn cap(caps: &[DkrtCap], kind: u8) -> Option<DkrtCap> {
     for c in caps {
         if c.kind == kind as u32 {
-            return *c;
+            return Some(*c);
         }
     }
-    DkrtCap { kind: kind as u32, limit: 0, used: 0, largest: 0 }
+    None
 }
 
 fn free(c: &DkrtCap) -> u32 {
@@ -103,7 +103,9 @@ fn free(c: &DkrtCap) -> u32 {
 /// None when the module fits `caps`, else the first short resource.
 pub fn fits_now(n: &Needs, caps: &[DkrtCap]) -> Option<Short> {
     for kind in ORDER {
-        let c = cap(caps, kind);
+        let Some(c) = cap(caps, kind) else {
+            continue;
+        };
         // an `if` chain, not a `match`: dense arms become a PC-relative jump table, which is not ColdFire code
         let (need, room) = if kind == CAPK_STAGE {
             (n.file_size, c.largest)

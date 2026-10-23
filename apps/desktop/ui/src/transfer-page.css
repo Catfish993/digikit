@@ -241,6 +241,22 @@
   color: #f0b35a;
   background: #2a2010;
 }
+.transfer-page .fitline {
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--ink-3, #868b94);
+  background: #1a1c20;
+}
+.transfer-page .fitline.ok {
+  color: #7be3a1;
+  background: #0f2418;
+}
+.transfer-page .fitline.warn {
+  color: #f0b35a;
+  background: #2a2010;
+}
 .transfer-page .check {
   flex: none;
   font-size: 10.5px;
