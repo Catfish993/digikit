@@ -52,6 +52,10 @@
     {"name": "the first short resource is reported: the DSP area before the arena", "needs": {"ARENA": 600000, "DSP_AREA": 524288, "DSP_ALIGN": 8}, "want": ["DSP_AREA", 524288, 524284]},
     {"name": "the first short resource is reported: the arena before the rows", "needs": {"ARENA": 600000, "PARAM_ROWS": 17}, "want": ["ARENA", 600000, 524288]}
   ],
+  "empty": {
+    "from": {"MODULES": [8, 3, 0], "SELECTION": [8, 2, 0], "ARENA": [524288, 9000, 100], "STAGE": [65536, 0, 65000], "DSP_AREA": [524288, 265600, 258684], "PARAM_ROWS": [16, 5, 0], "PAGE_ROWS": [0, 0, 0]},
+    "want": {"MODULES": [8, 0, 8], "SELECTION": [8, 0, 8], "ARENA": [524288, 0, 524272], "STAGE": [65536, 0, 65000], "DSP_AREA": [524288, 0, 524280], "PARAM_ROWS": [16, 0, 16], "PAGE_ROWS": [0, 0, 0]}
+  },
   "sets": [
     {
       "name": "three small modules fit",

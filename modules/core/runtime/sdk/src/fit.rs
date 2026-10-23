@@ -136,6 +136,25 @@ pub fn fits_now(n: &Needs, caps: &[DkrtCap]) -> Option<Short> {
     None
 }
 
+/// Make `caps` the capacity of a runtime that has loaded nothing: every resource unused and its whole limit free, as the next boot sees it (the
+/// module set is fixed per session). The arena starts one block header short of its limit and the DSP area 8 bytes short (its first range starts at
+/// an offset that is not 8-aligned); the staging buffer is not a resource that a load uses up.
+pub fn empty(caps: &mut [DkrtCap]) {
+    for c in caps.iter_mut() {
+        if c.kind == CAPK_STAGE as u32 {
+            continue;
+        }
+        c.used = 0;
+        c.largest = if c.kind == CAPK_ARENA as u32 {
+            c.limit.saturating_sub(ARENA_HDR)
+        } else if c.kind == CAPK_DSP_AREA as u32 {
+            c.limit.saturating_sub(8)
+        } else {
+            c.limit
+        };
+    }
+}
+
 /// Take the module's needs out of `caps` (what is left once it is loaded). An entry the capacity lacks is ignored.
 pub fn take(n: &Needs, caps: &mut [DkrtCap]) {
     let mut use_ = |kind: u8, amount: u32| {

@@ -5,7 +5,11 @@ Adds **SETTINGS > DIGIKIT** (the ninth row, after SYSTEM). Emulator only: nothin
 - **MODULES** lists the `.dkm` files of the +Drive module store (`digikit/` of the `plus_drive/` folder,
   [docs/design/digikit-store.md](../../../docs/design/digikit-store.md)), up to 32 of the first 128 table entries. A row reads `[X]` when it is in
   the pending selection and `[ ]` when not (the pending selection starts as the saved one; ticking only edits it); a fourth character `*`
-  (drawn as a cross) marks a module this boot loaded, `L` one whose DSP part is still going. `[-]` is a module whose header says this runtime
+  (drawn as a cross) marks a module this boot loaded, `L` one whose DSP part is still going, `x` one that will not fit next to the ticked ones. The row ends with the memory the
+  module takes (arena and DSP area, from the needs its header declares, docs/design/digikit-dkm.md): `[ ]x HUGE      321K`; the name is the file name without `.dkm`, cut to 8 characters
+  (the list shows about 18). The next boot loads the ticked modules into an empty runtime, so fit is checked against the limits with the ticked modules taken out, in list
+  order (`dkrt_sdk::fit`, docs/plans/what-fits.md); selecting a row that will not fit ticks nothing and shows a popup `NO FIT: DSP 164K > 155K FREE` and the short form in the
+  message row. `[-]` is a module whose header says this runtime
   or device cannot load it; it cannot be ticked. **APPLY & RESTART** appears only when the pending selection differs from the saved one (or this
   boot is in safe mode): the first press shows a popup that the device restarts, the second saves the selection (`dkrt_selection_set`) and
   restarts (`dkrt_restart`); a refusal is shown. **CLEAR SELECTION** unticks all. In safe mode the DIGIKIT view and the list show `SAFE: <reason>`

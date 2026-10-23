@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { describeShort, fitsNow, fitsSet, needsOf, take } from '../src/modules/dkfit.ts';
+import { describeShort, emptyCaps, fitsNow, fitsSet, needsOf, take } from '../src/modules/dkfit.ts';
 import { DKM_NEEDS } from '../src/modules/gen_proto.ts';
 
 const V = JSON.parse(readFileSync(new URL('../../../sdk/fit-vectors.json', import.meta.url), 'utf8'));
@@ -26,6 +26,12 @@ for (const s of V.sets) {
     assert.deepEqual(got && [got.index, got.resource, got.need, got.free], s.want);
   });
 }
+
+test('emptyCaps is the capacity of a runtime that has loaded nothing', () => {
+  const caps = (m) =>
+    Object.fromEntries(Object.entries(m).map(([k, [limit, used, largest]]) => [k, { limit, used, largest }]));
+  assert.deepEqual(emptyCaps(caps(V.empty.from)), caps(V.empty.want));
+});
 
 test('take leaves the capacity it says and does not change its input', () => {
   const caps = capsOf();

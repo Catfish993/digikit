@@ -89,6 +89,19 @@ def take(needs: dict[str, int], caps: Caps) -> Caps:
     return out
 
 
+def empty_caps(caps: Caps) -> Caps:
+    """CAPS as the next boot sees the runtime: nothing used, the whole limit free (the module set is fixed per session, so a selection loads into an
+    empty runtime). The arena starts one block header short of its limit and the DSP area 8 bytes short (its first range starts at an offset that is not
+    8-aligned); the staging buffer is not a resource that a load uses up."""
+    out = {k: dict(v) for k, v in caps.items()}
+    for kind, c in out.items():
+        if kind == "STAGE":
+            continue
+        c["used"] = 0
+        c["largest"] = c["limit"] - {"ARENA": HDR, "DSP_AREA": 8}.get(kind, 0)
+    return out
+
+
 def fits_set(
     needs: list[dict[str, int]], caps: Caps
 ) -> tuple[int, str, int, int] | None:
@@ -119,6 +132,32 @@ def describe(short: Short) -> str:
     if name in ("STAGE", "DSP_AREA", "ARENA"):
         return f"{label} {_size(need, True)} needed, {_size(free, False)} free"
     return f"{label} {need} needed, {free} free"
+
+
+def menu_line(short: Short, compact: bool = False) -> str:
+    """The text of the DIGIKIT menu for a short resource (`short_text` in modules/core/digikit-menu): `DSP 400K > 254K FREE`; COMPACT (the list's RESULT
+    row): `DSP 400K>254K`."""
+    name, need, free = short
+    label = {
+        "MODULES": "MODULES",
+        "SELECTION": "SELECTED",
+        "ARENA": "RAM",
+        "STAGE": "FILE",
+        "DSP_AREA": "DSP",
+        "MACHINE_ROWS": "MACHINES",
+        "VOICE_ROWS": "VOICES",
+        "PARAM_ROWS": "PARAMS",
+        "PAGE_ROWS": "PAGES",
+        "FX_SLOTS": "FX",
+    }[name]
+    gt = ">" if compact else " > "
+    if name in ("ARENA", "DSP_AREA", "STAGE"):
+        out = f"{label} {-(-need // 1024)}K{gt}{free // 1024}K"
+    else:
+        out = f"{label} {need}{gt}{free}"
+    if not compact:
+        out += " MAX" if name == "STAGE" else " FREE"
+    return out
 
 
 def _size(n: int, up: bool) -> str:

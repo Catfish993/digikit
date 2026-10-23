@@ -13,7 +13,10 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null, null_mut};
-use dkrt_sdk::proto::{CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_VOICE_ROWS};
+use dkrt_sdk::fit::{self, Needs, Short};
+use dkrt_sdk::proto::{
+    CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_STAGE, CAPK_VOICE_ROWS, DKM_FORMAT,
+};
 use dkrt_sdk::{DkrtStoreEntry, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
@@ -307,6 +310,14 @@ impl Text {
         self.b = [0; TEXT];
         self.n = 0;
     }
+    /// Spaces up to `n` characters.
+    fn pad(&mut self, n: usize) -> &mut Text {
+        while self.n < n && self.n < TEXT - 1 {
+            self.b[self.n] = b' ';
+            self.n += 1;
+        }
+        self
+    }
     fn s(&mut self, t: &[u8]) -> &mut Text {
         for &c in t {
             if self.n < TEXT - 1 && c != 0 {
@@ -374,6 +385,13 @@ static mut LOADED: [u8; MAX_ENT] = [0; MAX_ENT];
 static mut NENT: usize = 0;
 /// 1 when the file's header says this runtime or device cannot load it (shown greyed out, `[-]`, and cannot be ticked).
 static mut NOK: [u8; MAX_ENT] = [0; MAX_ENT];
+/// The needs each file's header declares (docs/design/digikit-dkm.md), 1 in `HAS_NEEDS` when it has them (a file that is not a `.dkm` has none).
+static mut NEEDS: [Needs; MAX_ENT] = [NO_NEEDS; MAX_ENT];
+static mut HAS_NEEDS: [u8; MAX_ENT] = [0; MAX_ENT];
+const NO_NEEDS: Needs = Needs { file_size: 0, arena: 0, arena_xfer: 0, dsp_area: 0, dsp_align: 0, machine_rows: 0, voice_rows: 0, param_rows: 0, page_rows: 0, fx_slots: 0 };
+/// 1 when the row's module does not fit next to the ticked ones (`refit`), and the first short resource.
+static mut WONT: [u8; MAX_ENT] = [0; MAX_ENT];
+static mut SHORT: [Short; MAX_ENT] = [Short { kind: 0, need: 0, free: 0 }; MAX_ENT];
 /// One 512-byte, 16-byte aligned firmware heap block the card DMA fills with a file's header sector.
 static mut HDR: *mut u8 = null_mut();
 /// The saved selection as the runtime gave it, and this boot's info (safe mode, results).
@@ -462,6 +480,12 @@ unsafe fn compatible(first: u32, device: u32) -> bool {
         Some(DKM_MAGIC) => {}
         _ => return true,
     }
+    // another format number: the loader refuses it (E_FORMAT)
+    if let Some(f) = file_word(first, 4) {
+        if f != DKM_FORMAT {
+            return false;
+        }
+    }
     let rt = [
         dkrt_sdk::contract::API,
         dkrt_sdk::contract::MACHINE,
@@ -492,6 +516,75 @@ unsafe fn compatible(first: u32, device: u32) -> bool {
     match file_word(first, off + 8) {
         Some(d) => d == device || device == 0,
         None => true,
+    }
+}
+
+/// The needs the `.dkm` at store sector `first` declares: its header sector through the block reader; None for a file that is not one or cannot be read.
+unsafe fn read_needs(first: u32) -> Option<Needs> {
+    if dkrt_store_read_sector(first, HDR) != OK {
+        return None;
+    }
+    Needs::from_header(core::slice::from_raw_parts(HDR, 512))
+}
+
+/// Which modules fit. A module set is fixed per session, so the ticked set loads at the next boot into an empty runtime: start from the limits (CAPACITY's
+/// limit of each resource, nothing used) and take in the ticked modules in list order; a ticked one that no longer fits is flagged and not taken.
+/// Then each unticked module is checked against what the ticked ones leave.
+unsafe fn refit() {
+    WONT = [0; MAX_ENT];
+    let mut caps = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; CAP_MAX];
+    let n = dkrt_capacity(caps.as_mut_ptr(), CAP_MAX as u32) as usize;
+    let caps = &mut caps[..n];
+    fit::empty(caps);
+    for pass in 0..2 {
+        for i in 0..NENT {
+            if HAS_NEEDS[i] == 0 || NOK[i] != 0 || (TICK[i] != 0) != (pass == 0) {
+                continue;
+            }
+            match fit::fits_now(&NEEDS[i], caps) {
+                None => {
+                    if pass == 0 {
+                        fit::take(&NEEDS[i], caps);
+                    }
+                }
+                Some(s) => {
+                    WONT[i] = 1;
+                    SHORT[i] = s;
+                }
+            }
+        }
+    }
+}
+
+/// `n` bytes in K for a row: `<1K`, `259K`, `1.2M`.
+fn size_k(t: &mut Text, n: u32) {
+    if n < 1024 {
+        t.s(b"<1K");
+    } else if n.div_ceil(1024) < 1000 {
+        t.num(n.div_ceil(1024)).s(b"K");
+    } else {
+        let tenth = (n / 1024 * 10) / 1024;
+        t.num(tenth / 10).s(b".").num(tenth % 10).s(b"M");
+    }
+}
+
+/// The names of the CAPACITY kinds a fit can be short of, by kind number (0 and the kinds that cannot be short: empty).
+const SHORT_NAME: [&str; 13] = ["", "MODULES", "SELECTED", "RAM", "FILE", "DSP", "MACHINES", "VOICES", "PARAMS", "PAGES", "FX", "", ""];
+
+/// What is short, in K for bytes and as numbers for rows and slots (the need rounded up, what is free rounded down): `DSP 400K > 254K FREE`, in a
+/// popup (28 characters fit with `NO FIT: `); `compact` for the list's RESULT row (about 18 characters fit): `DSP 400K>254K`.
+fn short_text(t: &mut Text, s: &Short, compact: bool) {
+    let k = s.kind as usize;
+    t.s(if k < 13 { SHORT_NAME[k].as_bytes() } else { b"" }).s(b" ");
+    let bytes = s.kind == CAPK_ARENA || s.kind == CAPK_DSP_AREA || s.kind == CAPK_STAGE;
+    let gt: &[u8] = if compact { b">" } else { b" > " };
+    if bytes {
+        t.num(s.need.div_ceil(1024)).s(b"K").s(gt).num(s.free / 1024).s(b"K");
+    } else {
+        t.num(s.need).s(gt).num(s.free);
+    }
+    if !compact {
+        t.s(if s.kind == CAPK_STAGE { b" MAX" } else { b" FREE" });
     }
 }
 
@@ -561,9 +654,14 @@ unsafe fn scan_once() {
     STORE = 1;
     let mut st: DkrtStatus = core::mem::zeroed();
     dkrt_status(&mut st);
+    HAS_NEEDS = [0; MAX_ENT];
     for i in 0..NENT {
-        if !compatible(ENTRIES[ENT[i] as usize].first, st.device) {
+        let first = ENTRIES[ENT[i] as usize].first;
+        if !compatible(first, st.device) {
             NOK[i] = 1;
+        } else if let Some(n) = read_needs(first) {
+            NEEDS[i] = n;
+            HAS_NEEDS[i] = 1;
         }
     }
     refresh_loaded();
@@ -636,8 +734,8 @@ fn result_text(t: &mut Text, code: i32) {
     }
 }
 
-/// The file name of a path, upper case, at most `max` characters from the end.
-fn name_of(p: &[u8], max: usize, t: &mut Text) {
+/// The file name of a path, upper case, at most `max` characters: from the end, or with `head` the first ones.
+fn name_of(p: &[u8], max: usize, head: bool, t: &mut Text) {
     let mut start = 0;
     for (k, &c) in p.iter().enumerate() {
         if c == b'/' {
@@ -645,14 +743,24 @@ fn name_of(p: &[u8], max: usize, t: &mut Text) {
         }
     }
     let name = &p[start..];
-    let name = if name.len() > max { &name[name.len() - max..] } else { name };
+    let name = if name.len() <= max {
+        name
+    } else if head {
+        &name[..max]
+    } else {
+        &name[name.len() - max..]
+    };
     for &c in name {
         t.s(&[upper(c)]);
     }
 }
 
+/// The row's file name without `.dkm`, upper case, its first `max` characters.
 unsafe fn upper_name(i: usize, max: usize, t: &mut Text) {
-    name_of(entry_path(ENT[i] as usize), max, t);
+    let p = entry_path(ENT[i] as usize);
+    let l = p.len();
+    let p = if l > 4 && p[l - 4] == b'.' && lower(p[l - 3]) == b'd' && lower(p[l - 2]) == b'k' && lower(p[l - 1]) == b'm' { &p[..l - 4] } else { p };
+    name_of(p, max, true, t);
 }
 
 /// Show `t` in the firmware's message popup window (the one "LOAD ERROR" uses after a project load): it takes the key focus
@@ -746,23 +854,54 @@ unsafe fn fill_main() {
     end_rebuild(m, sel);
 }
 
+/// The rows of the MODULES page as text (24 bytes each, NUL-terminated) and how many there are. Read by the proof.
+#[no_mangle]
+pub static mut DK_LOAD: [[u8; 24]; 40] = [[0; 24]; 40];
+#[no_mangle]
+pub static mut DK_LOAD_N: u32 = 0;
+
+/// One row of the MODULES page; its text is also kept in `DK_LOAD`.
+unsafe fn lrow(m: *mut u8, text: &[u8], act: u32) {
+    let k = DK_LOAD_N as usize;
+    if k < 40 {
+        let mut n = 0;
+        while n < 23 && n < text.len() && text[n] != 0 {
+            DK_LOAD[k][n] = text[n];
+            n += 1;
+        }
+        while n < 24 {
+            DK_LOAD[k][n] = 0;
+            n += 1;
+        }
+        DK_LOAD_N += 1;
+    }
+    row(m, text, act, 0);
+}
+
+/// Characters of a MODULES row: `[X]` the tick, a mark, the name (8), a space and the size (4): 17. The page's list shows about 18 characters (measured on
+/// the screenshots of the `fits` scenario: 14.6 pixels of 512 per character, the list from x = 215 to 485); the rest of a longer row is cut off.
+const ROW_NAME: usize = 8;
+
 unsafe fn fill_load() {
     let m = LOADV.obj;
     let sel = begin_rebuild(m);
+    DK_LOAD_N = 0;
+    refit();
     if STORE != 1 {
         let t: &[u8] = match STORE {
             2 => b"NO STORE\0",
             3 => b"STORE READ ERROR\0",
             _ => b"BAD STORE\0",
         };
-        row(m, t, A_NOP, 0);
+        lrow(m, t, A_NOP);
     } else if NENT == 0 {
-        row(m, b"NO MODULES\0", A_NOP, 0);
+        lrow(m, b"NO MODULES\0", A_NOP);
     } else {
         for i in 0..NENT {
             let mut t = Text::new();
             // `[-]` a file this runtime or device cannot load (it cannot be ticked); otherwise `[X]` ticked (in the pending
-            // selection), `[ ]` not; the fourth character is `*` when this boot loaded the module, `L` while it loads its DSP part
+            // selection), `[ ]` not; the fourth character is `*` when this boot loaded the module, `L` while it loads its DSP part,
+            // `x` when it does not fit next to the ticked ones (`refit`); then the name and the memory it takes (`<1K`, `259K`)
             t.s(if NOK[i] != 0 {
                 b"[-]"
             } else if TICK[i] != 0 {
@@ -771,32 +910,45 @@ unsafe fn fill_load() {
                 b"[ ]"
             });
             t.s(match LOADED[i] {
-                0 => b" ",
+                0 => {
+                    if WONT[i] != 0 {
+                        b"x"
+                    } else {
+                        b" "
+                    }
+                }
                 1 => b"*",
                 _ => b"L",
             });
-            upper_name(i, 17, &mut t);
-            row(m, &t.b, if NOK[i] != 0 { A_NOP } else { A_TOGGLE + i as u32 }, 0);
+            upper_name(i, ROW_NAME, &mut t);
+            if HAS_NEEDS[i] != 0 {
+                t.pad(4 + ROW_NAME + 1);
+                let mut sz = Text::new();
+                size_k(&mut sz, NEEDS[i].arena + NEEDS[i].dsp_area);
+                t.pad(4 + ROW_NAME + 1 + 4 - sz.n);
+                t.s(&sz.b);
+            }
+            lrow(m, &t.b, if NOK[i] != 0 { A_NOP } else { A_TOGGLE + i as u32 });
         }
         DK_OFFER = differs() as u32;
         if DK_OFFER != 0 {
-            row(m, if ARMED != 0 { b"CONFIRM RESTART\0" } else { b"APPLY & RESTART\0" }, A_APPLY, 0);
+            lrow(m, if ARMED != 0 { b"CONFIRM RESTART\0" } else { b"APPLY & RESTART\0" }, A_APPLY);
         }
         let mut any = false;
         for i in 0..NENT {
             any |= TICK[i] != 0;
         }
         if any {
-            row(m, b"CLEAR SELECTION\0", A_CLEAR, 0);
+            lrow(m, b"CLEAR SELECTION\0", A_CLEAR);
         }
         if BOOT.safe != 0 {
             let mut t = Text::new();
             t.s(b"SAFE: ");
             safe_reason(&mut t, BOOT.reason);
-            row(m, &t.b, A_SAFE, 0);
+            lrow(m, &t.b, A_SAFE);
         }
         if RESULT.n > 0 {
-            row(m, &RESULT.b, A_NOP, 0);
+            lrow(m, &RESULT.b, A_NOP);
         }
     }
     end_rebuild(m, sel);
@@ -910,7 +1062,7 @@ unsafe fn fill_about() {
         while l < SEL_PATH - 1 && p[l] != 0 {
             l += 1;
         }
-        name_of(&p[..l], 17, &mut t);
+        name_of(&p[..l], 17, false, &mut t);
         arow(m, &t.b);
         let mut t = Text::new();
         t.s(b"- ");
@@ -1286,7 +1438,15 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         safe_popup();
     } else if act >= A_TOGGLE {
         let i = (act - A_TOGGLE) as usize;
-        if i < NENT {
+        if i < NENT && TICK[i] == 0 && WONT[i] != 0 {
+            // a module that does not fit next to the ticked ones is not ticked: say which resource is short
+            RESULT.clear();
+            short_text(&mut RESULT, &SHORT[i], true);
+            let mut t = Text::new();
+            t.s(b"NO FIT: ");
+            short_text(&mut t, &SHORT[i], false);
+            popup(&t);
+        } else if i < NENT {
             TICK[i] ^= 1;
             RESULT.clear();
         }

@@ -446,6 +446,10 @@ def run_debug(c: Any) -> None:
         from tools.patchkit import pk_digikit_capacity as CAP
 
         return CAP.run_needs(c)
+    if c.table().get("part") == "fits":
+        from tools.patchkit import pk_digikit_capacity as CAP
+
+        return CAP.run_fits(c)
     if c.table().get("part") == "isolation":
         from tools.patchkit import pk_digikit_capacity as CAP
 

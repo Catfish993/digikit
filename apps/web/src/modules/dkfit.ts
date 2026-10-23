@@ -94,6 +94,25 @@ export function take(n: Needs, caps: Caps): Caps {
   return out;
 }
 
+/**
+ * `caps` as the next boot sees the runtime: nothing used, the whole limit free (the module set is fixed per session, so a selection loads into an
+ * empty runtime). The arena starts one block header short of its limit and the DSP area 8 bytes short (its first range starts at an offset that is
+ * not 8-aligned); the staging buffer is not a resource that a load uses up.
+ */
+export function emptyCaps(caps: Caps): Caps {
+  const out: Caps = {};
+  for (const [kind, c] of Object.entries(caps)) {
+    if (kind === 'STAGE') out[kind] = { ...c };
+    else
+      out[kind] = {
+        limit: c.limit,
+        used: 0,
+        largest: c.limit - (kind === 'ARENA' ? HDR : kind === 'DSP_AREA' ? 8 : 0),
+      };
+  }
+  return out;
+}
+
 /** Load the modules in order (the sum rule: each takes its needs out of the capacity; fragmentation is not modelled, so it is conservative).
  *  null when all fit, else the index of the first that does not and what it is short of. */
 export function fitsSet(needs: Needs[], caps: Caps): ({ index: number } & Short) | null {

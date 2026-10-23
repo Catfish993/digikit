@@ -321,3 +321,15 @@ fn take_leaves_the_capacity_it_says() {
     assert_eq!(get(CAPK_DSP_AREA).used, 265656); // the alignment room is taken too
     assert_eq!((get(CAPK_MODULES).used, get(CAPK_VOICE_ROWS).used), (1, 1));
 }
+
+#[test]
+fn empty_is_the_capacity_of_a_runtime_that_has_loaded_nothing() {
+    let v = vectors();
+    let mut c = caps(&v["empty"]["from"], None);
+    empty(&mut c);
+    let want = caps(&v["empty"]["want"], None);
+    assert_eq!(c.len(), want.len());
+    for (a, b) in c.iter().zip(&want) {
+        assert_eq!((a.kind, a.limit, a.used, a.largest), (b.kind, b.limit, b.used, b.largest));
+    }
+}

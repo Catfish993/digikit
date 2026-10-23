@@ -1,6 +1,6 @@
 # What fits: tell the user before a load whether a module will load (plan, 2026-10-23)
 
-Status: steps 1 (declared needs in the `.dkm` header) and 2 (the rule) built. Steps 3 to 5 follow; the status line is updated with each commit.
+Status: steps 1 (declared needs in the `.dkm` header), 2 (the rule) and 3 (the device MODULES list) built. Steps 4 and 5 follow; the status line is updated with each commit.
 Lane `tasks-images`, base main 38dfbe4a.
 
 Today a selection that is too big is refused at boot and shown afterwards (a RESULT row, the log error `E_DSP_NOSPACE`). The user should see it before

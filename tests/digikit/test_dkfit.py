@@ -56,3 +56,17 @@ def test_a_short_resource_reads_as_a_line():
     )
     assert F.describe(("ARENA", 1025, 1535)) == "memory 2 KiB needed, 1 KiB free"
     assert F.describe(("PARAM_ROWS", 3, 2)) == "parameter rows 3 needed, 2 free"
+
+
+def test_empty_caps_on_the_vector():
+    got = F.empty_caps(F.vector_caps(VECTORS["empty"]["from"], None))
+    assert got == F.vector_caps(VECTORS["empty"]["want"], None)
+
+
+def test_the_menu_lines_are_the_ones_the_page_shows():
+    # modules/core/digikit-menu `short_text`: the popup form and the RESULT row's compact form
+    assert F.menu_line(("DSP_AREA", 409600, 260096)) == "DSP 400K > 254K FREE"
+    assert F.menu_line(("DSP_AREA", 409601, 260096), compact=True) == "DSP 401K>254K"
+    assert F.menu_line(("ARENA", 600000, 100)) == "RAM 586K > 0K FREE"
+    assert F.menu_line(("PARAM_ROWS", 3, 2)) == "PARAMS 3 > 2 FREE"
+    assert F.menu_line(("STAGE", 70000, 65536)) == "FILE 69K > 64K MAX"
