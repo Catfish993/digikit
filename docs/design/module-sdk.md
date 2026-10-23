@@ -395,6 +395,13 @@ INFO (`upload.rs:470-493`, `digikit-upload.md:61`) keeps its layout (commands ar
 dsp range, state bytes, voices, health state, faults) and the free/largest figures for both memories; LIST keeps listing store files with `size` and `sha256`. INFO's flags gain "a module is disabled".
 `dkrt_module` (`lib.rs:671`) returns the same record through the C ABI so the DIGIKIT menu can show it (`digikit-runtime.md:58`).
 
+### 6.5 What fits (built, docs/plans/what-fits.md)
+
+A module says what a load takes: the packer writes the needs into the `.dkm` header (docs/design/digikit-dkm.md, "Needs"). One rule, `fits_now(needs, capacity)`, compares them with the device's CAPACITY and names the first short resource
+(`dkrt_sdk::fit` for the runtime and the menu, `dkfit.ts` for the host app, `dkfit.py` for the tools; `sdk/fit-vectors.json` keeps them equal). The DIGIKIT menu's MODULES rows show the memory a module takes and `x` when it will not fit
+next to the ticked ones; the Transfer page tags each library module `fits` or `won't fit` and says whether the ticked set fits together; `dk run` refuses a module that does not fit unless `--force`; `module:check` prints the needs
+and whether the module fits an empty device. Because the module set is fixed per session, a selection is checked against the limits with the other ticked modules taken out, not against what is loaded now.
+
 ## 7. The manifest
 
 Author concepts only. Firmware codes move to the device profile.
@@ -482,9 +489,9 @@ Run-time checks that stay because they cannot be made at build time: clamp (kept
 ```
 mise run module:new machine NAME      create modules/machines/NAME from the template: module.toml, src/dsp/NAME.s with the three symbols and a silent render,
                                       tests/test_NAME.py (sound tests), gallery/icon.svg, a type number in types.toml, builds it
-mise run module:check NAME            build (pk_build), static checks (section 8), conformance on every device in `devices`, then the module's own tests
+mise run module:check NAME            build (pk_build), static checks (section 8), conformance on every device in `devices`, then the module's own tests, the packed size, the declared needs and whether the module fits an empty device (6.5)
 mise run module:pack NAME [--device]  .dkm (what `patchkit pack` does)
-dk run NAME                           build, pack, upload, select, restart a device or the emulator, wait for the boot, report the log (tools/device/dkrun.py)
+dk run NAME                           build, pack, check that it fits (6.5; `--force` uploads a module that does not), upload, select, restart a device or the emulator, wait for the boot, report the log (tools/device/dkrun.py)
 mise run module:emu NAME              the same through the emulator Target (Phase 11 item 6)
 ```
 

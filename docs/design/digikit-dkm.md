@@ -103,7 +103,9 @@ the DSP area.
 | `VOICE_ROWS` | the number of voice records of the DSP section |
 | `FX_SLOTS` | effect slots; 0 (no run-time effects) |
 
-A module also takes one module record and one selection path, and its file must fit the staging buffer (the file size is at 0x08).
+The rule that compares the block with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_sdk::fit`, `dkfit.ts`, `dkfit.py`, vectors in `sdk/fit-vectors.json`): the staging buffer holds the file, a module record and a selection path are free,
+the DSP range (with up to `DSP_ALIGN - 8` bytes for alignment) is at most the largest free range, the arena holds the module's block and the block of its DSP image together (each block at most the largest free block), and every row count is at most
+limit - used. A kind that a device's CAPACITY lacks is not judged. A module also takes one module record and one selection path, and its file must fit the staging buffer (the file size is at 0x08).
 `tests/digikit/scenarios/needs-*.toml` (`tools/patchkit/pk_digikit_capacity.py run_needs`) loads every run-time module and fixture that packs
 for the device alone on a ColdFire-only rig and compares CAPACITY and MODULES with the declared needs; `isolation-*` does the same after a
 coupled load (rows of a DSP module come in after the DSP acknowledges). `patchkit dkm-info` prints the block.
