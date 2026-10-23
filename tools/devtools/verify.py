@@ -101,6 +101,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         "patchkit",
         (
             "packages/patchkit/",
+            "packages/dkneeds/",
             "devices/ports/",
             "tools/patchkit/pk_",
             "tools/patchkit/modroots.py",

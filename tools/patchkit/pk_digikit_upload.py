@@ -199,7 +199,7 @@ def read_checks(c: Any, up: D.Uploader, path: str, data: bytes) -> None:
     """READ (runtime 0.2.4): the header, a range across a sector boundary, the 768-byte cap and the end of the file equal the bytes sent;
     a missing file, offset past the end and length 0 are refused."""
     c.check(
-        "READ: the header bytes equal the file sent",
+        "READ: the first 0xa0 bytes equal the file sent",
         up.header(path) == data[: D.HEADER_BYTES],
     )
     got = up.read(path, 500, 700)

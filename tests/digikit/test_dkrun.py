@@ -1,13 +1,13 @@
 """The pure parts of tools/device/dkrun.py: the runtime check and the restart detection from the device's log (no emulator)."""
 
-import struct
-
 import pytest
 
 from tools.device import dklog as L
 from tools.device import dkproto
 from tools.device import dkrun as R
 from tools.device import dkupload as D
+from tools.patchkit import patchkit as PK
+from tools.patchkit import pk_capacity as P
 
 UP = L.K["UPLOAD"]
 
@@ -67,18 +67,24 @@ def test_wait_new_boot_retries_through_a_vanished_port():
     assert isinstance(up, Up) and calls["n"] == 4
 
 
-def _dkm(dsp_area=0, size=600):
-    """A packed module with the needs in its header (docs/design/digikit-dkm.md) and nothing else of it."""
-    h = bytearray(size)
-    h[:4] = b"DKMF"
-    struct.pack_into(">I", h, 8, size)
-    for name, value in {
-        "ARENA": 64,
-        "DSP_AREA": dsp_area,
-        "DSP_ALIGN": 8 if dsp_area else 0,
-    }.items():
-        struct.pack_into(">I", h, dkproto.DKM_NEEDS[name], value)
-    return bytes(h)
+def _dkm(tmp_path, dsp_area=0):
+    """A real packed module (patchkit's synthetic module, the packer's own writer) whose DSP section takes `dsp_area` bytes of the DSP area (a multiple
+    of 64) and nothing else of it; its needs are inferred from the file by `patchkit needs`, not declared."""
+    spec = tmp_path / f"fit-{dsp_area}.toml"
+    spec.write_text(
+        P.spec(
+            "fit/x",
+            dsp={"image": 64, "bss": dsp_area - 64, "voices": [{"type": 16}]}
+            if dsp_area
+            else None,
+        )
+    )
+    out = tmp_path / f"fit-{dsp_area}.dkm"
+    assert (
+        PK.run(["synth-dkm", str(spec), "--device", "dt2", "-o", str(out)]).returncode
+        == 0
+    )
+    return out.read_bytes()
 
 
 CAPS = {
@@ -115,16 +121,18 @@ class FitUp:
         self.sent.append(("select", paths))
 
 
-def test_a_module_that_will_not_fit_the_empty_device_is_named():
+def test_a_module_that_will_not_fit_the_empty_device_is_named(tmp_path):
     up = FitUp()
     # the next boot is empty: what is loaded now does not count, so 400000 bytes of DSP area used is no reason
-    assert R.check_fit(up, up.info(), _dkm(dsp_area=300_000)) is None
-    why = R.check_fit(up, up.info(), _dkm(dsp_area=600_000))
+    assert R.check_fit(up, up.info(), _dkm(tmp_path, 300_032)) is None
+    why = R.check_fit(up, up.info(), _dkm(tmp_path, 600_064))
     assert why == "DSP area 586 KiB needed, 511 KiB free"
+    # a file the loader would refuse (not a .dkm) is named too, whatever the device says
+    assert "not a .dkm" in R.check_fit(up, up.info(), b"nope" * 100)
     # no CAPACITY on the device: no verdict
     assert (
         R.check_fit(
-            FitUp(with_cap=False), FitUp(with_cap=False).info(), _dkm(dsp_area=600_000)
+            FitUp(with_cap=False), FitUp(with_cap=False).info(), _dkm(tmp_path, 600_064)
         )
         is None
     )
@@ -134,7 +142,7 @@ def test_run_refuses_a_module_that_will_not_fit_unless_forced(
     tmp_path, monkeypatch, capsys
 ):
     f = tmp_path / "big.dkm"
-    f.write_bytes(_dkm(dsp_area=600_000))
+    f.write_bytes(_dkm(tmp_path, 600_064))
     up = FitUp()
     monkeypatch.setattr(
         R,

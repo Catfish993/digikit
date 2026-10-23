@@ -1,9 +1,8 @@
-// The fit rule (src/modules/dkfit.ts) on the shared vectors of sdk/fit-vectors.json: dkrt_sdk::fit (Rust) and tools/device/dkfit.py read the same file.
+// The fit rule (src/modules/dkfit.ts) on the shared vectors of sdk/fit-vectors.json: dkrt_fit (Rust) and tools/device/dkfit.py read the same file. The compare only: the needs are inferred in Rust (dkneeds.test.mjs).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { describeShort, emptyCaps, fitsNow, fitsSet, needsOf, take } from '../src/modules/dkfit.ts';
-import { DKM_NEEDS } from '../src/modules/gen_proto.ts';
+import { describeShort, emptyCaps, fitsNow, fitsSet, take } from '../src/modules/dkfit.ts';
 
 const V = JSON.parse(readFileSync(new URL('../../../sdk/fit-vectors.json', import.meta.url), 'utf8'));
 
@@ -45,16 +44,6 @@ test('take leaves the capacity it says and does not change its input', () => {
   assert.equal(left.DSP_AREA.used, 265656); // the alignment room is taken too
   assert.equal(left.MODULES.used, 1);
   assert.equal(caps.MODULES.used, 0);
-});
-
-test('needsOf reads the header at the offsets of [dkm.needs]', () => {
-  const h = new Uint8Array(0xd0);
-  const v = new DataView(h.buffer);
-  v.setUint32(8, 700);
-  Object.values(DKM_NEEDS).forEach((at, i) => v.setUint32(at, 100 + i));
-  const n = needsOf(h);
-  assert.equal(n.file_size, 700);
-  Object.keys(DKM_NEEDS).forEach((name, i) => assert.equal(n[name], 100 + i));
 });
 
 test('a short resource reads as a line', () => {

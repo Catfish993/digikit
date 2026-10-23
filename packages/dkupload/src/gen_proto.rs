@@ -64,17 +64,6 @@ pub const CAPK_PAGE_ROWS: u8 = 9;
 pub const CAPK_FX_SLOTS: u8 = 10;
 pub const CAPK_MAP_ENTRIES: u8 = 11;
 pub const CAPK_STORE: u8 = 12;
-pub const DKM_FORMAT: u32 = 2;
-pub const DKM_HEADER: u32 = 0xd0;
-pub const DKM_NEED_ARENA: usize = 0xa0;
-pub const DKM_NEED_ARENA_XFER: usize = 0xa4;
-pub const DKM_NEED_DSP_AREA: usize = 0xa8;
-pub const DKM_NEED_DSP_ALIGN: usize = 0xac;
-pub const DKM_NEED_MACHINE_ROWS: usize = 0xb0;
-pub const DKM_NEED_VOICE_ROWS: usize = 0xb4;
-pub const DKM_NEED_PARAM_ROWS: usize = 0xb8;
-pub const DKM_NEED_PAGE_ROWS: usize = 0xbc;
-pub const DKM_NEED_FX_SLOTS: usize = 0xc0;
 /// The command ranges a module may register, as (first, last, guarded).
 /// The third field: the runtime refuses the range's commands while the REMOTE switch is off.
 pub const RANGES: [(u8, u8, bool); 2] = [

@@ -66,7 +66,7 @@ interface LibModule {
   version: string;
   size: number;
   test?: boolean;
-  /** The needs its header declares (a machine with DSP code: arena, DSP area, rows). */
+  /** What a load of the module takes (a machine with DSP code: arena, DSP area, rows). */
   needs: Needs;
 }
 const KiB = 1024;

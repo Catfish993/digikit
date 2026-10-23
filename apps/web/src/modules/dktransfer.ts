@@ -5,7 +5,7 @@
 //
 // The app does not build: its modules are built `.dkm` files of a folder (`mise run module:pack-all`).
 import { DkError, DkSession, HEADER_BYTES, fmtVersion, hasCap, hexOf, storeFree } from './dkupload-core.ts';
-import { describeShort, emptyCaps, fitsNow, needsOf, type Caps, type Needs } from './dkfit.ts';
+import { describeShort, emptyCaps, fitsNow, type Caps, type Needs } from './dkfit.ts';
 import type { DkEntry, DkInfoFull } from './dkupload-core.ts';
 
 export type Group = 'Machines' | 'Effects' | 'Tools';
@@ -22,7 +22,7 @@ export interface TransferRow {
   file_size: number;
   arena?: number;
   dsp?: number;
-  /** The needs the module's header declares (docs/design/digikit-dkm.md); `file_size` is its size. */
+  /** What a load of the module takes, inferred from its contents (docs/design/digikit-dkm.md, "Needs are inferred"); `file_size` is its size. */
   needs?: Needs;
   on_card: 'yes' | 'no' | 'other version';
   loaded: boolean;
@@ -55,14 +55,11 @@ export interface HeaderInfo {
   contracts: { api: [number, number]; machine: [number, number]; fx: [number, number]; service: [number, number] };
   group: Group;
   size: number;
-  arena: number;
-  dsp: number;
-  /** The declared needs, with `file_size` (the fit rule's input). */
-  needs: Needs;
 }
 
-/** A built module of the library folder: its header fields, its hash and its bytes. */
+/** A built module of the library folder: its header fields, its needs (none when the loader would refuse the file), its hash and its bytes. */
 export interface LibraryModule extends HeaderInfo {
+  needs: Needs | null;
   /** The module id (the header's name: `digikit/pluck`). */
   id: string;
   label: string;
@@ -83,35 +80,36 @@ export function groupOf(c: HeaderInfo['contracts']): Group {
   return 'Tools';
 }
 
-/** The header fields of a .dkm (its first `HEADER_BYTES`); null when the bytes are not one. */
+/** The header fields of a .dkm (its first 0xa0 bytes); null when the bytes are not one. */
 export function headerInfo(h: Uint8Array): HeaderInfo | null {
   if (h.length < HEADER_BYTES || MAGIC.some((b, i) => h[i] !== b)) return null;
   const v = new DataView(h.buffer, h.byteOffset, h.length);
   const pair = (at: number): [number, number] => [h[at], h[at + 1]];
   const contracts = { api: pair(0x38), machine: pair(0x3a), fx: pair(0x3c), service: pair(0x3e) };
-  const needs = needsOf(h);
   return {
     name: new TextDecoder().decode(h.subarray(0x40, 0x60)).split('\0')[0],
     version: fmtVersion(v.getUint32(0x34)),
     contracts,
     group: groupOf(contracts),
     size: v.getUint32(8),
-    arena: needs.ARENA ?? 0,
-    dsp: needs.DSP_AREA ?? 0,
-    needs,
   };
 }
 
 /** The store path of a module id. */
 export const modulePath = (id: string): string => `modules/${id.split('/').pop()}.dkm`;
 
-/** A `LibraryModule` from the bytes of a built .dkm; null when they are not one. */
-export async function libraryModule(bytes: Uint8Array): Promise<LibraryModule | null> {
+/** A `LibraryModule` from the bytes of a built .dkm; null when they are not one. `needsOf` infers the needs from the whole file (`DkNeeds.of`, dkneeds.ts:
+ * patchkit.wasm); without it the module has none and no fit verdict. */
+export async function libraryModule(
+  bytes: Uint8Array,
+  needsOf?: (file: Uint8Array) => Needs | null,
+): Promise<LibraryModule | null> {
   const h = headerInfo(bytes.subarray(0, HEADER_BYTES));
   if (!h) return null;
   const sha = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
   return {
     ...h,
+    needs: needsOf?.(bytes) ?? null,
     id: h.name,
     label: h.name.split('/').pop() ?? h.name,
     test: h.name.startsWith('test/'),
@@ -161,9 +159,9 @@ export function mergeView(
       test: m.test,
       version: m.version,
       file_size: m.file_size,
-      arena: m.arena,
-      dsp: m.dsp,
-      needs: m.needs,
+      arena: m.needs?.ARENA,
+      dsp: m.needs?.DSP_AREA,
+      needs: m.needs ?? undefined,
       on_card: !have ? 'no' : have.size === m.file_size && have.sha256 === m.sha256 ? 'yes' : 'other version',
       loaded: loaded.includes(m.name),
     };

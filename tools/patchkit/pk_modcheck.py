@@ -91,10 +91,17 @@ def device_caps(dev: str) -> dict[str, dict[str, int]]:
 
 
 def needs_lines(dkm: bytes, dev: str) -> list[str]:
-    """The declared needs of a packed module (docs/design/digikit-dkm.md) and whether it fits the empty device DEV (the fit rule, tools/device/dkfit.py)."""
-    from tools.device import dkfit, dkupload
+    """What a load of a packed module takes, inferred from the file (docs/design/digikit-dkm.md: `patchkit needs`, packages/dkneeds), and whether it
+    fits the empty device DEV (the fit rule, tools/device/dkfit.py)."""
+    from tools.device import dkfit, dkneeds
 
-    n = {**dkupload.dkm_needs(dkm), "file_size": len(dkm)}
+    try:
+        n = dkneeds.needs_of(dkm)
+    except dkneeds.NeedsError as e:
+        return [
+            f"{dev}: needs    none: {e}",
+            f"{dev}: fits     NO: the loader refuses the file",
+        ]
     shown = ", ".join(
         f"{label} {n[k]}"
         for label, k in (
@@ -122,7 +129,7 @@ def needs_lines(dkm: bytes, dev: str) -> list[str]:
 
 
 def size_lines(mid: str, devices: list[str]) -> list[str]:
-    """The `size` line of `patchkit pack` for module MID, once per device (design rule D5), then its declared needs and whether it fits an
+    """The `size` line of `patchkit pack` for module MID, once per device (design rule D5), then what a load of it takes (inferred from the file) and whether it fits an
     empty device. A module that does not pack (no ColdFire object, or several, e.g. a patched-in module) gets a "not packed" line with the reason."""
     from tools.patchkit import patchkit
 

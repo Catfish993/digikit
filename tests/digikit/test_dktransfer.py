@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from tools.device import dkproto
 from tools.device import dktransfer as T
 from tools.device import dkupload as D
 
@@ -16,16 +15,12 @@ def header(
 ):
     h = bytearray(D.HEADER_BYTES)
     h[:4] = b"DKMF"
-    struct.pack_into(">II", h, 8, size, D.HEADER_BYTES)
+    struct.pack_into(">II", h, 8, size, 0xA0)
     struct.pack_into(">I", h, 0x34, 0x000102)
     h[0x38:0x40] = bytes([*api, *machine, *fx, *service])
     h[0x40 : 0x40 + len(name)] = name.encode()
     struct.pack_into(">II", h, 0x64, 100, 20)
     struct.pack_into(">I", h, 0x9C, dsp)
-    # the declared needs: the arena block of image 100 and bss 20, the DSP area of a module that has DSP code
-    struct.pack_into(">I", h, dkproto.DKM_NEEDS["ARENA"], 120)
-    struct.pack_into(">I", h, dkproto.DKM_NEEDS["DSP_AREA"], dsp)
-    struct.pack_into(">I", h, dkproto.DKM_NEEDS["DSP_ALIGN"], 8 if dsp else 0)
     return bytes(h)
 
 
@@ -43,6 +38,34 @@ def test_header_groups():
     assert T.header_info(header("a"))["group"] == "Tools"
     assert T.header_info(b"nope" + bytes(200)) is None
     assert T.header_info(b"DKMF") is None
+
+
+def test_repo_rows_carry_the_needs_inferred_from_the_packed_file(tmp_path):
+    from tools.patchkit import patchkit as PK
+
+    def pack(mid, device):
+        out = tmp_path / f"{mid.replace('/', '-')}.dkm"
+        assert PK.run(["pack", mid, "--device", device, "-o", str(out)]).returncode == 0
+        return out
+
+    rows = {
+        r["id"]: r
+        for r in T.repo_rows(
+            "dt2",
+            ["digikit/pluck", "digikit/remote"],
+            pack=pack,
+            status=lambda m: "unchanged",
+        )
+    }
+    pluck, remote = rows["digikit/pluck"], rows["digikit/remote"]
+    # the machine with DSP code takes a DSP range and a voice row; the row's arena and dsp are what a load takes, from the same needs
+    assert pluck["needs"]["DSP_AREA"] > 0 and pluck["needs"]["VOICE_ROWS"] >= 1
+    assert (pluck["arena"], pluck["dsp"]) == (
+        pluck["needs"]["ARENA"],
+        pluck["needs"]["DSP_AREA"],
+    )
+    assert pluck["needs"]["file_size"] == pluck["file_size"]
+    assert remote["needs"]["DSP_AREA"] == 0 and remote["needs"]["ARENA"] > 0
 
 
 def row(

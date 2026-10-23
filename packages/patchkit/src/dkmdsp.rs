@@ -389,7 +389,7 @@ impl DspSection {
     }
 
     /// Bytes of the range the runtime reserves for the section (`dsp.rs`, `extent`, then the granule): image and bss rounded to 8, then
-    /// `voices * state_bytes` (each rounded to 8) of every version 3 voice, rounded up to a granule.
+    /// `voices * state_bytes` (each rounded to 8) of every version 3 voice, rounded up to a granule. `dkneeds` computes the same from the file.
     pub fn range_len(&self) -> u32 {
         let mut n = (self.image.len() as u32 + self.bss).div_ceil(8) * 8;
         for v in &self.voices {

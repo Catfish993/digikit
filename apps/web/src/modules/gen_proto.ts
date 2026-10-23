@@ -132,23 +132,6 @@ export const CAPACITY_KINDS = {
   STORE: 12,
 } as const;
 
-/** The `.dkm` format number and header size. */
-export const DKM_FORMAT = 2;
-export const DKM_HEADER = 0xd0;
-
-/** The header offsets of the declared needs of a `.dkm`. */
-export const DKM_NEEDS = {
-  ARENA: 0xa0,
-  ARENA_XFER: 0xa4,
-  DSP_AREA: 0xa8,
-  DSP_ALIGN: 0xac,
-  MACHINE_ROWS: 0xb0,
-  VOICE_ROWS: 0xb4,
-  PARAM_ROWS: 0xb8,
-  PAGE_ROWS: 0xbc,
-  FX_SLOTS: 0xc0,
-} as const;
-
 /** The `kind` of a LOG event. */
 export const LOG_KIND = {
   BOOT_START: 1,

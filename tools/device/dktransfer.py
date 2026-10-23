@@ -17,7 +17,7 @@ dev tooling; the app starts no process.
 marked), with group (machine, fx or service contract in the packed header: Machines, Effects, Tools), version, sizes, build state
 (`unchanged` = the committed objects carry the hash of their sources; `needs build`), whether the file is on the card (LIST, same sha256),
 whether it is loaded (MODULES), and whether it fits (CAPACITY; a warning only). Card files that match no repo module are listed with
-their group, read from the header (READ, runtime 0.2.4).
+their group, read from the 0xa0-byte header (READ, runtime 0.2.4).
 
 `install MOD...` (it emits `progress` events with the bytes sent of each upload, at most about ten per file) builds only the modules whose objects changed, packs them, uploads the files the card does not have (same sha256),
 VERIFYs each file on the card (the device hashes it from a fresh read). That is all: the device's selection is not touched, because
@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.device import dkfit as F
+from tools.device import dkneeds as N
 from tools.device import dkrun as R
 from tools.device import dkupload as D
 from tools.patchkit import modroots
@@ -72,16 +73,16 @@ def header_info(h: bytes) -> dict[str, Any] | None:
         k: (h[0x38 + 2 * i], h[0x39 + 2 * i])
         for i, k in enumerate(("api", "machine", "fx", "service"))
     }
-    needs = {**D.dkm_needs(h), "file_size": size}
+    image, bss = struct.unpack_from(">II", h, 0x64)
+    dsp = struct.unpack_from(">I", h, 0x9C)[0]
     return {
         "name": h[0x40:0x60].split(b"\0")[0].decode("ascii", "replace"),
         "version": D.fmt_runtime(version),
         "contracts": contracts,
         "group": group_of(contracts),
         "size": size,
-        "arena": needs["ARENA"],
-        "dsp": needs["DSP_AREA"],
-        "needs": needs,
+        "arena": image + bss,
+        "dsp": dsp,
     }
 
 
@@ -174,6 +175,12 @@ def repo_rows(
         h = header_info(data[: D.HEADER_BYTES])
         if h is None:
             continue
+        # what a load takes, inferred from the file (`patchkit needs`); a file the loader would refuse has none and no verdict
+        try:
+            h["needs"] = N.needs_of(data)
+            h["arena"], h["dsp"] = h["needs"]["ARENA"], h["needs"]["DSP_AREA"]
+        except N.NeedsError:
+            pass
         m = tomllib.loads((modroots.module_dir(mid) / "module.toml").read_text())[
             "module"
         ]
@@ -224,7 +231,7 @@ def merge(
     headers: dict[str, bytes | None],
 ) -> dict[str, Any]:
     """The `list` result from its parts: the repo rows (`repo_rows`), the card's LIST, the names MODULES reports loaded, CAPACITY (or None),
-    and the header bytes of the card files (`headers`: path -> header bytes, None when unreadable)."""
+    and the header bytes of the card files (`headers`: path -> 0xa0 bytes, None when unreadable)."""
     on_card = {p: (n, h) for p, n, h in card}
     mine = []
     seen = set()

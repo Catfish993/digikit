@@ -1,5 +1,5 @@
 {
-  "about": "Test vectors of the fit rule (docs/plans/what-fits.md): dkrt_sdk::fit (Rust), apps/web/src/modules/dkfit.ts and tools/device/dkfit.py read this file and must give the same answers. needs: the declared needs of a .dkm (names of [dkm.needs] in sdk/sdk.toml, plus file_size); missing = 0. caps: a CAPACITY reply as [limit, used, largest] per kind (names of [capacity.kinds]), laid over caps_base. want: null (fits) or [resource, need, free] of the first short resource; for a set: null or [index, resource, need, free].",
+  "about": "Test vectors of the fit rule (docs/plans/what-fits.md): dkrt_fit (Rust), apps/web/src/modules/dkfit.ts and tools/device/dkfit.py read this file and must give the same answers. needs: the needs of a .dkm as `dkneeds` infers them (the names of Needs::fields, plus file_size); missing = 0. caps: a CAPACITY reply as [limit, used, largest] per kind (names of [capacity.kinds]), laid over caps_base. want: null (fits) or [resource, need, free] of the first short resource; for a set: null or [index, resource, need, free].",
   "caps_base": {
     "MODULES": [8, 0, 0],
     "SELECTION": [8, 0, 0],

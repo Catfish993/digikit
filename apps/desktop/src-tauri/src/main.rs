@@ -549,6 +549,7 @@ fn main() {
             library::lib_scan,
             library::lib_read,
             library::sample_wasm,
+            library::patchkit_wasm,
             library::device_storage,
             local::local_pick_folder,
             local::local_list,

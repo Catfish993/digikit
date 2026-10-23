@@ -40,39 +40,6 @@ struct Sdk {
     limits: LimitsSection,
     capacity: Capacity,
     load: Load,
-    dkm: DkmSection,
-}
-/// `[dkm]`: the `.dkm` format number and header size, and the header offsets of the declared needs.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DkmSection {
-    format: u32,
-    header: u32,
-    needs: BTreeMap<String, u32>,
-}
-
-/// The `.dkm` header layout the packer and every reader share: `[dkm]` of `sdk/sdk.toml`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DkmLayout {
-    pub format: u32,
-    pub header: u32,
-    /// need name (a key of `[dkm.needs]`) -> header offset of its u32
-    pub needs: BTreeMap<String, u32>,
-}
-
-/// The end of the header's fixed fields (0x00 to 0x9f); the needs block starts here.
-const DKM_FIXED: u32 = 0xa0;
-
-/// The `.dkm` layout of the `sdk/sdk.toml` this crate was built with.
-pub fn embedded_dkm() -> DkmLayout {
-    let d = parse(include_str!("../../../sdk/sdk.toml"))
-        .expect("sdk/sdk.toml parses")
-        .dkm;
-    DkmLayout {
-        format: d.format,
-        header: d.header,
-        needs: d.needs,
-    }
 }
 /// The SysEx protocol's numbers: `[protocol]` of `sdk/sdk.toml`.
 #[derive(Deserialize)]
@@ -359,24 +326,6 @@ fn parse(text: &str) -> Result<Sdk> {
             return Err(err!("{SOURCE}: capacity kind {v} ({n}) is 0 or twice"));
         }
     }
-    let d = &sdk.dkm;
-    if d.header < DKM_FIXED || d.header % 16 != 0 {
-        return Err(err!(
-            "{SOURCE}: dkm header {:#x}: a multiple of 16, at least {DKM_FIXED:#x}",
-            d.header
-        ));
-    }
-    for (i, (n, at)) in d.needs.iter().enumerate() {
-        if *at < DKM_FIXED || at % 4 != 0 || at + 4 > d.header {
-            return Err(err!(
-                "{SOURCE}: dkm need {n}: offset {at:#x} is not a word in {DKM_FIXED:#x}..{:#x}",
-                d.header
-            ));
-        }
-        if d.needs.iter().skip(i + 1).any(|(_, w)| w == at) {
-            return Err(err!("{SOURCE}: dkm need offset {at:#x} ({n}) twice"));
-        }
-    }
     for (what, table) in [("protocol", &p.status), ("load", &sdk.load.status)] {
         for (i, (n, s)) in table.iter().enumerate() {
             if s.code >= 0 || (what == "protocol" && s.code < -128) {
@@ -426,15 +375,6 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
     }
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "{indent}pub const CAPK_{n}: u8 = {k};");
-    }
-    let _ = writeln!(s, "{indent}pub const DKM_FORMAT: u32 = {};", sdk.dkm.format);
-    let _ = writeln!(
-        s,
-        "{indent}pub const DKM_HEADER: u32 = {:#x};",
-        sdk.dkm.header
-    );
-    for (n, at) in by_value(&sdk.dkm.needs) {
-        let _ = writeln!(s, "{indent}pub const DKM_NEED_{n}: usize = {at:#x};");
     }
     let _ = writeln!(
         s,
@@ -595,13 +535,6 @@ fn python_proto(sdk: &Sdk) -> String {
         let _ = writeln!(s, "    {n:?}: {k},");
     }
     s.push_str("}\n");
-    let _ = writeln!(s, "\nDKM_FORMAT = {}", sdk.dkm.format);
-    let _ = writeln!(s, "DKM_HEADER = 0x{:X}", sdk.dkm.header);
-    s.push_str("DKM_NEEDS: dict[str, int] = {\n");
-    for (n, at) in by_value(&sdk.dkm.needs) {
-        let _ = writeln!(s, "    {n:?}: 0x{at:X},");
-    }
-    s.push_str("}\n");
     s
 }
 
@@ -656,14 +589,6 @@ fn ts_proto(sdk: &Sdk) -> String {
     );
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "  {n}: {k},");
-    }
-    let _ = write!(
-        s,
-        "}} as const;\n\n/** The `.dkm` format number and header size. */\nexport const DKM_FORMAT = {};\nexport const DKM_HEADER = {:#x};\n\n/** The header offsets of the declared needs of a `.dkm`. */\nexport const DKM_NEEDS = {{\n",
-        sdk.dkm.format, sdk.dkm.header
-    );
-    for (n, at) in by_value(&sdk.dkm.needs) {
-        let _ = writeln!(s, "  {n}: {at:#x},");
     }
     s.push_str("} as const;\n\n/** The `kind` of a LOG event. */\nexport const LOG_KIND = {\n");
     for k in &sdk.log.kind {

@@ -318,23 +318,6 @@ dsp_area_bytes = 524288  # the 17-bit word offset of a core/dsp-link chunk reach
 param_rows = 16     # parameter rows core/dynreg reserves (tied to its manifest by packages/patchkit/tests/devdata.rs)
 page_rows = 8       # page rows core/dynreg reserves (Digitone II)
 
-[dkm]               # the .dkm file format (docs/design/digikit-dkm.md): the version and the header size; the offsets of the declared needs
-format = 2          # the loader refuses another number (E_FORMAT); 2: the header carries the needs block
-header = 0xd0       # header size in bytes (a multiple of 16)
-
-[dkm.needs]         # the declared needs: header offsets of u32 fields the packer fills (`patchkit pack`) from the module's own data. Each is what a
-                    # load takes of one resource, so a host or the menu can say before the load whether the module fits (docs/plans/what-fits.md).
-                    # Names that are in [capacity.kinds] are in that kind's unit. Additive: an offset is never reused.
-ARENA = 0xa0        # ColdFire arena bytes the loaded module keeps: its block, (image + bss) rounded to 16, and the 16-byte block header
-ARENA_XFER = 0xa4   # arena bytes held only while the DSP code is sent: the block of the relocated DSP image (0: no DSP section)
-DSP_AREA = 0xa8     # DSP area bytes: image, bss and the voice states, rounded to the 64-byte granule (0: no DSP section)
-DSP_ALIGN = 0xac    # placement alignment of that range (a range may start up to ALIGN - 8 bytes behind the end of the module before it); 0: none
-MACHINE_ROWS = 0xb0 # machine records
-VOICE_ROWS = 0xb4   # DSP voice rows
-PARAM_ROWS = 0xb8   # parameter records
-PAGE_ROWS = 0xbc    # page records (Digitone II)
-FX_SLOTS = 0xc0     # effect slots (0: there are no run-time effects)
-
 [load.status]       # result codes of `dkrt_load` and the boot-time selection (also the status of SELECT); never renumber
 E_NOT_FOUND = { code = -1, text = "no store, or no such file or module" }
 E_BAD_STORE = { code = -2, text = "store header or table check failed" }

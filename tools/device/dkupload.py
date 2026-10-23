@@ -67,18 +67,7 @@ MAX_CHUNK = 32768
 DEPTH = 2
 E_OFFSET = next(c for c, (n, _) in dkproto.STATUS.items() if n == "E_OFFSET")
 READ_MAX = 768  # most bytes one READ returns (the reply body is at most 880 bytes)
-HEADER_BYTES = dkproto.DKM_HEADER  # a .dkm header (docs/design/digikit-dkm.md)
-
-
-def dkm_needs(header: bytes) -> dict[str, int]:
-    """The declared needs of a .dkm (its header or more): a name of `[dkm.needs]` in sdk/sdk.toml (`ARENA`, `DSP_AREA`, ...) -> value."""
-    if len(header) < HEADER_BYTES:
-        raise ValueError(f"a .dkm header is {HEADER_BYTES} bytes, got {len(header)}")
-    return {
-        k: struct.unpack_from(">I", header, at)[0]
-        for k, at in dkproto.DKM_NEEDS.items()
-    }
-
+HEADER_BYTES = 0xA0  # a .dkm header (docs/design/digikit-dkm.md)
 
 # status code -> name: the upload statuses, and the load and selection codes (SELECT answers them as the menu's APPLY gets them)
 STATUS: dict[int, str] = {
@@ -574,7 +563,7 @@ class Uploader:
         return True
 
     def header(self, path: str) -> bytes:
-        """The first `HEADER_BYTES` of a store file (a .dkm header; fewer for a shorter file)."""
+        """The first 0xa0 bytes of a store file (a .dkm header; fewer for a shorter file)."""
         return self.read(path, 0, HEADER_BYTES)[1]
 
     def read_file(

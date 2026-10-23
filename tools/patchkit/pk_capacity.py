@@ -22,7 +22,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.device import dkproto, dkupload
+from tools.device import dkneeds
 from tools.patchkit import pk_device
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,9 +35,7 @@ E_SEL_PATH, E_SEL_COUNT = -40, -41
 LOADED = "loaded"
 
 HDR = 16  # the arena's block header (arena.rs)
-DKM_HEADER = (
-    dkproto.DKM_HEADER
-)  # a .dkm with no tables: the file is the header, then the image
+DKM_HEADER = 0xA0  # a .dkm with no tables: the file is the header, then the image
 DSP_GRANULE = 64  # the DSP area is handed out in 64-byte granules (dsp.rs)
 MAX_VOICES = 8  # voices in one DSP section (dsp.rs)
 CODE = 4  # the synthetic module's code: moveq #0,d0; rts
@@ -371,8 +369,8 @@ def cases(g: Geometry) -> list[Case]:
 
 @dataclass(frozen=True)
 class Usage:
-    """What a packed module takes of each resource: the needs it declares in its header (docs/design/digikit-dkm.md; the scenario
-    `capacity-*` proves they are what the loader takes)."""
+    """What a packed module takes of each resource: the needs `dkneeds` infers from its file (docs/design/digikit-dkm.md; the scenario
+    `inferred-needs-*` proves they are what the loader takes)."""
 
     name: str
     arena: int  # the module's arena block
@@ -386,8 +384,8 @@ class Usage:
 
 
 def usage(dkm: bytes) -> Usage:
-    """The resources a packed module takes, as its header declares them."""
-    n = dkupload.dkm_needs(dkm)
+    """The resources a packed module takes, as `patchkit needs` infers them from the file (one implementation, Rust: packages/dkneeds)."""
+    n = dkneeds.needs_of(dkm)
     return Usage(
         dkm[0x40:0x60].split(b"\0")[0].decode(),
         n["ARENA"],

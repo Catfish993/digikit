@@ -359,7 +359,7 @@ def test_read_request_and_reply_encoding():
     assert D.frame(D.CMD_READ, 2)[5] == 0x16
     assert up.read("modules/a.dkm", 5, 20) == (2560, data[5:25])
     assert seen[-1] == b"modules/a.dkm\0" + bytes.fromhex("00000005 00000014")
-    assert up.header("modules/a.dkm") == data[: D.HEADER_BYTES]
+    assert up.header("modules/a.dkm") == data[:0xA0]
     assert (
         up.read("modules/a.dkm", 0, 5000)[1] == data[:768]
     )  # the device caps a reply at 768 bytes

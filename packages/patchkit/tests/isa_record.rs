@@ -76,7 +76,7 @@ fn pack_size_summary_parts_sum_to_the_file() {
         + d.imports.len() * dkm::IMPORT_LEN
         + d.register.len()
         + d.dsp.len();
-    let pad = f.len() - dkm::header() - d.slots.len() * 8 - listed;
+    let pad = f.len() - dkm::HEADER - d.slots.len() * 8 - listed;
     assert!(pad < 32, "{pad} bytes of padding in {line}");
 }
 

@@ -519,9 +519,6 @@ pub const DIAG_MAGIC: u32 = 0x4449_4147; // "DIAG"
 mod gen_sdk;
 pub use gen_sdk::{contract, logk, proto};
 
-/// The fit rule: does a module's declared needs fit the capacity (docs/plans/what-fits.md).
-pub mod fit;
-
 #[cfg(test)]
 mod tests {
     use super::sel::*;

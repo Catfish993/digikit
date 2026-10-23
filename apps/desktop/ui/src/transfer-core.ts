@@ -103,7 +103,7 @@ export interface RowTag {
 }
 
 /** The tags of a library module in the "On your computer" list: a test module, what the device holds of it, and whether it fits the device
- * (from the needs its header declares, next to the modules loaded now; the tooltip says what is short). A loaded module says nothing of fit. */
+ * (from the needs inferred from its contents, next to the modules loaded now; the tooltip says what is short). A loaded module says nothing of fit. */
 export function localTags(r: TransferRow): RowTag[] {
   const out: RowTag[] = [];
   if (r.test) out.push({ text: 'test', tone: 'dim' });

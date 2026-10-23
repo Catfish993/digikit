@@ -20,12 +20,14 @@ import functools
 from pathlib import Path
 from typing import Any
 
+from tools.device import dkneeds
 from tools.device import dkupload as DK
 from tools.patchkit import pk_capacity as P
 from tools.patchkit import pk_device
 from tools.patchkit import pk_digikit_debug as D
 from tools.patchkit import pk_dkrt_boot as B
 from tools.patchkit import pk_dkrt_machine as M
+from tools.patchkit import pk_harness as H
 
 DK_SEL_MAX = (
     B.SEL_MAX
@@ -336,18 +338,19 @@ def run_capacity(c: Any) -> None:
     c.common_checks_upload(project_writes_ok=True)
 
 
-# ---- declared needs: what a module's header says it takes is what the loader takes ---------------------------------------------
+# ---- inferred needs: what `dkneeds` says a module takes is what the loader takes ------------------------------------------------
 
 
-def run_needs(c: Any) -> None:
-    """The needs a packed module declares in its header (`[dkm.needs]` in sdk/sdk.toml; the menu and the hosts say from them whether a module
-    fits) equal what the runtime takes of each resource when it loads the module. Every module that packs for the device (`dktransfer.candidates`,
+def run_inferred_needs(c: Any) -> None:
+    """The needs that `dkneeds` infers from a packed module's contents (packages/dkneeds, the one implementation: the DIGIKIT menu runs it on the
+    card's files, patchkit and its wasm on the host; the module declares nothing) equal what the runtime takes of each resource when it loads the
+    module. Every module that packs for the device (`dktransfer.candidates`,
     the repository's run-time modules and the fixtures, less `[debug] exclude`: the fixtures that fault on purpose; `[debug] static` names the core modules patched in for the ones that import from them) is loaded alone on a
     ColdFire-only rig and CAPACITY and MODULES are read: the arena block of image and bss (and, with DSP code, the block of the DSP image, which
     stays until a transfer that a ColdFire-only rig never makes), the DSP range, the voice rows, and for a module with no DSP code the machine,
     parameter and page rows. The registry rows of a DSP module come after the DSP acknowledges: `isolation-*` checks them on a coupled boot."""
+    from tools.device import dkneeds as N
     from tools.device import dktransfer as T
-    from tools.device import dkupload as DKU
 
     skip = set(c.table().get("exclude", []))
     # `static`: core modules patched in besides the runtime, for the modules that import from them (core/input)
@@ -372,7 +375,7 @@ def run_needs(c: Any) -> None:
 
     def one(mid: str, path: str) -> None:
         data = (c.env.folder / "digikit" / path).read_bytes()
-        n = DKU.dkm_needs(data)
+        n = N.needs_of(data)
         card = c.card([path])
         with c.rig(img, card, "needs-" + mid.replace("/", "-"), cf_only=True) as rig:
             res = rig.boot_info()["results"]
@@ -404,11 +407,11 @@ def run_needs(c: Any) -> None:
                 and bin(rec["rows"]).count("1") == n["VOICE_ROWS"]
             )
             c.check(
-                f"{mid}: loaded, and the resources taken (CAPACITY, MODULES) are its declared needs {n}",
+                f"{mid}: loaded, and the resources taken (CAPACITY, MODULES) are the needs inferred from its contents {n}",
                 loaded and got == want and rec_ok,
-                f"result {res}, taken {got}, declared {want}, record {rec}",
+                f"result {res}, taken {got}, inferred {want}, record {rec}",
             )
-            c.report["needs"][mid] = {"declared": n, "taken": got}
+            c.report["needs"][mid] = {"inferred": n, "taken": got}
             c.done(rig)
 
     c.parallel(*[functools.partial(one, mid, path) for mid, path in found])
@@ -425,9 +428,10 @@ def fit_rows(
     not fit next to the ticked ones (the next boot loads them into an empty runtime), the name (without `.dkm`, the first 8 characters, upper case) and the memory it
     takes in K. CAP is the CAPACITY reply."""
     from tools.device import dkfit as F
-    from tools.device import dkupload as DKU
+    from tools.device import dkneeds as N
 
-    needs = [{**DKU.dkm_needs(f), "file_size": len(f)} for f in files]
+    needs = [n for n in N.needs_many(files) if n is not None]
+    assert len(needs) == len(files), "a synthetic module has no needs"
     left = F.empty_caps(cap)
     wont: set[int] = set()
     for i in sorted(ticked):  # the ticked ones in list order, then the others
@@ -453,10 +457,10 @@ def run_fits(c: Any) -> None:
     """The MODULES page tells before a selection whether a module will load: a store of four modules, one small, two that each take a little over
     half of the DSP area, one larger than the area. Opened with nothing ticked: only the largest has the `x` mark. With the first half-size one ticked:
     the second one has it too, and selecting it ticks nothing, shows a popup `NO FIT: DSP 164K > 155K FREE` and the short form in the RESULT row. The rows
-    (DK_LOAD) equal `fit_rows`, which uses the Python rule on the CAPACITY reply and the packed headers."""
+    (DK_LOAD) equal `fit_rows`, which uses the Python rule on the CAPACITY reply and the needs `patchkit needs` infers from the packed files."""
     from tools.coldfire import digikit_menu_proof as DP
     from tools.device import dkfit as F
-    from tools.device import dkupload as DKU
+    from tools.device import dkneeds as N
 
     img = c.image_for(f"{B.RT},core/digikit-menu", "menu")
     plan = DP.Plan(img.plan)
@@ -545,7 +549,7 @@ def run_fits(c: Any) -> None:
         shot(rig, "refused")
 
         def need_of(k: int) -> dict[str, int]:
-            return {**DKU.dkm_needs(files[k]), "file_size": len(files[k])}
+            return N.needs_of(files[k])
 
         short = F.fits_now(need_of(second), F.take(need_of(first), F.empty_caps(cap)))
         line = F.menu_line(short, compact=True) if short else ""
@@ -570,6 +574,125 @@ def run_fits(c: Any) -> None:
         )
         c.checks += rig.checks
         c.done(rig)
+    c.common_checks()
+
+
+# ---- what the MODULES page costs to open: the needs of every card file are read by sectors ------------------------------------
+
+
+def run_menu_open(c: Any) -> None:
+    """Opening SETTINGS > DIGIKIT > MODULES reads the needs of each file of the store by sector reads (`dkneeds`, `read_needs` of
+    modules/core/digikit-menu), once per open. A store of `[debug] modules` (default 12) synthetic modules, a third with DSP code and records, the rest
+    ColdFire-only, is opened; the same names with files that are not `.dkm` (the same sizes: the scan reads only their first sector) are opened as the
+    baseline. Measured from the press that opens the page to the moment its last row is written (`DK_LOAD_N`): emulated milliseconds and busy ColdFire
+    instructions, and the extra the needs cost, and the sector reads the needs reader made (`DK_NEEDS_READS`; the emulated card answers at once, so
+    the sector count, not the milliseconds, is what a device's card latency multiplies). Checked: the rows equal `fit_rows` (the Python rule on the needs `patchkit needs` infers), and the extra
+    stays under `[debug] max_extra_ms` (twenty times the measured cost: the point is that a store of a dozen modules opens at once). The figures go in the report
+    (`--keep`) and in docs/findings/60-what-fits.md."""
+    from tools.coldfire import digikit_menu_proof as DP
+    from tools.device import dkneeds as N
+
+    t = c.table()
+    count = int(t.get("modules", 12))
+    img = c.image_for(f"{B.RT},core/digikit-menu", "menu")
+    plan = DP.Plan(img.plan)
+    specs = {}
+    for i in range(count):
+        if i % 3 == 0:  # a machine with DSP code, state and records
+            specs[f"m{i:02d}"] = P.spec(
+                f"open/m{i:02d}",
+                machines=1,
+                params=4,
+                dsp={
+                    "image": 256,
+                    "bss": 1024,
+                    "voices": [{"machine": "m0", "state_bytes": 16, "voices": 4}],
+                },
+            )
+        else:
+            specs[f"m{i:02d}"] = P.spec(f"open/m{i:02d}", pad=1024 * (1 + i % 5))
+    paths = [c.pack_synth(sp, f"{k}.dkm") for k, sp in specs.items()]
+    store = c.env.folder / "digikit"
+    files = [(store / p).read_bytes() for p in paths]
+    names = [Path(p).name for p in paths]
+    real = c.card(None)
+    for p, data in zip(paths, files, strict=True):
+        (store / p).write_bytes(bytes(len(data)))  # the same size, not a .dkm
+    junk = c.card(None)
+
+    def w(rig: Any, name: str) -> int:
+        return rig.w(plan.addr(name))
+
+    def text(rig: Any, i: int) -> str:
+        raw = b"".join(
+            rig.w(plan.addr("DK_LOAD") + 24 * i + 4 * k).to_bytes(4, "big")
+            for k in range(6)
+        )
+        return raw.split(b"\0")[0].decode("latin-1")
+
+    def tap(rig: Any, key: str, gap_ms: int = 350) -> None:
+        rig.s.do_tap(key)
+        rig.s.run_ms(gap_ms)
+
+    def stat(rig: Any) -> tuple[float, int]:
+        st = rig.s.emu.status()
+        # `elapsed` is the controller clock: ColdFire instructions since the session began, 132000 to an emulated millisecond (H.MS)
+        return st["elapsed"] / H.MS, st["cf"]["interpreted_instructions"]
+
+    def open_cost(card: Path, tag: str) -> tuple[float, int, list[str], dict, int]:
+        with c.rig(img, card, tag) as rig:
+            cap = D.uploader(rig).capacity()
+            tap(rig, "NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES
+            tap(rig, "SETTINGS", 600)
+            for _ in range(8):
+                tap(rig, "DOWN", 200)
+            tap(rig, "YES", 700)
+            t0, i0 = stat(rig)
+            rig.s.emu.tap(H.button("YES"), hold=20 * H.MS)  # opens MODULES
+            for _ in range(
+                2000
+            ):  # 0.05 ms of emulated time a step: the stop is exact to that
+                rig.s.emu.step(H.MS // 20)
+                if w(rig, "DK_LOAD_N") >= count:
+                    break
+            t1, i1 = stat(rig)
+            rig.s.run_ms(300)
+            rows = [text(rig, i) for i in range(w(rig, "DK_LOAD_N"))][:count]
+            reads = w(rig, "DK_NEEDS_READS")
+            c.checks += rig.checks
+            c.done(rig)
+        return t1 - t0, i1 - i0, rows, cap, reads
+
+    ms_real, busy_real, rows, cap, reads = open_cost(real, "open-real")
+    ms_junk, busy_junk, _, _, reads_junk = open_cost(junk, "open-junk")
+    c.check(
+        f"{count} modules: every file has needs, and the rows equal the Python rule on them",
+        all(n is not None for n in N.needs_many(files))
+        and rows == fit_rows(names, files, set(), cap),
+        f"{rows}",
+    )
+    extra_ms, extra_busy = ms_real - ms_junk, busy_real - busy_junk
+    bound = float(t.get("max_extra_ms", 25))
+    c.report["menu_open"] = {
+        "modules": count,
+        "emulated_ms": {
+            "with_needs": ms_real,
+            "baseline_not_dkm": ms_junk,
+            "extra": extra_ms,
+        },
+        "busy_instructions": {
+            "with_needs": busy_real,
+            "baseline_not_dkm": busy_junk,
+            "extra": extra_busy,
+        },
+        "file_bytes": sum(len(f) for f in files),
+        "needs_sector_reads": {"with_needs": reads, "baseline_not_dkm": reads_junk},
+    }
+    c.check(
+        f"{count} modules: reading the needs adds {extra_ms:.1f} emulated ms and {extra_busy} busy instructions to opening MODULES ({ms_real:.1f} ms against {ms_junk:.1f} ms for files that are not .dkm), {reads} sector reads by the needs reader ({reads_junk} for the baseline)",
+        0 <= extra_ms < bound and len(rows) == count,
+        f"bound {bound} ms, rows {len(rows)}",
+    )
     c.common_checks()
 
 
@@ -681,7 +804,7 @@ def run_isolation(c: Any) -> None:
             after = rig.dsp_bytes(base, len(want))
             if key == "alone":
                 # the DSP part is done: the arena holds the module's block only (the DSP image's copy is freed) and every row is in the registry
-                n = DK.dkm_needs(ref_bytes)
+                n = dkneeds.needs_of(ref_bytes)
                 kinds = (
                     "ARENA",
                     "DSP_AREA",
@@ -694,9 +817,9 @@ def run_isolation(c: Any) -> None:
                 cap = D.uploader(rig).capacity()
                 took = {k: cap[k]["used"] for k in kinds}
                 c.check(
-                    "alone: after the load the runtime holds exactly the reference's declared needs (arena block, DSP range, machine, voice, parameter, page rows, FX slots)",
+                    "alone: after the load the runtime holds exactly the reference's inferred needs (arena block, DSP range, machine, voice, parameter, page rows, FX slots)",
                     took == {k: n[k] for k in kinds},
-                    f"taken {took}, declared {n}",
+                    f"taken {took}, inferred {n}",
                 )
             c.check(
                 f"{key}: the reference's DSP bytes in L2 equal its packed image relocated at its range, before and after the note",

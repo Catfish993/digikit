@@ -13,9 +13,10 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null, null_mut};
-use dkrt_sdk::fit::{self, Needs, Short};
+use dkneeds::{needs_of, Bytes};
+use dkrt_fit::{self as fit, Needs, Short};
 use dkrt_sdk::proto::{
-    CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_STAGE, CAPK_VOICE_ROWS, DKM_FORMAT,
+    CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_STAGE, CAPK_VOICE_ROWS,
 };
 use dkrt_sdk::{DkrtStoreEntry, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
@@ -385,7 +386,7 @@ static mut LOADED: [u8; MAX_ENT] = [0; MAX_ENT];
 static mut NENT: usize = 0;
 /// 1 when the file's header says this runtime or device cannot load it (shown greyed out, `[-]`, and cannot be ticked).
 static mut NOK: [u8; MAX_ENT] = [0; MAX_ENT];
-/// The needs each file's header declares (docs/design/digikit-dkm.md), 1 in `HAS_NEEDS` when it has them (a file that is not a `.dkm` has none).
+/// The needs of each file, inferred from its contents (`read_needs`), read once per scan; 1 in `HAS_NEEDS` when it has them (a file that is not a readable `.dkm` has none).
 static mut NEEDS: [Needs; MAX_ENT] = [NO_NEEDS; MAX_ENT];
 static mut HAS_NEEDS: [u8; MAX_ENT] = [0; MAX_ENT];
 const NO_NEEDS: Needs = Needs { file_size: 0, arena: 0, arena_xfer: 0, dsp_area: 0, dsp_align: 0, machine_rows: 0, voice_rows: 0, param_rows: 0, page_rows: 0, fx_slots: 0 };
@@ -480,12 +481,6 @@ unsafe fn compatible(first: u32, device: u32) -> bool {
         Some(DKM_MAGIC) => {}
         _ => return true,
     }
-    // another format number: the loader refuses it (E_FORMAT)
-    if let Some(f) = file_word(first, 4) {
-        if f != DKM_FORMAT {
-            return false;
-        }
-    }
     let rt = [
         dkrt_sdk::contract::API,
         dkrt_sdk::contract::MACHINE,
@@ -519,12 +514,52 @@ unsafe fn compatible(first: u32, device: u32) -> bool {
     }
 }
 
-/// The needs the `.dkm` at store sector `first` declares: its header sector through the block reader; None for a file that is not one or cannot be read.
-unsafe fn read_needs(first: u32) -> Option<Needs> {
-    if dkrt_store_read_sector(first, HDR) != OK {
-        return None;
+/// The sector reads the last scan made to read the needs (the cost of opening the page; read by the proof).
+#[no_mangle]
+pub static mut DK_NEEDS_READS: u32 = 0;
+
+/// A card file as the needs reader's byte source: the store's sector reads through the block reader, one sector cached (the file is never staged).
+struct CardFile {
+    first: u32,
+    size: u32,
+    /// the file's sector held in `HDR`
+    held: u32,
+}
+
+impl Bytes for CardFile {
+    fn size(&self) -> u32 {
+        self.size
     }
-    Needs::from_header(core::slice::from_raw_parts(HDR, 512))
+    fn read(&mut self, at: u32, out: &mut [u8]) -> bool {
+        if at > self.size || out.len() as u32 > self.size - at {
+            return false;
+        }
+        let mut i = 0usize;
+        while i < out.len() {
+            let pos = at + i as u32;
+            let sector = pos / 512;
+            if self.held != sector {
+                // `held` is not trusted across a failed read: the block reader may have written part of the buffer
+                self.held = u32::MAX;
+                unsafe { DK_NEEDS_READS += 1 };
+                if unsafe { dkrt_store_read_sector(self.first + sector, HDR) } != OK {
+                    return false;
+                }
+                self.held = sector;
+            }
+            out[i] = unsafe { *HDR.add((pos % 512) as usize) };
+            i += 1;
+        }
+        true
+    }
+}
+
+/// The needs of the `.dkm` at store sector `first` (`size` bytes), inferred from its contents (`dkneeds`, the code patchkit runs): the header, the
+/// `register` records and the DSP section's header and voice table, read by sector. None for a file that is not a readable `.dkm` of this format: it
+/// has no verdict here and the runtime names the reason at boot.
+unsafe fn read_needs(first: u32, size: u32) -> Option<Needs> {
+    let mut f = CardFile { first, size, held: u32::MAX };
+    needs_of(&mut f).ok()
 }
 
 /// Which modules fit. A module set is fixed per session, so the ticked set loads at the next boot into an empty runtime: start from the limits (CAPACITY's
@@ -655,11 +690,12 @@ unsafe fn scan_once() {
     let mut st: DkrtStatus = core::mem::zeroed();
     dkrt_status(&mut st);
     HAS_NEEDS = [0; MAX_ENT];
+    DK_NEEDS_READS = 0;
     for i in 0..NENT {
         let first = ENTRIES[ENT[i] as usize].first;
         if !compatible(first, st.device) {
             NOK[i] = 1;
-        } else if let Some(n) = read_needs(first) {
+        } else if let Some(n) = read_needs(first, ENTRIES[ENT[i] as usize].size) {
             NEEDS[i] = n;
             HAS_NEEDS[i] = 1;
         }

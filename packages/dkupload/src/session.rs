@@ -133,7 +133,7 @@ impl<T: Transport> Session<T> {
             .map_err(|_| Error::Protocol("verify: the reply is not 32 bytes".into()))
     }
 
-    /// The first `HEADER_BYTES` bytes of a store file (a .dkm header; fewer for a shorter file).
+    /// The first 0xa0 bytes of a store file (a .dkm header; fewer for a shorter file).
     pub fn header(&mut self, path: &str) -> Result<Vec<u8>, Error> {
         self.read(path, 0, HEADER_BYTES).map(|(_, b)| b)
     }

@@ -1127,6 +1127,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dkneeds"
+version = "0.1.0"
+
+[[package]]
+name = "dkrt-fit"
+version = "0.1.0"
+dependencies = [
+ "dkneeds",
+ "dkrt-sdk",
+]
+
+[[package]]
 name = "dkrt-sdk"
 version = "0.1.0"
 
@@ -3051,6 +3063,7 @@ name = "patchkit"
 version = "0.1.0"
 dependencies = [
  "coldfire",
+ "dkneeds",
  "dkupload",
  "dt2-firmware-loader",
  "serde",
