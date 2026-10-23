@@ -22,6 +22,8 @@ server = []
 # ColdFire path/PC profile (`cf.profile` method).
 cf-profile = ["elektron-native-boot/cf-profile"]
 coupled-audio = ["digi-coupled/coupled-audio"]
+# Both devices' generated cores in one binary (SHARC_GEN_DIR and SHARC_GEN_DIR_2).
+second-core = ["coupled-audio", "digi-coupled/second-core"]
 
 [dependencies]
 digi-coupled = { path = "../coupled" }

@@ -38,8 +38,10 @@ root). The directory name is not always the package name; use the package name w
 | `packages/emulator/boot` | `elektron-native-boot` | Bounded cold boot, the ColdFire runtime, the DSP peer (`sharc_peer`), DSP patches, and the examples (`card_boot`, `dsp_cold`, `sharc_live`, `turn_probe`; the headless tools `boot_gate`, `panel_drive` and `sysex_bridge`, see their headers). Also the wasm ABI. |
 | `packages/emulator/sharc-rt` | `sharc-rt` | Runtime under the generated core: state, memory, decoder, instruction table. |
 | `packages/emulator/sharc-gen` | `sharc-gen` | The generated SHARC+ core (from `SHARC_GEN_DIR`), compiled apart from the engine. |
+| `packages/emulator/sharc-stats` | `sharc-stats` | The counters and profiles the engine reports (shared by both engine instances). |
 | `packages/emulator/sharc` | `sharc-native` | The DSP engine: interpreter, AOT block dispatch and the fast tier (`src/fast/`). |
 | `packages/emulator/sharc-fast-cl` | `sharc-fast-cl` | Cranelift backend for the fast-tier kernel IR. |
+| `packages/emulator/sharc-gen-2`, `sharc-2`, `sharc-fast-cl-2` | `sharc-gen-2`, `sharc-native-2`, `sharc-fast-cl-2` | The second core: the same sources as `sharc-gen`, `sharc-native` and `sharc-fast-cl`, built on `SHARC_GEN_DIR_2` (see "Two cores in one binary"). Empty without that variable. |
 | `packages/emulator/sharc-fast-wasm` | `sharc-fast-wasm` | WebAssembly backend for the same IR, plus the V8 gate tools. |
 | `packages/emulator/live` | `live-audio` | Live audio output: SPSC ring, frame repeater, cpal callback. |
 | `packages/emulator/coupled` | `digi-coupled` | The coupled ColdFire + SHARC+ run loop shared by the app and `coupled-run`; the fixture gates. |
@@ -95,6 +97,23 @@ it -- so it pays one compile per gen, then reuses its own dir.
 
 A plain `cargo build` without `--target-dir` uses `./target` (ignored by git).
 Wrap heavy builds in `uv run python -m tools.devtools.benchlock run --shared -- ...`.
+
+## Two cores in one binary
+
+The generated core is device-specific (symbol numbers and the AOT blocks differ), so a build that opens either
+device's firmware coupled holds two: `SHARC_GEN_DIR` and `SHARC_GEN_DIR_2` name them, in either order, and the cargo
+feature `second-core` (digi-coupled, digi-control, digiemu-desktop) links both. The `-2` packages compile the
+sources of the first ones again (`[lib] path`, `build = ...`) against the second directory, so there are two engine
+types and one glue per core: `elektron_native_boot::sharc_peer::{NativeDsp, open_engine_patched}` for the first core,
+`sharc_peer::second::...` for the second (one file, `boot/src/sharc_engine.rs`, included twice). The engine instance
+the DSP worker runs is chosen when the session starts: `coupled/src/dsp_core.rs` takes the core whose DSP image
+name (`dn2-1.11`, `dt2-1.16`) starts with the loaded firmware's device id, so there is no per-instruction cost.
+The second instance has no C ABI symbols (cfg `sharc_second`) and reads its own fast-tier lists
+(`SHARC_FAST_REGIONS_2`, `SHARC_BLOCKTRANS_2`). The other device's ready inputs go to `digi-emud` and the app as
+`--also-coupled DSP_IMAGE DSP_STATE CF_SNAPSHOT SYX` (repeatable): a firmware load for that device then boots coupled
+(audio, DSP, restart) instead of ColdFire only. Without `SHARC_GEN_DIR_2` the `-2` packages are empty and every build
+is as before. Proof: `uv run python -m tools.devtools.dual_core_check` (the header names the build command). The
+launcher builds this with `DIGI_EMU_SECOND_CORE=1 mise run workbench` (no PGO profile for it yet).
 
 ## Headless coupled runner (`coupled-run`) and the matrix
 

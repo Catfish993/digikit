@@ -293,6 +293,10 @@ pub fn load_scenario(spec: &str) -> Result<Scenario, String> {
 
 pub struct Config {
     pub audio: Option<AudioOptions>,
+    /// The ready inputs (DSP image, DSP state, ColdFire snapshot) of other devices than `audio`'s, for a build with
+    /// the second generated core: a firmware loaded for one of them boots coupled (audio, DSP, restart) instead of
+    /// ColdFire only. Matched by the firmware the inputs were made for (`SOURCE.json`, else `expected_syx`).
+    pub audio_alt: Vec<AudioOptions>,
     pub scenario: Option<ScenarioSetup>,
     pub mode: Mode,
     /// Where patched-firmware snapshots are cached (`<run_dir>/patched`).
@@ -337,6 +341,7 @@ impl Config {
     pub fn new(audio: Option<AudioOptions>) -> Self {
         Self {
             audio,
+            audio_alt: Vec::new(),
             scenario: None,
             mode: Mode::Ui,
             run_dir: PathBuf::from("out/native/run"),
@@ -520,12 +525,28 @@ struct ScenarioRun {
     started: Option<Instant>,
 }
 
+/// SHA-256 of the .syx the ready inputs of `audio` were made for: `SOURCE.json` next to the DSP image, else the file `expected_syx`.
+fn ready_inputs_sha(audio: &AudioOptions) -> Option<String> {
+    let source = audio
+        .image
+        .parent()
+        .and_then(|dir| std::fs::read_to_string(dir.join("SOURCE.json")).ok())
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|v| v["syx_sha256"].as_str().map(str::to_string));
+    source.or_else(|| {
+        let bytes = std::fs::read(audio.expected_syx.as_ref()?).ok()?;
+        Some(cards::sha256_hex(&bytes))
+    })
+}
+
 struct Actor {
     rx: mpsc::Receiver<Command>,
     /// The audio options in force: a loaded card's own ready state replaces the
     /// launch options' until a firmware is loaded without a card.
     audio: Option<AudioOptions>,
     audio_default: Option<AudioOptions>,
+    /// The ready inputs of other devices (`Config::audio_alt`): a firmware of one of them boots coupled on its own DSP.
+    audio_alt: Vec<AudioOptions>,
     run_dir: PathBuf,
     events: Events,
     on_quit: Option<Box<dyn Fn() + Send>>,
@@ -644,6 +665,7 @@ impl Actor {
         Self {
             rx,
             audio_default: config.audio.clone(),
+            audio_alt: config.audio_alt,
             audio: config.audio,
             run_dir: config.run_dir,
             events: config.events,
@@ -705,6 +727,18 @@ impl Actor {
             deliver_exceptions: false,
             reset_ram: None,
         }
+    }
+
+    /// The launch audio options of the device whose firmware has SHA-256 `base_sha` (the stock image a patched one is made from): the
+    /// default or the alternate whose ready inputs were made for it, else the default (which then reports why it cannot be used).
+    fn audio_for_base(&self, base_sha: &str) -> Option<AudioOptions> {
+        let default = self.audio_default.as_ref();
+        default
+            .into_iter()
+            .chain(self.audio_alt.iter())
+            .find(|a| ready_inputs_sha(a).is_some_and(|sha| sha == base_sha))
+            .or(default)
+            .cloned()
     }
 
     /// The RAM range the device model keeps across a soft reset: `(base, bytes)` from the device file (`[digikit] keep_base`, `keep_bytes`).
@@ -1138,7 +1172,7 @@ impl Actor {
         self.mirror_flush();
         self.next_auto = None;
         self.cancel_card();
-        self.audio = self.audio_default.clone();
+        self.audio = self.audio_for_base(&cards::sha256_hex(&bytes));
         self.card_last = json!({"state": "idle"});
         self.runtime = None;
         self.read_error = None;
@@ -2679,7 +2713,7 @@ impl Actor {
         if replace {
             // As `ui_load` always did: forget the running firmware, its card job and its audio setup.
             self.cancel_card();
-            self.audio = self.audio_default.clone();
+            self.audio = self.audio_for_base(base_param.as_deref().unwrap_or(&new.sha256));
             self.card_last = json!({"state": "idle"});
             self.read_error = None;
             self.runtime = None;
@@ -3143,7 +3177,7 @@ impl Actor {
         reply: &RpcReply,
     ) -> Result<CoupledLoad, RpcError> {
         let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, m);
-        let Some(mut audio) = self.audio_default.clone().or_else(|| self.audio.clone()) else {
+        let Some(mut audio) = self.audio_for_base(base_sha).or_else(|| self.audio.clone()) else {
             return Ok(CoupledLoad::Unavailable("no coupled audio inputs".into()));
         };
         let unavailable = |why: String| Ok(CoupledLoad::Unavailable(why));
@@ -3887,7 +3921,7 @@ fn summarize_audio(runtime: &mut Runtime) -> Value {
         "frames": report["frames"], "missing_blocks": report["missing_blocks"],
         "halted": report["halted"], "sink_connected": report["sink_connected"],
         "source_audio_seconds": report["source_audio_seconds"],
-        "dsp_tiers": report["dsp_tiers"],
+        "dsp_tiers": report["dsp_tiers"], "dsp_core": report["dsp_core"],
     })
 }
 

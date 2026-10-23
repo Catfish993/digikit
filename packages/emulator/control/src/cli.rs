@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use digi_coupled::{AudioMode, AudioOptions};
 
-pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--mirror-dir DIR] [--device-folders] [--control|--no-control] [--runtime|--no-runtime] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
+pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE [--card-folder DIR [--no-card-sync]]] [--mirror-dir DIR] [--device-folders] [--control|--no-control] [--runtime|--no-runtime] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--also-coupled DSP_IMAGE DSP_STATE CF_SNAPSHOT SYX]... [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
 
 #[derive(Clone, Debug, Default)]
 pub struct StartupArgs {
@@ -21,6 +21,8 @@ pub struct StartupArgs {
     /// and the card of a load is built from it. `--no-card-sync` turns the mirror and the export on quit off.
     pub device_folders: bool,
     pub audio: Option<AudioOptions>,
+    /// `--also-coupled`: the ready inputs of another device (a build with the second generated core).
+    pub audio_alt: Vec<AudioOptions>,
     pub scenario: Option<String>,
     pub report: Option<PathBuf>,
     /// `--control` / `--no-control`; None leaves the host's default.
@@ -59,6 +61,7 @@ pub fn parse_values(
     let mut mirror_dir = None;
     let mut device_folders = false;
     let mut runtime = None;
+    let mut also: Vec<[PathBuf; 4]> = Vec::new();
     while let Some(value) = values.next() {
         let mut path = |label: &str| -> Result<PathBuf, String> {
             values
@@ -95,6 +98,13 @@ pub fn parse_values(
             automatic = true;
         } else if value == "--audio-profile-syx" {
             audio_profile_syx = Some(path("--audio-profile-syx")?);
+        } else if value == "--also-coupled" {
+            also.push([
+                path("--also-coupled DSP_IMAGE")?,
+                path("--also-coupled DSP_STATE")?,
+                path("--also-coupled CF_SNAPSHOT")?,
+                path("--also-coupled SYX")?,
+            ]);
         } else if value == "--dsp-image" {
             image = Some(path("--dsp-image")?);
         } else if value == "--dsp-state" {
@@ -201,6 +211,23 @@ pub fn parse_values(
         }
         None
     };
+    // The other devices' ready inputs: the primary's playback settings, the profile check on their own firmware.
+    let audio_alt = match (&audio, also.is_empty()) {
+        (_, true) => Vec::new(),
+        (Some(primary), false) if !primary.zero => also
+            .into_iter()
+            .map(|[image, state, snapshot, syx]| AudioOptions {
+                image,
+                state,
+                snapshot,
+                automatic: true,
+                expected_syx: Some(syx),
+                dsp_patch: None,
+                ..primary.clone()
+            })
+            .collect(),
+        _ => return Err("--also-coupled needs --coupled or --auto-coupled".into()),
+    };
     Ok(StartupArgs {
         syx,
         card_image,
@@ -209,6 +236,7 @@ pub fn parse_values(
         mirror_dir,
         device_folders,
         audio,
+        audio_alt,
         scenario,
         report,
         control,
@@ -269,5 +297,24 @@ mod tests {
         assert!(parse(&["--dsp", "zero", "--cf-snapshot", "s", "--dsp-image", "i"]).is_err());
         assert!(parse(&["--dsp", "other"]).is_err());
         assert!(parse(&["--dsp", "sharc"]).unwrap().audio.is_none());
+    }
+
+    #[test]
+    fn also_coupled_adds_another_devices_ready_inputs() {
+        let a = parse(&[
+            "x.syx", "--auto-coupled", "--dsp-image", "i", "--dsp-state", "s", "--cf-snapshot", "c", "--no-audio",
+            "--also-coupled", "i2", "s2", "c2", "y.syx",
+        ])
+        .unwrap();
+        assert_eq!(a.audio_alt.len(), 1);
+        let alt = &a.audio_alt[0];
+        assert_eq!(
+            (&alt.image, &alt.state, &alt.snapshot, &alt.expected_syx),
+            (&"i2".into(), &"s2".into(), &"c2".into(), &Some("y.syx".into()))
+        );
+        assert!(alt.automatic && !alt.playback);
+        assert!(parse(&["--also-coupled", "i2", "s2", "c2", "y.syx"]).is_err());
+        assert!(parse(&["--coupled", "--dsp-image", "i", "--dsp-state", "s", "--cf-snapshot", "c", "--also-coupled", "i2"]).is_err());
+        assert!(parse(&[]).unwrap().audio_alt.is_empty());
     }
 }

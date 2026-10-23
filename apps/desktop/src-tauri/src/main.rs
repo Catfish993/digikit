@@ -439,6 +439,7 @@ fn main() {
         .clone()
         .unwrap_or_else(|| PathBuf::from("out/native/run"));
     let mut config = Config::new(startup.audio.clone());
+    config.audio_alt = startup.audio_alt.clone();
     config.mode = if startup.paused {
         Mode::Paused
     } else if startup.scenario.is_some() {

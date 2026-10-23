@@ -1060,7 +1060,9 @@ dependencies = [
  "serde_json",
  "sha2",
  "sharc-fast-cl",
+ "sharc-fast-cl-2",
  "sharc-native",
+ "sharc-native-2",
 ]
 
 [[package]]
@@ -1260,6 +1262,7 @@ dependencies = [
  "sha2",
  "sharc-fast-wasm",
  "sharc-native",
+ "sharc-native-2",
 ]
 
 [[package]]
@@ -3835,6 +3838,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharc-fast-cl-2"
+version = "0.0.1"
+dependencies = [
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-jit",
+ "cranelift-module",
+ "cranelift-native",
+ "sharc-native-2",
+]
+
+[[package]]
 name = "sharc-fast-wasm"
 version = "0.0.1"
 dependencies = [
@@ -3851,16 +3866,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharc-gen-2"
+version = "0.0.1"
+dependencies = [
+ "sharc-rt",
+]
+
+[[package]]
 name = "sharc-native"
 version = "0.0.1"
 dependencies = [
  "sharc-fast-cl",
  "sharc-gen",
  "sharc-rt",
+ "sharc-stats",
+]
+
+[[package]]
+name = "sharc-native-2"
+version = "0.0.1"
+dependencies = [
+ "sharc-gen-2",
+ "sharc-rt",
+ "sharc-stats",
 ]
 
 [[package]]
 name = "sharc-rt"
+version = "0.0.1"
+
+[[package]]
+name = "sharc-stats"
 version = "0.0.1"
 
 [[package]]

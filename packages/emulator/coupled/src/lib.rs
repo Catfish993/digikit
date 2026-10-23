@@ -20,6 +20,8 @@ use std::{
 pub const STEP_CHUNK: u32 = 250_000;
 #[cfg(feature = "coupled-audio")]
 pub mod cold;
+#[cfg(feature = "coupled-audio")]
+pub mod dsp_core;
 pub mod scenario;
 /// Most inputs kept for replay.
 const INPUT_LOG_LIMIT: usize = 100_000;
@@ -522,7 +524,7 @@ mod coupled {
     use elektron_native_boot::{
         pcm_play::{Mode, PcmPlayer, Recovery, SOURCE_RATE},
         sharc_peer::{
-            DEFAULT_PERIOD, NativeDsp, Shared, ThreadedHandle, ThreadedPeer, ThreadedTimingProfile,
+            DEFAULT_PERIOD, Shared, ThreadedHandle, ThreadedTimingProfile,
         },
         wav::WavWriter,
     };
@@ -749,6 +751,8 @@ mod coupled {
         player: Option<PcmPlayer>,
         device_error: Option<String>,
         playback_requested: bool,
+        /// The DSP image name of the generated core this session runs (`dn2-1.11`, `dt2-1.16`).
+        dsp_core: &'static str,
         pub(super) frames: u64,
         samples: u64,
         initial_instructions: u64,
@@ -812,23 +816,21 @@ mod coupled {
                 || elektron_native_boot::spikelog::enabled();
             emulator.enable_ssi_diagnostic(96_000)?;
             emulator.load_state(&snapshot)?;
-            // The fast tier's Cranelift backend; the engine uses it only when
-            // SHARC_FAST_REGIONS names regions (the launcher sets that).
-            sharc_fast_cl::register();
-            let (peer, handle, shared) = ThreadedPeer::spawn_with_timing(
-                move || {
-                    elektron_native_boot::sharc_peer::open_engine_patched(
-                        &image,
-                        &state,
-                        clock,
-                        patch.as_ref(),
-                        idle,
-                    )
-                    .map(NativeDsp)
+            // The fast tier's Cranelift backend is registered by the spawn; the engine uses it only when
+            // SHARC_FAST_REGIONS names regions (the launcher sets that). The core is the device's own.
+            let core = crate::dsp_core::Core::for_device(&profile.device);
+            let (peer, handle, shared) = crate::dsp_core::spawn_dsp(
+                core,
+                crate::dsp_core::EngineInputs {
+                    image,
+                    state,
+                    clock_base: clock,
+                    patch,
+                    idle,
                 },
                 elektron_native_boot::sharc_peer::period_from_env(),
-                idle.range,
                 link_timing,
+                true,
             )?;
             if dsp.sample_link == Some(device_profile::SampleLink::Lp0) {
                 peer.enable_sample_link();
@@ -863,6 +865,7 @@ mod coupled {
                 player,
                 device_error,
                 playback_requested: options.playback,
+                dsp_core: core.image_name(),
                 frames: 0,
                 samples: 0,
                 initial_instructions,
@@ -1067,6 +1070,7 @@ mod coupled {
                 "missing_blocks": shared.missing_blocks, "nonzero_replies": shared.nonzero_replies,
                 "halted": shared.halted, "flow_started": self.samples > 0,
                 "playback_requested": self.playback_requested, "sink_connected": connected,
+                "dsp_core": self.dsp_core,
                 "device_error": self.device_error, "output_device": output_device, "sink": sink,
                 "sink_stats_note": "async feeder snapshot; excludes PCM messages still in the channel",
                 "audio_mode": self.audio_mode.name(),
