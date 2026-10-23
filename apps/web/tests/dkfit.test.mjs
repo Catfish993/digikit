@@ -8,7 +8,7 @@ import { DKM_NEEDS } from '../src/modules/gen_proto.ts';
 const V = JSON.parse(readFileSync(new URL('../../../sdk/fit-vectors.json', import.meta.url), 'utf8'));
 
 const capsOf = (over) => {
-  const merged = { ...V.caps_base, ...(over ?? {}) };
+  const merged = { ...V.caps_base, ...over };
   return Object.fromEntries(
     Object.entries(merged)
       .filter(([, v]) => v !== null)
