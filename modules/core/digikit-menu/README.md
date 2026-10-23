@@ -10,14 +10,14 @@ Adds **SETTINGS > DIGIKIT** (the ninth row, after SYSTEM). Emulator only: nothin
   (the list shows about 18). The next boot loads the ticked modules into an empty runtime, so fit is checked against the limits with the ticked modules taken out, in list
   order (`dkrt_fit`, docs/plans/what-fits.md); selecting a row that will not fit ticks nothing and shows a popup `NO FIT: DSP 164K > 155K FREE` and the short form in the
   message row. The names in these texts are the page's own: `CPU` (the arena: CPU memory on the desktop), `DSP` (the DSP area: DSP memory), `MACHINES`, `PARAMS`, `PAGES`.
-  **The load line:** while at least one module is ticked, one line directly above APPLY & RESTART (or where it would be) gives the two fullest resources of the ticked set, `DSP 85% CPU 1%`
-  (`dkrt_fit` `load_line`: the limits with the ticked modules taken out, the same capacity the `x` marks use; labels `DSP`, `CPU`, `MOD`, `MCH`, `PRM`, `PAG`; percents rounded up, so a set that takes
+  **The load line:** while at least one module is ticked, one line directly above APPLY & RESTART (or where it would be) gives the DSP and the CPU memory of the ticked set (always these two), `DSP 85% CPU 1%`
+  (`dkrt_fit` `load_line`: the limits with the ticked modules taken out, the same capacity the `x` marks use; labels `DSP`, `CPU`; percents rounded up, so a set that takes
   anything never reads 0%; at most 17 characters). It changes with every tick and goes with the last one. `[-]` is a module whose header says this runtime
   or device cannot load it; it cannot be ticked. **APPLY & RESTART** appears only when the pending selection differs from the saved one (or this
   boot is in safe mode): the first press shows a popup that the device restarts, the second saves the selection (`dkrt_selection_set`) and
   restarts (`dkrt_restart`); a refusal is shown. **CLEAR SELECTION** unticks all. In safe mode the DIGIKIT view and the list show `SAFE: <reason>`
   and a popup says why. Modules are loaded by the runtime at boot, not by the menu.
-- **HEALTH** shows CPU load, the DSP's block time (average and maximum of the last second), the free firmware heap and its largest block, the free runtime arena and
+- **HEALTH** shows CPU load, the DSP's block time (average and maximum of the last second), the free firmware heap and its largest block, the free CPU memory (the runtime arena) and
   the free DSP area, and refreshes itself about twice a second without a key press (the page registers a function with `dkrt_poll_set`, which the UI loop calls
   once per pass; it stops when the page is closed). The figures need `core/health`; without it the page says so. Finding 41.
 - **MEMORY** shows the runtime's capacity (the CAPACITY command's entries, `dkrt_capacity`) as text rows with a ten-character bar: `DSP` and `CPU` (the arena) as a percent, `MODS`, `MACH`, `VOICE`, `PARAM` and `PAGE` as used/limit. Finding 57.

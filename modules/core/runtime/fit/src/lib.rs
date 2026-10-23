@@ -136,21 +136,14 @@ pub fn take(n: &Needs, caps: &mut [DkrtCap]) {
     use_(CAPK_FX_SLOTS, n.fx_slots);
 }
 
-/// The resources the load line ranks, with the label the device shows (three letters: two entries at 100 % fit the list's 18 characters).
-/// The staging buffer, the selection paths, the voice rows and the effect slots say nothing a user can act on.
-const LINE: [(u8, &[u8]); 6] = [
-    (CAPK_DSP_AREA, b"DSP"),
-    (CAPK_ARENA, b"CPU"),
-    (CAPK_MODULES, b"MOD"),
-    (CAPK_MACHINE_ROWS, b"MCH"),
-    (CAPK_PARAM_ROWS, b"PRM"),
-    (CAPK_PAGE_ROWS, b"PAG"),
-];
+/// The resources the load line shows, in this order, with the label the device shows: the two a user can act on (DSP memory, CPU memory).
+/// The module records, the row tables, the staging buffer, the selection paths, the voice rows and the effect slots are not shown.
+const LINE: [(u8, &[u8]); 2] = [(CAPK_DSP_AREA, b"DSP"), (CAPK_ARENA, b"CPU")];
 /// The longest load line: two labels of three letters, two percents of four characters and a space between.
 pub const LINE_MAX: usize = 17;
 
 /// `used` as a percent of `limit`, rounded up: a set that takes anything never reads 0 %, and a resource reads 100 % only when it is full.
-/// (u32 arithmetic only: the limits of these resources are at most 2^19, so `used * 1000` fits; the module has no 64-bit helpers.)
+/// (u32 arithmetic only: the limits of these resources are at most 2^19, so `used * 100` fits; the module has no 64-bit helpers.)
 fn percent(used: u32, limit: u32) -> u32 {
     used.min(limit)
         .saturating_mul(100)
@@ -158,34 +151,10 @@ fn percent(used: u32, limit: u32) -> u32 {
         / limit
 }
 
-/// What the resources are ranked by: the displayed percent first (so a resource that is used at all ranks above one that is not), then the share per
-/// thousand, rounded down.
-fn rank(used: u32, limit: u32) -> u32 {
-    percent(used, limit) * 1000 + used.min(limit).saturating_mul(1000) / limit
-}
-
-/// The load line of a selection (the MODULES page, above APPLY & RESTART): the two fullest resources of `caps`, which is the capacity once the ticked modules are
-/// taken out of an empty one (`empty`, `take`), as `DSP 85% CPU 1%`. Fullest by `rank`, the earlier one of `LINE` first on a tie; a resource the
-/// capacity lacks or that has no limit (the Digitakt II has no page rows) is not ranked. Writes into `out` and returns the length (0 when the capacity has none of them).
+/// The load line of a selection (the MODULES page, above APPLY & RESTART): `DSP 52% CPU 1%`, always the DSP memory and then the CPU memory of
+/// `caps`, which is the capacity once the ticked modules are taken out of an empty one (`empty`, `take`). A resource the capacity lacks or that has
+/// no limit is left out. Writes into `out` and returns the length (0 when the capacity has neither).
 pub fn load_line(caps: &[DkrtCap], out: &mut [u8; LINE_MAX]) -> usize {
-    // (index into LINE, rank, percent) of the two fullest so far
-    let mut best: [Option<(usize, u32, u32)>; 2] = [None, None];
-    for (i, &(kind, _)) in LINE.iter().enumerate() {
-        let Some(c) = cap(caps, kind) else {
-            continue;
-        };
-        if c.limit == 0 {
-            continue;
-        }
-        let this = (i, rank(c.used, c.limit), percent(c.used, c.limit));
-        // a strictly fuller entry goes ahead of the one it beats; an equal one stays behind it
-        if best[0].map_or(true, |b| this.1 > b.1) {
-            best[1] = best[0];
-            best[0] = Some(this);
-        } else if best[1].map_or(true, |b| this.1 > b.1) {
-            best[1] = Some(this);
-        }
-    }
     let mut n = 0;
     let mut put = |bytes: &[u8]| {
         for &b in bytes {
@@ -193,13 +162,21 @@ pub fn load_line(caps: &[DkrtCap], out: &mut [u8; LINE_MAX]) -> usize {
             n += 1;
         }
     };
-    for (k, b) in best.iter().flatten().enumerate() {
-        if k > 0 {
+    let mut first = true;
+    for &(kind, label) in LINE.iter() {
+        let Some(c) = cap(caps, kind) else {
+            continue;
+        };
+        if c.limit == 0 {
+            continue;
+        }
+        if !first {
             put(b" ");
         }
-        put(LINE[b.0].1);
+        first = false;
+        put(label);
         put(b" ");
-        let p = b.2;
+        let p = percent(c.used, c.limit);
         if p >= 100 {
             put(b"100");
         } else {

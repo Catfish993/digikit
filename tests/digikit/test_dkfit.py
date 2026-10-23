@@ -97,5 +97,5 @@ def test_the_load_line_of_a_selection_takes_the_ticked_modules_out_of_the_limits
         },
         F.empty_caps(caps),
     )
-    # 265656 of 524288 is 50.67 %, up to 51; the arena (1424 of 524288) and the module record (1 of 8, 12.5 %) follow
-    assert F.load_line(left) == "DSP 51% MOD 13%"
+    # 265656 of 524288 is 50.67 %, up to 51; the arena (1424 of 524288, 0.27 %) reads 1: the line is always DSP and CPU
+    assert F.load_line(left) == "DSP 51% CPU 1%"

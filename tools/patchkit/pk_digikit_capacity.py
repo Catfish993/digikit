@@ -550,14 +550,15 @@ def run_fits(c: Any) -> None:
             got == want and got[first][:4] == "[X] " and got[second][:4] == "[ ]x",
             f"{got} vs {want}",
         )
-        # the load line: the two fullest resources of the limits with the ticked modules taken out, directly above APPLY & RESTART
+        # the load line: the DSP and CPU memory of the limits with the ticked modules taken out, directly above APPLY & RESTART
         want_line = F.load_line(F.take(need_file(first), F.empty_caps(cap)))
         n_rows = w(rig, "DK_LOAD_N")
         below = [text(rig, "DK_LOAD", i) for i in range(len(names), n_rows)]
         c.check(
-            "MODULES, one half-size module ticked: the load line (two fullest resources) is directly above APPLY & RESTART",
+            "MODULES, one half-size module ticked: the load line (DSP and CPU) is directly above APPLY & RESTART",
             below[:2] == [want_line, "APPLY & RESTART"]
             and want_line.startswith("DSP ")
+            and " CPU " in want_line
             and len(want_line) <= 18,
             f"{below} vs line {want_line!r}",
         )

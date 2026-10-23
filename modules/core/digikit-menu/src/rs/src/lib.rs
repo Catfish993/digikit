@@ -393,7 +393,7 @@ const NO_NEEDS: Needs = Needs { file_size: 0, arena: 0, arena_xfer: 0, dsp_area:
 /// 1 when the row's module does not fit next to the ticked ones (`refit`), and the first short resource.
 static mut WONT: [u8; MAX_ENT] = [0; MAX_ENT];
 static mut SHORT: [Short; MAX_ENT] = [Short { kind: 0, need: 0, free: 0 }; MAX_ENT];
-/// The load line of the ticked set (`refit`): the two fullest resources, `DSP 85% CPU 1%`; empty when nothing is ticked.
+/// The load line of the ticked set (`refit`): the DSP and the CPU memory, `DSP 85% CPU 1%`; empty when nothing is ticked.
 static mut LOAD_LINE: Text = Text::new();
 /// One 512-byte, 16-byte aligned firmware heap block the card DMA fills with a file's header sector.
 static mut HDR: *mut u8 = null_mut();
@@ -576,7 +576,7 @@ unsafe fn refit() {
     LOAD_LINE.clear();
     for pass in 0..2 {
         if pass == 1 {
-            // the ticked modules that fit are taken: the two fullest resources of the limits they leave
+            // the ticked modules that fit are taken: the DSP and CPU memory of the limits they leave
             let mut any = false;
             for i in 0..NENT {
                 any |= TICK[i] != 0;
@@ -1304,7 +1304,7 @@ unsafe fn fill_health() {
     }
     hrow(m, &t, 3);
     let mut t = Text::new();
-    t.s(b"ARENA FREE ");
+    t.s(b"CPU FREE ");
     size_text(&mut t, h.arena_free);
     hrow(m, &t, 4);
     let mut t = Text::new();

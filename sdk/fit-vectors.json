@@ -1,5 +1,5 @@
 {
-  "about": "Test vectors of the fit rule (docs/plans/what-fits.md): dkrt_fit (Rust), apps/web/src/modules/dkfit.ts and tools/device/dkfit.py read this file and must give the same answers. needs: the needs of a .dkm as `dkneeds` infers them (the names of Needs::fields, plus file_size); missing = 0. caps: a CAPACITY reply as [limit, used, largest] per kind (names of [capacity.kinds]), laid over caps_base. want: null (fits) or [resource, need, free] of the first short resource; for a set: null or [index, resource, need, free]. load_lines: the MODULES page's load line (dkrt_fit `load_line`, tools/device/dkfit.py `load_line`): caps is the whole capacity as [limit, used, largest] per kind, want the text.",
+  "about": "Test vectors of the fit rule (docs/plans/what-fits.md): dkrt_fit (Rust), apps/web/src/modules/dkfit.ts and tools/device/dkfit.py read this file and must give the same answers. needs: the needs of a .dkm as `dkneeds` infers them (the names of Needs::fields, plus file_size); missing = 0. caps: a CAPACITY reply as [limit, used, largest] per kind (names of [capacity.kinds]), laid over caps_base. want: null (fits) or [resource, need, free] of the first short resource; for a set: null or [index, resource, need, free]. load_lines: the MODULES page's load line (dkrt_fit `load_line`, tools/device/dkfit.py `load_line`): always the DSP memory and then the CPU memory; caps is the whole capacity as [limit, used, largest] per kind, want the text.",
   "caps_base": {
     "MODULES": [8, 0, 0],
     "SELECTION": [8, 0, 0],
@@ -94,15 +94,14 @@
     }
   ],
   "load_lines": [
-    {"name": "two fullest: DSP 85 %, then the module record and machine row tie at 12.5 % (the earlier of the table wins)", "caps": {"MODULES": [8, 1, 0], "ARENA": [524288, 6000, 0], "DSP_AREA": [524288, 445000, 0], "MACHINE_ROWS": [8, 1, 0], "PARAM_ROWS": [16, 1, 0], "PAGE_ROWS": [8, 0, 0]}, "want": "DSP 85% MOD 13%"},
-    {"name": "a small use reads at least 1 %", "caps": {"MODULES": [8, 0, 0], "ARENA": [524288, 6000, 0], "DSP_AREA": [524288, 445000, 0]}, "want": "DSP 85% CPU 2%"},
-    {"name": "used at all ranks above not used, whatever the table order", "caps": {"ARENA": [524288, 1, 0], "DSP_AREA": [524288, 0, 0]}, "want": "CPU 1% DSP 0%"},
-    {"name": "nothing taken: two zero entries in table order", "caps": {"DSP_AREA": [524288, 0, 0], "ARENA": [524288, 0, 0], "MODULES": [8, 0, 0]}, "want": "DSP 0% CPU 0%"},
-    {"name": "a tie stays in table order, full reads 100 %", "caps": {"ARENA": [100, 100, 0], "DSP_AREA": [100, 100, 0], "MODULES": [8, 8, 0]}, "want": "DSP 100% CPU 100%"},
-    {"name": "no limit (page rows on the Digitakt II) is not ranked", "caps": {"DSP_AREA": [1000, 10, 0], "PAGE_ROWS": [0, 0, 0]}, "want": "DSP 1%"},
-    {"name": "nothing ranked: empty", "caps": {"STAGE": [65536, 0, 0], "SELECTION": [8, 8, 0], "VOICE_ROWS": [8, 8, 0]}, "want": ""},
-    {"name": "used above the limit reads 100 %", "caps": {"MODULES": [8, 9, 0]}, "want": "MOD 100%"},
-    {"name": "the longest line: two row resources at 100 %", "caps": {"MACHINE_ROWS": [8, 8, 0], "PARAM_ROWS": [16, 16, 0], "PAGE_ROWS": [8, 8, 0]}, "want": "MCH 100% PRM 100%"},
-    {"name": "a device without page rows: the fullest are the DSP area and the arena", "caps": {"MODULES": [8, 2, 0], "ARENA": [524288, 300000, 0], "DSP_AREA": [524288, 265656, 0], "MACHINE_ROWS": [8, 1, 0], "PARAM_ROWS": [16, 4, 0], "PAGE_ROWS": [0, 0, 0]}, "want": "CPU 58% DSP 51%"}
+    {"name": "always the DSP memory and the CPU memory, however full the rows are", "caps": {"MODULES": [8, 8, 0], "ARENA": [524288, 6000, 0], "DSP_AREA": [524288, 445000, 0], "MACHINE_ROWS": [8, 8, 0], "PARAM_ROWS": [16, 16, 0], "PAGE_ROWS": [8, 8, 0]}, "want": "DSP 85% CPU 2%"},
+    {"name": "a small use reads at least 1 %", "caps": {"MODULES": [8, 0, 0], "ARENA": [524288, 1, 0], "DSP_AREA": [524288, 0, 0]}, "want": "DSP 0% CPU 1%"},
+    {"name": "DSP first, then CPU, whichever is fuller", "caps": {"ARENA": [524288, 524288, 0], "DSP_AREA": [524288, 0, 0]}, "want": "DSP 0% CPU 100%"},
+    {"name": "nothing taken: two zero entries", "caps": {"DSP_AREA": [524288, 0, 0], "ARENA": [524288, 0, 0], "MODULES": [8, 0, 0]}, "want": "DSP 0% CPU 0%"},
+    {"name": "full reads 100 %", "caps": {"ARENA": [100, 100, 0], "DSP_AREA": [100, 100, 0], "MODULES": [8, 8, 0]}, "want": "DSP 100% CPU 100%"},
+    {"name": "no limit is left out", "caps": {"DSP_AREA": [1000, 10, 0], "ARENA": [0, 0, 0], "PAGE_ROWS": [0, 0, 0]}, "want": "DSP 1%"},
+    {"name": "a capacity without the two resources: empty", "caps": {"STAGE": [65536, 0, 0], "SELECTION": [8, 8, 0], "VOICE_ROWS": [8, 8, 0], "MODULES": [8, 9, 0]}, "want": ""},
+    {"name": "used above the limit reads 100 %", "caps": {"ARENA": [100, 150, 0], "DSP_AREA": [100, 0, 0]}, "want": "DSP 0% CPU 100%"},
+    {"name": "a device without page rows", "caps": {"MODULES": [8, 2, 0], "ARENA": [524288, 300000, 0], "DSP_AREA": [524288, 265656, 0], "MACHINE_ROWS": [8, 1, 0], "PARAM_ROWS": [16, 4, 0], "PAGE_ROWS": [0, 0, 0]}, "want": "DSP 51% CPU 58%"}
   ]
 }

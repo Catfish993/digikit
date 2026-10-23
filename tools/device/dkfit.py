@@ -113,14 +113,10 @@ def fits_set(
     return None
 
 
-# the resources the load line ranks, with the label the device shows (dkrt_fit `LINE`)
+# the resources the load line shows, in this order, with the label the device shows (dkrt_fit `LINE`)
 LINE = (
     ("DSP_AREA", "DSP"),
     ("ARENA", "CPU"),
-    ("MODULES", "MOD"),
-    ("MACHINE_ROWS", "MCH"),
-    ("PARAM_ROWS", "PRM"),
-    ("PAGE_ROWS", "PAG"),
 )
 
 
@@ -130,25 +126,15 @@ def _percent(used: int, limit: int) -> int:
 
 
 def load_line(caps: Caps) -> str:
-    """The load line of the DIGIKIT menu's MODULES page (`load_line` of modules/core/runtime/fit): the two fullest resources of CAPS, which is the capacity once the
-    ticked modules are taken out of an empty one, as `DSP 85% CPU 1%`. Ranked by the displayed percent, then the share per thousand (rounded down); the earlier one of
-    LINE first on a tie; a resource that CAPS lacks or that has no limit is not ranked."""
-    ranked = []
-    for i, (kind, label) in enumerate(LINE):
+    """The load line of the DIGIKIT menu's MODULES page (`load_line` of modules/core/runtime/fit): always the DSP memory and then the CPU memory of CAPS, which is
+    the capacity once the ticked modules are taken out of an empty one, as `DSP 52% CPU 1%`; a resource that CAPS lacks or that has no limit is left out."""
+    parts = []
+    for kind, label in LINE:
         c = caps.get(kind)
         if c is None or c["limit"] == 0:
             continue
-        pct = _percent(c["used"], c["limit"])
-        ranked.append(
-            (
-                -(pct * 1000 + min(c["used"], c["limit"]) * 1000 // c["limit"]),
-                i,
-                label,
-                pct,
-            )
-        )
-    ranked.sort()
-    return " ".join(f"{label} {pct}%" for _, _, label, pct in ranked[:2])
+        parts.append(f"{label} {_percent(c['used'], c['limit'])}%")
+    return " ".join(parts)
 
 
 def describe(short: Short) -> str:
