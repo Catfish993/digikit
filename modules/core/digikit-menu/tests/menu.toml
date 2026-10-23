@@ -105,7 +105,7 @@ tap = "YES"
 [[step]]
 wait_ms = 600
 [[step]]
-expect_text = {rows = "DK_MEM", count = "DK_MEM_N", stride = 24, has = ["ARENA .......... 0%", "MODS  .......... 0/8"]}
+expect_text = {rows = "DK_MEM", count = "DK_MEM_N", stride = 24, has = ["CPU   .......... 0%", "MODS  .......... 0/8"]}
 [[step]]
 expect_frame = "digikit_memory"
 [[step]]

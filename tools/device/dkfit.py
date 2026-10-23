@@ -113,15 +113,53 @@ def fits_set(
     return None
 
 
+# the resources the load line ranks, with the label the device shows (dkrt_fit `LINE`)
+LINE = (
+    ("DSP_AREA", "DSP"),
+    ("ARENA", "CPU"),
+    ("MODULES", "MOD"),
+    ("MACHINE_ROWS", "MCH"),
+    ("PARAM_ROWS", "PRM"),
+    ("PAGE_ROWS", "PAG"),
+)
+
+
+def _percent(used: int, limit: int) -> int:
+    """USED as a percent of LIMIT, rounded up: a set that takes anything never reads 0 %, and a resource reads 100 % only when it is full."""
+    return -(-min(used, limit) * 100 // limit)
+
+
+def load_line(caps: Caps) -> str:
+    """The load line of the DIGIKIT menu's MODULES page (`load_line` of modules/core/runtime/fit): the two fullest resources of CAPS, which is the capacity once the
+    ticked modules are taken out of an empty one, as `DSP 85% CPU 1%`. Ranked by the displayed percent, then the share per thousand (rounded down); the earlier one of
+    LINE first on a tie; a resource that CAPS lacks or that has no limit is not ranked."""
+    ranked = []
+    for i, (kind, label) in enumerate(LINE):
+        c = caps.get(kind)
+        if c is None or c["limit"] == 0:
+            continue
+        pct = _percent(c["used"], c["limit"])
+        ranked.append(
+            (
+                -(pct * 1000 + min(c["used"], c["limit"]) * 1000 // c["limit"]),
+                i,
+                label,
+                pct,
+            )
+        )
+    ranked.sort()
+    return " ".join(f"{label} {pct}%" for _, _, label, pct in ranked[:2])
+
+
 def describe(short: Short) -> str:
-    """One line for a person: `DSP area 400 KiB needed, 254 KiB free`."""
+    """One line for a person: `DSP memory 400 KiB needed, 254 KiB free`."""
     name, need, free = short
     label = {
         "STAGE": "file",
         "MODULES": "module records",
         "SELECTION": "selection paths",
-        "DSP_AREA": "DSP area",
-        "ARENA": "memory",
+        "DSP_AREA": "DSP memory",
+        "ARENA": "CPU memory",
         "VOICE_ROWS": "voice rows",
         "MACHINE_ROWS": "machine rows",
         "PARAM_ROWS": "parameter rows",
@@ -141,7 +179,7 @@ def menu_line(short: Short, compact: bool = False) -> str:
     label = {
         "MODULES": "MODULES",
         "SELECTION": "SELECTED",
-        "ARENA": "RAM",
+        "ARENA": "CPU",
         "STAGE": "FILE",
         "DSP_AREA": "DSP",
         "MACHINE_ROWS": "MACHINES",

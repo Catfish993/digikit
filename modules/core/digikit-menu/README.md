@@ -9,7 +9,10 @@ Adds **SETTINGS > DIGIKIT** (the ninth row, after SYSTEM). Emulator only: nothin
   module takes (arena and DSP area, from the needs inferred from its contents, docs/design/digikit-dkm.md, "Needs are inferred": `dkneeds::needs_of` reads the header, the `register` records and the DSP section's header by store sectors, once per open of the menu, and stages nothing): `[ ]x HUGE      321K`; the name is the file name without `.dkm`, cut to 8 characters
   (the list shows about 18). The next boot loads the ticked modules into an empty runtime, so fit is checked against the limits with the ticked modules taken out, in list
   order (`dkrt_fit`, docs/plans/what-fits.md); selecting a row that will not fit ticks nothing and shows a popup `NO FIT: DSP 164K > 155K FREE` and the short form in the
-  message row. `[-]` is a module whose header says this runtime
+  message row. The names in these texts are the page's own: `CPU` (the arena: CPU memory on the desktop), `DSP` (the DSP area: DSP memory), `MACHINES`, `PARAMS`, `PAGES`.
+  **The load line:** while at least one module is ticked, one line directly above APPLY & RESTART (or where it would be) gives the two fullest resources of the ticked set, `DSP 85% CPU 1%`
+  (`dkrt_fit` `load_line`: the limits with the ticked modules taken out, the same capacity the `x` marks use; labels `DSP`, `CPU`, `MOD`, `MCH`, `PRM`, `PAG`; percents rounded up, so a set that takes
+  anything never reads 0%; at most 17 characters). It changes with every tick and goes with the last one. `[-]` is a module whose header says this runtime
   or device cannot load it; it cannot be ticked. **APPLY & RESTART** appears only when the pending selection differs from the saved one (or this
   boot is in safe mode): the first press shows a popup that the device restarts, the second saves the selection (`dkrt_selection_set`) and
   restarts (`dkrt_restart`); a refusal is shown. **CLEAR SELECTION** unticks all. In safe mode the DIGIKIT view and the list show `SAFE: <reason>`
@@ -17,7 +20,7 @@ Adds **SETTINGS > DIGIKIT** (the ninth row, after SYSTEM). Emulator only: nothin
 - **HEALTH** shows CPU load, the DSP's block time (average and maximum of the last second), the free firmware heap and its largest block, the free runtime arena and
   the free DSP area, and refreshes itself about twice a second without a key press (the page registers a function with `dkrt_poll_set`, which the UI loop calls
   once per pass; it stops when the page is closed). The figures need `core/health`; without it the page says so. Finding 41.
-- **MEMORY** shows the runtime's capacity (the CAPACITY command's entries, `dkrt_capacity`) as text rows with a ten-character bar: DSP area and arena as a percent, modules, machine, voice, parameter and page rows as used/limit. Finding 57.
+- **MEMORY** shows the runtime's capacity (the CAPACITY command's entries, `dkrt_capacity`) as text rows with a ten-character bar: `DSP` and `CPU` (the arena) as a percent, `MODS`, `MACH`, `VOICE`, `PARAM` and `PAGE` as used/limit. Finding 57.
 - **ABOUT** shows the version, the runtime's ABI, safe mode and why, this boot's modules with each result text, and the free arena in KB.
 
 The DIGIKIT rows and pages draw no glyph (the SETTINGS row keeps its own), and the ABOUT, HEALTH and MEMORY pages show no highlighted row (finding 28, "Glyphs and text pages"). MODULES keeps its cursor bar.

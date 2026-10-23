@@ -126,7 +126,7 @@ def test_a_module_that_will_not_fit_the_empty_device_is_named(tmp_path):
     # the next boot is empty: what is loaded now does not count, so 400000 bytes of DSP area used is no reason
     assert R.check_fit(up, up.info(), _dkm(tmp_path, 300_032)) is None
     why = R.check_fit(up, up.info(), _dkm(tmp_path, 600_064))
-    assert why == "DSP area 586 KiB needed, 511 KiB free"
+    assert why == "DSP memory 586 KiB needed, 511 KiB free"
     # a file the loader would refuse (not a .dkm) is named too, whatever the device says
     assert "not a .dkm" in R.check_fit(up, up.info(), b"nope" * 100)
     # no CAPACITY on the device: no verdict
@@ -151,7 +151,7 @@ def test_run_refuses_a_module_that_will_not_fit_unless_forced(
     )
     with pytest.raises(
         R.RunError,
-        match=r"will not fit this device: DSP area 586 KiB needed, 511 KiB free \(--force uploads it anyway\)",
+        match=r"will not fit this device: DSP memory 586 KiB needed, 511 KiB free \(--force uploads it anyway\)",
     ):
         R.run(up, "test/big", dkm=f, restart=False)
     assert up.sent == []  # nothing was uploaded, nothing selected

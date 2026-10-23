@@ -118,7 +118,7 @@ def test_merge_state_groups_and_fit():
     assert by["digikit/pluck"]["fits"] is True
     assert by["test/sine"]["fits"] is False
     assert by["test/sine"]["warnings"] == [
-        "DSP area 64 bytes needed, 50 bytes free; fits when the modules loaded now are not selected"
+        "DSP memory 64 bytes needed, 50 bytes free; fits when the modules loaded now are not selected"
     ]
     assert by["digikit/tool"]["fits"] is True
     extra = {r["path"]: r for r in v["card_only"]}

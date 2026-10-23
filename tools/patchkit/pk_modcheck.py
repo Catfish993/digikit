@@ -105,9 +105,9 @@ def needs_lines(dkm: bytes, dev: str) -> list[str]:
     shown = ", ".join(
         f"{label} {n[k]}"
         for label, k in (
-            ("arena", "ARENA"),
-            ("arena while the DSP code is sent", "ARENA_XFER"),
-            ("DSP area", "DSP_AREA"),
+            ("CPU memory", "ARENA"),
+            ("CPU memory while the DSP code is sent", "ARENA_XFER"),
+            ("DSP memory", "DSP_AREA"),
             ("machines", "MACHINE_ROWS"),
             ("voices", "VOICE_ROWS"),
             ("params", "PARAM_ROWS"),

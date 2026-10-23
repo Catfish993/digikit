@@ -53,3 +53,14 @@ verdict is not generous by more than the alignment room of one module); machine 
 
 **[D]** The module set is fixed per session (hot reload is archived), so the menu checks a ticked set against the device's limits, not against what is loaded now: a restart loads the selection into an empty runtime. The host's per-module tag
 uses the live CAPACITY (next to the loaded modules) and the tooltip says whether the module fits alone. Card files that are not in the library have no needs on the host (it reads only their header, as before); the menu has needs for every file of the card.
+
+## The load line and the Memory panel (follow-up)
+
+**[D]** The MODULES page shows one line above APPLY & RESTART while a module is ticked: the two fullest resources of the capacity that `refit` already computes (the limits with the ticked modules that fit taken out), for example `DSP 52% MOD 13%` for one
+half-size module on a Digitone II. The rule is `dkrt_fit::load_line` (percent rounded up; ranked by that percent and then the share per thousand; `DSP`, `CPU`, `MOD`, `MCH`, `PRM`, `PAG`; at most 17 characters, the list shows about 18), kept equal to
+`tools/device/dkfit.py` `load_line` by the `load_lines` of `sdk/fit-vectors.json`. `fits-dn2` and `fits-dt2` (DK_LOAD): no line with nothing ticked, the line directly above APPLY & RESTART with one module ticked and unchanged after a refused
+selection, gone with the last tick. A module's `arena` is its own block only in a coupled boot: the MEMORY page after loading `digikit/pluck` reads `CPU .......... 0%` (the DSP image's block of 1392 bytes is freed after the transfer; the
+ColdFire-only `inferred-needs-*` rigs keep it, which is why `take` still counts it for the fit). The desktop Memory panel therefore gives a module its `ARENA` need alone and puts the rest of `used` under "Other".
+
+**[D]** The MEMORY page's row is `CPU` (it was `ARENA`), and the fit texts say `CPU` where they said `RAM`; the frame golden `digikit_memory` of `core/digikit-menu` (both devices) was recorded again for it. The HEALTH page keeps `ARENA FREE` and `DSP FREE`
+**[O]** (a measured figure, not a limit; not renamed).

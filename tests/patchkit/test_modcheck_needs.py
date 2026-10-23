@@ -46,13 +46,13 @@ def test_a_module_that_fits_and_one_that_does_not(monkeypatch):
     monkeypatch.setattr(dkneeds, "needs_of", lambda data: stub[data])
     stub[b"ok"] = needs(ARENA=48, DSP_AREA=4096, DSP_ALIGN=8, VOICE_ROWS=1)
     ok = pk_modcheck.needs_lines(b"ok", "dt2")
-    assert ok[0] == "dt2: needs    arena 48, DSP area 4096, voices 1"
+    assert ok[0] == "dt2: needs    CPU memory 48, DSP memory 4096, voices 1"
     assert ok[1] == "dt2: fits     fits an empty device"
     big = pk_device.limits("dt2").dsp_area_bytes + 64
     stub[b"big"] = needs(ARENA=48, DSP_AREA=big, DSP_ALIGN=8, VOICE_ROWS=1)
     no = pk_modcheck.needs_lines(b"big", "dt2")
     assert no[1].startswith(
-        "dt2: fits     DOES NOT FIT even an empty device: DSP area "
+        "dt2: fits     DOES NOT FIT even an empty device: DSP memory "
     )
     # a module that takes nothing but its code says so
     stub[b"none"] = needs()
@@ -81,7 +81,7 @@ def test_the_lines_of_a_real_packed_module(tmp_path):
         == 0
     )
     lines = pk_modcheck.needs_lines(out.read_bytes(), "dt2")
-    assert "DSP area 4096" in lines[0] and "voices 1" in lines[0]
+    assert "DSP memory 4096" in lines[0] and "voices 1" in lines[0]
     assert lines[1] == "dt2: fits     fits an empty device"
     # the same fields the command line reports
     assert dkneeds.needs_of(out.read_bytes())["DSP_AREA"] == 4096
