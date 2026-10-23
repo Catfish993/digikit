@@ -1,36 +1,27 @@
-// The Memory panel: what the resources a device limits are used for. A collapsible panel in the Card panel's look (card-panel.css), on the
-// Emulator page next to the Card panel and on the Remote page. One bar per resource the device limits (memory-core.ts); each bar is split
-// into one segment per loaded module, coloured by the module's type, then free space; hover a segment for the module and its amount.
-// The panel reads CAPACITY, MODULES and the local library (memory-backend.ts) over the session it is given: when it is shown or opened, when a
-// Transfer job ended or the emulator restarted (the same signal the Card panel reads), when the window gets the focus, and with its Refresh
-// button. A read that fails is tried again a few times (a device that is still booting after a restart). Nothing pending or ticked is shown.
-import { For, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+// The Memory panel: what the resources a device limits are used for. A collapsible panel in the Card panel's look (card-panel.css), under the
+// Card panel in the right-hand column of the Emulator page (SidePanels.tsx) and alone in the Remote page's. One bar per resource the device
+// limits (memory-core.ts); each bar is split into one segment per loaded module, coloured by the module's type, then free space; hover a
+// segment for the module and its amount.
+// The panel reads CAPACITY, MODULES and the local library (memory-backend.ts) over the session it is given, which is the target's one session
+// (target.ts): when it is shown or opened, when a Transfer job ended or the emulator restarted (the same signal the Card panel reads), when
+// the window gets the focus, and with its Refresh button. One read at a time (read-gate-core.ts); a read that fails is tried again a few
+// times with a growing gap (a device that is still booting after a restart). A hidden or collapsed panel reads nothing. Nothing pending or
+// ticked is shown.
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type JSX } from 'solid-js';
 import { panels } from '@web/data/faceplates';
+import { isCancelled } from '@web/modules/backend';
 import type { DkSession } from '@web/modules/dkupload-core';
 import { cardRefresh } from './card-state';
+import { memoryOpen as open, setMemoryOpen } from './panel-open';
 import { deviceOfPort } from './remote-core';
 import { freeTitle, segmentTitle, usedText, widthPct } from './memory-core';
 import { readMemory, type MemoryReading } from './memory-backend';
+import { createReadGate } from './read-gate-core';
 import { focusReadDue } from './refresh-core';
 import { failureLine } from './wait-core';
 import './card-panel.css';
 import './memory-panel.css';
 
-const OPEN_KEY = 'digikit.memoryPanel';
-/** A failed read is tried again after this long, this many times. */
-const RETRY_MS = 3000;
-const RETRIES = 3;
-/** Below this window width the panel starts closed (two panels would leave the faceplate no room), unless the user chose. */
-const WIDE_PX = 1100;
-const readOpen = () => {
-  try {
-    const saved = localStorage.getItem(OPEN_KEY);
-    if (saved) return saved !== 'closed';
-  } catch {
-    /* no choice kept */
-  }
-  return window.innerWidth >= WIDE_PX;
-};
 const LEGEND = [
   { kind: 'machine', text: 'Machine' },
   { kind: 'effect', text: 'Effect' },
@@ -48,63 +39,60 @@ export default function MemoryPanel(props: {
   where: () => string;
   track?: () => unknown;
 }): JSX.Element {
-  const [open, setOpen] = createSignal(readOpen());
   const [reading, setReading] = createSignal<MemoryReading>();
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
-  let seq = 0;
-  let retry: number | undefined;
 
-  const read = async (attempt = 0) => {
-    window.clearTimeout(retry);
-    const mine = ++seq;
-    setBusy(true);
-    try {
-      const r = await readMemory(await props.session());
-      if (mine !== seq) return;
-      setReading(r);
-      setError('');
-    } catch (e) {
-      if (mine !== seq) return;
-      setError(failureLine(e, props.where()));
-      if (attempt < RETRIES) retry = window.setTimeout(() => void read(attempt + 1), RETRY_MS);
-    } finally {
-      if (mine === seq) setBusy(false);
-    }
-  };
+  const gate = createReadGate({
+    run: async (current) => {
+      setBusy(true);
+      try {
+        const r = await readMemory(await props.session());
+        if (current()) {
+          setReading(r);
+          setError('');
+        }
+        return true;
+      } catch (e) {
+        if (!current()) return true;
+        // the Cancel button ended it: nothing is wrong, and nothing tries again by itself
+        if (isCancelled(e)) return true;
+        setError(failureLine(e, props.where()));
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+  });
+  // Only a change of whether the panel is on screen and open counts, not each change of what `visible` reads (the Console's `status` changes
+  // once per display frame): a memo passes on a change of its value only.
+  const active = createMemo(() => props.visible && open());
   // read when the panel is shown and opened, when the target changed, when a Transfer job ended or the emulator restarted
   createEffect(() => {
     cardRefresh();
     props.track?.();
-    if (props.visible && open()) void read();
+    if (active()) untrack(() => gate.request());
+    else untrack(() => gate.stop());
   });
   let lastFocusRead: number | undefined;
   const back = () => {
-    if (document.visibilityState !== 'visible' || !props.visible || !open()) return;
+    if (document.visibilityState !== 'visible' || !active()) return;
     const now = Date.now();
     if (!focusReadDue(lastFocusRead, now)) return;
     lastFocusRead = now;
-    void read();
+    gate.request();
   };
   onMount(() => {
     window.addEventListener('focus', back);
     document.addEventListener('visibilitychange', back);
   });
   onCleanup(() => {
-    seq++; // an answer after the panel is gone is dropped
-    window.clearTimeout(retry);
+    gate.dispose(); // an answer after the panel is gone is dropped
     window.removeEventListener('focus', back);
     document.removeEventListener('visibilitychange', back);
   });
 
-  const toggle = () => {
-    setOpen(!open());
-    try {
-      localStorage.setItem(OPEN_KEY, open() ? 'open' : 'closed');
-    } catch {
-      /* the choice lasts until the window closes */
-    }
-  };
+  const toggle = () => setMemoryOpen(!open());
   const device = () => {
     const d = deviceOfPort(reading()?.port ?? '');
     return d ? panels[d].name : '';
@@ -129,9 +117,7 @@ export default function MemoryPanel(props: {
             stroke-linejoin="round"
           />
         </svg>
-        <Show when={open()}>
-          <strong>Memory</strong>
-        </Show>
+        <strong>Memory</strong>
       </button>
       <Show when={open()}>
         <div class="card-body">
@@ -185,7 +171,7 @@ export default function MemoryPanel(props: {
             </p>
           </Show>
           <div class="acts">
-            <button type="button" class="act small" disabled={busy()} onClick={() => void read()}>
+            <button type="button" class="act small" disabled={busy()} onClick={() => gate.request()}>
               {busy() ? 'Reading…' : 'Refresh'}
             </button>
           </div>

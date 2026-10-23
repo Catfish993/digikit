@@ -2,7 +2,7 @@
 // `mise run workbench -- FILE` starts it on FILE; with "watching" on, a change to FILE on disk reloads it, so a
 // module can be patched from the command line and heard here a second later.
 import { invoke } from '@tauri-apps/api/core';
-import { Show, createSignal, onCleanup, onMount } from 'solid-js';
+import { Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import LivePanel, { type LivePanelApi } from '@web/components/LivePanel';
 import { panels } from '@web/data/faceplates';
 import {
@@ -13,9 +13,8 @@ import {
   type RuntimeSnapshot,
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
-import CardPanel from './CardPanel';
 import { bumpCardRefresh } from './card-state';
-import MemoryPanel from './MemoryPanel';
+import SidePanels from './SidePanels';
 import RemotePage from './RemotePage';
 import { emulatorSession, target } from './target';
 import TransferPage from './TransferPage';
@@ -125,6 +124,8 @@ export default function Console() {
   let reloading = false;
   const timers: number[] = [];
 
+  // a memo: `status` is set once per display frame, and the panels must hear of a change of this value only
+  const sidePanelsShown = createMemo(() => page() === 'emulator' && !!status());
   const device = () => {
     const d = status()?.device;
     return d === 'dt2' || d === 'dn2' ? d : 'dn2';
@@ -501,12 +502,13 @@ export default function Console() {
                 <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
               </div>
             </main>
-            <MemoryPanel
-              visible={page() === 'emulator' && !!status()}
+            <SidePanels
+              visible={sidePanelsShown()}
+              card
+              reload={restart}
               session={emulatorSession}
               where={() => 'the emulator'}
             />
-            <CardPanel visible={page() === 'emulator' && !!status()} reload={restart} />
           </div>
           <Show when={page() === 'transfer'}>
             <TransferPage />

@@ -56,11 +56,23 @@ uses the live CAPACITY (next to the loaded modules) and the tooltip says whether
 
 ## The load line and the Memory panel (follow-up)
 
-**[D]** The MODULES page shows one line above APPLY & RESTART while a module is ticked: the two fullest resources of the capacity that `refit` already computes (the limits with the ticked modules that fit taken out), for example `DSP 52% MOD 13%` for one
-half-size module on a Digitone II. The rule is `dkrt_fit::load_line` (percent rounded up; ranked by that percent and then the share per thousand; `DSP`, `CPU`, `MOD`, `MCH`, `PRM`, `PAG`; at most 17 characters, the list shows about 18), kept equal to
+**[D]** The MODULES page shows one line above APPLY & RESTART while a module is ticked: the DSP memory and the CPU memory of the capacity that `refit` already computes (the limits with the ticked modules that fit taken out), always these two in this order,
+for example `DSP 52% CPU 1%` for one half-size module on a Digitone II. The rule is `dkrt_fit::load_line` (percent rounded up; `DSP`, `CPU`; at most 17 characters, the list shows about 18), kept equal to
 `tools/device/dkfit.py` `load_line` by the `load_lines` of `sdk/fit-vectors.json`. `fits-dn2` and `fits-dt2` (DK_LOAD): no line with nothing ticked, the line directly above APPLY & RESTART with one module ticked and unchanged after a refused
 selection, gone with the last tick. A module's `arena` is its own block only in a coupled boot: the MEMORY page after loading `digikit/pluck` reads `CPU .......... 0%` (the DSP image's block of 1392 bytes is freed after the transfer; the
 ColdFire-only `inferred-needs-*` rigs keep it, which is why `take` still counts it for the fit). The desktop Memory panel therefore gives a module its `ARENA` need alone and puts the rest of `used` under "Other".
 
-**[D]** The MEMORY page's row is `CPU` (it was `ARENA`), and the fit texts say `CPU` where they said `RAM`; the frame golden `digikit_memory` of `core/digikit-menu` (both devices) was recorded again for it. The HEALTH page keeps `ARENA FREE` and `DSP FREE`
-**[O]** (a measured figure, not a limit; not renamed).
+**[D]** The MEMORY page's row is `CPU` (it was `ARENA`), and the fit texts say `CPU` where they said `RAM`; the frame golden `digikit_memory` of `core/digikit-menu` (both devices) was recorded again for it. The HEALTH page row `ARENA FREE` was renamed
+`CPU FREE` afterwards (`DSP FREE` stays), so the device says CPU and DSP everywhere. **[C]** Earlier text here said the load line shows the two fullest resources (`DSP 52% MOD 13%`): it shows DSP and CPU always, because a user can act on those two only.
+
+## The Memory panel stuck on "Reading..." (desktop workbench, live emulator)
+
+**[C]** The first Memory panel stayed on "Reading..." and the status bar showed the emulator at a fraction of its speed while it was open. The preview's mock backend hid it. **[D]** Measured against a live Digitone II 1.12 daemon
+(`tools/devtools/emu_live.py`, the live preview `apps/desktop/ui/preview/live.vite.config.ts`, `tools/devtools/memory_live.mjs`): the cause was not two sessions taking each other's replies. With the emulator as the target `emulatorSession()` already
+returned the shared session. The panel's effect read `props.visible`, which the Console computes as `page() === 'emulator' && !!status()`; `status` is set to a new object once per display frame, so the effect ran every frame, started a new read
+each time (the earlier one's answer was dropped by its sequence number, so no read ever showed) and the page made about 90 `status` calls a second (`emulatorMode()` in every `session()`) and 90 `card.folder` calls a second (the Card panel had the same effect)
+on the control socket, with the USB reads starving behind them. Idle 0.67 audio s per wall s; with the panels open 0.35 (0.53 times idle), the panel never showed a bar.
+The fix: the panels read a memo of `visible && open` (a change of that value only), one read at a time (`read-gate-core.ts`: triggers meanwhile make one more, a failed read is retried after 3, 9 and 27 s, a hidden or collapsed panel drops its retry), one
+session per target for every page and panel (`session-core.ts`, `target.ts`; the Emulator page's panel uses the emulator's session whatever target is selected, which is the one `session()` returns while the emulator is the target). After the fix, same rig:
+first bars 0.5 s after the page opened, a Refresh 33 to 55 ms, back from the Transfer page 44 ms, 0.62 to 0.67 audio s per wall s open against 0.65 to 0.67 idle (ratio 0.95 to 1.00), `card.folder` 0.5 calls a second (its 2 s poll).
+The real app's drop (0.05 times, not 0.5 times) is larger than this rig's, since each `emu_call` there also crosses the Tauri IPC; the mechanism is the same and the call rates are the ones measured here. **[O]** Not re-measured in the Tauri app itself.

@@ -1,4 +1,5 @@
-/* The Card panel (CardPanel.tsx): a narrow column beside the faceplate; tokens from the site (apps/web/src/styles/site.css). */
+/* The Card panel (CardPanel.tsx) and the Memory panel (MemoryPanel.tsx): panels in a narrow column beside the faceplate (SidePanels.tsx); tokens from
+   the site (apps/web/src/styles/site.css). */
 .card-panel {
   flex-shrink: 0;
   width: 260px;
@@ -152,4 +153,39 @@
 }
 .card-panel .card-body .group + .group {
   margin-top: 2px;
+}
+
+/* The column: the Card panel on top, the Memory panel under it. A closed panel keeps its title bar; with both closed the column is a rail. */
+.side-col {
+  flex-shrink: 0;
+  width: 260px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #121316;
+  border-left: 1px solid #222428;
+}
+.side-col[hidden] {
+  display: none;
+}
+.side-col.rail {
+  width: 36px;
+}
+.side-col .card-panel {
+  width: auto;
+  min-height: 34px;
+  flex: 0 1 auto;
+  border-left: 0;
+}
+.side-col .card-panel + .card-panel {
+  border-top: 1px solid #222428;
+}
+.side-col .card-panel.closed {
+  flex-shrink: 0;
+}
+.side-col .card-panel.closed .card-toggle {
+  border-bottom: 0;
+}
+.side-col.rail .card-toggle strong {
+  display: none;
 }

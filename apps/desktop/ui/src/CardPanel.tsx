@@ -5,7 +5,7 @@
 // from the folder (the Digitakt II) takes a new folder at the next load: the panel says so and offers "Reload now". The emulator does the
 // work and keeps the choice per device (`card.folder`, `card.folder_set`, `card.sync` through `emu_call`); this panel only asks.
 import { invoke } from '@tauri-apps/api/core';
-import { For, Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from 'solid-js';
 import { errorLine, formatBytes } from '@web/modules/backend';
 import { panels } from '@web/data/faceplates';
 import {
@@ -20,17 +20,10 @@ import {
   type CardFolder,
 } from './card-core';
 import { cardRefresh } from './card-state';
+import { cardOpen as open, setCardOpen } from './panel-open';
 import './card-panel.css';
 
 const POLL_MS = 2000;
-const OPEN_KEY = 'digikit.cardPanel';
-const readOpen = () => {
-  try {
-    return localStorage.getItem(OPEN_KEY) !== 'closed';
-  } catch {
-    return true;
-  }
-};
 const call = <T,>(method: string, params: Record<string, unknown> = {}) =>
   invoke<T>('emu_call', { method, params, session: null });
 /** The device's name as the faceplate gives it. */
@@ -39,39 +32,40 @@ const deviceName = (id: string | undefined) =>
 
 /** `reload`: start the loaded firmware again (the Restart button's path), which builds the card from the folder in use. */
 export default function CardPanel(props: { visible: boolean; reload?: () => Promise<void> }): JSX.Element {
-  const [open, setOpen] = createSignal(readOpen());
   const [card, setCard] = createSignal<CardFolder>();
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
 
+  let reading = false;
+  /** One read at a time: a read that is due while one runs is not started (the light poll asks again). */
   const refresh = async () => {
+    if (reading) return;
+    reading = true;
     try {
       setCard(await call<CardFolder>('card.folder'));
       setError('');
     } catch (e) {
       setError(errorLine(e));
+    } finally {
+      reading = false;
     }
     setNow(Date.now());
   };
+  // Only a change of whether the panel is on screen and open counts, not each change of what `visible` reads (the Console's `status` changes
+  // once per display frame): a memo passes on a change of its value only.
+  const active = createMemo(() => props.visible && open());
   // read when the panel is shown and opened, when a Transfer job ended, and on a light poll while it is visible
   createEffect(() => {
     cardRefresh();
-    if (props.visible && open()) void refresh();
+    if (active()) untrack(() => void refresh());
   });
   const timer = window.setInterval(() => {
-    if (props.visible && open() && !busy()) void refresh();
+    if (active() && !busy()) void refresh();
   }, POLL_MS);
   onCleanup(() => window.clearInterval(timer));
 
-  const toggle = () => {
-    setOpen(!open());
-    try {
-      localStorage.setItem(OPEN_KEY, open() ? 'open' : 'closed');
-    } catch {
-      /* the choice lasts until the window closes */
-    }
-  };
+  const toggle = () => setCardOpen(!open());
   const sync = async () => {
     setBusy(true);
     try {
@@ -140,9 +134,7 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
             stroke-linejoin="round"
           />
         </svg>
-        <Show when={open()}>
-          <strong>Card</strong>
-        </Show>
+        <strong>Card</strong>
       </button>
       <Show when={open()}>
         <div class="card-body">
