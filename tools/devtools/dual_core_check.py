@@ -151,33 +151,42 @@ def main() -> int:
         action="store_true",
         help="with --module digikit/pluck: choose PLUCK on DT2 track 1 and hold a note (the PCM must not be silent)",
     )
+    ap.add_argument(
+        "--start",
+        choices=("dn2", "dt2"),
+        default="dn2",
+        help="the device the daemon starts on (the other one is opened next)",
+    )
     args = ap.parse_args()
     args.runtime = args.runtime or bool(args.module)
     keep = args.keep or tempfile.mkdtemp(prefix="digi-dual-")
 
-    dn2, dt2 = (digi_env.ready_inputs(device=d) for d in ("dn2", "dt2"))
+    ready = {d: digi_env.ready_inputs(device=d) for d in ("dn2", "dt2")}
+    start = args.start
+    other = "dt2" if start == "dn2" else "dn2"
     first = [
-        str(dn2["firmware"]),
+        str(ready[start]["firmware"]),
         "--auto-coupled",
         "--audio-profile-syx",
-        str(dn2["firmware"]),
+        str(ready[start]["firmware"]),
         "--dsp-image",
-        str(dn2["DSP image"]),
+        str(ready[start]["DSP image"]),
         "--dsp-state",
-        str(dn2["DSP state"]),
+        str(ready[start]["DSP state"]),
         "--cf-snapshot",
-        str(dn2["CF snapshot"]),
+        str(ready[start]["CF snapshot"]),
         "--also-coupled",
-        str(dt2["DSP image"]),
-        str(dt2["DSP state"]),
-        str(dt2["CF snapshot"]),
-        str(dt2["firmware"]),
+        str(ready[other]["DSP image"]),
+        str(ready[other]["DSP state"]),
+        str(ready[other]["CF snapshot"]),
+        str(ready[other]["firmware"]),
         "--no-audio",
     ]
     results: list[dict[str, Any]] = []
     with Emu.spawn(*first, run_dir=keep, timeout=300.0) as emu:
-        results.append(phase(emu, "dn2 at start", args.steps, "dn2", args.pcm))
-        for device, inputs, other in (("dt2", dt2, "dn2"), ("dn2", dn2, "dt2")):
+        results.append(phase(emu, f"{start} at start", args.steps, start, args.pcm))
+        for device, came_from in ((other, start), (start, other)):
+            inputs = ready[device]
             report = emu.call(
                 "firmware.load",
                 syx=str(inputs["firmware"]),
@@ -197,7 +206,7 @@ def main() -> int:
             results.append(
                 phase(
                     emu,
-                    f"{device} after open (from {other})",
+                    f"{device} after open (from {came_from})",
                     args.steps,
                     device,
                     args.pcm,
