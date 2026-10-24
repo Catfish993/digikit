@@ -88,4 +88,15 @@ position = 0            # 0 to 7: the place on the page (default: the knob's pla
 
 Judged by `tests/modules/test_fx_conformance.py` (`mise run module:check NAME`): signals, parameter limits, modulation, switching, a long run;
 checks: returns, registers, the adapter did not refuse a block, write set, instruction budget (about 23,000 for the effect, 900 for the adapter).
-Template (patched in): `tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s`. Emulator proof of the adapter: `tools/patchkit/pk_proof_fx.py`. The conformance suite judges patched-in effects (an `[[entry]] registry = "fx"` row); a run-time effect is judged by the scenario above only.
+Template (patched in): `tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s`. Emulator proof of the adapter: `tools/patchkit/pk_proof_fx.py`. The conformance suite judges patched-in effects (an `[[entry]] registry = "fx"` row) and run-time effects (a `[[fx]]` record: the rig reserves the state the runtime would, and a page knob's range gives the float of each parameter word the cases use); the scenarios above prove the page and the loading.
+
+## The reference effect: `digikit/freqshift`
+
+`modules/fx/freqshift` is the effect to copy for a real one: a run-time module with a page (tab FSH, one bipolar knob, MIX default 0), state in the descriptor (664 bytes: filter states, a delay buffer, an oscillator), a float32 reference model that defines the
+arithmetic (`tools/patchkit/freqshift_ref.py`), a test that holds the routine on the rig to the model (`tests/patchkit/test_freqshift.py`) and an emulator scenario for the page and the sound (`tests/digikit/scenarios/fx-freqshift-dt2.toml`). Its cookbook entry (finding 54) lists what was hard. Patterns worth taking:
+
+- A knob that is centred: `display = "bipolar"`, `min = -64.0`, `max = 63.0`, `default = 0.0` makes the float the shown number; a mapping with `2^x - 1` and no constant term gives exactly 0 at 0.
+- MIX default 0 (`mix = 0` in `[[fx]]`) so that loading the effect does not change the sound.
+- Two-pass block code: oscillator values for the whole block into the state, then one pass per chain with its states in registers (a subroutine called per channel; the loop body is the unrolled even/odd sample pair).
+- An integer phase accumulator (never a float one) for anything that must not drift; ramp the increment inside the block.
+- Clamp the output to +-7.9: an input at the level bound times a filter's overshoot would otherwise refuse the block.

@@ -260,7 +260,7 @@ The verify route: a change in a machine module, a module it depends on or builds
 
 ## FX conformance (`tests/modules/test_fx_conformance.py`)
 
-The same idea for effect modules (the FX contract, `sdk/dk_fx.h`): the suite finds a module with an `[[entry]] registry = "fx"` row and a DSP object
+The same idea for effect modules (the FX contract, `sdk/dk_fx.h`): the suite finds a module with an `[[entry]] registry = "fx"` row (patched in) or an `[[fx]]` record (run time; its page knobs' ranges give the floats of the parameter words, and the rig reserves its state) and a DSP object
 (`pk_conform.fx_spec`; `core/*` never is) and runs the effect behind `core/fx` on the concrete core (`tests/support/fx_rig.py`, a hostile context per call,
 the registers of the stock function marked), one block at a time. `mise run module:check NAME` runs it. The adapter is one source for both devices, so the
 suite runs once per module.

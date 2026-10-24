@@ -25,6 +25,8 @@ TYPED = [
     "tools/patchkit/pk_digikit_fx.py",
     "tools/patchkit/pk_digikit_fxpage.py",
     "tools/patchkit/pk_digikit_fxpersist.py",
+    "tools/patchkit/pk_digikit_fxshift.py",
+    "tools/patchkit/freqshift_ref.py",
     "tools/device/dkfit.py",
     "tools/device/dkneeds.py",
     "tools/patchkit/pk_device.py",

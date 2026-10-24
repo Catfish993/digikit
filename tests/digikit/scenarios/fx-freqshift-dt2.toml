@@ -1,0 +1,10 @@
+# The frequency shifter digikit/freqshift (DT2): its page and knobs, and the sound: the sine moves by the shift of the routine's mapping, up and down, with the image 40 dB down; the values are saved with the kit.
+[scenario]
+name = "fx-freqshift-dt2"
+kind = "fxshift"
+devices = ["dt2"]
+tier = "quick"
+
+[fxshift]
+hint = 7            # the sine's position in the machine list (the same as fx-pages-dt2)
+trig_frame = 7500

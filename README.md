@@ -29,6 +29,7 @@ before it goes near the device.
 | --- | --- | --- | --- |
 | [digikit runtime](modules/core/runtime/README.md) | Menu, module loading, upload, debug log | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
 | [PLUCK](modules/machines/pluck/README.md) | Plucked-string synth: decay, pick position, brightness, colour. A run-time module: load it with `mise run dk:run` | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
+| [Frequency shifter](modules/fx/freqshift/README.md) | Moves every frequency up or down by the same number of Hz (an FX page with SHIFT and MIX). A run-time module | Digitakt II | not yet |
 | [Master gain](modules/fx/master-gain/README.md) | Scales the master output by a set gain | Digitakt II, Digitone II | not yet |
 | [Master drive](modules/fx/master-drive/README.md) | Soft-clip saturation on the master output | Digitakt II, Digitone II | not yet |
 | [XSLICE](tests/fixtures/modules/xslice/README.md) | A copy of MANUAL SLICE under its own name (a demonstration) | Digitakt II | not yet |

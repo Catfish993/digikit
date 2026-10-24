@@ -58,6 +58,9 @@ Kinds:
   fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II): Save Kit and Load Kit restore them to the
              same effect (kit array, DSP row, PCM, pages) and give another effect, an empty row or a stock kit the defaults, never a zero on the way to the DSP; a project; another
              pattern's kit; tools/patchkit/pk_digikit_fxpersist.py.
+  fxshift    the frequency shifter `digikit/freqshift` (Digitakt II): its page (tab FSH, title FREQ SHIFTER, SHIFT bipolar, MIX default 0), loading it leaves the PCM bit for bit as it was, MIX up and SHIFT 0
+             keeps the sine, turning SHIFT moves the sine by the shift of the routine's mapping in either direction with the image 40 dB down, Save Kit and Load Kit give SHIFT back;
+             tools/patchkit/pk_digikit_fxshift.py.
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
@@ -1388,6 +1391,12 @@ def run_fxpersist(c: Ctx) -> None:
     FPS.run_fxpersist(c)
 
 
+def run_fxshift(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxshift as FSH
+
+    FSH.run_fxshift(c)
+
+
 def live_boot(c: Ctx, tag: str = "", patch_set: str | None = None) -> tuple[Any, Path]:
     """A coupled daemon free-running on a stock image with the runtime patched in (the DT2 on a card built from a folder, the DN2 on none),
     started with `--mirror-dir`; returns it and the mirror folder. The caller closes it."""
@@ -2093,6 +2102,7 @@ KINDS = {
     "fx": run_fx,
     "fxpage": run_fxpage,
     "fxpersist": run_fxpersist,
+    "fxshift": run_fxshift,
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,
