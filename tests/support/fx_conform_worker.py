@@ -29,7 +29,7 @@ import time
 from support.fx_rig import MASTER, P0, FxRig, Row, f2w, w2f  # noqa: F401
 from tools.patchkit import pk_conform
 
-NFAULT_WORD = 13
+NFAULT_WORD = 17
 
 
 def f32(x: float) -> float:
@@ -82,7 +82,8 @@ def run_case(sp, case, bud: int, desc: tuple[int, ...], seed: int) -> dict:
     k = 0
     on = True
     for k in range(case.blocks):
-        words = case.words[k] if len(case.words) > 1 else case.words[0]
+        raw = case.words[k] if len(case.words) > 1 else case.words[0]
+        words = tuple(pk_conform.fx_word(sp, j, w) for j, w in enumerate(raw))
         for j, w in enumerate(words):
             rig.set_row_word(0, P0 + j, w)
         if case.toggle and k and k % case.toggle == 0:
@@ -163,8 +164,8 @@ def main() -> int:
         problems.append("the description has no DK_FX_MAGIC")
     if desc[1] != 1:
         problems.append(f"contract {desc[1]} is not DK_FX_V1")
-    if desc[2] > 4:
-        problems.append(f"{desc[2]} parameters, at most 4")
+    if desc[2] > 8:
+        problems.append(f"{desc[2]} parameters, at most 8")
     if desc[3] % 4:
         problems.append(f"state_bytes {desc[3]} is not a multiple of 4")
     bud = pk_conform.fx_budget()

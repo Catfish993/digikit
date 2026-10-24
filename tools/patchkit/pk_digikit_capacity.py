@@ -17,6 +17,7 @@ Not covered: a DSP transfer that fails (`E_DSP_XFER`) and anything that needs th
 from __future__ import annotations
 
 import functools
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -122,7 +123,10 @@ def boot_checks(
     )
     cap = up.capacity()
     m["cap"] = cap
-    lim = pk_device.limits(c.device)
+    lim = replace(
+        pk_device.limits(c.device),
+        fx_slots=pk_device.effective_fx_slots(pk_device.limits(c.device), rig.plan),
+    )
     rows = 0
     for x in mods:
         rows |= x["rows"]
@@ -353,7 +357,7 @@ def run_inferred_needs(c: Any) -> None:
     from tools.device import dktransfer as T
 
     skip = set(c.table().get("exclude", []))
-    # `static`: core modules patched in besides the runtime, for the modules that import from them (core/input)
+    # `static`: core modules patched in besides the runtime, for the modules that import from them (core/input) or take rows in them (core/dynfx)
     img = c.image_for(",".join([B.RT, *c.table().get("static", [])]), "run")
     found: list[tuple[str, str]] = []
     packs: list[str] = []
@@ -389,6 +393,7 @@ def run_inferred_needs(c: Any) -> None:
                 "ARENA": n["ARENA"] + n["ARENA_XFER"],
                 "DSP_AREA": n["DSP_AREA"],
                 "VOICE_ROWS": n["VOICE_ROWS"],
+                "FX_SLOTS": n["FX_SLOTS"],  # the effect rows are claimed with the range
             }
             if (
                 not dsp

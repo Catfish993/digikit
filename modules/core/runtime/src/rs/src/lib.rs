@@ -21,6 +21,7 @@ pub mod card;
 pub mod crash;
 pub mod dlog;
 mod dsp;
+pub mod fxpage;
 mod loader;
 pub mod registry;
 mod sha256;
@@ -168,6 +169,12 @@ pub fn flush(start: u32, len: u32) {
 
 pub fn device() -> u32 {
     unsafe { read_volatile(addr_of!(dkrt_device_id)) }
+}
+
+/// The effects the image takes at run time: CAPACITY's limit for `FX_SLOTS`. The free effect rows of `core/dynfx` (0 on an image without it, so a device
+/// that cannot load effects yet reports 0).
+pub fn fx_slots() -> u32 {
+    unsafe { dsp::fx_free_rows() }
 }
 
 /// The device's short name as the INFO reply gives it: 3 characters and a NUL.
@@ -759,7 +766,7 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
         (CAPK_VOICE_ROWS, vrows, vused, 0),
         (CAPK_PARAM_ROWS, param.0, param.1, 0),
         (CAPK_PAGE_ROWS, page.0, page.1, 0),
-        (CAPK_FX_SLOTS, dkrt_sdk::device::LIMIT_FX_SLOTS, 0, 0),
+        (CAPK_FX_SLOTS, fx_slots(), dsp::fx_used(), 0),
         (CAPK_MAP_ENTRIES, dkrt_sdk::sel::MAP_N as u32, assign::map_used(), 0),
         (CAPK_STORE, st_total, st_used, 0),
     ];
@@ -929,6 +936,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     upload::restart_poll();
     crash::install();
     dsp::step();
+    fxpage::tick();
     dlog::tick();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));

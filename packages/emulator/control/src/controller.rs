@@ -3457,6 +3457,7 @@ impl Actor {
                 self.install_patched_audio(install)
             }
         };
+        let installed = result.is_ok();
         self.emit(
             "firmware.loaded",
             json!({"ok": result.is_ok(), "seconds": seconds,
@@ -3466,6 +3467,18 @@ impl Actor {
             report["seconds"] = seconds.into();
             self.envelope(report)
         }));
+        // The old runtime kept stepping while the boot ran on its worker. A step or run-until job in flight has its target counted
+        // on that runtime (`icount + n`): left alone, it would run the new runtime up to that count, a number of instructions that
+        // depends on how far the old runtime had got when the boot finished (host timing). End it at the install instead, so every
+        // run starts the new runtime at the same instruction.
+        if installed
+            && matches!(
+                self.job.as_ref().map(|j| &j.kind),
+                Some(JobKind::Steps { .. } | JobKind::Until(_))
+            )
+        {
+            self.finish_job(Ok(json!({"runtime_replaced": true})));
+        }
     }
 }
 

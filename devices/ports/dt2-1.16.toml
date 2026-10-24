@@ -49,6 +49,97 @@ mark = "D"
 rule = "core/dynreg:cf_func"
 
 [[anchor]]
+name = "cf.fxpages.acc"
+cpu = "cf"
+kind = "code"
+addr = 0x400c8826
+len = 6
+sha256 = "4804747ca9c54fb6cf82b4a21415559c390b2b2f9fc4f3cea86546d00ee4dc72"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.graph"
+cpu = "cf"
+kind = "code"
+addr = 0x40074ff8
+len = 6
+sha256 = "53ffbbb789c1ba823ff9e9ce100d797b461eeeab010f7a0a1e361408e3864b9d"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.init"
+cpu = "cf"
+kind = "code"
+addr = 0x400e5590
+len = 8
+sha256 = "4a577f7d4e224f5bcdda330bfb08780933faacb4e3da1120371ac265a2d70dfd"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.label"
+cpu = "cf"
+kind = "code"
+addr = 0x40074dc8
+len = 6
+sha256 = "35f57655f91d71a8d4c1dd465632547a68ea7c6814c466a9430d1c62b275418d"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.list"
+cpu = "cf"
+kind = "code"
+addr = 0x40066d7c
+len = 6
+sha256 = "42c4f6f1923b4a05648467ba283b4820d78e2121bab7692e268beda7a43f6357"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.load"
+cpu = "cf"
+kind = "code"
+addr = 0x400dae22
+len = 6
+sha256 = "1bf979bceba284ebeb6068fa83c174989ff44a30ab610c291d1fe98aa4a5fee0"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.save"
+cpu = "cf"
+kind = "code"
+addr = 0x400dae74
+len = 6
+sha256 = "4a7a0b462f93dfe8d42afbe0502eb1f06970acdd552e0ce265cc62a24cefb7b1"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.stock"
+cpu = "cf"
+kind = "data"
+addr = 0x401f7438
+src = 0x40066d7e
+len = 12
+sha256 = "bfd5f7f71e0ebd97c6d7602bc0b575381d1f92dd55f3dd82ef39410f8bf04625"
+mark = "D"
+rule = "core/fxpages:cf_ptr"
+
+[[anchor]]
+name = "cf.fxpages.stock_n"
+cpu = "cf"
+kind = "code"
+addr = 0x40066d6e
+len = 2
+sha256 = "771260b3e7ad3e3bbe992aa16c9958440f42bf5762b268b299898d6eefe67772"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
 name = "cf.machines.clone.0"
 cpu = "cf"
 kind = "code"

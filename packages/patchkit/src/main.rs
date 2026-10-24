@@ -471,28 +471,59 @@ plan.json {}",
                         ranges,
                     });
                 }
+                // the effects of the device (`[[fx]]`): process routine and descriptor in the DSP object; a page's knobs set the first words of the row
+                let dev_fx: Vec<_> = m
+                    .manifest
+                    .fx
+                    .iter()
+                    .filter(|f| f.devices.is_empty() || f.devices.iter().any(|d| *d == dev))
+                    .collect();
+                let mut fxs: Vec<patchkit::dkmdsp::FxSpec> = vec![];
+                let mut pages = vec![];
+                for (i, f) in dev_fx.iter().enumerate() {
+                    fxs.push(patchkit::dkmdsp::FxSpec {
+                        process: f.process.clone(),
+                        desc: f.desc.clone(),
+                        defaults: patchkit::register::fx_defaults(id, f)?,
+                    });
+                    if let Some(p) = patchkit::register::effect_page(id, i, f)? {
+                        pages.push(p);
+                    }
+                }
                 match sharc.first() {
                     Some((o, _)) => {
                         dsp = patchkit::dkmdsp::pack(
                             o,
                             patchkit::register::device_id(&dev)?,
                             &voices,
+                            &fxs,
                         )?
                     }
-                    None if !voices.is_empty() => {
-                        return Err(Error(format!("{id}: a voice needs a DSP object for {dev}")));
+                    None if !voices.is_empty() || !fxs.is_empty() => {
+                        return Err(Error(format!(
+                            "{id}: a voice or an effect needs a DSP object for {dev}"
+                        )));
                     }
                     None => {}
                 }
-                match resolved {
+                let mut regs = match resolved {
                     Some(r) => {
                         let (first, last) = patchkit::devgen::dyn_range(&lib, &dev)?;
                         patchkit::register::check_type_hints(r, id, first, last)?;
-                        patchkit::register::Register::lower(r, id)?.encode()
+                        Some(patchkit::register::Register::lower(r, id)?)
                     }
-                    None if !dsp.is_empty() => vec![],
+                    None if !dsp.is_empty() => None,
                     None => return Err(Error(format!("{id}: nothing for device {dev}"))),
+                };
+                if !pages.is_empty() {
+                    let r = regs.get_or_insert_with(|| patchkit::register::Register {
+                        device: patchkit::register::device_id(&dev).unwrap_or(0),
+                        ..Default::default()
+                    });
+                    r.effects = pages;
+                    r.check()?;
                 }
+                regs.map(|r| r.encode()).unwrap_or_default()
             } else {
                 vec![]
             };
@@ -642,6 +673,16 @@ plan.json {}",
                         v.state_bytes,
                         v.clear_bytes,
                         v.ranges
+                    );
+                }
+                for e in &x.fxs {
+                    println!(
+                        "  effect process +{:#x} desc +{:#x} state {} params {} defaults {:x?}",
+                        e.process,
+                        e.desc,
+                        e.state_bytes,
+                        e.n_params,
+                        &e.defaults[..e.n_params as usize]
                     );
                 }
             }

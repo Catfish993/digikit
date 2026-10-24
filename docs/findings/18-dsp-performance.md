@@ -81,6 +81,10 @@ Other measured points:
 - Per-range AOT invalidation **[D]**: a code patch bars only the regions with an
   entry in a bad range; trig1-tap-release with a patch kept 697M of 701M insns in AOT,
   CPU 4.53 vs 3.99 s unpatched (was: all AOT barred).
+- Per-block AOT invalidation **[D]** (2026-10-24): on a range whose hash differs the engine decodes the loaded
+  words, compares them with the generated instruction table and bars only the regions with a block that holds a
+  different instruction (`sharc/src/code_diff.rs`; stock parity 0 differing PCs on DN2 1.12 and DT2 1.17). The DN2
+  `core/fx` hook (range 3482 words) costs x1.013 instead of x2.38 (finding 55, route A).
 - Generated lowering (laneF, `tools/sharc_dev/sharc_lowergen*.py`, 24 forms) **[D]**: fast
   89.5 -> 93.4% (92.5% on 1.5 s) and interpreted insns -29%; one semantics source
   (`tools/sharc_dev/sharc_core`), fuzzed against the interpreter; on by default.

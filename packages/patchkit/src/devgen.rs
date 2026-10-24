@@ -36,6 +36,32 @@ struct Doc {
     modules: Option<ModulesDoc>,
     input: Option<InputDoc>,
     panel: Option<PanelDoc>,
+    fx: Option<FxDoc>,
+}
+/// `[fx]`: the facts of the effect pages of run-time effects (core/fxpages, docs/design/digikit-registry.md "Effect pages"): where the kit keeps its
+/// effect values, which of them the firmware does not use (effect row k owns `value_indices[8k .. 8k + 8]`), the page numbering and the stock
+/// parameter rows whose display an effect knob copies.
+#[derive(Deserialize)]
+struct FxDoc {
+    /// The address of the firmware's pointer to the live kit object (an SRAM global), and the byte offset of the kit's array of s16 effect values in it.
+    kit_ptr: u64,
+    array_off: u64,
+    /// The page number of the first effect page (the number of stock pages).
+    page_first: u64,
+    /// Indices of the effect value array that no stock parameter uses, in the order the effect rows take them (a multiple of 8, at most `FX_VALUES_MAX`).
+    value_indices: Vec<u64>,
+    /// Stock parameter codes: a 0 .. 127 knob, a -64 .. +63 knob, and the level slot (MIX).
+    template_percent: u64,
+    template_bipolar: u64,
+    template_mix: u64,
+    /// Where the kit's storage keeps the effect values (persistence): the byte offset of the first spare halfword in the storage record of the effect value
+    /// array, and the number of spare halfwords. The values (one halfword for each of `value_indices`) come first, then one effect ID for each effect row.
+    store_off: u64,
+    store_halfwords: u64,
+    /// An array index nothing uses (not one of `value_indices`): the mark that an effect row holds values (core/fxpages).
+    mark_index: u64,
+    /// The byte offset of the u32 after the array's halfwords (the stock loader and saver move it with `move.l (0x98,record),(tail,array)`).
+    tail_off: u64,
 }
 /// `[input]`: which input backend the device uses (a name of `INPUT_BACKENDS`); the profile chooses, the code of core/input has one backend each.
 #[derive(Deserialize)]
@@ -148,6 +174,22 @@ struct Entry {
     limits: LimitsF,
     adapter: Option<AdapterF>,
     input: InputF,
+    fx: FxF,
+}
+/// A device's effect page facts (all 0 / empty on a device without run-time effect pages).
+#[derive(Debug, Default)]
+struct FxF {
+    kit_ptr: u64,
+    array_off: u64,
+    page_first: u64,
+    value_indices: Vec<u64>,
+    template_percent: u64,
+    template_bipolar: u64,
+    template_mix: u64,
+    store_off: u64,
+    store_halfwords: u64,
+    mark_index: u64,
+    tail_off: u64,
 }
 /// A device's input facts: the backend (index into `INPUT_BACKENDS` plus 1; 0 none) and the panel's key code layout.
 #[derive(Debug, Default)]
@@ -258,6 +300,7 @@ impl Facts {
             }
             check_limits(&short, &l, k.dsp_area_bytes, &crate::sdkgen::limits_max())?;
             let input = input_facts(&short, d.input, d.panel)?;
+            let fx = fx_facts(&short, d.fx, l.fx_slots)?;
             let adapter = adapter_facts(
                 &short,
                 d.adapter.and_then(|a| a.machine),
@@ -305,6 +348,7 @@ impl Facts {
                         },
                         adapter,
                         input,
+                        fx,
                     },
                 )
                 .is_some()
@@ -374,6 +418,72 @@ const ADM_NO_SLOT: i64 = 255;
 pub const INPUT_BACKENDS: [&str; 1] = ["panel-uart"];
 /// The most exceptions to the linear key codes a device file may list.
 const PANEL_EXC_MAX: usize = 8;
+/// Entries of `[fx] value_indices` the generated files carry (`DK_FX_MAX` effects of 8 values).
+const FX_VALUES_MAX: usize = 32;
+
+/// Check `[fx]`: a multiple of 8 distinct indices (below 256), enough for the device's effect slots.
+fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64) -> Result<FxF> {
+    let Some(f) = f else {
+        return Ok(FxF::default());
+    };
+    let n = f.value_indices.len();
+    if n % 8 != 0 || n > FX_VALUES_MAX || (n as u64) < 8 * fx_slots {
+        return Err(err!(
+            "{short}: [fx] value_indices must list a multiple of 8 indices, at least 8 for each of the {fx_slots} effect slots, at most {FX_VALUES_MAX}"
+        ));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    if f.value_indices.iter().any(|i| *i > 255 || !seen.insert(*i)) {
+        return Err(err!(
+            "{short}: [fx] value_indices are distinct numbers below 256"
+        ));
+    }
+    if f.page_first == 0 || f.page_first > 255 || f.array_off & 1 != 0 || f.kit_ptr & 3 != 0 {
+        return Err(err!(
+            "{short}: [fx] page_first is 1 to 255, array_off is even and kit_ptr a multiple of 4"
+        ));
+    }
+    // the storage: the values, then one ID for each effect row, in halfwords the stock firmware ignores
+    if f.store_off & 1 != 0 || f.store_off > 0xffff || (n + n / 8) as u64 > f.store_halfwords {
+        return Err(err!(
+            "{short}: [fx] store_off is even and store_halfwords holds the {n} values and {} effect IDs ({} halfwords)",
+            n / 8,
+            n + n / 8
+        ));
+    }
+    if f.tail_off & 1 != 0 || f.tail_off > 0xffff || f.mark_index * 2 + 2 > f.tail_off {
+        return Err(err!(
+            "{short}: [fx] tail_off is even and behind the halfword of mark_index"
+        ));
+    }
+    if f.mark_index > 255 || f.value_indices.contains(&f.mark_index) {
+        return Err(err!(
+            "{short}: [fx] mark_index is an array index below 256 that is not one of value_indices"
+        ));
+    }
+    for (name, t) in [
+        ("template_percent", f.template_percent),
+        ("template_bipolar", f.template_bipolar),
+        ("template_mix", f.template_mix),
+    ] {
+        if t > 0xffff {
+            return Err(err!("{short}: [fx] {name} is a parameter code"));
+        }
+    }
+    Ok(FxF {
+        kit_ptr: f.kit_ptr,
+        array_off: f.array_off,
+        page_first: f.page_first,
+        value_indices: f.value_indices,
+        template_percent: f.template_percent,
+        template_bipolar: f.template_bipolar,
+        template_mix: f.template_mix,
+        store_off: f.store_off,
+        store_halfwords: f.store_halfwords,
+        mark_index: f.mark_index,
+        tail_off: f.tail_off,
+    })
+}
 
 fn input_facts(short: &str, i: Option<InputDoc>, p: Option<PanelDoc>) -> Result<InputF> {
     let Some(i) = i else {
@@ -825,8 +935,8 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
         c(
             "LIMIT_FX_SLOTS",
             e.limits.fx_slots,
-            Shared,
-            "[limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY)",
+            PerDevice,
+            "[limits] fx_slots (effects in the chain: CAPACITY's limit and the free effect rows of core/dynfx)",
         ),
         c(
             "LIMIT_STAGE_BYTES",
@@ -893,6 +1003,74 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             note: "[panel.exceptions] bit of the code",
         });
     }
+    let fx = &e.fx;
+    for (name, value, note) in [
+        (
+            "FX_KIT_PTR",
+            fx.kit_ptr,
+            "[fx] kit_ptr (the firmware's pointer to the live kit object)",
+        ),
+        (
+            "FX_ARRAY_OFF",
+            fx.array_off,
+            "[fx] array_off (the kit's array of effect values, bytes from the kit object)",
+        ),
+        (
+            "FX_PAGE_FIRST",
+            fx.page_first,
+            "[fx] page_first (the page number of the first effect page)",
+        ),
+        (
+            "FX_TPL_PERCENT",
+            fx.template_percent,
+            "[fx] template_percent (a 0 .. 127 knob)",
+        ),
+        (
+            "FX_TPL_BIPOLAR",
+            fx.template_bipolar,
+            "[fx] template_bipolar (a -64 .. +63 knob)",
+        ),
+        (
+            "FX_TPL_MIX",
+            fx.template_mix,
+            "[fx] template_mix (the level slot: MIX)",
+        ),
+        (
+            "FX_STORE_OFF",
+            fx.store_off,
+            "[fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start)",
+        ),
+        (
+            "FX_STORE_HW",
+            fx.store_halfwords,
+            "[fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row)",
+        ),
+        (
+            "FX_MARK_INDEX",
+            fx.mark_index,
+            "[fx] mark_index (the array index that holds the mark: an effect row has its values)",
+        ),
+        (
+            "FX_TAIL_OFF",
+            fx.tail_off,
+            "[fx] tail_off (the u32 after the array's halfwords: the loader and saver copy it, bytes from the array)",
+        ),
+        (
+            "FX_VALUES_N",
+            fx.value_indices.len() as u64,
+            "[fx] value_indices: number of indices",
+        ),
+    ] {
+        v.push(c(name, value, PerDevice, note));
+    }
+    for (i, name) in FX_VALUE.iter().enumerate() {
+        v.push(c(
+            name,
+            fx.value_indices.get(i).copied().unwrap_or(0),
+            PerDevice,
+            "[fx] value_indices (an effect value index that no stock parameter uses)",
+        ));
+    }
     for i in 0..PEEK_MAX {
         let r = k.peek.get(i).copied().unwrap_or([0, 0]);
         v.push(C {
@@ -940,6 +1118,40 @@ const PANEL_EXC_BIT: [&str; PANEL_EXC_MAX] = [
     "PANEL_EXC_BIT_5",
     "PANEL_EXC_BIT_6",
     "PANEL_EXC_BIT_7",
+];
+const FX_VALUE: [&str; FX_VALUES_MAX] = [
+    "FX_VALUE_0",
+    "FX_VALUE_1",
+    "FX_VALUE_2",
+    "FX_VALUE_3",
+    "FX_VALUE_4",
+    "FX_VALUE_5",
+    "FX_VALUE_6",
+    "FX_VALUE_7",
+    "FX_VALUE_8",
+    "FX_VALUE_9",
+    "FX_VALUE_10",
+    "FX_VALUE_11",
+    "FX_VALUE_12",
+    "FX_VALUE_13",
+    "FX_VALUE_14",
+    "FX_VALUE_15",
+    "FX_VALUE_16",
+    "FX_VALUE_17",
+    "FX_VALUE_18",
+    "FX_VALUE_19",
+    "FX_VALUE_20",
+    "FX_VALUE_21",
+    "FX_VALUE_22",
+    "FX_VALUE_23",
+    "FX_VALUE_24",
+    "FX_VALUE_25",
+    "FX_VALUE_26",
+    "FX_VALUE_27",
+    "FX_VALUE_28",
+    "FX_VALUE_29",
+    "FX_VALUE_30",
+    "FX_VALUE_31",
 ];
 const PEEK_LO: [&str; PEEK_MAX] = ["PEEK_LO_0", "PEEK_LO_1", "PEEK_LO_2", "PEEK_LO_3"];
 const PEEK_HI: [&str; PEEK_MAX] = ["PEEK_HI_0", "PEEK_HI_1", "PEEK_HI_2", "PEEK_HI_3"];

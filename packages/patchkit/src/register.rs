@@ -10,6 +10,9 @@
 //!   kind 1 PARAM   (0x50): u32 index, template, slot; i32 min, max, default; name[32]; short[16]
 //!   kind 2 MACHINE (0x6c): u32 key, clone_of, position, own_dsp, level; i32 knobs[8]; name[24]; short[24]
 //!   kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II)
+//!   kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, id; tab[8]; title[24]; 7 knobs of (u32 position, display, f32 min, max, default; name[24]; short[8])
+//!                           (the page of a run-time effect, Digitakt II; `fx` is the index of the effect record in the DSP section; `id` is the
+//!                           effect's 16-bit ID, `effect_id`: the kit stores it with the effect's values, so a kit load restores values only to the effect they came from)
 //! ```
 //!
 //! `key` (a machine's and a page's first field, a DSP voice's type) is `hash << 8 | type`: the 24-bit hash of the machine's global id
@@ -32,6 +35,17 @@ pub const KIND_PAGE: u32 = 3;
 pub const LEN_PARAM: usize = 0x50;
 pub const LEN_MACHINE: usize = 0x6c;
 pub const LEN_PAGE: usize = 0x60;
+pub const KIND_EFFECT: u32 = 4;
+pub const LEN_EFFECT: usize = 0x1a4;
+/// Knobs of an effect page (the 8th word of its parameters is MIX), the text fields, and the MIX default's range (the knob's raw 0 .. 127).
+pub const EFFECT_KNOBS: usize = 7;
+pub const EFFECT_TAB: usize = 8;
+pub const EFFECT_TAB_MAX: usize = 3;
+pub const EFFECT_TITLE: usize = 24;
+pub const EFFECT_NAME: usize = 24;
+pub const EFFECT_SHORT: usize = 8;
+pub const EFFECT_SHORT_MAX: usize = 6;
+pub const MAX_EFFECTS: usize = 4;
 pub const MAX_RECORDS: usize = 32;
 pub const KNOBS: usize = 8;
 pub const KNOB_PARAM: u32 = 0x8000_0000;
@@ -52,6 +66,22 @@ pub fn machine_hash(module: &str, machine: &str) -> u32 {
         h = (h ^ b as u32).wrapping_mul(0x0100_0193);
     }
     h & 0x00ff_ffff
+}
+
+/// The 16-bit ID of a run-time effect (1 to 0xffff; 0 means "no effect" in a kit's storage): the low and high halves of FNV-1a 32 of the UTF-8 string `<module id>:<effect id>`
+/// folded together, 0 turned into 1. The runtime keeps the effect's values in the kit under this number (docs/findings/61-fx-pages.md "Persistence"); it is
+/// defined here and nowhere else: the record carries it. Two effects of one image can share an ID (1 in 65535 for a pair): the later load then takes the values of the other.
+pub fn effect_id(module: &str, effect: &str) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in format!("{module}:{effect}").bytes() {
+        h = (h ^ b as u32).wrapping_mul(0x0100_0193);
+    }
+    let f = (h >> 16) ^ (h & 0xffff);
+    if f == 0 {
+        1
+    } else {
+        f
+    }
 }
 
 /// The machine key a `.dkm` carries where a stock machine has its type: the hash in the upper 24 bits and the machine's `type_hint` in the
@@ -126,12 +156,174 @@ pub struct Page {
     pub title: String,
 }
 
+/// One knob of an effect page. `min`, `max` and `default` are IEEE single floats (their bits): the value the effect gets is a float in that range.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EffectKnob {
+    pub position: u32,
+    /// 0 percent (0 .. 127), 1 bipolar (-64 .. +63)
+    pub display: u32,
+    pub min: u32,
+    pub max: u32,
+    pub default: u32,
+    pub name: String,
+    pub short: String,
+}
+
+/// The page of a run-time effect (Digitakt II): the effect is record `fx` of the module's DSP section. `mix` is the default of the MIX knob (raw 0 .. 127).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EffectPage {
+    pub fx: u32,
+    /// The effect's ID in a kit's storage (`effect_id`, 1 to 0xffff).
+    pub id: u32,
+    pub mix: u32,
+    pub tab: String,
+    pub title: String,
+    pub knobs: Vec<EffectKnob>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Register {
     pub device: u32,
     pub params: Vec<Param>,
     pub machines: Vec<Machine>,
     pub pages: Vec<Page>,
+    pub effects: Vec<EffectPage>,
+}
+
+/// The f32 of a manifest number, checked finite.
+fn f32_bits(what: &str, v: f64) -> Result<u32> {
+    let f = v as f32;
+    if !f.is_finite() {
+        return Err(err!("{what}: {v} is not a finite float"));
+    }
+    Ok(f.to_bits())
+}
+
+/// The effect page of `[[fx]]` number `fx` (its index in the device's effect list), or None when it declares no `tab`. A knob's default is a float in
+/// [min, max]; positions are distinct, 0 to 7.
+pub fn effect_page(module: &str, fx: usize, d: &crate::typed::FxDef) -> Result<Option<EffectPage>> {
+    let Some(tab) = &d.tab else {
+        if d.title.is_some() || !d.knob.is_empty() {
+            return Err(err!(
+                "{module}: fx {}: a title or knobs need a `tab` (the page's tab label)",
+                d.id
+            ));
+        }
+        return Ok(None);
+    };
+    let who = format!("{module}: fx {}", d.id);
+    let Some(title) = &d.title else {
+        return Err(err!("{who}: a page needs a `title`"));
+    };
+    if !(0..=127).contains(&d.mix) {
+        return Err(err!("{who}: mix {} is 0 to 127", d.mix));
+    }
+    if d.knob.len() > EFFECT_KNOBS {
+        return Err(err!(
+            "{who}: {} knobs; a page has at most {EFFECT_KNOBS} (and MIX)",
+            d.knob.len()
+        ));
+    }
+    let mut knobs = vec![];
+    for (i, k) in d.knob.iter().enumerate() {
+        let w = format!("{who}: knob {i} ({})", k.name);
+        let position = k.position.unwrap_or(i as u32);
+        let display = match k.display.as_deref() {
+            None | Some("percent") => 0,
+            Some("bipolar") => 1,
+            Some(o) => return Err(err!("{w}: display {o:?} is percent or bipolar")),
+        };
+        if !(k.min < k.max) || !(k.min..=k.max).contains(&k.default) {
+            return Err(err!(
+                "{w}: needs min < max and a default inside (min {}, max {}, default {})",
+                k.min,
+                k.max,
+                k.default
+            ));
+        }
+        knobs.push(EffectKnob {
+            position,
+            display,
+            min: f32_bits(&w, k.min)?,
+            max: f32_bits(&w, k.max)?,
+            default: f32_bits(&w, k.default)?,
+            name: k.name.clone(),
+            short: k.short.clone(),
+        });
+    }
+    let e = EffectPage {
+        fx: fx as u32,
+        id: effect_id(module, &d.id),
+        mix: d.mix as u32,
+        tab: tab.clone(),
+        title: title.clone(),
+        knobs,
+    };
+    e.check().map_err(|x| err!("{who}: {}", x.0))?;
+    Ok(Some(e))
+}
+
+/// The words p0 ... of an effect's row: with a page, knob i's default as a float for p_i and 0 after them (`defaults` must then be empty: a word has one
+/// source); without a page, `defaults`.
+pub fn fx_defaults(module: &str, d: &crate::typed::FxDef) -> Result<Vec<u32>> {
+    if d.tab.is_none() {
+        return Ok(d.defaults.clone());
+    }
+    if !d.defaults.is_empty() {
+        return Err(err!(
+            "{module}: fx {}: an effect with a page takes its defaults from the knobs; drop `defaults`",
+            d.id
+        ));
+    }
+    d.knob
+        .iter()
+        .map(|k| {
+            f32_bits(
+                &format!("{module}: fx {}: knob {}", d.id, k.name),
+                k.default,
+            )
+        })
+        .collect()
+}
+
+impl EffectPage {
+    pub fn check(&self) -> Result<()> {
+        text_ok("effect tab", &self.tab, EFFECT_TAB_MAX)?;
+        text_ok("effect page title", &self.title, EFFECT_TITLE - 1)?;
+        if self.mix > 127 {
+            return Err(err!("mix {} is 0 to 127", self.mix));
+        }
+        if self.id == 0 || self.id > 0xffff {
+            return Err(err!("effect id {} is 1 to 65535", self.id));
+        }
+        if self.knobs.len() > EFFECT_KNOBS {
+            return Err(err!("{} knobs; at most {EFFECT_KNOBS}", self.knobs.len()));
+        }
+        let mut seen = 0u32;
+        for k in &self.knobs {
+            text_ok("knob name", &k.name, EFFECT_NAME - 1)?;
+            text_ok("knob short", &k.short, EFFECT_SHORT_MAX)?;
+            if k.position >= KNOBS as u32 || seen & (1 << k.position) != 0 || k.display > 1 {
+                return Err(err!(
+                    "knob {}: a position 0 to 7 that no other knob has, display 0 or 1",
+                    k.name
+                ));
+            }
+            seen |= 1 << k.position;
+            let (lo, hi, d) = (
+                f32::from_bits(k.min),
+                f32::from_bits(k.max),
+                f32::from_bits(k.default),
+            );
+            if !(lo.is_finite() && hi.is_finite() && d.is_finite())
+                || !(lo < hi)
+                || !(lo..=hi).contains(&d)
+            {
+                return Err(err!("knob {}: min < max and default inside", k.name));
+            }
+        }
+        Ok(())
+    }
 }
 
 fn text_ok(what: &str, s: &str, max: usize) -> Result<()> {
@@ -279,6 +471,22 @@ impl Register {
                 }
             }
         }
+        if self.effects.len() > MAX_EFFECTS
+            || self.params.len() + self.machines.len() + self.pages.len() + self.effects.len()
+                > MAX_RECORDS
+        {
+            return Err(err!(
+                "at most {MAX_EFFECTS} effect pages and {MAX_RECORDS} records per module"
+            ));
+        }
+        let mut fxs = vec![];
+        for e in &self.effects {
+            e.check()?;
+            if fxs.contains(&e.fx) {
+                return Err(err!("two pages for effect {}", e.fx));
+            }
+            fxs.push(e.fx);
+        }
         for g in &self.pages {
             text_ok("page name", &g.name, MACHINE_NAME - 1)?;
             text_ok("page title", &g.title, MACHINE_NAME - 1)?;
@@ -307,7 +515,8 @@ impl Register {
         p32(&mut o, self.device);
         p32(
             &mut o,
-            (self.params.len() + self.machines.len() + self.pages.len()) as u32,
+            (self.params.len() + self.machines.len() + self.pages.len() + self.effects.len())
+                as u32,
         );
         for p in &self.params {
             p32(&mut o, KIND_PARAM);
@@ -343,6 +552,27 @@ impl Register {
             p32(&mut o, g.level);
             put_text(&mut o, &g.name, MACHINE_NAME);
             put_text(&mut o, &g.title, MACHINE_NAME);
+        }
+        for e in &self.effects {
+            p32(&mut o, KIND_EFFECT);
+            p32(&mut o, LEN_EFFECT as u32);
+            for v in [e.fx, e.mix, e.knobs.len() as u32, e.id] {
+                p32(&mut o, v);
+            }
+            put_text(&mut o, &e.tab, EFFECT_TAB);
+            put_text(&mut o, &e.title, EFFECT_TITLE);
+            for j in 0..EFFECT_KNOBS {
+                match e.knobs.get(j) {
+                    Some(k) => {
+                        for v in [k.position, k.display, k.min, k.max, k.default] {
+                            p32(&mut o, v);
+                        }
+                        put_text(&mut o, &k.name, EFFECT_NAME);
+                        put_text(&mut o, &k.short, EFFECT_SHORT);
+                    }
+                    None => o.extend_from_slice(&[0u8; 20 + EFFECT_NAME + EFFECT_SHORT]),
+                }
+            }
         }
         o
     }
@@ -415,6 +645,37 @@ impl Register {
                         title: txt(rec + 40 + MACHINE_NAME, MACHINE_NAME)?,
                     })
                 }
+                (KIND_EFFECT, LEN_EFFECT) => {
+                    let n = g(rec + 8)? as usize;
+                    if n > EFFECT_KNOBS {
+                        return Err(err!("register section: effect record knob count"));
+                    }
+                    let mut knobs = vec![];
+                    for j in 0..n {
+                        let k = rec
+                            + 16
+                            + EFFECT_TAB
+                            + EFFECT_TITLE
+                            + j * (20 + EFFECT_NAME + EFFECT_SHORT);
+                        knobs.push(EffectKnob {
+                            position: g(k)?,
+                            display: g(k + 4)?,
+                            min: g(k + 8)?,
+                            max: g(k + 12)?,
+                            default: g(k + 16)?,
+                            name: txt(k + 20, EFFECT_NAME)?,
+                            short: txt(k + 20 + EFFECT_NAME, EFFECT_SHORT)?,
+                        });
+                    }
+                    reg.effects.push(EffectPage {
+                        fx: g(rec)?,
+                        id: g(rec + 12)?,
+                        mix: g(rec + 4)?,
+                        tab: txt(rec + 16, EFFECT_TAB)?,
+                        title: txt(rec + 16 + EFFECT_TAB, EFFECT_TITLE)?,
+                        knobs,
+                    })
+                }
                 _ => return Err(err!("register section: record kind {kind} length {len}")),
             }
             at += len;
@@ -458,6 +719,7 @@ mod tests {
                 short: "XSD".into(),
             }],
             pages: vec![],
+            effects: vec![],
         }
     }
 
@@ -507,6 +769,108 @@ mod tests {
         let mut bad = with_page();
         bad.pages[0].knobs[2] = 0xd5;
         assert!(bad.check().is_err());
+    }
+
+    fn effect() -> EffectPage {
+        let f = |x: f32| x.to_bits();
+        EffectPage {
+            fx: 0,
+            id: effect_id("m", "gain"),
+            mix: 127,
+            tab: "GAN".into(),
+            title: "Test Gain".into(),
+            knobs: vec![
+                EffectKnob {
+                    position: 0,
+                    display: 0,
+                    min: f(0.0),
+                    max: f(2.0),
+                    default: f(1.0),
+                    name: "Gain".into(),
+                    short: "GAIN".into(),
+                },
+                EffectKnob {
+                    position: 5,
+                    display: 1,
+                    min: f(-1.0),
+                    max: f(1.0),
+                    default: f(0.0),
+                    name: "Tilt".into(),
+                    short: "TILT".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn an_effect_page_round_trips_and_has_its_length() {
+        let mut r = sample();
+        r.effects.push(effect());
+        let b = r.encode();
+        assert_eq!(b.len(), HEADER + LEN_PARAM + LEN_MACHINE + LEN_EFFECT);
+        assert_eq!(Register::parse(&b).unwrap(), r);
+        // the manifest's view of it
+        let d = crate::typed::FxDef {
+            id: "gain".into(),
+            process: "p".into(),
+            desc: "d".into(),
+            defaults: vec![],
+            devices: vec![],
+            tab: Some("GAN".into()),
+            title: Some("Test Gain".into()),
+            mix: 127,
+            knob: vec![crate::typed::FxKnob {
+                name: "Gain".into(),
+                short: "GAIN".into(),
+                min: 0.0,
+                max: 2.0,
+                default: 1.0,
+                display: None,
+                position: None,
+            }],
+        };
+        let p = effect_page("m", 0, &d).unwrap().unwrap();
+        assert_eq!(p.knobs[0], effect().knobs[0]);
+        assert_eq!(p.id, effect().id);
+        let mut none = d.clone();
+        none.tab = None;
+        assert!(effect_page("m", 0, &none).is_err()); // a title and knobs without a tab
+        none.title = None;
+        none.knob.clear();
+        assert!(effect_page("m", 0, &none).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_effect_id_is_16_bits_never_0_and_follows_the_module_and_the_effect() {
+        let a = effect_id("test/dyn-fx-gain", "gain");
+        assert!((1..=0xffff).contains(&a));
+        assert_eq!(a, effect_id("test/dyn-fx-gain", "gain"));
+        assert_ne!(a, effect_id("test/dyn-fx-gain", "gain2"));
+        assert_ne!(a, effect_id("test/other", "gain"));
+        // pinned: the ID is stored in kits, so its definition must not drift
+        assert_eq!(effect_id("m", "gain"), 0xbb58);
+        assert_eq!(effect_id("test/dyn-fx-gain", "gain"), 0x4625);
+    }
+
+    #[test]
+    fn effect_page_mistakes_are_refused() {
+        let ok = |f: &dyn Fn(&mut EffectPage)| {
+            let mut e = effect();
+            f(&mut e);
+            e.check().is_err()
+        };
+        assert!(ok(&|e| e.tab = "GAIN".into()));
+        assert!(ok(&|e| e.tab = "".into()));
+        assert!(ok(&|e| e.knobs[0].short = "TOOLONG".into()));
+        assert!(ok(&|e| e.knobs[1].position = 0));
+        assert!(ok(&|e| e.knobs[1].position = 8));
+        assert!(ok(&|e| e.knobs[0].default = 3.0f32.to_bits()));
+        assert!(ok(&|e| e.knobs[0].min = e.knobs[0].max));
+        assert!(ok(&|e| e.mix = 128));
+        assert!(ok(&|e| e.id = 0));
+        assert!(ok(&|e| e.id = 0x1_0000));
+        let big: Vec<_> = (0..8).map(|_| effect().knobs[0].clone()).collect();
+        assert!(ok(&|e| e.knobs = big.clone()));
     }
 
     #[test]

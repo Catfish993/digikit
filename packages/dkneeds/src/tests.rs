@@ -47,6 +47,8 @@ fn register(kinds: &[u32]) -> Vec<u8> {
             LEN_PARAM
         } else if k == KIND_MACHINE {
             LEN_MACHINE
+        } else if k == KIND_EFFECT {
+            LEN_EFFECT
         } else {
             LEN_PAGE
         } as usize;
@@ -125,6 +127,10 @@ fn register_records_are_counted_by_kind() {
     let reg = register(&[KIND_PARAM, KIND_PARAM, KIND_MACHINE, KIND_PAGE, KIND_PARAM]);
     let n = of(&dkm(4, 0, &reg, &[])).unwrap();
     assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (3, 1, 1));
+    // an effect's page takes no row of its own
+    let reg = register(&[KIND_EFFECT, KIND_PARAM]);
+    let n = of(&dkm(4, 0, &reg, &[])).unwrap();
+    assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (1, 0, 0));
     // an empty table (a header only) counts nothing
     let n = of(&dkm(4, 0, &register(&[]), &[])).unwrap();
     assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (0, 0, 0));
@@ -168,6 +174,57 @@ fn a_dsp_section_takes_a_range_a_block_and_voice_rows() {
     let n = of(&f).unwrap();
     assert_eq!(n.dsp_need(), 192 + 8);
     assert_eq!(Needs::default().dsp_need(), 0);
+}
+
+/// A version 4 DSP section: one voice record of version 3 form is not needed, `fx` effect records `(state_bytes)` follow an empty voice table.
+fn dsp_section_v4(image: u32, bss: u32, fx: &[u32]) -> Vec<u8> {
+    let fx_off = DSP_HEADER as usize;
+    let image_off = fx_off + FX_LEN as usize * fx.len();
+    let mut s = vec![0u8; image_off + image as usize];
+    put(&mut s, 0, DSP_MAGIC);
+    put(&mut s, 4, 4);
+    put(&mut s, 8, 1);
+    put(&mut s, 0x0c, image);
+    put(&mut s, 0x10, bss);
+    put(&mut s, 0x14, 16);
+    put(&mut s, 0x18, image_off as u32);
+    put(&mut s, 0x1c, fx_off as u32);
+    put(&mut s, 0x24, fx_off as u32);
+    put(&mut s, 0x2c, fx_off as u32);
+    put(&mut s, 0x34, fx_off as u32);
+    put(&mut s, 0x38, fx.len() as u32);
+    for (i, &state) in fx.iter().enumerate() {
+        put(&mut s, fx_off + FX_LEN as usize * i + 8, state);
+    }
+    s
+}
+
+#[test]
+fn effect_records_take_effect_slots_and_their_state() {
+    // image 8, bss 100 (108 -> 112), one effect with 20 bytes of state (24): 136, granule 192; no voice row
+    let n = of(&dkm(4, 0, &[], &dsp_section_v4(8, 100, &[20]))).unwrap();
+    assert_eq!(
+        (n.fx_slots, n.voice_rows, n.dsp_area, n.arena_xfer),
+        (1, 0, 192, 16 + ARENA_HDR)
+    );
+    // an effect with no state adds none; three effects count three slots and add their states in turn
+    let n = of(&dkm(4, 0, &[], &dsp_section_v4(8, 0, &[0]))).unwrap();
+    assert_eq!((n.fx_slots, n.dsp_area), (1, 64));
+    let n = of(&dkm(4, 0, &[], &dsp_section_v4(64, 0, &[8, 12, 16]))).unwrap();
+    assert_eq!(n.fx_slots, 3);
+    assert_eq!(n.dsp_area, (64u32 + 8 + 16 + 16).div_ceil(GRANULE) * GRANULE);
+    // versions before 4 take no slot
+    assert_eq!(of(&dkm(4, 0, &[], &dsp_section(3, 8, 0, &[(0, 0)]))).unwrap().fx_slots, 0);
+    // more than DK_FX_MAX records, a table outside the section and an absurd state are refused
+    let f = dkm(4, 0, &[], &dsp_section_v4(8, 0, &[0, 0, 0, 0, 0]));
+    assert_eq!(of(&f), Err(Error::Dsp));
+    let mut bad = dsp_section_v4(8, 0, &[0]);
+    put(&mut bad, 0x34, 0x1000);
+    assert_eq!(of(&dkm(4, 0, &[], &bad)), Err(Error::Dsp));
+    assert_eq!(
+        of(&dkm(4, 0, &[], &dsp_section_v4(8, 0, &[MAX_STATE_BYTES + 4]))),
+        Err(Error::Dsp)
+    );
 }
 
 #[test]
@@ -287,7 +344,7 @@ fn absurd_sizes_and_counts_are_refused_without_a_panic() {
     let d = |at: usize, v: u32| edit(dsp_off + at, v);
     assert_eq!(of(&d(0, 0)), Err(Error::Dsp));
     assert_eq!(of(&d(4, 0)), Err(Error::Dsp));
-    assert_eq!(of(&d(4, 4)), Err(Error::Dsp));
+    assert_eq!(of(&d(4, 5)), Err(Error::Dsp));
     assert_eq!(of(&d(0x0c, 0)), Err(Error::Dsp));
     assert_eq!(of(&d(0x0c, 10)), Err(Error::Dsp)); // not a multiple of 4
     assert_eq!(of(&d(0x0c, u32::MAX - 3)), Err(Error::Dsp));

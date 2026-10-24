@@ -96,6 +96,26 @@ def test_fx_specs_find_the_fixtures_and_keep_the_negative_apart():
     assert not c.is_machine_module("test/fx-gain")
 
 
+def test_fx_specs_include_run_time_effects_and_turn_case_values_into_knob_floats():
+    """A `[[fx]]` record (a run-time effect: no state symbol, the page's knobs give the floats of the words) is an effect spec too."""
+    import struct
+
+    s = c.fx_spec("digikit/freqshift")
+    assert s is not None
+    assert (s.process, s.desc, s.state) == ("_fs_process", "_fs_desc", "")
+    assert s.knobs == ((-64.0, 63.0),)
+
+    def bits(x: float) -> int:
+        return struct.unpack("<I", struct.pack("<f", x))[0]
+
+    assert c.fx_word(s, 0, 0) == bits(-64.0)
+    assert c.fx_word(s, 0, c.FX_PARAM_MAX) == bits(63.0)
+    mid = struct.unpack("<f", struct.pack("<I", c.fx_word(s, 0, 0x4000)))[0]
+    assert abs(mid) < 1e-4  # the middle of the bipolar knob
+    assert c.fx_word(s, 1, 5) == 5  # a word without a knob stays the raw case value
+    assert "test/dyn-fx-gain" in [x.module for x in c.fx_specs()]
+
+
 def test_the_fx_budget_is_the_tighter_headroom_over_the_chain():
     assert c.fx_budget() == min(c.budget(d).headroom for d in c.DEVICES) // c.FX_MAX
     assert c.fx_budget() > 5000

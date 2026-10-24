@@ -103,9 +103,29 @@ modules = 8
 machine_rows = 8
 arena_bytes = 524288
 stage_bytes = 65536
-fx_slots = 4
+fx_slots = 3   # effects in the chain; core/dynfx reserves this many free effect rows for run-time effects (at most DK_FX_MAX = 4)
 param_rows = 16
 page_rows = 8
+
+# The effect pages of run-time effects (core/fxpages, docs/design/digikit-registry.md "Effect pages", docs/findings/61-fx-pages.md "The Digitone II"): the
+# same facts as in the Digitakt II file, read from the 1.12 image. The kit's Fx array has 101 halfwords here (the Fx parameters use the indices 1 to 69; the
+# indices 70 to 100 belong to no Fx parameter, are not sent to the DSP and not saved by the stock saver), so the effect values and the mark live above 69.
+[fx]
+kit_ptr = 0x800052a0
+array_off = 0x48e4
+# The stock pages are 0 .. 36 (the accessor's bound is 0x24); the effect pages are 37, 38 and 39.
+page_first = 37
+value_indices = [70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93]
+# The same stock parameter codes as on the Digitakt II: Delay "Feedback HPF", "Stereo Width" and "Mix Volume".
+template_percent = 0x75
+template_bipolar = 0x73
+template_mix = 0x79
+# The storage record of the Fx array is the Digitakt II's (a u32 at +0, 46 halfwords from +4, spare from +0x60, a u32 at +0x98).
+store_off = 0x60
+store_halfwords = 28
+mark_index = 100
+# The u32 after the array's 101 halfwords.
+tail_off = 0xca
 
 # What patchkit needs of this device: the container and section limits of a port (written into devices/ports/*.toml by
 # tools/patchkit/port_resolve.py; docs/findings/01 "NOR flash map") and the DSP L2 range the free-region search runs in.
@@ -125,8 +145,8 @@ dsp_l2_excludes = []
 # another). Both are the flash-image roots of the rt021 images for now; `emulator` adds `core/remote-open`: the REMOTE
 # switch of the DIGIKIT menu starts on in the emulator and off on a device (core/input is in both; the commands of digikit/remote need the switch).
 [patch_sets]
-emulator = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health", "core/input", "core/remote-open"]
-device = ["core/dynreg", "core/dyndsp", "core/digikit-menu", "core/health", "core/input"]
+emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/digikit-menu", "core/health", "core/input", "core/remote-open"]
+device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/digikit-menu", "core/health", "core/input"]
 
 # The input backend core/input uses to press keys and turn encoders from software (docs/plans/remote-control.md). The profile chooses; `panel-uart`: the panel
 # MCU's UART packets are decoded by the firmware's own key and encoder decoders, which core/input calls (anchors by hash in the port files).

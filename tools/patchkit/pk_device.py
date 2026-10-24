@@ -13,6 +13,7 @@ import tomllib
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -90,6 +91,16 @@ def contract_max() -> dict[str, int]:
     (the same number as `modules`: the record format)."""
     m = tomllib.loads((ROOT / "sdk" / "sdk.toml").read_text())["limits"]["max"]
     return {**m, "sel_max": m["modules"]}
+
+
+def effective_fx_slots(lim: Limits, plan: dict[str, Any]) -> int:
+    """The effect slots an image reports in CAPACITY: the device's `fx_slots` when the image has `core/dynfx` (its free effect rows), else 0 (an image that cannot
+    load an effect, such as every Digitone II image until F4 step 5, reports no slot)."""
+    return (
+        lim.fx_slots
+        if any(str(m).startswith("core/dynfx@") for m in plan["modules"])
+        else 0
+    )
 
 
 def limits(short: str) -> Limits:

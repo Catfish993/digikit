@@ -1,0 +1,646 @@
+[module]
+id = "core/fxpages"
+version = "0.1.0"
+name = "Effect pages"
+category = "core"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Reserves the FX view pages and the parameter rows of run-time effects: one page after CHO for each effect row, answered by the page accessor, listed in the FX view; the digikit runtime fills them from the module's effect record. Keeps the effects' knob values with the kit (hooks on the kit loader, saver and initialiser)"
+requires = ["core/runtime", "core/params", "core/dynreg", "core/dynfx"]
+conflicts = []
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
+
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# Patch-time half of the effect pages (docs/design/digikit-registry.md "Effect pages", docs/findings/61-fx-pages.md). It adds no behaviour by itself: with no
+# effect loaded the FX view has the three stock pages, DEL, REV and CHO, drawn as before.
+#
+# - The firmware's page descriptor table (33 rows of 0x2c bytes: name and title as char pointers, nine parameter codes) lives in RAM, built at start; it has no free
+#   row and a bound of 33 in its accessor. `fxp_acc` replaces the first instructions of the accessor: the page numbers `[fx] page_first` and up (one for each
+#   effect slot, `[limits] fx_slots`) answer with a row of this module's own table (`fxp_rows`, filled by the runtime), every other number gets the stock code.
+# - The FX view builds its page list from a rodata array of three page numbers (13, 14, 15). `fxp_list` hands the builder this module's list (`fxp_list_buf`, filled by the runtime
+#   at boot, before the view is built) and its count (`fxp_count`); while the count is 0 (no runtime) the builder gets its own list.
+# - The view draws the left tab label from hard-coded strings for the three stock pages: `fxp_label` draws the name of an effect page's row there, the stock code does the rest.
+# - The view draws a filter graph over the knobs 5 and 6 of every page but CHO: `fxp_graph` leaves it out for the effect pages.
+# - 24 parameter rows (`params.fp0` ..), 8 for each effect slot: 7 knobs and the MIX of the page. The runtime writes them (template, range, names, value index).
+# - Persistence (finding 61): three hooks on the functions that move the kit's effect value array: the initialiser (`fxp_init`: each effect row gets its defaults), the loader
+#   (`fxp_load`: the stored values when the stored effect ID is the row's, else the defaults) and the saver (`fxp_save`: the values and the 3 effect IDs into the 28 spare
+#   halfwords of the kit's storage record, which stock ignores). The stock tables are not touched (the lock map shares them). The runtime fills `fxp_ids` and `fxp_defs`.
+# - `fxpages_info` is the table the runtime reads (core/runtime, optional link).
+
+[[gen]]
+kind = "gas"
+path = "build/gen/device-{dev}.inc"
+
+[[object]]
+path = "build/fxpages-dt2.dko.json"
+sources = ["src/cf/fxpages-dt2.s"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[object.externs]
+_fp_acc = "cf.fxpages.acc"
+_fp_label = "cf.fxpages.label"
+_fp_graph = "cf.fxpages.graph"
+_fp_list = "cf.fxpages.list"
+_fp_stock = "cf.fxpages.stock"
+_fp_stock_n = "cf.fxpages.stock_n"
+_fp_p_first = "params.fp0.index"
+_fp_load = "cf.fxpages.load"
+_fp_save = "cf.fxpages.save"
+_fp_init = "cf.fxpages.init"
+
+[[object]]
+path = "build/fxpages-dn2.dko.json"
+sources = ["src/cf/fxpages-dn2.s"]
+place = "cf.expansion"
+devices = ["dn2"]
+
+[object.externs]
+_fp_acc = "cf.fxpages.acc"
+_fp_label = "cf.fxpages.label"
+_fp_graph = "cf.fxpages.graph"
+_fp_list = "cf.fxpages.list"
+_fp_stock = "cf.fxpages.stock"
+_fp_stock_n = "cf.fxpages.stock_n"
+_fp_p_first = "params.fp0.index"
+_fp_load = "cf.fxpages.load"
+_fp_save = "cf.fxpages.save"
+_fp_init = "cf.fxpages.init"
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.fxpages.acc"
+offset = 0
+to = "fxp_acc"
+displaced = "drop"
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.fxpages.label"
+offset = 0
+to = "fxp_label"
+displaced = "drop"
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.fxpages.graph"
+offset = 0
+to = "fxp_graph"
+displaced = "drop"
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.fxpages.list"
+offset = 0
+to = "fxp_list"
+displaced = "drop"
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.fxpages.load"
+offset = 0
+to = "fxp_load"
+displaced = "drop"
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.fxpages.save"
+offset = 0
+to = "fxp_save"
+displaced = "drop"
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.fxpages.init"
+offset = 0
+to = "fxp_init"
+displaced = "drop"
+devices = ["dt2", "dn2"]
+
+[[claim]]
+resource = "cf.fxpages.acc"
+[[claim]]
+resource = "cf.fxpages.label"
+[[claim]]
+resource = "cf.fxpages.graph"
+[[claim]]
+resource = "cf.fxpages.list"
+[[claim]]
+resource = "cf.fxpages.load"
+[[claim]]
+resource = "cf.fxpages.save"
+[[claim]]
+resource = "cf.fxpages.init"
+
+# The page descriptor accessor (FUN_400c898a on 1.17): `moveq 0x20,D1; move.l (4,SP),D0` (6 bytes), then the bound check, the row address and `rts`.
+[[anchor_rule]]
+name = "cf.fxpages.acc"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "2f139e6b0d70fdc22d64ca72a71f88c9"
+offset = 0
+len = 6
+mark = "D"
+
+# FxPageView's tab label (FUN_40074d88): `move.b #0xd,D1b; cmp.l D0,D1` (6 bytes) of the third page test (DEL), the `bne.b` after it is the stock one. The
+# routine's common tail (`pea 2; pea 0x24; pea 7; ...; jsr` at +0x1e) draws the string on the stack; the end of the function is at +0x3c.
+[[anchor_rule]]
+name = "cf.fxpages.label"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "ac7642057ecf0a7193cfff5c94a8c9ad"
+offset = 0x40
+len = 6
+mark = "D"
+
+# FxPageView::vfunc_4 (draw): `cmp.l D0,D5; beq.w <after the graph>` (6 bytes; D5 = 15, D0 = the page number) before the filter graph; the branch target is at +0x1c4.
+[[anchor_rule]]
+name = "cf.fxpages.graph"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "baec8deb33854d1a7ac48e9cef2774ea"
+offset = 0x134
+len = 6
+mark = "D"
+
+# The FX view's builder (FUN_40066584, the constructor of the main screen view): `move.l #<list>,D0` (6 bytes) with the count `moveq 3,D1` pushed just before it.
+[[anchor_rule]]
+name = "cf.fxpages.list"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "7160f06f3d6124dc745cdb7c75628c47"
+offset = 0x7f8
+len = 6
+mark = "D"
+
+# The loader of the kit's effect value array (FUN_400daf54(array, storage), called by the kit loader FUN_400db898 for Load Kit, a pattern's kit and a project load):
+# after its table loop, `move.l (0x98,A0),(0x8e,A1)` (6 bytes; A0 = the storage record, A1 = the array). The hook restores the effect values (persistence).
+[[anchor_rule]]
+name = "cf.fxpages.load"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "5c9666e3948285d6d01efc932404808b"
+offset = 0x32
+len = 6
+mark = "D"
+
+# The saver (FUN_400daf98(storage, array), called by the kit saver FUN_400dbdca): after its table loop and the clear of the 4 bytes at +0x9c,
+# `move.l (0x8e,A3),(0x98,A2)` (6 bytes; A2 = the storage record, A3 = the array). The hook writes the effect values and IDs into the spare halfwords.
+[[anchor_rule]]
+name = "cf.fxpages.save"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "075bbe00a9e7ec3e8e70a78898611ee3"
+offset = 0x40
+len = 6
+mark = "D"
+
+# The initialiser of the kit's effect value array (FUN_400e5698(array): 0x92 bytes zeroed, then the default of each of the 71 parameter codes; called by the kit
+# initialiser FUN_400e5700 (new kit, Load Kit's fresh kit, project) and by the kit loader when the storage record is refused): its common exit, `movem.l (SP),{D2 A2 A3 A4 A5};
+# lea (0x20,SP),SP` (8 bytes; A2 = the array, 0 when the function was given none), then the `rts`. The hook gives each effect row its defaults.
+[[anchor_rule]]
+name = "cf.fxpages.init"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "8d1db0c6e713e00d9191111226e258ae"
+offset = 0x5c
+len = 8
+mark = "D"
+
+# The stock list itself (rodata, three page numbers) and the stock count (the byte of `moveq 3,D1` at +1): the runtime copies them in front of its pages.
+[[anchor_rule]]
+name = "cf.fxpages.stock"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "7160f06f3d6124dc745cdb7c75628c47"
+offset = 0x7fa
+len = 12
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.fxpages.stock_n"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "7160f06f3d6124dc745cdb7c75628c47"
+offset = 0x7ea
+len = 2
+mark = "D"
+
+# ---- Digitone II 1.12 (the same sites, found by their own hashes; the shapes are the Digitakt II's, finding 61 "The Digitone II") ----
+# The page accessor FUN_400c25d8: `moveq 0x24,D1; move.l 4(SP),D0` (the bound: pages 0 .. 36 are stock).
+[[anchor_rule]]
+name = "cf.fxpages.acc"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "78edf1e40ff808780fc20e11fa31d3b4"
+offset = 0
+len = 6
+mark = "D"
+
+# FUN_4006f4a8 (the tab label): the third page test (`move.b #0x11,D1b; cmp.l D0,D1`), the common tail at +0x1e.
+[[anchor_rule]]
+name = "cf.fxpages.label"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "42e5d8c79170ce23d2ad591391433214"
+offset = 0x40
+len = 6
+mark = "D"
+
+# FxPageView::vfunc_4 (0x4006f5e4): `cmp.l D0,D5; beq.w <after the graph>` with D5 = 0x13; the branch target is at +0x1c4.
+[[anchor_rule]]
+name = "cf.fxpages.graph"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "134772a1ba6366ed7046889536674b96"
+offset = 0x134
+len = 6
+mark = "D"
+
+# The FX view's builder (0x40060e72): `move.l #<list>,D0` with `moveq 3,D1` before it.
+[[anchor_rule]]
+name = "cf.fxpages.list"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "8fb9057131b85c6b6ab80d28a4e37a8b"
+offset = 0x7b2
+len = 6
+mark = "D"
+
+# The loader of the Fx array (FUN_400dcef0): `move.l (0x98,A0),(0xca,A1)` after its table loop.
+[[anchor_rule]]
+name = "cf.fxpages.load"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "ae2cb9f9c5021edb353ca8bd68eb7375"
+offset = 0x32
+len = 6
+mark = "D"
+
+# The saver (FUN_400dcf34): `move.l (0xca,A3),(0x98,A2)` after the clear of the 4 bytes at +0x9c.
+[[anchor_rule]]
+name = "cf.fxpages.save"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "72cfca259b20ad2a989d78e670ada50a"
+offset = 0x40
+len = 6
+mark = "D"
+
+# The initialiser of the Fx array (FUN_400e7140: 0xce bytes zeroed, the default of each of the 101 codes): the common exit, `movem.l (SP),{D2 A2 A3 A4 A5}; lea (0x20,SP),SP`.
+[[anchor_rule]]
+name = "cf.fxpages.init"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "77836acd2395bf50b1af9bcd04bbbe1e"
+offset = 0x5c
+len = 8
+mark = "D"
+
+# The stock list (rodata 0x401e0448, pages 17, 18, 19) and the stock count.
+[[anchor_rule]]
+name = "cf.fxpages.stock"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "8fb9057131b85c6b6ab80d28a4e37a8b"
+offset = 0x7b4
+len = 12
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.fxpages.stock_n"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "8fb9057131b85c6b6ab80d28a4e37a8b"
+offset = 0x7a4
+len = 2
+mark = "D"
+
+# ---- reserved parameter rows ---------------------------------------------------------------------------------------------------
+# 8 for each effect slot (fp0 .. fp7 are effect row 0, ...): 7 knobs and the page's level slot (MIX). The template is a placeholder (Delay "Feedback HPF"); the runtime
+# writes the row from the effect's record: template by display, range, names, and the value index of `[fx] value_indices`.
+# tests/patchkit/test_limits.py checks the number of rows against `[limits] fx_slots`.
+
+[[entry]]
+registry = "params"
+id = "fp0"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp1"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp2"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp3"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp4"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp5"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp6"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp7"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp8"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp9"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp10"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp11"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp12"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp13"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp14"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp15"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp16"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp17"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp18"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp19"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp20"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp21"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp22"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]
+
+[[entry]]
+registry = "params"
+id = "fp23"
+name = ""
+short = ""
+template = 0x75
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2", "dn2"]

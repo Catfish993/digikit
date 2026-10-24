@@ -771,7 +771,7 @@ def part_modules(c: Any, img: Any) -> None:
             "VOICE_ROWS": lim.machine_rows,
             "PARAM_ROWS": lim.param_rows,
             "PAGE_ROWS": lim.page_rows,
-            "FX_SLOTS": lim.fx_slots,
+            "FX_SLOTS": pk_device.effective_fx_slots(lim, rig.plan),
             "MAP_ENTRIES": pk_device.contract_max()["map_entries"],
             "STORE": c.store.limit // 2,  # KiB
         }

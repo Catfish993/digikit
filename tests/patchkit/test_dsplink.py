@@ -448,9 +448,20 @@ def test_window_transfers_carry_the_window_and_refuse_bad_arguments(machine, bui
     assert (w[1] & 0x1FFFF, (w[1] >> 17) & 0xFF, (w[1] >> 25) & 1) == (3, 2, 1)
     assert w[2:4] == [0x11223344, 0x55667788]
     assert w[4] == check_word(w[:4])
+    # window 2 (the effect rows of the FX chain) is the same transfer with the window number 2 in the header
+    r = run(
+        machine,
+        built,
+        {src: data},
+        [call(built, "dl_send_win", [2, 5, src, 8]), tick],
+    )
+    assert r[0].d0 == 0
+    w = tail_words(r[1].reads[1], 0x402, 174)
+    assert w[0] == MAGIC | (0 << 16) | (2 << 30)
+    assert (w[1] & 0x1FFFF, (w[1] >> 17) & 0xFF, (w[1] >> 25) & 1) == (5, 2, 1)
     bad = [
         [0, 0, src, 8],  # window 0 is dl_send's
-        [2, 0, src, 8],  # no window 2
+        [3, 0, src, 8],  # no window 3
         [1, 0, src, 0],
         [1, 0, src, 6],
         [1, 0x20000, src, 4],

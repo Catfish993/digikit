@@ -8,14 +8,21 @@
 // exists yet, so every register the adapter or an effect touches is saved in `_fx_save` (static: the hook is not re-entered) and restored before the
 // tail. Argument registers (R4, R8, R12) and the callee-saved registers are therefore intact when the stock code starts.
 //
-// An empty chain (the table's first row has pc 0) costs the save of R0, I4 and L4, one load and the restore: the audio is the stock audio.
+// An empty chain (every row up to the zero row is free, or there is none) costs the save of R0, I4 and L4, a quick scan of at most DK_FX_MAX rows
+// (about 5 instructions per free row) and the restore: the audio is the stock audio.
 //
-// The chain: the rows of the registry `fx` (_fx_table, 16 words each, core/fx's module.toml), in module order, up to the zero row. Per row, per block:
-//   * disabled by faults (dis != 0): skipped. enabled == was == 0: skipped.
+// The chain: the rows of the registry `fx` (_fx_table, 24 words each, core/fx's module.toml), in module order, up to the zero row. A free row (pc
+// 0xffffffff, a place that core/dynfx reserves for a run-time effect) is skipped; a run-time effect is published by writing its words and its pc last
+// (one word per transfer, docs/design/digikit-dkm.md), so a scan never runs a half-written row. Per row, per block:
+//   * free (pc 0xffffffff): skipped. disabled by faults (dis != 0): skipped. enabled == was == 0: skipped.
 //   * enabled and not was: the effect's state (state_bytes of its dk_fx_desc) is zeroed, then it runs and fades in over the block.
 //   * enabled and was: it runs and its output replaces the master block.
 //   * not enabled and was: it runs once more and fades out over the block (the process routine is not called while off).
 //   The fade is linear per channel: master[k] = dry + (wet - dry) * w_k, w_k = (k + 1) / 32 (in) or 1 - (k + 1) / 32 (out).
+//   MIX (row word 13, a float): the dry/wet blend of the row, owned by the adapter, not by the effect. The effect writes only the wet signal; the
+//   master becomes dry + mix * (wet - dry) (linear), in the fades the weight w_k is multiplied by the mix. mix == 1.0 (the default of a row) is the
+//   plain copy (the wet signal bit for bit); mix == 0 leaves the master as it was (the dry signal bit for bit; the effect still runs and is checked).
+//   A run-time effect gets its mix from the knob on its page (docs/design/digikit-registry.md).
 //   * process(R4 = state, R8 = dk_fx_in {in = master, out = scratch, block}, R12 = the row's parameter words) is entered with
 //     `I13 = return; JUMP (M13, I12)`. It may clobber R0-R15, I0-I5, M1-M4, B3 and must keep the rest (sdk/dk_fx.h).
 //   * the output is checked: a negative result, a non-finite sample or a magnitude above 8.0 is a fault: the master block stays as it was (dry,
@@ -31,12 +38,13 @@
 #define FX_STATE 2
 #define FX_EN 3
 #define FX_P0_BYTES 16
-#define FX_WAS 8
-#define FX_DIS 10
-#define FX_WSTART 11
-#define FX_WCOUNT 12
-#define FX_NFAULT 13
-#define FX_ROW_BYTES 64
+#define FX_WAS 12
+#define FX_MIX 13
+#define FX_DIS 14
+#define FX_WSTART 15
+#define FX_WCOUNT 16
+#define FX_NFAULT 17
+#define FX_ROW_BYTES 96
 #define FX_WINDOW 1500
 #define FX_MAX_FAULTS 8
 
@@ -54,8 +62,27 @@ _fx_entry:
     DM(_fx_s_l4) = R0;
     L4 = 0;
     I4 = _fx_table;
-    R0 = DM(0, I4);                       // the first row's pc
+    // the quick scan: rows 0 to 3 (DK_FX_MAX; a row is 24 words). pc 0 ends the table (nothing to run), pc 0xffffffff is a free row (next row),
+    // anything else is an effect: run the chain.
+    R0 = DM(0, I4);
     R0 = PASS R0;
+    IF EQ JUMP _fx_none;
+    R0 = R0 + 1;
+    IF NE JUMP _fx_run;
+    R0 = DM(24, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _fx_none;
+    R0 = R0 + 1;
+    IF NE JUMP _fx_run;
+    R0 = DM(48, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _fx_none;
+    R0 = R0 + 1;
+    IF NE JUMP _fx_run;
+    R0 = DM(72, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _fx_none;
+    R0 = R0 + 1;
     IF NE JUMP _fx_run;
 _fx_none:
     R0 = DM(_fx_s_l4);
@@ -161,6 +188,8 @@ _fx_row:
     R0 = DM(FX_PC, I4);
     R0 = PASS R0;
     IF EQ JUMP _fx_rows_done;
+    R0 = R0 + 1;
+    IF EQ JUMP _fx_skip;                  // a free row (pc 0xffffffff)
     R0 = DM(FX_DIS, I4);
     R0 = PASS R0;
     IF NE JUMP _fx_skip;
@@ -213,16 +242,23 @@ _fx_chk: R13 = MAX(R13, R0);
     R0 = 0x41000000;                      // 8.0
     COMP(R13, R0);
     IF GT JUMP _fx_fault;
+    R9 = DM(FX_MIX, I4);                  // I4 is still the row
+    R0 = 0x7fffffff;
+    R0 = R9 AND R0;
+    IF EQ JUMP _fx_ok;                    // mix 0: the master stays dry, bit for bit
     R5 = DM(_fx_c + 4);
+    R0 = 0x3f800000;
+    COMP(R9, R0);
+    IF NE JUMP _fx_xfade;                 // mix not 1.0: the blend (also in the steady mode)
     R5 = PASS R5;
     IF NE JUMP _fx_xfade;
-    I1 = _fx_scratch;                     // steady: the output replaces the master block
+    I1 = _fx_scratch;                     // steady, mix 1.0: the output replaces the master block
     I0 = _fx_master;
     LCNTR = DK_FX_BLOCK, DO _fx_cp UNTIL LCE;
         R0 = DM(I1, M6);
 _fx_cp: DM(I0, M6) = R0;
     JUMP _fx_ok;
-_fx_xfade:
+_fx_xfade:                                // R9 = the mix (float), R5 = the mode: 0 steady (mix not 1.0), 1 fade in, 2 fade out
     R6 = 0x3d000000;                      // +1/32
     R7 = 0;                               // the weight before the first sample
     R0 = 1;
@@ -230,6 +266,9 @@ _fx_xfade:
     IF EQ JUMP _fx_xf;
     R6 = 0xbd000000;                      // -1/32
     R7 = 0x3f800000;                      // 1.0
+    R5 = PASS R5;
+    IF NE JUMP _fx_xf;
+    R6 = 0;                               // steady: the weight stays 1.0, so the blend is the mix
 _fx_xf:
     I1 = _fx_scratch;
     I0 = _fx_master;
@@ -339,16 +378,18 @@ _fx_zero:
 _fx_zl: DM(I2, M6) = R0;
     RTS;
 
-// One channel of a fade. In: R6 = the weight step, R7 = the weight before the first sample, I1 = wet, I2 = dry (read), I0 = master (write).
-// Each pointer advances by DK_BLOCK words. Clobbers R0, R1, R10.
+// One channel of a fade or of a blend. In: R6 = the weight step, R7 = the weight before the first sample, R9 = the mix (float), I1 = wet, I2 = dry
+// (read), I0 = master (write). The weight of a sample is the fade weight times the mix. Each pointer advances by DK_BLOCK words. Clobbers R0, R1,
+// R10, R11.
 _fx_xchan:
     R10 = R7;
     LCNTR = DK_BLOCK, DO _fx_xl UNTIL LCE;
         F10 = F10 + F6;
+        F11 = F10 * F9;
         R0 = DM(I2, M6);
         R1 = DM(I1, M6);
         F1 = F1 - F0;
-        F1 = F1 * F10;
+        F1 = F1 * F11;
         F1 = F1 + F0;
 _fx_xl: DM(I0, M6) = R1;
     RTS;

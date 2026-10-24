@@ -1401,7 +1401,7 @@ fn requires_are_added_and_cycles_and_missing_modules_refused() {
 #[test]
 fn a_registry_limit_caps_the_entries_at_the_device_files_number() {
     need_image!(DT2);
-    // the registry takes 8, the device file's [limits] fx_slots (4 on both devices) caps it
+    // the registry takes 8, the device file's [limits] fx_slots (3 on the Digitakt II, 4 on the Digitone II) caps it
     let capped = FW
         .replace("max = 3", "max = 8\nlimit = \"fx_slots\"")
         .to_string();
@@ -1414,8 +1414,8 @@ fn a_registry_limit_caps_the_entries_at_the_device_files_number() {
             module("t/a", "requires = [\"t/fw\"]", &many, None),
         ])
     };
-    assert!(run(&set(4), &["t/a", "t/fw"]).is_ok());
-    expect_err(run(&set(5), &["t/a", "t/fw"]), "[limits] fx_slots is 4");
+    assert!(run(&set(3), &["t/a", "t/fw"]).is_ok());
+    expect_err(run(&set(4), &["t/a", "t/fw"]), "[limits] fx_slots is 3");
     // an unknown limit name is refused when the module loads
     let bad = FW.replace("max = 3", "max = 3\nlimit = \"nope\"");
     expect_err(

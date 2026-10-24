@@ -10,7 +10,7 @@
 //! 0x14 u32 align        placement alignment in bytes (8 or more, a power of two)
 //! 0x18 u32 image_off    0x1c u32 reloc_off   0x20 u32 reloc_count
 //! 0x24 u32 import_off   0x28 u32 import_count   0x2c u32 voice_off   0x30 u32 voice_count
-//! 0x34 .. 0x40 reserved (0)
+//! 0x34 u32 fx_off       0x38 u32 fx_count   (version 4: effect records; 0 before)   0x3c reserved (0)
 //! imports: 32-byte NUL padded names of DSP symbols the runtime resolves (`dyndsp_info` of core/dyn-dsp)
 //! relocs : 8 bytes each: u32 image byte offset of a 48-bit instruction, u32 kind << 28 | class << 24 | import index
 //!            kind 0 abs24 (the instruction's 24-bit address field), kind 1 abs32 (its 32-bit immediate)
@@ -23,6 +23,10 @@
 //!            12 u32 state_bytes (per voice), 16 u32 clear_bytes (zeroed at note-on), 20..51 8 x u32 ranges as above, 52 u32 voices (number of
 //!            voice states to reserve behind the image and bss), 56..63 reserved 0. The packer writes version 3 only when a voice has a
 //!            note_on entry or a state; otherwise version 2 (the runtime parses all three; v1 and v2 voices have note_on 0 and no state)
+//! fx     : version 4: 64 bytes each: 0 u32 process (image byte offset of the process routine), 4 u32 desc (image byte offset of its `dk_fx_desc`),
+//!            8 u32 state_bytes (from the desc: reserved behind the image, bss and voice states), 12 u32 n_params (from the desc), 16 u32 flags (0),
+//!            20..51 8 x u32 the words p0 .. p7 of the effect's row (the DSP reads them as they are), 52..63 reserved 0. A version 4 section has voices of 64
+//!            bytes (as version 3); the packer writes it only when the module has an effect
 //! image  : the linked bytes at the nominal base `L2_BYTE_BASE`; every relocated field holds `S + A` at that base
 //! ```
 //!
@@ -39,6 +43,8 @@ pub const MAGIC: u32 = 0x444b_4453; // "DKDS"
 pub const VERSION: u32 = 2;
 /// The version with `note_on` entries and per-voice state (voices of `VOICE_LEN_V3` bytes).
 pub const VERSION_3: u32 = 3;
+/// The version with effect records (`FX_LEN` bytes each); its voices are those of version 3.
+pub const VERSION_4: u32 = 4;
 /// The version without voice ranges (voices of `VOICE_LEN_V1` bytes); the runtime still loads it, with every range undeclared.
 pub const VERSION_1: u32 = 1;
 pub const HEADER: usize = 0x40;
@@ -50,6 +56,14 @@ pub const DESC_MAGIC: u32 = 0x444b_4d41;
 pub const DESC_CONTRACT: u32 = 1;
 pub const DESC_WORDS: usize = 10;
 pub const VOICE_LEN_V1: usize = 16;
+pub const FX_LEN: usize = 64;
+/// Effects a module may carry (`DK_FX_MAX` of sdk/dk_fx.h).
+pub const MAX_FX: usize = 4;
+/// `dk_fx_desc` (sdk/dk_fx.h): magic "DKFX", the contract number the packer accepts, its size in u32 words and the most parameter words.
+pub const FX_DESC_MAGIC: u32 = 0x444b_4658;
+pub const FX_DESC_CONTRACT: u32 = 1;
+pub const FX_DESC_WORDS: usize = 7;
+pub const FX_MAX_PARAMS: u32 = 8;
 pub const IMPORT_LEN: usize = 32;
 pub const MAX_RELOCS: usize = 4096;
 pub const MAX_IMPORTS: usize = 32;
@@ -119,6 +133,28 @@ impl VoiceSpec {
     }
 }
 
+/// An effect record of version 4.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Effect {
+    /// byte offset of the process routine in the image
+    pub process: u32,
+    /// byte offset of the `dk_fx_desc` in the image
+    pub desc: u32,
+    /// bytes of state and parameters the effect reads (both from the desc)
+    pub state_bytes: u32,
+    pub n_params: u32,
+    /// the words p0 .. p7 of the row
+    pub defaults: [u32; 8],
+}
+
+/// An effect as the manifest names it: `process` is a global text symbol of the DSP object, `desc` a data symbol holding a `dk_fx_desc`.
+#[derive(Clone, Debug)]
+pub struct FxSpec {
+    pub process: String,
+    pub desc: String,
+    pub defaults: Vec<u32>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reloc {
     pub offset: u32,
@@ -136,11 +172,12 @@ pub struct DspSection {
     pub imports: Vec<String>,
     pub relocs: Vec<Reloc>,
     pub voices: Vec<Voice>,
+    pub fxs: Vec<Effect>,
 }
 
 /// Link `obj` (a SHARC+ object) at the nominal base and encode the section. `voices` names the entry routine of each machine type
-/// (a global text symbol of the object).
-pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec]) -> Result<Vec<u8>> {
+/// (a global text symbol of the object), `fxs` the process routine and descriptor of each effect.
+pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec], fxs: &[FxSpec]) -> Result<Vec<u8>> {
     if obj.arch != "sharc" {
         return Err(err!(
             "a DSP section holds a SHARC+ object; the object is {}",
@@ -323,6 +360,74 @@ pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec]) -> Result<Vec<u8>> {
             ranges: v.ranges,
         });
     }
+    if fxs.len() > MAX_FX {
+        return Err(err!("{} effects; at most {MAX_FX}", fxs.len()));
+    }
+    let mut es = vec![];
+    for f in fxs {
+        let process = entry_of(&f.process).map_err(|e| err!("effect process: {e}"))?;
+        match defined.get(f.desc.as_str()) {
+            Some(("data", _)) => {}
+            Some(_) => {
+                return Err(err!(
+                    "effect desc {}: not a data symbol of the DSP object",
+                    f.desc
+                ));
+            }
+            None => {
+                return Err(err!(
+                    "effect desc {}: the DSP object does not define it",
+                    f.desc
+                ));
+            }
+        }
+        let at = (linked.symbols[f.desc.as_str()] - L2_BYTE_BASE as u64) as usize;
+        let bytes = image.get(at..at + FX_DESC_WORDS * 4).ok_or_else(|| {
+            err!(
+                "effect desc {}: shorter than {} bytes",
+                f.desc,
+                FX_DESC_WORDS * 4
+            )
+        })?;
+        let w = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        if w(0) != FX_DESC_MAGIC {
+            return Err(err!(
+                "effect desc {}: magic {:#x}, not DKFX ({FX_DESC_MAGIC:#x})",
+                f.desc,
+                w(0)
+            ));
+        }
+        if w(1) != FX_DESC_CONTRACT {
+            return Err(err!(
+                "effect desc {}: contract {}, this packer takes {FX_DESC_CONTRACT}",
+                f.desc,
+                w(1)
+            ));
+        }
+        let (n_params, state_bytes) = (w(2), w(3));
+        if n_params > FX_MAX_PARAMS || state_bytes % 4 != 0 {
+            return Err(err!(
+                "effect desc {}: n_params {n_params} (at most {FX_MAX_PARAMS}), state_bytes {state_bytes} (a multiple of 4)",
+                f.desc
+            ));
+        }
+        if f.defaults.len() > n_params as usize {
+            return Err(err!(
+                "effect {}: {} default words for {n_params} parameters",
+                f.process,
+                f.defaults.len()
+            ));
+        }
+        let mut defaults = [0u32; 8];
+        defaults[..f.defaults.len()].copy_from_slice(&f.defaults);
+        es.push(Effect {
+            process,
+            desc: at as u32,
+            state_bytes,
+            n_params,
+            defaults,
+        });
+    }
     let s = DspSection {
         device,
         image,
@@ -331,6 +436,7 @@ pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec]) -> Result<Vec<u8>> {
         imports: imports.iter().map(|s| s.to_string()).collect(),
         relocs,
         voices: vs,
+        fxs: es,
     };
     Ok(s.encode())
 }
@@ -340,12 +446,24 @@ impl DspSection {
         let import_off = HEADER;
         let reloc_off = import_off + self.imports.len() * IMPORT_LEN;
         let voice_off = reloc_off + self.relocs.len() * RELOC_LEN;
-        let v3 = self.voices.iter().any(|v| v.contract());
+        let v4 = !self.fxs.is_empty();
+        let v3 = v4 || self.voices.iter().any(|v| v.contract());
         let vlen = if v3 { VOICE_LEN_V3 } else { VOICE_LEN };
-        let image_off = align_up(voice_off + self.voices.len() * vlen, 16);
+        let fx_off = voice_off + self.voices.len() * vlen;
+        let image_off = align_up(fx_off + self.fxs.len() * FX_LEN, 16);
         let mut f = vec![0u8; image_off + self.image.len()];
         put(&mut f, 0, MAGIC);
-        put(&mut f, 4, if v3 { VERSION_3 } else { VERSION });
+        put(
+            &mut f,
+            4,
+            if v4 {
+                VERSION_4
+            } else if v3 {
+                VERSION_3
+            } else {
+                VERSION
+            },
+        );
         put(&mut f, 8, self.device);
         put(&mut f, 0x0c, self.image.len() as u32);
         put(&mut f, 0x10, self.bss);
@@ -357,6 +475,10 @@ impl DspSection {
         put(&mut f, 0x28, self.imports.len() as u32);
         put(&mut f, 0x2c, voice_off as u32);
         put(&mut f, 0x30, self.voices.len() as u32);
+        if v4 {
+            put(&mut f, 0x34, fx_off as u32);
+            put(&mut f, 0x38, self.fxs.len() as u32);
+        }
         for (i, n) in self.imports.iter().enumerate() {
             let at = import_off + i * IMPORT_LEN;
             f[at..at + n.len()].copy_from_slice(n.as_bytes());
@@ -384,16 +506,29 @@ impl DspSection {
                 }
             }
         }
+        for (i, e) in self.fxs.iter().enumerate() {
+            let at = fx_off + i * FX_LEN;
+            put(&mut f, at, e.process);
+            put(&mut f, at + 4, e.desc);
+            put(&mut f, at + 8, e.state_bytes);
+            put(&mut f, at + 12, e.n_params);
+            for (k, w) in e.defaults.iter().enumerate() {
+                put(&mut f, at + 20 + 4 * k, *w);
+            }
+        }
         f[image_off..].copy_from_slice(&self.image);
         f
     }
 
     /// Bytes of the range the runtime reserves for the section (`dsp.rs`, `extent`, then the granule): image and bss rounded to 8, then
-    /// `voices * state_bytes` (each rounded to 8) of every version 3 voice, rounded up to a granule. `dkneeds` computes the same from the file.
+    /// `voices * state_bytes` (each rounded to 8) of every version 3 voice, then `state_bytes` (rounded to 8) of every effect, rounded up to a granule. `dkneeds` computes the same from the file.
     pub fn range_len(&self) -> u32 {
         let mut n = (self.image.len() as u32 + self.bss).div_ceil(8) * 8;
         for v in &self.voices {
             n += v.voices * v.state_bytes.div_ceil(8) * 8;
+        }
+        for e in &self.fxs {
+            n += e.state_bytes.div_ceil(8) * 8;
         }
         n.div_ceil(GRANULE) * GRANULE
     }
@@ -404,12 +539,17 @@ impl DspSection {
             return Err(err!("not a DSP section (magic)"));
         }
         let version = get(f, 4);
-        if version != VERSION && version != VERSION_1 && version != VERSION_3 {
+        if version != VERSION
+            && version != VERSION_1
+            && version != VERSION_3
+            && version != VERSION_4
+        {
             return Err(err!("DSP section version {version}"));
         }
+        let v3 = version >= VERSION_3;
         let vlen = match version {
             VERSION_1 => VOICE_LEN_V1,
-            VERSION_3 => VOICE_LEN_V3,
+            VERSION_3 | VERSION_4 => VOICE_LEN_V3,
             _ => VOICE_LEN,
         };
         let rng = |off: u32, n: usize| -> Result<&[u8]> {
@@ -432,8 +572,15 @@ impl DspSection {
         let nrel = get(f, 0x20) as usize;
         let nimp = get(f, 0x28) as usize;
         let nvoice = get(f, 0x30) as usize;
-        if nrel > MAX_RELOCS || nimp > MAX_IMPORTS || nvoice > MAX_VOICES {
-            return Err(err!("DSP section: too many relocations, imports or voices"));
+        let (fx_off, nfx) = if version == VERSION_4 {
+            (get(f, 0x34), get(f, 0x38) as usize)
+        } else {
+            (0, 0)
+        };
+        if nrel > MAX_RELOCS || nimp > MAX_IMPORTS || nvoice > MAX_VOICES || nfx > MAX_FX {
+            return Err(err!(
+                "DSP section: too many relocations, imports, voices or effects"
+            ));
         }
         let imp = rng(get(f, 0x24), nimp * IMPORT_LEN)?;
         let imports = (0..nimp)
@@ -467,7 +614,6 @@ impl DspSection {
         let voices = (0..nvoice)
             .map(|i| {
                 let at = i * vlen;
-                let v3 = version == VERSION_3;
                 Voice {
                     type_no: get(vo, at),
                     entry: get(vo, at + 4),
@@ -477,7 +623,7 @@ impl DspSection {
                     voices: if v3 { get(vo, at + 52) } else { 0 },
                     ranges: match version {
                         VERSION_1 => [0; 8],
-                        VERSION_3 => std::array::from_fn(|k| get(vo, at + 20 + 4 * k)),
+                        VERSION_3 | VERSION_4 => std::array::from_fn(|k| get(vo, at + 20 + 4 * k)),
                         _ => std::array::from_fn(|k| get(vo, at + 8 + 4 * k)),
                     },
                 }
@@ -492,6 +638,29 @@ impl DspSection {
         }) {
             return Err(err!("DSP voice entry outside the image"));
         }
+        let fo = rng(fx_off, nfx * FX_LEN)?;
+        let fxs = (0..nfx)
+            .map(|i| {
+                let at = i * FX_LEN;
+                Effect {
+                    process: get(fo, at),
+                    desc: get(fo, at + 4),
+                    state_bytes: get(fo, at + 8),
+                    n_params: get(fo, at + 12),
+                    defaults: std::array::from_fn(|k| get(fo, at + 20 + 4 * k)),
+                }
+            })
+            .collect::<Vec<_>>();
+        if fxs.iter().any(|e| {
+            e.process as usize >= image_size
+                || e.process % 2 != 0
+                || e.desc as usize + FX_DESC_WORDS * 4 > image_size
+                || e.desc % 4 != 0
+                || e.n_params > FX_MAX_PARAMS
+                || e.state_bytes % 4 != 0
+        }) {
+            return Err(err!("DSP effect record outside the image or malformed"));
+        }
         Ok(DspSection {
             device: get(f, 8),
             image,
@@ -500,6 +669,7 @@ impl DspSection {
             imports,
             relocs,
             voices,
+            fxs,
         })
     }
 
@@ -541,6 +711,11 @@ impl DspSection {
             }
         }
         Ok(m)
+    }
+
+    /// The pc of the process routine of effect `i` placed at `base`.
+    pub fn fx_pc(&self, i: usize, base: u32) -> u32 {
+        L2_SW_BASE + (base - L2_BYTE_BASE + self.fxs[i].process) / 2
     }
 
     /// The pc of voice `i` placed at `base`.
@@ -626,6 +801,7 @@ mod tests {
                 "entry".into(),
                 [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0],
             )],
+            &[],
         )
         .unwrap();
         let d = DspSection::parse(&bytes).unwrap();
@@ -660,24 +836,24 @@ mod tests {
     fn bad_objects_and_sections_are_refused() {
         let o = object();
         assert!(
-            pack(&o, 1, &[VoiceSpec::old(16, "nope".into(), [0; 8])])
+            pack(&o, 1, &[VoiceSpec::old(16, "nope".into(), [0; 8])], &[])
                 .unwrap_err()
                 .0
                 .contains("does not define")
         );
         assert!(
-            pack(&o, 1, &[VoiceSpec::old(16, "again".into(), [0; 8])])
+            pack(&o, 1, &[VoiceSpec::old(16, "again".into(), [0; 8])], &[])
                 .unwrap_err()
                 .0
                 .contains("global text")
         );
         let mut c = object();
         c.relocs.push(rel(0, "sharc.abs24", "var", 0));
-        assert!(pack(&c, 1, &[]).unwrap_err().0.contains("24-bit"));
+        assert!(pack(&c, 1, &[], &[]).unwrap_err().0.contains("24-bit"));
         let mut c = object();
         c.arch = "cf".into();
-        assert!(pack(&c, 1, &[]).is_err());
-        let good = pack(&o, 1, &[]).unwrap();
+        assert!(pack(&c, 1, &[], &[]).is_err());
+        let good = pack(&o, 1, &[], &[]).unwrap();
         let mut bad = good.clone();
         bad[0] ^= 1;
         assert!(DspSection::parse(&bad).is_err());
@@ -688,9 +864,96 @@ mod tests {
         assert!(d.relocated(0x2000_0000, &|_| Some(0x100_0000)).is_err());
     }
 
+    /// An effect: a process routine in the text, a `dk_fx_desc` (magic, contract 1, n_params, state_bytes, ...) in the data and a state-less bss.
+    fn fx_object(n_params: u32, state_bytes: u32) -> Dko {
+        let mut o = object();
+        let words = [FX_DESC_MAGIC, 1, n_params, state_bytes, 200, 0, 0];
+        let desc: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        o.sections[1] = sec("d", "data", 4, &desc);
+        o.symbols.push(sym("dkdesc", Some("d"), 0, true));
+        o.symbols.push(sym("proc", Some("t"), 3, true));
+        o
+    }
+
+    fn fx_spec(defaults: Vec<u32>) -> FxSpec {
+        FxSpec {
+            process: "proc".into(),
+            desc: "dkdesc".into(),
+            defaults,
+        }
+    }
+
+    #[test]
+    fn an_effect_is_a_version_4_record_the_loader_can_place() {
+        let o = fx_object(1, 4);
+        let bytes = pack(&o, 1, &[], &[fx_spec(vec![0x3f00_0000])]).unwrap();
+        assert_eq!(get(&bytes, 4), VERSION_4);
+        let d = DspSection::parse(&bytes).unwrap();
+        assert_eq!(d.voices, vec![]);
+        assert_eq!(d.fxs.len(), 1);
+        let e = &d.fxs[0];
+        assert_eq!((e.state_bytes, e.n_params), (4, 1));
+        assert_eq!(e.defaults, [0x3f00_0000, 0, 0, 0, 0, 0, 0, 0]);
+        // the process is the pc of `proc` (text offset 6 = 3 short words), the desc the byte offset of its data in the image
+        assert_eq!(e.process, 6);
+        assert_eq!(d.fx_pc(0, 0x2000_0000), L2_SW_BASE + 3);
+        assert_eq!(
+            &d.image[e.desc as usize..e.desc as usize + 4],
+            FX_DESC_MAGIC.to_le_bytes()
+        );
+        // the range holds the image (24 text + 28 data = 52 -> 56), the bss (64 -> 120) and the state (4 -> 8): 128, one granule
+        assert_eq!(d.range_len(), 128);
+        // the record is the only thing the section adds: without effects the section is version 2
+        assert_eq!(get(&pack(&o, 1, &[], &[]).unwrap(), 4), VERSION);
+        // and a section with an effect round-trips through encode
+        assert_eq!(DspSection::parse(&d.encode()).unwrap(), d);
+    }
+
+    #[test]
+    fn a_bad_effect_is_refused() {
+        let e = |o: &Dko, f: FxSpec| pack(o, 1, &[], &[f]).unwrap_err().0;
+        let o = fx_object(1, 4);
+        let mut f = fx_spec(vec![]);
+        f.process = "nope".into();
+        assert!(e(&o, f).contains("does not define"));
+        let mut f = fx_spec(vec![]);
+        f.desc = "again".into();
+        assert!(e(&o, f).contains("not a data symbol"));
+        // more defaults than parameters, too many parameters, a state that is not a multiple of 4, another contract
+        assert!(e(&o, fx_spec(vec![1, 2])).contains("default words"));
+        assert!(e(&fx_object(9, 4), fx_spec(vec![])).contains("n_params 9"));
+        assert!(e(&fx_object(1, 6), fx_spec(vec![])).contains("multiple of 4"));
+        let mut c = fx_object(1, 4);
+        let words = [FX_DESC_MAGIC, 2, 1, 4, 0, 0, 0];
+        let desc: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        c.sections[1] = sec("d", "data", 4, &desc);
+        assert!(e(&c, fx_spec(vec![])).contains("contract 2"));
+        // a data symbol that is too short to be a descriptor
+        let mut f = fx_spec(vec![]);
+        f.desc = "var".into();
+        let mut short = fx_object(1, 4);
+        short.symbols.push(sym("var2", Some("d"), 24, true));
+        f.desc = "var2".into();
+        assert!(e(&short, f).contains("shorter"));
+        // five effects are more than the chain
+        let five = vec![fx_spec(vec![]); 5];
+        assert!(pack(&o, 1, &[], &five).unwrap_err().0.contains("at most 4"));
+        // a malformed section is refused by the parser
+        let good = pack(&o, 1, &[], &[fx_spec(vec![])]).unwrap();
+        let mut bad = good.clone();
+        put(&mut bad, 0x38, 9);
+        assert!(DspSection::parse(&bad).is_err());
+        let mut bad = good.clone();
+        put(&mut bad, 0x34, 0x7fff_fff0);
+        assert!(DspSection::parse(&bad).is_err());
+    }
+
     #[test]
     fn packing_is_deterministic() {
         let o = object();
-        assert_eq!(pack(&o, 1, &[]).unwrap(), pack(&o, 1, &[]).unwrap());
+        assert_eq!(
+            pack(&o, 1, &[], &[]).unwrap(),
+            pack(&o, 1, &[], &[]).unwrap()
+        );
     }
 }
