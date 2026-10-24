@@ -250,7 +250,7 @@ An `[[fx]]` with a `tab` has a page in the FX view; the runtime builds the page 
 | Manifest key | Meaning | Limit |
 | --- | --- | --- |
 | `[[fx]] tab` | the page's tab label | 1 to 3 characters |
-| `[[fx]] title` | the page title (the view adds `(n/N)`) | 1 to 23 characters |
+| `[[fx]] title` | the page title (the view adds `(n/N)`); mixed case like stock, the firmware font draws a capital Q like an O | 1 to 23 characters |
 | `[[fx]] mix` | default of the MIX knob on the page's level slot | 0 to 127 (default 127) |
 | `[[fx.knob]] name`, `short` | the long name shown while the knob turns, the label under it | 23 and 6 characters |
 | `[[fx.knob]] min`, `max`, `default` | the float range the effect gets, and the default (also the word's value at load) | `min < max`, the default inside |

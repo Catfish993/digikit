@@ -778,7 +778,7 @@ mod tests {
             id: effect_id("m", "gain"),
             mix: 127,
             tab: "GAN".into(),
-            title: "TEST GAIN".into(),
+            title: "Test Gain".into(),
             knobs: vec![
                 EffectKnob {
                     position: 0,
@@ -817,7 +817,7 @@ mod tests {
             defaults: vec![],
             devices: vec![],
             tab: Some("GAN".into()),
-            title: Some("TEST GAIN".into()),
+            title: Some("Test Gain".into()),
             mix: 127,
             knob: vec![crate::typed::FxKnob {
                 name: "Gain".into(),

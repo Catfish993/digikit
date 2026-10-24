@@ -52,13 +52,13 @@ Kinds:
              dry sine times the gain, the chain's row, MODULES and CAPACITY say so, deselecting the effect and restarting gives the dry PCM again, and
              one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
   fxpage     the FX view pages and knobs of run-time effects (`core/fxpages`; Digitakt II and Digitone II): with no effect loaded the three stock pages draw and play as on an image without
-             the pages; with `test/dyn-fx-gain` the view has a fourth page (tab GAN, title TEST GAIN, the GAIN knob and MIX), turning the knobs changes the PCM as
+             the pages; with `test/dyn-fx-gain` the view has a fourth page (tab GAN, title Test Gain, the GAIN knob and MIX), turning the knobs changes the PCM as
              declared (gain, MIX 0 = dry bit for bit, MIX 127 = wet, the linear blend between), and deselecting the effect and restarting brings the three pages and
              the dry PCM back; screenshots with `DIGIKIT_SHOTS=DIR`; tools/patchkit/pk_digikit_fxpage.py.
   fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II and Digitone II): Save Kit and Load Kit restore them to the
              same effect (kit array, DSP row, PCM, pages) and give another effect, an empty row or a stock kit the defaults, never a zero on the way to the DSP; a project; another
              pattern's kit; tools/patchkit/pk_digikit_fxpersist.py.
-  fxshift    the frequency shifter `digikit/freqshift` (Digitakt II): its page (tab FSH, title FREQ SHIFTER, SHIFT bipolar, MIX default 0), loading it leaves the PCM bit for bit as it was, MIX up and SHIFT 0
+  fxshift    the frequency shifter `digikit/freqshift` (Digitakt II): its page (tab FSH, title Freq Shifter, SHIFT bipolar, MIX default 0), loading it leaves the PCM bit for bit as it was, MIX up and SHIFT 0
              keeps the sine, turning SHIFT moves the sine by the shift of the routine's mapping in either direction with the image 40 dB down, Save Kit and Load Kit give SHIFT back;
              tools/patchkit/pk_digikit_fxshift.py.
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see

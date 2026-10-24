@@ -9,7 +9,7 @@ with the dry sound is a slow phaser-like beating. The effect is a single-sideban
 allpass filters), which are modulated by a sine and a cosine of the shift frequency and added. The image on the other side of the input frequency is
 at least 40 dB down (46 dB from 30 Hz to 18 kHz).
 
-The effect has a page of its own in the FX view (FUNC + FX, then UP or DOWN after CHO): tab **FSH**, title **FREQ SHIFTER**.
+The effect has a page of its own in the FX view (FUNC + FX, then UP or DOWN after CHO): tab **FSH**, title **Freq Shifter**.
 
 - **SHIFT** (first knob, shown from -64 to +63, 0 in the middle): the shift. 0 is no shift (the sound passes through the allpass pair, magnitude flat). Positive values move the frequencies up,
   negative values down. One step near 0 is about 0.1 Hz, and the steps grow exponentially to about +-2 kHz at the ends. The knob is a sweep: turning it ramps

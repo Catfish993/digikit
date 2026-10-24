@@ -5,7 +5,7 @@ Run by `tools/patchkit/pk_digikit_scen.py` (scenario `fx-freqshift-dt2`). The im
 a sine of one frequency f0. Two boots, each in its own daemon:
 
   dry     the sine alone: the reference PCM and f0.
-  shift   the sine and the effect (tab FSH, title FREQ SHIFTER, the knob SHIFT -64 .. +63 bipolar, default 0, MIX default 0):
+  shift   the sine and the effect (tab FSH, title Freq Shifter, the knob SHIFT -64 .. +63 bipolar, default 0, MIX default 0):
           page A  loaded with its defaults the effect changes nothing: the PCM is the dry PCM bit for bit; the page row, the names, the value indices and the defaults are the manifest's;
           B       MIX turned to the top, SHIFT 0: the sound is the dry sound's magnitude (an allpass pair: 0.5 % in amplitude);
           C       SHIFT turned up: p0 is the float the knob stands for and the sine moves by exactly the shift of the routine's mapping (inc 48000 / 2^32 Hz); the image is 40 dB down;
@@ -157,9 +157,9 @@ def run_fxshift(c: Any) -> None:
                 f"{codes}",
             )
             c.check(
-                "shift: the page's tab is FSH and its title FREQ SHIFTER",
+                "shift: the page's tab is FSH and its title Freq Shifter",
                 cstr(rig, rig.w(row0)) == "FSH"
-                and cstr(rig, rig.w(row0 + 4)) == "FREQ SHIFTER",
+                and cstr(rig, rig.w(row0 + 4)) == "Freq Shifter",
                 f"{cstr(rig, rig.w(row0))!r} {cstr(rig, rig.w(row0 + 4))!r}",
             )
             pf = M.sym(plan, "core/params", "pf_table")

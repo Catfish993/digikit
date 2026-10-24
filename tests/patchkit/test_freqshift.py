@@ -242,7 +242,7 @@ def test_the_manifest_declares_the_page_and_the_knob():
     assert (fx["id"], fx["tab"], fx["title"], fx["mix"]) == (
         "fshift",
         "FSH",
-        "FREQ SHIFTER",
+        "Freq Shifter",
         0,
     )
     (knob,) = fx["knob"]

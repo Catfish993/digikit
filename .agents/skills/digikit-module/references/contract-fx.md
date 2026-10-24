@@ -54,7 +54,7 @@ id = "gain"
 process = "_dg_process"
 desc = "_dg_desc"
 tab = "GAN"             # the tab label of the page: 1 to 3 characters
-title = "TEST GAIN"     # the page title: 1 to 23 characters; the view adds (n/N)
+title = "Test Gain"     # the page title: 1 to 23 characters, mixed case like stock ("Delay (1/4)"); the view adds (n/N)
 mix = 127               # the default of the MIX knob, 0 to 127 (default 127 = wet)
 devices = ["dt2", "dn2"]
 
@@ -69,7 +69,7 @@ position = 0            # 0 to 7: the place on the page (default: the knob's pla
 ```
 
 - **Limits.** 3 effects at a time (`fx_slots`), each with its own page; 7 knobs and MIX. Knob i is p_i, so the effect reads at most p0 to p6 from knobs (`n_params` in your `dk_fx_desc` must cover the
-  knobs; p7 is free for a constant). Text is printable ASCII.
+  knobs; p7 is free for a constant). Text is printable ASCII. Write titles in mixed case like the stock pages ("Freq Shifter", not "FREQ SHIFTER"); the firmware font draws a capital Q like an O.
 - **MIX is the framework's.** The MIX knob sits on the page's level slot (label MIX, long name "Mix"). Your routine writes only the wet signal; the adapter makes
   `master = dry + mix * (wet - dry)` per sample, mix = raw / 127 in the display's steps (127 is exactly the wet signal, 0 is exactly the dry one, bit for bit). It costs about 7 DSP instructions a block at
   mix 1.0 and about 400 at another mix.

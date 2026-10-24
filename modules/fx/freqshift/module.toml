@@ -26,7 +26,7 @@ place = "dsp.l2"
 devices = ["dt2", "dn2"]
 
 # One effect, `fshift` (the effect ID of saved kits is made from the module id and this id: never rename either). Its page after CHO in the FX view:
-# tab FSH, title FREQ SHIFTER, one knob SHIFT on the first position, and the framework's MIX knob, which starts at 0 so that loading the effect does not
+# tab FSH, title Freq Shifter, one knob SHIFT on the first position, and the framework's MIX knob, which starts at 0 so that loading the effect does not
 # change the sound until MIX is turned up. SHIFT is bipolar: the shown value -64 .. +63 is the float the routine reads (0 is no shift; |v| = 1 is about 0.1 Hz,
 # the ends about +-2 kHz, exponential in between; the table is in the cookbook).
 [[fx]]
@@ -34,7 +34,7 @@ id = "fshift"
 process = "_fs_process"
 desc = "_fs_desc"
 tab = "FSH"
-title = "FREQ SHIFTER"
+title = "Freq Shifter"
 mix = 0
 devices = ["dt2", "dn2"]
 

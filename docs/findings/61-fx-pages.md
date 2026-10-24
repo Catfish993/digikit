@@ -60,7 +60,7 @@ is multiplied by the mix. Cost on the concrete core (`tests/patchkit/test_fx.py`
 effect's row, one word per transfer through window 2 of `core/dsp-link` (knob j to p_j as a float, MIX to word 13). The state `DKRT_FXP` shows it (`sent`, `errors`, `seeds`).
 The scenario turns GAIN and MIX on the page and compares the PCM with the dry sound: the default 0.5 gives 0.5 x dry (0.50 ulp), GAIN 0.98 gives 0.98 x (1.97 ulps), MIX at 0.52
 gives the linear blend (1.87 ulps against 1 + mix * (gain - 1)), MIX 0 the dry PCM bit for bit, MIX 127 the wet PCM again; deselecting the effect and restarting brings the three stock pages
-(pixel for pixel) and the dry PCM (bit for bit) back. Screenshots (the fourth page: tab GAN, title `TEST GAIN (4/4)`, the GAIN knob, MIX on the level slot, `Gain=98` while turning) are
+(pixel for pixel) and the dry PCM (bit for bit) back. Screenshots (the fourth page: tab GAN, title `Test Gain (4/4)`, the GAIN knob, MIX on the level slot, `Gain=98` while turning) are
 in the scenario's work folder; `DIGIKIT_SHOTS=DIR` copies them.
 
 ## Persistence (F4 step 3) **[D]**
@@ -149,7 +149,7 @@ the stock list anchor instead of a `moveq #13`) and the offset of the u32 behind
 
 **Free value indices.** The Fx owners of the Digitone II (LFO 1 to 3, Chorus, Delay, Reverb, Ext-in, Master) use the array indices 1 to 69 and nothing else; 70 to 100 belong to no Fx parameter, the frame copy to the DSP takes 25 to 69 and the
 stock saver table ends at 69 (static: `out/runs/lanes/f4-static.log`, parameter table of the image). So the effect rows take **70 to 93** (`value_indices`) and the mark is index **100**. Poke test in the emulator, in the scenario
-`fx-pages-dn2` (part `stock`, no effect loaded): the 25 halfwords take distinct values (`0x1000 + 0x111 n`), keep them, no other index moves, and a note plays at the same level as the control note before it (within 0.2 dB; two notes of one boot start a few blocks apart under host load, so there is no bit-for-bit compare of the second and third note; the stock PCM against an image without `core/fxpages` is still bit for bit). A pattern change, a kit load and a
+`fx-pages-dn2` (part `stock`, no effect loaded): the 25 halfwords take distinct values (`0x1000 + 0x111 n`), keep them, no other index moves, and a note plays at the same level as the control note before it (within 0.2 dB; the two notes retrigger a sine that still sounds, so their captures are not bit for bit equal; the stock PCM against an image without `core/fxpages` is still bit for bit). **[C]** An earlier note here said the note start varies under host load; the capture start was fixed in b2e0edbd (`capture_pcm` syncs) and the bit-for-bit compare still fails on both devices: in `stock-ctl.wav` the sine of the stock note is still sounding at sample 0 (the sine lasts 2 s, a capture is 1 s), in `stock-poked.wav` the retrigger leaves a short silence at sample 88 to 129, and the first non-zero sample is no note start (onset shift 0 and error 0.065 on the Digitakt II, shift 208 on the Digitone II). A pattern change, a kit load and a
 project load behave as on the Digitakt II (`fx-persist-dn2`; the first kit object of a boot is seeded by the runtime, another pattern's kit by the mark).
 
 **Which kit object the encoders edit [D].** The object of `*0x800052a0` + `0x48e4`: turning GAIN in the scenario changes that array at the effect's own index only, and no other index moves except those that move on their own (LFO smoothing; the same check as on the
@@ -159,13 +159,13 @@ accepts any alignment in DDR. The scenario's helpers (`u16`, `put16`) do the sam
 
 **Measured (scenarios on dn2-1.12, quick tier) [D].**
 - `fx-pages-dn2` (199 s, 35 checks): the three stock pages are pixel for pixel the pages of an image without `core/fxpages`, the stock PCM is equal bit for bit (and with the 25 free indices poked the sound has the control note's level); with `test/dyn-fx-gain` the FX view lists
-  {17, 18, 19, 37}, the page has tab GAN, title `TEST GAIN (4/4)`, the GAIN knob and MIX on the level slot (index 70 and 77, defaults `0x3200` and `0x7f00`); GAIN to raw `0x6400` gives p0 = 0.98 in the row and 0.98 x dry PCM, an intermediate MIX
+  {17, 18, 19, 37}, the page has tab GAN, title `Test Gain (4/4)`, the GAIN knob and MIX on the level slot (index 70 and 77, defaults `0x3200` and `0x7f00`); GAIN to raw `0x6400` gives p0 = 0.98 in the row and 0.98 x dry PCM, an intermediate MIX
   the linear blend, MIX 0 the dry PCM bit for bit, MIX 127 the wet PCM; deselecting the effect and a restart bring the three pages (pixel for pixel) and the dry PCM back.
 - `fx-persist-dn2` (265 s, 37 checks): the Digitakt II's checks, with the kit library at sectors `0x2040` to `0x2054` of the card: Save Kit and Load Kit restore the 16 values (kit array, DSP row floats, PCM bit for bit, pages pixel for pixel), the stock kit and
   swapped rows give the defaults, no row word was 0 at any time during a load, a project, pattern A02 (a kit object made before the effects, seeded by the runtime after 300 ms) gets the defaults and back on A01 the turned values are there.
 - `fx-freqshift-dn2` (167 s, 25 checks): the routine is the Digitakt II's (`docs/findings/54-module-cookbook.md`): MIX 0 is the dry PCM bit for bit, SHIFT 0 keeps the sine (amplitude ratio 1.00001), +40 gives +96.79 Hz and -42 gives -124.72 Hz exactly as the routine's mapping says,
   the image is 70.1 dB down, Load Kit restores SHIFT and MIX.
-- Screenshots (`out/runs/lanes/f4-shots/dn2-*.png`): the stock DEL page (title `Delay (1/4)` with the effect loaded, `(1/3)` without), REV and CHO (`Chorus (3/3)`); the fourth page with tab GAN, title `TEST GAIN (4/4)`, a GAIN knob, seven empty cells and MIX
+- Screenshots (`out/runs/lanes/f4-shots/dn2-*.png`): the stock DEL page (title `Delay (1/4)` with the effect loaded, `(1/3)` without), REV and CHO (`Chorus (3/3)`); the fourth page with tab GAN, title `Test Gain (4/4)`, a GAIN knob, seven empty cells and MIX
   on the level slot; the same while turning (`Gain=100`, `Mix=0`); the frequency shifter's page (tab FSH, `Freq Shift=40` while turning).
 - The Digitone II needs `core/dynfx` and `core/fxpages` in its image: they are in the `device` patch set and not in `emulator`, because `core/fx` costs the emulator x2.38 DSP CPU there (finding 55). The scenarios name them in their module list.
 

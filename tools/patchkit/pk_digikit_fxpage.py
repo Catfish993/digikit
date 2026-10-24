@@ -2,7 +2,7 @@
 """The `fxpage` kind of the digikit scenarios: the FX view pages and knobs of run-time effects (docs/design/digikit-registry.md "Effect pages", finding 61).
 
 Run by `tools/patchkit/pk_digikit_scen.py`. The image is the runtime with `core/dynfx` and `core/fxpages` (the Digitakt II); the sound is the run-time machine
-`test/sine` on track 1, the effect `test/dyn-fx-gain` (tab GAN, title TEST GAIN, one knob GAIN 0 .. 1.27 default 0.5, MIX default 127). Four boots, each in its
+`test/sine` on track 1, the effect `test/dyn-fx-gain` (tab GAN, title Test Gain, one knob GAIN 0 .. 1.27 default 0.5, MIX default 127). Four boots, each in its
 own daemon:
 
   step1   an image without `core/fxpages` (what step 1 of the effects feature built), the sine alone: the screenshots of the three stock pages and the PCM that
@@ -350,7 +350,7 @@ def run_fxpage(c: Any) -> None:
             tab_at, title_at = rig.w(row0), rig.w(row0 + 4)
             c.check(
                 "effect: the page row's tab and title are the manifest's",
-                cstr(rig, tab_at) == "GAN" and cstr(rig, title_at) == "TEST GAIN",
+                cstr(rig, tab_at) == "GAN" and cstr(rig, title_at) == "Test Gain",
                 f"{cstr(rig, tab_at)!r} {cstr(rig, title_at)!r}",
             )
             pf = M.sym(plan, "core/params", "pf_table")
@@ -515,8 +515,8 @@ def run_fxpage(c: Any) -> None:
         bool(r0["identical"]) and abs(r0["shift"]) <= 128,
         f"onset shift {r0['shift']}, max err {r0.get('max_abs_err')}",
     )
-    # two notes of one boot start a few blocks apart depending on the host's load, so the sound is compared by its level over the common length (the sine has the same
-    # level whatever its phase), not bit for bit
+    # the second and third note of one boot retrigger a sine that still sounds (it lasts 2 s, a capture is 1 s), so the first non-zero sample is not the note's start and the
+    # two captures are not bit for bit equal: the sound is compared by its level over the common length (the sine has the same level whatever its phase)
     r1 = scaled(pcm["ctl"], pcm["poked"], 1.0)
     c.check(
         "stock: with the free value indices poked the sound is the control note's: the same level within 0.2 dB (nothing reads the indices)",

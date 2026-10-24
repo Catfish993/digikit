@@ -32,7 +32,7 @@ id = "gain"
 process = "_dgb_process"
 desc = "_dgb_desc"
 tab = "GNB"
-title = "TEST GAIN B"
+title = "Test Gain B"
 mix = 64
 devices = ["dt2", "dn2"]
 
