@@ -4,7 +4,7 @@
 #define DK_FX_V1 1
 #define DK_BLOCK 32
 #define DK_FX_BLOCK 64
-#define DK_FX_MAX_PARAMS 4
+#define DK_FX_MAX_PARAMS 8
 #define DK_FX_MAX 4
 #define DK_FX_OK 0
 #define DK_LEVEL_BOUND_BITS 1090519040

@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support.fx_rig import FxRig, Row, f2w, w2f
+from support.fx_rig import DIS, NFAULT, P0, WAS, FxRig, Row, f2w, w2f
 from support.paths import REPO_ROOT
 
 from tools.firmware import config
@@ -67,6 +67,29 @@ def test_the_empty_chain_costs_a_few_instructions():
     print(f"empty chain: {b.instructions} instructions per block on the concrete core")
 
 
+def test_free_rows_cost_five_instructions_each_and_change_nothing():
+    """The rows core/dynfx reserves (pc 0xffffffff) in front of the zero row: the quick scan walks them, the audio is the stock audio."""
+    master = SIGNALS["ramp"]
+    base = FxRig([]).block(master, ctx="friendly").instructions
+    for n in (1, 3, 4):
+        rig = FxRig([Row("", "")] * n)
+        b = rig.block(master, ctx="friendly")
+        assert b.returned and b.master == tuple(master)
+        assert b.ctx_bad == [] and b.regs_bad == []
+        assert b.instructions <= base + 6 * n, (n, b.instructions, base)
+        print(f"{n} free rows: {b.instructions} instructions per block (empty chain {base})")
+
+
+def test_a_free_row_in_front_of_an_effect_is_skipped_by_the_chain():
+    """Run-time effects fill the free rows in any order: the chain runs the effect behind a free row and skips the free row after it."""
+    rig = FxRig([Row("", ""), Row("_te_half", "_te_state_a"), Row("", "")])
+    for _ in range(3):
+        b = rig.block(RAMP, ctx="friendly")
+        assert b.returned and b.ctx_bad == [] and b.regs_bad == []
+    assert b.master == tuple(HALF)
+    assert rig.row_word(0, WAS) == 0 and rig.row_word(1, WAS) == 1
+
+
 # ---- the chain ------------------------------------------------------------------------------------------------------------
 def f32(x: float) -> float:
     return w2f(f2w(x))
@@ -98,7 +121,7 @@ def test_an_effect_fades_in_over_the_first_block_and_then_replaces_the_master():
         b = rig.block(RAMP)
         assert b.master == tuple(HALF)
         assert b.ctx_bad == [] and b.regs_bad == []
-    assert rig.row_word(0, 8) == 1  # was
+    assert rig.row_word(0, WAS) == 1  # was
 
 
 def test_a_new_effect_gets_a_zeroed_state_when_it_switches_on():
@@ -136,7 +159,7 @@ def test_an_effect_fades_out_for_one_block_and_is_not_called_while_off():
         b = rig.block(RAMP)
         assert b.master == tuple(RAMP)
     assert rig.state_word(0, 0) == calls
-    assert rig.row_word(0, 8) == 0
+    assert rig.row_word(0, WAS) == 0
 
 
 def test_a_row_that_starts_off_is_skipped():
@@ -183,7 +206,7 @@ def test_the_process_routine_gets_the_row_parameters_and_the_block_number():
             rig.state_word(0, 1) == n
         )  # dk_fx_in.block counts the blocks that ran a chain
     assert b.master == (7.0,) * 64
-    rig.set_row_word(0, 4, 3)
+    rig.set_row_word(0, P0, 3)
     assert rig.block(RAMP).master == (3.0,) * 64
 
 
@@ -202,25 +225,25 @@ def test_a_bad_block_plays_dry_and_clears_the_state(effect):
         0,
         0,
     ]  # the poison is cleared by the fault
-    assert rig.row_word(1, 8) == 0  # was
+    assert rig.row_word(1, WAS) == 0  # was
     assert (
-        rig.row_word(1, 13) == 4
+        rig.row_word(1, NFAULT) == 4
     )  # faults since the start (the first block faults too)
-    assert rig.row_word(0, 13) == 0
+    assert rig.row_word(0, NFAULT) == 0
 
 
 def test_the_eighth_fault_within_1500_blocks_switches_the_effect_off():
     rig = FxRig([Row("_te_nan", "_te_state_a")])
     for n in range(7):
         rig.block(RAMP)
-        assert rig.row_word(0, 10) == 0, n
+        assert rig.row_word(0, DIS) == 0, n
     b = rig.block(RAMP)
     assert b.master == tuple(RAMP)
-    assert rig.row_word(0, 10) == 1  # dis
-    assert rig.row_word(0, 13) == 8
+    assert rig.row_word(0, DIS) == 1  # dis
+    assert rig.row_word(0, NFAULT) == 8
     for _ in range(5):
         assert rig.block(RAMP).master == tuple(RAMP)
-    assert rig.row_word(0, 13) == 8  # not called any more
+    assert rig.row_word(0, NFAULT) == 8  # not called any more
     assert rig.symbol_word("_fx_diag", 1) == 8
 
 
@@ -234,10 +257,10 @@ def test_faults_spread_over_more_than_1500_blocks_do_not_switch_it_off():
     rig.set_enabled(0, True)
     for _ in range(7):  # the window restarts: 7 faults again
         rig.block(RAMP)
-    assert rig.row_word(0, 10) == 0
-    assert rig.row_word(0, 13) == 14
+    assert rig.row_word(0, DIS) == 0
+    assert rig.row_word(0, NFAULT) == 14
     rig.block(RAMP)
-    assert rig.row_word(0, 10) == 1
+    assert rig.row_word(0, DIS) == 1
 
 
 def test_an_effect_that_clobbers_every_allowed_register_changes_nothing_else():
@@ -362,7 +385,7 @@ def test_the_fixture_puts_one_row_in_the_chain_on_both_devices(
     plan = json.loads(plan_path.read_text())
     sym = plan["symbols"]
     assert sym["core/fx@0.1.0:fx.count"] == 1
-    assert sym["core/fx@0.1.0:fx.row_size"] == 64
+    assert sym["core/fx@0.1.0:fx.row_size"] == 96
     assert (
         "test/fx-gain@0.1.0:_fg_process" in sym
         and "test/fx-gain@0.1.0:_fg_state" in sym

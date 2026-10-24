@@ -8,10 +8,13 @@
 // exists yet, so every register the adapter or an effect touches is saved in `_fx_save` (static: the hook is not re-entered) and restored before the
 // tail. Argument registers (R4, R8, R12) and the callee-saved registers are therefore intact when the stock code starts.
 //
-// An empty chain (the table's first row has pc 0) costs the save of R0, I4 and L4, one load and the restore: the audio is the stock audio.
+// An empty chain (every row up to the zero row is free, or there is none) costs the save of R0, I4 and L4, a quick scan of at most DK_FX_MAX rows
+// (about 5 instructions per free row) and the restore: the audio is the stock audio.
 //
-// The chain: the rows of the registry `fx` (_fx_table, 16 words each, core/fx's module.toml), in module order, up to the zero row. Per row, per block:
-//   * disabled by faults (dis != 0): skipped. enabled == was == 0: skipped.
+// The chain: the rows of the registry `fx` (_fx_table, 24 words each, core/fx's module.toml), in module order, up to the zero row. A free row (pc
+// 0xffffffff, a place that core/dynfx reserves for a run-time effect) is skipped; a run-time effect is published by writing its words and its pc last
+// (one word per transfer, docs/design/digikit-dkm.md), so a scan never runs a half-written row. Per row, per block:
+//   * free (pc 0xffffffff): skipped. disabled by faults (dis != 0): skipped. enabled == was == 0: skipped.
 //   * enabled and not was: the effect's state (state_bytes of its dk_fx_desc) is zeroed, then it runs and fades in over the block.
 //   * enabled and was: it runs and its output replaces the master block.
 //   * not enabled and was: it runs once more and fades out over the block (the process routine is not called while off).
@@ -31,12 +34,12 @@
 #define FX_STATE 2
 #define FX_EN 3
 #define FX_P0_BYTES 16
-#define FX_WAS 8
-#define FX_DIS 10
-#define FX_WSTART 11
-#define FX_WCOUNT 12
-#define FX_NFAULT 13
-#define FX_ROW_BYTES 64
+#define FX_WAS 12
+#define FX_DIS 14
+#define FX_WSTART 15
+#define FX_WCOUNT 16
+#define FX_NFAULT 17
+#define FX_ROW_BYTES 96
 #define FX_WINDOW 1500
 #define FX_MAX_FAULTS 8
 
@@ -54,8 +57,27 @@ _fx_entry:
     DM(_fx_s_l4) = R0;
     L4 = 0;
     I4 = _fx_table;
-    R0 = DM(0, I4);                       // the first row's pc
+    // the quick scan: rows 0 to 3 (DK_FX_MAX; a row is 24 words). pc 0 ends the table (nothing to run), pc 0xffffffff is a free row (next row),
+    // anything else is an effect: run the chain.
+    R0 = DM(0, I4);
     R0 = PASS R0;
+    IF EQ JUMP _fx_none;
+    R0 = R0 + 1;
+    IF NE JUMP _fx_run;
+    R0 = DM(24, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _fx_none;
+    R0 = R0 + 1;
+    IF NE JUMP _fx_run;
+    R0 = DM(48, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _fx_none;
+    R0 = R0 + 1;
+    IF NE JUMP _fx_run;
+    R0 = DM(72, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _fx_none;
+    R0 = R0 + 1;
     IF NE JUMP _fx_run;
 _fx_none:
     R0 = DM(_fx_s_l4);
@@ -161,6 +183,8 @@ _fx_row:
     R0 = DM(FX_PC, I4);
     R0 = PASS R0;
     IF EQ JUMP _fx_rows_done;
+    R0 = R0 + 1;
+    IF EQ JUMP _fx_skip;                  // a free row (pc 0xffffffff)
     R0 = DM(FX_DIS, I4);
     R0 = PASS R0;
     IF NE JUMP _fx_skip;

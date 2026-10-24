@@ -29,7 +29,7 @@ import time
 from support.fx_rig import MASTER, P0, FxRig, Row, f2w, w2f  # noqa: F401
 from tools.patchkit import pk_conform
 
-NFAULT_WORD = 13
+NFAULT_WORD = 17
 
 
 def f32(x: float) -> float:

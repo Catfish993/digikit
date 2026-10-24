@@ -28,7 +28,8 @@ DATA_BASE = 0x200A0000
 DATA_END = 0x20100000
 MASTER = 0x2009E000  # byte address of the 64 master floats
 TABLE = dv.TABLE
-ROW_WORDS = 16
+ROW_WORDS = 24
+FREE_PC = 0xFFFFFFFF  # the pc of a free row (core/dynfx): the adapter skips it
 POISON = 0x7FC00001  # the initial word of every .PKBSS
 nw = dv.nw
 # the row words (core/fx module.toml)
@@ -38,11 +39,11 @@ PC, DESC, STATE, ENABLED, P0, WAS, DIS, WSTART, WCOUNT, NFAULT = (
     2,
     3,
     4,
-    8,
-    10,
-    11,
     12,
-    13,
+    14,
+    15,
+    16,
+    17,
 )
 # registers the stock function expects back (callee-saved, its arguments) and the markers they carry into the hook
 MARKS = {f"R{n}": 0x7000 + n for n in range(16)}
@@ -86,7 +87,7 @@ def w2f(w: int) -> float:
 
 @dataclass
 class Row:
-    pc: str  # the process routine's symbol
+    pc: str  # the process routine's symbol; "" is a free row (pc 0xffffffff)
     state: str  # the state block's data symbol
     enabled: int = 1
     params: tuple[int, ...] = (0, 0, 0, 0)
@@ -215,6 +216,9 @@ class FxRig:
                 poke(nw(addr) + k, w)
         for i, r in enumerate(self.rows):
             base = nw(TABLE) + i * ROW_WORDS
+            if not r.pc:
+                poke(base + PC, FREE_PC)
+                continue
             poke(base + PC, b.symbols[r.pc])
             poke(base + DESC, b.data[r.desc])
             poke(base + STATE, b.data[r.state])

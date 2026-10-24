@@ -43,7 +43,7 @@ consts = [
     { name = "DK_FX_V1", value = 1 },
     { name = "DK_BLOCK", value = 32 },
     { name = "DK_FX_BLOCK", value = 64 },                  # floats of the master block: 32 left, then 32 right
-    { name = "DK_FX_MAX_PARAMS", value = 4 },
+    { name = "DK_FX_MAX_PARAMS", value = 8 },
     { name = "DK_FX_MAX", value = 4 },                     # effects in the chain
     { name = "DK_FX_OK", value = 0 },
     { name = "DK_LEVEL_BOUND_BITS", value = 1090519040 },  # 8.0f

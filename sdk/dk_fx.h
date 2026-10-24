@@ -7,8 +7,8 @@
 #define DK_FX_V1         1              /* contract version                                                   */
 #define DK_BLOCK         32             /* samples per channel and call, 48 kHz, both devices                 */
 #define DK_FX_BLOCK      64             /* floats of a block: planar, 32 left, then 32 right                  */
-#define DK_FX_MAX_PARAMS 4              /* hard cap on parameter words                                        */
-#define DK_FX_MAX        4              /* effects in the chain                                               */
+#define DK_FX_MAX_PARAMS 8              /* hard cap on parameter words: 7 knobs and MIX (v1 rows had 4)       */
+#define DK_FX_MAX        4              /* effects in the chain (a device's `[limits] fx_slots` is at most this) */
 #define DK_LEVEL_BOUND   8.0f           /* |sample| above this is a fault (+18 dB over full scale)            */
 #define DK_FX_MAGIC      0x444b4658u    /* 'DKFX', the first word of dk_fx_desc                               */
 
@@ -22,7 +22,9 @@ typedef struct dk_fx_in {               /* per call, built by the adapter       
     uint32_t     block;                 /* blocks since the start of the DSP, wraps at 2^32                   */
 } dk_fx_in;
 
-/* One per module in read-only data, found by the module's registry row. No function pointers. */
+/* One per module in read-only data, found by the module's registry row (patched in) or its `[[fx]]` record (run-time, DSP section version 4
+   of the .dkm). The row holds DK_FX_MAX_PARAMS parameter words, p0 to p7: word i of `params` is p_i, all 0 unless the row says otherwise (a run-time
+   effect's record gives defaults). The adapter passes the words as they are; n_params says how many the effect reads. No function pointers. */
 typedef struct dk_fx_desc {
     uint32_t magic;                     /* DK_FX_MAGIC                                                        */
     uint32_t contract;                  /* DK_FX_V1                                                           */
