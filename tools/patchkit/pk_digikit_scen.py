@@ -55,6 +55,9 @@ Kinds:
              the pages; with `test/dyn-fx-gain` the view has a fourth page (tab GAN, title TEST GAIN, the GAIN knob and MIX), turning the knobs changes the PCM as
              declared (gain, MIX 0 = dry bit for bit, MIX 127 = wet, the linear blend between), and deselecting the effect and restarting brings the three pages and
              the dry PCM back; screenshots with `DIGIKIT_SHOTS=DIR`; tools/patchkit/pk_digikit_fxpage.py.
+  fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II): Save Kit and Load Kit restore them to the
+             same effect (kit array, DSP row, PCM, pages) and give another effect, an empty row or a stock kit the defaults, never a zero on the way to the DSP; a project; another
+             pattern's kit; tools/patchkit/pk_digikit_fxpersist.py.
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
@@ -358,7 +361,8 @@ class Ctx:
             for k in self.totals:
                 self.totals[k] += w[k]
 
-    def common_checks(self) -> None:
+    def common_checks(self, firmware_areas: tuple[tuple[int, int], ...] = ()) -> None:
+        """The checks every scenario ends with. FIRMWARE_AREAS: sector ranges (first, end) below 0x50000 that the scenario makes the firmware write on purpose (the kit library of a Save Kit)."""
         t = self.totals
         self.check(
             "write-watch on cf.expansion over every boot: no stray write",
@@ -375,10 +379,17 @@ class Ctx:
         outside = sorted(
             x
             for x in self.all_writes
-            if x < FIRMWARE_FIRST and x not in (self.store.sel_a, self.store.sel_b)
+            if x < FIRMWARE_FIRST
+            and x not in (self.store.sel_a, self.store.sel_b)
+            and not any(lo <= x < hi for lo, hi in firmware_areas)
         )
         self.check(
-            "card writes elsewhere: only the firmware's own working project and project slots (sectors from 0x50000)",
+            "card writes elsewhere: only the firmware's own working project and project slots (sectors from 0x50000)"
+            + (
+                " and the areas the scenario writes on purpose"
+                if firmware_areas
+                else ""
+            ),
             not outside,
             f"{len(self.all_writes)} sectors, below 0x50000: {[hex(x) for x in outside[:6]]}",
         )
@@ -1371,6 +1382,12 @@ def run_fxpage(c: Ctx) -> None:
     FP.run_fxpage(c)
 
 
+def run_fxpersist(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxpersist as FPS
+
+    FPS.run_fxpersist(c)
+
+
 def live_boot(c: Ctx, tag: str = "", patch_set: str | None = None) -> tuple[Any, Path]:
     """A coupled daemon free-running on a stock image with the runtime patched in (the DT2 on a card built from a folder, the DN2 on none),
     started with `--mirror-dir`; returns it and the mirror folder. The caller closes it."""
@@ -2075,6 +2092,7 @@ KINDS = {
     "pages": run_pages,
     "fx": run_fx,
     "fxpage": run_fxpage,
+    "fxpersist": run_fxpersist,
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,

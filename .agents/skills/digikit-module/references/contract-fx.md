@@ -74,12 +74,17 @@ position = 0            # 0 to 7: the place on the page (default: the knob's pla
   `master = dry + mix * (wet - dry)` per sample, mix = raw / 127 in the display's steps (127 is exactly the wet signal, 0 is exactly the dry one, bit for bit). It costs about 7 DSP instructions a block at
   mix 1.0 and about 400 at another mix.
 - **How the values arrive.** In `params` (R12) as the IEEE float `min + (max - min) * raw / 0x7f00`, about 3 ms after a turn (the runtime polls the kit once per UI-loop pass and writes one word per
-  transfer). At load every word is its knob's `default`. The range is fixed at 0x7f00 steps, so a knob has about 127 detents' worth of travel at its resolution; choose the range so that a turn is audible.
-- **Not supported.** P-locks, LFO and other modulation on a knob, MIDI CC, a second page for one effect, a knob that does not reach the DSP as a float, saving the values with the kit (step 3 of the
-  feature: until then a kit load resets them to 0 and the effect gets `min`). An image without `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II have it) refuses a module with
+  transfer). At load every word is its knob's `default`, and after a Load Kit the stored value (below). The range is fixed at 0x7f00 steps, so a knob has about 127 detents' worth of travel at its resolution; choose the range so that a turn is audible.
+- **Values are saved with the kit.** Save Kit, a project save and a pattern's kit keep the knobs' and MIX's values of each loaded effect together with an effect ID (a number the packer
+  makes from your module id and the effect's `id`: `register::effect_id`; do not rename either once users have kits). Load Kit gives an effect its stored values only when the ID stored for
+  its row is its own; a different effect in that row, an empty row, a kit saved without the effect and a kit saved by stock firmware all give it the defaults of your manifest (each knob's `default`, MIX
+  `mix`). Your effect never sees a zero in between. A new kit gets the defaults. A kit saved with effects also loads on stock firmware (it ignores the extra bytes). Effects count by row: the same two
+  effects loaded in the other order (the selection's order sets the rows) get defaults, not each other's values.
+- **Not supported.** P-locks, LFO and other modulation on a knob, MIDI CC, a second page for one effect, a knob that does not reach the DSP as a float. An image without `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II have it) refuses a module with
   a page (`E_NO_REGISTRY`). On the Digitone II effects follow later.
 - **Check it.** `patchkit pack MODULE --device dt2 -o x.dkm` refuses a bad page (a text too long, a default outside the range, two knobs at one position); the scenario `tests/digikit/scenarios/fx-pages-dt2.toml`
   (`pk_digikit_scen run fx-pages-dt2`) is the proof for the fixture: the page's screenshots, the PCM at the knobs' values, MIX 0 equal to the dry sound.
+  `tests/digikit/scenarios/fx-persist-dt2.toml` (`pk_digikit_scen run fx-persist-dt2`) proves the saved values: Save Kit and Load Kit, a kit without the effect, the effects in the other rows, a project, another pattern's kit.
 
 Judged by `tests/modules/test_fx_conformance.py` (`mise run module:check NAME`): signals, parameter limits, modulation, switching, a long run;
 checks: returns, registers, the adapter did not refuse a block, write set, instruction budget (about 23,000 for the effect, 900 for the adapter).

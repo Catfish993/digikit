@@ -38,7 +38,7 @@ def packed(tmp_path_factory):
 
 
 @needs_selache
-@pytest.mark.parametrize("mod", ["core/dynfx", FX])
+@pytest.mark.parametrize("mod", ["core/dynfx", FX, "test/dyn-fx-gain-b"])
 def test_committed_objects_are_current(mod):
     pk_build.build_module(modroots.module_dir(mod), check=True)
 
@@ -70,6 +70,46 @@ def test_the_effect_record_is_what_the_manifest_and_the_descriptor_say(packed):
         want = pk_dkrt_machine.relocate(sec, base, {})
         got = tools.patchkit_run("dkm-dsp-image", out, f"{base:x}")
         assert bytes.fromhex(got.strip()) == want, hex(base)
+
+
+def effect_ids(dkm: bytes) -> list[int]:
+    """The `id` word (the fourth) of each EFFECT record (kind 4) of the file's register section."""
+    at = dkm.find(b"DKRG")
+    assert at >= 0 and struct.unpack_from(">II", dkm, at)[1] == 1
+    n = struct.unpack_from(">I", dkm, at + 12)[0]
+    p, out = at + 16, []
+    for _ in range(n):
+        kind, length = struct.unpack_from(">II", dkm, p)
+        if kind == 4:
+            out.append(struct.unpack_from(">I", dkm, p + 8 + 12)[0])
+        p += length
+    return out
+
+
+def fnv_effect_id(module: str, effect: str) -> int:
+    """`register::effect_id` (patchkit): FNV-1a 32 of `<module id>:<effect id>`, the halves xor-ed, never 0."""
+    h = 0x811C9DC5
+    for b in f"{module}:{effect}".encode():
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return ((h >> 16) ^ (h & 0xFFFF)) or 1
+
+
+def test_the_effect_record_carries_the_id_the_kit_stores(packed, tmp_path):
+    # the ID is the packer's definition (module id and effect id, not the file's name); the runtime stores it with the values in a kit (finding 61 "Persistence")
+    tools, out = packed
+    ids = effect_ids(out.read_bytes())
+    assert ids == [fnv_effect_id(FX, "gain")] and ids[0] == 0x4625
+    renamed = tmp_path / "renamed.dkm"
+    tools.patchkit_run(
+        "pack", FX, "--device", "dt2", "--name", "other/name", "-o", renamed
+    )
+    assert effect_ids(renamed.read_bytes()) == ids
+    other = tmp_path / "b.dkm"
+    tools.patchkit_run("pack", "test/dyn-fx-gain-b", "--device", "dt2", "-o", other)
+    assert effect_ids(other.read_bytes()) == [
+        fnv_effect_id("test/dyn-fx-gain-b", "gain")
+    ]
+    assert effect_ids(other.read_bytes()) != ids
 
 
 def test_the_inferred_needs_are_one_effect_slot_and_the_state_in_the_range(packed):

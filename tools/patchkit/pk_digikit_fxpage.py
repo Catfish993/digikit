@@ -325,8 +325,8 @@ def run_fxpage(c: Any) -> None:
             )
             kit = Kit(rig, fxp_cfg)
             c.check(
-                "effect: the kit's value array holds the defaults (the runtime put them in the live kit)",
-                (kit.raw(0, 0), kit.raw(0, 7)) == (0x3200, 0x7F00) and st["seeds"] >= 1,
+                "effect: the kit's value array holds the defaults (the init hook of core/fxpages or the runtime put them in the live kit)",
+                (kit.raw(0, 0), kit.raw(0, 7)) == (0x3200, 0x7F00),
                 f"{kit.raw(0, 0):#x} {kit.raw(0, 7):#x} seeds {st['seeds']}",
             )
             row = chain_rows(rig, slots)[0]
