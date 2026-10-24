@@ -31,6 +31,8 @@ TABLE = dv.TABLE
 ROW_WORDS = 24
 FREE_PC = 0xFFFFFFFF  # the pc of a free row (core/dynfx): the adapter skips it
 POISON = 0x7FC00001  # the initial word of every .PKBSS
+AUTO_STATES = 4  # a Row with `state=""` (a run-time effect has no state symbol: the runtime reserves it) gets `_fx_auto_state<row>`,
+AUTO_STATE_BYTES = 4096  # this many bytes of poisoned bss each
 nw = dv.nw
 # the row words (core/fx module.toml)
 PC, DESC, STATE, ENABLED, P0, WAS, MIX, DIS, WSTART, WCOUNT, NFAULT = (
@@ -90,7 +92,7 @@ def w2f(w: int) -> float:
 @dataclass
 class Row:
     pc: str  # the process routine's symbol; "" is a free row (pc 0xffffffff)
-    state: str  # the state block's data symbol
+    state: str  # the state block's data symbol ("": the rig reserves `_fx_auto_state<row>`, as the runtime does for a run-time effect)
     enabled: int = 1
     params: tuple[int, ...] = (0, 0, 0, 0)
     desc: str = "_te_desc"
@@ -155,6 +157,11 @@ def _build(sources: tuple[Path, ...]) -> _Built:
             addr += (len(raw) + 3) & ~3
         for name, (sec, off, _g) in o.data_symbols.items():
             data[name] = where[sec] + off
+    for i in range(AUTO_STATES):
+        data[f"_fx_auto_state{i}"] = addr
+        inits.append((addr, bytes(AUTO_STATE_BYTES), True))
+        own[-1].append((addr, AUTO_STATE_BYTES))
+        addr += AUTO_STATE_BYTES
     if addr > DATA_END:
         raise RuntimeError(f"data symbols need {addr - DATA_BASE:#x} bytes of L2")
     externs = {
@@ -224,7 +231,7 @@ class FxRig:
                 continue
             poke(base + PC, b.symbols[r.pc])
             poke(base + DESC, b.data[r.desc])
-            poke(base + STATE, b.data[r.state])
+            poke(base + STATE, b.data[self.state_symbol(i)])
             poke(base + ENABLED, r.enabled)
             poke(base + MIX, r.mix)
             for j, p in enumerate(r.params):
@@ -242,8 +249,11 @@ class FxRig:
     def set_enabled(self, i: int, on: bool) -> None:
         self.set_row_word(i, ENABLED, 1 if on else 0)
 
+    def state_symbol(self, i: int) -> str:
+        return self.rows[i].state or f"_fx_auto_state{i}"
+
     def state_word(self, i: int, k: int) -> int:
-        return self.sess.peek(nw(self.built.data[self.rows[i].state]) + k) or 0
+        return self.sess.peek(nw(self.built.data[self.state_symbol(i)]) + k) or 0
 
     def symbol_word(self, name: str, k: int = 0) -> int:
         return self.sess.peek(nw(self.built.data[name]) + k) or 0
