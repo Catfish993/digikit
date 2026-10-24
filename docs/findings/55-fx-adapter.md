@@ -65,7 +65,7 @@ At a block boundary (`tools/patchkit/fx_rings.py` has addresses and decoders; th
 - DSP instructions per block on the concrete core (`tests/patchkit/test_fx.py`, `tests/support/fx_rig.py`): empty chain 16; a chain whose rows are all off 174;
   one effect steady 732 (the 0.5 test effect itself about 210; copy, output check and bookkeeping about 520); a fade block 1065. In the smoke cells the DSP
   budget line shows +18 and +730 busy instructions per block (DT2 1.17), equal to the rig. The conformance suite measured 1072 as the worst block of `fx-gain`.
-- **Emulator CPU of the hook (AOT barred) [D]**: patching a function bars the generated (AOT) regions of the whole hashed code range it lies in
+- **Emulator CPU of the hook (AOT barred) [D] [C]**: **corrected below: the engine now bars only the regions with a changed block (route A, section "The emulator cost"); this table is the cost with the old check, which barred the whole hashed range.** Patching a function barred the generated (AOT) regions of the whole hashed code range it lies in
   (`verify_code`, `packages/emulator/sharc/src/lib.rs`; `CODE_RANGES` of the generated core). So the cost depends on the range of the site, not on the adapter (+18 instructions).
   Paired A/B with `tools/devtools/coupled_ab.py` (same binary, image B patched through `--dsp-patch` written by `tools/patchkit/pk_dsp_diff.py`; machine load 12-22, so only
   the paired ratio counts; PCM hash equal in A and B; the sites other than the chosen ones are the same adapter with the hook moved by hand, 3 pairs):
@@ -82,8 +82,7 @@ At a block boundary (`tools/patchkit/fx_rings.py` has addresses and decoders; th
   | DN2 | converter entry `0x1c9d3f` (299; H0, after the pack) | 1.13 |
 
   On DN2 no site between the master and the pack is in a smaller range: the pack is inside H1's function, the master function's end is a run of 32-bit instructions (no 48-bit
-  site) and the stages before the ramp are not the final master. **[O]** Ways to cut the DN2 cost: finer `CODE_RANGES` in the generator (splits at function entries), or the
-  effect at H0 (x1.13) with the adapter re-converting the master pair of ring C itself (the format is exact, see above; not tried).
+  site) and the stages before the ramp are not the final master. **[C]** The DN2 cost of the chosen site is x1.01 with the changed-block check of the engine (route A below), not x3.09; the other numbers of this table are the old check's.
 
 ## Run-time rows (F4 step 1, 2026-10-24) **[D]**
 
@@ -125,10 +124,28 @@ emulator running):
 | B: A + `core/dynfx` (+ `core/fx`), no effect loaded | 4.028 (IQR 0.049) | **2.38** (2.36 to 2.39) | 0.247 | 29,750 (+22,300 of the fall-back) |
 | C: A + `core/fx` + `digikit/freqshift` as a patched-in effect (SHIFT 10, MIX 1; proxy for a loaded one) | 4.571 (IQR 0.015) | **2.71** (2.70 to 2.72) | 0.219 | 34,350 |
 
-The PCM of B is the PCM of A (hash equal in all runs); C differs (the effect is on). The headless binary is not PGO-tuned, so the absolute factors are low; the ratio is what carries over. **Decision for now (Em's call
-on the cost is open):** `core/dynfx` and `core/fxpages` are in the DN2 `device` patch set (the real DSP has no interpreter) and **not** in its `emulator` set; DN2 scenarios and tests name them in their module list
-(`c.image_for(RT + ",core/dynfx,core/fxpages", ...)`), and so does anybody who wants a DN2 emulator image with run-time effects. Ways to remove the cost (not tried): finer `CODE_RANGES` (no merge of adjacent blocks at function
-entries) so that H1 and its caller do not share one range; the effect at H0 (x1.13, the range of the converter) with the adapter converting the master pair of ring C itself.
+The PCM of B is the PCM of A (hash equal in all runs); C differs (the effect is on). The headless binary is not PGO-tuned, so the absolute factors are low; the ratio is what carries over. That was the cost with the old code check (rows A, B, C above are the old engine; the old-engine rerun in the next paragraph gives x2.38 again).
+
+**Route A: the engine bars only the changed blocks [D] (2026-10-24).** `verify_code` hashes the loaded code per range, and a range is a merged span of many blocks (here 3482 words for the hook site), so one patched
+word barred every region with an entry in the range: about 70 regions, +22,300 interpreted instructions per block. Now, when a range's hash differs, the engine decodes the loaded words of that range and compares them
+with the generated instruction table (`insn_at`, the table the generator wrote for the image); a block is barred only when a PC in `[its start, the next block start + 6)` (the 6 words are `CODE_LOOKAHEAD`, the decoder's look-ahead; the margin
+is more than the decoder needs) holds a different instruction, and all entries of a barred region go together as before (`packages/emulator/sharc/src/code_diff.rs`, `Engine::verify_code`). An unpatched image keeps the hash path
+and decodes nothing. Fail safe: a range with more than 512 differing PCs, or one whose hash differs with no differing PC, is barred as a whole as before; the result per range and hash is remembered, so a re-check of the same words
+decodes nothing. No generator change, no `CORE_FINGERPRINT` change, no core regeneration.
+- **Parity [D]:** on the stock images the decoded loaded words equal the generated table at every PC of every range: **DN2 1.12 26,119 PCs, DT2 1.17 25,847 PCs, 0 differ**
+  (`uv run python -m tools.devtools.code_parity --device dn2|dt2`; the daemon prints `code parity:` with `SHARC_CODE_PARITY=1`). The decode of an instruction reads its look-ahead words, so a change after a block shows at the block's last instruction.
+- **Which PCs differ on the DN2 emulator set + effects [D]** (`SHARC_CODE_LOG=1`: `code check: ...`): the set alone has 5 (`0x1c9e5e` to `0x1c9e61`, `0xb8251b`), 15 entries barred; with `core/fx` and `core/dynfx` 6 (`0x1c244d`, the hook, and the same five), 25 entries
+  barred. Before: the whole range of `0x1c244d` (3482 words) and every range of the other patches.
+- **Speed [D]** (`tools/devtools/coupled_ab.py`, scenario `trig1-taps`, 10.5 audio s, 3 pairs, DSP thread CPU per audio second, same binary, images through `--dsp-patch`; PCM hash equal in all 12 runs; load 2 to 4):
+
+  | engine | A: the DN2 `emulator` set | B: A + `core/dynfx`, `core/fxpages`, `core/fx`, no effect | paired B/A |
+  | --- | --- | --- | --- |
+  | before (the check by range hash) | 1.709 (IQR 0.008) | 4.062 (IQR 0.011) | **2.377** (2.372 to 2.389) |
+  | after (changed blocks only) | 1.351 (IQR 0.008) | 1.370 (IQR 0.002) | **1.013** (1.009 to 1.015) |
+
+  So the cost of the hook is x1.01, and the set without effects also runs 21 % faster (1.709 -> 1.351), because the other patches of the runtime also barred whole ranges. Checks on the new engine: `fx-dyn-dn2`, `fx-freqshift-dn2`,
+  `pk_proof_fx --quick` on both devices pass.
+- **Not covered:** a patch that reads code as data, or code that the decoder resolves differently by a word further than `CODE_LOOKAHEAD` after the range (the hash had the same limit).
 
 **The Digitakt II emulator set (step 1 on) has `core/fx` in it**, and its cost (x1.03 in the table above) was measured on the first hook site only. Re-measured with the final set (`core/dynfx` and `core/fxpages` against
 the same set without them; scenario `dt2-sample-trig` on the sample card, 3 audio s, 5 pairs, same method): DSP CPU per audio second 4.080 -> 4.118, **paired ratio 1.009** (0.990 to 1.079), PCM equal. The ratio is
@@ -137,5 +154,4 @@ within the run-to-run spread of this short scenario; the earlier x1.03 stands as
 ## Open **[O]**
 
 - The role of ring C words 2 and 3 (next pair) and of the rest of the frame.
-- Whether the DN2 cost (x3.09) is acceptable for the desktop and browser targets, and which of the two ways to cut it is taken.
 - A second agent checks the hook table against the image bytes before the marks become [V].

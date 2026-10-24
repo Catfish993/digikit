@@ -52,8 +52,8 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
   - The context registers (M5-M7, M13-M15, L0-L5, MODE1) belong to the DSP context: save and pin them for the chain, restore before the stock code.
   - `.PKBSS` memory is not loaded; the adapter zeroes an effect's state when it switches on, the rig poisons it to prove that.
   - A master hook at the DAC converter (H0, master-gain / master-drive) is after the USB pack: the USB audio does not carry it (finding 55).
-  - Patching a function bars the emulator's AOT regions of its whole hashed code range: the same adapter costs x1.03 on the DT2 at `FUN_1c80f2` and x3.09 on the DN2 at
-    `FUN_1c244d` (finding 55). Choose a hook site by its range before anything else.
+  - Patching a function bars the emulator's AOT regions of the blocks that hold a changed instruction (finding 55, route A; before 2026-10-24 the whole hashed code range): the adapter costs x1.01 on the DN2 at
+    `FUN_1c244d` and x1.03 on the DT2 at `FUN_1c80f2`. A hook in a long block or in a function that runs every block still costs the regions that contain it.
 - **Patterns:** `references/contract-fx.md`; the rig (`tests/support/fx_rig.py`) and the effects for tests (`tests/support/fx_effects.s`) are templates for
   an effect's unit test.
 
