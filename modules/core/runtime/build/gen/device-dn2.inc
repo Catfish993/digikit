@@ -25,7 +25,7 @@
     .equ LIMIT_MODULES, 0x8    /* [limits] modules (module records) */
     .equ LIMIT_MACHINE_ROWS, 0x8    /* [limits] machine_rows (run-time machine and voice rows) */
     .equ LIMIT_ARENA_BYTES, 0x80000    /* [limits] arena_bytes (the module arena) */
-    .equ LIMIT_FX_SLOTS, 0x4    /* [limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY) */
+    .equ LIMIT_FX_SLOTS, 0x4    /* [limits] fx_slots (effects in the chain: CAPACITY's limit and the free effect rows of core/dynfx) */
     .equ LIMIT_STAGE_BYTES, 0x10000    /* [limits] stage_bytes (the staging buffer of a .dkm file) */
     .equ PEEK_N, 0x2    /* [digikit] peek: number of ranges */
     .equ INPUT_BACKEND, 0x1    /* [input] backend (1 panel-uart; 0 none) */

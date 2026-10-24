@@ -825,8 +825,8 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
         c(
             "LIMIT_FX_SLOTS",
             e.limits.fx_slots,
-            Shared,
-            "[limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY)",
+            PerDevice,
+            "[limits] fx_slots (effects in the chain: CAPACITY's limit and the free effect rows of core/dynfx)",
         ),
         c(
             "LIMIT_STAGE_BYTES",

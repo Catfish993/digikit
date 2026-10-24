@@ -60,12 +60,21 @@ fn the_runtime_constants_are_the_device_files_numbers() {
         "DSP_BLOCK_CYCLES: u32 = 0xa2c2b;",
         "KEEP_BASE: u32 = 0x47fe0000;",
         "KEEP_BYTES: u32 = 0x1000;",
-        "LIMIT_FX_SLOTS: u32 = 0x4;",
     ] {
         assert!(rs.contains(want), "{want}");
     }
+    // the effect slots differ per device (the Digitakt II reserves 3 run-time effect rows, core/dynfx): not in the shared file
+    assert!(
+        !rs.contains("LIMIT_FX_SLOTS"),
+        "the effect slots differ per device"
+    );
     let dn2 = get("build/gen/device-dn2.inc");
     assert!(dn2.contains(".equ DEVICE_ID, 0x2 "), "{dn2}");
+    assert!(dn2.contains(".equ LIMIT_FX_SLOTS, 0x4 "), "{dn2}");
+    assert!(
+        get("build/gen/device-dt2.inc").contains(".equ LIMIT_FX_SLOTS, 0x3 "),
+        "dt2"
+    );
     // the store area of each device ([card.store], docs/design/digikit-store.md): DN2 from 0x800000, DT2 after the +Drive, both to the end of the card
     for (inc, first, sectors) in [
         (dn2, "0x800000", "0x261a000"),
@@ -198,7 +207,7 @@ fn a_limit_above_the_contract_maximum_is_refused() {
     Facts::from_texts([dt2.as_str(), dn2.as_str()]).unwrap();
     for (what, from, to) in [
         ("modules", "modules = 8", "modules = 9"),
-        ("fx_slots", "fx_slots = 4", "fx_slots = 5"),
+        ("fx_slots", "fx_slots = 3", "fx_slots = 5"),
         ("param_rows", "param_rows = 16", "param_rows = 17"),
         (
             "dsp_area_bytes",
@@ -219,7 +228,7 @@ fn a_limit_above_the_contract_maximum_is_refused() {
     let bad = dn2.replace("page_rows = 8", "page_rows = 9");
     assert!(Facts::from_texts([dt2.as_str(), bad.as_str()]).is_err());
     // a value below the maximum is a device choice and is accepted
-    let less = dt2.replace("fx_slots = 4", "fx_slots = 2");
+    let less = dt2.replace("fx_slots = 3", "fx_slots = 2");
     Facts::from_texts([less.as_str(), dn2.as_str()]).unwrap();
 }
 
@@ -239,6 +248,30 @@ fn machine_rows_are_the_run_time_machine_types_of_types_toml() {
         e.contains("machine_rows") && e.contains("types.toml"),
         "{e}"
     );
+}
+
+#[test]
+fn the_free_effect_rows_are_the_dt2_fx_slots() {
+    // core/dynfx reserves one free row of the effect chain for each of the device's effect slots (docs/design/digikit-dkm.md); only the Digitakt II has it
+    let lib = Library::scan_repo(&root()).unwrap();
+    let dynfx = lib.get("core/dynfx").unwrap();
+    let rows = dynfx
+        .manifest
+        .entry
+        .iter()
+        .filter(|e| e.registry == "fx")
+        .count() as u64;
+    let t: toml::Value = toml::from_str(
+        &std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(rows, t["limits"]["fx_slots"].as_integer().unwrap() as u64);
+    assert!(dynfx
+        .manifest
+        .module
+        .ports
+        .iter()
+        .all(|p| p.starts_with("dt2-")));
 }
 
 #[test]
@@ -327,6 +360,10 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             all.sort();
             let mut want: Vec<&str> = RT021_MODULES.to_vec();
             want.extend(extra);
+            // the Digitakt II also has run-time effects (core/dynfx and the chain it reserves rows in); the Digitone II not yet
+            if dev.short == "dt2" {
+                want.extend(["core/dynfx", "core/fx"]);
+            }
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);
         }

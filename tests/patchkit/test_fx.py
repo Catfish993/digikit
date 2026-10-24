@@ -77,7 +77,9 @@ def test_free_rows_cost_five_instructions_each_and_change_nothing():
         assert b.returned and b.master == tuple(master)
         assert b.ctx_bad == [] and b.regs_bad == []
         assert b.instructions <= base + 6 * n, (n, b.instructions, base)
-        print(f"{n} free rows: {b.instructions} instructions per block (empty chain {base})")
+        print(
+            f"{n} free rows: {b.instructions} instructions per block (empty chain {base})"
+        )
 
 
 def test_a_free_row_in_front_of_an_effect_is_skipped_by_the_chain():

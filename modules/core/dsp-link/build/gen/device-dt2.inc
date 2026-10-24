@@ -52,8 +52,8 @@
 #define LIMIT_MACHINE_ROWS 8
 // [limits] arena_bytes (the module arena)
 #define LIMIT_ARENA_BYTES 524288
-// [limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY)
-#define LIMIT_FX_SLOTS 4
+// [limits] fx_slots (effects in the chain: CAPACITY's limit and the free effect rows of core/dynfx)
+#define LIMIT_FX_SLOTS 3
 // [limits] stage_bytes (the staging buffer of a .dkm file)
 #define LIMIT_STAGE_BYTES 65536
 // [digikit] peek: number of ranges
