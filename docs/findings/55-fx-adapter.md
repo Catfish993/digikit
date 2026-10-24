@@ -152,12 +152,25 @@ decodes nothing. No generator change, no `CORE_FINGERPRINT` change, no core rege
 the same set without them; scenario `dt2-sample-trig` on the sample card, 3 audio s, 5 pairs, same method): DSP CPU per audio second 4.080 -> 4.118, **paired ratio 1.009** (0.990 to 1.079), PCM equal. The ratio is
 within the run-to-run spread of this short scenario; the earlier x1.03 stands as the upper figure.
 
+## `menu-dkrun-pluck-dt2` was intermittent: the restart left a step job running on the new runtime **[D][C]**
+
+The scenario (`tests/digikit/test_menu_dt2.py`, bound 128 samples on the onset shift between the run-time machine and the patched-in one) failed with onset shifts of 192 and 256 samples (0 samples differ after
+alignment) in about half of the runs with the changed-block engine of 60aa71ba, and passed with the engine before it. An earlier note here blamed the DSP worker's lead over the ColdFire. **[C]** The DSP side is
+deterministic: DSPI logs (`DIGI_DSPI_LOG`, tx and reply of every frame) of two runs are bit-identical over 16,543 frames, and the DSP replies of the new engine and the old one are identical (ref run 9,076 frames; menu run
+up to the first note, frame 7,502). The cause is in the daemon's soft reset (`controller.rs`, `poll_patch`):
+
+- The RESTART of `dk run` makes the guest reset. The cold boot runs on a worker thread, and the old runtime keeps stepping meanwhile (the harness's `step` jobs). When the boot is installed, a `step` job in flight still
+  has its end counted on the old runtime (`icount + n`). The new runtime then runs up to that count: a number of instructions that depends on how far the old runtime got in the wall time of the cold boot (the harness saw
+ 
+  482 to 560 accepted `step` calls of 400,000 instructions).
+- The harness takes the note's trigger frame from the frame count after the restart (`max(TRIG_FRAME, frames + 300)`), so the trigger frame moved from run to run (9,579 to 9,648 frames). The note onset then differs
+  between the run and the reference (fixed trigger) depends on that phase: a run with the note at ColdFire icount 1,813,775,926 failed (shift 192), runs at 1,808,575,926 and 1,814,575,926 passed. The baseline engine had the
+  same race and passed in the runs measured (543 and 560 accepted calls, shift 0 in both). The step from phase to onset (3 or 4 DSP periods) is not analysed **[O]**.
+- Fix: `poll_patch` ends a step or run-until job in flight when the install succeeded (reply `runtime_replaced`). The new runtime then starts at the same instruction in every run (icount 1,193,186,366 after
+  the settle time, the note trigger at `TRIG_FRAME` as in the reference, 4 of 4 runs identical in icount and frames, all shift 0, exact PCM).
+
+
 ## Open **[O]**
 
-- **[O] `menu-dkrun-pluck-dt2` is intermittent with the changed-block engine.** The scenario (`tests/digikit/test_menu_dt2.py`, bound 128 samples on the onset shift between the run-time machine and the patched-in one) failed with
-  onset shifts of 192 and 256 samples (0 samples differ after alignment) in 2 of 2 runs of the test file and 1 of 3 runs of the scenario alone with the new daemon, and passed (shift 0, exact) in 1 of 1 and 3 of 3 with the daemon
-  of the commit before. The new engine runs the patched DT2 image about 30 % faster (the scenario takes 60 s, was 88 s). The shift is whole DSP periods and 64-sample steps: the number of frames the DSP worker is ahead of the
-  ColdFire when a mailbox write arrives depends on host timing once the DSP is not the slower side. Same family as b2e0edbd (capture start). Not fixed here; the fix belongs to the coupled daemon (apply a ColdFire write at a
-  frame position that does not depend on the worker's lead), not to the test bound.
 - The role of ring C words 2 and 3 (next pair) and of the rest of the frame.
 - A second agent checks the hook table against the image bytes before the marks become [V].
