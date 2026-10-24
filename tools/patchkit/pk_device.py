@@ -96,7 +96,11 @@ def contract_max() -> dict[str, int]:
 def effective_fx_slots(lim: Limits, plan: dict[str, Any]) -> int:
     """The effect slots an image reports in CAPACITY: the device's `fx_slots` when the image has `core/dynfx` (its free effect rows), else 0 (an image that cannot
     load an effect, such as every Digitone II image until F4 step 5, reports no slot)."""
-    return lim.fx_slots if any(str(m).startswith("core/dynfx@") for m in plan["modules"]) else 0
+    return (
+        lim.fx_slots
+        if any(str(m).startswith("core/dynfx@") for m in plan["modules"])
+        else 0
+    )
 
 
 def limits(short: str) -> Limits:

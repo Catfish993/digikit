@@ -68,7 +68,9 @@ def run_fx(c: Any) -> None:
     hint = t.get("hint", 7)
     trig = t.get("trig_frame", M.TRIG_FRAME)
     slots = pk_device.limits(c.device).fx_slots
-    img = c.image_for(RT + ",core/dynfx,core/fxpages", "fx")  # the test effect has a page: core/fxpages
+    img = c.image_for(
+        RT + ",core/dynfx,core/fxpages", "fx"
+    )  # the test effect has a page: core/fxpages
     sine = c.pack(SINE, "m0.dkm")
     fx_files, fx_bytes = [], []
     for k in range(
