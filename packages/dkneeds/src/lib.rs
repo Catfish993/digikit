@@ -47,6 +47,9 @@ pub const KIND_PAGE: u32 = 3;
 pub const LEN_PARAM: u32 = 0x50;
 pub const LEN_MACHINE: u32 = 0x6c;
 pub const LEN_PAGE: u32 = 0x60;
+/// An effect's page: it takes no row of its own (it belongs to the effect's slot, counted by the DSP section's effect record).
+pub const KIND_EFFECT: u32 = 4;
+pub const LEN_EFFECT: u32 = 0x1a4;
 pub const MAX_RECORDS: u32 = 32;
 
 /// The DSP section: magic "DKDS", versions 1 to 4, header 0x40 bytes, voices of 16, 48 or 64 bytes (version 4: voices of 64 bytes and effect records).
@@ -273,6 +276,8 @@ fn registry<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result
         } else if kind == KIND_PAGE {
             n.page_rows += 1;
             LEN_PAGE
+        } else if kind == KIND_EFFECT {
+            LEN_EFFECT
         } else {
             return Err(Error::Register);
         };

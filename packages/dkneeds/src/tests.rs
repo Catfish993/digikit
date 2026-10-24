@@ -47,6 +47,8 @@ fn register(kinds: &[u32]) -> Vec<u8> {
             LEN_PARAM
         } else if k == KIND_MACHINE {
             LEN_MACHINE
+        } else if k == KIND_EFFECT {
+            LEN_EFFECT
         } else {
             LEN_PAGE
         } as usize;
@@ -125,6 +127,10 @@ fn register_records_are_counted_by_kind() {
     let reg = register(&[KIND_PARAM, KIND_PARAM, KIND_MACHINE, KIND_PAGE, KIND_PARAM]);
     let n = of(&dkm(4, 0, &reg, &[])).unwrap();
     assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (3, 1, 1));
+    // an effect's page takes no row of its own
+    let reg = register(&[KIND_EFFECT, KIND_PARAM]);
+    let n = of(&dkm(4, 0, &reg, &[])).unwrap();
+    assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (1, 0, 0));
     // an empty table (a header only) counts nothing
     let n = of(&dkm(4, 0, &register(&[]), &[])).unwrap();
     assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (0, 0, 0));

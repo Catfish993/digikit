@@ -7,7 +7,7 @@
 #define DK_FX_V1         1              /* contract version                                                   */
 #define DK_BLOCK         32             /* samples per channel and call, 48 kHz, both devices                 */
 #define DK_FX_BLOCK      64             /* floats of a block: planar, 32 left, then 32 right                  */
-#define DK_FX_MAX_PARAMS 8              /* hard cap on parameter words: 7 knobs and MIX (v1 rows had 4)       */
+#define DK_FX_MAX_PARAMS 8              /* hard cap on parameter words: the 7 knobs of a page are p0 to p6 (v1 rows had 4); MIX is not one: the adapter owns it */
 #define DK_FX_MAX        4              /* effects in the chain (a device's `[limits] fx_slots` is at most this) */
 #define DK_LEVEL_BOUND   8.0f           /* |sample| above this is a fault (+18 dB over full scale)            */
 #define DK_FX_MAGIC      0x444b4658u    /* 'DKFX', the first word of dk_fx_desc                               */

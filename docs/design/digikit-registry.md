@@ -21,6 +21,7 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
       kind 1 PARAM   (0x50): u32 index, template, slot; i32 min, max, default; name[32]; short[16]
       kind 2 MACHINE (0x6c): u32 type, clone_of, position, own_dsp, level; u32 knobs[8]; name[24]; short[24]
       kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II only)
+      kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, 0; tab[8]; title[24]; 7 x (u32 position, display; f32 min, max, default; name[24]; short[8])   (Digitakt II)
 
 - MACHINE `type` is the machine **key** (since sticky ids, 2026-10-20, docs/design/module-sdk.md 11.5 D7): `hash24 << 8 | hint`. The hash is the low 24 bits of FNV-1a 32 over the
   UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is the machine's `type_hint` (manifest, per device, 16 to 23; the pack refuses another value), 0 when it has none: "assign a type at load", preferring the hint (finding 52). The runtime
@@ -40,6 +41,11 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
   record of a device that keeps its knobs in pages carries knobs 0. At most 8 pages per file and 8 at a time.
 - `own_dsp` (MACHINE, Digitone II): 1 tells the frame builder to send the machine's own type to the DSP (the FM engine renders nothing for it); on the
   Digitakt II it must be 0. The DSP routine that renders the type is not part of this section (lane A of the plan).
+- EFFECT (Digitakt II): the page of a run-time effect, see "Effect pages" below. `fx` is the index of the effect's record in the file's DSP section (version 4), `mix` the default of the MIX
+  knob (0 to 127), `tab` the page's tab label (1 to 3 characters), `title` the page title (1 to 23), then 7 knob entries of which the first `n_knobs` are used: knob i is parameter word p_i
+  of the effect's row, shown at `position` (0 to 7, distinct) with `display` 0 (0 .. 127) or 1 (-64 .. +63), `min`, `max` and `default` are IEEE single floats (`min < max`, the default
+  inside), `name` the long name shown while the knob turns (1 to 23 characters), `short` the label under the knob (1 to 6). At most 4 per file, one for each effect; a file with one
+  needs `core/fxpages` (`E_NO_REGISTRY` otherwise). The packer writes it from `[[fx]]` with `tab` (`docs/design/module-sdk.md`, "Define an effect with its own page").
 - Not carried yet: DSP code and `[[voice]]` records. The packer refuses a voice; the runtime refuses any record it does not know (`E_FORMAT`).
 - `patchkit pack` of a module without code writes a four-byte image (`moveq #0,d0; rts` as `dkm_init`) so that the loader's rules stay as they are.
 
@@ -117,6 +123,27 @@ machine list, the descriptor dispatch and the parameter accessors are the UI tas
    track can be left on a type with no row. The anchors and their port entries are removed; docs/plans/digikit-hot-reload.md lists them.
 5. A project (or a track) that names a type whose row is free behaves as on a gap row: the type byte stays; the row is a clone of type 0 with no knobs
    (the SRC page shows empty boxes); the permission, per-type byte and the DSP selector are type 0's.
+
+## Effect pages (Digitakt II, F4 step 2)
+
+`core/fxpages` (patch time) and `fxpage.rs` (run time) give each run-time effect row of `core/dynfx` a page after CHO in the FX view; DEL, REV, CHO and then the pages of the loaded effects in
+effect-row order. Facts of the firmware and the measurements are in `docs/findings/61-fx-pages.md`; this is the design.
+
+- **Reserved resources** (patch time): one page row for each effect slot (page numbers `[fx] page_first` and up, answered by a hook in the page accessor), the list the FX view reads its pages from
+  (a hook in the view builder), the tab label and graph hooks, and 24 parameter rows (`params.fp0` ..): effect row k owns the rows `8k .. 8k + 7`, seven knobs and MIX. `fxpages_info` is the table
+  the runtime reads (rows, list, anchors of the stock list, the first parameter code, the kit pointer and array offset, the template codes and the value indices, all device-file facts: `[fx]`).
+- **What an EFFECT record makes** (`fxpage::apply`, in `registry::apply` after the machines, when `dsp::reserve` has claimed the effect's chain row k): the parameter rows `8k + j` from the
+  knobs (template by display: `template_percent` or `template_bipolar`, range 0 to 0x7f00, default `round((default - min) / (max - min) * 0x7f00)`, names; mirror index `value_indices[8k + j]`), MIX
+  as row `8k + 7` (template `template_mix`, name "Mix", short "MIX", default `mix * 256`), the page row (tab, title, the knob codes at their positions, MIX on the level slot), then the page list and its
+  count (stock pages first). `remove` takes the page out of the list first, then resets the rows (the same order as machines). Rows are claimed with the effect row, so a page needs no row of
+  its own in CAPACITY: it is counted by the effect slot (`FX_SLOTS`).
+- **Values.** The firmware's page code reads and writes the kit's array of s16 values at the rows' mirror index, so the display, the turn and the long name (`Gain=98`) are the firmware's. The runtime puts the
+  defaults in the live kit's array when it first sees the kit object (and again for each new kit object: the firmware zeroes the array when it loads a kit), polls the array once per UI-loop pass and
+  sends a changed value to the row in the DSP: knob j as the float `min + (max - min) * raw / 0x7f00` into p_j, MIX as `raw / 0x7f00` into the row's mix word, about 3 ms after a turn (one word per
+  transfer, only when no module load is in progress). `core/fx` applies the mix as the dry/wet blend (finding 55): `master = dry + mix * (wet - dry)`; the effect writes only the wet signal.
+- **Limits.** 3 effects on the Digitakt II (`fx_slots`), each with up to 7 knobs and MIX; 1 to 3 characters in the tab, 23 in the title, 6 under a knob; no p-locks, no LFO or other modulation on the
+  knobs, no MIDI CC (the rows carry the template's kind and key words, so the firmware's modulation and CC maps would alias a stock parameter: not supported); the values are not saved with the kit
+  yet (step 3); a knob that is not listed has an empty cell. An image without `core/fxpages` refuses a module with an EFFECT record; a module without one loads on every image.
 
 ## Digitone II
 

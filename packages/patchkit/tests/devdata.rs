@@ -261,17 +261,50 @@ fn the_free_effect_rows_are_the_dt2_fx_slots() {
         .iter()
         .filter(|e| e.registry == "fx")
         .count() as u64;
-    let t: toml::Value = toml::from_str(
-        &std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap(),
-    )
-    .unwrap();
+    let t: toml::Value =
+        toml::from_str(&std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap())
+            .unwrap();
     assert_eq!(rows, t["limits"]["fx_slots"].as_integer().unwrap() as u64);
-    assert!(dynfx
+    assert!(
+        dynfx
+            .manifest
+            .module
+            .ports
+            .iter()
+            .all(|p| p.starts_with("dt2-"))
+    );
+}
+
+#[test]
+fn the_effect_page_rows_are_eight_parameter_rows_for_each_dt2_fx_slot() {
+    // core/fxpages reserves 7 knobs and MIX for each effect slot; the device file's [fx] has a value index for each of them (docs/design/digikit-registry.md "Effect pages")
+    let lib = Library::scan_repo(&root()).unwrap();
+    let m = lib.get("core/fxpages").unwrap();
+    let rows = m
         .manifest
-        .module
-        .ports
+        .entry
         .iter()
-        .all(|p| p.starts_with("dt2-")));
+        .filter(|e| e.registry == "params")
+        .count() as u64;
+    let t: toml::Value =
+        toml::from_str(&std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap())
+            .unwrap();
+    let slots = t["limits"]["fx_slots"].as_integer().unwrap() as u64;
+    assert_eq!(rows, 8 * slots);
+    let idx = t["fx"]["value_indices"].as_array().unwrap();
+    assert!(
+        idx.len() as u64 >= rows,
+        "a value index for each parameter row"
+    );
+    // the first effect page follows the stock pages: the firmware's page accessor has 33 rows
+    assert_eq!(t["fx"]["page_first"].as_integer(), Some(33));
+    assert!(
+        m.manifest
+            .module
+            .ports
+            .iter()
+            .all(|p| p.starts_with("dt2-"))
+    );
 }
 
 #[test]
@@ -362,7 +395,7 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             want.extend(extra);
             // the Digitakt II also has run-time effects (core/dynfx and the chain it reserves rows in); the Digitone II not yet
             if dev.short == "dt2" {
-                want.extend(["core/dynfx", "core/fx"]);
+                want.extend(["core/dynfx", "core/fx", "core/fxpages"]);
             }
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);

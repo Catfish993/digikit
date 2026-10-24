@@ -24,8 +24,8 @@ path = "build/runtime.dko.json"
 sources = ["src/rs/Cargo.toml"]
 place = "cf.expansion"
 # The run-time registry's table of addresses (core/dynreg), the DSP code channel (core/dsp-link: dl_send, dl_send_win, dl_poll) and
-# the table of DSP addresses (core/dyndsp) and the effect chain's table (core/dynfx); each is 0 when its module is not in the image.
-optional = ["dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dl_diag", "dyndsp_info", "dynfx_info", "health_read", "health_heap", "input_key", "input_turn", "remote_open"]
+# the table of DSP addresses (core/dyndsp) and the effect chain's table (core/dynfx) and the effect pages' (core/fxpages); each is 0 when its module is not in the image.
+optional = ["dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dl_diag", "dyndsp_info", "dynfx_info", "fxpages_info", "health_read", "health_heap", "input_key", "input_turn", "remote_open"]
 
 [object.externs]
 fw_block_read = "dkrt.fw.block_read"

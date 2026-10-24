@@ -23,7 +23,3 @@ dkrt_store_first:
     .globl dkrt_store_sectors
 dkrt_store_sectors:
     .long STORE_SECTORS
-    /* the effect slots of the device ([limits] fx_slots): the limit CAPACITY reports for FX_SLOTS */
-    .globl dkrt_fx_slots
-dkrt_fx_slots:
-    .long LIMIT_FX_SLOTS

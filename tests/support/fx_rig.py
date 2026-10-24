@@ -33,18 +33,20 @@ FREE_PC = 0xFFFFFFFF  # the pc of a free row (core/dynfx): the adapter skips it
 POISON = 0x7FC00001  # the initial word of every .PKBSS
 nw = dv.nw
 # the row words (core/fx module.toml)
-PC, DESC, STATE, ENABLED, P0, WAS, DIS, WSTART, WCOUNT, NFAULT = (
+PC, DESC, STATE, ENABLED, P0, WAS, MIX, DIS, WSTART, WCOUNT, NFAULT = (
     0,
     1,
     2,
     3,
     4,
     12,
+    13,
     14,
     15,
     16,
     17,
 )
+ONE = 0x3F800000  # 1.0f: the default mix of a row
 # registers the stock function expects back (callee-saved, its arguments) and the markers they carry into the hook
 MARKS = {f"R{n}": 0x7000 + n for n in range(16)}
 MARKS.update(
@@ -92,6 +94,7 @@ class Row:
     enabled: int = 1
     params: tuple[int, ...] = (0, 0, 0, 0)
     desc: str = "_te_desc"
+    mix: int = ONE  # row word 13: the dry/wet blend (a float, 0 = dry, 1.0 = wet)
 
 
 @dataclass
@@ -223,6 +226,7 @@ class FxRig:
             poke(base + DESC, b.data[r.desc])
             poke(base + STATE, b.data[r.state])
             poke(base + ENABLED, r.enabled)
+            poke(base + MIX, r.mix)
             for j, p in enumerate(r.params):
                 poke(base + P0 + j, p & 0xFFFFFFFF)
         if self.record_stores:

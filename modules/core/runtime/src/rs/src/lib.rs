@@ -21,6 +21,7 @@ pub mod card;
 pub mod crash;
 pub mod dlog;
 mod dsp;
+pub mod fxpage;
 mod loader;
 pub mod registry;
 mod sha256;
@@ -115,8 +116,6 @@ extern "C" {
     /// INFO reply gives (`[digikit] name`: 3 characters and a NUL, as a big-endian word).
     static dkrt_device_id: u32;
     static dkrt_device_name: u32;
-    /// The effect slots of the device (`[limits] fx_slots`), defined by `src/cf/<dev>/device.s`.
-    static dkrt_fx_slots: u32;
     /// The 4-byte address literals of two firmware words (anchors `dkrt.fw.block_counter_lit`, `dkrt.fw.tx_inflight_lit`): the symbol's
     /// address is that of the literal in the firmware's code, whose value is the address of the word.
     static dkrt_block_counter_lit: u32;
@@ -172,9 +171,10 @@ pub fn device() -> u32 {
     unsafe { read_volatile(addr_of!(dkrt_device_id)) }
 }
 
-/// The effects the device's chain takes: CAPACITY's limit for `FX_SLOTS`.
+/// The effects the image takes at run time: CAPACITY's limit for `FX_SLOTS`. The free effect rows of `core/dynfx` (0 on an image without it, so a device
+/// that cannot load effects yet reports 0).
 pub fn fx_slots() -> u32 {
-    unsafe { read_volatile(addr_of!(dkrt_fx_slots)) }
+    unsafe { dsp::fx_free_rows() }
 }
 
 /// The device's short name as the INFO reply gives it: 3 characters and a NUL.
@@ -936,6 +936,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     upload::restart_poll();
     crash::install();
     dsp::step();
+    fxpage::tick();
     dlog::tick();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));

@@ -59,7 +59,7 @@ terminator = true
 
 # A row is 24 words:
 #   0 pc (0 ends the table, 0xffffffff is a free row that the adapter skips: core/dynfx), 1 desc, 2 state, 3 enabled (1: on), 4 to 11 the
-#   parameter words p0 to p7 (DK_FX_MAX_PARAMS), 12 was (enabled in the last block), 13 spare, 14 dis (1: switched off by its faults until the
+#   parameter words p0 to p7 (DK_FX_MAX_PARAMS), 12 was (enabled in the last block), 13 mix (float, the dry/wet blend, default 1.0), 14 dis (1: switched off by its faults until the
 #   next start), 15 the block of the fault window's start, 16 faults in the window, 17 faults since the start, 18 to 23 spare. The words from
 #   12 on belong to the adapter. The registry's window 2 of core/dsp-link is this table (24 words a row).
 [[registry.field]]
@@ -112,9 +112,9 @@ name = "was"
 kind = "u32"
 default = 0
 [[registry.field]]
-name = "spare13"
+name = "mix"
 kind = "u32"
-default = 0
+default = 0x3f800000
 [[registry.field]]
 name = "dis"
 kind = "u32"

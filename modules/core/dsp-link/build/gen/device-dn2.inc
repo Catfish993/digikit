@@ -116,6 +116,84 @@
 #define PANEL_EXC_CH_7 0
 // [panel.exceptions] bit of the code
 #define PANEL_EXC_BIT_7 0
+// [fx] kit_ptr (the firmware's pointer to the live kit object)
+#define FX_KIT_PTR 0
+// [fx] array_off (the kit's array of effect values, bytes from the kit object)
+#define FX_ARRAY_OFF 0
+// [fx] page_first (the page number of the first effect page)
+#define FX_PAGE_FIRST 0
+// [fx] template_percent (a 0 .. 127 knob)
+#define FX_TPL_PERCENT 0
+// [fx] template_bipolar (a -64 .. +63 knob)
+#define FX_TPL_BIPOLAR 0
+// [fx] template_mix (the level slot: MIX)
+#define FX_TPL_MIX 0
+// [fx] value_indices: number of indices
+#define FX_VALUES_N 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_0 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_1 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_2 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_3 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_4 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_5 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_6 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_7 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_8 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_9 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_10 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_11 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_12 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_13 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_14 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_15 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_16 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_17 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_18 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_19 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_20 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_21 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_22 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_23 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_24 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_25 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_26 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_27 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_28 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_29 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_30 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_31 0
 // [digikit] peek range start (RAM the PEEK command may read)
 #define PEEK_LO_0 1073741824
 // [digikit] peek range end (exclusive)

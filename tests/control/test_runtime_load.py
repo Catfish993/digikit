@@ -45,8 +45,8 @@ def test_the_runtime_boots_and_answers_info(device, version):
         load_s = time.monotonic() - started
         runtime = report["runtime"]
         assert runtime["patched"] is True and runtime["set"] == "emulator"
-        # the emulator set: 12 modules; the Digitakt II adds the run-time effects (their chain and its free rows)
-        assert len(runtime["modules"]) == (14 if device == "dt2" else 12)
+        # the emulator set: 12 modules; the Digitakt II adds the run-time effects (their chain and its free rows) and their pages
+        assert len(runtime["modules"]) == (15 if device == "dt2" else 12)
         info = Uploader(EmuTransport(emu, limit=2_000_000_000)).info()
         print(
             device,

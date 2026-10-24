@@ -9,5 +9,5 @@ tier = "quick"
 
 [debug]
 part = "inferred-needs"
-static = ["core/input", "core/dynfx"]   # core/dynfx: the effect rows that test/dyn-fx-gain takes
+static = ["core/input", "core/dynfx", "core/fxpages"]   # core/dynfx: the effect rows that test/dyn-fx-gain takes, core/fxpages: its page
 exclude = ["test/dyn-crash", "test/dyn-fault", "test/dyn-fault-late"]

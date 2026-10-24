@@ -57,6 +57,45 @@
     .equ PANEL_EXC_CODE_7, 0x0    /* [panel.exceptions] code */
     .equ PANEL_EXC_CH_7, 0x0    /* [panel.exceptions] channel of the code */
     .equ PANEL_EXC_BIT_7, 0x0    /* [panel.exceptions] bit of the code */
+    .equ FX_KIT_PTR, 0x0    /* [fx] kit_ptr (the firmware's pointer to the live kit object) */
+    .equ FX_ARRAY_OFF, 0x0    /* [fx] array_off (the kit's array of effect values, bytes from the kit object) */
+    .equ FX_PAGE_FIRST, 0x0    /* [fx] page_first (the page number of the first effect page) */
+    .equ FX_TPL_PERCENT, 0x0    /* [fx] template_percent (a 0 .. 127 knob) */
+    .equ FX_TPL_BIPOLAR, 0x0    /* [fx] template_bipolar (a -64 .. +63 knob) */
+    .equ FX_TPL_MIX, 0x0    /* [fx] template_mix (the level slot: MIX) */
+    .equ FX_VALUES_N, 0x0    /* [fx] value_indices: number of indices */
+    .equ FX_VALUE_0, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_1, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_2, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_3, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_4, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_5, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_6, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_7, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_8, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_9, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_10, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_11, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_12, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_13, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_14, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_15, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_16, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_17, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_18, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_19, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_20, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_21, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_22, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_23, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_24, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_25, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_26, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_27, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_28, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_29, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_30, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_31, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ PEEK_LO_0, 0x40000000    /* [digikit] peek range start (RAM the PEEK command may read) */
     .equ PEEK_HI_0, 0x466c0000    /* [digikit] peek range end (exclusive) */
     .equ PEEK_LO_1, 0x46712000    /* [digikit] peek range start (RAM the PEEK command may read) */

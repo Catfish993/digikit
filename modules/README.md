@@ -569,7 +569,9 @@ state = "_fg_state"      # .PKBSS _fg_state, <state_bytes>;
 
 On the Digitakt II an effect can also be a run-time module (`dynamic = true`, a `.dkm`): it declares `[[fx]]` with `process`, `desc` and `defaults` instead of the `[[entry]]` row, has no
 state symbol (the runtime reserves `state_bytes` of its descriptor) and takes one of the 3 free rows that `core/dynfx` reserves. Example and fixture: `tests/fixtures/modules/dyn-fx-gain`
-(contract and rules: the "Run-time effects" part of `contract-fx.md`; format: `docs/design/digikit-dkm.md`).
+(contract and rules: the "Run-time effects" part of `contract-fx.md`; format: `docs/design/digikit-dkm.md`). With a `tab`, a `title` and `[[fx.knob]]` entries the effect also gets a page of its
+own after CHO in the FX view (up to 7 knobs and MIX; `core/fxpages` reserves the page, the cookbook is "Define an effect with its own page" in `contract-fx.md`, the design is "Effect pages" in
+`docs/design/digikit-registry.md`, finding 61).
 
 The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and

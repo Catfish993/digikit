@@ -539,7 +539,11 @@ impl DspSection {
             return Err(err!("not a DSP section (magic)"));
         }
         let version = get(f, 4);
-        if version != VERSION && version != VERSION_1 && version != VERSION_3 && version != VERSION_4 {
+        if version != VERSION
+            && version != VERSION_1
+            && version != VERSION_3
+            && version != VERSION_4
+        {
             return Err(err!("DSP section version {version}"));
         }
         let v3 = version >= VERSION_3;
@@ -619,9 +623,7 @@ impl DspSection {
                     voices: if v3 { get(vo, at + 52) } else { 0 },
                     ranges: match version {
                         VERSION_1 => [0; 8],
-                        VERSION_3 | VERSION_4 => {
-                            std::array::from_fn(|k| get(vo, at + 20 + 4 * k))
-                        }
+                        VERSION_3 | VERSION_4 => std::array::from_fn(|k| get(vo, at + 20 + 4 * k)),
                         _ => std::array::from_fn(|k| get(vo, at + 8 + 4 * k)),
                     },
                 }
@@ -895,7 +897,10 @@ mod tests {
         // the process is the pc of `proc` (text offset 6 = 3 short words), the desc the byte offset of its data in the image
         assert_eq!(e.process, 6);
         assert_eq!(d.fx_pc(0, 0x2000_0000), L2_SW_BASE + 3);
-        assert_eq!(&d.image[e.desc as usize..e.desc as usize + 4], FX_DESC_MAGIC.to_le_bytes());
+        assert_eq!(
+            &d.image[e.desc as usize..e.desc as usize + 4],
+            FX_DESC_MAGIC.to_le_bytes()
+        );
         // the range holds the image (24 text + 28 data = 52 -> 56), the bss (64 -> 120) and the state (4 -> 8): 128, one granule
         assert_eq!(d.range_len(), 128);
         // the record is the only thing the section adds: without effects the section is version 2
@@ -946,6 +951,9 @@ mod tests {
     #[test]
     fn packing_is_deterministic() {
         let o = object();
-        assert_eq!(pack(&o, 1, &[], &[]).unwrap(), pack(&o, 1, &[], &[]).unwrap());
+        assert_eq!(
+            pack(&o, 1, &[], &[]).unwrap(),
+            pack(&o, 1, &[], &[]).unwrap()
+        );
     }
 }

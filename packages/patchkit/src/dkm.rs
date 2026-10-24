@@ -826,6 +826,8 @@ mod tests {
         assert_eq!(dkneeds::LEN_PARAM as usize, r::LEN_PARAM);
         assert_eq!(dkneeds::LEN_MACHINE as usize, r::LEN_MACHINE);
         assert_eq!(dkneeds::LEN_PAGE as usize, r::LEN_PAGE);
+        assert_eq!(dkneeds::KIND_EFFECT, r::KIND_EFFECT);
+        assert_eq!(dkneeds::LEN_EFFECT as usize, r::LEN_EFFECT);
         assert_eq!(dkneeds::MAX_RECORDS as usize, r::MAX_RECORDS);
         use crate::dkmdsp as d;
         assert_eq!(dkneeds::DSP_MAGIC, d::MAGIC);

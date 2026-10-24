@@ -101,6 +101,13 @@ Effects can also be loaded at run time on the Digitakt II (`docs/design/digikit-
   holds the record's words; MODULES, CAPACITY (`FX_SLOTS` used 1 of 3) and `dkneeds` agree; deselect and restart gives the dry PCM bit for bit; three effects play as 0.125 x dry and the fourth is refused (`E_DSP_ROWS`
   and the fit rule: `FX 1 > 0 FREE`).
 
+## MIX and the effect pages (F4 step 2, 2026-10-24) **[D]**
+
+- **Row word 13 is the mix** (a float, default 1.0 through the registry field): `master = dry + mix * (wet - dry)` per sample, the fade weights multiplied by the mix; mix 1.0 is the plain copy and mix 0 leaves
+  the master alone, both bit for bit. Cost (concrete core): one effect steady 743 instructions per block at mix 1.0 (736 before), 1142 at another mix, 605 at mix 0 (the copy is skipped); the fades 1142.
+  The empty chain (16), three free rows (31) and the all-off chain (178) are unchanged.
+- The chain's row is published with its mix word (13 steps, was 12). The effect's page, its knobs and the poller that writes p_j and the mix: finding 61.
+
 ## Open **[O]**
 
 - The role of ring C words 2 and 3 (next pair) and of the rest of the frame.

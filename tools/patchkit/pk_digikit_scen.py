@@ -51,6 +51,10 @@ Kinds:
   fx         effects loaded at run time (DSP section version 4, `core/dynfx`; Digitakt II): the sine and `test/dyn-fx-gain` selected at boot play as the
              dry sine times the gain, the chain's row, MODULES and CAPACITY say so, deselecting the effect and restarting gives the dry PCM again, and
              one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
+  fxpage     the FX view pages and knobs of run-time effects (`core/fxpages`; Digitakt II): with no effect loaded the three stock pages draw and play as on an image without
+             the pages; with `test/dyn-fx-gain` the view has a fourth page (tab GAN, title TEST GAIN, the GAIN knob and MIX), turning the knobs changes the PCM as
+             declared (gain, MIX 0 = dry bit for bit, MIX 127 = wet, the linear blend between), and deselecting the effect and restarting brings the three pages and
+             the dry PCM back; screenshots with `DIGIKIT_SHOTS=DIR`; tools/patchkit/pk_digikit_fxpage.py.
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
@@ -1361,6 +1365,12 @@ def run_fx(c: Ctx) -> None:
     FX.run_fx(c)
 
 
+def run_fxpage(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxpage as FP
+
+    FP.run_fxpage(c)
+
+
 def live_boot(c: Ctx, tag: str = "", patch_set: str | None = None) -> tuple[Any, Path]:
     """A coupled daemon free-running on a stock image with the runtime patched in (the DT2 on a card built from a folder, the DN2 on none),
     started with `--mirror-dir`; returns it and the mirror folder. The caller closes it."""
@@ -2064,6 +2074,7 @@ KINDS = {
     "live": run_live,
     "pages": run_pages,
     "fx": run_fx,
+    "fxpage": run_fxpage,
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,

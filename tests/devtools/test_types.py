@@ -23,6 +23,7 @@ TYPED = [
     "tools/patchkit/pk_capacity.py",
     "tools/patchkit/pk_digikit_capacity.py",
     "tools/patchkit/pk_digikit_fx.py",
+    "tools/patchkit/pk_digikit_fxpage.py",
     "tools/device/dkfit.py",
     "tools/device/dkneeds.py",
     "tools/patchkit/pk_device.py",

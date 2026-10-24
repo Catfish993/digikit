@@ -17,6 +17,7 @@ Not covered: a DSP transfer that fails (`E_DSP_XFER`) and anything that needs th
 from __future__ import annotations
 
 import functools
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -122,7 +123,10 @@ def boot_checks(
     )
     cap = up.capacity()
     m["cap"] = cap
-    lim = pk_device.limits(c.device)
+    lim = replace(
+        pk_device.limits(c.device),
+        fx_slots=pk_device.effective_fx_slots(pk_device.limits(c.device), rig.plan),
+    )
     rows = 0
     for x in mods:
         rows |= x["rows"]

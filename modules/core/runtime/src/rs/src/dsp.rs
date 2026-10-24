@@ -51,7 +51,7 @@ pub const MAX_FX: usize = 4;
 const FX_REC: u32 = 64;
 const FX_ROW_WORDS: u32 = 24;
 const FX_FREE_PC: u32 = 0xffff_ffff;
-const FX_STEPS: u32 = 12;
+const FX_STEPS: u32 = 13;
 /// The words of an effect row (`core/fx` module.toml): pc, desc, state, enabled, p0 (to p7), and the adapter's was, dis, fault window start, count and total.
 const FXW_PC: u32 = 0;
 const FXW_DESC: u32 = 1;
@@ -59,6 +59,10 @@ const FXW_STATE: u32 = 2;
 const FXW_ENABLED: u32 = 3;
 const FXW_P0: u32 = 4;
 const FXW_WAS: u32 = 12;
+/// The row's dry/wet blend (a float; 1.0 is the wet signal, 0 the dry one), owned by the adapter and set by the MIX knob of the effect's page.
+pub const FXW_MIX: u32 = 13;
+/// 1.0f: the mix of a row without a page.
+pub const MIX_ONE: u32 = 0x3f80_0000;
 const FXW_DIS: u32 = 14;
 const FXW_WSTART: u32 = 15;
 const FXW_WCOUNT: u32 = 16;
@@ -202,6 +206,8 @@ pub struct DspState {
     pub fx_desc: [u32; MAX_FX],
     pub fx_state: [u32; MAX_FX],
     pub fx_par: [[u32; 8]; MAX_FX],
+    /// Per effect row: the MIX word to publish (`MIX_ONE` unless the effect's page says otherwise).
+    pub fx_mix: [u32; MAX_FX],
     /// Per module record: the effect rows it owns (bit mask).
     pub mod_fx: [u32; crate::MAX_MODULES],
 }
@@ -255,7 +261,7 @@ unsafe fn fiw(k: usize) -> u32 {
 }
 
 /// Effect rows the image reserves for run-time effects (0 without `core/dynfx`).
-unsafe fn fx_free_rows() -> u32 {
+pub unsafe fn fx_free_rows() -> u32 {
     if finfo().is_null() {
         0
     } else {
@@ -275,6 +281,58 @@ pub unsafe fn fx_used() -> u32 {
         k += 1;
     }
     used
+}
+
+/// The module record + 1 that owns effect row `k` (0: free) and the row's index in the chain's table (the registry `fx`), for the effect pages.
+pub unsafe fn fx_owner_of(k: usize) -> u8 {
+    if k < MAX_FX {
+        ds().fx_owner[k]
+    } else {
+        0
+    }
+}
+
+/// The effect row (0 ..) that module record `owner - 1` claimed for its `ordinal`-th effect record (rows are claimed in record order, lowest first).
+pub unsafe fn fx_row_of(owner: u8, ordinal: u32) -> Option<usize> {
+    let d = ds();
+    let mut seen = 0;
+    let mut k = 0;
+    while k < MAX_FX {
+        if d.fx_owner[k] == owner {
+            if seen == ordinal {
+                return Some(k);
+            }
+            seen += 1;
+        }
+        k += 1;
+    }
+    None
+}
+
+/// Set the MIX word an effect row publishes (before its rows go out) and the defaults of its parameter words are the record's.
+pub unsafe fn fx_set_mix(k: usize, bits: u32) {
+    if k < MAX_FX {
+        ds().fx_mix[k] = bits;
+    }
+}
+
+/// An effect row whose words are in the DSP: claimed, published and no load in progress, so a one-word write can go out.
+pub unsafe fn fx_live(k: usize) -> bool {
+    let d = ds();
+    k < MAX_FX && d.fx_owner[k] != 0 && d.fx_pub[k] != 0 && d.phase == PH_IDLE && d.nwait == 0
+}
+
+/// The effect row's words in the chain: word `w` of row `k` (a one-word write through window 2).
+pub unsafe fn fx_word_start(k: usize, w: u32, value: u32) -> bool {
+    if finfo().is_null() {
+        return false;
+    }
+    start_word(WIN_FX, FX_ROW_WORDS * (fiw(F_FIRST) + k as u32) + w, value)
+}
+
+/// `Some(true)` done, `Some(false)` failed, `None` still running (a write started by `fx_word_start`).
+pub unsafe fn fx_word_poll() -> Option<bool> {
+    poll_done()
 }
 
 unsafe fn have_link() -> bool {
@@ -797,6 +855,7 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
             d.fx_par[frow][k] = rd32(e.add(20 + 4 * k));
             k += 1;
         }
+        d.fx_mix[frow] = MIX_ONE;
         d.fx_owner[frow] = rec as u8 + 1;
         d.fx_pub[frow] = 0;
         fclaimed |= 1 << frow;
@@ -840,6 +899,7 @@ unsafe fn unreserve(rec: usize) {
             d.fx_desc[k] = 0;
             d.fx_state[k] = 0;
             d.fx_par[k] = [0; 8];
+            d.fx_mix[k] = MIX_ONE;
         }
         k += 1;
     }
@@ -937,6 +997,7 @@ unsafe fn clear_fx_rows(rec: usize) {
             let at = FX_ROW_WORDS * (first + k as u32);
             write_word_blocking(WIN_FX, at + FXW_PC, FX_FREE_PC);
             write_word_blocking(WIN_FX, at + FXW_WAS, 0);
+            write_word_blocking(WIN_FX, at + FXW_MIX, MIX_ONE);
             write_word_blocking(WIN_FX, at + FXW_DIS, 0);
             write_word_blocking(WIN_FX, at + FXW_WSTART, 0);
             write_word_blocking(WIN_FX, at + FXW_WCOUNT, 0);
@@ -1080,7 +1141,7 @@ pub unsafe fn step() {
                     }
                     k += 1;
                 }
-                // then the effect rows, `FX_STEPS` steps each: the 8 parameter words, desc, state, enabled, the pc
+                // then the effect rows, `FX_STEPS` steps each: the 8 parameter words, desc, state, mix, enabled, the pc
                 let mut frow = MAX_FX;
                 if row == MAX_ROWS {
                     k = 0;
@@ -1111,6 +1172,8 @@ pub unsafe fn step() {
                     } else if want == 9 {
                         (at + FXW_STATE, d.fx_state[frow])
                     } else if want == 10 {
+                        (at + FXW_MIX, d.fx_mix[frow])
+                    } else if want == 11 {
                         (at + FXW_ENABLED, 1)
                     } else {
                         (at + FXW_PC, d.fx_pc[frow])

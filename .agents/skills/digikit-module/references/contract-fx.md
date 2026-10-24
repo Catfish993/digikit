@@ -2,8 +2,7 @@
 
 An effect processes the final stereo block of the device: the master, after the master mix and before the USB pack and the DAC converter
 (`docs/findings/53-stock-dsp-shape.md` H1, `docs/findings/55-fx-adapter.md` for the sites). Effects are patched in (`test/fx-gain` is the example) or, on the
-Digitakt II, loaded at run time from a `.dkm` (`test/dyn-fx-gain`, see "Run-time effects" below; `[contract] fx` is [1, 0]). Knobs for the parameter words and `tail_blocks`
-come later.
+Digitakt II, loaded at run time from a `.dkm` (`test/dyn-fx-gain`, see "Run-time effects" below; `[contract] fx` is [1, 0]). Knobs for the parameter words are an FX page of the effect ("Define an effect with its own page" below); `tail_blocks` comes later.
 
 Entry: the adapter `core/fx` enters your routine with `I13 = return address; JUMP (M13, I12)`; you return with `JUMP (M13, I13)`.
 Arguments: `R4` = state, `R8` = `dk_fx_in`, `R12` = parameter words. Result in `R0`: 0 (`DK_FX_OK`) or a negative number (a fault).
@@ -42,8 +41,45 @@ devices = ["dt2"]
 
 `patchkit pack MODULE --device dt2` makes a `.dkm` whose DSP section (version 4) has one record per effect and whose contract bytes say fx 1.0 (and no machine). There is no state symbol: the runtime
 reserves `state_bytes` behind your image and passes the address in R4. The runtime takes a free row of the chain (the device has `fx_slots` of them, 3 on the Digitakt II: `CAPACITY` `FX_SLOTS`, the DIGIKIT menu's `FX`), sets p0 to p7 to
-your defaults and `enabled` to 1, and publishes the pc last. A fourth effect is refused by the fit rule before the load and by the loader (`E_DSP_ROWS`) at boot. The effect is on from the start; there are no knobs yet
-(the words stay at their defaults). Template: `tests/fixtures/modules/dyn-fx-gain`; proof: `tests/digikit/scenarios/fx-dyn-dt2.toml` (`mise run scenario`-style, `pk_digikit_scen run fx-dyn-dt2`).
+your defaults and `enabled` to 1, and publishes the pc last. A fourth effect is refused by the fit rule before the load and by the loader (`E_DSP_ROWS`) at boot. The effect is on from the start; with a page its words follow the knobs. Template: `tests/fixtures/modules/dyn-fx-gain`; proof: `tests/digikit/scenarios/fx-dyn-dt2.toml` (`mise run scenario`-style, `pk_digikit_scen run fx-dyn-dt2`).
+
+## Define an effect with its own page (Digitakt II, `.dkm`)
+
+An effect with a `tab` gets a page after CHO in the FX view (FUNC + FX, then UP/DOWN): DEL, REV, CHO, then the pages of the loaded effects. You write the DSP code and the manifest; there is no
+ColdFire code and no effect-specific code anywhere else. Example (`tests/fixtures/modules/dyn-fx-gain/module.toml`):
+
+```toml
+[[fx]]
+id = "gain"
+process = "_dg_process"
+desc = "_dg_desc"
+tab = "GAN"             # the tab label of the page: 1 to 3 characters
+title = "TEST GAIN"     # the page title: 1 to 23 characters; the view adds (n/N)
+mix = 127               # the default of the MIX knob, 0 to 127 (default 127 = wet)
+devices = ["dt2"]
+
+[[fx.knob]]             # up to 7; knob i is the parameter word p_i your process routine reads
+name = "Gain"           # the long name shown while the knob turns ("Gain=98"): 1 to 23 characters
+short = "GAIN"          # the label under the knob: 1 to 6 characters
+min = 0.0               # the float your routine gets at the bottom of the knob ...
+max = 1.27              # ... and at the top; the value is linear between them
+default = 0.5           # inside min .. max; it is also the word's value at load (`defaults` is not allowed with a page)
+display = "percent"     # "percent" (0 .. 127, the default) or "bipolar" (-64 .. +63, for a knob that is centred)
+position = 0            # 0 to 7: the place on the page (default: the knob's place in the list)
+```
+
+- **Limits.** 3 effects at a time (`fx_slots`), each with its own page; 7 knobs and MIX. Knob i is p_i, so the effect reads at most p0 to p6 from knobs (`n_params` in your `dk_fx_desc` must cover the
+  knobs; p7 is free for a constant). Text is printable ASCII.
+- **MIX is the framework's.** The MIX knob sits on the page's level slot (label MIX, long name "Mix"). Your routine writes only the wet signal; the adapter makes
+  `master = dry + mix * (wet - dry)` per sample, mix = raw / 127 in the display's steps (127 is exactly the wet signal, 0 is exactly the dry one, bit for bit). It costs about 7 DSP instructions a block at
+  mix 1.0 and about 400 at another mix.
+- **How the values arrive.** In `params` (R12) as the IEEE float `min + (max - min) * raw / 0x7f00`, about 3 ms after a turn (the runtime polls the kit once per UI-loop pass and writes one word per
+  transfer). At load every word is its knob's `default`. The range is fixed at 0x7f00 steps, so a knob has about 127 detents' worth of travel at its resolution; choose the range so that a turn is audible.
+- **Not supported.** P-locks, LFO and other modulation on a knob, MIDI CC, a second page for one effect, a knob that does not reach the DSP as a float, saving the values with the kit (step 3 of the
+  feature: until then a kit load resets them to 0 and the effect gets `min`). An image without `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II have it) refuses a module with
+  a page (`E_NO_REGISTRY`). On the Digitone II effects follow later.
+- **Check it.** `patchkit pack MODULE --device dt2 -o x.dkm` refuses a bad page (a text too long, a default outside the range, two knobs at one position); the scenario `tests/digikit/scenarios/fx-pages-dt2.toml`
+  (`pk_digikit_scen run fx-pages-dt2`) is the proof for the fixture: the page's screenshots, the PCM at the knobs' values, MIX 0 equal to the dry sound.
 
 Judged by `tests/modules/test_fx_conformance.py` (`mise run module:check NAME`): signals, parameter limits, modulation, switching, a long run;
 checks: returns, registers, the adapter did not refuse a block, write set, instruction budget (about 23,000 for the effect, 900 for the adapter).

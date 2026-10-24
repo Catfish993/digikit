@@ -64,7 +64,7 @@ the DSP section (16-byte aligned), padding to 16, then the image. A file with a 
   `dkm_slot_<n>`, n = 0 to 7. The loader publishes each with one aligned 32-bit store after `init` returned 0.
 - **`register` records**: typed machine and parameter records (`docs/design/digikit-registry.md`; layout in
   `packages/patchkit/src/register.rs`). `patchkit pack MODULE --device dt2` lowers a `dynamic = true` module's `[[machine]]` and `[[param]]`
-  sections into them; the loader checks them with the rest of the file (before anything is written) and hands them to the registry
+  sections into them (and an `[[fx]]` with a `tab` into an EFFECT record, kind 4, the page of the effect: "Effect pages" in the registry design); the loader checks them with the rest of the file (before anything is written) and hands them to the registry
   (`registry.rs`), which fills the rows `core/dynreg` reserved. A module with no code at all packs with a four-byte image (`dkm_init` is
   `moveq #0,d0; rts`).
 - **Image**: the linked bytes at base 0; every word named by a relocation holds `S + A` (symbol offset plus addend) for kind 0 and
@@ -98,7 +98,7 @@ It does not read the image, the tables' entries, the records' bodies or the DSP 
 | `ARENA_XFER` | arena bytes held only while the DSP code is sent: the same for the relocated DSP image (its `image_size`); 0 without a DSP section |
 | `DSP_AREA` | the DSP range: `align8(image + bss)` plus the voice states (`voices * align8(state_bytes)` per voice record of version 3 and 4) and the effect states (`align8(state_bytes)` per version 4 effect record), rounded up to the 64-byte granule; 0 without a DSP section |
 | `DSP_ALIGN` | the range's placement alignment (the DSP section's `align`): the range starts at the next multiple of it, so up to `DSP_ALIGN - 8` bytes of the free range can be lost; 0 without a DSP section |
-| `MACHINE_ROWS`, `PARAM_ROWS`, `PAGE_ROWS` | the number of records of that kind in the `register` records |
+| `MACHINE_ROWS`, `PARAM_ROWS`, `PAGE_ROWS` | the number of records of that kind in the `register` records (an effect's page, kind 4, counts nothing: it belongs to the effect slot of its DSP record) |
 | `VOICE_ROWS` | the number of voice records of the DSP section |
 | `FX_SLOTS` | effect slots: the number of effect records of the DSP section (version 4) |
 

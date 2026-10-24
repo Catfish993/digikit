@@ -14,6 +14,8 @@ A framework module: it lets other modules process the final stereo block of the 
   (a `.dkm` with a DSP section of version 4; `docs/design/digikit-dkm.md`); the runtime fills one through window 2 of `core/dsp-link`, the pc word last.
 - Per block and effect: the output is checked (finite, magnitude at most 8.0); a bad block plays dry and clears the effect's state; the 8th
   fault within 1500 blocks switches the effect off until the next start. A switch on or off is a linear crossfade over one block.
+- MIX: row word 13 is the row's dry/wet blend (a float, default 1.0): the effect writes only the wet signal and the adapter makes `dry + mix * (wet - dry)`; mix 1.0 is the wet block bit for bit, mix 0 the
+  dry block bit for bit. The effect page of a run-time effect sets it (`core/fxpages`, finding 61).
 - Empty chain: 16 instructions per block with no row, 21 with one free row, 31 with three free rows (a quick scan of at most four rows, about 5 instructions per free row); one effect adds
-  4 to the bookkeeping of its row (steady 736, off 178 instructions per block).
+  4 to the bookkeeping of its row (steady 743 at mix 1.0, 1142 at another mix, 605 at mix 0, off 178 instructions per block).
 - Tests: `tests/patchkit/test_fx.py` (the adapter on the concrete core), `tests/support/fx_rig.py`.
