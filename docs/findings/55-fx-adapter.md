@@ -154,5 +154,10 @@ within the run-to-run spread of this short scenario; the earlier x1.03 stands as
 
 ## Open **[O]**
 
+- **[O] `menu-dkrun-pluck-dt2` is intermittent with the changed-block engine.** The scenario (`tests/digikit/test_menu_dt2.py`, bound 128 samples on the onset shift between the run-time machine and the patched-in one) failed with
+  onset shifts of 192 and 256 samples (0 samples differ after alignment) in 2 of 2 runs of the test file and 1 of 3 runs of the scenario alone with the new daemon, and passed (shift 0, exact) in 1 of 1 and 3 of 3 with the daemon
+  of the commit before. The new engine runs the patched DT2 image about 30 % faster (the scenario takes 60 s, was 88 s). The shift is whole DSP periods and 64-sample steps: the number of frames the DSP worker is ahead of the
+  ColdFire when a mailbox write arrives depends on host timing once the DSP is not the slower side. Same family as b2e0edbd (capture start). Not fixed here; the fix belongs to the coupled daemon (apply a ColdFire write at a
+  frame position that does not depend on the worker's lead), not to the test bound.
 - The role of ring C words 2 and 3 (next pair) and of the rest of the frame.
 - A second agent checks the hook table against the image bytes before the marks become [V].
