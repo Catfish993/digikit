@@ -2,7 +2,7 @@
 
 An effect processes the final stereo block of the device: the master, after the master mix and before the USB pack and the DAC converter
 (`docs/findings/53-stock-dsp-shape.md` H1, `docs/findings/55-fx-adapter.md` for the sites). Effects are patched in (`test/fx-gain` is the example) or, on the
-Digitakt II, loaded at run time from a `.dkm` (`test/dyn-fx-gain`, see "Run-time effects" below; `[contract] fx` is [1, 0]). Knobs for the parameter words are an FX page of the effect ("Define an effect with its own page" below); `tail_blocks` comes later.
+Digitakt II or Digitone II, loaded at run time from a `.dkm` (`test/dyn-fx-gain`, see "Run-time effects" below; `[contract] fx` is [1, 0]). Knobs for the parameter words are an FX page of the effect ("Define an effect with its own page" below); `tail_blocks` comes later.
 
 Entry: the adapter `core/fx` enters your routine with `I13 = return address; JUMP (M13, I12)`; you return with `JUMP (M13, I13)`.
 Arguments: `R4` = state, `R8` = `dk_fx_in`, `R12` = parameter words. Result in `R0`: 0 (`DK_FX_OK`) or a negative number (a fault).
@@ -26,9 +26,9 @@ dk_fx_desc (words): magic DK_FX_MAGIC, contract DK_FX_V1, n_params, state_bytes 
   the L registers and MODE1. The adapter pins M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1, L0-L5 = 0, SIMD off, RND32 set.
 - Data stack: `stack_bytes` below `I7`; nothing else outside your own data may be written. The input block is read only.
 
-## Run-time effects (Digitakt II, `.dkm`)
+## Run-time effects (Digitakt II and Digitone II, `.dkm`)
 
-A module with `dynamic = true`, `type = "fx"` and a DSP object for `dt2` declares its effects in `module.toml`:
+A module with `dynamic = true`, `type = "fx"` and a DSP object for `dt2` and `dn2` declares its effects in `module.toml`:
 
 ```toml
 [[fx]]
@@ -36,14 +36,14 @@ id = "gain"
 process = "_dg_process"   # global text symbol of the process routine
 desc = "_dg_desc"         # data symbol of its dk_fx_desc (n_params <= 8, state_bytes a multiple of 4)
 defaults = [0x3f000000]   # the words p0 ... of the row (at most n_params); 0 where none
-devices = ["dt2"]
+devices = ["dt2", "dn2"]
 ```
 
-`patchkit pack MODULE --device dt2` makes a `.dkm` whose DSP section (version 4) has one record per effect and whose contract bytes say fx 1.0 (and no machine). There is no state symbol: the runtime
-reserves `state_bytes` behind your image and passes the address in R4. The runtime takes a free row of the chain (the device has `fx_slots` of them, 3 on the Digitakt II: `CAPACITY` `FX_SLOTS`, the DIGIKIT menu's `FX`), sets p0 to p7 to
-your defaults and `enabled` to 1, and publishes the pc last. A fourth effect is refused by the fit rule before the load and by the loader (`E_DSP_ROWS`) at boot. The effect is on from the start; with a page its words follow the knobs. Template: `tests/fixtures/modules/dyn-fx-gain`; proof: `tests/digikit/scenarios/fx-dyn-dt2.toml` (`mise run scenario`-style, `pk_digikit_scen run fx-dyn-dt2`).
+`patchkit pack MODULE --device dt2` (or `dn2`) makes a `.dkm` whose DSP section (version 4) has one record per effect and whose contract bytes say fx 1.0 (and no machine). There is no state symbol: the runtime
+reserves `state_bytes` behind your image and passes the address in R4. The runtime takes a free row of the chain (the device has `fx_slots` of them, 3 on both devices: `CAPACITY` `FX_SLOTS`, the DIGIKIT menu's `FX`), sets p0 to p7 to
+your defaults and `enabled` to 1, and publishes the pc last. A fourth effect is refused by the fit rule before the load and by the loader (`E_DSP_ROWS`) at boot. The effect is on from the start; with a page its words follow the knobs. Template: `tests/fixtures/modules/dyn-fx-gain`; proof: `tests/digikit/scenarios/fx-dyn-dt2.toml` and `fx-dyn-dn2.toml` (`pk_digikit_scen run fx-dyn-dt2`). The Digitone II's image needs `core/dynfx` and `core/fxpages` named in the module list (they are in its `device` patch set, not in `emulator`: the effect hook costs the emulator about x2.4 DSP CPU there, finding 55).
 
-## Define an effect with its own page (Digitakt II, `.dkm`)
+## Define an effect with its own page (Digitakt II and Digitone II, `.dkm`)
 
 An effect with a `tab` gets a page after CHO in the FX view (FUNC + FX, then UP/DOWN): DEL, REV, CHO, then the pages of the loaded effects. You write the DSP code and the manifest; there is no
 ColdFire code and no effect-specific code anywhere else. Example (`tests/fixtures/modules/dyn-fx-gain/module.toml`):
@@ -56,7 +56,7 @@ desc = "_dg_desc"
 tab = "GAN"             # the tab label of the page: 1 to 3 characters
 title = "TEST GAIN"     # the page title: 1 to 23 characters; the view adds (n/N)
 mix = 127               # the default of the MIX knob, 0 to 127 (default 127 = wet)
-devices = ["dt2"]
+devices = ["dt2", "dn2"]
 
 [[fx.knob]]             # up to 7; knob i is the parameter word p_i your process routine reads
 name = "Gain"           # the long name shown while the knob turns ("Gain=98"): 1 to 23 characters
@@ -80,11 +80,11 @@ position = 0            # 0 to 7: the place on the page (default: the knob's pla
   its row is its own; a different effect in that row, an empty row, a kit saved without the effect and a kit saved by stock firmware all give it the defaults of your manifest (each knob's `default`, MIX
   `mix`). Your effect never sees a zero in between. A new kit gets the defaults. A kit saved with effects also loads on stock firmware (it ignores the extra bytes). Effects count by row: the same two
   effects loaded in the other order (the selection's order sets the rows) get defaults, not each other's values.
-- **Not supported.** P-locks, LFO and other modulation on a knob, MIDI CC, a second page for one effect, a knob that does not reach the DSP as a float. An image without `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II have it) refuses a module with
-  a page (`E_NO_REGISTRY`). On the Digitone II effects follow later.
-- **Check it.** `patchkit pack MODULE --device dt2 -o x.dkm` refuses a bad page (a text too long, a default outside the range, two knobs at one position); the scenario `tests/digikit/scenarios/fx-pages-dt2.toml`
+- **Not supported.** P-locks, LFO and other modulation on a knob, MIDI CC, a second page for one effect, a knob that does not reach the DSP as a float. An image without `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II and the `device` set of the Digitone II have it) refuses a module with
+  a page (`E_NO_REGISTRY`). The pages are the same on both devices (the Digitone II's effect pages are numbers 37 to 39, its FX view lists DEL, REV, CHO as there).
+- **Check it.** `patchkit pack MODULE --device dt2 -o x.dkm` refuses a bad page (a text too long, a default outside the range, two knobs at one position); the scenarios `tests/digikit/scenarios/fx-pages-dt2.toml` and `fx-pages-dn2.toml`
   (`pk_digikit_scen run fx-pages-dt2`) is the proof for the fixture: the page's screenshots, the PCM at the knobs' values, MIX 0 equal to the dry sound.
-  `tests/digikit/scenarios/fx-persist-dt2.toml` (`pk_digikit_scen run fx-persist-dt2`) proves the saved values: Save Kit and Load Kit, a kit without the effect, the effects in the other rows, a project, another pattern's kit.
+  `tests/digikit/scenarios/fx-persist-dt2.toml` and `fx-persist-dn2.toml` (`pk_digikit_scen run fx-persist-dt2`) prove the saved values: Save Kit and Load Kit, a kit without the effect, the effects in the other rows, a project, another pattern's kit.
 
 Judged by `tests/modules/test_fx_conformance.py` (`mise run module:check NAME`): signals, parameter limits, modulation, switching, a long run;
 checks: returns, registers, the adapter did not refuse a block, write set, instruction budget (about 23,000 for the effect, 900 for the adapter).
@@ -93,7 +93,7 @@ Template (patched in): `tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s`. Emula
 ## The reference effect: `digikit/freqshift`
 
 `modules/fx/freqshift` is the effect to copy for a real one: a run-time module with a page (tab FSH, one bipolar knob, MIX default 0), state in the descriptor (664 bytes: filter states, a delay buffer, an oscillator), a float32 reference model that defines the
-arithmetic (`tools/patchkit/freqshift_ref.py`), a test that holds the routine on the rig to the model (`tests/patchkit/test_freqshift.py`) and an emulator scenario for the page and the sound (`tests/digikit/scenarios/fx-freqshift-dt2.toml`). Its cookbook entry (finding 54) lists what was hard. Patterns worth taking:
+arithmetic (`tools/patchkit/freqshift_ref.py`), a test that holds the routine on the rig to the model (`tests/patchkit/test_freqshift.py`) and an emulator scenario for the page and the sound (`tests/digikit/scenarios/fx-freqshift-dt2.toml` and `fx-freqshift-dn2.toml`). Its cookbook entry (finding 54) lists what was hard. Patterns worth taking:
 
 - A knob that is centred: `display = "bipolar"`, `min = -64.0`, `max = 63.0`, `default = 0.0` makes the float the shown number; a mapping with `2^x - 1` and no constant term gives exactly 0 at 0.
 - MIX default 0 (`mix = 0` in `[[fx]]`) so that loading the effect does not change the sound.

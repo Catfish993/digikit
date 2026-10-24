@@ -30,6 +30,7 @@ from tools.patchkit.pk_digikit_fxpage import (
     ENC_LEVEL,
     ONE,
     SINE,
+    STOCK_PAGES,
     W_MIX,
     Kit,
     Shots,
@@ -40,7 +41,7 @@ from tools.patchkit.pk_digikit_fxpage import (
     profile,
     unbits,
 )
-from tools.patchkit.pk_digikit_fxpersist import KIT_AREA, Run
+from tools.patchkit.pk_digikit_fxpersist import KIT_AREAS, Run
 
 FX = "digikit/freqshift"
 LO, HI = -64.0, 63.0  # the SHIFT knob
@@ -115,7 +116,7 @@ def run_fxshift(c: Any) -> None:
             c.check(
                 "dry: the sine loaded", info["results"] == [0], f"{info['results']}"
             )
-            rig.select_type(rig.dyn_type(SINE, "sine"), hint)
+            rig.pick(rig.dyn_type(SINE, "sine"), hint)
             to_main(rig)
             sound(rig, "dry", again=False)
             c.done(rig)
@@ -128,7 +129,7 @@ def run_fxshift(c: Any) -> None:
                 info["results"] == [0, 0] and info["safe"] == 0,
                 f"{info['results']}",
             )
-            rig.select_type(rig.dyn_type(SINE, "sine"), hint)
+            rig.pick(rig.dyn_type(SINE, "sine"), hint)
             shots = Shots(c.work, "fsh")
             plan = rig.plan
             slots = pk_device.limits(c.device).fx_slots
@@ -144,8 +145,8 @@ def run_fxshift(c: Any) -> None:
             row0 = M.sym(plan, "core/fxpages", "fxp_rows")
             first = cfg["page_first"]
             c.check(
-                "shift: the FX view has four pages: the stock pages 13, 14, 15 and the effect's",
-                count == 4 and listed == [13, 14, 15, first],
+                "shift: the FX view has four pages: the three stock pages and the effect's",
+                count == 4 and listed == [*STOCK_PAGES[c.device], first],
                 f"count {count} {listed}",
             )
             p_first = M.sym(plan, "core/fxpages", "params.fp0.index")
@@ -318,4 +319,4 @@ def run_fxshift(c: Any) -> None:
             abs(wanted / a0 - 1) < 0.005 and db > 40.0 and still / wanted < 0.01,
             f"wanted {wanted:.4f} ({wanted / a0:.4f} of dry), image {image:.5f}, at f0 {still:.5f}, rejection {db:.1f} dB",
         )
-    c.common_checks(KIT_AREA)
+    c.common_checks(KIT_AREAS[c.device])

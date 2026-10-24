@@ -5,7 +5,7 @@
 | Four hooks, each on the first whole instructions (6 bytes) of a site; the displaced instructions are not run, each routine redoes them:
 |
 |   fxp_acc    the page descriptor accessor `FUN_400c898a(int page) -> row` (rows of 0x2c bytes at a RAM table). A page number FX_PAGE_FIRST + k
-|              (k < the effect slots) answers with row k of fxp_rows; everything else runs the stock code (moveq 0x20,D1; move.l 4(SP),D0; ...).
+|              (k < the effect slots) answers with row k of fxp_rows; everything else runs the stock code (moveq FX_PAGE_FIRST-1,D1; move.l 4(SP),D0; ...).
 |   fxp_list   the FX view builder pushes its page count (moveq 3,D1) and then loads the address of its list of page numbers (move.l #list,D0). The
 |              count is replaced on the stack and D0 is fxp_list_buf. While fxp_count is 0 (the runtime did not build a list) the stock list stays.
 |   fxp_label  the tab label of FxPageView: after the tests for the pages 14 and 15 the stock code tests for 13 (`move.b #0xd,D1b; cmp.l D0,D1; bne.b`).
@@ -56,7 +56,7 @@ fxp_acc:
     addi.l  #fxp_rows,%d0
     rts
 1:  move.l  4(%sp),%d0                  | the displaced instructions
-    moveq   #0x20,%d1
+    moveq   #FX_PAGE_FIRST-1,%d1         | (the stock bound: the pages below FX_PAGE_FIRST)
     jmp     _fp_acc + 6
 
     .globl fxp_list
@@ -81,7 +81,7 @@ fxp_label:
     movea.l %d1,%a0
     move.l  (%a0),-(%sp)                | the tab label, as the stock code pushes its string
     jmp     _fp_label + 0x1e
-1:  moveq   #0xd,%d1                    | the displaced instructions (D0 is untouched)
+1:  move.l   _fp_stock,%d1               | the displaced instructions: the first page of the stock list (DEL; D0 is untouched)
     cmp.l   %d0,%d1
     jmp     _fp_label + 6
 
@@ -96,7 +96,7 @@ fxp_graph:
 
     .globl fxp_load
 fxp_load:
-    move.l  0x98(%a0),0x8e(%a1)         | the displaced instruction (A0 = storage record, A1 = the array)
+    move.l  0x98(%a0),FX_TAIL_OFF(%a1)  | the displaced instruction (A0 = storage record, A1 = the array)
     lea     -20(%sp),%sp                | ColdFire movem has no predecrement form
     movem.l %d2-%d4/%a4-%a5,(%sp)
     move.l  %a1,fxp_last_load
@@ -142,7 +142,7 @@ fxp_load:
 
     .globl fxp_save
 fxp_save:
-    move.l  0x8e(%a3),0x98(%a2)         | the displaced instruction (A2 = storage record, A3 = the array)
+    move.l  FX_TAIL_OFF(%a3),0x98(%a2)  | the displaced instruction (A2 = storage record, A3 = the array)
     lea     -20(%sp),%sp
     movem.l %d2-%d4/%a4-%a5,(%sp)
     move.l  %a3,fxp_last_save

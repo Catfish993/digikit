@@ -57,7 +57,7 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
 - **Patterns:** `references/contract-fx.md`; the rig (`tests/support/fx_rig.py`) and the effects for tests (`tests/support/fx_effects.s`) are templates for
   an effect's unit test.
 
-## digikit/freqshift (effect, single-sideband frequency shifter; Digitakt II, run time)
+## digikit/freqshift (effect, single-sideband frequency shifter; Digitakt II and Digitone II, run time)
 
 - **What:** every frequency of the master moves by the same number of Hz (not a pitch shift): a Hilbert pair of allpass chains makes two copies 90 degrees apart, a sine and a cosine of the
   shift frequency modulate them and the sum keeps one sideband. One knob SHIFT (-64 .. +63, bipolar, 0 in the middle), MIX from the framework (default 0, so loading the effect changes nothing).
@@ -81,7 +81,7 @@ frequency shifter (effect, after the run-time FX adapter of P3d-1).
   - The bipolar display shows the signed value under the knob and in the title (`Freq Shift=-42`); the firmware font draws a capital Q like an O in the page title.
   - `ASHIFT` by an immediate is refused by the build (selas-pitfalls): `R1 = -5; R10 = ASHIFT R0 BY R1;`.
 - **Tests:** `tests/patchkit/test_freqshift_ref.py` (mapping, Hilbert pair, oscillator, tones on the model), `tests/patchkit/test_freqshift.py` (the routine on the rig: model match, tones at +100, -100 and +2,000 Hz with the image 40 dB down, flat at SHIFT 0, MIX 0 dry bit for bit, level bound, cost, a long run
-  under PyPy; a run of a minute is `slow`), conformance (`mise run module:check digikit/freqshift`), the emulator scenario `fx-freqshift-dt2` (page, knob, PCM spectra, Save Kit and Load Kit). A listening demo: `tests/support/freqshift_demo.py`.
+  under PyPy; a run of a minute is `slow`), conformance (`mise run module:check digikit/freqshift`), the emulator scenarios `fx-freqshift-dt2` and `fx-freqshift-dn2` (page, knob, PCM spectra, Save Kit and Load Kit; the Digitone II's pass with the same figures: +40 gives +96.79 Hz, -42 gives -124.72 Hz, the image 70.1 dB down, MIX 0 the dry PCM bit for bit). A listening demo: `tests/support/freqshift_demo.py`.
 
 ## digikit/remote (a service module: SysEx commands of its own; both devices)
 

@@ -60,6 +60,8 @@ struct FxDoc {
     store_halfwords: u64,
     /// An array index nothing uses (not one of `value_indices`): the mark that an effect row holds values (core/fxpages).
     mark_index: u64,
+    /// The byte offset of the u32 after the array's halfwords (the stock loader and saver move it with `move.l (0x98,record),(tail,array)`).
+    tail_off: u64,
 }
 /// `[input]`: which input backend the device uses (a name of `INPUT_BACKENDS`); the profile chooses, the code of core/input has one backend each.
 #[derive(Deserialize)]
@@ -187,6 +189,7 @@ struct FxF {
     store_off: u64,
     store_halfwords: u64,
     mark_index: u64,
+    tail_off: u64,
 }
 /// A device's input facts: the backend (index into `INPUT_BACKENDS` plus 1; 0 none) and the panel's key code layout.
 #[derive(Debug, Default)]
@@ -448,6 +451,11 @@ fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64) -> Result<FxF> {
             n + n / 8
         ));
     }
+    if f.tail_off & 1 != 0 || f.tail_off > 0xffff || f.mark_index * 2 + 2 > f.tail_off {
+        return Err(err!(
+            "{short}: [fx] tail_off is even and behind the halfword of mark_index"
+        ));
+    }
     if f.mark_index > 255 || f.value_indices.contains(&f.mark_index) {
         return Err(err!(
             "{short}: [fx] mark_index is an array index below 256 that is not one of value_indices"
@@ -473,6 +481,7 @@ fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64) -> Result<FxF> {
         store_off: f.store_off,
         store_halfwords: f.store_halfwords,
         mark_index: f.mark_index,
+        tail_off: f.tail_off,
     })
 }
 
@@ -1040,6 +1049,11 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "FX_MARK_INDEX",
             fx.mark_index,
             "[fx] mark_index (the array index that holds the mark: an effect row has its values)",
+        ),
+        (
+            "FX_TAIL_OFF",
+            fx.tail_off,
+            "[fx] tail_off (the u32 after the array's halfwords: the loader and saver copy it, bytes from the array)",
         ),
         (
             "FX_VALUES_N",

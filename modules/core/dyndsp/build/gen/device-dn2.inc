@@ -57,40 +57,41 @@
     .equ PANEL_EXC_CODE_7, 0x0    /* [panel.exceptions] code */
     .equ PANEL_EXC_CH_7, 0x0    /* [panel.exceptions] channel of the code */
     .equ PANEL_EXC_BIT_7, 0x0    /* [panel.exceptions] bit of the code */
-    .equ FX_KIT_PTR, 0x0    /* [fx] kit_ptr (the firmware's pointer to the live kit object) */
-    .equ FX_ARRAY_OFF, 0x0    /* [fx] array_off (the kit's array of effect values, bytes from the kit object) */
-    .equ FX_PAGE_FIRST, 0x0    /* [fx] page_first (the page number of the first effect page) */
-    .equ FX_TPL_PERCENT, 0x0    /* [fx] template_percent (a 0 .. 127 knob) */
-    .equ FX_TPL_BIPOLAR, 0x0    /* [fx] template_bipolar (a -64 .. +63 knob) */
-    .equ FX_TPL_MIX, 0x0    /* [fx] template_mix (the level slot: MIX) */
-    .equ FX_STORE_OFF, 0x0    /* [fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start) */
-    .equ FX_STORE_HW, 0x0    /* [fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row) */
-    .equ FX_MARK_INDEX, 0x0    /* [fx] mark_index (the array index that holds the mark: an effect row has its values) */
-    .equ FX_VALUES_N, 0x0    /* [fx] value_indices: number of indices */
-    .equ FX_VALUE_0, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_1, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_2, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_3, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_4, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_5, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_6, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_7, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_8, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_9, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_10, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_11, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_12, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_13, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_14, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_15, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_16, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_17, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_18, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_19, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_20, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_21, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_22, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_VALUE_23, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_KIT_PTR, 0x800052a0    /* [fx] kit_ptr (the firmware's pointer to the live kit object) */
+    .equ FX_ARRAY_OFF, 0x48e4    /* [fx] array_off (the kit's array of effect values, bytes from the kit object) */
+    .equ FX_PAGE_FIRST, 0x25    /* [fx] page_first (the page number of the first effect page) */
+    .equ FX_TPL_PERCENT, 0x75    /* [fx] template_percent (a 0 .. 127 knob) */
+    .equ FX_TPL_BIPOLAR, 0x73    /* [fx] template_bipolar (a -64 .. +63 knob) */
+    .equ FX_TPL_MIX, 0x79    /* [fx] template_mix (the level slot: MIX) */
+    .equ FX_STORE_OFF, 0x60    /* [fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start) */
+    .equ FX_STORE_HW, 0x1c    /* [fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row) */
+    .equ FX_MARK_INDEX, 0x64    /* [fx] mark_index (the array index that holds the mark: an effect row has its values) */
+    .equ FX_TAIL_OFF, 0xca    /* [fx] tail_off (the u32 after the array's halfwords: the loader and saver copy it, bytes from the array) */
+    .equ FX_VALUES_N, 0x18    /* [fx] value_indices: number of indices */
+    .equ FX_VALUE_0, 0x46    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_1, 0x47    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_2, 0x48    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_3, 0x49    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_4, 0x4a    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_5, 0x4b    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_6, 0x4c    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_7, 0x4d    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_8, 0x4e    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_9, 0x4f    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_10, 0x50    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_11, 0x51    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_12, 0x52    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_13, 0x53    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_14, 0x54    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_15, 0x55    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_16, 0x56    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_17, 0x57    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_18, 0x58    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_19, 0x59    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_20, 0x5a    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_21, 0x5b    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_22, 0x5c    /* [fx] value_indices (an effect value index that no stock parameter uses) */
+    .equ FX_VALUE_23, 0x5d    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_24, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_25, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_26, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */

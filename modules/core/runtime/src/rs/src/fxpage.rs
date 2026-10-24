@@ -435,22 +435,26 @@ unsafe fn seed_row(inf: *const u32, k: usize, arr: u32) {
     }
 }
 
-/// The live kit object (0 while the firmware has none); a pointer in a DDR cell, checked to lie in DDR.
+/// The live kit object (0 while the firmware has none); a pointer in a DDR cell, checked to lie in DDR. Any alignment: the Digitone II's kit objects are allocated at odd
+/// addresses (its sound arrays have an odd stride), so the array's halfwords are read and written a byte at a time.
 unsafe fn kit(inf: *const u32) -> u32 {
     let k = rd(iw(inf, w::KIT_PTR));
     let ddr = dkrt_sdk::device::DDR_CACHED_BASE..dkrt_sdk::device::DDR_CACHED_BASE + dkrt_sdk::device::DDR_BYTES;
-    if k & 3 != 0 || !ddr.contains(&k) {
+    if !ddr.contains(&k) {
         return 0;
     }
     k
 }
 
 unsafe fn rd16(a: u32) -> i32 {
-    read_volatile(a as *const i16) as i32
+    let hi = read_volatile(a as *const u8) as u16;
+    let lo = read_volatile((a + 1) as *const u8) as u16;
+    ((hi << 8 | lo) as i16) as i32
 }
 
 unsafe fn wr16(a: u32, v: i32) {
-    write_volatile(a as *mut i16, v as i16)
+    write_volatile(a as *mut u8, (v >> 8) as u8);
+    write_volatile((a + 1) as *mut u8, v as u8);
 }
 
 /// Words of effect row `k` that exist: its knobs and MIX.

@@ -38,6 +38,7 @@ from tools.patchkit.pk_digikit_fxpage import (
     open_send_fx,
     page_down,
     profile,
+    put16,
     u16,
 )
 from tools.patchkit.pk_harness import button
@@ -48,9 +49,8 @@ STOCK_IDX = 32  # the kit array index of Delay Time (finding 61: the stock effec
 ID_A = 0x4625  # patchkit `register::effect_id("test/dyn-fx-gain", "gain")`
 RAW_MAX = 0x7F00
 FXP_MARK = 0x46A7  # the value core/fxpages puts at [fx] mark_index of a kit array that holds its rows
-KIT_AREA = (
-    (0x16000, 0x17000),
-)  # the firmware's kit library: where Save Kit writes (sectors)
+# the firmware's kit library: where Save Kit writes (sectors); the Digitone II keeps it near the start of the card
+KIT_AREAS = {"dt2": ((0x16000, 0x17000),), "dn2": ((0x2000, 0x2100),)}
 # the defaults of A and B in the kit (raw), None where the page has no knob (the word is not the effect's)
 DEF_AB = (
     [0x3200] + [None] * 6 + [0x7F00] + [0x1900] + [None] * 6 + [0x4000] + [None] * 8
@@ -104,11 +104,7 @@ class Run:
     def poke(self, index: int, raw: int) -> None:
         """Write the halfword INDEX of the live kit's value array (the change the firmware's own pages make; the next poll of the runtime sends it)."""
         addr = self.rig.w(self.cfg["kit_ptr"]) + self.cfg["array_off"] + 2 * index
-        word = self.rig.w(addr & ~3)
-        word = (
-            (word & 0xFFFF) | raw << 16 if addr % 4 == 0 else (word & 0xFFFF0000) | raw
-        )
-        self.rig.emu.poke32(addr & ~3, word)
+        put16(self.rig, addr, raw)
 
     def press_watch(
         self, key: str, total_ms: int, step: int, each: Any = None
@@ -148,11 +144,7 @@ class Run:
 
     def poke16(self, addr: int, raw: int) -> None:
         """Write the halfword at ADDR."""
-        word = self.rig.w(addr & ~3)
-        word = (
-            (word & 0xFFFF) | raw << 16 if addr % 4 == 0 else (word & 0xFFFF0000) | raw
-        )
-        self.rig.emu.poke32(addr & ~3, word)
+        put16(self.rig, addr, raw)
 
     def swap_rows(self, a: int, b: int) -> None:
         """Swap the effect IDs and the defaults of two rows in the tables of the kit hooks (the runtime writes them in the order the effects load)."""
@@ -296,7 +288,7 @@ def run_fxpersist(c: Any) -> None:
             rig.s.pcm_mark = 0
 
         def select_sine() -> None:
-            rig.select_type(rig.dyn_type(SINE, "sine"), hint)
+            rig.pick(rig.dyn_type(SINE, "sine"), hint)
 
         def note(name: str) -> None:
             r.to_main()
@@ -469,13 +461,20 @@ def run_fxpersist(c: Any) -> None:
 
         # another pattern has a kit object of its own, made before the effects were loaded: it plays with the defaults; back on the first pattern the turned values are there
         r.tap("PTN", 800)
-        r.tap("TRIG 2", 1500)
+        r.tap("TRIG 2", 300)
+        waited = 300
+        while (
+            r.mark() != FXP_MARK and waited < 8000
+        ):  # the runtime seeds a kit it has not seen in a pass of its UI loop
+            rig.s.run_ms(100)
+            waited += 100
         got = r.values()
         c.check(
             "fx: pattern A02's kit (another kit object) holds the defaults, not what the object held before (seeded, marked)",
             is_default(got, DEF_AB) and r.mark() == FXP_MARK and got[:16] != S[:16],
-            f"{hx(got)} mark {r.mark():#x}",
+            f"{hx(got)} mark {r.mark():#x} after {waited} ms, live kit {rig.w(cfg['kit_ptr']):#x}, the runtime's {fxp_state(rig)['kit']:#x}, seeds {fxp_state(rig)['seeds']}",
         )
+        rig.s.run_ms(1200)
         r.tap("PTN", 800)
         r.tap("TRIG 1", 1500)
         got = r.values()
@@ -672,4 +671,4 @@ def run_fxpersist(c: Any) -> None:
         )
         no_zero("swap", out["seen"])
         c.done(rig)
-    c.common_checks(KIT_AREA)
+    c.common_checks(KIT_AREAS[c.device])

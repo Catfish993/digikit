@@ -41,6 +41,8 @@ FXP_KIT, FXP_SENT, FXP_ERRORS, FXP_SEEDS = 4, 16, 20, 24
 FXP_OWNER, FXP_NKNOB, FXP_CUR, FXP_DSP = 28, 32, 44, 172
 W_MIX = 13
 ONE = 0x3F800000
+# the firmware's FX view list (DEL, REV, CHO): rodata at `cf.fxpages.stock`, the page numbers differ by device
+STOCK_PAGES = {"dt2": [13, 14, 15], "dn2": [17, 18, 19]}
 # the encoders: knob A and the level knob
 ENC_A, ENC_LEVEL = "ENC A", "LEVEL"
 
@@ -134,8 +136,20 @@ def profile(dev: str) -> dict[str, Any]:
 
 
 def u16(rig: Any, addr: int) -> int:
-    wv = rig.w(addr & ~3)
-    return (wv >> 16 if addr % 4 == 0 else wv) & 0xFFFF
+    """The big-endian halfword at ADDR, at any alignment (the Digitone II's kit objects start at odd addresses)."""
+    return (
+        (rig.w(addr & ~3) >> (8 * (2 - addr % 4)) & 0xFFFF)
+        if addr % 4 <= 2
+        else ((rig.w(addr & ~3) & 0xFF) << 8 | rig.w((addr & ~3) + 4) >> 24)
+    )
+
+
+def put16(rig: Any, addr: int, raw: int) -> None:
+    """Write the big-endian halfword at ADDR, at any alignment (aligned words are read and written whole)."""
+    for i, byte in enumerate((raw >> 8 & 0xFF, raw & 0xFF)):
+        a = addr + i
+        shift = 8 * (3 - a % 4)
+        rig.emu.poke32(a & ~3, (rig.w(a & ~3) & ~(0xFF << shift)) | byte << shift)
 
 
 class Kit:
@@ -165,10 +179,18 @@ class Kit:
             f"turning {enc}: value {self.raw(k, j):#x}, wanted {target:#x}"
         )
 
-    def snapshot(self) -> list[int]:
-        """All 71 values of the live kit's array."""
+    def poke(self, index: int, raw: int) -> None:
+        """Write the halfword INDEX of the live kit's array (what a page's knob does, without the page)."""
         kit = self.rig.w(self.fx["kit_ptr"])
-        return [u16(self.rig, kit + self.fx["array_off"] + 2 * i) for i in range(71)]
+        put16(self.rig, kit + self.fx["array_off"] + 2 * index, raw)
+
+    def snapshot(self) -> list[int]:
+        """All values of the live kit's array (`[fx] tail_off` bytes: 71 on the Digitakt II, 101 on the Digitone II)."""
+        kit = self.rig.w(self.fx["kit_ptr"])
+        return [
+            u16(self.rig, kit + self.fx["array_off"] + 2 * i)
+            for i in range(self.fx["tail_off"] // 2)
+        ]
 
     def to_min(self, enc: str) -> None:
         self.rig.s.turn_burst(enc, -8, 80)
@@ -233,7 +255,7 @@ def run_fxpage(c: Any) -> None:
             c.check(
                 "step1: the sine loaded", info["results"] == [0], f"{info['results']}"
             )
-            rig.select_type(rig.dyn_type(SINE, "sine"), hint)
+            rig.pick(rig.dyn_type(SINE, "sine"), hint)
             frames["step1"] = stock_pages(rig, Shots(c.work, "step1"))
             to_main(rig)
             pcm["step1"] = sound(rig, c.work / "step1.wav")
@@ -251,10 +273,35 @@ def run_fxpage(c: Any) -> None:
                 and fxp_state(rig)["owner"] == [0, 0, 0, 0],
                 f"{fxp_state(rig)['owner']}",
             )
-            rig.select_type(rig.dyn_type(SINE, "sine"), hint)
+            rig.pick(rig.dyn_type(SINE, "sine"), hint)
             frames["stock"] = stock_pages(rig, Shots(c.work, "stock"))
             to_main(rig)
             pcm["stock"] = sound(rig, c.work / "stock.wav")
+            # the free value indices of [fx]: poked with distinct values in a kit with no effect, nothing else moves and the sound is the same
+            kit = Kit(rig, fxp_cfg)
+            idxs = [*fxp_cfg["value_indices"], fxp_cfg["mark_index"]]
+            quiet0 = kit.snapshot()
+            rig.s.run_ms(300)
+            drift = {
+                i
+                for i, (x, y) in enumerate(zip(quiet0, kit.snapshot(), strict=True))
+                if x != y
+            }
+            before = kit.snapshot()
+            for n, i in enumerate(idxs):
+                kit.poke(i, 0x1000 + 0x111 * n)
+            rig.s.run_ms(500)
+            after = kit.snapshot()
+            moved = {
+                i for i, (x, y) in enumerate(zip(before, after, strict=True)) if x != y
+            }
+            c.check(
+                f"stock: the {len(idxs)} free value indices ([fx] value_indices and mark_index) take distinct values and keep them; no other index moved",
+                all(after[i] == 0x1000 + 0x111 * n for n, i in enumerate(idxs))
+                and not (moved - set(idxs) - drift),
+                f"moved {sorted(moved - set(idxs))} drift {sorted(drift)}",
+            )
+            pcm["poked"] = rig.note(c.work / "stock-poked.wav", rig.frames() + 300)
             c.done(rig)
 
     def effect() -> None:
@@ -265,7 +312,7 @@ def run_fxpage(c: Any) -> None:
                 info["results"] == [0, 0] and info["safe"] == 0,
                 f"{info['results']}",
             )
-            rig.select_type(rig.dyn_type(SINE, "sine"), hint)
+            rig.pick(rig.dyn_type(SINE, "sine"), hint)
             shots = Shots(c.work, "effect")
             open_send_fx(rig)
             pages = []
@@ -287,8 +334,8 @@ def run_fxpage(c: Any) -> None:
             row0 = M.sym(plan, "core/fxpages", "fxp_rows")
             first = fxp_cfg["page_first"]
             c.check(
-                "effect: the page list holds the stock pages 13, 14, 15 and the effect's page",
-                count == 4 and listed == [13, 14, 15, first],
+                "effect: the page list holds the three stock pages and the effect's page",
+                count == 4 and listed == [*STOCK_PAGES[c.device], first],
                 f"count {count} {listed}",
             )
             p_first = M.sym(plan, "core/fxpages", "params.fp0.index")
@@ -444,7 +491,7 @@ def run_fxpage(c: Any) -> None:
                 and fxp_state(rig)["owner"] == [0, 0, 0, 0],
                 f"{fxp_state(rig)['owner']}",
             )
-            rig.select_type(rig.dyn_type(SINE, "sine"), hint)
+            rig.pick(rig.dyn_type(SINE, "sine"), hint)
             frames["gone"] = stock_pages(rig, Shots(c.work, "gone"))
             to_main(rig)
             pcm["gone"] = sound(rig, c.work / "gone.wav", restarted=True)
@@ -465,6 +512,12 @@ def run_fxpage(c: Any) -> None:
         "stock: with the pages and no effect the PCM is the PCM of the image without them, bit for bit from the onset on",
         bool(r0["identical"]) and abs(r0["shift"]) <= 128,
         f"onset shift {r0['shift']}, max err {r0.get('max_abs_err')}",
+    )
+    r1 = scaled(pcm["stock"], pcm["poked"], 1.0)
+    c.check(
+        "stock: with the free value indices poked the PCM is the stock PCM bit for bit from the onset on (nothing reads them)",
+        bool(r1["identical"]) and abs(r1["shift"]) <= 128,
+        f"onset shift {r1['shift']}, max err {r1.get('max_abs_err')}",
     )
     dry = pcm["stock"]
     g, m = exp["g"], exp["m"]

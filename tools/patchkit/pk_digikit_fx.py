@@ -48,11 +48,12 @@ def scaled(ref: np.ndarray, run: np.ndarray, gain: float) -> dict[str, Any]:
     """RUN against REF times GAIN from the note's onset on (the boots reach the note up to a few blocks apart): `hook_ab.compare`'s figures over the
     common length, and the onset shift in samples."""
 
-    def onset(x: np.ndarray) -> int:
-        nz = np.flatnonzero(np.abs(x) > 1e-6)
+    def onset(x: np.ndarray, thr: float) -> int:
+        nz = np.flatnonzero(np.abs(x) > thr)
         return int(nz[0]) if len(nz) else -1
 
-    a, b = onset(ref), onset(run)
+    # the threshold scales with the gain, so that a quieter run is not found later on the same attack ramp
+    a, b = onset(ref, 1e-6), onset(run, 1e-6 * max(abs(gain), 1e-3))
     if a < 0 or b < 0:
         return {"shift": None, "max_err_ulps": 1e9, "rms_db": None}
     n = min(len(ref) - a, len(run) - b)
@@ -90,7 +91,7 @@ def run_fx(c: Any) -> None:
 
     def sound(rig: Any, wav: Path, restarted: bool = False) -> np.ndarray:
         """The sine on track 1 and a note from the DSP block TRIG (a fresh boot); after a restart the frame counter goes on, so the note starts 300 blocks on."""
-        rig.select_type(rig.dyn_type(SINE, "sine"), hint)
+        rig.pick(rig.dyn_type(SINE, "sine"), hint)
         return rig.note(wav, rig.frames() + 300 if restarted else trig)
 
     def check_pcm(tag: str, got: np.ndarray, gain: float, what: str) -> None:

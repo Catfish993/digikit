@@ -117,73 +117,75 @@
 // [panel.exceptions] bit of the code
 #define PANEL_EXC_BIT_7 0
 // [fx] kit_ptr (the firmware's pointer to the live kit object)
-#define FX_KIT_PTR 0
+#define FX_KIT_PTR 2147504800
 // [fx] array_off (the kit's array of effect values, bytes from the kit object)
-#define FX_ARRAY_OFF 0
+#define FX_ARRAY_OFF 18660
 // [fx] page_first (the page number of the first effect page)
-#define FX_PAGE_FIRST 0
+#define FX_PAGE_FIRST 37
 // [fx] template_percent (a 0 .. 127 knob)
-#define FX_TPL_PERCENT 0
+#define FX_TPL_PERCENT 117
 // [fx] template_bipolar (a -64 .. +63 knob)
-#define FX_TPL_BIPOLAR 0
+#define FX_TPL_BIPOLAR 115
 // [fx] template_mix (the level slot: MIX)
-#define FX_TPL_MIX 0
+#define FX_TPL_MIX 121
 // [fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start)
-#define FX_STORE_OFF 0
+#define FX_STORE_OFF 96
 // [fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row)
-#define FX_STORE_HW 0
+#define FX_STORE_HW 28
 // [fx] mark_index (the array index that holds the mark: an effect row has its values)
-#define FX_MARK_INDEX 0
+#define FX_MARK_INDEX 100
+// [fx] tail_off (the u32 after the array's halfwords: the loader and saver copy it, bytes from the array)
+#define FX_TAIL_OFF 202
 // [fx] value_indices: number of indices
-#define FX_VALUES_N 0
+#define FX_VALUES_N 24
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_0 0
+#define FX_VALUE_0 70
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_1 0
+#define FX_VALUE_1 71
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_2 0
+#define FX_VALUE_2 72
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_3 0
+#define FX_VALUE_3 73
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_4 0
+#define FX_VALUE_4 74
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_5 0
+#define FX_VALUE_5 75
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_6 0
+#define FX_VALUE_6 76
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_7 0
+#define FX_VALUE_7 77
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_8 0
+#define FX_VALUE_8 78
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_9 0
+#define FX_VALUE_9 79
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_10 0
+#define FX_VALUE_10 80
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_11 0
+#define FX_VALUE_11 81
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_12 0
+#define FX_VALUE_12 82
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_13 0
+#define FX_VALUE_13 83
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_14 0
+#define FX_VALUE_14 84
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_15 0
+#define FX_VALUE_15 85
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_16 0
+#define FX_VALUE_16 86
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_17 0
+#define FX_VALUE_17 87
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_18 0
+#define FX_VALUE_18 88
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_19 0
+#define FX_VALUE_19 89
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_20 0
+#define FX_VALUE_20 90
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_21 0
+#define FX_VALUE_21 91
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_22 0
+#define FX_VALUE_22 92
 // [fx] value_indices (an effect value index that no stock parameter uses)
-#define FX_VALUE_23 0
+#define FX_VALUE_23 93
 // [fx] value_indices (an effect value index that no stock parameter uses)
 #define FX_VALUE_24 0
 // [fx] value_indices (an effect value index that no stock parameter uses)

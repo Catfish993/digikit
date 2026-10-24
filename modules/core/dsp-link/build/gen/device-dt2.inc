@@ -134,6 +134,8 @@
 #define FX_STORE_HW 28
 // [fx] mark_index (the array index that holds the mark: an effect row has its values)
 #define FX_MARK_INDEX 70
+// [fx] tail_off (the u32 after the array's halfwords: the loader and saver copy it, bytes from the array)
+#define FX_TAIL_OFF 142
 // [fx] value_indices: number of indices
 #define FX_VALUES_N 24
 // [fx] value_indices (an effect value index that no stock parameter uses)

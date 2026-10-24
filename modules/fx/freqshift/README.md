@@ -1,6 +1,6 @@
 # Frequency shifter
 
-**Category:** fx  **Devices:** Digitakt II 1.17 (Digitone II 1.12 follows)  **Status:** experimental (emulator only)  **Kind:** run-time module (`.dkm`)
+**Category:** fx  **Devices:** Digitakt II 1.17, Digitone II 1.12  **Status:** experimental (emulator only)  **Kind:** run-time module (`.dkm`)
 
 Moves every frequency of the master output up or down by the same number of Hz. This is a frequency shift, not a pitch shift: a note
 with overtones at 100, 200 and 300 Hz that is shifted by +50 Hz has them at 150, 250 and 350 Hz, so a small shift makes a sound
@@ -37,8 +37,8 @@ Things to know:
 - It costs about 4,100 DSP instructions per block of 32 samples (about 2 % of the busy budget of one effect slot; the declared maximum is 4,200).
 
 A run-time module: it is not patched into the firmware. The digikit runtime loads the `.dkm` from the card and sends the DSP code to the DSP. Pack it with
-`mise run module:pack -- digikit/freqshift --device dt2` and upload `out/patch/freqshift-dt2.dkm`, or load it with `mise run dk:run -- digikit/freqshift --emu`. The image needs the digikit runtime with
-`core/dynfx` and `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II have them).
+`mise run module:pack -- digikit/freqshift --device dt2` (or `dn2`) and upload `out/patch/freqshift-dt2.dkm`, or load it with `mise run dk:run -- digikit/freqshift --emu`. The image needs the digikit runtime with
+`core/dynfx` and `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II have them; the Digitone II's `device` set has them, its `emulator` set does not: name both modules there).
 
 Source and reference: `src/dsp/freqshift.s`, the float32 model `tools/patchkit/freqshift_ref.py` (defines the arithmetic; `mise` is not needed to run it), the tests `tests/patchkit/test_freqshift.py`,
-`tests/patchkit/test_freqshift_ref.py` and the emulator scenario `tests/digikit/scenarios/fx-freqshift-dt2.toml`. A demo render for listening: `tests/support/freqshift_demo.py`.
+`tests/patchkit/test_freqshift_ref.py` and the emulator scenario `tests/digikit/scenarios/fx-freqshift-dt2.toml` (and `-dn2`). A demo render for listening: `tests/support/freqshift_demo.py`.

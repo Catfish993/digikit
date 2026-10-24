@@ -66,6 +66,7 @@
     .equ FX_STORE_OFF, 0x60    /* [fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start) */
     .equ FX_STORE_HW, 0x1c    /* [fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row) */
     .equ FX_MARK_INDEX, 0x46    /* [fx] mark_index (the array index that holds the mark: an effect row has its values) */
+    .equ FX_TAIL_OFF, 0x8e    /* [fx] tail_off (the u32 after the array's halfwords: the loader and saver copy it, bytes from the array) */
     .equ FX_VALUES_N, 0x18    /* [fx] value_indices: number of indices */
     .equ FX_VALUE_0, 0x1    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_1, 0x2    /* [fx] value_indices (an effect value index that no stock parameter uses) */

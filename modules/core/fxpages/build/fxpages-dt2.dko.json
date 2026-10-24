@@ -32,49 +32,49 @@
   },
   {
    "addend": 224,
-   "offset": 166,
+   "offset": 170,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 240,
-   "offset": 172,
+   "offset": 176,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 228,
-   "offset": 178,
+   "offset": 182,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 236,
-   "offset": 312,
+   "offset": 316,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 244,
-   "offset": 318,
+   "offset": 322,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 232,
-   "offset": 324,
+   "offset": 328,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 248,
-   "offset": 398,
+   "offset": 402,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
@@ -115,99 +115,106 @@
    "type": "cf.32"
   },
   {
+   "addend": 0,
+   "offset": 118,
+   "section": ".text",
+   "symbol": "_fp_stock",
+   "type": "cf.32"
+  },
+  {
    "addend": 6,
-   "offset": 122,
+   "offset": 126,
    "section": ".text",
    "symbol": "_fp_label",
    "type": "cf.32"
   },
   {
    "addend": 452,
-   "offset": 140,
+   "offset": 144,
    "section": ".text",
    "symbol": "_fp_graph",
    "type": "cf.32"
   },
   {
    "addend": 6,
-   "offset": 146,
+   "offset": 150,
    "section": ".text",
    "symbol": "_fp_graph",
    "type": "cf.32"
   },
   {
    "addend": 168,
-   "offset": 192,
+   "offset": 196,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 174,
-   "offset": 198,
+   "offset": 202,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 80,
-   "offset": 204,
+   "offset": 208,
    "section": ".text",
    "symbol": ".sec..rodata",
    "type": "cf.32"
   },
   {
    "addend": 6,
-   "offset": 292,
+   "offset": 296,
    "section": ".text",
    "symbol": "_fp_load",
    "type": "cf.32"
   },
   {
    "addend": 168,
-   "offset": 338,
+   "offset": 342,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 80,
-   "offset": 344,
+   "offset": 348,
    "section": ".text",
    "symbol": ".sec..rodata",
    "type": "cf.32"
   },
   {
    "addend": 6,
-   "offset": 388,
+   "offset": 392,
    "section": ".text",
    "symbol": "_fp_save",
    "type": "cf.32"
   },
   {
    "addend": 168,
-   "offset": 412,
+   "offset": 416,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 174,
-   "offset": 418,
+   "offset": 422,
    "section": ".text",
    "symbol": ".sec..bss",
    "type": "cf.32"
   },
   {
    "addend": 80,
-   "offset": 424,
+   "offset": 428,
    "section": ".text",
    "symbol": ".sec..rodata",
    "type": "cf.32"
   },
   {
    "addend": 8,
-   "offset": 486,
+   "offset": 490,
    "section": ".text",
    "symbol": "_fp_init",
    "type": "cf.32"
@@ -321,10 +328,10 @@
  "sections": [
   {
    "align": 4,
-   "hex": "202f00040480000000210c8000000003640e722c4c0108000680000000004e75202f000472204ef900000000203900000000670e2e80203c000000004ef900000000203c000000004ef90000000022000481000000210c81000000036416702c4c00180006810000000020412f104ef900000000720db2804ef900000000ba8067080c800000002165064ef9000000004ef90000000023680098008e4fefffec48d7301c23c90000000023c80000000052b90000000047e8009041e8006045f90000000049f9000000004bf900000000700373da75db4a81660e41e8001049ec00104bed0008602e337c46a7008c7600b48166027601780873d875dc4a83660222020c8100007f0063022202759d33812a00538466e2538066b84cd7301c4fef00144ef900000000256b008e00984fefffec48d7301c23cb0000000023ca0000000052b90000000043ea009041ea006049f9000000004bf900000000700373dc32c17408779d78004a81670438333a0030c4538266ee538066e44cd7301c4fef00144ef9000000004a8a675052b9000000004fefffec48d7181c41f90000000043f90000000047f900000000700373d8660a43e9001047eb00086014357c46a7008c780875d9779b35823a00538466f4538066da4cd7181c4fef00144cd73c044fef00204ef900000000",
+   "hex": "202f00040480000000210c8000000003640e722c4c0108000680000000004e75202f000472204ef900000000203900000000670e2e80203c000000004ef900000000203c000000004ef90000000022000481000000210c81000000036416702c4c00180006810000000020412f104ef900000000223900000000b2804ef900000000ba8067080c800000002165064ef9000000004ef90000000023680098008e4fefffec48d7301c23c90000000023c80000000052b90000000047e8009041e8006045f90000000049f9000000004bf900000000700373da75db4a81660e41e8001049ec00104bed0008602e337c46a7008c7600b48166027601780873d875dc4a83660222020c8100007f0063022202759d33812a00538466e2538066b84cd7301c4fef00144ef900000000256b008e00984fefffec48d7301c23cb0000000023ca0000000052b90000000043ea009041ea006049f9000000004bf900000000700373dc32c17408779d78004a81670438333a0030c4538266ee538066e44cd7301c4fef00144ef9000000004a8a675052b9000000004fefffec48d7181c41f90000000043f90000000047f900000000700373d8660a43e9001047eb00086014357c46a7008c780875d9779b35823a00538466f4538066da4cd7181c4fef00144cd73c044fef00204ef900000000",
    "kind": "text",
    "name": ".text",
-   "size": 490
+   "size": 494
   },
   {
    "align": 4,
@@ -341,7 +348,7 @@
    "size": 156
   }
  ],
- "source_sha256": "6a8c4aa78b1ced2b319f92c5bcf6b9b071cd1b9f0dc3b38fb2e55ac973da543b",
+ "source_sha256": "482ebb5b2c37387412fe72d22d155bde889d4e2d521bb7557e141a99819732e5",
  "symbols": [
   {
    "global": false,
@@ -437,7 +444,7 @@
    "global": true,
    "name": "fxp_graph",
    "section": ".text",
-   "value": 126
+   "value": 130
   },
   {
    "global": true,
@@ -449,7 +456,7 @@
    "global": true,
    "name": "fxp_init",
    "section": ".text",
-   "value": 392
+   "value": 396
   },
   {
    "global": true,
@@ -485,7 +492,7 @@
    "global": true,
    "name": "fxp_load",
    "section": ".text",
-   "value": 150
+   "value": 154
   },
   {
    "global": true,
@@ -521,7 +528,7 @@
    "global": true,
    "name": "fxp_save",
    "section": ".text",
-   "value": 296
+   "value": 300
   },
   {
    "global": true,
@@ -547,7 +554,7 @@
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "135",
-  "isa_check": "7bd936eaf2419e5119bc4d7ea219ffa5cd28c265be39cf3104af0febf8055238",
+  "isa_check": "7ec8601d5701496c34770f45918812329e5d362be3e06bf833ff1ed4f301d4d4",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

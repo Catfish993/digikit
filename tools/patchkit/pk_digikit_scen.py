@@ -48,14 +48,14 @@ Kinds:
              out/runs/lanes/b-rungC/ (tools/patchkit/pk_digikit_rungc.py).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
              added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
-  fx         effects loaded at run time (DSP section version 4, `core/dynfx`; Digitakt II): the sine and `test/dyn-fx-gain` selected at boot play as the
+  fx         effects loaded at run time (DSP section version 4, `core/dynfx`; Digitakt II and Digitone II): the sine and `test/dyn-fx-gain` selected at boot play as the
              dry sine times the gain, the chain's row, MODULES and CAPACITY say so, deselecting the effect and restarting gives the dry PCM again, and
              one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
-  fxpage     the FX view pages and knobs of run-time effects (`core/fxpages`; Digitakt II): with no effect loaded the three stock pages draw and play as on an image without
+  fxpage     the FX view pages and knobs of run-time effects (`core/fxpages`; Digitakt II and Digitone II): with no effect loaded the three stock pages draw and play as on an image without
              the pages; with `test/dyn-fx-gain` the view has a fourth page (tab GAN, title TEST GAIN, the GAIN knob and MIX), turning the knobs changes the PCM as
              declared (gain, MIX 0 = dry bit for bit, MIX 127 = wet, the linear blend between), and deselecting the effect and restarting brings the three pages and
              the dry PCM back; screenshots with `DIGIKIT_SHOTS=DIR`; tools/patchkit/pk_digikit_fxpage.py.
-  fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II): Save Kit and Load Kit restore them to the
+  fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II and Digitone II): Save Kit and Load Kit restore them to the
              same effect (kit array, DSP row, PCM, pages) and give another effect, an empty row or a stock kit the defaults, never a zero on the way to the DSP; a project; another
              pattern's kit; tools/patchkit/pk_digikit_fxpersist.py.
   fxshift    the frequency shifter `digikit/freqshift` (Digitakt II): its page (tab FSH, title FREQ SHIFTER, SHIFT bipolar, MIX default 0), loading it leaves the PCM bit for bit as it was, MIX up and SHIFT 0
@@ -394,7 +394,12 @@ class Ctx:
                 else ""
             ),
             not outside,
-            f"{len(self.all_writes)} sectors, below 0x50000: {[hex(x) for x in outside[:6]]}",
+            f"{len(self.all_writes)} sectors, below 0x50000: {[hex(x) for x in outside[:6]]}"
+            + "".join(
+                f"; in {hex(lo)}..{hex(hi)}: {len(inside)} sectors {hex(min(inside))}..{hex(max(inside))}"
+                for lo, hi in firmware_areas
+                if (inside := [x for x in self.all_writes if lo <= x < hi])
+            ),
         )
 
     def common_checks_upload(self, project_writes_ok: bool = True) -> None:

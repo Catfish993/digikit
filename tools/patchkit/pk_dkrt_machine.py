@@ -342,6 +342,14 @@ class Rig:
         s.do_tap("YES")
         s.run_ms(300)
 
+    def pick(self, want: int, hint: int) -> int:
+        """Put the machine of type WANT on track 1. Digitakt II: the list position is tried until the track's type is WANT (the type word is read). Digitone II: the list
+        position HINT (finding 33); no type word is read there, the sound proves the choice."""
+        if self.device == "dt2":
+            return self.select_type(want, hint)
+        self.select(hint)
+        return hint
+
     def select_type(self, want: int, hint: int) -> int:
         """Open the list, move DOWN `downs` times and commit; try the hint and its neighbours until the track has WANT."""
         for downs in (hint, hint + 1, hint - 1, hint + 2, hint + 3):

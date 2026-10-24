@@ -108,12 +108,16 @@ Effects can also be loaded at run time on the Digitakt II (`docs/design/digikit-
   The empty chain (16), three free rows (31) and the all-off chain (178) are unchanged.
 - The chain's row is published with its mix word (13 steps, was 12). The effect's page, its knobs and the poller that writes p_j and the mix: finding 61.
 
-## Run-time effects on the Digitone II: the emulator cost (F4 step 5, 2026-10-24) **[D]**
+## Run-time effects on the Digitone II (F4 step 5, 2026-10-24) **[D]**
 
-`core/dynfx` now builds for the Digitone II 1.12 (`[limits] fx_slots` 3 as on the Digitakt II; the registry `fx`, window 2 of `core/dsp-link` and the hook H1 were already there). It needs `core/fx`, which
-no DN2 patch set carried until now (`emulator` and `device` are `core/dynreg`, `core/dyndsp`, `core/digikit-menu`, `core/health`, `core/input`, `core/remote-open`), so adding it to a set puts the hook of finding 55
-(H1 `FUN_1c244d`, range 3482 words) into the emulator image. Paired A/B on the DN2 emulator set (`tools/devtools/coupled_ab.py`, scenario `trig1-taps`, 10.5 audio s, 3 pairs, same binary, images through
-`--dsp-patch` from `pk_dsp_diff`; DSP thread CPU per audio second; no other emulator running):
+`core/dynfx` builds for the Digitone II 1.12 (`[limits] fx_slots` 3 as on the Digitakt II; the registry `fx`, window 2 of `core/dsp-link` and the hook H1 were already there). Rows, the runtime and the proof are
+the Digitakt II's: scenario `tests/digikit/scenarios/fx-dyn-dn2.toml` (`tools/patchkit/pk_digikit_fx.py`, quick tier, 82 s): the sine and `test/dyn-fx-gain` selected at boot play as 0.5 x the dry sine (within 2 ulps from the
+onset on), the chain's row holds the record's words, MODULES, CAPACITY (`FX_SLOTS` used 1 of 3) and `dkneeds` agree, deselect and restart gives the dry PCM bit for bit, three effects play as 0.125 x dry and the fourth is
+refused (`E_DSP_ROWS`, and the fit rule). The sine is picked by its list position on the Digitone II (`Rig.pick`: the track's type word is read on the Digitakt II only).
+
+**The emulator cost, and where the effect modules are.** `core/fx` was in no DN2 patch set before. It brings the hook of this finding (H1 `FUN_1c244d`, range 3482 words) into the image and bars AOT for its whole hashed
+range. Paired A/B on the DN2 `emulator` set (`tools/devtools/coupled_ab.py`, scenario `trig1-taps`, 10.5 audio s, 3 pairs, same binary, images through `--dsp-patch` from `pk_dsp_diff`; DSP thread CPU per audio second; no other
+emulator running):
 
 | image | DSP CPU per audio s | ratio | real-time factor | instructions to the interpreter per block |
 | --- | --- | --- | --- | --- |
@@ -121,9 +125,14 @@ no DN2 patch set carried until now (`emulator` and `device` are `core/dynreg`, `
 | B: A + `core/dynfx` (+ `core/fx`), no effect loaded | 4.028 (IQR 0.049) | **2.38** (2.36 to 2.39) | 0.247 | 29,750 (+22,300 of the fall-back) |
 | C: A + `core/fx` + `digikit/freqshift` as a patched-in effect (SHIFT 10, MIX 1; proxy for a loaded one) | 4.571 (IQR 0.015) | **2.71** (2.70 to 2.72) | 0.219 | 34,350 |
 
-The PCM of B is the PCM of A (hash equal in all runs); C differs (the effect is on). The headless binary is not PGO-tuned, so the absolute factors are low; the ratio is what carries over. The DT2 image pays x1.03 for the same
-step; on the DN2 the hook lands in the one large range. Options (not tried): finer `CODE_RANGES` (no merge of adjacent blocks at function entries) so that H1 and its caller do not share one range; the effect at H0
-(x1.13, the range of the converter) with the adapter converting the master pair of ring C itself; or leaving `core/dynfx` out of the DN2 default sets and adding it with `--modules` where an effect is wanted.
+The PCM of B is the PCM of A (hash equal in all runs); C differs (the effect is on). The headless binary is not PGO-tuned, so the absolute factors are low; the ratio is what carries over. **Decision for now (Em's call
+on the cost is open):** `core/dynfx` and `core/fxpages` are in the DN2 `device` patch set (the real DSP has no interpreter) and **not** in its `emulator` set; DN2 scenarios and tests name them in their module list
+(`c.image_for(RT + ",core/dynfx,core/fxpages", ...)`), and so does anybody who wants a DN2 emulator image with run-time effects. Ways to remove the cost (not tried): finer `CODE_RANGES` (no merge of adjacent blocks at function
+entries) so that H1 and its caller do not share one range; the effect at H0 (x1.13, the range of the converter) with the adapter converting the master pair of ring C itself.
+
+**The Digitakt II emulator set (step 1 on) has `core/fx` in it**, and its cost (x1.03 in the table above) was measured on the first hook site only. Re-measured with the final set (`core/dynfx` and `core/fxpages` against
+the same set without them; scenario `dt2-sample-trig` on the sample card, 3 audio s, 5 pairs, same method): DSP CPU per audio second 4.080 -> 4.118, **paired ratio 1.009** (0.990 to 1.079), PCM equal. The ratio is
+within the run-to-run spread of this short scenario; the earlier x1.03 stands as the upper figure.
 
 ## Open **[O]**
 

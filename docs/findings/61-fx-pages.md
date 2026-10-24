@@ -125,6 +125,50 @@ with the same 16 bits (about 1 in 65535 per pair); the later load then takes the
   (`FUN_400e5698` ran once, the loader not at all), so the runtime seeded the two rows when it registered them.
 
 
+## The Digitone II (F4 step 5, 1.12) **[D]**
+
+The same machinery runs on the Digitone II 1.12: `core/fxpages` has an object per device (`fxpages-dn2.s`, one source file for each, the same code), the anchors are found by their own function hashes
+(`devices/ports/dn2-1.12.toml`, `cf.fxpages.*`), and the device facts are `[fx]` of `devices/digitone-ii.toml`. Every site has the shape of the Digitakt II's, read from the 1.12 image (disassembly and `cfdb` hashes, **[D]**):
+
+| What | DN2 1.12 | Digitakt II 1.17 for comparison |
+| --- | --- | --- |
+| page accessor | `FUN_400c25d8`, `moveq 0x24,D1` (bound), table `0x42433c00`, rows of `0x2c` bytes | `FUN_400c898a`, bound `0x20` |
+| stock / effect pages | pages 0 to 36 are stock; the effect pages are **37, 38, 39** (`[fx] page_first = 37`) | 33, 34, 35 |
+| FX view list | rodata `0x401e0448` = {17, 18, 19}; `moveq 3` at `0x40061616`, `move.l #list` at `0x40061624`, in the builder `0x40060e72` (offsets `0x7a4`, `0x7b2`) | {13, 14, 15}, offsets `0x7ea`, `0x7f8` |
+| tab label | `FUN_4006f4a8`, tests for pages 0x12, 0x13, then 0x11 (the hook is the third, offset `0x40`; the common tail is at `+0x1e`) | pages 14, 15, 13 |
+| filter graph | `FxPageView::vfunc_4` (`0x4006f5e4`) at offset `0x134`: `cmp.l D0,D5` (D5 = 0x13, CHO), `beq.w` to `+0x1c4`; the REV graph test (`moveq 0x12`, `bne`) skips an effect page by itself | D5 = 15 |
+| kit loader | `FUN_400dcef0`, hook at `0x32` (`move.l (0x98,A0),(0xca,A1)`); table `0x401fd278`, 46 entries | `FUN_400daf54`, `(0x8e,A1)` |
+| kit saver | `FUN_400dcf34`, hook at `0x40` (`move.l (0xca,A3),(0x98,A2)`); table `0x401fd160`, 70 entries | `FUN_400daf98` |
+| array initialiser | `FUN_400e7140` (clears `0xce` bytes, the default of each of 101 codes), hook at the common exit `0x5c` | `FUN_400e5698` (`0x92`, 71 codes) |
+| storage record | the same: u32 at +0, 46 halfwords from +4, spare from `0x60` (28 halfwords), u32 at `+0x98` | same |
+| live kit | `*0x800052a0` (kit_t), the Fx array at `+0x48e4`, 101 halfwords and a u32 at `+0xca` (`[fx] tail_off`) | `*0x80004704`, `+0x4534`, 71 halfwords, u32 at `0x8e` |
+
+Three literals of the Digitakt II source became device facts or anchor reads, so that the two sources differ only in their include: the stock bound (`FX_PAGE_FIRST - 1`), the first page of the stock list (the routine reads the first word of
+the stock list anchor instead of a `moveq #13`) and the offset of the u32 behind the array (`[fx] tail_off`, `FX_TAIL_OFF`). The Digitakt II object is rebuilt from the edited source (the label hook's displaced instruction is a
+`move.l` of the list's first word now) and its scenarios pass as before.
+
+**Free value indices.** The Fx owners of the Digitone II (LFO 1 to 3, Chorus, Delay, Reverb, Ext-in, Master) use the array indices 1 to 69 and nothing else; 70 to 100 belong to no Fx parameter, the frame copy to the DSP takes 25 to 69 and the
+stock saver table ends at 69 (static: `out/runs/lanes/f4-static.log`, parameter table of the image). So the effect rows take **70 to 93** (`value_indices`) and the mark is index **100**. Poke test in the emulator, in the scenario
+`fx-pages-dn2` (part `stock`, no effect loaded): the 25 halfwords take distinct values (`0x1000 + 0x111 n`), keep them, no other index moves, and the PCM of a note is the stock PCM bit for bit. A pattern change, a kit load and a
+project load behave as on the Digitakt II (`fx-persist-dn2`; the first kit object of a boot is seeded by the runtime, another pattern's kit by the mark).
+
+**Which kit object the encoders edit [D].** The object of `*0x800052a0` + `0x48e4`: turning GAIN in the scenario changes that array at the effect's own index only, and no other index moves except those that move on their own (LFO smoothing; the same check as on the
+Digitakt II). The kit's own address is **not aligned**: the Digitone II allocates its kit objects at odd addresses (the sound arrays have the odd stride `0x48b`; pattern A02's kit was at `0x42112dfd`). The firmware's own loaders move
+halfwords there, and so do the hooks (ColdFire allows it), but the runtime's first version refused a kit pointer that was not a multiple of 4 and never seeded such a kit: the runtime now reads and writes the array's halfwords a byte at a time and
+accepts any alignment in DDR. The scenario's helpers (`u16`, `put16`) do the same.
+
+**Measured (scenarios on dn2-1.12, quick tier) [D].**
+- `fx-pages-dn2` (199 s, 35 checks): the three stock pages are pixel for pixel the pages of an image without `core/fxpages`, the stock PCM is equal bit for bit (also with the 25 free indices poked); with `test/dyn-fx-gain` the FX view lists
+  {17, 18, 19, 37}, the page has tab GAN, title `TEST GAIN (4/4)`, the GAIN knob and MIX on the level slot (index 70 and 77, defaults `0x3200` and `0x7f00`); GAIN to raw `0x6400` gives p0 = 0.98 in the row and 0.98 x dry PCM, an intermediate MIX
+  the linear blend, MIX 0 the dry PCM bit for bit, MIX 127 the wet PCM; deselecting the effect and a restart bring the three pages (pixel for pixel) and the dry PCM back.
+- `fx-persist-dn2` (265 s, 37 checks): the Digitakt II's checks, with the kit library at sectors `0x2040` to `0x2054` of the card: Save Kit and Load Kit restore the 16 values (kit array, DSP row floats, PCM bit for bit, pages pixel for pixel), the stock kit and
+  swapped rows give the defaults, no row word was 0 at any time during a load, a project, pattern A02 (a kit object made before the effects, seeded by the runtime after 300 ms) gets the defaults and back on A01 the turned values are there.
+- `fx-freqshift-dn2` (167 s, 25 checks): the routine is the Digitakt II's (`docs/findings/54-module-cookbook.md`): MIX 0 is the dry PCM bit for bit, SHIFT 0 keeps the sine (amplitude ratio 1.00001), +40 gives +96.79 Hz and -42 gives -124.72 Hz exactly as the routine's mapping says,
+  the image is 70.1 dB down, Load Kit restores SHIFT and MIX.
+- Screenshots (`out/runs/lanes/f4-shots/dn2-*.png`): the stock DEL page (title `Delay (1/4)` with the effect loaded, `(1/3)` without), REV and CHO (`Chorus (3/3)`); the fourth page with tab GAN, title `TEST GAIN (4/4)`, a GAIN knob, seven empty cells and MIX
+  on the level slot; the same while turning (`Gain=100`, `Mix=0`); the frequency shifter's page (tab FSH, `Freq Shift=40` while turning).
+- The Digitone II needs `core/dynfx` and `core/fxpages` in its image: they are in the `device` patch set and not in `emulator`, because `core/fx` costs the emulator x2.38 DSP CPU there (finding 55). The scenarios name them in their module list.
+
 ## Open **[O]**
 
 - The init hook (`fxp_init`) has run only on the boot kit, before any effect was registered (`fxp_ninit` 1 at boot, no effect rows to fill). A kit initialised after the effects are loaded (the New Kit paths
@@ -133,7 +177,6 @@ with the same 16 bits (about 1 in 65535 per pair); the later load then takes the
 - Project save and load were run inside a session; a power-up with a saved project (the boot's project load before or after the runtime's registration) was not: the emulator's ready snapshot starts from a
   fresh project. In the boot the effects registered after the first kit initialisation and before any load.
 - A kit saved while an effect's module is absent loses that effect's values (ID 0 and zeros are written), and a second save keeps the loss.
-- The Digitone II (step 5): loader `FUN_400dcef0`, saver `FUN_400dcf34`, tables `0x401fd278` (46) and `0x401fd160` (70), the array object is 101 halfwords plus a u32 at `0xca` (f4-static.log): the same three hooks need
-  the DN2 record's spare offset and count, a free array index for the mark and the DN2 value indices in its device file.
+- The Digitone II (step 5, section above): persistence was run in the emulator only (`fx-persist-dn2`); the init hook's own copy of the defaults has not been seen to run there either.
 - A page whose effect fails to load its DSP part after the boot hook stays in the view (the view is built once); `remove` empties its cells.
-- A second agent checks the sites against the image bytes before the marks become [V]. The Digitone II (step 5) needs its own page table, list and label code (finding notes in `out/runs/lanes/f4-static.log`).
+- A second agent checks the sites against the image bytes before the marks become [V]. The Digitone II sites above are read from the image and exercised in the emulator by the scenarios.
