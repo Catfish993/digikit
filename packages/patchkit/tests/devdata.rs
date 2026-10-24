@@ -305,6 +305,11 @@ fn the_effect_page_rows_are_eight_parameter_rows_for_each_dt2_fx_slot() {
             .iter()
             .all(|p| p.starts_with("dt2-"))
     );
+    // persistence: the kit's spare storage halfwords hold the values and one ID for each row (finding 61), inside the 0xa0-byte record, after its 46 used halfwords and before its u32 at 0x98
+    let off = t["fx"]["store_off"].as_integer().unwrap() as usize;
+    let hw = t["fx"]["store_halfwords"].as_integer().unwrap() as usize;
+    assert!(idx.len() + idx.len() / 8 <= hw);
+    assert!(off >= 4 + 2 * 46 && off + 2 * hw <= 0x98);
 }
 
 #[test]

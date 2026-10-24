@@ -128,6 +128,12 @@
 #define FX_TPL_BIPOLAR 115
 // [fx] template_mix (the level slot: MIX)
 #define FX_TPL_MIX 121
+// [fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start)
+#define FX_STORE_OFF 96
+// [fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row)
+#define FX_STORE_HW 28
+// [fx] mark_index (the array index that holds the mark: an effect row has its values)
+#define FX_MARK_INDEX 70
 // [fx] value_indices: number of indices
 #define FX_VALUES_N 24
 // [fx] value_indices (an effect value index that no stock parameter uses)

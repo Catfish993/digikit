@@ -10,8 +10,9 @@
 //!   kind 1 PARAM   (0x50): u32 index, template, slot; i32 min, max, default; name[32]; short[16]
 //!   kind 2 MACHINE (0x6c): u32 key, clone_of, position, own_dsp, level; i32 knobs[8]; name[24]; short[24]
 //!   kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II)
-//!   kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, 0; tab[8]; title[24]; 7 knobs of (u32 position, display, f32 min, max, default; name[24]; short[8])
-//!                           (the page of a run-time effect, Digitakt II; `fx` is the index of the effect record in the DSP section)
+//!   kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, id; tab[8]; title[24]; 7 knobs of (u32 position, display, f32 min, max, default; name[24]; short[8])
+//!                           (the page of a run-time effect, Digitakt II; `fx` is the index of the effect record in the DSP section; `id` is the
+//!                           effect's 16-bit ID, `effect_id`: the kit stores it with the effect's values, so a kit load restores values only to the effect they came from)
 //! ```
 //!
 //! `key` (a machine's and a page's first field, a DSP voice's type) is `hash << 8 | type`: the 24-bit hash of the machine's global id
@@ -65,6 +66,22 @@ pub fn machine_hash(module: &str, machine: &str) -> u32 {
         h = (h ^ b as u32).wrapping_mul(0x0100_0193);
     }
     h & 0x00ff_ffff
+}
+
+/// The 16-bit ID of a run-time effect (1 to 0xffff; 0 means "no effect" in a kit's storage): the low and high halves of FNV-1a 32 of the UTF-8 string `<module id>:<effect id>`
+/// folded together, 0 turned into 1. The runtime keeps the effect's values in the kit under this number (docs/findings/61-fx-pages.md "Persistence"); it is
+/// defined here and nowhere else: the record carries it. Two effects of one image can share an ID (1 in 65535 for a pair): the later load then takes the values of the other.
+pub fn effect_id(module: &str, effect: &str) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in format!("{module}:{effect}").bytes() {
+        h = (h ^ b as u32).wrapping_mul(0x0100_0193);
+    }
+    let f = (h >> 16) ^ (h & 0xffff);
+    if f == 0 {
+        1
+    } else {
+        f
+    }
 }
 
 /// The machine key a `.dkm` carries where a stock machine has its type: the hash in the upper 24 bits and the machine's `type_hint` in the
@@ -156,6 +173,8 @@ pub struct EffectKnob {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EffectPage {
     pub fx: u32,
+    /// The effect's ID in a kit's storage (`effect_id`, 1 to 0xffff).
+    pub id: u32,
     pub mix: u32,
     pub tab: String,
     pub title: String,
@@ -234,6 +253,7 @@ pub fn effect_page(module: &str, fx: usize, d: &crate::typed::FxDef) -> Result<O
     }
     let e = EffectPage {
         fx: fx as u32,
+        id: effect_id(module, &d.id),
         mix: d.mix as u32,
         tab: tab.clone(),
         title: title.clone(),
@@ -272,6 +292,9 @@ impl EffectPage {
         text_ok("effect page title", &self.title, EFFECT_TITLE - 1)?;
         if self.mix > 127 {
             return Err(err!("mix {} is 0 to 127", self.mix));
+        }
+        if self.id == 0 || self.id > 0xffff {
+            return Err(err!("effect id {} is 1 to 65535", self.id));
         }
         if self.knobs.len() > EFFECT_KNOBS {
             return Err(err!("{} knobs; at most {EFFECT_KNOBS}", self.knobs.len()));
@@ -533,7 +556,7 @@ impl Register {
         for e in &self.effects {
             p32(&mut o, KIND_EFFECT);
             p32(&mut o, LEN_EFFECT as u32);
-            for v in [e.fx, e.mix, e.knobs.len() as u32, 0] {
+            for v in [e.fx, e.mix, e.knobs.len() as u32, e.id] {
                 p32(&mut o, v);
             }
             put_text(&mut o, &e.tab, EFFECT_TAB);
@@ -624,7 +647,7 @@ impl Register {
                 }
                 (KIND_EFFECT, LEN_EFFECT) => {
                     let n = g(rec + 8)? as usize;
-                    if n > EFFECT_KNOBS || g(rec + 12)? != 0 {
+                    if n > EFFECT_KNOBS {
                         return Err(err!("register section: effect record knob count"));
                     }
                     let mut knobs = vec![];
@@ -646,6 +669,7 @@ impl Register {
                     }
                     reg.effects.push(EffectPage {
                         fx: g(rec)?,
+                        id: g(rec + 12)?,
                         mix: g(rec + 4)?,
                         tab: txt(rec + 16, EFFECT_TAB)?,
                         title: txt(rec + 16 + EFFECT_TAB, EFFECT_TITLE)?,
@@ -751,6 +775,7 @@ mod tests {
         let f = |x: f32| x.to_bits();
         EffectPage {
             fx: 0,
+            id: effect_id("m", "gain"),
             mix: 127,
             tab: "GAN".into(),
             title: "TEST GAIN".into(),
@@ -806,12 +831,25 @@ mod tests {
         };
         let p = effect_page("m", 0, &d).unwrap().unwrap();
         assert_eq!(p.knobs[0], effect().knobs[0]);
+        assert_eq!(p.id, effect().id);
         let mut none = d.clone();
         none.tab = None;
         assert!(effect_page("m", 0, &none).is_err()); // a title and knobs without a tab
         none.title = None;
         none.knob.clear();
         assert!(effect_page("m", 0, &none).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_effect_id_is_16_bits_never_0_and_follows_the_module_and_the_effect() {
+        let a = effect_id("test/dyn-fx-gain", "gain");
+        assert!((1..=0xffff).contains(&a));
+        assert_eq!(a, effect_id("test/dyn-fx-gain", "gain"));
+        assert_ne!(a, effect_id("test/dyn-fx-gain", "gain2"));
+        assert_ne!(a, effect_id("test/other", "gain"));
+        // pinned: the ID is stored in kits, so its definition must not drift
+        assert_eq!(effect_id("m", "gain"), 0xbb58);
+        assert_eq!(effect_id("test/dyn-fx-gain", "gain"), 0x4625);
     }
 
     #[test]
@@ -829,6 +867,8 @@ mod tests {
         assert!(ok(&|e| e.knobs[0].default = 3.0f32.to_bits()));
         assert!(ok(&|e| e.knobs[0].min = e.knobs[0].max));
         assert!(ok(&|e| e.mix = 128));
+        assert!(ok(&|e| e.id = 0));
+        assert!(ok(&|e| e.id = 0x1_0000));
         let big: Vec<_> = (0..8).map(|_| effect().knobs[0].clone()).collect();
         assert!(ok(&|e| e.knobs = big.clone()));
     }

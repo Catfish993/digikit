@@ -12,7 +12,12 @@
 //! `tick` (once per UI-loop pass) reads the values of the loaded effects from the kit's array and sends a changed value to the effect's row in the DSP, one word
 //! per transfer through window 2 of `core/dsp-link`: knob j as a float in [min, max] into p_j (min + (max - min) * raw / 0x7f00), MIX as a float 0 .. 1 into the row's
 //! mix word (raw / 0x7f00), which the adapter `core/fx` applies as the dry/wet blend. A value is the raw s16 of the array, 0 to 0x7f00 (the display shows raw / 256).
-//! A new kit object (a pattern or kit change) gets the values again (the firmware zeroes the array when it loads a kit; persistence is the next step).
+//! The values are saved with the kit (persistence, finding 61): the hooks `fxp_load` and `fxp_save` of `core/fxpages` run in the firmware's kit loader and saver, put the
+//! values of the loaded effects into the kit's spare storage halfwords and take them out again, together with the effect's ID (the EFFECT record's `id`). A load
+//! gives an effect row the stored values only when the stored ID is the one of the effect now in the row, and the effect's defaults otherwise, before the UI loop
+//! looks at the array again, so no zero ever reaches the DSP. A third hook, `fxp_init` (the firmware's initialiser of the array: a new kit, a fresh kit that Load Kit fills),
+//! gives each loaded effect its defaults. Both put a mark in a spare index of the array; a kit object without the mark (another pattern's kit, made before the effect was loaded) gets the
+//! defaults the first time `tick` finds it live, before any value is read from it.
 //! The array is the live kit's (`[fx] kit_ptr` of the device file): the kit accessor of the firmware (`fw_kit_of`) answers another object, the project's.
 //!
 //! Everything runs in the UI task. No float arithmetic runs in an interrupt; the arithmetic is the compiler's soft float.
@@ -60,6 +65,10 @@ mod w {
     pub const TPL_MIX: usize = 18;
     pub const KIT_PTR: usize = 19;
     pub const INDICES: usize = 80; // bytes
+    pub const IDS: usize = 28; // byte 112: address of the effect IDs of the rows (halfwords)
+    pub const DEFS: usize = 29; // the default raw values (halfwords, one for each value index)
+    pub const MARK_INDEX: usize = 37; // byte 148: the array index of the mark, and its value (word 38)
+    pub const MARK_VALUE: usize = 38;
 }
 
 /// The effect pages' state: who owns each page (module record + 1), the values in force, and the strings the rows point to.
@@ -84,6 +93,12 @@ pub struct FxpState {
     /// The raw value (0 .. 0x7f00, as the kit's array holds it) in force and the one the DSP has (-1: not sent).
     pub cur: [[i32; WORDS]; MAX_FX],
     pub dsp: [[i32; WORDS]; MAX_FX],
+    /// The record's default raw values (knob j, MIX): what a kit gets that holds no values of this effect.
+    pub def: [[i32; WORDS]; MAX_FX],
+    /// The effect ID of each row (the record's; 0: no effect), as `fxp_ids` of core/fxpages has it for the kit hooks.
+    pub id: [u32; MAX_FX],
+    /// The live kit pointer changed to a kit object that had the mark (a pattern change back to a kit we know).
+    pub adopts: u32,
     /// The float range of knob j: its minimum and its span max - min (f32 bits).
     pub min: [[u32; KNOBS]; MAX_FX],
     pub span: [[u32; KNOBS]; MAX_FX],
@@ -171,7 +186,8 @@ pub unsafe fn check_record(b: *const u8) -> i32 {
         return E_NO_REGISTRY;
     }
     let (fx, mix, n) = (rd32(b), rd32(b.add(4)), rd32(b.add(8)) as usize);
-    if fx as usize >= MAX_FX || mix > 127 || n > KNOBS || rd32(b.add(12)) != 0 {
+    let id = rd32(b.add(12));
+    if fx as usize >= MAX_FX || mix > 127 || n > KNOBS || id == 0 || id > 0xffff {
         return E_FORMAT;
     }
     if !text_ok(b.add(16), 8, 3) || !text_ok(b.add(24), TEXT, TEXT - 1) {
@@ -311,10 +327,19 @@ pub unsafe fn apply(owner: u8, b: *const u8) -> i32 {
             s.short[wi].as_ptr() as u32,
         );
         s.cur[k][j] = def_n;
+        s.def[k][j] = def_n;
         s.dsp[k][j] = def_n; // the DSP row gets the record's defaults (p words) and the mix below
         j += 1;
     }
     s.nknob[k] = n as u8;
+    publish_row(inf, k, rd32(b.add(12)));
+    let live = kit(inf);
+    if live != 0 {
+        // a kit object is live already and holds nothing of this effect (the init hook ran before the effect was here): its defaults now
+        seed_row(inf, k, live + iw(inf, w::ARRAY_OFF));
+        mark(inf, live + iw(inf, w::ARRAY_OFF));
+        s.seeds += 1;
+    }
     crate::dsp::fx_set_mix(k, mix_value(rd32(b.add(4)) as i32 * 256));
     // the page row: codes, then the strings; the owner and the list publish it
     let mut c = 0;
@@ -359,15 +384,54 @@ pub unsafe fn remove(owner: u8) {
                 c += 1;
             }
             let mut j = 0;
+            publish_row(inf, k, 0);
             while j < WORDS {
                 registry::reset_param_row(iw(inf, w::P_FIRST) + (k * WORDS + j) as u32);
                 s.cur[k][j] = 0;
+                s.def[k][j] = 0;
                 s.dsp[k][j] = -1;
                 j += 1;
             }
             s.nknob[k] = 0;
         }
         k += 1;
+    }
+}
+
+/// Hand the kit hooks of `core/fxpages` the effect ID of row `k` (0: none) and its defaults. An effect's defaults go first and its ID after them, so a kit
+/// load between the two stores cannot restore values against defaults that are not there yet; a row's ID goes to 0 first for the same reason.
+unsafe fn publish_row(inf: *const u32, k: usize, id: u32) {
+    let s = fs();
+    let (ids, defs) = (iw(inf, w::IDS), iw(inf, w::DEFS));
+    if id == 0 {
+        write_volatile((ids + 2 * k as u32) as *mut u16, 0);
+    }
+    let mut j = 0;
+    while j < WORDS {
+        write_volatile((defs + 2 * (k * WORDS + j) as u32) as *mut u16, s.def[k][j] as u16);
+        j += 1;
+    }
+    if id != 0 {
+        write_volatile((ids + 2 * k as u32) as *mut u16, id as u16);
+    }
+    s.id[k] = id;
+}
+
+/// Put the mark of `core/fxpages` into the kit array `arr`: its effect rows hold values.
+unsafe fn mark(inf: *const u32, arr: u32) {
+    wr16(arr + 2 * iw(inf, w::MARK_INDEX), iw(inf, w::MARK_VALUE) as i32);
+}
+
+/// The defaults of effect row `k` into the kit array `arr`.
+unsafe fn seed_row(inf: *const u32, k: usize, arr: u32) {
+    let s = fs();
+    let mut j = 0;
+    while j < WORDS {
+        if has_word(s, k, j) {
+            wr16(arr + 2 * value_index(inf, k, j), s.def[k][j]);
+            s.cur[k][j] = s.def[k][j];
+        }
+        j += 1;
     }
 }
 
@@ -431,23 +495,24 @@ pub unsafe fn tick() {
         return;
     }
     let arr = kit + iw(inf, w::ARRAY_OFF);
-    if kit != s.kit {
-        // a kit object we have not put our values in (a pattern or kit change zeroes the array): our values again
+    if rd16(arr + 2 * iw(inf, w::MARK_INDEX)) != iw(inf, w::MARK_VALUE) as i32 {
+        // no mark: the hooks of core/fxpages have not given this kit object its rows (a kit that was there before the effect was loaded: another pattern's, or one the
+        // firmware cleared without them): the defaults, and the mark, before anything is read from it (a zero is never sent)
         k = 0;
         while k < MAX_FX {
             if s.owner[k] != 0 {
-                let mut j = 0;
-                while j < WORDS {
-                    if has_word(s, k, j) {
-                        wr16(arr + 2 * value_index(inf, k, j), s.cur[k][j]);
-                    }
-                    j += 1;
-                }
+                seed_row(inf, k, arr);
             }
             k += 1;
         }
-        s.kit = kit;
+        mark(inf, arr);
         s.seeds += 1;
+        s.kit = kit;
+        return;
+    }
+    if kit != s.kit {
+        s.adopts += 1; // a kit object with its rows: the live kit changed (a pattern change); the poll sends what differs from the DSP
+        s.kit = kit;
         return;
     }
     s.polls = s.polls.wrapping_add(1);

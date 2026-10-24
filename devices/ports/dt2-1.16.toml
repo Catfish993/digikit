@@ -69,6 +69,16 @@ mark = "D"
 rule = "core/fxpages:cf_func"
 
 [[anchor]]
+name = "cf.fxpages.init"
+cpu = "cf"
+kind = "code"
+addr = 0x400e5590
+len = 8
+sha256 = "4a577f7d4e224f5bcdda330bfb08780933faacb4e3da1120371ac265a2d70dfd"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
 name = "cf.fxpages.label"
 cpu = "cf"
 kind = "code"
@@ -85,6 +95,26 @@ kind = "code"
 addr = 0x40066d7c
 len = 6
 sha256 = "42c4f6f1923b4a05648467ba283b4820d78e2121bab7692e268beda7a43f6357"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.load"
+cpu = "cf"
+kind = "code"
+addr = 0x400dae22
+len = 6
+sha256 = "1bf979bceba284ebeb6068fa83c174989ff44a30ab610c291d1fe98aa4a5fee0"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.save"
+cpu = "cf"
+kind = "code"
+addr = 0x400dae74
+len = 6
+sha256 = "4a7a0b462f93dfe8d42afbe0502eb1f06970acdd552e0ce265cc62a24cefb7b1"
 mark = "D"
 rule = "core/fxpages:cf_func"
 

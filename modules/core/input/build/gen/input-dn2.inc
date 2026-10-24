@@ -63,6 +63,9 @@
     .equ FX_TPL_PERCENT, 0x0    /* [fx] template_percent (a 0 .. 127 knob) */
     .equ FX_TPL_BIPOLAR, 0x0    /* [fx] template_bipolar (a -64 .. +63 knob) */
     .equ FX_TPL_MIX, 0x0    /* [fx] template_mix (the level slot: MIX) */
+    .equ FX_STORE_OFF, 0x0    /* [fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start) */
+    .equ FX_STORE_HW, 0x0    /* [fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row) */
+    .equ FX_MARK_INDEX, 0x0    /* [fx] mark_index (the array index that holds the mark: an effect row has its values) */
     .equ FX_VALUES_N, 0x0    /* [fx] value_indices: number of indices */
     .equ FX_VALUE_0, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_1, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */

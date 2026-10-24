@@ -54,6 +54,12 @@ struct FxDoc {
     template_percent: u64,
     template_bipolar: u64,
     template_mix: u64,
+    /// Where the kit's storage keeps the effect values (persistence): the byte offset of the first spare halfword in the storage record of the effect value
+    /// array, and the number of spare halfwords. The values (one halfword for each of `value_indices`) come first, then one effect ID for each effect row.
+    store_off: u64,
+    store_halfwords: u64,
+    /// An array index nothing uses (not one of `value_indices`): the mark that an effect row holds values (core/fxpages).
+    mark_index: u64,
 }
 /// `[input]`: which input backend the device uses (a name of `INPUT_BACKENDS`); the profile chooses, the code of core/input has one backend each.
 #[derive(Deserialize)]
@@ -178,6 +184,9 @@ struct FxF {
     template_percent: u64,
     template_bipolar: u64,
     template_mix: u64,
+    store_off: u64,
+    store_halfwords: u64,
+    mark_index: u64,
 }
 /// A device's input facts: the backend (index into `INPUT_BACKENDS` plus 1; 0 none) and the panel's key code layout.
 #[derive(Debug, Default)]
@@ -431,6 +440,19 @@ fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64) -> Result<FxF> {
             "{short}: [fx] page_first is 1 to 255, array_off is even and kit_ptr a multiple of 4"
         ));
     }
+    // the storage: the values, then one ID for each effect row, in halfwords the stock firmware ignores
+    if f.store_off & 1 != 0 || f.store_off > 0xffff || (n + n / 8) as u64 > f.store_halfwords {
+        return Err(err!(
+            "{short}: [fx] store_off is even and store_halfwords holds the {n} values and {} effect IDs ({} halfwords)",
+            n / 8,
+            n + n / 8
+        ));
+    }
+    if f.mark_index > 255 || f.value_indices.contains(&f.mark_index) {
+        return Err(err!(
+            "{short}: [fx] mark_index is an array index below 256 that is not one of value_indices"
+        ));
+    }
     for (name, t) in [
         ("template_percent", f.template_percent),
         ("template_bipolar", f.template_bipolar),
@@ -448,6 +470,9 @@ fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64) -> Result<FxF> {
         template_percent: f.template_percent,
         template_bipolar: f.template_bipolar,
         template_mix: f.template_mix,
+        store_off: f.store_off,
+        store_halfwords: f.store_halfwords,
+        mark_index: f.mark_index,
     })
 }
 
@@ -1000,6 +1025,21 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "FX_TPL_MIX",
             fx.template_mix,
             "[fx] template_mix (the level slot: MIX)",
+        ),
+        (
+            "FX_STORE_OFF",
+            fx.store_off,
+            "[fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start)",
+        ),
+        (
+            "FX_STORE_HW",
+            fx.store_halfwords,
+            "[fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row)",
+        ),
+        (
+            "FX_MARK_INDEX",
+            fx.mark_index,
+            "[fx] mark_index (the array index that holds the mark: an effect row has its values)",
         ),
         (
             "FX_VALUES_N",

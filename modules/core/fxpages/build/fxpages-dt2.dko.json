@@ -31,6 +31,55 @@
    "type": "cf.32"
   },
   {
+   "addend": 224,
+   "offset": 166,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 240,
+   "offset": 172,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 228,
+   "offset": 178,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 236,
+   "offset": 312,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 244,
+   "offset": 318,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 232,
+   "offset": 324,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 248,
+   "offset": 398,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
    "addend": 6,
    "offset": 40,
    "section": ".text",
@@ -87,6 +136,83 @@
    "type": "cf.32"
   },
   {
+   "addend": 168,
+   "offset": 192,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 174,
+   "offset": 198,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 80,
+   "offset": 204,
+   "section": ".text",
+   "symbol": ".sec..rodata",
+   "type": "cf.32"
+  },
+  {
+   "addend": 6,
+   "offset": 292,
+   "section": ".text",
+   "symbol": "_fp_load",
+   "type": "cf.32"
+  },
+  {
+   "addend": 168,
+   "offset": 338,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 80,
+   "offset": 344,
+   "section": ".text",
+   "symbol": ".sec..rodata",
+   "type": "cf.32"
+  },
+  {
+   "addend": 6,
+   "offset": 388,
+   "section": ".text",
+   "symbol": "_fp_save",
+   "type": "cf.32"
+  },
+  {
+   "addend": 168,
+   "offset": 412,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 174,
+   "offset": 418,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 80,
+   "offset": 424,
+   "section": ".text",
+   "symbol": ".sec..rodata",
+   "type": "cf.32"
+  },
+  {
+   "addend": 8,
+   "offset": 486,
+   "section": ".text",
+   "symbol": "_fp_init",
+   "type": "cf.32"
+  },
+  {
    "addend": 0,
    "offset": 12,
    "section": ".rodata",
@@ -127,37 +253,106 @@
    "section": ".rodata",
    "symbol": "_fp_p_first",
    "type": "cf.32"
+  },
+  {
+   "addend": 168,
+   "offset": 112,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 174,
+   "offset": 116,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 224,
+   "offset": 120,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 228,
+   "offset": 124,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 232,
+   "offset": 128,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 236,
+   "offset": 132,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 240,
+   "offset": 136,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 244,
+   "offset": 140,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 248,
+   "offset": 144,
+   "section": ".rodata",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
   }
  ],
  "sections": [
   {
    "align": 4,
-   "hex": "202f00040480000000210c8000000003640e722c4c0108000680000000004e75202f000472204ef900000000203900000000670e2e80203c000000004ef900000000203c000000004ef90000000022000481000000210c81000000036416702c4c00180006810000000020412f104ef900000000720db2804ef900000000ba8067080c800000002165064ef9000000004ef900000000",
+   "hex": "202f00040480000000210c8000000003640e722c4c0108000680000000004e75202f000472204ef900000000203900000000670e2e80203c000000004ef900000000203c000000004ef90000000022000481000000210c81000000036416702c4c00180006810000000020412f104ef900000000720db2804ef900000000ba8067080c800000002165064ef9000000004ef90000000023680098008e4fefffec48d7301c23c90000000023c80000000052b90000000047e8009041e8006045f90000000049f9000000004bf900000000700373da75db4a81660e41e8001049ec00104bed0008602e337c46a7008c7600b48166027601780873d875dc4a83660222020c8100007f0063022202759d33812a00538466e2538066b84cd7301c4fef00144ef900000000256b008e00984fefffec48d7301c23cb0000000023ca0000000052b90000000043ea009041ea006049f9000000004bf900000000700373dc32c17408779d78004a81670438333a0030c4538266ee538066e44cd7301c4fef00144ef9000000004a8a675052b9000000004fefffec48d7181c41f90000000043f90000000047f900000000700373d8660a43e9001047eb00086014357c46a7008c780875d9779b35823a00538466f4538066da4cd7181c4fef00144cd73c044fef00204ef900000000",
    "kind": "text",
    "name": ".text",
-   "size": 150
+   "size": 490
   },
   {
    "align": 4,
    "hex": "",
    "kind": "bss",
    "name": ".bss",
-   "size": 168
+   "size": 252
   },
   {
    "align": 4,
-   "hex": "465850470000000100000001000000000000002c0000002100000003000000000000000800000000000000000000000000000000000000080000453400000018000000750000007300000079800047040102030405060708090a0b0c0d0e0f1011121314151617180000000000000000",
+   "hex": "465850470000000100000001000000000000002c0000002100000003000000000000000800000000000000000000000000000000000000080000453400000018000000750000007300000079800047040102030405060708090a0b0c0d0e0f101112131415161718000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000046000046a7",
    "kind": "data",
    "name": ".rodata",
-   "size": 112
+   "size": 156
   }
  ],
- "source_sha256": "508b435eaf2d9d96325c8f12372bf942e902582323169564bd003edbbb5df8af",
+ "source_sha256": "6a8c4aa78b1ced2b319f92c5bcf6b9b071cd1b9f0dc3b38fb2e55ac973da543b",
  "symbols": [
   {
    "global": false,
    "name": ".sec..bss",
    "section": ".bss",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..rodata",
+   "section": ".rodata",
    "value": 0
   },
   {
@@ -169,6 +364,12 @@
   {
    "global": true,
    "name": "_fp_graph",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fp_init",
    "section": null,
    "value": 0
   },
@@ -186,7 +387,19 @@
   },
   {
    "global": true,
+   "name": "_fp_load",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "_fp_p_first",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fp_save",
    "section": null,
    "value": 0
   },
@@ -216,15 +429,45 @@
   },
   {
    "global": true,
+   "name": "fxp_defs",
+   "section": ".bss",
+   "value": 174
+  },
+  {
+   "global": true,
    "name": "fxp_graph",
    "section": ".text",
    "value": 126
   },
   {
    "global": true,
+   "name": "fxp_ids",
+   "section": ".bss",
+   "value": 168
+  },
+  {
+   "global": true,
+   "name": "fxp_init",
+   "section": ".text",
+   "value": 392
+  },
+  {
+   "global": true,
    "name": "fxp_label",
    "section": ".text",
    "value": 78
+  },
+  {
+   "global": true,
+   "name": "fxp_last_load",
+   "section": ".bss",
+   "value": 224
+  },
+  {
+   "global": true,
+   "name": "fxp_last_save",
+   "section": ".bss",
+   "value": 236
   },
   {
    "global": true,
@@ -240,9 +483,57 @@
   },
   {
    "global": true,
+   "name": "fxp_load",
+   "section": ".text",
+   "value": 150
+  },
+  {
+   "global": true,
+   "name": "fxp_load_src",
+   "section": ".bss",
+   "value": 240
+  },
+  {
+   "global": true,
+   "name": "fxp_ninit",
+   "section": ".bss",
+   "value": 248
+  },
+  {
+   "global": true,
+   "name": "fxp_nload",
+   "section": ".bss",
+   "value": 228
+  },
+  {
+   "global": true,
+   "name": "fxp_nsave",
+   "section": ".bss",
+   "value": 232
+  },
+  {
+   "global": true,
    "name": "fxp_rows",
    "section": ".bss",
    "value": 0
+  },
+  {
+   "global": true,
+   "name": "fxp_save",
+   "section": ".text",
+   "value": 296
+  },
+  {
+   "global": true,
+   "name": "fxp_save_dst",
+   "section": ".bss",
+   "value": 244
+  },
+  {
+   "global": false,
+   "name": "fxp_vidx",
+   "section": ".rodata",
+   "value": 80
   },
   {
    "global": true,
@@ -255,8 +546,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "37",
-  "isa_check": "3a4c43327f9d456a8fe8b4efe6b602c6b0d6ed75676fffd446e2b41c828a864b",
+  "instructions_redecoded": "135",
+  "isa_check": "7bd936eaf2419e5119bc4d7ea219ffa5cd28c265be39cf3104af0febf8055238",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }
