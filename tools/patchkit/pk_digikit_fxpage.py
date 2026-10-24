@@ -277,6 +277,8 @@ def run_fxpage(c: Any) -> None:
             frames["stock"] = stock_pages(rig, Shots(c.work, "stock"))
             to_main(rig)
             pcm["stock"] = sound(rig, c.work / "stock.wav")
+            # a second note on the same boot, as the effect part takes its notes: the control for the note with the free indices poked
+            pcm["ctl"] = rig.note(c.work / "stock-ctl.wav", rig.frames() + 300)
             # the free value indices of [fx]: poked with distinct values in a kit with no effect, nothing else moves and the sound is the same
             kit = Kit(rig, fxp_cfg)
             idxs = [*fxp_cfg["value_indices"], fxp_cfg["mark_index"]]
@@ -513,9 +515,9 @@ def run_fxpage(c: Any) -> None:
         bool(r0["identical"]) and abs(r0["shift"]) <= 128,
         f"onset shift {r0['shift']}, max err {r0.get('max_abs_err')}",
     )
-    r1 = scaled(pcm["stock"], pcm["poked"], 1.0)
+    r1 = scaled(pcm["ctl"], pcm["poked"], 1.0)
     c.check(
-        "stock: with the free value indices poked the PCM is the stock PCM bit for bit from the onset on (nothing reads them)",
+        "stock: with the free value indices poked the PCM is the control note's PCM bit for bit from the onset on (nothing reads them)",
         bool(r1["identical"]) and abs(r1["shift"]) <= 128,
         f"onset shift {r1['shift']}, max err {r1.get('max_abs_err')}",
     )

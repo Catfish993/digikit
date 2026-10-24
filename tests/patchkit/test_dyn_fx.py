@@ -145,8 +145,9 @@ def test_the_fit_rule_counts_the_effect_slots_of_the_device(packed):
     # (a set of four effects stops at the fourth: the "sets" vector of sdk/fit-vectors.json, read by tests/digikit/test_dkfit.py)
 
 
-def test_the_effect_is_not_packable_for_the_digitone_yet(packed, tmp_path):
+def test_the_effect_packs_for_the_digitone_too(packed, tmp_path):
     tools, _ = packed
+    out = tmp_path / "fx-dn2.dkm"
     r = tools.run(
         tools.patchkit,
         "--root",
@@ -156,6 +157,8 @@ def test_the_effect_is_not_packable_for_the_digitone_yet(packed, tmp_path):
         "--device",
         "dn2",
         "-o",
-        tmp_path / "fx-dn2.dkm",
+        out,
     )
-    assert r.returncode != 0
+    assert r.returncode == 0, r.stderr
+    sec = pk_dkrt_machine.parse_dsp_section(out.read_bytes())
+    assert sec["voices"] == [] and len(sec["fxs"]) == 1

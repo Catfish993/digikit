@@ -70,7 +70,7 @@ fn the_runtime_constants_are_the_device_files_numbers() {
     );
     let dn2 = get("build/gen/device-dn2.inc");
     assert!(dn2.contains(".equ DEVICE_ID, 0x2 "), "{dn2}");
-    assert!(dn2.contains(".equ LIMIT_FX_SLOTS, 0x4 "), "{dn2}");
+    assert!(dn2.contains(".equ LIMIT_FX_SLOTS, 0x3 "), "{dn2}");
     assert!(
         get("build/gen/device-dt2.inc").contains(".equ LIMIT_FX_SLOTS, 0x3 "),
         "dt2"
@@ -251,8 +251,8 @@ fn machine_rows_are_the_run_time_machine_types_of_types_toml() {
 }
 
 #[test]
-fn the_free_effect_rows_are_the_dt2_fx_slots() {
-    // core/dynfx reserves one free row of the effect chain for each of the device's effect slots (docs/design/digikit-dkm.md); only the Digitakt II has it
+fn the_free_effect_rows_are_the_devices_fx_slots() {
+    // core/dynfx reserves one free row of the effect chain for each of the device's effect slots (docs/design/digikit-dkm.md); both devices have it
     let lib = Library::scan_repo(&root()).unwrap();
     let dynfx = lib.get("core/dynfx").unwrap();
     let rows = dynfx
@@ -261,22 +261,29 @@ fn the_free_effect_rows_are_the_dt2_fx_slots() {
         .iter()
         .filter(|e| e.registry == "fx")
         .count() as u64;
-    let t: toml::Value =
-        toml::from_str(&std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap())
-            .unwrap();
-    assert_eq!(rows, t["limits"]["fx_slots"].as_integer().unwrap() as u64);
+    for file in ["digitakt-ii", "digitone-ii"] {
+        let t: toml::Value = toml::from_str(
+            &std::fs::read_to_string(root().join(format!("devices/{file}.toml"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            rows,
+            t["limits"]["fx_slots"].as_integer().unwrap() as u64,
+            "{file}"
+        );
+    }
     assert!(
         dynfx
             .manifest
             .module
             .ports
             .iter()
-            .all(|p| p.starts_with("dt2-"))
+            .all(|p| p.starts_with("dt2-") || p.starts_with("dn2-"))
     );
 }
 
 #[test]
-fn the_effect_page_rows_are_eight_parameter_rows_for_each_dt2_fx_slot() {
+fn the_effect_page_rows_are_eight_parameter_rows_for_each_fx_slot() {
     // core/fxpages reserves 7 knobs and MIX for each effect slot; the device file's [fx] has a value index for each of them (docs/design/digikit-registry.md "Effect pages")
     let lib = Library::scan_repo(&root()).unwrap();
     let m = lib.get("core/fxpages").unwrap();
@@ -286,30 +293,45 @@ fn the_effect_page_rows_are_eight_parameter_rows_for_each_dt2_fx_slot() {
         .iter()
         .filter(|e| e.registry == "params")
         .count() as u64;
-    let t: toml::Value =
-        toml::from_str(&std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap())
-            .unwrap();
-    let slots = t["limits"]["fx_slots"].as_integer().unwrap() as u64;
-    assert_eq!(rows, 8 * slots);
-    let idx = t["fx"]["value_indices"].as_array().unwrap();
-    assert!(
-        idx.len() as u64 >= rows,
-        "a value index for each parameter row"
-    );
-    // the first effect page follows the stock pages: the firmware's page accessor has 33 rows
-    assert_eq!(t["fx"]["page_first"].as_integer(), Some(33));
     assert!(
         m.manifest
             .module
             .ports
             .iter()
-            .all(|p| p.starts_with("dt2-"))
+            .all(|p| p.starts_with("dt2-") || p.starts_with("dn2-"))
     );
-    // persistence: the kit's spare storage halfwords hold the values and one ID for each row (finding 61), inside the 0xa0-byte record, after its 46 used halfwords and before its u32 at 0x98
-    let off = t["fx"]["store_off"].as_integer().unwrap() as usize;
-    let hw = t["fx"]["store_halfwords"].as_integer().unwrap() as usize;
-    assert!(idx.len() + idx.len() / 8 <= hw);
-    assert!(off >= 4 + 2 * 46 && off + 2 * hw <= 0x98);
+    // (device file, the number of stock pages: the firmware's page accessor has that many rows, the effect pages follow them, the array's halfwords: 71 / 101)
+    for (file, first, array_hw) in [("digitakt-ii", 33, 71), ("digitone-ii", 37, 101)] {
+        let t: toml::Value = toml::from_str(
+            &std::fs::read_to_string(root().join(format!("devices/{file}.toml"))).unwrap(),
+        )
+        .unwrap();
+        let slots = t["limits"]["fx_slots"].as_integer().unwrap() as u64;
+        assert_eq!(rows, 8 * slots, "{file}");
+        let idx = t["fx"]["value_indices"].as_array().unwrap();
+        assert!(
+            idx.len() as u64 >= rows,
+            "{file}: a value index for each parameter row"
+        );
+        assert_eq!(t["fx"]["page_first"].as_integer(), Some(first), "{file}");
+        // the values and the mark are indices of the array that no stock parameter uses; the u32 behind the array
+        assert_eq!(
+            t["fx"]["tail_off"].as_integer(),
+            Some(2 * array_hw),
+            "{file}"
+        );
+        let mark = t["fx"]["mark_index"].as_integer().unwrap();
+        assert!(mark < array_hw, "{file}");
+        assert!(
+            idx.iter().all(|i| i.as_integer().unwrap() < array_hw),
+            "{file}"
+        );
+        // persistence: the kit's spare storage halfwords hold the values and one ID for each row (finding 61), inside the 0xa0-byte record, after its 46 used halfwords and before its u32 at 0x98
+        let off = t["fx"]["store_off"].as_integer().unwrap() as usize;
+        let hw = t["fx"]["store_halfwords"].as_integer().unwrap() as usize;
+        assert!(idx.len() + idx.len() / 8 <= hw, "{file}");
+        assert!(off >= 4 + 2 * 46 && off + 2 * hw <= 0x98, "{file}");
+    }
 }
 
 #[test]
@@ -398,8 +420,9 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             all.sort();
             let mut want: Vec<&str> = RT021_MODULES.to_vec();
             want.extend(extra);
-            // the Digitakt II also has run-time effects (core/dynfx and the chain it reserves rows in); the Digitone II not yet
-            if dev.short == "dt2" {
+            // run-time effects (core/dynfx and the chain it reserves rows in): the Digitakt II has them in both sets; the Digitone II in the device set only (in the emulator the
+            // hook costs x2.4 DSP CPU, finding 55)
+            if dev.short == "dt2" || set == "device" {
                 want.extend(["core/dynfx", "core/fx", "core/fxpages"]);
             }
             want.sort();
