@@ -38,7 +38,7 @@ Things to know:
 
 A run-time module: it is not patched into the firmware. The digikit runtime loads the `.dkm` from the card and sends the DSP code to the DSP. Pack it with
 `mise run module:pack -- digikit/freqshift --device dt2` (or `dn2`) and upload `out/patch/freqshift-dt2.dkm`, or load it with `mise run dk:run -- digikit/freqshift --emu`. The image needs the digikit runtime with
-`core/dynfx` and `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II have them; the Digitone II's `device` set has them, its `emulator` set does not: name both modules there).
+`core/dynfx` and `core/fxpages` (the `emulator` and `device` patch sets of both devices have them).
 
 Source and reference: `src/dsp/freqshift.s`, the float32 model `tools/patchkit/freqshift_ref.py` (defines the arithmetic; `mise` is not needed to run it), the tests `tests/patchkit/test_freqshift.py`,
 `tests/patchkit/test_freqshift_ref.py` and the emulator scenario `tests/digikit/scenarios/fx-freqshift-dt2.toml` (and `-dn2`). A demo render for listening: `tests/support/freqshift_demo.py`.

@@ -143,8 +143,9 @@ decodes nothing. No generator change, no `CORE_FINGERPRINT` change, no core rege
   | before (the check by range hash) | 1.709 (IQR 0.008) | 4.062 (IQR 0.011) | **2.377** (2.372 to 2.389) |
   | after (changed blocks only) | 1.351 (IQR 0.008) | 1.370 (IQR 0.002) | **1.013** (1.009 to 1.015) |
 
-  So the cost of the hook is x1.01, and the set without effects also runs 21 % faster (1.709 -> 1.351), because the other patches of the runtime also barred whole ranges. Checks on the new engine: `fx-dyn-dn2`, `fx-freqshift-dn2`,
+  So the cost of the hook is x1.01 (inside the x1.10 bar for adding the modules to the DN2 `emulator` set, which was done: see below), and the set without effects also runs 21 % faster (1.709 -> 1.351), because the other patches of the runtime also barred whole ranges. Checks on the new engine: `fx-dyn-dn2`, `fx-freqshift-dn2`,
   `pk_proof_fx --quick` on both devices pass.
+- **The DN2 `emulator` set has `core/dynfx` and `core/fxpages` (and with them `core/fx`) now [D]**, as the Digitakt II's has (`devices/digitone-ii.toml` `[patch_sets]`; 15 modules). Before this the DN2 scenarios named both modules in their list; they still do (the same shared tools run on both devices).
 - **Not covered:** a patch that reads code as data, or code that the decoder resolves differently by a word further than `CODE_LOOKAHEAD` after the range (the hash had the same limit).
 
 **The Digitakt II emulator set (step 1 on) has `core/fx` in it**, and its cost (x1.03 in the table above) was measured on the first hook site only. Re-measured with the final set (`core/dynfx` and `core/fxpages` against

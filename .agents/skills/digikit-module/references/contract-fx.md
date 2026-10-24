@@ -80,7 +80,7 @@ position = 0            # 0 to 7: the place on the page (default: the knob's pla
   its row is its own; a different effect in that row, an empty row, a kit saved without the effect and a kit saved by stock firmware all give it the defaults of your manifest (each knob's `default`, MIX
   `mix`). Your effect never sees a zero in between. A new kit gets the defaults. A kit saved with effects also loads on stock firmware (it ignores the extra bytes). Effects count by row: the same two
   effects loaded in the other order (the selection's order sets the rows) get defaults, not each other's values.
-- **Not supported.** P-locks, LFO and other modulation on a knob, MIDI CC, a second page for one effect, a knob that does not reach the DSP as a float. An image without `core/fxpages` (the `emulator` and `device` patch sets of the Digitakt II and the `device` set of the Digitone II have it) refuses a module with
+- **Not supported.** P-locks, LFO and other modulation on a knob, MIDI CC, a second page for one effect, a knob that does not reach the DSP as a float. An image without `core/fxpages` (the `emulator` and `device` patch sets of both devices have it) refuses a module with
   a page (`E_NO_REGISTRY`). The pages are the same on both devices (the Digitone II's effect pages are numbers 37 to 39, its FX view lists DEL, REV, CHO as there).
 - **Check it.** `patchkit pack MODULE --device dt2 -o x.dkm` refuses a bad page (a text too long, a default outside the range, two knobs at one position); the scenarios `tests/digikit/scenarios/fx-pages-dt2.toml` and `fx-pages-dn2.toml`
   (`pk_digikit_scen run fx-pages-dt2`) is the proof for the fixture: the page's screenshots, the PCM at the knobs' values, MIX 0 equal to the dry sound.

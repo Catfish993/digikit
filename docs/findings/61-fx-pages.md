@@ -167,7 +167,7 @@ accepts any alignment in DDR. The scenario's helpers (`u16`, `put16`) do the sam
   the image is 70.1 dB down, Load Kit restores SHIFT and MIX.
 - Screenshots (`out/runs/lanes/f4-shots/dn2-*.png`): the stock DEL page (title `Delay (1/4)` with the effect loaded, `(1/3)` without), REV and CHO (`Chorus (3/3)`); the fourth page with tab GAN, title `Test Gain (4/4)`, a GAIN knob, seven empty cells and MIX
   on the level slot; the same while turning (`Gain=100`, `Mix=0`); the frequency shifter's page (tab FSH, `Freq Shift=40` while turning).
-- The Digitone II needs `core/dynfx` and `core/fxpages` in its image: they are in the `device` patch set and not in `emulator`, because `core/fx` costs the emulator x2.38 DSP CPU there (finding 55). The scenarios name them in their module list.
+- The Digitone II needs `core/dynfx` and `core/fxpages` in its image: they are in the `device` patch set, and since 2026-10-24 in `emulator` too (`core/fx` cost the emulator x2.38 DSP CPU there until the engine barred only the changed blocks, x1.01 now, finding 55). The scenarios still name them in their module list.
 
 ## Open **[O]**
 
