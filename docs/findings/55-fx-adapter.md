@@ -85,6 +85,22 @@ At a block boundary (`tools/patchkit/fx_rings.py` has addresses and decoders; th
   site) and the stages before the ramp are not the final master. **[O]** Ways to cut the DN2 cost: finer `CODE_RANGES` in the generator (splits at function entries), or the
   effect at H0 (x1.13) with the adapter re-converting the master pair of ring C itself (the format is exact, see above; not tried).
 
+## Run-time rows (F4 step 1, 2026-10-24) **[D]**
+
+Effects can also be loaded at run time on the Digitakt II (`docs/design/digikit-dkm.md`, DSP section version 4; runtime 0.4.0). What changed in the adapter and its neighbours:
+
+- **Rows are 24 words** (was 16): pc, desc, state, enabled, p0 to p7 (`DK_FX_MAX_PARAMS` 8, was 4), `was` 12, `dis` 14, fault window 15 to 17. Row stride 96 bytes.
+- **A free row has pc `0xffffffff`** and is skipped; pc 0 still ends the table. `core/dynfx` (Digitakt II only for now) reserves one free row for each `[limits] fx_slots` (3) and a table, `dynfx_info`, that the
+  runtime reads. The registry `fx` takes the free rows and the rows of patched-in effects together (limit `fx_slots`).
+- **Window 2** of `core/dsp-link` is the whole table of the registry `fx` (24 words a row, `fx.rows`, `fx.count`); the runtime writes one word per transfer and the pc last, as it does for voice rows.
+- **Cost** (concrete core, `tests/patchkit/test_fx.py`): empty chain 16 instructions (no row; unchanged), 21 with one free row, 31 with three free rows, 33 with four (the quick scan costs about 5 instructions per
+  free row); one effect steady 736 (was 732), a chain whose rows are all off 178 (was 174). The Digitakt II images that carry `core/dynfx` (the `device` and `emulator` patch sets) therefore always pay the hook: x1.03 DSP CPU in the
+  emulator (the table above) and about 31 instructions per block on the DSP (0.005 % of a 666,667-cycle block at the emulator's model clock).
+- State of a run-time effect lives in the module's own DSP range (behind its image), zeroed by the adapter when the effect switches on.
+- Proof: `tests/digikit/scenarios/fx-dyn-dt2.toml` (`tools/patchkit/pk_digikit_fx.py`): the sine and `test/dyn-fx-gain` selected at boot play as 0.5 x the dry sine (within 2 ulps, from the onset on); the chain's row
+  holds the record's words; MODULES, CAPACITY (`FX_SLOTS` used 1 of 3) and `dkneeds` agree; deselect and restart gives the dry PCM bit for bit; three effects play as 0.125 x dry and the fourth is refused (`E_DSP_ROWS`
+  and the fit rule: `FX 1 > 0 FREE`).
+
 ## Open **[O]**
 
 - The role of ring C words 2 and 3 (next pair) and of the rest of the frame.

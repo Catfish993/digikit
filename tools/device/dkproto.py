@@ -93,7 +93,7 @@ LOAD_STATUS: dict[int, tuple[str, str]] = {
     -31: ("E_DSP_FORMAT", "the DSP section is malformed"),
     -32: ("E_DSP_IMPORT", "a DSP symbol is not exported by the image"),
     -33: ("E_DSP_NOSPACE", "no free range in the DSP area"),
-    -34: ("E_DSP_ROWS", "no free voice row"),
+    -34: ("E_DSP_ROWS", "no free voice or effect row"),
     -35: ("E_DSP_XFER", "the transfer to the DSP failed or timed out"),
     -36: ("E_DSP_DEVICE", "the DSP code is for the other device"),
     -37: ("E_DSP_TYPE", "voice type out of range, or used by another module"),

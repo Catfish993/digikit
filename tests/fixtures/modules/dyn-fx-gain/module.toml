@@ -1,0 +1,33 @@
+[module]
+id = "test/dyn-fx-gain"
+version = "0.1.0"
+name = "FX gain (run time)"
+category = "test"
+type = "fx"
+author = "digikit"
+status = "experimental"
+summary = "Test effect of the FX contract, loaded at run time on the Digitakt II: scales the master block by its parameter p0, default 0.5."
+dynamic = true
+ports = ["dt2-1.16", "dt2-1.17"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "experimental"
+
+# `patchkit pack test/dyn-fx-gain --device dt2 -o fx-gain.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
+# publishes a free effect row of core/dynfx for the effect (state reserved behind the image, p0 at its default).
+[[object]]
+path = "build/dyn-fx-gain-dsp.dko.json"
+sources = ["src/dsp/dyn_fx_gain.s"]
+place = "dsp.l2"
+devices = ["dt2"]
+
+# One effect: its process routine and `dk_fx_desc` (sdk/dk_fx.h). `defaults` are the words p0 ... of its row: p0 = 0.5f.
+[[fx]]
+id = "gain"
+process = "_dg_process"
+desc = "_dg_desc"
+defaults = [0x3f000000]
+devices = ["dt2"]

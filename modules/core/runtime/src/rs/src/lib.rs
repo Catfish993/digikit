@@ -115,6 +115,8 @@ extern "C" {
     /// INFO reply gives (`[digikit] name`: 3 characters and a NUL, as a big-endian word).
     static dkrt_device_id: u32;
     static dkrt_device_name: u32;
+    /// The effect slots of the device (`[limits] fx_slots`), defined by `src/cf/<dev>/device.s`.
+    static dkrt_fx_slots: u32;
     /// The 4-byte address literals of two firmware words (anchors `dkrt.fw.block_counter_lit`, `dkrt.fw.tx_inflight_lit`): the symbol's
     /// address is that of the literal in the firmware's code, whose value is the address of the word.
     static dkrt_block_counter_lit: u32;
@@ -168,6 +170,11 @@ pub fn flush(start: u32, len: u32) {
 
 pub fn device() -> u32 {
     unsafe { read_volatile(addr_of!(dkrt_device_id)) }
+}
+
+/// The effects the device's chain takes: CAPACITY's limit for `FX_SLOTS`.
+pub fn fx_slots() -> u32 {
+    unsafe { read_volatile(addr_of!(dkrt_fx_slots)) }
 }
 
 /// The device's short name as the INFO reply gives it: 3 characters and a NUL.
@@ -759,7 +766,7 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
         (CAPK_VOICE_ROWS, vrows, vused, 0),
         (CAPK_PARAM_ROWS, param.0, param.1, 0),
         (CAPK_PAGE_ROWS, page.0, page.1, 0),
-        (CAPK_FX_SLOTS, dkrt_sdk::device::LIMIT_FX_SLOTS, 0, 0),
+        (CAPK_FX_SLOTS, fx_slots(), dsp::fx_used(), 0),
         (CAPK_MAP_ENTRIES, dkrt_sdk::sel::MAP_N as u32, assign::map_used(), 0),
         (CAPK_STORE, st_total, st_used, 0),
     ];

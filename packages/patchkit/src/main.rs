@@ -471,16 +471,31 @@ plan.json {}",
                         ranges,
                     });
                 }
+                // the effects of the device (`[[fx]]`): process routine and descriptor in the DSP object
+                let fxs: Vec<patchkit::dkmdsp::FxSpec> = m
+                    .manifest
+                    .fx
+                    .iter()
+                    .filter(|f| f.devices.is_empty() || f.devices.iter().any(|d| *d == dev))
+                    .map(|f| patchkit::dkmdsp::FxSpec {
+                        process: f.process.clone(),
+                        desc: f.desc.clone(),
+                        defaults: f.defaults.clone(),
+                    })
+                    .collect();
                 match sharc.first() {
                     Some((o, _)) => {
                         dsp = patchkit::dkmdsp::pack(
                             o,
                             patchkit::register::device_id(&dev)?,
                             &voices,
+                            &fxs,
                         )?
                     }
-                    None if !voices.is_empty() => {
-                        return Err(Error(format!("{id}: a voice needs a DSP object for {dev}")));
+                    None if !voices.is_empty() || !fxs.is_empty() => {
+                        return Err(Error(format!(
+                            "{id}: a voice or an effect needs a DSP object for {dev}"
+                        )));
                     }
                     None => {}
                 }
@@ -642,6 +657,16 @@ plan.json {}",
                         v.state_bytes,
                         v.clear_bytes,
                         v.ranges
+                    );
+                }
+                for e in &x.fxs {
+                    println!(
+                        "  effect process +{:#x} desc +{:#x} state {} params {} defaults {:x?}",
+                        e.process,
+                        e.desc,
+                        e.state_bytes,
+                        e.n_params,
+                        &e.defaults[..e.n_params as usize]
                     );
                 }
             }

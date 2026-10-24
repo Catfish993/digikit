@@ -567,6 +567,10 @@ state = "_fg_state"      # .PKBSS _fg_state, <state_bytes>;
 
 `tests/fixtures/modules/fx-gain` (0.5 gain) is the example and the fixture of `core/fx`'s tests; `fx-nan` is the negative one. An empty chain plays the stock audio.
 
+On the Digitakt II an effect can also be a run-time module (`dynamic = true`, a `.dkm`): it declares `[[fx]]` with `process`, `desc` and `defaults` instead of the `[[entry]]` row, has no
+state symbol (the runtime reserves `state_bytes` of its descriptor) and takes one of the 3 free rows that `core/dynfx` reserves. Example and fixture: `tests/fixtures/modules/dyn-fx-gain`
+(contract and rules: the "Run-time effects" part of `contract-fx.md`; format: `docs/design/digikit-dkm.md`).
+
 The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and
 `modules/core/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,

@@ -170,6 +170,7 @@ RUNNER_KINDS: dict[str, tuple[str, ...]] = {
     "pk_digikit_upload.py": ("upload",),
     "pk_digikit_rungc.py": ("rungc",),
     "pk_digikit_pages.py": ("pages",),
+    "pk_digikit_fx.py": ("fx",),
 }
 
 

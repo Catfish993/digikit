@@ -43,7 +43,10 @@
     {"name": "page rows on a device that has none", "needs": {"PAGE_ROWS": 1}, "want": ["PAGE_ROWS", 1, 0]},
     {"name": "page rows on a device that has them", "needs": {"PAGE_ROWS": 1}, "caps": {"PAGE_ROWS": [8, 7, 0]}, "want": null},
     {"name": "a kind the capacity lacks is not judged", "needs": {"PAGE_ROWS": 3, "FX_SLOTS": 1}, "caps": {"PAGE_ROWS": null, "FX_SLOTS": null}, "want": null},
-    {"name": "effect slots (there are none)", "needs": {"FX_SLOTS": 1}, "want": ["FX_SLOTS", 1, 0]},
+    {"name": "effect slots on a device that has none", "needs": {"FX_SLOTS": 1}, "want": ["FX_SLOTS", 1, 0]},
+    {"name": "an effect fits a free slot", "needs": {"FX_SLOTS": 1}, "caps": {"FX_SLOTS": [3, 2, 0]}, "want": null},
+    {"name": "a fourth effect is refused: the three slots are taken", "needs": {"FX_SLOTS": 1}, "caps": {"FX_SLOTS": [3, 3, 0]}, "want": ["FX_SLOTS", 1, 0]},
+    {"name": "two effects in one module need two slots", "needs": {"FX_SLOTS": 2}, "caps": {"FX_SLOTS": [3, 2, 0]}, "want": ["FX_SLOTS", 2, 1]},
     {
       "name": "the first short resource is reported: the module record before the DSP area",
       "needs": {"DSP_AREA": 524288, "DSP_ALIGN": 8, "PARAM_ROWS": 17},
@@ -85,6 +88,12 @@
       "name": "machine rows are taken in turn",
       "needs": [{"ARENA": 48, "MACHINE_ROWS": 2, "times": 5}],
       "want": [4, "MACHINE_ROWS", 2, 0]
+    },
+    {
+      "name": "four effects: the fourth finds the three slots taken",
+      "caps": {"FX_SLOTS": [3, 0, 0]},
+      "needs": [{"ARENA": 48, "DSP_AREA": 64, "DSP_ALIGN": 8, "ARENA_XFER": 64, "FX_SLOTS": 1, "times": 4}],
+      "want": [3, "FX_SLOTS", 1, 0]
     },
     {
       "name": "the capacity left by modules already loaded is the start",

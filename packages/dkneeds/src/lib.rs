@@ -49,12 +49,15 @@ pub const LEN_MACHINE: u32 = 0x6c;
 pub const LEN_PAGE: u32 = 0x60;
 pub const MAX_RECORDS: u32 = 32;
 
-/// The DSP section: magic "DKDS", versions 1 to 3, header 0x40 bytes, voices of 16, 48 or 64 bytes.
+/// The DSP section: magic "DKDS", versions 1 to 4, header 0x40 bytes, voices of 16, 48 or 64 bytes (version 4: voices of 64 bytes and effect records).
 pub const DSP_MAGIC: u32 = 0x444b_4453;
 pub const DSP_HEADER: u32 = 0x40;
 pub const MAX_RELOCS: u32 = 4096;
 pub const MAX_IMPORTS: u32 = 32;
 pub const MAX_VOICES: u32 = 8;
+/// Effect records of a version 4 section: their size and the most the loader takes (`DK_FX_MAX`), and the state bytes of one (the loader's own limit).
+pub const FX_LEN: u32 = 64;
+pub const MAX_FX: u32 = 4;
 /// Voice states of one voice record, and the bytes of one state: the loader's own limits (`dsp.rs`), the second one at the loader's most (the DSP area).
 pub const MAX_STATE_VOICES: u32 = 64;
 pub const MAX_STATE_BYTES: u32 = 1 << 24;
@@ -135,7 +138,7 @@ pub struct Needs {
     pub voice_rows: u32,
     pub param_rows: u32,
     pub page_rows: u32,
-    /// Effect slots: a run-time module takes none yet (the runtime loads no effects), so always 0.
+    /// Effect slots: the effect records of the DSP section (version 4).
     pub fx_slots: u32,
 }
 
@@ -296,7 +299,7 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
         16
     } else if version == 2 {
         48
-    } else if version == 3 {
+    } else if version == 3 || version == 4 {
         64
     } else {
         return Err(Error::Dsp);
@@ -311,6 +314,11 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
     );
     let (import_off, nimport) = (word(src, off + 0x24)?, word(src, off + 0x28)?);
     let (voice_off, nvoice) = (word(src, off + 0x2c)?, word(src, off + 0x30)?);
+    let (fx_off, nfx) = if version == 4 {
+        (word(src, off + 0x34)?, word(src, off + 0x38)?)
+    } else {
+        (0, 0)
+    };
     if image == 0
         || image & 3 != 0
         || bss & 3 != 0
@@ -319,10 +327,12 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
         || nreloc > MAX_RELOCS
         || nimport > MAX_IMPORTS
         || nvoice > MAX_VOICES
+        || nfx > MAX_FX
         || !inside(image_off, image, size)
         || !inside(reloc_off, nreloc * 8, size)
         || !inside(import_off, nimport * 32, size)
         || !inside(voice_off, nvoice * stride, size)
+        || !inside(fx_off, nfx * FX_LEN, size)
     {
         return Err(Error::Dsp);
     }
@@ -332,7 +342,7 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
         .and_then(|t| t.checked_add(7))
         .ok_or(Error::Dsp)?
         & !7;
-    if version == 3 {
+    if version >= 3 {
         let mut i = 0;
         while i < nvoice {
             let at = off + voice_off + stride * i;
@@ -347,6 +357,17 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
             i += 1;
         }
     }
+    // version 4: the state of every effect (state_bytes at +8 of its record), rounded to 8
+    let mut i = 0;
+    while i < nfx {
+        let state = word(src, off + fx_off + FX_LEN * i + 8)?;
+        if state > MAX_STATE_BYTES {
+            return Err(Error::Dsp);
+        }
+        total = total.checked_add((state + 7) & !7).ok_or(Error::Dsp)?;
+        i += 1;
+    }
+    n.fx_slots = nfx;
     n.arena_xfer = arena_block(image).ok_or(Error::Dsp)?;
     n.dsp_area = total.checked_add(GRANULE - 1).ok_or(Error::Dsp)? & !(GRANULE - 1);
     n.dsp_align = align;

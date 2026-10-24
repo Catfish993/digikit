@@ -14,7 +14,13 @@
 //! half-written row. A row is freed the other way round (type to `0xffffffff` first). The generation (20) and log level (21) words
 //! are not written yet (0).
 //!
-//! Nothing here runs unless the file has a DSP section; the link to `core/dsp-link` and `core/dyndsp` is optional.
+//! Effect rows (DSP section version 4, `core/dynfx`): the rows of the effect chain of `core/fx` (24 words each, window 2 of `core/dsp-link`). An effect
+//! record claims a free row (pc `0xffffffff`) when the range is reserved and publishes it after the code is acknowledged, one word per transfer: the
+//! eight parameter words (the record's defaults), desc, state, `enabled` (1) and the pc last, so the chain never sees a half-written row. A row is freed
+//! the other way round (the pc to `0xffffffff` first, then the adapter's `was`, `dis` and fault counters cleared). The effect's state is reserved in the
+//! module's range behind the image, bss and voice states (`state_bytes` of its `dk_fx_desc`).
+//!
+//! Nothing here runs unless the file has a DSP section; the link to `core/dsp-link`, `core/dyndsp` and `core/dynfx` is optional.
 use crate::{arena, cstr_eq, cstr_len, rd32};
 use core::ptr::{addr_of_mut, read_volatile};
 use dkrt_sdk::*;
@@ -39,6 +45,31 @@ const VOICE_V3: u32 = 64;
 const MAX_STATE_VOICES: u32 = 64;
 /// Steps to publish a row: 8 ranges, the pc, note_on, state base, stride, clear, the cleared disabled word, the type.
 const ROW_STEPS: u32 = 15;
+/// Effect rows: the most a chain takes (`DK_FX_MAX`), the bytes of an effect record in a DSP section of version 4, the words of a row of `core/fx`, the pc of
+/// a free row and the steps to publish a row: 8 parameter words, desc, state, enabled, the pc.
+pub const MAX_FX: usize = 4;
+const FX_REC: u32 = 64;
+const FX_ROW_WORDS: u32 = 24;
+const FX_FREE_PC: u32 = 0xffff_ffff;
+const FX_STEPS: u32 = 12;
+/// The words of an effect row (`core/fx` module.toml): pc, desc, state, enabled, p0 (to p7), and the adapter's was, dis, fault window start, count and total.
+const FXW_PC: u32 = 0;
+const FXW_DESC: u32 = 1;
+const FXW_STATE: u32 = 2;
+const FXW_ENABLED: u32 = 3;
+const FXW_P0: u32 = 4;
+const FXW_WAS: u32 = 12;
+const FXW_DIS: u32 = 14;
+const FXW_WSTART: u32 = 15;
+const FXW_WCOUNT: u32 = 16;
+/// `dk_fx_desc` (sdk/dk_fx.h): magic "DKFX", contract, and its size in bytes.
+const FX_DESC_MAGIC: u32 = 0x444b_4658;
+const FX_DESC_BYTES: u32 = 28;
+const FX_MAX_PARAMS: u32 = 8;
+/// The windows of `core/dsp-link`.
+const WIN_VOICES: u32 = 1;
+const WIN_FX: u32 = 2;
+const FX_INFO_MAGIC: u32 = 0x4446_5849; // "DFXI"
 const L2_BYTE_BASE: u32 = 0x2000_0000;
 const L2_SW_BASE: u32 = 0x00B8_0000;
 /// The run-time machine types (`dynamic_first ..= last` of modules/core/machines/types.toml, through `patchkit gen`).
@@ -69,12 +100,22 @@ const I_VFREE: usize = 7;
 const I_NIMPORT: usize = 9;
 const I_IMPORTS: usize = 10;
 
+// words of `dynfx_info` (byte offset / 4)
+const F_MAGIC: usize = 0;
+const F_DEVICE: usize = 2;
+const F_ROWS: usize = 3;
+const F_FIRST: usize = 4;
+const F_FREE: usize = 5;
+const F_WORDS: usize = 7;
+
 extern "C" {
     // Symbols of core/dsp-link and core/dyndsp; each resolves to 0 when the module is not in the image (`[object] optional`).
     fn dl_send();
     fn dl_send_win();
     fn dl_poll();
     fn dyndsp_info();
+    // core/dynfx: the effect chain's table; 0 when the module is not in the image.
+    fn dynfx_info();
 }
 
 #[repr(C)]
@@ -153,6 +194,16 @@ pub struct DspState {
     pub row_state_base: [u32; MAX_ROWS],
     pub row_stride: [u32; MAX_ROWS],
     pub row_clear: [u32; MAX_ROWS],
+    /// Per effect row (the free rows of `core/dynfx`, in order): the owner (module record + 1, 0: free), whether its pc word was written to the DSP (so it needs
+    /// clearing), the pc, the byte addresses of the desc and the state, and the words p0 to p7 to publish.
+    pub fx_owner: [u8; MAX_FX],
+    pub fx_pub: [u8; MAX_FX],
+    pub fx_pc: [u32; MAX_FX],
+    pub fx_desc: [u32; MAX_FX],
+    pub fx_state: [u32; MAX_FX],
+    pub fx_par: [[u32; 8]; MAX_FX],
+    /// Per module record: the effect rows it owns (bit mask).
+    pub mod_fx: [u32; crate::MAX_MODULES],
 }
 
 #[no_mangle]
@@ -181,6 +232,49 @@ unsafe fn info() -> *const u32 {
 
 unsafe fn iw(k: usize) -> u32 {
     read_volatile(info().add(k))
+}
+
+/// The table of `core/dynfx`, or null (also when it is for another device or has another row size than the runtime knows).
+unsafe fn finfo() -> *const u32 {
+    let a = fn_addr(dynfx_info);
+    if a == 0 || info().is_null() {
+        return core::ptr::null();
+    }
+    let p = a as *const u32;
+    if read_volatile(p.add(F_MAGIC)) != FX_INFO_MAGIC
+        || read_volatile(p.add(F_DEVICE)) != iw(I_DEVICE)
+        || read_volatile(p.add(F_WORDS)) != FX_ROW_WORDS
+    {
+        return core::ptr::null();
+    }
+    p
+}
+
+unsafe fn fiw(k: usize) -> u32 {
+    read_volatile(finfo().add(k))
+}
+
+/// Effect rows the image reserves for run-time effects (0 without `core/dynfx`).
+unsafe fn fx_free_rows() -> u32 {
+    if finfo().is_null() {
+        0
+    } else {
+        fiw(F_FREE).min(MAX_FX as u32)
+    }
+}
+
+/// Effect rows in use (claimed by a module that is loaded or loading), for CAPACITY.
+pub unsafe fn fx_used() -> u32 {
+    let d = ds();
+    let mut used = 0;
+    let mut k = 0;
+    while k < MAX_FX {
+        if d.fx_owner[k] != 0 {
+            used += 1;
+        }
+        k += 1;
+    }
+    used
 }
 
 unsafe fn have_link() -> bool {
@@ -331,6 +425,9 @@ pub struct Job {
     pub nvoice: u32,
     /// Bytes of a voice entry (`VOICE_V1`, `VOICE_V2` or `VOICE_V3`).
     pub vstride: u32,
+    /// The effect records (version 4), `FX_REC` bytes each.
+    pub fxs: *const u8,
+    pub nfx: u32,
     import_vals: [u32; MAX_IMPORTS as usize],
 }
 
@@ -348,6 +445,8 @@ impl Job {
             voices: core::ptr::null(),
             nvoice: 0,
             vstride: VOICE_V2,
+            fxs: core::ptr::null(),
+            nfx: 0,
             import_vals: [0; MAX_IMPORTS as usize],
         }
     }
@@ -358,8 +457,8 @@ unsafe fn in_sec(off: u32, len: u32, size: u32) -> bool {
 }
 
 /// Bytes of the range a module needs, before the granule: image, bss, then (version 3) the state blocks of its voices, every block
-/// of `voices * state_bytes` rounded to 8 bytes. The caller has checked the counts, so nothing overflows.
-unsafe fn extent(image_size: u32, bss: u32, voices: *const u8, nvoice: u32, vstride: u32) -> u32 {
+/// of `voices * state_bytes` rounded to 8 bytes, then (version 4) the state of each effect rounded to 8. The caller has checked the counts, so nothing overflows.
+unsafe fn extent(image_size: u32, bss: u32, voices: *const u8, nvoice: u32, vstride: u32, fxs: *const u8, nfx: u32) -> u32 {
     let mut total = (image_size + bss + 7) & !7;
     if vstride == VOICE_V3 {
         let mut i = 0;
@@ -369,7 +468,18 @@ unsafe fn extent(image_size: u32, bss: u32, voices: *const u8, nvoice: u32, vstr
             i += 1;
         }
     }
+    // then the state of each effect (version 4)
+    let mut i = 0;
+    while i < nfx {
+        total += (rd32(fxs.add((FX_REC * i) as usize + 8)) + 7) & !7;
+        i += 1;
+    }
     total
+}
+
+/// The little-endian word at `p` (the DSP image's own byte order).
+unsafe fn rd32le(p: *const u8) -> u32 {
+    (*p as u32) | ((*p.add(1) as u32) << 8) | ((*p.add(2) as u32) << 16) | ((*p.add(3) as u32) << 24)
 }
 
 /// An exported DSP symbol of `dyndsp_info`; 0 when there is none of that name.
@@ -394,7 +504,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     }
     let s = f.add(off as usize);
     let version = rd32(s.add(4));
-    if rd32(s) != STATE_MAGIC || (version != 1 && version != 2 && version != 3) {
+    if rd32(s) != STATE_MAGIC || (version != 1 && version != 2 && version != 3 && version != 4) {
         return E_DSP_FORMAT;
     }
     if !have_link() {
@@ -409,6 +519,8 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     let (image_off, reloc_off, nreloc) = (rd32(s.add(0x18)), rd32(s.add(0x1c)), rd32(s.add(0x20)));
     let (import_off, nimport) = (rd32(s.add(0x24)), rd32(s.add(0x28)));
     let (voice_off, nvoice) = (rd32(s.add(0x2c)), rd32(s.add(0x30)));
+    // version 4: the effect records (0x34 offset, 0x38 count)
+    let (fx_off, nfx) = if version == 4 { (rd32(s.add(0x34)), rd32(s.add(0x38))) } else { (0, 0) };
     let vstride = match version {
         1 => VOICE_V1,
         2 => VOICE_V2,
@@ -422,6 +534,8 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         || nreloc > MAX_RELOCS
         || nimport > MAX_IMPORTS
         || nvoice as usize > MAX_VOICES
+        || nfx as usize > MAX_FX
+        || !in_sec(fx_off, nfx * FX_REC, size)
         || !in_sec(image_off, image_size, size)
         || !in_sec(reloc_off, nreloc * 8, size)
         || !in_sec(import_off, nimport * 32, size)
@@ -441,8 +555,30 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
             i += 1;
         }
     }
+    // effect records: entries and descriptor inside the image, the descriptor says what the record says (the adapter zeroes `state_bytes` of the
+    // descriptor at the state address: it must not be more than the range holds)
+    let mut i = 0;
+    while i < nfx {
+        let e = s.add((fx_off + FX_REC * i) as usize);
+        let (process, desc, state, np) = (rd32(e), rd32(e.add(4)), rd32(e.add(8)), rd32(e.add(12)));
+        if process >= image_size
+            || process & 1 != 0
+            || desc & 3 != 0
+            || !in_sec(desc, FX_DESC_BYTES, image_size)
+            || state & 3 != 0
+            || state > iw(I_AREA_BYTES)
+            || np > FX_MAX_PARAMS
+        {
+            return E_DSP_FORMAT;
+        }
+        let dd = s.add((image_off + desc) as usize);
+        if rd32le(dd) != FX_DESC_MAGIC || rd32le(dd.add(4)) != 1 || rd32le(dd.add(8)) != np || rd32le(dd.add(12)) != state {
+            return E_DSP_FORMAT;
+        }
+        i += 1;
+    }
     // the range must fit the area at all (a later load may still find it taken: reserve())
-    let need = extent(image_size, bss, s.add(voice_off as usize), nvoice, vstride);
+    let need = extent(image_size, bss, s.add(voice_off as usize), nvoice, vstride, s.add(fx_off as usize), nfx);
     if need > iw(I_AREA_BYTES) || (need + GRANULE - 1) & !(GRANULE - 1) > iw(I_AREA_BYTES) {
         return E_DSP_NOSPACE;
     }
@@ -483,6 +619,22 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     if nvoice > free_rows {
         return E_DSP_ROWS;
     }
+    // effect rows: the image must have the chain's table, and a free row for each record
+    if nfx > 0 {
+        if finfo().is_null() {
+            return E_NO_DSP;
+        }
+        let (mut free_fx, mut f) = (0, 0);
+        while f < MAX_FX {
+            if d.fx_owner[f] == 0 && (f as u32) < fx_free_rows() {
+                free_fx += 1;
+            }
+            f += 1;
+        }
+        if nfx > free_fx {
+            return E_DSP_ROWS;
+        }
+    }
     i = 0;
     while i < nvoice {
         let e = s.add(voice_off as usize + vstride as usize * i as usize);
@@ -519,6 +671,8 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     job.voices = s.add(voice_off as usize);
     job.nvoice = nvoice;
     job.vstride = vstride;
+    job.fxs = s.add(fx_off as usize);
+    job.nfx = nfx;
     OK
 }
 
@@ -537,7 +691,7 @@ unsafe fn put_le16(p: *mut u8, v: u32) {
 /// Nothing is sent yet. On an error nothing is left reserved.
 pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
     let d = ds();
-    let len = (extent(job.image_size, job.bss, job.voices, job.nvoice, job.vstride) + GRANULE - 1) & !(GRANULE - 1);
+    let len = (extent(job.image_size, job.bss, job.voices, job.nvoice, job.vstride, job.fxs, job.nfx) + GRANULE - 1) & !(GRANULE - 1);
     let off = match alloc_range(len, job.align) {
         Some(o) => o,
         None => return E_DSP_NOSPACE,
@@ -625,6 +779,31 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
         row += 1;
         v += 1;
     }
+    // claim the effect rows (lowest free ones first); the states follow the voice states, in record order
+    let mut fclaimed = 0u32;
+    let mut f = 0;
+    let mut frow = 0;
+    while f < job.nfx as usize {
+        while frow < MAX_FX && (d.fx_owner[frow] != 0 || (frow as u32) >= fx_free_rows()) {
+            frow += 1;
+        }
+        let e = job.fxs.add(FX_REC as usize * f);
+        d.fx_pc[frow] = L2_SW_BASE + (base + rd32(e) - L2_BYTE_BASE) / 2;
+        d.fx_desc[frow] = base + rd32(e.add(4));
+        d.fx_state[frow] = base + state_at;
+        state_at += (rd32(e.add(8)) + 7) & !7;
+        let mut k = 0;
+        while k < 8 {
+            d.fx_par[frow][k] = rd32(e.add(20 + 4 * k));
+            k += 1;
+        }
+        d.fx_owner[frow] = rec as u8 + 1;
+        d.fx_pub[frow] = 0;
+        fclaimed |= 1 << frow;
+        frow += 1;
+        f += 1;
+    }
+    d.mod_fx[rec] = fclaimed;
     d.mod_off[rec] = off;
     d.mod_len[rec] = len;
     d.mod_rows[rec] = claimed;
@@ -652,9 +831,22 @@ unsafe fn unreserve(rec: usize) {
         }
         k += 1;
     }
+    k = 0;
+    while k < MAX_FX {
+        if d.fx_owner[k] == rec as u8 + 1 {
+            d.fx_owner[k] = 0;
+            d.fx_pub[k] = 0;
+            d.fx_pc[k] = 0;
+            d.fx_desc[k] = 0;
+            d.fx_state[k] = 0;
+            d.fx_par[k] = [0; 8];
+        }
+        k += 1;
+    }
     d.mod_off[rec] = 0;
     d.mod_len[rec] = 0;
     d.mod_rows[rec] = 0;
+    d.mod_fx[rec] = 0;
 }
 
 /// Undo a `reserve` that was never started (the CF side failed after it).
@@ -669,12 +861,12 @@ pub unsafe fn cancel(rec: usize) {
 
 // ---- one-word writes into the voices registry ---------------------------------------------------------------------------------
 
-/// Start writing `value` into word `word` of window 1; false when the link refused (busy: try again).
-unsafe fn start_word(word: u32, value: u32) -> bool {
+/// Start writing `value` into word `word` of window `win` (1 the voice rows, 2 the effect rows); false when the link refused (busy: try again).
+unsafe fn start_word(win: u32, word: u32, value: u32) -> bool {
     let d = ds();
     // the link sends the bytes of the buffer as little-endian DSP words; this is a big-endian ColdFire long
     d.word = (value << 24) | ((value & 0xff00) << 8) | ((value >> 8) & 0xff00) | (value >> 24); // byte swap by hand: no libgcc here
-    call_send_win(1, word, &d.word as *const u32, 4) == 0
+    call_send_win(win, word, &d.word as *const u32, 4) == 0
 }
 
 /// `Some(true)` done, `Some(false)` failed, `None` still running.
@@ -692,9 +884,9 @@ unsafe fn poll_done() -> Option<bool> {
 }
 
 /// Write one word and wait for it (the UI task spins; a few audio blocks). Used on the error paths.
-unsafe fn write_word_blocking(word: u32, value: u32) -> bool {
+unsafe fn write_word_blocking(win: u32, word: u32, value: u32) -> bool {
     let mut n = 0;
-    while !start_word(word, value) {
+    while !start_word(win, word, value) {
         n += 1;
         if n > SPIN {
             return false;
@@ -724,8 +916,31 @@ unsafe fn clear_rows(rec: usize) {
     let mut k = 0;
     while k < MAX_ROWS {
         if d.row_owner[k] == rec as u8 + 1 && d.row_pub[k] != 0 {
-            write_word_blocking(ROW_WORDS * (first + k as u32), FREE_TYPE);
+            write_word_blocking(WIN_VOICES, ROW_WORDS * (first + k as u32), FREE_TYPE);
             d.row_pub[k] = 0;
+        }
+        k += 1;
+    }
+}
+
+/// Free the effect rows module record `rec` published: the pc first, so the chain skips the row at once; then the adapter's words (`was`, `dis`, the fault
+/// window and its count) back to 0, so the next effect on the row starts clean.
+unsafe fn clear_fx_rows(rec: usize) {
+    let d = ds();
+    if finfo().is_null() {
+        return;
+    }
+    let first = fiw(F_FIRST);
+    let mut k = 0;
+    while k < MAX_FX {
+        if d.fx_owner[k] == rec as u8 + 1 && d.fx_pub[k] != 0 {
+            let at = FX_ROW_WORDS * (first + k as u32);
+            write_word_blocking(WIN_FX, at + FXW_PC, FX_FREE_PC);
+            write_word_blocking(WIN_FX, at + FXW_WAS, 0);
+            write_word_blocking(WIN_FX, at + FXW_DIS, 0);
+            write_word_blocking(WIN_FX, at + FXW_WSTART, 0);
+            write_word_blocking(WIN_FX, at + FXW_WCOUNT, 0);
+            d.fx_pub[k] = 0;
         }
         k += 1;
     }
@@ -738,6 +953,7 @@ pub unsafe fn release(rec: usize) {
         return;
     }
     clear_rows(rec);
+    clear_fx_rows(rec);
     unreserve(rec);
 }
 
@@ -789,6 +1005,7 @@ unsafe fn fail(code: i32) {
     let d = ds();
     let rec = d.pending.rec as usize;
     clear_rows(rec);
+    clear_fx_rows(rec);
     if d.pending.send_buf != 0 {
         arena::free(d.pending.send_buf as *mut u8);
         d.pending.send_buf = 0;
@@ -863,11 +1080,48 @@ pub unsafe fn step() {
                     }
                     k += 1;
                 }
+                // then the effect rows, `FX_STEPS` steps each: the 8 parameter words, desc, state, enabled, the pc
+                let mut frow = MAX_FX;
                 if row == MAX_ROWS {
+                    k = 0;
+                    while k < MAX_FX {
+                        if d.fx_owner[k] == rec as u8 + 1 {
+                            if want < FX_STEPS {
+                                frow = k;
+                                break;
+                            }
+                            want -= FX_STEPS;
+                        }
+                        k += 1;
+                    }
+                }
+                if row == MAX_ROWS && frow == MAX_FX {
                     // every row is in: list the machine, run init, publish the slots
                     crate::boot::note_result(d.pending.boot_idx, OK);
                     crate::st().last_result = OK;
                     next_job();
+                    return;
+                }
+                if d.started == 0 && frow != MAX_FX {
+                    let at = FX_ROW_WORDS * (fiw(F_FIRST) + frow as u32);
+                    let (word, value) = if want < 8 {
+                        (at + FXW_P0 + want, d.fx_par[frow][want as usize])
+                    } else if want == 8 {
+                        (at + FXW_DESC, d.fx_desc[frow])
+                    } else if want == 9 {
+                        (at + FXW_STATE, d.fx_state[frow])
+                    } else if want == 10 {
+                        (at + FXW_ENABLED, 1)
+                    } else {
+                        (at + FXW_PC, d.fx_pc[frow])
+                    };
+                    if start_word(WIN_FX, word, value) {
+                        d.started = 1;
+                        d.row_writes += 1;
+                        if want == FX_STEPS - 1 {
+                            d.fx_pub[frow] = 1; // from here the pc word may be in the DSP: clear it on failure
+                        }
+                    }
                     return;
                 }
                 if d.started == 0 {
@@ -889,7 +1143,7 @@ pub unsafe fn step() {
                     } else {
                         (at, d.row_type[row])
                     };
-                    if start_word(word, value) {
+                    if start_word(WIN_VOICES, word, value) {
                         d.started = 1;
                         d.row_writes += 1;
                         if want == ROW_STEPS - 1 {

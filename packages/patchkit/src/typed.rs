@@ -7,6 +7,7 @@
 //! [[machine]]  id, name, short, clone_of, knobs = [...], level   (up to the device's knob count; [machine.dn2] overrides)
 //! [[page]]     id, machine, name, title                           (only on devices whose knobs live in a page)
 //! [[voice]]    machine, entry | render [, note_on, desc]          (machine id -> DSP entry symbols; desc: `dk_machine_desc`)
+//! [[fx]]       id, process, desc [, defaults]                      (a run-time effect: DSP symbols; desc: `dk_fx_desc`; `.dkm` only)
 //! ```
 //!
 //! `lower` turns them, per device, into the `[[entry]]` rows the frameworks (`core/machines`, `core/params`,
@@ -260,6 +261,21 @@ pub struct VoiceDef {
     /// The `dk_machine_desc` data symbol (contract voices): voices, state and clear bytes come from it.
     #[serde(default)]
     pub desc: Option<String>,
+    #[serde(default)]
+    pub devices: Vec<String>,
+}
+
+/// A run-time effect (`[[fx]]`, DSP section version 4 of a `.dkm`; docs/design/digikit-dkm.md): `process` is the global text symbol of its process routine
+/// (sdk/dk_fx.h), `desc` the data symbol of its `dk_fx_desc` (n_params and state_bytes come from it), `defaults` the words p0 ... of its row (at most
+/// `n_params`, the words the DSP reads as they are; none: all 0). Only the packer reads it: a patched-in effect is an `[[entry]]` row of the registry `fx`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FxDef {
+    pub id: String,
+    pub process: String,
+    pub desc: String,
+    #[serde(default)]
+    pub defaults: Vec<u32>,
     #[serde(default)]
     pub devices: Vec<String>,
 }

@@ -9,6 +9,7 @@
 //! 2. the ColdFire ranges of used records are pairwise disjoint, and so are their DSP ranges;
 //! 3. every owned voice row belongs to a used record whose `mod_rows` has the row's bit, and every bit of a used record's `mod_rows`
 //!    is a row it owns; an unused record has no DSP range, no rows and no registry rows, and every registry row has a used owner;
+//!    The effect rows follow the same rule (`mod_fx`, a bit for each row of the chain a record owns).
 //! 4. no two used records have the same name.
 use crate::{cstr_eq, dlog, dsp, registry, st, ARENA_BYTES, DKRT_ARENA, MAX_MODULES};
 use core::ptr::{addr_of, addr_of_mut};
@@ -99,6 +100,26 @@ pub unsafe fn check() -> u32 {
             }
         } else if d.mod_len[i] != 0 || d.mod_rows[i] != 0 {
             return fail(3, i, d.mod_len[i], d.mod_rows[i]);
+        }
+        i += 1;
+    }
+    // the effect rows the same way: an owned row belongs to a used record whose `mod_fx` has its bit, and every bit is an owned row
+    k = 0;
+    while k < dsp::MAX_FX {
+        let o = d.fx_owner[k];
+        if o != 0 && (o as usize > MAX_MODULES || s.modules[o as usize - 1].used == 0 || d.mod_fx[o as usize - 1] & (1 << k) == 0) {
+            return fail(3, if o != 0 && (o as usize) <= MAX_MODULES { o as usize - 1 } else { 0 }, 0x400 | k as u32, o as u32);
+        }
+        k += 1;
+    }
+    i = 0;
+    while i < MAX_MODULES {
+        k = 0;
+        while k < 32 {
+            if d.mod_fx[i] & (1 << k) != 0 && (k >= dsp::MAX_FX || s.modules[i].used == 0 || d.fx_owner[k] != i as u8 + 1) {
+                return fail(3, i, 0x400 | k as u32, if k < dsp::MAX_FX { d.fx_owner[k] as u32 } else { 0xff });
+            }
+            k += 1;
         }
         i += 1;
     }
