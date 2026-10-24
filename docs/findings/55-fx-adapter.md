@@ -108,6 +108,23 @@ Effects can also be loaded at run time on the Digitakt II (`docs/design/digikit-
   The empty chain (16), three free rows (31) and the all-off chain (178) are unchanged.
 - The chain's row is published with its mix word (13 steps, was 12). The effect's page, its knobs and the poller that writes p_j and the mix: finding 61.
 
+## Run-time effects on the Digitone II: the emulator cost (F4 step 5, 2026-10-24) **[D]**
+
+`core/dynfx` now builds for the Digitone II 1.12 (`[limits] fx_slots` 3 as on the Digitakt II; the registry `fx`, window 2 of `core/dsp-link` and the hook H1 were already there). It needs `core/fx`, which
+no DN2 patch set carried until now (`emulator` and `device` are `core/dynreg`, `core/dyndsp`, `core/digikit-menu`, `core/health`, `core/input`, `core/remote-open`), so adding it to a set puts the hook of finding 55
+(H1 `FUN_1c244d`, range 3482 words) into the emulator image. Paired A/B on the DN2 emulator set (`tools/devtools/coupled_ab.py`, scenario `trig1-taps`, 10.5 audio s, 3 pairs, same binary, images through
+`--dsp-patch` from `pk_dsp_diff`; DSP thread CPU per audio second; no other emulator running):
+
+| image | DSP CPU per audio s | ratio | real-time factor | instructions to the interpreter per block |
+| --- | --- | --- | --- | --- |
+| A: the `emulator` set | 1.687 (IQR 0.007) | 1 | 0.59 | 7,470 |
+| B: A + `core/dynfx` (+ `core/fx`), no effect loaded | 4.028 (IQR 0.049) | **2.38** (2.36 to 2.39) | 0.247 | 29,750 (+22,300 of the fall-back) |
+| C: A + `core/fx` + `digikit/freqshift` as a patched-in effect (SHIFT 10, MIX 1; proxy for a loaded one) | 4.571 (IQR 0.015) | **2.71** (2.70 to 2.72) | 0.219 | 34,350 |
+
+The PCM of B is the PCM of A (hash equal in all runs); C differs (the effect is on). The headless binary is not PGO-tuned, so the absolute factors are low; the ratio is what carries over. The DT2 image pays x1.03 for the same
+step; on the DN2 the hook lands in the one large range. Options (not tried): finer `CODE_RANGES` (no merge of adjacent blocks at function entries) so that H1 and its caller do not share one range; the effect at H0
+(x1.13, the range of the converter) with the adapter converting the master pair of ring C itself; or leaving `core/dynfx` out of the DN2 default sets and adding it with `--modules` where an effect is wanted.
+
 ## Open **[O]**
 
 - The role of ring C words 2 and 3 (next pair) and of the rest of the frame.

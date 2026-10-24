@@ -103,7 +103,7 @@ modules = 8
 machine_rows = 8
 arena_bytes = 524288
 stage_bytes = 65536
-fx_slots = 4
+fx_slots = 3   # effects in the chain; core/dynfx reserves this many free effect rows for run-time effects (at most DK_FX_MAX = 4)
 param_rows = 16
 page_rows = 8
 
