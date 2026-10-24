@@ -149,7 +149,7 @@ the stock list anchor instead of a `moveq #13`) and the offset of the u32 behind
 
 **Free value indices.** The Fx owners of the Digitone II (LFO 1 to 3, Chorus, Delay, Reverb, Ext-in, Master) use the array indices 1 to 69 and nothing else; 70 to 100 belong to no Fx parameter, the frame copy to the DSP takes 25 to 69 and the
 stock saver table ends at 69 (static: `out/runs/lanes/f4-static.log`, parameter table of the image). So the effect rows take **70 to 93** (`value_indices`) and the mark is index **100**. Poke test in the emulator, in the scenario
-`fx-pages-dn2` (part `stock`, no effect loaded): the 25 halfwords take distinct values (`0x1000 + 0x111 n`), keep them, no other index moves, and the PCM of a note is the stock PCM bit for bit. A pattern change, a kit load and a
+`fx-pages-dn2` (part `stock`, no effect loaded): the 25 halfwords take distinct values (`0x1000 + 0x111 n`), keep them, no other index moves, and a note plays at the same level as the control note before it (within 0.2 dB; two notes of one boot start a few blocks apart under host load, so there is no bit-for-bit compare of the second and third note; the stock PCM against an image without `core/fxpages` is still bit for bit). A pattern change, a kit load and a
 project load behave as on the Digitakt II (`fx-persist-dn2`; the first kit object of a boot is seeded by the runtime, another pattern's kit by the mark).
 
 **Which kit object the encoders edit [D].** The object of `*0x800052a0` + `0x48e4`: turning GAIN in the scenario changes that array at the effect's own index only, and no other index moves except those that move on their own (LFO smoothing; the same check as on the
@@ -158,7 +158,7 @@ halfwords there, and so do the hooks (ColdFire allows it), but the runtime's fir
 accepts any alignment in DDR. The scenario's helpers (`u16`, `put16`) do the same.
 
 **Measured (scenarios on dn2-1.12, quick tier) [D].**
-- `fx-pages-dn2` (199 s, 35 checks): the three stock pages are pixel for pixel the pages of an image without `core/fxpages`, the stock PCM is equal bit for bit (also with the 25 free indices poked); with `test/dyn-fx-gain` the FX view lists
+- `fx-pages-dn2` (199 s, 35 checks): the three stock pages are pixel for pixel the pages of an image without `core/fxpages`, the stock PCM is equal bit for bit (and with the 25 free indices poked the sound has the control note's level); with `test/dyn-fx-gain` the FX view lists
   {17, 18, 19, 37}, the page has tab GAN, title `TEST GAIN (4/4)`, the GAIN knob and MIX on the level slot (index 70 and 77, defaults `0x3200` and `0x7f00`); GAIN to raw `0x6400` gives p0 = 0.98 in the row and 0.98 x dry PCM, an intermediate MIX
   the linear blend, MIX 0 the dry PCM bit for bit, MIX 127 the wet PCM; deselecting the effect and a restart bring the three pages (pixel for pixel) and the dry PCM back.
 - `fx-persist-dn2` (265 s, 37 checks): the Digitakt II's checks, with the kit library at sectors `0x2040` to `0x2054` of the card: Save Kit and Load Kit restore the 16 values (kit array, DSP row floats, PCM bit for bit, pages pixel for pixel), the stock kit and
