@@ -77,11 +77,7 @@ pub fn effect_id(module: &str, effect: &str) -> u32 {
         h = (h ^ b as u32).wrapping_mul(0x0100_0193);
     }
     let f = (h >> 16) ^ (h & 0xffff);
-    if f == 0 {
-        1
-    } else {
-        f
-    }
+    if f == 0 { 1 } else { f }
 }
 
 /// The machine key a `.dkm` carries where a stock machine has its type: the hash in the upper 24 bits and the machine's `type_hint` in the
@@ -261,6 +257,55 @@ pub fn effect_page(module: &str, fx: usize, d: &crate::typed::FxDef) -> Result<O
     };
     e.check().map_err(|x| err!("{who}: {}", x.0))?;
     Ok(Some(e))
+}
+
+/// The routes of `[[fx]]` `d` as (mask of `dkmdsp::ROUTE_*`, default route). `route` is `"master"` (the default when left out) or `"send"`. `routes` lists the routes the user may
+/// choose in DIGIKIT > FX ROUTES; left out it is `["master"]`, and `["send", "master"]` when `route = "send"` (so a send effect falls back to the master when the send slots
+/// are taken, and a master effect is a master effect). A send-only effect says `routes = ["send"]`. Refused: a name that is not `master` or `send`, an empty `routes`, a route twice,
+/// and a `route` that `routes` does not list.
+pub fn fx_routes(module: &str, d: &crate::typed::FxDef) -> Result<(u32, u32)> {
+    use crate::dkmdsp::{ROUTE_MASTER, ROUTE_SEND};
+    let who = format!("{module}: fx {}", d.id);
+    let one = |what: &str, name: &str| match name {
+        "master" => Ok(ROUTE_MASTER),
+        "send" => Ok(ROUTE_SEND),
+        o => Err(err!("{who}: {what} {o:?} is master or send")),
+    };
+    let route = match d.route.as_deref() {
+        None => ROUTE_MASTER,
+        Some(r) => one("route", r)?,
+    };
+    let routes = match &d.routes {
+        None if route == ROUTE_SEND => ROUTE_SEND | ROUTE_MASTER,
+        None => ROUTE_MASTER,
+        Some(l) if l.is_empty() => {
+            return Err(err!("{who}: routes is empty; list master, send or both"));
+        }
+        Some(l) => {
+            let mut mask = 0;
+            for r in l {
+                let b = one("routes entry", r)?;
+                if mask & b != 0 {
+                    return Err(err!("{who}: routes lists {r:?} twice"));
+                }
+                mask |= b;
+            }
+            mask
+        }
+    };
+    if routes & route == 0 {
+        return Err(err!(
+            "{who}: route {:?} is not in routes",
+            d.route.as_deref().unwrap_or("master")
+        ));
+    }
+    // the send knob and the FX ROUTES row are labelled with the page's tab: an effect without a page is an insert
+    if d.tab.is_none() && routes != ROUTE_MASTER {
+        return Err(err!(
+            "{who}: a send route needs a `tab` (the label of the effect's page, which also labels its send knob and its FX ROUTES row)"
+        ));
+    }
+    Ok((routes, route))
 }
 
 /// The words p0 ... of an effect's row: with a page, knob i's default as a float for p_i and 0 after them (`defaults` must then be empty: a word has one
@@ -828,6 +873,8 @@ mod tests {
                 display: None,
                 position: None,
             }],
+            route: None,
+            routes: None,
         };
         let p = effect_page("m", 0, &d).unwrap().unwrap();
         assert_eq!(p.knobs[0], effect().knobs[0]);
@@ -838,6 +885,80 @@ mod tests {
         none.title = None;
         none.knob.clear();
         assert!(effect_page("m", 0, &none).unwrap().is_none());
+    }
+
+    fn fx_with(route: Option<&str>, routes: Option<&[&str]>) -> crate::typed::FxDef {
+        crate::typed::FxDef {
+            id: "gain".into(),
+            process: "p".into(),
+            desc: "d".into(),
+            defaults: vec![],
+            devices: vec![],
+            tab: None,
+            title: None,
+            mix: 127,
+            knob: vec![],
+            route: route.map(String::from),
+            routes: routes.map(|l| l.iter().map(|s| s.to_string()).collect()),
+        }
+    }
+
+    #[test]
+    fn the_routes_of_an_effect_follow_the_manifest_rule_and_bad_ones_are_refused() {
+        use crate::dkmdsp::{ROUTE_MASTER as M, ROUTE_SEND as S};
+        let r = |route, routes: Option<&[&str]>| {
+            let mut d = fx_with(route, routes);
+            d.tab = Some("GAN".into());
+            fx_routes("m", &d)
+        };
+        // nothing said: a master effect that cannot move
+        assert_eq!(r(None, None).unwrap(), (M, M));
+        assert_eq!(r(Some("master"), None).unwrap(), (M, M));
+        // a send default without `routes` may fall back to the master
+        assert_eq!(r(Some("send"), None).unwrap(), (S | M, S));
+        // explicit lists, in any order
+        assert_eq!(r(None, Some(&["send", "master"])).unwrap(), (S | M, M));
+        assert_eq!(
+            r(Some("send"), Some(&["master", "send"])).unwrap(),
+            (S | M, S)
+        );
+        assert_eq!(r(Some("send"), Some(&["send"])).unwrap(), (S, S));
+        assert_eq!(r(None, Some(&["master"])).unwrap(), (M, M));
+        // refused: unknown names, an empty list, a repeated route, a default that is not in the list
+        let e = |route, routes: Option<&[&str]>| r(route, routes).unwrap_err().0;
+        assert!(e(Some("aux"), None).contains("route \"aux\" is master or send"));
+        assert!(e(None, Some(&["master", "bus"])).contains("routes entry \"bus\""));
+        assert!(e(None, Some(&[])).contains("routes is empty"));
+        assert!(e(None, Some(&["send", "send"])).contains("twice"));
+        assert!(e(None, Some(&["send"])).contains("route \"master\" is not in routes"));
+        assert!(e(Some("send"), Some(&["master"])).contains("route \"send\" is not in routes"));
+        // an effect without a page is an insert: a send route needs the tab that labels it
+        let no_tab = |route, routes: Option<&[&str]>| fx_routes("m", &fx_with(route, routes));
+        assert_eq!(no_tab(None, None).unwrap(), (M, M));
+        assert!(
+            no_tab(Some("send"), None)
+                .unwrap_err()
+                .0
+                .contains("needs a `tab`")
+        );
+        assert!(
+            no_tab(None, Some(&["master", "send"]))
+                .unwrap_err()
+                .0
+                .contains("needs a `tab`")
+        );
+        // the manifest reader takes the two keys and no other spelling
+        let m: crate::typed::FxDef = toml::from_str(
+            "id = \"g\"\nprocess = \"p\"\ndesc = \"d\"\ntab = \"GAN\"\ntitle = \"T\"\nroute = \"send\"\nroutes = [\"send\"]\n",
+        )
+        .unwrap();
+        assert_eq!(fx_routes("t/x", &m).unwrap(), (S, S));
+        assert!(
+            toml::from_str::<crate::typed::FxDef>(
+                "id = \"g\"\nprocess = \"p\"\ndesc = \"d\"\nroutez = \"send\"\n"
+            )
+            .is_err()
+        );
     }
 
     #[test]

@@ -16,9 +16,9 @@ use core::ptr::{addr_of, addr_of_mut, null, null_mut};
 use dkneeds::{needs_of, Bytes};
 use dkrt_fit::{self as fit, Needs, Short};
 use dkrt_sdk::proto::{
-    CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_STAGE, CAPK_VOICE_ROWS,
+    CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_SEND_SLOTS, CAPK_STAGE, CAPK_VOICE_ROWS,
 };
-use dkrt_sdk::{DkrtStoreEntry, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
+use dkrt_sdk::{DkrtFx, DkrtStoreEntry, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -95,6 +95,11 @@ extern "C" {
     /// adapter (core/input) and so no remote control.
     fn dkrt_remote_get() -> i32;
     fn dkrt_remote_set(on: u32) -> i32;
+    /// The `index`th loaded effect that has a page: tab, module id, allowed routes, default, the route it runs on and the route the settings give it; 0, or `E_NOT_FOUND` past the end.
+    fn dkrt_fx(index: u32, out: *mut DkrtFx) -> i32;
+    /// digikit's settings (finding 63): set `key` (NUL-terminated) to `len` bytes; written to the card 2 s later, or at once by the flush. 0 or an `E_SET_*` code.
+    fn dkrt_settings_put(key: *const u8, value: *const u8, len: u32) -> i32;
+    fn dkrt_settings_flush() -> i32;
 }
 
 // ---- std::function and shared_ptr as the firmware lays them out -----------------------------------------------
@@ -157,12 +162,14 @@ static mut LOADV: View = NO_VIEW;
 static mut ABOUTV: View = NO_VIEW;
 static mut HEALTHV: View = NO_VIEW;
 static mut MEMV: View = NO_VIEW;
+static mut FXRV: View = NO_VIEW;
 
 static NAME_MAIN: &[u8] = b"DigikitMenu\0";
 static NAME_LOAD: &[u8] = b"DigikitLoadMenu\0";
 static NAME_ABOUT: &[u8] = b"DigikitAboutMenu\0";
 static NAME_HEALTH: &[u8] = b"DigikitHealthMenu\0";
 static NAME_MEM: &[u8] = b"DigikitMemoryMenu\0";
+static NAME_FXR: &[u8] = b"DigikitFxRoutesMenu\0";
 
 /// The address of the stock icon the SYSTEM item uses, read from the operand of the instruction that pushes it.
 unsafe fn icon() -> *const u8 {
@@ -878,7 +885,10 @@ const A_OPEN_HEALTH: u32 = 7;
 const A_DEBUG: u32 = 8;
 const A_OPEN_MEM: u32 = 9;
 const A_REMOTE: u32 = 10;
+const A_OPEN_FXR: u32 = 11;
+const A_FXR_APPLY: u32 = 12;
 const A_TOGGLE: u32 = 0x100;
+const A_FXR_TOGGLE: u32 = 0x200;
 
 unsafe fn fill_main() {
     let m = MAIN.obj;
@@ -890,6 +900,7 @@ unsafe fn fill_main() {
         row(m, &t.b, A_SAFE, 0);
     }
     row(m, b"MODULES\0", A_OPEN_LOAD, 0);
+    row(m, b"FX ROUTES\0", A_OPEN_FXR, 0);
     row(m, b"ABOUT\0", A_OPEN_ABOUT, 0);
     row(m, b"HEALTH\0", A_OPEN_HEALTH, 0);
     row(m, b"MEMORY\0", A_OPEN_MEM, 0);
@@ -1129,6 +1140,192 @@ unsafe fn fill_about() {
     arow(m, &t.b);
     arow(m, if d.ram_kept != 0 { b"RAM KEPT: YES\0" } else { b"RAM KEPT: NO\0" });
     end_rebuild(m, sel);
+}
+
+// ---- FX ROUTES (FX routing, docs/findings/62-fx-send-route.md and 64-fx-send-page.md) -------------------------------------------------
+
+/// Effects a page lists at most (the chain has `DK_FX_MAX` = 4 rows).
+const MAX_FXR: usize = 4;
+const ROUTE_MASTER: u32 = 1;
+const ROUTE_SEND: u32 = 2;
+/// The loaded effects with a page, as `dkrt_fx` gave them when the page was opened.
+static mut FXR: [DkrtFx; MAX_FXR] = unsafe { core::mem::zeroed() };
+static mut FXR_N: usize = 0;
+/// Per effect: the pending route (`ROUTE_*`; YES changes it, nothing is saved until APPLY & RESTART) and the route the settings give it (the saved one).
+static mut FXR_PEND: [u8; MAX_FXR] = [0; MAX_FXR];
+static mut FXR_SAVED: [u8; MAX_FXR] = [0; MAX_FXR];
+/// The device's send slots (CAPACITY `SEND_SLOTS`, the limit; 0 when the image has no send page).
+static mut FXR_SLOTS: u32 = 0;
+/// The rows of the FX ROUTES page as text (24 bytes each, NUL-terminated) and how many there are. Read by the proof.
+#[no_mangle]
+pub static mut DK_FXR: [[u8; 24]; 8] = [[0; 24]; 8];
+#[no_mangle]
+pub static mut DK_FXR_N: u32 = 0;
+/// The pending routes of the effects (1 master, 2 send), for the proof.
+#[no_mangle]
+pub static mut DK_FXR_PEND: [u8; MAX_FXR] = [0; MAX_FXR];
+/// Times APPLY & RESTART wrote the routes (the second press), and the last result of the put, the flush and the restart (which returns only when it refuses).
+#[no_mangle]
+pub static mut DK_FXR_APPLIES: u32 = 0;
+#[no_mangle]
+pub static mut DK_FXR_SET: i32 = 0;
+#[no_mangle]
+pub static mut DK_FXR_FLUSH: i32 = 0;
+#[no_mangle]
+pub static mut DK_FXR_RESTART: i32 = 0;
+
+/// The effects, the saved routes and the send slots, read from the runtime; the pending routes start as the saved ones.
+unsafe fn read_fxr() {
+    FXR_N = 0;
+    while FXR_N < MAX_FXR {
+        if dkrt_fx(FXR_N as u32, addr_of_mut!(FXR[FXR_N])) != OK {
+            break;
+        }
+        FXR_SAVED[FXR_N] = FXR[FXR_N].saved as u8;
+        FXR_PEND[FXR_N] = FXR[FXR_N].saved as u8;
+        FXR_N += 1;
+    }
+    let mut caps = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; CAP_MAX];
+    let n = dkrt_capacity(caps.as_mut_ptr(), CAP_MAX as u32) as usize;
+    FXR_SLOTS = 0;
+    for e in &caps[..n] {
+        if e.kind == CAPK_SEND_SLOTS as u32 {
+            FXR_SLOTS = e.limit;
+        }
+    }
+    RESULT.clear();
+    ARMED = 0;
+}
+
+unsafe fn fxr_differs() -> bool {
+    for i in 0..FXR_N {
+        if FXR_PEND[i] != FXR_SAVED[i] {
+            return true;
+        }
+    }
+    false
+}
+
+/// One row of the FX ROUTES page; its text is also kept in `DK_FXR`.
+unsafe fn frow(m: *mut u8, text: &[u8], act: u32) {
+    let k = DK_FXR_N as usize;
+    if k < 8 {
+        let mut n = 0;
+        while n < 23 && n < text.len() && text[n] != 0 {
+            DK_FXR[k][n] = text[n];
+            n += 1;
+        }
+        while n < 24 {
+            DK_FXR[k][n] = 0;
+            n += 1;
+        }
+        DK_FXR_N += 1;
+    }
+    row(m, text, act, 0);
+}
+
+/// `<TAB>` as the effect's page labels it (up to 3 characters).
+fn fxr_tab(t: &mut Text, f: &DkrtFx) {
+    let mut n = 0;
+    while n < 8 && f.tab[n] != 0 {
+        t.s(&f.tab[n..n + 1]);
+        n += 1;
+    }
+}
+
+unsafe fn fill_fxr() {
+    let m = FXRV.obj;
+    let sel = begin_rebuild(m);
+    DK_FXR_N = 0;
+    // a row is the effect's tab and the route it will have: `GAN  SEND`, `GAN  MASTER`
+    if FXR_N == 0 {
+        frow(m, b"NO EFFECTS LOADED\0", A_NOP);
+    } else {
+        for i in 0..FXR_N {
+            let mut t = Text::new();
+            fxr_tab(&mut t, &FXR[i]);
+            t.pad(5);
+            t.s(if FXR_PEND[i] as u32 == ROUTE_SEND { b"SEND" } else { b"MASTER" });
+            frow(m, &t.b, A_FXR_TOGGLE + i as u32);
+        }
+        if fxr_differs() {
+            frow(m, if ARMED != 0 { b"CONFIRM RESTART\0" } else { b"APPLY & RESTART\0" }, A_FXR_APPLY);
+        }
+        if RESULT.n > 0 {
+            frow(m, &RESULT.b, A_NOP);
+        }
+    }
+    DK_FXR_PEND = FXR_PEND;
+    end_rebuild(m, sel);
+}
+
+/// YES on a row: the pending route changes to the other allowed one. An effect that allows one route says which (`GAN: MASTER ONLY`), and a switch to the send
+/// route is refused when the pending routes already use every send slot (`NO SEND SLOT`); both are shown in the message row and change nothing.
+unsafe fn fxr_toggle(i: usize) {
+    RESULT.clear();
+    if i < FXR_N {
+        let f = &FXR[i];
+        let cur = FXR_PEND[i] as u32;
+        let other = if cur == ROUTE_SEND { ROUTE_MASTER } else { ROUTE_SEND };
+        if f.allowed & other == 0 {
+            fxr_tab(&mut RESULT, f);
+            RESULT.s(if cur == ROUTE_SEND { b": SEND ONLY" } else { b": MASTER ONLY" });
+        } else if other == ROUTE_SEND && fxr_sends(i) >= FXR_SLOTS {
+            RESULT.s(b"NO SEND SLOT");
+        } else {
+            FXR_PEND[i] = other as u8;
+        }
+    }
+    fill_fxr();
+}
+
+/// Effects other than `skip` whose pending route is the send bus.
+unsafe fn fxr_sends(skip: usize) -> u32 {
+    let mut n = 0;
+    for i in 0..FXR_N {
+        if i != skip && FXR_PEND[i] as u32 == ROUTE_SEND {
+            n += 1;
+        }
+    }
+    n
+}
+
+/// APPLY & RESTART on the FX ROUTES page: the first press says that the device restarts (a popup) and arms the row; the second writes the changed routes
+/// (`fx/route/<module id>`, one byte: 1 send, 0 master), flushes the settings to the card (the write would wait 2 s otherwise) and soft-resets. A refusal is shown.
+unsafe fn do_fxr_apply() {
+    if ARMED == 0 {
+        ARMED = 1;
+        RESULT.clear();
+        let mut t = Text::new();
+        t.s(b"DEVICE WILL RESTART");
+        popup(&t);
+        return;
+    }
+    ARMED = 0;
+    DK_FXR_APPLIES += 1;
+    for i in 0..FXR_N {
+        if FXR_PEND[i] != FXR_SAVED[i] {
+            let mut key = Text::new();
+            key.s(b"fx/route/").s(&FXR[i].id);
+            let v = [(FXR_PEND[i] as u32 == ROUTE_SEND) as u8];
+            let r = dkrt_settings_put(key.ptr(), v.as_ptr(), 1);
+            DK_FXR_SET = r;
+            if r != OK {
+                fail_text(b"NOT SAVED", r);
+                return;
+            }
+        }
+    }
+    let r = dkrt_settings_flush();
+    DK_FXR_FLUSH = r;
+    if r != OK {
+        fail_text(b"NOT SAVED", r);
+        return;
+    }
+    FXR_SAVED = FXR_PEND;
+    let r = dkrt_restart();
+    DK_FXR_RESTART = r;
+    fail_text(b"NO RESTART", r);
 }
 
 // ---- MEMORY (finding 57) ---------------------------------------------------------------------------------------------------
@@ -1443,7 +1640,7 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         }
         return;
     }
-    if act != A_APPLY {
+    if act != A_APPLY && act != A_FXR_APPLY {
         ARMED = 0;
     }
     if act == A_OPEN_LOAD {
@@ -1452,6 +1649,16 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         ensure_view(addr_of_mut!(LOADV), NAME_LOAD, b"MODULES\0", MAIN.obj);
         fill_load();
         push(MAIN.obj, addr_of_mut!(LOADV));
+    } else if act == A_OPEN_FXR {
+        read_fxr();
+        ensure_view(addr_of_mut!(FXRV), NAME_FXR, b"FX ROUTES\0", MAIN.obj);
+        fill_fxr();
+        push(MAIN.obj, addr_of_mut!(FXRV));
+    } else if act == A_FXR_APPLY {
+        do_fxr_apply();
+        fill_fxr();
+    } else if act >= A_FXR_TOGGLE {
+        fxr_toggle((act - A_FXR_TOGGLE) as usize);
     } else if act == A_OPEN_ABOUT {
         ensure_view(addr_of_mut!(ABOUTV), NAME_ABOUT, b"ABOUT\0", MAIN.obj);
         text_page(ABOUTV.obj);

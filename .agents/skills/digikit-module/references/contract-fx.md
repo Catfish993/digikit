@@ -86,17 +86,39 @@ position = 0            # 0 to 7: the place on the page (default: the knob's pla
   (`pk_digikit_scen run fx-pages-dt2`) is the proof for the fixture: the page's screenshots, the PCM at the knobs' values, MIX 0 equal to the dry sound.
   `tests/digikit/scenarios/fx-persist-dt2.toml` and `fx-persist-dn2.toml` (`pk_digikit_scen run fx-persist-dt2`) prove the saved values: Save Kit and Load Kit, a kit without the effect, the effects in the other rows, a project, another pattern's kit.
 
+- **Insert or send (the framework's choice; you give the default).** An effect runs on the master chain (an insert) or on a send bus; the `process` routine is the same for both, and on a send it gets the sum of the tracks' send amounts as its input block, and its
+  wet output times MIX is added to the FX return. Your manifest says where the effect starts and which routes make sense for it; the user decides, in DIGIKIT > FX ROUTES (a setting, `fx/route/<module id>`, which wins over your default when the effect allows it):
+
+  ```toml
+  [[fx]]
+  id = "reverb"
+  ...
+  route = "send"                  # the default route: "master" (the default) or "send"
+  routes = ["send", "master"]     # the routes the user may choose; left out: see the rule below
+  ```
+
+  *The rule.* `route` left out is `"master"`. `routes` left out is `["master"]`, or `["send", "master"]` when `route = "send"` (a send effect can always fall back to the master: the master has no slot limit). A send-only effect says `routes = ["send"]` (with
+  `route = "send"`), a master-only one says nothing (the modules before these fields keep their bytes: `route`/`routes` default to what the old record meant). `patchkit pack` refuses a name that is not `master` or `send`, an empty `routes`, a route listed twice and a `route` that
+  `routes` does not list, and any send route on an effect without a `tab` (the send knob and the FX ROUTES row are labelled with the page's tab: an effect without a page is an insert). A stored route that the effect does not allow (a module updated to be master only) is ignored: the default holds. Choose `routes = ["master"]` for an effect that makes no sense on a send (a gain, a limiter, an effect with a dry path of its own), `["send"]` for one that is only a
+  return (a reverb that has no dry signal), both for the rest. The record carries both (flags of the effect record, `docs/design/digikit-dkm.md`); a runtime that does not know them runs the effect on the master.
+
+  **The send amounts are framework-owned**: one knob for each send effect on a second page of the track FX key (the label is your `tab`, `<tab> Send=40` while it turns), one amount for each track, kept in the settings store and the DSP row, never in your state or parameter words
+  and never in a kit or pattern file. The effect never sees an amount and has no way to read or set it; MIX is the return level of a send. The device allows a fixed number of send effects at a time (`send_slots`: two on the Digitakt II, one on the Digitone II); an effect beyond that stays an insert (FX ROUTES does not let the user choose send
+  when the slots are taken, and a default beyond the limit runs on the master). Function + FX lists DEL, REV, CHO, then the send effects, then the master effects (each in the order they were loaded). A changed route takes effect after a restart (FX ROUTES offers it).
+  Author's rules: do not assume you are the last in a chain, and write the wet signal only (a send effect has no dry path). Both devices (Digitone II: finding 67; its send bus is the sum of the voice slots of the track). See `docs/findings/62-fx-send-route.md`, `64-fx-send-page.md`, `65-fx-routes.md` and `67-fx-routes-dn2.md`. Fixtures: `tests/fixtures/modules/dyn-fx-gain-send` (`route = "send"`) and `dyn-fx-gain-sendonly`
+  (`routes = ["send"]`); proof `tests/digikit/scenarios/fx-routes-dt2.toml` and `fx-routes-dn2.toml`.
+
 Judged by `tests/modules/test_fx_conformance.py` (`mise run module:check NAME`): signals, parameter limits, modulation, switching, a long run;
-checks: returns, registers, the adapter did not refuse a block, write set, instruction budget (about 23,000 for the effect, 900 for the adapter).
+checks: returns, registers, the adapter did not refuse a block, write set, instruction budget (`pk_conform.fx_budget()`, about 31,000 for the effect today, and 900 for the adapter; `devices.md`, "Effects").
 Template (patched in): `tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s`. Emulator proof of the adapter: `tools/patchkit/pk_proof_fx.py`. The conformance suite judges patched-in effects (an `[[entry]] registry = "fx"` row) and run-time effects (a `[[fx]]` record: the rig reserves the state the runtime would, and a page knob's range gives the float of each parameter word the cases use); the scenarios above prove the page and the loading.
 
 ## The reference effect: `digikit/freqshift`
 
-`modules/fx/freqshift` is the effect to copy for a real one: a run-time module with a page (tab FSH, one bipolar knob, MIX default 0), state in the descriptor (664 bytes: filter states, a delay buffer, an oscillator), a float32 reference model that defines the
+`modules/fx/freqshift` is the effect to copy for a real one: a run-time module with a page (tab FSH, one bipolar knob, `route = "send"` with MIX default 127), state in the descriptor (664 bytes: filter states, a delay buffer, an oscillator), a float32 reference model that defines the
 arithmetic (`tools/patchkit/freqshift_ref.py`), a test that holds the routine on the rig to the model (`tests/patchkit/test_freqshift.py`) and an emulator scenario for the page and the sound (`tests/digikit/scenarios/fx-freqshift-dt2.toml` and `fx-freqshift-dn2.toml`). Its cookbook entry (finding 54) lists what was hard. Patterns worth taking:
 
 - A knob that is centred: `display = "bipolar"`, `min = -64.0`, `max = 63.0`, `default = 0.0` makes the float the shown number; a mapping with `2^x - 1` and no constant term gives exactly 0 at 0.
-- MIX default 0 (`mix = 0` in `[[fx]]`) so that loading the effect does not change the sound.
+- A send effect (`route = "send"`, `routes = ["send", "master"]`) with MIX default 127: on a send MIX is the return level (0 adds nothing), so loading the effect changes nothing until a track has a send amount. As a master insert the same default means fully shifted, and MIX is one value for both routes: pick a default that works as a send, and say in the README what it means on the master.
 - Two-pass block code: oscillator values for the whole block into the state, then one pass per chain with its states in registers (a subroutine called per channel; the loop body is the unrolled even/odd sample pair).
 - An integer phase accumulator (never a float one) for anything that must not drift; ramp the increment inside the block.
 - Clamp the output to +-7.9: an input at the level bound times a filter's overshoot would otherwise refuse the block.

@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 from tools.coldfire import arena_safety  # noqa: E402
 from tools.control.digi_client import Emu  # noqa: E402
+from tools.device.dkproto import SETTINGS_SECTORS  # noqa: E402
 from tools.patchkit import hook_ab  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit.pk_dkrt import (  # noqa: E402
@@ -220,6 +221,13 @@ class Rig:
                 ProofError
             ):  # the fingerprint sector of a store list
                 holes.append((sym(plan, "core/runtime", "DKRT_STORE_FP"), 512))
+            with contextlib.suppress(
+                ProofError
+            ):  # the settings record's RAM copy and its header sector: the boot's card read of the settings area lands in them by DMA
+                holes.append(
+                    (sym(plan, "core/runtime", "DKRT_SETTINGS"), SETTINGS_SECTORS * 512)
+                )
+                holes.append((sym(plan, "core/runtime", "DKRT_SETTINGS_HDR"), 512))
             ranges, at = [], lo
             for start, size in sorted(holes):
                 if start > at:  # adjacent holes leave no range between them

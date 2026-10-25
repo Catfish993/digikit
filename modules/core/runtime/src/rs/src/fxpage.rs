@@ -117,7 +117,7 @@ fn fs() -> &'static mut FxpState {
     unsafe { &mut *addr_of_mut!(DKRT_FXP) }
 }
 
-unsafe fn info() -> *const u32 {
+pub(crate) unsafe fn info() -> *const u32 {
     let a = core::hint::black_box(fxpages_info as usize);
     if a == 0 {
         return core::ptr::null();
@@ -129,15 +129,15 @@ unsafe fn info() -> *const u32 {
     p
 }
 
-unsafe fn iw(i: *const u32, k: usize) -> u32 {
+pub(crate) unsafe fn iw(i: *const u32, k: usize) -> u32 {
     read_volatile(i.add(k))
 }
 
-unsafe fn rd(a: u32) -> u32 {
+pub(crate) unsafe fn rd(a: u32) -> u32 {
     read_volatile(a as *const u32)
 }
 
-unsafe fn wr(a: u32, v: u32) {
+pub(crate) unsafe fn wr(a: u32, v: u32) {
     write_volatile(a as *mut u32, v)
 }
 
@@ -252,16 +252,50 @@ unsafe fn rebuild_list(inf: *const u32) {
         wr(list + 4 * n, rd(stock + 4 * n));
         n += 1;
     }
-    let mut k = 0;
-    while k < iw(inf, w::PAGES) as usize && k < MAX_FX {
-        if s.owner[k] != 0 && n < cap {
-            wr(list + 4 * n, iw(inf, w::FIRST) + k as u32);
-            n += 1;
+    // the send effects first, then the master effects, each in row order (FX routing: the send effects are the ones the track FX key has a page for)
+    let mut pass = 0;
+    while pass < 2 {
+        let mut k = 0;
+        while k < iw(inf, w::PAGES) as usize && k < MAX_FX {
+            if s.owner[k] != 0 && n < cap && crate::fxsend::is_send(k) == (pass == 0) {
+                wr(list + 4 * n, iw(inf, w::FIRST) + k as u32);
+                n += 1;
+            }
+            k += 1;
         }
-        k += 1;
+        pass += 1;
     }
     // no page of ours: the count 0 keeps the stock list (the hook in the builder)
     wr(iw(inf, w::COUNT), if n == n_stock { 0 } else { n });
+}
+
+/// Build the page list again (a route changed the order).
+pub unsafe fn relist() {
+    let inf = info();
+    if !inf.is_null() {
+        rebuild_list(inf);
+    }
+}
+
+/// The module record + 1 that owns the page of effect row `k` (0: no page).
+pub fn page_owner(k: usize) -> u8 {
+    if k < MAX_FX {
+        fs().owner[k]
+    } else {
+        0
+    }
+}
+
+/// The tab label of the page of effect row `k` (up to 3 characters) into `out`.
+pub fn tab_of(k: usize, out: &mut [u8; 8]) {
+    if k < MAX_FX {
+        let t = &fs().tab[k];
+        let mut i = 0;
+        while i < 8 && t[i] != 0 {
+            out[i] = t[i];
+            i += 1;
+        }
+    }
 }
 
 /// Fill the page, the parameter rows and the list for the EFFECT record at `b` of module `owner` (module record + 1). The effect's row in the chain has been
@@ -351,6 +385,7 @@ pub unsafe fn apply(owner: u8, b: *const u8) -> i32 {
     wr(row + 4, title);
     s.owner[k] = owner;
     rebuild_list(inf);
+    crate::fxsend::apply(k, owner, s.tab[k].as_ptr());
     OK
 }
 
@@ -393,6 +428,7 @@ pub unsafe fn remove(owner: u8) {
                 j += 1;
             }
             s.nknob[k] = 0;
+            crate::fxsend::remove(k);
         }
         k += 1;
     }
@@ -437,7 +473,7 @@ unsafe fn seed_row(inf: *const u32, k: usize, arr: u32) {
 
 /// The live kit object (0 while the firmware has none); a pointer in a DDR cell, checked to lie in DDR. Any alignment: the Digitone II's kit objects are allocated at odd
 /// addresses (its sound arrays have an odd stride), so the array's halfwords are read and written a byte at a time.
-unsafe fn kit(inf: *const u32) -> u32 {
+pub(crate) unsafe fn kit(inf: *const u32) -> u32 {
     let k = rd(iw(inf, w::KIT_PTR));
     let ddr = dkrt_sdk::device::DDR_CACHED_BASE..dkrt_sdk::device::DDR_CACHED_BASE + dkrt_sdk::device::DDR_BYTES;
     if !ddr.contains(&k) {
@@ -446,13 +482,13 @@ unsafe fn kit(inf: *const u32) -> u32 {
     k
 }
 
-unsafe fn rd16(a: u32) -> i32 {
+pub(crate) unsafe fn rd16(a: u32) -> i32 {
     let hi = read_volatile(a as *const u8) as u16;
     let lo = read_volatile((a + 1) as *const u8) as u16;
     ((hi << 8 | lo) as i16) as i32
 }
 
-unsafe fn wr16(a: u32, v: i32) {
+pub(crate) unsafe fn wr16(a: u32, v: i32) {
     write_volatile(a as *mut u8, (v >> 8) as u8);
     write_volatile((a + 1) as *mut u8, v as u8);
 }
@@ -462,7 +498,12 @@ fn has_word(s: &FxpState, k: usize, j: usize) -> bool {
     j == WORDS - 1 || j < s.nknob[k] as usize
 }
 
-/// Once per UI-loop pass: finish the transfer in flight, put the values in a new kit's array, and send the next changed value.
+/// Is a value transfer in flight (the send amounts wait for it: one transfer at a time).
+pub fn busy() -> bool {
+    fs().busy != 0
+}
+
+/// Once per UI-loop pass: finish the transfer in flight, put the values in a new kit's array, and send the next changed value; then the send effects' amounts.
 pub unsafe fn tick() {
     let s = fs();
     let mut any = false;
@@ -494,6 +535,14 @@ pub unsafe fn tick() {
             }
         }
     }
+    values(inf);
+    crate::fxsend::tick();
+}
+
+/// The effect pages' values: the kit's array against the DSP rows.
+unsafe fn values(inf: *const u32) {
+    let s = fs();
+    let mut k;
     let kit = kit(inf);
     if kit == 0 {
         return;
@@ -533,7 +582,7 @@ pub unsafe fn tick() {
                         s.changes += 1;
                     }
                     // one word per pass, and only when the row is in the DSP and no load is going on
-                    if n != s.dsp[k][j] && s.busy == 0 && crate::dsp::fx_live(k) {
+                    if n != s.dsp[k][j] && s.busy == 0 && !crate::fxsend::busy() && crate::dsp::fx_live(k) {
                         let (word, bits) = if j == WORDS - 1 {
                             (crate::dsp::FXW_MIX, mix_value(n))
                         } else {

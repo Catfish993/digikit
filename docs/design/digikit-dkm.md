@@ -162,11 +162,16 @@ All integers are big endian. Offsets are from the start of the section.
 - **Effects** (version 4): 64 bytes each, the effects of the FX contract (`sdk/dk_fx.h`) that the module brings, from the manifest's `[[fx]]` (`id`, `process`: the process
   routine's global symbol, `desc`: the `dk_fx_desc` data symbol, `defaults`: the words p0 ... of the row, at most `n_params`, the words the DSP reads as they are;
   `devices`). Record: 0 `process` (image byte offset of the routine), 4 `desc` (image byte offset of its `dk_fx_desc`), 8 `state_bytes`, 12 `n_params` (both
-  from the descriptor, which the packer reads and checks: magic `DKFX`, contract 1, `n_params` at most 8, `state_bytes` a multiple of 4), 16 flags (0), 20 to 51 the words
+  from the descriptor, which the packer reads and checks: magic `DKFX`, contract 1, `n_params` at most 8, `state_bytes` a multiple of 4), 16 flags (the routes, below; 0 = master only), 20 to 51 the words
   p0 to p7 of the row (0 where the manifest gives none), 52 to 63 reserved 0. The effect's state is not a symbol of the object: the runtime reserves
   `align8(state_bytes)` for each record in the module's range, behind the image, the bss and the voice states, in record order (the adapter zeroes the state when the effect
   switches on). The process routine's pc at placement `B` is `0xb80000 + (B - 0x20000000 + process) / 2` (as a voice's). The runtime checks the record against the descriptor in the
   image (a record that says more state than the descriptor, or another parameter count, is `E_DSP_FORMAT`).
+  **Flags (the routes, FX routing step 4).** From the manifest's `[[fx]] route` and `routes`: bit 0 `FXF_SEND` (1): the effect may run on a send bus; bit 1 `FXF_NOMASTER` (2): it may not run on the master chain; bit 2 `FXF_DEFAULT_SEND` (4): its
+  default route is the send bus. The master is always allowed unless bit 1 says not, so the word 0 that every record made before the routes has means "master only, default master": an old `.dkm` loads unchanged, and a module that leaves the
+  fields out packs to the same bytes as before. The values the packer writes: 0 master only; 1 allowed both, default master (`route = "master"`, `routes = ["master", "send"]`); 5 both, default send (`route = "send"` with `routes` left out); 7 send only
+  (`routes = ["send"]`). Other combinations (a default that is not allowed, a bit above 4, bit 1 without bit 0 or without bit 2) are refused by the packer's parser and by the loader (`E_DSP_FORMAT`). The runtime uses the default when the settings
+  have no `fx/route/<module id>` and when the stored route is not allowed; a runtime older than the flags ignores them (the effect runs on the master). The contract version is not changed: the record layout only gives a meaning to a word that was 0.
 - **Image**: the linked bytes at the nominal base; every relocated field holds `S + A`. The sections are text, data, bss in that order,
   so a `.PKBSS` buffer (pluck's 256 KiB delay lines) follows the sent bytes in the reserved range.
 
@@ -179,8 +184,8 @@ it writes the machine and parameter rows, runs `init` and binds the slots.
 **Effect rows.** An effect record takes a free row of the effect chain of `core/fx` (`core/dynfx` reserves one for each of the device's `fx_slots`: 3 on the Digitakt II; a free row has pc
 `0xffffffff`, which the adapter skips). The runtime claims the lowest free rows when it reserves the range (CAPACITY `FX_SLOTS` counts them from then on) and publishes each row
 after the code is acknowledged, through **window 2** of `core/dsp-link` (the whole table of the registry `fx`, 24 words a row; **one word per transfer**): the parameter words p0 to p7, desc, state, `enabled` = 1
-and the pc last (word indices 4 to 11, 1, 2, 3, 0 of the row; 24 words: 0 pc, 1 desc, 2 state, 3 enabled, 4 to 11 p0 to p7, 12 `was`, 14 `dis`, 15 to 17 the fault window and counts, the rest spare).
-A row is freed the other way round: the pc to `0xffffffff` first, then `was`, `dis` and the fault window to 0. `dynfx_info` (core/dynfx) is the table the runtime reads: 0 `DFXI`, 4 version, 8 device,
+the 4 amount words and the route (a send effect never runs on the master, finding 64) and the pc last (word indices 4 to 11, 1, 2, 3, 19 to 22, 18, 0 of the row; 24 words: 0 pc, 1 desc, 2 state, 3 enabled, 4 to 11 p0 to p7, 12 `was`, 14 `dis`, 15 to 17 the fault window and counts, 18 route (0 master chain, 1 send bus; Digitakt II, finding 62), 19 to 22 the 16 send amounts as bytes, 23 spare).
+A row is freed the other way round: the pc to `0xffffffff` first, then the route and the amounts, `was`, `dis` and the fault window to 0. `dynfx_info` (core/dynfx) is the table the runtime reads: 0 `DFXI`, 4 version, 8 device,
 12 rows base, 16 index of the first free row, 20 free rows, 24 rows of the registry, 28 words of a row. An image without `core/dynfx` refuses a module with effect records with `E_NO_DSP`; more
 records than free rows is `E_DSP_ROWS`. When the DSP part fails at boot the module is taken down the other way: machine row, voice row (type
 to `0xffffffff` first), then the range (the run-time unload that did this is archived). Refusal codes -30 to -39 (`dkrt-sdk`): `E_NO_DSP` -30 (no `core/dsp-link` and `core/dyndsp` in

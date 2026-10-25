@@ -46,12 +46,12 @@ const MAX_STATE_VOICES: u32 = 64;
 /// Steps to publish a row: 8 ranges, the pc, note_on, state base, stride, clear, the cleared disabled word, the type.
 const ROW_STEPS: u32 = 15;
 /// Effect rows: the most a chain takes (`DK_FX_MAX`), the bytes of an effect record in a DSP section of version 4, the words of a row of `core/fx`, the pc of
-/// a free row and the steps to publish a row: 8 parameter words, desc, state, enabled, the pc.
+/// a free row and the steps to publish a row: 8 parameter words, desc, state, mix, enabled, the 4 amount words and the route (finding 62), the pc.
 pub const MAX_FX: usize = 4;
 const FX_REC: u32 = 64;
 const FX_ROW_WORDS: u32 = 24;
 const FX_FREE_PC: u32 = 0xffff_ffff;
-const FX_STEPS: u32 = 13;
+const FX_STEPS: u32 = 18;
 /// The words of an effect row (`core/fx` module.toml): pc, desc, state, enabled, p0 (to p7), and the adapter's was, dis, fault window start, count and total.
 const FXW_PC: u32 = 0;
 const FXW_DESC: u32 = 1;
@@ -66,6 +66,10 @@ pub const MIX_ONE: u32 = 0x3f80_0000;
 const FXW_DIS: u32 = 14;
 const FXW_WSTART: u32 = 15;
 const FXW_WCOUNT: u32 = 16;
+/// The send route (finding 62): 0 master, 1 send bus; then the 16 amounts as 4 words, track t in word `FXW_AMT0 + t / 4`, byte `t % 4` (little endian).
+pub const FXW_ROUTE: u32 = 18;
+pub const FXW_AMT0: u32 = 19;
+const FX_STEP_ROUTE: u32 = 12;
 /// `dk_fx_desc` (sdk/dk_fx.h): magic "DKFX", contract, and its size in bytes.
 const FX_DESC_MAGIC: u32 = 0x444b_4658;
 const FX_DESC_BYTES: u32 = 28;
@@ -208,6 +212,11 @@ pub struct DspState {
     pub fx_par: [[u32; 8]; MAX_FX],
     /// Per effect row: the MIX word to publish (`MIX_ONE` unless the effect's page says otherwise).
     pub fx_mix: [u32; MAX_FX],
+    /// Per effect row: the route and the four amount words to publish (before the pc: a send effect never runs on the master).
+    pub fx_route: [u32; MAX_FX],
+    pub fx_amt: [[u32; 4]; MAX_FX],
+    /// Per effect row: the flags word of its record (`FXF_*`: the routes the effect may run on and its default route; 0 = master only).
+    pub fx_flags: [u32; MAX_FX],
     /// Per module record: the effect rows it owns (bit mask).
     pub mod_fx: [u32; crate::MAX_MODULES],
 }
@@ -309,10 +318,28 @@ pub unsafe fn fx_row_of(owner: u8, ordinal: u32) -> Option<usize> {
     None
 }
 
+/// The flags word of the record that effect row `k` was claimed for (`FXF_SEND`, `FXF_NOMASTER`, `FXF_DEFAULT_SEND`; 0 for a free row).
+pub unsafe fn fx_flags_of(k: usize) -> u32 {
+    if k < MAX_FX {
+        ds().fx_flags[k]
+    } else {
+        0
+    }
+}
+
 /// Set the MIX word an effect row publishes (before its rows go out) and the defaults of its parameter words are the record's.
 pub unsafe fn fx_set_mix(k: usize, bits: u32) {
     if k < MAX_FX {
         ds().fx_mix[k] = bits;
+    }
+}
+
+/// Set the route and the four amount words an effect row publishes (before its rows go out; `fxsend::apply` does it from the settings).
+pub unsafe fn fx_set_route(k: usize, route: u32, amt: [u32; 4]) {
+    if k < MAX_FX {
+        let d = ds();
+        d.fx_route[k] = route;
+        d.fx_amt[k] = amt;
     }
 }
 
@@ -629,6 +656,11 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         {
             return E_DSP_FORMAT;
         }
+        // the routes: send allowed (bit 0), master not allowed (bit 1), default send (bit 2); the default must be an allowed route (0 is a record before the routes)
+        let fl = rd32(e.add(16));
+        if fl & !7 != 0 || (fl & 6 != 0 && fl & 1 == 0) || (fl & 2 != 0 && fl & 4 == 0) {
+            return E_DSP_FORMAT;
+        }
         let dd = s.add((image_off + desc) as usize);
         if rd32le(dd) != FX_DESC_MAGIC || rd32le(dd.add(4)) != 1 || rd32le(dd.add(8)) != np || rd32le(dd.add(12)) != state {
             return E_DSP_FORMAT;
@@ -856,6 +888,9 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
             k += 1;
         }
         d.fx_mix[frow] = MIX_ONE;
+        d.fx_route[frow] = 0;
+        d.fx_amt[frow] = [0; 4];
+        d.fx_flags[frow] = rd32(e.add(16));
         d.fx_owner[frow] = rec as u8 + 1;
         d.fx_pub[frow] = 0;
         fclaimed |= 1 << frow;
@@ -900,6 +935,9 @@ unsafe fn unreserve(rec: usize) {
             d.fx_state[k] = 0;
             d.fx_par[k] = [0; 8];
             d.fx_mix[k] = MIX_ONE;
+            d.fx_route[k] = 0;
+            d.fx_amt[k] = [0; 4];
+            d.fx_flags[k] = 0;
         }
         k += 1;
     }
@@ -996,6 +1034,13 @@ unsafe fn clear_fx_rows(rec: usize) {
         if d.fx_owner[k] == rec as u8 + 1 && d.fx_pub[k] != 0 {
             let at = FX_ROW_WORDS * (first + k as u32);
             write_word_blocking(WIN_FX, at + FXW_PC, FX_FREE_PC);
+            // the next effect on the row starts on the master route with no amounts (finding 62)
+            write_word_blocking(WIN_FX, at + FXW_ROUTE, 0);
+            let mut w = 0;
+            while w < 4 {
+                write_word_blocking(WIN_FX, at + FXW_AMT0 + w, 0);
+                w += 1;
+            }
             write_word_blocking(WIN_FX, at + FXW_WAS, 0);
             write_word_blocking(WIN_FX, at + FXW_MIX, MIX_ONE);
             write_word_blocking(WIN_FX, at + FXW_DIS, 0);
@@ -1141,7 +1186,7 @@ pub unsafe fn step() {
                     }
                     k += 1;
                 }
-                // then the effect rows, `FX_STEPS` steps each: the 8 parameter words, desc, state, mix, enabled, the pc
+                // then the effect rows, `FX_STEPS` steps each: the 8 parameter words, desc, state, mix, enabled, the 4 amount words, the route, the pc
                 let mut frow = MAX_FX;
                 if row == MAX_ROWS {
                     k = 0;
@@ -1175,14 +1220,18 @@ pub unsafe fn step() {
                         (at + FXW_MIX, d.fx_mix[frow])
                     } else if want == 11 {
                         (at + FXW_ENABLED, 1)
+                    } else if want < FX_STEPS - 2 {
+                        (at + FXW_AMT0 + (want - FX_STEP_ROUTE), d.fx_amt[frow][(want - FX_STEP_ROUTE) as usize])
+                    } else if want == FX_STEPS - 2 {
+                        (at + FXW_ROUTE, d.fx_route[frow])
                     } else {
                         (at + FXW_PC, d.fx_pc[frow])
                     };
                     if start_word(WIN_FX, word, value) {
                         d.started = 1;
                         d.row_writes += 1;
-                        if want == FX_STEPS - 1 {
-                            d.fx_pub[frow] = 1; // from here the pc word may be in the DSP: clear it on failure
+                        if want >= FX_STEP_ROUTE {
+                            d.fx_pub[frow] = 1; // from here the amounts, the route or the pc word may be in the DSP: clear them on failure
                         }
                     }
                     return;

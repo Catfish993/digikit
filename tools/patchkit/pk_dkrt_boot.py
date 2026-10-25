@@ -78,6 +78,12 @@ SEL_MAGIC, SEL_VERSION = 0x444B534C, 1
 SEL_MAX, SEL_PATH = pk_device.contract_max()["sel_max"], 56
 # The store area differs per device (devices/*.toml [card.store]): `pk_device.store_of(device)` has first, sectors, sel_a, sel_b and header_b (all absolute).
 CMD_CARD_PROBE, CMD_DEBUG = 7, 8
+CMD_SETTINGS_PUT, CMD_SETTINGS_GET, CMD_SETTINGS_REMOVE, CMD_SETTINGS_FLUSH = (
+    9,
+    10,
+    11,
+    12,
+)
 CARD_FIELDS = [
     "state",
     "first_nonblank",

@@ -49,6 +49,8 @@ The level slot (the ninth code) is the page's MIX knob.
 
 ## MIX is the adapter's **[D]**
 
+(The row's words 18 to 22 are the send route, finding 62; on a send row MIX is the return level.)
+
 `core/fx` row word 13 is the mix (a float, default 1.0 in the registry's field): the effect writes only the wet signal and the adapter makes `master = dry + mix * (wet - dry)`. Mix 1.0
 copies the wet block (bit for bit), mix 0 leaves the master alone (the dry block bit for bit, the effect still runs and is checked), anything else blends per sample; in the fades the weight
 is multiplied by the mix. Cost on the concrete core (`tests/patchkit/test_fx.py`): one effect steady 743 instructions per block at mix 1.0 (736 before: +7), 1142 at an intermediate mix
@@ -180,3 +182,9 @@ accepts any alignment in DDR. The scenario's helpers (`u16`, `put16`) do the sam
 - The Digitone II (step 5, section above): persistence was run in the emulator only (`fx-persist-dn2`); the init hook's own copy of the defaults has not been seen to run there either.
 - A page whose effect fails to load its DSP part after the boot hook stays in the view (the view is built once); `remove` empties its cells.
 - A second agent checks the sites against the image bytes before the marks become [V]. The Digitone II sites above are read from the image and exercised in the emulator by the scenarios.
+
+
+## The send page (FX routing step 3) **[D]**
+
+`core/fxpages` also has the send page of the track FX key (finding 64): page number `page_first + fx_slots` (36 on the Digitakt II) in `fxp_acc`, a hook on the FX key's list (`cf.fxpages.keylist`: the same builder `FUN_40066584`, `+0x6c0`), a hook on the sound loader's exit (`cf.fxpages.sound`)
+and two more parameter rows (`params.fs0`, `fs1`). `fxpages_info` is version 2 (words 39 to 48). The F4 pages above are unchanged: with no send effect the FX key and the F4 view are the stock ones and the PCM is the same bit for bit.

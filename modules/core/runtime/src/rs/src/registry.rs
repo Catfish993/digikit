@@ -646,6 +646,22 @@ pub(crate) unsafe fn write_fx_param_row(code: u32, template: u32, mirror: u32, m
     wr(row + 0x1c, rd(tpl + 0x1c));
 }
 
+/// A parameter row for a send knob (`core/fxpages`, finding 64): the lowering of `write_fx_param_row` with the value class of `class` (the display, and no p-lock: the
+/// value class of the kit's Delay rows) and the owner of the stock send row `owner_of` (so the firmware's own set and get reach the current track's Sound array at `mirror`),
+/// and no CC and no NRPN (the row's word 6 is -1: `ParameterSet::vfunc_25` sends nothing).
+pub(crate) unsafe fn write_send_param_row(code: u32, class: u32, owner_of: u32, mirror: u32, name: u32, short: u32) {
+    let inf = info();
+    if inf.is_null() {
+        return;
+    }
+    write_fx_param_row(code, class, mirror, 0, 0x7f00, 0, name, short);
+    let table = iw(inf, w::P_TABLE);
+    let size = iw(inf, w::PF_SIZE);
+    let row = table + code * size;
+    wr(row, rd(table + owner_of * size));
+    wr(row + 0x18, 0xffff_ffff);
+}
+
 /// A parameter row back to the reserved state (an empty gap row, as `remove` leaves the machine parameters).
 pub(crate) unsafe fn reset_param_row(code: u32) {
     let inf = info();

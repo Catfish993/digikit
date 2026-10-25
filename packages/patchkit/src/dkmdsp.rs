@@ -24,9 +24,12 @@
 //!            voice states to reserve behind the image and bss), 56..63 reserved 0. The packer writes version 3 only when a voice has a
 //!            note_on entry or a state; otherwise version 2 (the runtime parses all three; v1 and v2 voices have note_on 0 and no state)
 //! fx     : version 4: 64 bytes each: 0 u32 process (image byte offset of the process routine), 4 u32 desc (image byte offset of its `dk_fx_desc`),
-//!            8 u32 state_bytes (from the desc: reserved behind the image, bss and voice states), 12 u32 n_params (from the desc), 16 u32 flags (0),
+//!            8 u32 state_bytes (from the desc: reserved behind the image, bss and voice states), 12 u32 n_params (from the desc), 16 u32 flags (the routes, below; 0 = master only),
 //!            20..51 8 x u32 the words p0 .. p7 of the effect's row (the DSP reads them as they are), 52..63 reserved 0. A version 4 section has voices of 64
 //!            bytes (as version 3); the packer writes it only when the module has an effect
+//!            flags: bit 0 `FXF_SEND` the effect may run on a send bus, bit 1 `FXF_NOMASTER` it may not run on the master chain, bit 2 `FXF_DEFAULT_SEND` its default
+//!            route is the send bus (the settings key `fx/route/<module id>` decides when it is there). 0, what every record before the routes has: master only.
+//!            Allowed combinations: 0; 1; 1 | 4; 1 | 2 | 4 (send only)
 //! image  : the linked bytes at the nominal base `L2_BYTE_BASE`; every relocated field holds `S + A` at that base
 //! ```
 //!
@@ -57,6 +60,13 @@ pub const DESC_CONTRACT: u32 = 1;
 pub const DESC_WORDS: usize = 10;
 pub const VOICE_LEN_V1: usize = 16;
 pub const FX_LEN: usize = 64;
+/// The routes of an effect (the manifest's `route` and `routes`): the master chain and a send bus. `Effect::routes` is a mask of them.
+pub const ROUTE_MASTER: u32 = 1;
+pub const ROUTE_SEND: u32 = 2;
+/// Bits of the effect record's flags word (offset 16); 0 = master only, the default route master (a record of the version before the routes).
+pub const FXF_SEND: u32 = 1;
+pub const FXF_NOMASTER: u32 = 2;
+pub const FXF_DEFAULT_SEND: u32 = 4;
 /// Effects a module may carry (`DK_FX_MAX` of sdk/dk_fx.h).
 pub const MAX_FX: usize = 4;
 /// `dk_fx_desc` (sdk/dk_fx.h): magic "DKFX", the contract number the packer accepts, its size in u32 words and the most parameter words.
@@ -145,6 +155,61 @@ pub struct Effect {
     pub n_params: u32,
     /// the words p0 .. p7 of the row
     pub defaults: [u32; 8],
+    /// The routes the effect may run on (`ROUTE_MASTER`, `ROUTE_SEND`; a mask) and the default one (`ROUTE_MASTER` or `ROUTE_SEND`).
+    pub routes: u32,
+    pub route: u32,
+}
+
+impl Effect {
+    /// The flags word of the record for `routes` and `route`; `Err` for a combination the record cannot say.
+    pub fn flags_of(routes: u32, route: u32) -> Result<u32> {
+        if routes == 0 || routes & !(ROUTE_MASTER | ROUTE_SEND) != 0 {
+            return Err(err!(
+                "effect routes {routes:#x}: a mask of master (1) and send (2)"
+            ));
+        }
+        if route != ROUTE_MASTER && route != ROUTE_SEND || routes & route == 0 {
+            return Err(err!(
+                "effect route {route}: not one of the routes {routes:#x}"
+            ));
+        }
+        let mut f = 0;
+        if routes & ROUTE_SEND != 0 {
+            f |= FXF_SEND;
+        }
+        if routes & ROUTE_MASTER == 0 {
+            f |= FXF_NOMASTER;
+        }
+        if route == ROUTE_SEND {
+            f |= FXF_DEFAULT_SEND;
+        }
+        Ok(f)
+    }
+
+    /// The routes and the default route a flags word says (the runtime's checks: a bit that is not defined, or a combination that leaves the default outside the allowed routes, is refused).
+    pub fn routes_of(flags: u32) -> Result<(u32, u32)> {
+        if flags & !(FXF_SEND | FXF_NOMASTER | FXF_DEFAULT_SEND) != 0 {
+            return Err(err!("effect flags {flags:#x}: unknown bits"));
+        }
+        let mut routes = 0;
+        if flags & FXF_NOMASTER == 0 {
+            routes |= ROUTE_MASTER;
+        }
+        if flags & FXF_SEND != 0 {
+            routes |= ROUTE_SEND;
+        }
+        let route = if flags & FXF_DEFAULT_SEND != 0 {
+            ROUTE_SEND
+        } else {
+            ROUTE_MASTER
+        };
+        if routes & route == 0 {
+            return Err(err!(
+                "effect flags {flags:#x}: the default route is not an allowed one"
+            ));
+        }
+        Ok((routes, route))
+    }
 }
 
 /// An effect as the manifest names it: `process` is a global text symbol of the DSP object, `desc` a data symbol holding a `dk_fx_desc`.
@@ -153,6 +218,9 @@ pub struct FxSpec {
     pub process: String,
     pub desc: String,
     pub defaults: Vec<u32>,
+    /// The allowed routes (mask of `ROUTE_*`) and the default one (`register::fx_routes` resolves the manifest's `route` and `routes`).
+    pub routes: u32,
+    pub route: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -426,7 +494,10 @@ pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec], fxs: &[FxSpec]) -> Res
             state_bytes,
             n_params,
             defaults,
+            routes: f.routes,
+            route: f.route,
         });
+        Effect::flags_of(f.routes, f.route).map_err(|e| err!("effect {}: {}", f.process, e.0))?;
     }
     let s = DspSection {
         device,
@@ -512,6 +583,11 @@ impl DspSection {
             put(&mut f, at + 4, e.desc);
             put(&mut f, at + 8, e.state_bytes);
             put(&mut f, at + 12, e.n_params);
+            put(
+                &mut f,
+                at + 16,
+                Effect::flags_of(e.routes, e.route).expect("routes checked by pack"),
+            );
             for (k, w) in e.defaults.iter().enumerate() {
                 put(&mut f, at + 20 + 4 * k, *w);
             }
@@ -642,15 +718,18 @@ impl DspSection {
         let fxs = (0..nfx)
             .map(|i| {
                 let at = i * FX_LEN;
-                Effect {
+                let (routes, route) = Effect::routes_of(get(fo, at + 16))?;
+                Ok(Effect {
                     process: get(fo, at),
                     desc: get(fo, at + 4),
                     state_bytes: get(fo, at + 8),
                     n_params: get(fo, at + 12),
                     defaults: std::array::from_fn(|k| get(fo, at + 20 + 4 * k)),
-                }
+                    routes,
+                    route,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
         if fxs.iter().any(|e| {
             e.process as usize >= image_size
                 || e.process % 2 != 0
@@ -880,6 +959,62 @@ mod tests {
             process: "proc".into(),
             desc: "dkdesc".into(),
             defaults,
+            routes: ROUTE_MASTER,
+            route: ROUTE_MASTER,
+        }
+    }
+
+    #[test]
+    fn the_routes_are_the_flags_of_the_record_and_zero_is_master_only() {
+        let o = fx_object(1, 4);
+        let flags = |routes, route| {
+            let mut f = fx_spec(vec![]);
+            f.routes = routes;
+            f.route = route;
+            let b = pack(&o, 1, &[], &[f]).unwrap();
+            let d = DspSection::parse(&b).unwrap();
+            let at = get(&b, 0x34) as usize + 16;
+            assert_eq!((d.fxs[0].routes, d.fxs[0].route), (routes, route));
+            get(&b, at)
+        };
+        // master only is the word 0 that every record before the routes has, so a module without `route` packs to the bytes it always did
+        assert_eq!(flags(ROUTE_MASTER, ROUTE_MASTER), 0);
+        assert_eq!(flags(ROUTE_MASTER | ROUTE_SEND, ROUTE_MASTER), FXF_SEND);
+        assert_eq!(
+            flags(ROUTE_MASTER | ROUTE_SEND, ROUTE_SEND),
+            FXF_SEND | FXF_DEFAULT_SEND
+        );
+        assert_eq!(
+            flags(ROUTE_SEND, ROUTE_SEND),
+            FXF_SEND | FXF_NOMASTER | FXF_DEFAULT_SEND
+        );
+        // the packer refuses a default that is not allowed, and no route at all
+        let e = |routes, route| {
+            let mut f = fx_spec(vec![]);
+            f.routes = routes;
+            f.route = route;
+            pack(&o, 1, &[], &[f]).unwrap_err().0
+        };
+        assert!(e(ROUTE_MASTER, ROUTE_SEND).contains("not one of the routes"));
+        assert!(e(ROUTE_SEND, ROUTE_MASTER).contains("not one of the routes"));
+        assert!(e(0, ROUTE_MASTER).contains("a mask"));
+        assert!(e(4, ROUTE_MASTER).contains("a mask"));
+        // the parser (the runtime's check) refuses a bit it does not know and a default outside the allowed routes
+        let good = pack(&o, 1, &[], &[fx_spec(vec![])]).unwrap();
+        let at = get(&good, 0x34) as usize + 16;
+        for (word, ok) in [
+            (0, true),
+            (FXF_SEND, true),
+            (FXF_SEND | FXF_DEFAULT_SEND, true),
+            (FXF_SEND | FXF_NOMASTER | FXF_DEFAULT_SEND, true),
+            (FXF_DEFAULT_SEND, false),
+            (FXF_NOMASTER, false),
+            (FXF_SEND | FXF_NOMASTER, false),
+            (8, false),
+        ] {
+            let mut b = good.clone();
+            put(&mut b, at, word);
+            assert_eq!(DspSection::parse(&b).is_ok(), ok, "flags {word:#x}");
         }
     }
 

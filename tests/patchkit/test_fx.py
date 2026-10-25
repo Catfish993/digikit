@@ -376,7 +376,7 @@ def test_the_cost_of_the_mix_per_active_row():
     print(
         f"one effect steady: mix 1.0 {one}, mix 0 {zero}, mix 0.5 {half} instructions per block"
     )
-    assert one < 760 and zero < one and half < one + 420
+    assert one < 770 and zero < one and half < one + 420
 
 
 GAIN = ROOT / "tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s"
@@ -503,10 +503,12 @@ def test_the_dsp_diff_of_the_patched_image_is_the_hook_and_the_placed_code(
     )
     text = pk_dsp_diff.patch_text(DT2_117, out)
     lines = [ln.split() for ln in text.splitlines() if ln.startswith("BYTES")]
-    assert (
-        lines[0][1] == f"{0x28000000 + 2 * 0x1C80F2:x}"
-    )  # the hook at the alias of the first instruction
-    assert len(lines[0][2]) == 12  # one 48-bit jump
+    # the send hook (master function FUN_1c207b) and the master hook (FUN_1c80f2), each at the alias of its first instruction
+    assert [ln[1] for ln in lines[:2]] == [
+        f"{0x28000000 + 2 * 0x1C207B:x}",
+        f"{0x28000000 + 2 * 0x1C80F2:x}",
+    ]
+    assert all(len(ln[2]) == 12 for ln in lines[:2])  # one 48-bit jump each
     assert all(
-        int(ln[1], 16) >= 0x2001AB7C for ln in lines[1:]
+        int(ln[1], 16) >= 0x2001AB7C for ln in lines[2:]
     )  # the rest is appended L2

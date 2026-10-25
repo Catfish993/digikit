@@ -7,7 +7,8 @@
 //! ```text
 //! sector 0                  header copy A (one sector)
 //! ..                        tables and file data, anywhere in [1, header_b): free space is reused by the runtime
-//! header_b = sectors - 3    header copy B
+//! header_b = sectors - 35   header copy B
+//! sectors - 34 .. - 3       the settings record, two copies of 16 sectors (settings.rs; not a store structure)
 //! sectors - 2, - 1          the selection record, two copies (selection.rs; not a store structure)
 //!
 //! header:  "DKST", u32 version = 3, u32 entry_count, u32 table_sectors, u32 table_first, u32 table_crc (IEEE, over the table's sectors, zero
@@ -33,8 +34,9 @@ pub const STORE_ENTRY_BYTES: usize = 256;
 pub const STORE_PATH_BYTES: usize = 160;
 /// A path has at most this many bytes (the field ends in a NUL).
 pub const STORE_PATH_MAX: usize = STORE_PATH_BYTES - 1;
-/// Sectors after the last one files may use: header copy B and the two sectors of the selection record.
-pub const STORE_TAIL: u64 = 3;
+/// Sectors after the last one files may use: header copy B, the settings record (two copies of 16 sectors) and the two sectors of the
+/// selection record. Equal to `dkrt_sdk::store::TAIL` (the device files' `[card.store]` fix the same layout).
+pub const STORE_TAIL: u64 = 35;
 pub const KIND_FILE: u8 = 0;
 pub const KIND_DIR: u8 = 1;
 
@@ -169,7 +171,7 @@ pub fn valid_store_path(path: &str) -> bool {
 }
 
 /// The bytes of a store holding `files`, a whole number of sectors starting with the header (header copy B is a copy of the first sector). `available`
-/// is the area's size in sectors without header B and the selection record (`StoreLayout::store_limit`). The data is laid out in path order after the
+/// is the area's size in sectors without the tail (header B, the settings record and the selection record) (`StoreLayout::store_limit`). The data is laid out in path order after the
 /// table.
 pub fn encode_store(files: Vec<StoreFile>, available: u64) -> Result<Vec<u8>, StoreError> {
     let mut files = files;
@@ -390,7 +392,7 @@ fn load_store(
     })
 }
 
-/// Read the store at `first_sector` (`available` sectors without header B and the selection record; `header_b_sector` is the absolute sector of header
+/// Read the store at `first_sector` (`available` sectors without the tail (header B, the settings record and the selection record); `header_b_sector` is the absolute sector of header
 /// copy B, `StoreLayout::header_b`): `Ok(None)` when neither header has the magic (nothing was built into the area). A copy is valid when its magic,
 /// version, header CRC, area and table CRC hold; the valid copy with the higher `seq` wins (equal: A).
 pub fn read_store(
@@ -458,7 +460,7 @@ mod tests {
         StoreFile::file(path, (0..len).map(|i| (i * 13 + 5) as u8).collect())
     }
 
-    /// An area of 0x6000 sectors at 0x1000: header B at 0x1000 + 0x5ffd.
+    /// An area of 0x6000 sectors at 0x1000: header B at 0x1000 + 0x5fdd.
     const FIRST: u64 = 0x1000;
     const SECTORS: u64 = 0x6000;
     const AVAIL: u64 = SECTORS - STORE_TAIL;

@@ -209,3 +209,7 @@ and a page of more than five rows needs the keys to scroll. What works is hiding
 - This is a module-owned vtable copy, so it breaks finding 23's "no new vtable" for these pages. The module does not call it with a stock slot it does not recognise: the first
   word of slot 4 must be `0x70c8`, otherwise the pages keep the bar. **[O]** Hardware: not run on a device; the paint-time cursor write assumes one UI task paints.
 **[O]** The alternative (c), a page class of our own, was not built.
+
+## FX ROUTES row (2026-10-25, FX routing step 4) **[D]**
+
+The DIGIKIT list is MODULES, FX ROUTES, ABOUT, HEALTH, MEMORY, DEBUG, REMOTE (finding 65). FX ROUTES is a plain `VerticalMenuView` with the cursor bar, as MODULES (a choice page, so no text paint): built the first time it is opened and filled by `begin_rebuild` and `end_rebuild` with a row for each effect, an APPLY & RESTART row that appears when a pending route differs from the saved one, and a message row. The rows behind it moved down by one: the scenarios and proofs that open ABOUT, HEALTH, MEMORY or REMOTE press one DOWN more, and the pinned frames of the main DIGIKIT list (`digikit`, `safe_main` and the popup frames over it) changed with the new row.

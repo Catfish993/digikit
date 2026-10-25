@@ -88,7 +88,7 @@ At a block boundary (`tools/patchkit/fx_rings.py` has addresses and decoders; th
 
 Effects can also be loaded at run time on the Digitakt II (`docs/design/digikit-dkm.md`, DSP section version 4; runtime 0.4.0). What changed in the adapter and its neighbours:
 
-- **Rows are 24 words** (was 16): pc, desc, state, enabled, p0 to p7 (`DK_FX_MAX_PARAMS` 8, was 4), `was` 12, `dis` 14, fault window 15 to 17. Row stride 96 bytes.
+- **Rows are 24 words** (was 16): pc, desc, state, enabled, p0 to p7 (`DK_FX_MAX_PARAMS` 8, was 4), `was` 12, `dis` 14, fault window 15 to 17. Row stride 96 bytes. Words 18 to 22 are the send route (route, 16 amount bytes; finding 62, Digitakt II); word 23 is spare.
 - **A free row has pc `0xffffffff`** and is skipped; pc 0 still ends the table. `core/dynfx` (Digitakt II only for now) reserves one free row for each `[limits] fx_slots` (3) and a table, `dynfx_info`, that the
   runtime reads. The registry `fx` takes the free rows and the rows of patched-in effects together (limit `fx_slots`).
 - **Window 2** of `core/dsp-link` is the whole table of the registry `fx` (24 words a row, `fx.rows`, `fx.count`); the runtime writes one word per transfer and the pc last, as it does for voice rows.

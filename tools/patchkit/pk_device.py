@@ -48,10 +48,13 @@ def digikit_devices() -> list[str]:
 @dataclass(frozen=True)
 class Store:
     first: int  # first card sector of the store
-    sectors: int  # sectors in the area, with header copy B and the selection record at the end
+    sectors: int  # sectors in the area, with header copy B, the settings record and the selection record at the end
     sel_a: int  # selection record copy A (absolute)
     sel_b: int  # selection record copy B (absolute)
     header_b: int  # store header copy B (absolute); the store's files end before it
+    set_a: int = 0  # settings record copy A (absolute first sector); copy B follows `set_copy_sectors` sectors later
+    set_b: int = 0
+    set_copy_sectors: int = 16  # sectors of one settings copy (sdk/sdk.toml [settings])
 
     @property
     def limit(self) -> int:
@@ -68,7 +71,20 @@ def store_of(short: str) -> Store:
     s = load(short)["card"]["store"]
     first, end = s["first_sector"], s["end_sector"]
     sel = s.get("selection_sectors", 2)
-    return Store(first, end - first, end - sel, end - sel + 1, s["header_b_sector"])
+    settings = s.get(
+        "settings_sectors", 32
+    )  # two copies of sdk/sdk.toml [settings] sectors, before the selection record
+    set_a = end - sel - settings
+    return Store(
+        first,
+        end - first,
+        end - sel,
+        end - sel + 1,
+        s["header_b_sector"],
+        set_a,
+        set_a + settings // 2,
+        settings // 2,
+    )
 
 
 @dataclass(frozen=True)
@@ -80,6 +96,7 @@ class Limits:
     arena_bytes: int  # the ColdFire module arena
     stage_bytes: int  # the staging buffer: the largest .dkm file
     fx_slots: int  # effects in the chain
+    send_slots: int  # of them effects on a send bus (the device file's limit; `effective_send_slots` is what an image reports)
     param_rows: int  # parameter rows core/dynreg reserves
     page_rows: int  # page rows core/dynreg reserves (0 on a device without)
     dsp_area_bytes: int  # the DSP run-time area
@@ -101,6 +118,15 @@ def effective_fx_slots(lim: Limits, plan: dict[str, Any]) -> int:
         if any(str(m).startswith("core/dynfx@") for m in plan["modules"])
         else 0
     )
+
+
+def effective_send_slots(short: str, plan: dict[str, Any]) -> int:
+    """The send slots an image of device SHORT reports in CAPACITY: the device's `send_slots` when the image has `core/fxpages` (the send page) and the device file has a send page
+    (`[fx] track_page`), else 0 (every Digitone II image until FX routing step 6)."""
+    has_page = any(str(m).startswith("core/fxpages@") for m in plan["modules"])
+    if not has_page or load(short).get("fx", {}).get("track_page", 0) == 0:
+        return 0
+    return limits(short).send_slots
 
 
 def limits(short: str) -> Limits:

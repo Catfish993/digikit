@@ -110,6 +110,7 @@ machine_rows = 8
 arena_bytes = 524288
 stage_bytes = 65536
 fx_slots = 3   # effects in the chain; core/dynfx reserves this many free effect rows for run-time effects (at most DK_FX_MAX = 4)
+send_slots = 2 # of them effects that run on a send bus (core/fx send route, the send page of the FX key: one knob each; at most the entries of [fx] send_indices)
 param_rows = 16
 page_rows = 0
 
@@ -137,6 +138,17 @@ template_mix = 0x79
 # each of `value_indices`, then one effect ID for each effect row (27 of the 28 halfwords).
 store_off = 0x60
 store_halfwords = 28
+# The send page (FX routing, finding 64): the page after the track FX page (page 12: BR, OVER, SRR, SR.RT, DEL, REV, CHR, OD.RT) of the FX key, one knob for each effect that runs on a
+# send bus, set for the current track. `track_page` is the stock page the new page copies its title and level slot from; the send page itself is page_first + fx_slots. The amount
+# of a send is the halfword Sound[i] of each track's Sound object (the parameter array is at +0x14), i from `send_indices`: indices the Sound setter accepts (idx < 0x47) that no stock
+# parameter uses and that the sound loader zeroes (a kit load) but the saver does not write (finding 64). The 16 Sound objects lie in the kit object, track t at kit + sound_off +
+# sound_stride * t (the Fx array follows them: array_off = sound_off + 16 * sound_stride). `send_template` is the stock send row (Delay send, code 0x44) whose owner and key words the knob rows
+# copy; the value class (display, and no p-lock) is `template_percent`'s.
+track_page = 12
+sound_off = 0x34
+sound_stride = 0x450
+send_template = 0x44
+send_indices = [69, 70]
 # An index of the array that nothing reads or writes either (Fx[70]; poked in the emulator without any effect, finding 61): core/fxpages keeps a mark there, set when it gave an effect row its defaults
 # or the stored values (the init and load hooks) and not saved with the kit. A kit object without the mark (one that no hook has touched: another pattern's kit) gets the defaults when it first plays.
 mark_index = 70
@@ -338,12 +350,14 @@ superblock_sector = 0x5d8000
 end_sector = 0x2df0180      # superblock + the erase of FUN_4015a440 (0x2818180 sectors); the allocator stops at page 0xA0080 (finding 59)
 
 # Module and sample store (docs/design/digikit-store.md, version 3): sectors [first_sector, end_sector). DT2: after the +Drive (it ends at 0x2DF0180: finding 59), 82 MiB.
-# The last selection_sectors sectors hold the runtime's selection record; header copy B is the sector before them.
+# The last selection_sectors sectors hold the runtime's selection record; before them the settings record (settings_sectors: two copies of
+# sdk/sdk.toml [settings] sectors, 8 KiB each); header copy B is the sector before the settings record; the store's files end before it.
 [card.store]
 first_sector = 0x2df1000
 end_sector = 0x2e1a000
 selection_sectors = 2      # the last two sectors: the digikit selection record (docs/design/digikit-store.md)
-header_b_sector = 0x2e19ffd  # store header copy B: the sector before the selection record; the store's files end before it
+settings_sectors = 32      # the 32 sectors before them: the settings record, copy A then copy B of 16 sectors (docs/design/digikit-store.md, "The settings record")
+header_b_sector = 0x2e19fdd  # store header copy B: the sector before the settings record; the store's files end before it
 
 # How a module's machines map onto this device (packages/patchkit/src/typed.rs lowers the typed sections of a
 # module.toml with it; `patchkit gen` writes the constants a DSP routine needs). Finding 02; modules/machines/pluck/src/dsp.

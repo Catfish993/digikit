@@ -3,7 +3,7 @@
 # packages/dkupload/src/gen_proto.rs from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
-version = "0.5.0"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
+version = "0.5.1"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
@@ -230,6 +230,19 @@ id = 31
 name = "MACHINE_TYPE_EVICTED"
 args = ["hash", "type", "-", "-", "-"]
 
+# the settings record was read at the boot (`state` 0 none valid, 1 a copy loaded, 2 a copy is damaged and the other one was taken)
+[[log.kind]]
+id = 32
+name = "SETTINGS_LOAD"
+args = ["state", "copy", "seq", "used", "entries"]
+# state 4: the settings store is off (arg 3 holds the store's status: the older store reaches into the settings area, or its headers do not read)
+
+# the settings record was written to the copy that was not current (`result` 0 or a negative code)
+[[log.kind]]
+id = 33
+name = "SETTINGS_WRITE"
+args = ["copy", "seq", "used", "result", "-"]
+
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO
 guarded = ["remote"]   # ranges ([protocol.ranges]) whose commands the runtime refuses with E_DISABLED while the REMOTE switch of the DIGIKIT menu is off
@@ -248,6 +261,7 @@ ABORT = 0x15
 READ = 0x16         # a byte range of a store file: path, u32 offset, u32 length (at most 768); reply: u32 file size, the bytes
 VERIFY = 0x17       # re-read a store file from the card and hash it: path; reply: sha256[32]
 MKDIR = 0x18        # make a folder (a folder entry with nothing in it): path; ok when it exists
+SETTINGS = 0x19     # read-only: the active settings record (docs/design/digikit-store.md, "The settings record"): u32 offset, u16 length (at most 768); reply: u8 copy (0 A, 1 B), u32 seq, u32 used, the bytes
 LOG = 0x20
 PEEK = 0x21
 LOGCFG = 0x22
@@ -281,6 +295,11 @@ E_INUSE = { code = -62, text = "the card's store area is not ours and not blank"
 E_PEEK = { code = -63, text = "PEEK range not allowed, or length 0 or over 512" }
 E_CMD_RANGE = { code = -64, text = "command range not reserved, taken, or empty" }
 E_DISABLED = { code = -65, text = "a guarded command range is switched off (DIGIKIT > REMOTE)" }
+E_SET_KEY = { code = -66, text = "a settings key breaks the rules (1 to 47 printable ASCII characters)" }
+E_SET_FULL = { code = -67, text = "the settings area is full" }
+E_SET_NOKEY = { code = -68, text = "no such settings key (or no settings record)" }
+E_SET_VALUE = { code = -69, text = "a settings value is too long, or the buffer is too small" }
+E_SET_OFF = { code = -70, text = "settings store off: an older store reaches its area, or no store" }
 
 [protocol.caps]     # INFO capability bits (bit numbers of the `caps` word)
 LOG = 0
@@ -294,6 +313,7 @@ READ = 7
 VERIFY = 8
 SERVICE_CMDS = 9    # modules register commands (Api.register_cmds)
 FOLDERS = 10        # LIST takes a prefix, MKDIR, CAPACITY kind STORE (store format 3)
+SETTINGS = 11       # the SETTINGS command (read the settings record), CAPACITY kind SETTINGS
 
 [capacity.kinds]   # the `kind` byte of a CAPACITY entry (u8 kind, u32 limit, u32 used, u32 largest); additive: a number is never reused
 MODULES = 1         # module records; used: loaded; largest: 0
@@ -308,15 +328,38 @@ PAGE_ROWS = 9       # page rows core/dynreg reserves (Digitone II), in use
 FX_SLOTS = 10       # effects in the chain: the device's limit (`[limits] fx_slots`); used: run-time effects claimed (the effect rows of core/dynfx); largest: 0
 MAP_ENTRIES = 11    # sticky machine-type map entries in use
 STORE = 12          # the module and sample store, in KiB (a store can be 22 GiB); used: KiB taken; largest: 0 (BEGIN says E_FULL with the free bytes)
+SETTINGS = 13       # the settings record, in bytes: limit: the area of one copy (`[settings]`); used: the record's bytes (header and entries); largest: 0
+SEND_SLOTS = 14     # effects that run on a send bus: the device's limit (`[limits] send_slots`, 0 when the image has no send page); used: loaded effects with the send route; largest: 0
 
 [limits.max]        # contract maxima (capacity plan, docs/plans/capacity-isolation.md): a device's `[limits]` value in devices/*.toml may not exceed them
                     # (`patchkit gen` refuses it). Names are the keys of `[limits]` and, for dsp_area_bytes, of `[digikit]`.
 modules = 8         # module records: the selection record holds SEL_MAX = 8 paths (record format, modules/core/runtime/sdk/src/lib.rs)
 map_entries = 8     # sticky machine-type map entries: MAP_N = 8 (record format: bytes 28-31 and 480-507)
 fx_slots = 4        # effects in the chain: DK_FX_MAX of [fx] (kept equal by packages/patchkit/tests/sdkgen.rs)
+send_slots = 2      # effects on a send bus: the Sound array's free indices a send page can use, [fx] send_indices (at most SEND_MAX = 2 in core/fxpages)
 dsp_area_bytes = 524288  # the 17-bit word offset of a core/dsp-link chunk reaches 2^17 words
 param_rows = 16     # parameter rows core/dynreg reserves (tied to its manifest by packages/patchkit/tests/devdata.rs)
 page_rows = 8       # page rows core/dynreg reserves (Digitone II)
+
+# The settings store (docs/design/digikit-store.md, "The settings record"): one record in two copies in the store range, next to the selection
+# record. `sectors` is the size of ONE copy; the runtime keeps the record in RAM and writes the copy that is not current. The area is part of the
+# store's tail (`store::TAIL`), and `[card.store] settings_sectors` of the device files must equal `copies * sectors` (patchkit gen refuses another value).
+[settings]
+copies = 2
+sectors = 16        # per copy: 8 KiB
+key_max = 47        # bytes of a key (printable ASCII 0x21 to 0x7e)
+value_max = 1024    # bytes of a value
+
+# The keys by owner. A key that starts with `prefix` is owned by that part of digikit; `value` names the decoding that the host readers
+# (`patchkit store dump`, tools/device/dksettings.py) print: `u8` one byte, `route` one byte (0 master, 1 send), `u8x16` sixteen bytes (one per track).
+# A run-time module will own `<module id>/...` (reserved, not built: no module API yet).
+[[settings.key]]
+prefix = "fx/route/"    # + the module id: where the effect runs
+value = "route"
+
+[[settings.key]]
+prefix = "fx/send/"     # + the module id: the send amounts of the 16 tracks, 0 to 127
+value = "u8x16"
 
 [load.status]       # result codes of `dkrt_load` and the boot-time selection (also the status of SELECT); never renumber
 E_NOT_FOUND = { code = -1, text = "no store, or no such file or module" }

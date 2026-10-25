@@ -7,7 +7,8 @@
 //! ```text
 //! sector 0               header copy A
 //! ...                    tables and file data, anywhere in [1, header_b): free space is reused
-//! header_b = sectors - 3 header copy B
+//! header_b = sectors - 35 header copy B
+//! sectors - 34 .. - 3    the settings record, two copies of `settings::SECTORS` sectors (the runtime's; not a store structure)
 //! sectors - 2, - 1       the selection record, two copies (the runtime's; not a store structure)
 //! ```
 //!
@@ -31,8 +32,12 @@ const O_KIND: usize = 200;
 pub const KIND_FILE: u8 = 0;
 /// A folder that has no file in it (a folder with files is implied by their paths). No data, size 0.
 pub const KIND_DIR: u8 = 1;
-/// Sectors after the last one files may use: header copy B and the two sectors of the selection record.
-pub const TAIL: u32 = 3;
+/// Sectors of the selection record (two copies of one sector).
+pub const SEL_SECTORS: u32 = 2;
+/// Sectors of the settings record (`sdk/sdk.toml [settings]`: two copies of `settings::SECTORS`).
+pub const SET_SECTORS: u32 = crate::gen_sdk::settings::COPIES * crate::gen_sdk::settings::SECTORS;
+/// Sectors after the last one files may use: header copy B, the settings record and the two sectors of the selection record.
+pub const TAIL: u32 = 1 + SET_SECTORS + SEL_SECTORS;
 /// Sectors one card read or write moves at most (the firmware's block read takes 64 KiB).
 pub const MAX_IO_SECTORS: u32 = 128;
 
@@ -58,6 +63,13 @@ impl Layout {
     }
     pub const fn sel_b(&self) -> u32 {
         self.first + self.sectors - 1
+    }
+    /// Absolute first sectors of the two settings record copies (`settings::SECTORS` sectors each), before the selection record.
+    pub const fn set_a(&self) -> u32 {
+        self.first + self.sectors - SEL_SECTORS - SET_SECTORS
+    }
+    pub const fn set_b(&self) -> u32 {
+        self.set_a() + crate::gen_sdk::settings::SECTORS
     }
     /// May a card write of `bytes` (a multiple of 512, not 0) starting at absolute `sector` happen? Only inside the store area: the runtime's one
     /// card-write function refuses anything else (finding 46).
@@ -302,7 +314,30 @@ fn chunk_sectors(cap: usize) -> u32 {
     }
 }
 
-/// Open the store: the headers, and (when `verify`) the table's CRC read through `buf` (`cap` bytes); a copy whose table does not check is
+/// Does the table of `h`, or a file in it, reach into the tail (`header_b ..` the end of the area)? A store written before the settings record (tail of 3 sectors)
+/// may: its files could lie where the settings copies and header B are now. Such a store is not used (`open` skips it): the runtime would write over a file.
+pub unsafe fn reaches_tail(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize) -> Result<bool, i32> {
+    let end = lay.header_b();
+    if h.table_sectors != 0 && h.table_first.saturating_add(h.table_sectors) > end {
+        return Ok(true);
+    }
+    let mut hit = false;
+    let r = scan(io, lay, h, buf, cap, |_, e| {
+        let ent = entry_of(e);
+        let len = entry_sectors(&ent);
+        if len != 0 && ent.first.saturating_add(len) > end {
+            hit = true;
+            return false;
+        }
+        true
+    });
+    if r != OK {
+        return Err(r);
+    }
+    Ok(hit)
+}
+
+/// Open the store: the headers, and (when `verify`) the table's CRC read through `buf` (`cap` bytes) and that nothing reaches into the tail; a copy whose table does not check is
 /// skipped for the other one. `scratch` is 512 bytes, 16-byte aligned, and must not overlap `buf`.
 pub unsafe fn open(io: &Io, lay: &Layout, scratch: *mut u8, buf: *mut u8, cap: usize, verify: bool) -> Result<Table, i32> {
     let (a, b) = open_headers(io, lay, scratch)?;
@@ -322,6 +357,10 @@ pub unsafe fn open(io: &Io, lay: &Layout, scratch: *mut u8, buf: *mut u8, cap: u
                 _ => continue,
             }
         } else if verify && h.table_crc != 0 {
+            continue;
+        }
+        // an older store whose table or files reach into the tail (settings record, header B) is skipped for the other copy, or refused
+        if verify && !matches!(reaches_tail(io, lay, &h, buf, cap), Ok(false)) {
             continue;
         }
         let other = if use_b { a } else { b };

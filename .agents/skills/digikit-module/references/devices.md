@@ -55,12 +55,37 @@ The runtime refuses a module that does not fit, with its own code (docs/findings
 | machine types, voice rows | 8 | 8 | a ninth machine `E_TYPE_RANGE`, a ninth voice `E_DSP_ROWS` |
 | parameter rows | 16 | 16 | `E_PARAM_FULL` |
 | page rows | none | 8 | `E_PAGE_FULL` |
+| run-time effects (`fx_slots`) | 3 | 3 | a fourth: refused by the fit rule before the load, `E_DSP_ROWS` at boot |
+| send effects (`send_slots`, of those) | 2 | 1 | the effect stays an insert; FX ROUTES does not offer send |
 | effects in the chain (patched in) | 4 | 4 | patchkit refuses at build time |
 
 `bss` is not stored in the file: a large work buffer costs arena or DSP area, not file size. Size per-voice state for the lowest musical note, not for the arithmetic limit.
 
 What is used and what is left: `mise run dk:store -- --emu info` (or `--port NAME`) prints one `capacity` line per resource (runtime 0.2.2 and later): modules, arena and DSP area bytes with the largest free piece, machine, voice, parameter and page rows. `modules` lists each module's share.
 
+
+## Effects
+
+An effect works on the master block (or a send bus) and is the same routine on both devices. The run-time effect rows come from `core/dynfx`;
+the pages from `core/fxpages`, which the Digitone II image needs in its module list (`device` patch set).
+
+| | Digitakt II | Digitone II |
+| --- | --- | --- |
+| run-time effects at once (`fx_slots`) | 3 | 3 |
+| of them on a send bus (`send_slots`) | 2 | 1 |
+| DSP area for the effect's code and state | the run-time DSP area above (512 KiB), shared with machines | 320 KiB, shared with machines |
+| effect page numbers (`[fx] page_first`) | 33, 34, 35 (stock pages 0 to 32) | 37, 38, 39 (stock pages 0 to 36) |
+| send page (second page of the track FX key) | page 36 (`page_first + fx_slots`), after stock page 12 | page 40 (37 + 3), after stock page 16 (finding 67) |
+| knobs for each effect | at most 7 and MIX (the same) | the same |
+| FX view | DEL, REV, CHO, the send effects, then the master effects | the same |
+
+- **Instruction budget of the conformance suite.** `module:check` allows each effect `pk_conform.fx_budget()` instructions in the worst block: the
+  headroom of the tighter device divided by the 3 slots (about 31,000 today, set by the Digitone II), plus 900 for the `core/fx` adapter
+  (`FX_ADAPTER_MAX`). The number follows the measured stock load, so read it from the report (`-rA`) and not from this file.
+  Size `max_cycles_block` in your `dk_fx_desc` below it.
+- **Digitone II.** Its stock DSP load is higher, so the free time per block is smaller (see "Time and budget"); the effect hook costs the
+  emulator about x2.4 DSP CPU there (finding 55). A send effect there gets the sum of the voice slots of the track as its send input (finding 67).
+- Send amounts, MIX and routes are framework-owned (`contract-fx.md`).
 
 ## Stock patterns worth copying
 

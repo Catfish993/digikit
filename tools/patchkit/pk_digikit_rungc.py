@@ -310,7 +310,8 @@ def _run_rungc(
                 f"loads {[e[4] for e in loads]}, dsp {[e[4] for e in dsp_parts]}, keep {[e[4] for e in keeps]}",
             )
             to_digikit(rig)
-            tap(rig, "DOWN", 300)
+            tap(rig, "DOWN", 300)  # FX ROUTES
+            tap(rig, "DOWN", 300)  # ABOUT
             tap(rig, "YES", 900)  # ABOUT
             rows = DBG.about_rows(rig, plan)
             snap(rig, "05-about")

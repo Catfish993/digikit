@@ -17,7 +17,7 @@ build/             generated; never committed, never exported
 | `id` | `AUTHOR/NAME`: lowercase, digits, dashes. `core/` and `test/` are reserved. |
 | `version` | major.minor.patch |
 | `name`, `summary` | shown in the menu and the gallery; `summary` is one short sentence |
-| `category` | `machines`, `fx`, `ui`, `test` |
+| `category` | `machines`, `fx`, `ui`, `tools`, `test` |
 | `type` | `machine`, `fx`, `service`, `raw`; `framework` is internal (the `core/` modules) |
 | `author` | the author part of the id for content modules |
 | `dynamic` | `true`: a run-time `.dkm` |
@@ -35,6 +35,28 @@ build/             generated; never committed, never exported
 - `[[param]]`: `id`, `name`, `short`, `template` (stock row to copy: `0xd1` on the Digitakt II, `[param.dn2] template = 0xd5`), `min`,
   `max` (words, UI value x 256, 0 to 0x7f00), `default`. The adapter clamps the value to `min` .. `max` before your code sees it.
 - `[[page]]` (Digitone II): `id`, `machine`, `name`, `title`, `devices = ["dn2"]`: the machine's SYN page.
+
+## `[[fx]]` and `[[fx.knob]]` (a run-time effect: `type = "fx"`, `dynamic = true`)
+
+An effect has an `[[object]]` with `place = "dsp.l2"` and `devices = ["dt2", "dn2"]` and one `[[fx]]` for each effect. Example:
+`tests/fixtures/modules/dyn-fx-gain/module.toml`; rules and limits: `contract-fx.md`.
+
+| key of `[[fx]]` | meaning |
+| --- | --- |
+| `id` | the effect's name inside the module; with the module id it makes the effect ID of saved kits (never rename) |
+| `process`, `desc` | the global text symbol of the process routine, the data symbol of its `dk_fx_desc` |
+| `defaults` | the words p0 ... at load, at most `n_params`; not allowed with a page (the knobs' `default` is used) |
+| `tab`, `title` | give the effect a page after CHO in FUNC + FX: tab 1 to 3 characters, title 1 to 23 characters (mixed case) |
+| `mix` | the default of the framework's MIX knob, 0 to 127 (default 127 = wet) |
+| `route` | where the effect starts: `"master"` (default) or `"send"`; a send needs a `tab` |
+| `routes` | the routes the user may choose in DIGIKIT > FX ROUTES; left out: `["master"]`, or `["send", "master"]` when `route = "send"`; `["send"]` is send only |
+| `devices` | `["dt2", "dn2"]` |
+
+`[[fx.knob]]` (up to 7; knob i is the parameter word p_i, a float): `name` (1 to 23 characters, shown while the knob turns), `short` (1 to 6,
+the label), `min`, `max` (the floats at the bottom and the top of the knob), `default` (inside `min` .. `max`), `display` (`"percent"` 0 .. 127
+or `"bipolar"` -64 .. +63), `position` (0 to 7, the place on the page; default: the place in the list). MIX, the route and the send amounts are
+the framework's: never declare them. `patchkit pack` refuses a bad text, a default outside the range, two knobs at one position, a bad
+route and a send without a `tab`. A patched-in effect has an `[[entry]] registry = "fx"` row instead (`contract-fx.md`).
 
 ## Knobs
 

@@ -34,6 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 from tools import python_env  # noqa: E402
+from tools.device.dkproto import SETTINGS_SECTORS  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import modroots, pk_device  # noqa: E402
@@ -249,9 +250,17 @@ def watch_ranges(rt: dict, lo: int, hi: int) -> list[tuple[int, int]]:
     """[lo, hi) minus the buffers the card reads fill by DMA (the staging buffer, the 512-byte record buffer)."""
     holes = [(rt["stage"], 64 * 1024)]
     # 512-byte buffers the card reads land in by DMA: the selection record, the store's header sectors, the fingerprint of a list
-    for name in ("DKRT_SECBUF", "DKRT_STORE_PEEK", "DKRT_STORE_FP"):
+    for name in (
+        "DKRT_SECBUF",
+        "DKRT_STORE_PEEK",
+        "DKRT_STORE_FP",
+        "DKRT_SETTINGS_HDR",
+    ):
         if name in rt["sym"]:
             holes.append((rt["sym"][name], 512))
+    # the settings record's RAM copy: the boot's card read of the settings area lands in it by DMA
+    if "DKRT_SETTINGS" in rt["sym"]:
+        holes.append((rt["sym"]["DKRT_SETTINGS"], SETTINGS_SECTORS * 512))
     out, at = [], lo
     for start, size in sorted(holes):
         if start > at:
