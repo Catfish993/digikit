@@ -308,12 +308,18 @@ UI_ONLY: tuple[str, ...] = (
     "docs/*",
     "*.md",
 )
-# Exact non-runtime maintenance paths whose existing Python coverage is sufficient. Keep this a
-# table, not a prefix rule: a neighbouring devtools or settings path stays conservative.
+# Exact non-runtime paths whose existing owner host/Python coverage is sufficient. Keep this a
+# table, not a prefix rule: neighbouring tests, helpers and configuration stay conservative.
 SMOKE_EXEMPT: dict[str, str] = {
     "tools/devtools/agent_guard.py": "agent guard",
     "tools/devtools/pathcheck.py": "path checker",
     ".claude/settings.json": "agent settings",
+    "packages/control-client/tests/client.test.ts": "host client test",
+    "packages/test-support/tests/support.test.ts": "host support test",
+    "packages/dk-session/tests/emu-usb-transport.test.ts": "host transport test",
+    "tests/regression/host/runtime.test.ts": "host runtime test",
+    "tests/regression/host/remote-keys.test.ts": "host remote-keys test",
+    "tests/regression/host/daemon.test.ts": "host daemon test",
 }
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (

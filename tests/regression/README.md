@@ -49,8 +49,9 @@ native CLI, for example `pnpm test:host --reporter=default --reporter=junit --ou
 The `host` step runs all four host projects once with its worker budget, alongside global lint/format
 and control-client, shared-session, test-support and regression type checks. Explicit `--only host`
 requires no native/WASM build or device inputs. `web` retains browser tests, Astro and patchkit WASM,
-and depends on `host`, including with `--only web`. Normal host-path routing still adds conservative
-smoke; no smoke exemptions were added.
+and depends on `host`, including with `--only web`. Normal host-path routing skips smoke only for the six audited test files listed in
+[TESTING.md](../../docs/TESTING.md), while retaining `host`. Helpers, sources, manifests, configuration,
+new neighboring tests and unknown paths still select conservative smoke, including mixed changes.
 Consumer typecheck/check scripts explicitly generate `@digi/dk-session` declarations first; its runtime
 export still resolves to the existing TypeScript source. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
 

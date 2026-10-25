@@ -1,15 +1,7 @@
 // digikit/remote and the screenshot in the pure TypeScript client (`DkSession`, dkupload-core.ts) against a fake device that frames its replies byte for byte.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  DkError,
-  DkSession,
-  decode8in7,
-  decodeScreen,
-  encode8in7,
-  frame,
-  screenPixel,
-} from '@digi/dk-session';
+import { DkError, DkSession, decode8in7, decodeScreen, encode8in7, frame, screenPixel } from '@digi/dk-session';
 import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 
 const concat = (...p) => Uint8Array.from(Buffer.concat(p.map((x) => Buffer.from(x))));

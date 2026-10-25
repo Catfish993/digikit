@@ -58,6 +58,51 @@ SMOKE_EXEMPT_FILES = [
     ".claude/settings.json",
 ]
 
+HOST_SMOKE_EXEMPT_FILES = [
+    "packages/control-client/tests/client.test.ts",
+    "packages/test-support/tests/support.test.ts",
+    "packages/dk-session/tests/emu-usb-transport.test.ts",
+    "tests/regression/host/runtime.test.ts",
+    "tests/regression/host/remote-keys.test.ts",
+    "tests/regression/host/daemon.test.ts",
+]
+
+
+@pytest.mark.parametrize("path", HOST_SMOKE_EXEMPT_FILES)
+def test_exact_host_test_paths_skip_smoke_but_keep_host_coverage(path: str) -> None:
+    assert verify.steps_for([path]) == ("host",)
+
+
+def test_host_test_exemptions_mix_with_ui_docs_and_maintenance() -> None:
+    assert verify.steps_for(HOST_SMOKE_EXEMPT_FILES) == ("host",)
+    assert verify.steps_for(
+        [*HOST_SMOKE_EXEMPT_FILES, "docs/x.md", "tools/devtools/pathcheck.py"]
+    ) == ("host", "python-tests")
+    assert verify.steps_for(
+        [*HOST_SMOKE_EXEMPT_FILES, "apps/web/src/components/PatchGallery.tsx"]
+    ) == ("host", "web")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/control-client/src/client.ts",
+        "packages/test-support/src/session.ts",
+        "tests/regression/support.ts",
+        "packages/control-client/package.json",
+        "packages/test-support/tsconfig.json",
+        "vitest.host.config.ts",
+        "packages/control-client/tests/new.test.ts",
+        "tests/regression/host/new.test.ts",
+        "unknown/file.txt",
+        "modules/fx/master-gain/src/cf/gain.s",
+        "modules/core/runtime/src/rs/src/upload.rs",
+        "tests/regression/runtime/dt2.test.ts",
+    ],
+)
+def test_host_test_exemptions_keep_other_paths_conservative(path: str) -> None:
+    assert "smoke" in verify.steps_for([*HOST_SMOKE_EXEMPT_FILES, path])
+
 
 def test_exact_maintenance_paths_skip_smoke_but_keep_python_coverage() -> None:
     for path in SMOKE_EXEMPT_FILES:
@@ -138,6 +183,9 @@ def test_explain_says_why_smoke_is_skipped(capsys: pytest.CaptureFixture[str]) -
         ["tools/devtools/pathcheck.py", "unknown/file.txt"]
     )
     assert "smoke: skipped" not in run(["docs/x.md"])
+    assert "smoke: skipped, smoke-exempt maintenance change (host client test)" in run(
+        ["packages/control-client/tests/client.test.ts"]
+    )
 
 
 def test_changed_pk_test_runs_itself_and_the_gate() -> None:
@@ -803,10 +851,8 @@ def test_host_and_app_changes_keep_both_checks() -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "packages/dk-session/tests/emu-usb-transport.test.ts",
         "packages/control-client/package.json",
         "packages/test-support/tsconfig.json",
-        "tests/regression/host/runtime.test.ts",
     ],
 )
 def test_host_paths_do_not_select_browser_checks(path: str) -> None:
@@ -1128,10 +1174,7 @@ def test_runtime_fixture_command_is_sequential(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_runtime_fixture_host_paths_do_not_select_device_acceptance() -> None:
-    assert verify.steps_for(["tests/regression/host/runtime.test.ts"]) == (
-        "host",
-        "smoke",
-    )
+    assert verify.steps_for(["tests/regression/host/runtime.test.ts"]) == ("host",)
 
 
 def test_runtime_fixture_rejects_insufficient_budget(

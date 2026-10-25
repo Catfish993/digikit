@@ -5,15 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import {
-  Dk,
-  DkClient,
-  DkError,
-  MockTransport,
-  repackMissing,
-  storePath,
-  hexSha256,
-} from '@digi/dk-session';
+import { Dk, DkClient, DkError, MockTransport, repackMissing, storePath, hexSha256 } from '@digi/dk-session';
 import { WebMidiTransport, listPorts, portLabel } from '../src/modules/webmidi.ts';
 
 const wasm = join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'public/dkupload.wasm');
