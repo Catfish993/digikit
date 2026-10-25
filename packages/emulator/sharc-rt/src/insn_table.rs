@@ -88,10 +88,26 @@ impl InsnTable {
     }
 }
 
-/// Parse BLOB once (the table lives as long as the process).
+/// Parse BLOB once (the table lives as long as the process). A binary with two generated cores (two devices, the second-core
+/// build) calls this with one blob each: the tables are told apart by the blob's address, one slot each, so the second core
+/// never reads the first core's table.
 pub fn insn_table(blob: &'static [u8]) -> &'static InsnTable {
-    static TABLE: std::sync::OnceLock<InsnTable> = std::sync::OnceLock::new();
-    TABLE.get_or_init(|| parse_insn_table(blob).expect("malformed instruction table"))
+    const SLOTS: usize = 4;
+    static TABLES: [std::sync::OnceLock<(usize, InsnTable)>; SLOTS] =
+        [const { std::sync::OnceLock::new() }; SLOTS];
+    let key = blob.as_ptr() as usize;
+    for slot in &TABLES {
+        let (owner, table) = slot.get_or_init(|| {
+            (
+                key,
+                parse_insn_table(blob).expect("malformed instruction table"),
+            )
+        });
+        if *owner == key {
+            return table;
+        }
+    }
+    panic!("more than {SLOTS} generated cores in one process");
 }
 
 fn parse_insn_table(b: &[u8]) -> Result<InsnTable, i32> {
@@ -205,4 +221,25 @@ mod instruction_table_tests {
             assert!(parse_insn_table(&bytes[..end]).is_err(), "length {end}");
         }
     }
+    /// A blob of one instruction at PC, without fields.
+    fn one(pc: u32) -> &'static [u8] {
+        let mut out = b"SHIX".to_vec();
+        out.extend_from_slice(&1_u32.to_le_bytes());
+        out.extend_from_slice(&pc.to_le_bytes());
+        out.extend_from_slice(&1_u16.to_le_bytes());
+        out.extend_from_slice(&2_u16.to_le_bytes());
+        out.extend_from_slice(&[6, 0]);
+        Box::leak(out.into_boxed_slice())
+    }
+
+    /// Two generated cores in one process each get their own table (the second-core build links two).
+    #[test]
+    fn each_blob_has_its_own_table() {
+        let (a, b) = (one(0x100), one(0x200));
+        let (ta, tb) = (insn_table(a), insn_table(b));
+        assert!(ta.get(0x100).is_some() && ta.get(0x200).is_none());
+        assert!(tb.get(0x200).is_some() && tb.get(0x100).is_none());
+        assert!(std::ptr::eq(ta, insn_table(a)) && std::ptr::eq(tb, insn_table(b)));
+    }
+
 }

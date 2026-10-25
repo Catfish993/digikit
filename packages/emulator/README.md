@@ -115,6 +115,31 @@ The second instance has no C ABI symbols (cfg `sharc_second`) and reads its own 
 is as before. Proof: `uv run python -m tools.devtools.dual_core_check` (the header names the build command). The
 launcher builds this with `DIGI_EMU_SECOND_CORE=1 mise run workbench` (no PGO profile for it yet).
 
+Use (opt-in, `DIGI_EMU_SECOND_CORE=1`; the default launcher build is one core, unchanged):
+
+- `DIGI_EMU_SECOND_CORE=1 mise run workbench` (the header `-- --build-only` builds without launching) builds with `second-core`
+  and passes the other device's ready inputs and generated core. It needs both devices' ready inputs (DN2 and DT2) and both
+  generated cores; without them the launcher says `second core: ... one core only` and builds one core. The two-core build has its
+  own target directory (`out/native/target/<first key>+<second key>`, `tools/emulator/native_target.py`) and no PGO profile
+  (`perf:pgo` trains single-core binaries).
+- The patched images (runtime, core/dynfx, core/fxpages, core/fx) differ from the image the generated blocks came from. Each
+  engine instance checks its own loaded code against its own generated core (`Engine::verify_code`, `code_diff.rs`) and bars only
+  the blocks with a changed instruction, so the AOT path works on the second core as on the first (`SHARC_CODE_LOG=1` prints the
+  check; the audio report's `dsp_tiers` has `code_mismatch`).
+- Process-wide state is shared by both cores through `sharc-rt`: the instruction table (`insn_table`) is parsed once per generated
+  blob (one slot each). It was one `OnceLock` for the process, so the core that asked second read the first core's table and the
+  code check compared a patched DT2 image against DN2's instructions (493 changed PCs instead of 10; 0.23x against 0.38x real time
+  with the runtime patched in). Any new process-wide cache in `sharc-rt` needs the same key.
+- The fast tier lists exist for DN2 only (`tools/emulator/fast_regions.json`): `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` go to
+  the first core, `SHARC_FAST_REGIONS_2` and `SHARC_BLOCKTRANS_2` (from the `--also-coupled` firmware) to the second. A DT2 core
+  has no lists, so it runs AOT blocks and the interpreter only, as a single-core DT2 launch does.
+- `dual_core_check` modes (a daemon each, bounded; `DIGI_EMUD` names the two-core `digi-emud`): the default (open the other
+  device and back), `--module digikit/pluck --play` (`dk run` and a played note), `--menu digikit/pluck --menu digikit/freqshift`
+  (the on-device path SETTINGS > DIGIKIT > MODULES > tick > APPLY & RESTART, a note, the effect's FX page; screenshots to
+  `out/runs/lanes/dualcore-shots/` or `--shots DIR`) and `--bench dt2 --binary LABEL=PATH ... --pairs 3` (DSP CPU per audio second, AOT share and real-time factor of a device
+  with the runtime patched in, alternating the `digi-emud` builds given; a build with DT2 as `SHARC_GEN_DIR` against one with it
+  as `SHARC_GEN_DIR_2` measures what the second-core role costs).
+
 ## Headless coupled runner (`coupled-run`) and the matrix
 
 `packages/emulator/coupled` (crate `digi-coupled`) holds the coupled ColdFire + SHARC+ run
