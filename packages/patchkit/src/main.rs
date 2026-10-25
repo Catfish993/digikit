@@ -8,6 +8,9 @@ use patchkit::port::Registry;
 use patchkit::verify;
 use std::path::{Path, PathBuf};
 
+#[cfg(not(target_arch = "wasm32"))]
+mod storedump;
+
 const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
 
   inspect X.syx                          device, version, port, patch record
@@ -25,8 +28,13 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
                                          the spec keys are in packages/patchkit/src/dkmsynth.rs)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
+  needs   [--json] FILE.dkm...           what a load of each file takes (arena, DSP area, rows), inferred from its contents; `-` reads stdin;
+                                         --json: one object, file -> the needs or {\"error\": text}; exit 1 when a file has none
   dkm-dsp-image FILE BASE [NAME=VALUE..]  the relocated DSP image of a .dkm at the L2 byte address BASE (hex)
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
+  store dump IMAGE [--device dt2|dn2] [--overlay FILE] [--base-sector N] [--json]   digikit's own data on a card image or a raw sector dump:
+                                         the store header and files, the selection record, the settings record (both copies, the one in use,
+                                         every entry decoded); `store dump --record FILE` reads one settings record file (docs/design/digikit-store.md)
   list                                   modules under modules/ and ports under devices/ports/
   gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
                                          a SHARC include per device, gallery JSON
@@ -148,6 +156,13 @@ fn run(a: Args) -> Result<()> {
             for (id, d, s) in rep.sections {
                 println!("section {id}  {d} bytes decoded, {s} stored");
             }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        "store" => {
+            if rest.first().map(String::as_str) != Some("dump") {
+                return Err(Error(USAGE.into()));
+            }
+            storedump::run(&rest[1..]).map_err(Error)?;
         }
         "list" => {
             let reg = registry(&a.root)?;
@@ -469,28 +484,62 @@ plan.json {}",
                         ranges,
                     });
                 }
+                // the effects of the device (`[[fx]]`): process routine and descriptor in the DSP object; a page's knobs set the first words of the row
+                let dev_fx: Vec<_> = m
+                    .manifest
+                    .fx
+                    .iter()
+                    .filter(|f| f.devices.is_empty() || f.devices.iter().any(|d| *d == dev))
+                    .collect();
+                let mut fxs: Vec<patchkit::dkmdsp::FxSpec> = vec![];
+                let mut pages = vec![];
+                for (i, f) in dev_fx.iter().enumerate() {
+                    let (routes, route) = patchkit::register::fx_routes(id, f)?;
+                    fxs.push(patchkit::dkmdsp::FxSpec {
+                        process: f.process.clone(),
+                        desc: f.desc.clone(),
+                        defaults: patchkit::register::fx_defaults(id, f)?,
+                        routes,
+                        route,
+                    });
+                    if let Some(p) = patchkit::register::effect_page(id, i, f)? {
+                        pages.push(p);
+                    }
+                }
                 match sharc.first() {
                     Some((o, _)) => {
                         dsp = patchkit::dkmdsp::pack(
                             o,
                             patchkit::register::device_id(&dev)?,
                             &voices,
+                            &fxs,
                         )?
                     }
-                    None if !voices.is_empty() => {
-                        return Err(Error(format!("{id}: a voice needs a DSP object for {dev}")));
+                    None if !voices.is_empty() || !fxs.is_empty() => {
+                        return Err(Error(format!(
+                            "{id}: a voice or an effect needs a DSP object for {dev}"
+                        )));
                     }
                     None => {}
                 }
-                match resolved {
+                let mut regs = match resolved {
                     Some(r) => {
                         let (first, last) = patchkit::devgen::dyn_range(&lib, &dev)?;
                         patchkit::register::check_type_hints(r, id, first, last)?;
-                        patchkit::register::Register::lower(r, id)?.encode()
+                        Some(patchkit::register::Register::lower(r, id)?)
                     }
-                    None if !dsp.is_empty() => vec![],
+                    None if !dsp.is_empty() => None,
                     None => return Err(Error(format!("{id}: nothing for device {dev}"))),
+                };
+                if !pages.is_empty() {
+                    let r = regs.get_or_insert_with(|| patchkit::register::Register {
+                        device: patchkit::register::device_id(&dev).unwrap_or(0),
+                        ..Default::default()
+                    });
+                    r.effects = pages;
+                    r.check()?;
                 }
+                regs.map(|r| r.encode()).unwrap_or_default()
             } else {
                 vec![]
             };
@@ -538,6 +587,50 @@ plan.json {}",
             let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
             write(&out, &patchkit::dkmsynth::synth(&spec, &dev, &models)?)?;
         }
+        "needs" => {
+            let json = rest.iter().any(|a| a == "--json");
+            let files: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();
+            if files.is_empty() {
+                return Err(Error(USAGE.into()));
+            }
+            let mut out = serde_json::Map::new();
+            let mut failed = false;
+            for f in files {
+                let raw = if f == "-" {
+                    let mut b = vec![];
+                    std::io::Read::read_to_end(&mut std::io::stdin(), &mut b)
+                        .map_err(|e| Error(format!("stdin: {e}")))?;
+                    b
+                } else {
+                    read(f)?
+                };
+                let v = patchkit::dkm::needs_json(&raw).unwrap_or_else(|e| {
+                    failed = true;
+                    serde_json::json!({ "error": e.0 })
+                });
+                if !json {
+                    match patchkit::dkm::needs(&raw) {
+                        Ok(n) => println!(
+                            "{f}: file_size {}, {}",
+                            n.file_size,
+                            n.fields()
+                                .iter()
+                                .map(|(k, v)| format!("{} {v}", k.to_lowercase()))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                        Err(e) => println!("{f}: no needs: {}", e.0),
+                    }
+                }
+                out.insert(f.clone(), v);
+            }
+            if json {
+                println!("{}", serde_json::Value::Object(out));
+            }
+            if failed {
+                std::process::exit(1);
+            }
+        }
         "dkm-info" => {
             let raw = read(need(rest)?)?;
             let file_len = raw.len();
@@ -558,6 +651,17 @@ plan.json {}",
                 d.bss,
                 d.align
             );
+            match patchkit::dkm::needs(&raw) {
+                Ok(n) => println!(
+                    "needs     {}",
+                    n.fields()
+                        .iter()
+                        .map(|(n, v)| format!("{} {v}", n.to_lowercase()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                Err(e) => println!("needs     none ({})", e.0),
+            }
             println!("relocs    {}", d.relocs.len());
             println!("imports   {}", d.imports.join(", "));
             println!("init      {:?}  fini {:?}", d.init, d.fini);
@@ -585,6 +689,16 @@ plan.json {}",
                         v.state_bytes,
                         v.clear_bytes,
                         v.ranges
+                    );
+                }
+                for e in &x.fxs {
+                    println!(
+                        "  effect process +{:#x} desc +{:#x} state {} params {} defaults {:x?}",
+                        e.process,
+                        e.desc,
+                        e.state_bytes,
+                        e.n_params,
+                        &e.defaults[..e.n_params as usize]
                     );
                 }
             }

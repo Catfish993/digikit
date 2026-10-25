@@ -42,6 +42,20 @@ export PATCHKIT_MODULES=~/mods
 mise run module:check -- em/my-synth
 ```
 
+## An effect
+
+A run-time effect (`type = "fx"`, `dynamic = true`) processes the master block, or a send bus, with SHARC+ code. In `module.toml` an `[[fx]]`
+gives the routine, and `[[fx.knob]]` entries (up to 7) with a `tab` and a `title` give it its own page after CHO in FUNC + FX. `route` and
+`routes` say whether it is a master insert or a send effect (Digitakt II 2 send effects, Digitone II 1; 3 effects at a time). MIX, the routes
+and the send amounts belong to the framework: the effect writes the wet signal only. The user sets the route in SETTINGS > DIGIKIT > FX ROUTES,
+and the send amount of each track on the second page of the track's FX key.
+
+`module:new` has no effect template. Copy `modules/fx/freqshift` or `tests/fixtures/modules/dyn-fx-gain`, rename the module id, the object
+and source names, the symbols and the effect `id`, then use the same commands as for a machine (`module:build`, `module:check`, which runs
+the fx conformance suite, `module:pack`, `dk:run`). The exact steps are in the "Workflow: a new effect" of
+`.agents/skills/digikit-module/SKILL.md`; the contract, the page and the route rules are in
+`.agents/skills/digikit-module/references/contract-fx.md`. The per-device numbers are in `.agents/skills/digikit-module/references/devices.md` ("Effects").
+
 ## The module folder
 
 ```
@@ -74,7 +88,7 @@ ports = ["dt2-1.17", "dn2-1.12"]
   modules use their own author, and `digikit` for the project's modules. `module:new` refuses `core`.
 - **type**: `machine` has a contract (below). `fx` and `service` have their own contracts. `raw` has none: arbitrary code with only the
   generic load checks, shown as unchecked. `framework` is the internal type of the `core/` modules; `module:new` and `module:import` refuse it.
-- **category**: a group name for the folder and the gallery (`machines`, `fx`, `ui`, `test`).
+- **category**: a group name for the folder and the gallery (`machines`, `fx`, `ui`, `tools`, `test`).
 - **version**: change it for every release. The export file name carries it.
 - **dynamic**: `true` for a run-time `.dkm`. A module without it is patched into a firmware image (see "Patched-in modules").
 

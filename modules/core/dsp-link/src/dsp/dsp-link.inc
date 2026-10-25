@@ -22,9 +22,10 @@
 //   w0  bits 0-15 DL_MAGIC, bits 16-29 idx (chunk number, 0 for the first of a transfer), bits 30-31 win (the window)
 //   w1  bits 0-16 off (destination, in words from the start of the window), bits 17-24 n (payload words),
 //       bit 25 LAST, bit 26 END (stop acknowledging), bits 27-31 xid (transfer id, 1..31)
-// Windows: 0 is _dl_area (DL_AREA_WORDS long); 1 is the voices registry (_dl_vrows, 2 * _dl_vcount words: one {type, pc} row is
-// two words), which the digikit runtime fills one word per transfer so that the render scan never sees a half-written row.
-// Both externs are 0 when core/dsp-voice is not in the image, which makes window 1 refuse every write.
+// Windows: 0 is _dl_area (DL_AREA_WORDS long); 1 is the voices registry (_dl_vrows, 24 * _dl_vcount words: a row is 24 words), which the digikit
+// runtime fills one word per transfer so that the render scan never sees a half-written row; 2 is the effect rows of core/fx (_dl_frows, 24 *
+// _dl_fcount words, all rows of the registry `fx`, free rows included), filled the same way (the pc word last). Windows 1 and 2 refuse every write
+// when their registry is not in the image (the externs are 0), window 3 does not exist.
 //   w2 ... w(n+1)  the payload
 //   w(n+2)  check = s1 XOR s2 over w0 ... w(n+1), where s1 += w and s2 += s1 for each word w (both start at 0)
 // A chunk is taken when xid and magic are right, idx equals the number of chunks taken so far (cum) and the check holds.
@@ -66,6 +67,8 @@
 .EXTERN _dl_area;
 .EXTERN _dl_vrows;
 .EXTERN _dl_vcount;
+.EXTERN _dl_frows;
+.EXTERN _dl_fcount;
 .EXTERN _dv_diag;
 .EXTERN _dv_rec;
 
@@ -146,12 +149,22 @@ _dl_notend:
 _dl_win1:
     R3 = 1;
     COMP(R0, R3);
-    IF NE JUMP _dl_range;                 // windows 2 and 3 do not exist
+    IF NE JUMP _dl_win2;
     R3 = _dl_vcount;                      // window 1: the voice rows (24 words each, the terminator row excluded)
     R4 = LSHIFT R3 BY 4;
     R3 = LSHIFT R3 BY 3;
     R3 = R3 + R4;                         // count * 24
     R4 = _dl_vrows;
+    JUMP _dl_wdone;
+_dl_win2:
+    R3 = 2;
+    COMP(R0, R3);
+    IF NE JUMP _dl_range;                 // window 3 does not exist
+    R3 = _dl_fcount;                      // window 2: the effect rows (24 words each, the terminator row excluded)
+    R4 = LSHIFT R3 BY 4;
+    R3 = LSHIFT R3 BY 3;
+    R3 = R3 + R4;                         // count * 24
+    R4 = _dl_frows;
 _dl_wdone:
     DM(_dl_wbase) = R4;
     R4 = R5 + R6;

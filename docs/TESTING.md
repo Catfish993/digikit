@@ -74,7 +74,7 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run test:changed` | The tests the changed files select (`tools/devtools/changed_tests.py`): the tests that import a changed module under tools/ or tests/ (directly or through a tests helper or conftest; `--deep` also through other tools modules), the tests and quick-tier scenarios that name a changed module (for a framework module only the module itself), the fine routes of verify, the changed test files, and the Rust tests of the affected crates. Never a test directory, no PY_GATE, no build step. `--explain` prints each file with its reason and what the gate adds; `--base BRANCH` for a lane. | In a lane, while iterating |
 | `mise run verify:pre` | Quick lane checks (`tools/devtools/verify_pre.py`, 1 to 2 min): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No emulator, pin or scenario; it prints that it is not the merge gate. | In a lane, while iterating and before handing the branch over |
-| `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`); a lane checks the routing with `--explain` |
+| `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, unless the change is UI-only); a lane checks the routing with `--explain` |
 | `mise run verify:full` | Every step (about 7 min with a warm render cache, about 20 min when DSP/native code changed). The AOT = no-AOT sweep runs the fixed subset; `-- --all-no-aot` runs all 134 scenarios and all 61 oracle tests. | Only after changes to the generated core |
 | `mise run scenario:all` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
 | `mise run scenario:check` | `pytest tests/scenarios --slow`: DN2 FX oracles, fast subset (about 3 min) | After DSP or scenario changes |
@@ -90,10 +90,16 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 
 Type checks and node tests do not show a misaligned row or a notice that appears at the wrong time. `mise run ui:preview` serves the desktop pages
 (apps/desktop/ui) in a browser at http://127.0.0.1:5199/ without the Tauri app: `@tauri-apps/api` and the two backends are replaced by the
-modules of apps/desktop/ui/preview (a fake device with modules and sample folders, a samples folder of about 20 WAVs, and a pace for uploads). The
+modules of apps/desktop/ui/preview (a fake device with modules and sample folders, a samples folder of about 20 WAVs, and a pace for uploads; the Memory panel's backend too: `?card=dn2|dt2&mem=pluck|full|empty|dsp`). The
 state is in the address (`?dev=ok|empty|noreply|error|slow&folder=files|empty|none&speed=MiB/s&mode=modules|samples`) and in `window.__sim`.
 `node tools/devtools/ui_shots.mjs --out DIR [--prefix before] [scene ...]` drives headless Chromium through the scenes (`--list`) and writes one PNG
 each, at 1440x900 and at the window minimum (700 px wide). Look at the pictures; run it before and after a UI change.
+
+The preview's fake device cannot show what a page does to a running emulator (a read that never completes, a flood of control calls, a slower emulator). `apps/desktop/ui/preview/live.vite.config.ts` serves the same
+pages over a RUNNING daemon: `uv run python -m tools.devtools.emu_live --device dn2 --run-dir DIR` starts one (runtime patched in, free-running; it prints `{pid, socket}`; stop it with `kill PID`), then
+`DIGI_LIVE_SOCKET=SOCKET pnpm --filter @digi/desktop exec vite --config ui/preview/live.vite.config.ts --port 5298` and `node tools/devtools/memory_live.mjs SOCKET [--check] [--out DIR]`
+measure the Memory panel there: time to the first bars, a Refresh, the read after a visit to the Transfer page, the control calls a second and the emulator's real-time factor open against idle (`--check`: under a second, ratio 0.9 or more).
+`apps/web/tests/session-share.test.mjs` (one session per target, requests in turn) and `read-gate.test.mjs` (one read at a time, retries, hidden panels) are the node tests of the same rules.
 
 ## Digikit boot scenarios (`tests/digikit`)
 
@@ -117,6 +123,10 @@ sectors the guest wrote (in the store range only the two selection sectors).
 
 Routing is in `tools/devtools/verify.py` (path prefixes, `PY_SUITES`) and `tools/devtools/verify_route.py` (finer rules). Check it with
 `mise run verify -- --explain` instead of running the gate.
+
+The `smoke` step (the patchkit smoke matrix) runs whenever the gate runs anything, except for a UI-only change set: when every changed file matches
+`UI_ONLY` in `tools/devtools/verify.py` (`apps/desktop/ui/`, `apps/web/src/components/`, `apps/web/src/styles/`, `apps/web/tests/*.mjs`, `docs/`, `*.md`),
+smoke is skipped and `--explain` prints `smoke: skipped, UI-only change`. One other file in the change set keeps it (web pages and layouts, the rest of `apps/web/src`, `apps/desktop/src-tauri`, `tools/`, `modules/`, `packages/`, `devices/`, `tests/` and every other path).
 
 | Changed | Steps | Python test files |
 | --- | --- | --- |
@@ -183,7 +193,10 @@ plan's addresses, so a profile with other limits gets its own sets. The limits a
 | --- | --- |
 | `capacity-dt2`, `capacity-dn2` | one ColdFire-only boot per case: module table (SELECT of a ninth path), staging buffer, repeated name, arena, DSP area, voice rows, machine types, parameter rows, page rows (DN2): each limit filled, then the refusal with its code; MODULES, the ranges, `DKRT_TABLE_BAD` and the CAPACITY reply (against MODULES, the device file and what the case filled) after each |
 | `memaudit-dt2-full`, `memaudit-dn2-full` | the memory audit over `test/dyn-demo` plus the full set (every limit used, three modules refused) |
-| `isolation-dn2` (quick), `isolation-dt2` (full: 78 s cold, over the 60 s rule) | coupled: `test/sine` alone against `test/sine` with the full set behind it: MODULES record, DSP bytes read back from L2, PCM from the onset |
+| `inferred-needs-dt2`, `inferred-needs-dn2` | one ColdFire-only boot per run-time module and fixture that packs for the device (12 and 10; the fixtures that fault on purpose left out): CAPACITY and the MODULES record equal the needs `dkneeds` infers from the module's file (arena block with the DSP image's block, DSP range, voice rows, machine, parameter and page rows of a module without DSP code); the module declares nothing |
+| `fits-dt2`, `fits-dn2` | coupled: SETTINGS > DIGIKIT > MODULES over a store of four synthetic modules (small, two over half the DSP area, one over all of it): the rows (`DK_LOAD`) equal the Python rule on the CAPACITY reply and the needs `patchkit needs` infers from the packed files, with nothing ticked and with one half-size module ticked; the load line (the DSP and the CPU memory, always, `DSP 52% CPU 1%`) is directly above APPLY & RESTART with a tick, absent with none, unchanged by a refused selection (`DK_LOAD`, the rule of `tools/device/dkfit.py` `load_line`); selecting a module that does not fit ticks nothing and shows the popup (`DK_POPUP`) and the short message row; screenshots with `--keep` |
+| `menu-open-dt2`, `menu-open-dn2` | coupled: opening MODULES over a store of 12 synthetic modules (four with DSP code) reads their needs by sectors (`dkneeds` in the menu): the rows equal the Python rule on the needs `patchkit needs` infers, the extra emulated time against the same names as files that are not `.dkm` is under 25 ms; the extra busy instructions and the sector reads are in the report (finding 60) |
+| `isolation-dn2` (quick), `isolation-dt2` (full: 78 s cold, over the 60 s rule) | coupled: `test/sine` alone against `test/sine` with the full set behind it: MODULES record, DSP bytes read back from L2, PCM from the onset; alone, CAPACITY after the load equals the inferred needs (every row) |
 
 `tests/patchkit/test_capacity_sets.py` packs every set for both devices and checks that the sizes add up to the limits (no emulator); `tests/patchkit/test_limits.py` keeps the tools
 from repeating a limit as a number. The scenarios of the kind `debug` run in `tests/digikit/test_debug_dt2.py` and `test_debug_dn2.py`.
@@ -247,7 +260,7 @@ The verify route: a change in a machine module, a module it depends on or builds
 
 ## FX conformance (`tests/modules/test_fx_conformance.py`)
 
-The same idea for effect modules (the FX contract, `sdk/dk_fx.h`): the suite finds a module with an `[[entry]] registry = "fx"` row and a DSP object
+The same idea for effect modules (the FX contract, `sdk/dk_fx.h`): the suite finds a module with an `[[entry]] registry = "fx"` row (patched in) or an `[[fx]]` record (run time; its page knobs' ranges give the floats of the parameter words, and the rig reserves its state) and a DSP object
 (`pk_conform.fx_spec`; `core/*` never is) and runs the effect behind `core/fx` on the concrete core (`tests/support/fx_rig.py`, a hostile context per call,
 the registers of the stock function marked), one block at a time. `mise run module:check NAME` runs it. The adapter is one source for both devices, so the
 suite runs once per module.

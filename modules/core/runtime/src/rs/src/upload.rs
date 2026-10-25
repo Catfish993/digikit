@@ -428,7 +428,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     wr32(rb.add(21), newest);
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
-    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS);
+    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS);
     reply(CMD_INFO, seq, OK, 33)
 }
 
@@ -906,6 +906,44 @@ unsafe fn cmd_read(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
     reply(CMD_READ, seq, OK, 4 + len as usize)
 }
 
+/// SETTINGS (read only): the settings record as the runtime holds it (docs/design/digikit-store.md, "The settings record"). Body: `u32 offset`, `u16 length`
+/// (1 to 768). Reply: `u8 flags` (bit 0: the record has changes that the card does not hold yet), `u8 copy` (the card's current copy: 0 A, 1 B, 2 none),
+/// `u32 seq` (the card's), `u32 used` (the record's bytes), then `min(length, used - offset)` bytes of the record from `offset`. A host reads in pieces
+/// and decodes the whole (the format is `dkrt_sdk::settings`). E_SET_NOKEY: no record on the card and none made; E_OFFSET: offset past the record.
+unsafe fn cmd_settings(seq: u32, body: *const u8, blen: usize) -> i32 {
+    if blen != 6 {
+        return reply(CMD_SETTINGS, seq, E_MSG, 0);
+    }
+    let off = rd32(body) as usize;
+    let mut len = (((*body.add(4) as u32) << 8) | *body.add(5) as u32) as usize;
+    if len == 0 {
+        return reply(CMD_SETTINGS, seq, E_LENGTH, 0);
+    }
+    if crate::settings::is_off() {
+        return reply(CMD_SETTINGS, seq, E_SET_OFF, 0);
+    }
+    let (flags, cur, rseq, rec) = match crate::settings::snapshot() {
+        Some(r) => r,
+        None => return reply(CMD_SETTINGS, seq, E_SET_NOKEY, 0),
+    };
+    if off >= rec.len() {
+        return reply(CMD_SETTINGS, seq, E_OFFSET, 0);
+    }
+    if len > READ_MAX as usize {
+        len = READ_MAX as usize;
+    }
+    if len > rec.len() - off {
+        len = rec.len() - off;
+    }
+    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
+    *rb = flags;
+    *rb.add(1) = cur as u8;
+    wr32(rb.add(2), rseq);
+    wr32(rb.add(6), rec.len() as u32);
+    copy(rb.add(10), rec.as_ptr().add(off), len);
+    reply(CMD_SETTINGS, seq, OK, 10 + len)
+}
+
 /// VERIFY: `path NUL`, optionally then `u32 offset, u32 length`. Reads the file (or that range of it) back from the card, in chunks, and replies its
 /// sha256 (32 bytes): what a host compares with its own hash to know that the bytes on the card are the bytes it sent. The cost is about 120 ColdFire
 /// instructions a byte, so a large file is checked in ranges (the offset is a multiple of 512). Errors: E_NOFILE, E_READ, E_OFFSET (not a multiple of
@@ -1278,6 +1316,9 @@ unsafe fn h_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 
 unsafe fn h_read(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     cmd_read(seq, buf, body, blen)
 }
+unsafe fn h_settings(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_settings(seq, body, blen)
+}
 unsafe fn h_verify(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     cmd_verify(seq, buf, body, blen)
 }
@@ -1305,7 +1346,7 @@ unsafe fn h_restart(seq: u32, _buf: *mut u8, _body: *const u8, _blen: usize) -> 
 }
 
 /// The built-in commands, looked up one after the other (a jump table is not ColdFire code).
-static CMDS: [Cmd; 18] = [
+static CMDS: [Cmd; 19] = [
     Cmd { cmd: CMD_INFO, flags: NOLOG, h: h_info },
     Cmd { cmd: CMD_LIST, flags: 0, h: h_list },
     Cmd { cmd: CMD_MODULES, flags: NOLOG, h: h_modules },
@@ -1317,6 +1358,7 @@ static CMDS: [Cmd; 18] = [
     Cmd { cmd: CMD_MKDIR, flags: 0, h: h_mkdir },
     Cmd { cmd: CMD_READ, flags: NOLOG, h: h_read },
     Cmd { cmd: CMD_VERIFY, flags: NOLOG, h: h_verify },
+    Cmd { cmd: CMD_SETTINGS, flags: NOLOG, h: h_settings },
     Cmd { cmd: CMD_CLEAR, flags: 0, h: h_clear },
     Cmd { cmd: CMD_ABORT, flags: 0, h: h_abort },
     Cmd { cmd: CMD_LOG, flags: NOLOG, h: h_log },

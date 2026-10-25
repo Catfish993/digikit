@@ -20,9 +20,11 @@ const INFO_MAGIC: u32 = 0x4459_4e52; // "DYNR"
 const KIND_PARAM: u32 = 1;
 const KIND_MACHINE: u32 = 2;
 const KIND_PAGE: u32 = 3;
+const KIND_EFFECT: u32 = crate::fxpage::KIND_EFFECT;
 const LEN_PARAM: u32 = 0x50;
 const LEN_MACHINE: u32 = 0x6c;
 const LEN_PAGE: u32 = 0x60;
+const LEN_EFFECT: u32 = crate::fxpage::LEN_EFFECT;
 const KNOB_PARAM: u32 = 0x8000_0000;
 const MAX_RECORDS: u32 = 32;
 const MAX_MACH: usize = 8;
@@ -119,7 +121,7 @@ fn rs() -> &'static mut RegState {
     unsafe { &mut *addr_of_mut!(DKRT_REG) }
 }
 
-unsafe fn info() -> *const u32 {
+pub(crate) unsafe fn info() -> *const u32 {
     let a = core::hint::black_box(dynreg_info as usize);
     if a == 0 {
         return core::ptr::null();
@@ -174,7 +176,7 @@ unsafe fn copy_text(dst: *mut u8, src: *const u8, n: usize) {
 
 /// Build a std::string representation {len, cap, refcount -1, chars, 0} at `rep` (upper-cased when `upper`); returns the
 /// chars' address.
-unsafe fn make_rep(rep: *mut u8, src: *const u8, upper: bool) -> u32 {
+pub(crate) unsafe fn make_rep(rep: *mut u8, src: *const u8, upper: bool) -> u32 {
     let n = cstr_len(src, MACH_TEXT) as u32;
     crate::wr32(rep, n);
     crate::wr32(rep.add(4), n);
@@ -231,7 +233,7 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
     }
     // pass 1: layout, counts
     let mut at: u32 = 16;
-    let (mut np, mut nm, mut ng) = (0u32, 0u32, 0u32);
+    let (mut np, mut nm, mut ng, mut ne) = (0u32, 0u32, 0u32, 0u32);
     let mut i = 0;
     while i < n {
         if at > size || size - at < 8 {
@@ -243,6 +245,7 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
             KIND_PARAM => LEN_PARAM,
             KIND_MACHINE => LEN_MACHINE,
             KIND_PAGE => LEN_PAGE,
+            KIND_EFFECT => LEN_EFFECT,
             _ => return E_FORMAT,
         };
         if len != want || size - at < len {
@@ -252,14 +255,36 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
             np += 1;
         } else if kind == KIND_MACHINE {
             nm += 1;
+        } else if kind == KIND_EFFECT {
+            ne += 1;
         } else {
             ng += 1;
         }
         at += len;
         i += 1;
     }
-    if at != size || np as usize > MAX_PARAM || nm as usize > MAX_MACH || ng as usize > MAX_PAGE {
+    if at != size || np as usize > MAX_PARAM || nm as usize > MAX_MACH || ng as usize > MAX_PAGE || ne as usize > crate::fxpage::MAX_FX {
         return E_FORMAT;
+    }
+    // effect pages need core/fxpages; each record is checked on its own, and an effect has one page
+    let mut fx_seen = 0u32;
+    let mut bad_fx = OK;
+    each(reg, |kind, b| {
+        if kind == KIND_EFFECT && bad_fx == OK {
+            let r = crate::fxpage::check_record(b);
+            let fx = rd32(b);
+            if r == OK && fx < 32 && fx_seen & (1 << fx) != 0 {
+                bad_fx = E_FORMAT;
+            } else if r != OK {
+                bad_fx = r;
+            }
+            if fx < 32 {
+                fx_seen |= 1 << fx;
+            }
+        }
+    });
+    if bad_fx != OK {
+        return bad_fx;
     }
     // pages need a device that has page rows
     let has_pages = iw(inf, w::PG_ROWS) != 0;
@@ -275,8 +300,8 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
     let mut bad = OK;
     let mut pi = 0u32;
     each(reg, |kind, b| {
-        if bad != OK {
-            return;
+        if bad != OK || kind == KIND_EFFECT {
+            return; // an effect's page was checked above, it has no machine, parameter or page row of this registry
         }
         if kind == KIND_PARAM {
             let index = rd32(b);
@@ -591,8 +616,60 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
         s.mach_owner[k] = owner;
         wr(row + iw(inf, w::O_NAME), s.s.mach_name[k].as_ptr() as u32);
     });
+    // effect pages (Digitakt II): the effect's row in the chain is claimed, so its page, parameter rows and list entry can be written
+    let mut rc = OK;
+    each(reg, |kind, b| {
+        if kind == KIND_EFFECT && rc == OK {
+            rc = crate::fxpage::apply(owner, b);
+        }
+    });
+    if rc != OK {
+        return rc;
+    }
     s.registers = s.registers.wrapping_add(1);
     OK
+}
+
+/// A parameter row for an effect knob (`core/fxpages`): the lowering of `write_param_row` with the kit's effect value index as the mirror index and the template's
+/// own kind and key words (the reserved machine rows' `0x10 + slot` ids would collide with stock effect parameters).
+pub(crate) unsafe fn write_fx_param_row(code: u32, template: u32, mirror: u32, min: u32, max: u32, def: u32, name: u32, short: u32) {
+    let inf = info();
+    if inf.is_null() {
+        return;
+    }
+    write_param_row(inf, code, template, 0, min, max, def, name, short);
+    let table = iw(inf, w::P_TABLE);
+    let size = iw(inf, w::PF_SIZE);
+    let (row, tpl) = (table + code * size, table + template * size);
+    wr(row + 4, mirror);
+    wr(row + 0x18, rd(tpl + 0x18));
+    wr(row + 0x1c, rd(tpl + 0x1c));
+}
+
+/// A parameter row for a send knob (`core/fxpages`, finding 64): the lowering of `write_fx_param_row` with the value class of `class` (the display, and no p-lock: the
+/// value class of the kit's Delay rows) and the owner of the stock send row `owner_of` (so the firmware's own set and get reach the current track's Sound array at `mirror`),
+/// and no CC and no NRPN (the row's word 6 is -1: `ParameterSet::vfunc_25` sends nothing).
+pub(crate) unsafe fn write_send_param_row(code: u32, class: u32, owner_of: u32, mirror: u32, name: u32, short: u32) {
+    let inf = info();
+    if inf.is_null() {
+        return;
+    }
+    write_fx_param_row(code, class, mirror, 0, 0x7f00, 0, name, short);
+    let table = iw(inf, w::P_TABLE);
+    let size = iw(inf, w::PF_SIZE);
+    let row = table + code * size;
+    wr(row, rd(table + owner_of * size));
+    wr(row + 0x18, 0xffff_ffff);
+}
+
+/// A parameter row back to the reserved state (an empty gap row, as `remove` leaves the machine parameters).
+pub(crate) unsafe fn reset_param_row(code: u32) {
+    let inf = info();
+    if inf.is_null() {
+        return;
+    }
+    let empty = iw(inf, w::EMPTY);
+    write_param_row(inf, code, iw(inf, w::RESERVE_TEMPLATE), iw(inf, w::SLOT_BASE), 0, 0, 0, empty, empty);
 }
 
 /// The reserved machine, parameter and page rows as (rows the registry has, rows in use); (0, 0) without a registry (for CAPACITY).
@@ -638,6 +715,7 @@ pub fn types_of(owner: u8, out: &mut [u8; MAX_MACH]) -> usize {
 
 /// Give back every row `owner` filled: the machines first (hidden, then reset to a gap row), then the parameters.
 pub unsafe fn remove(owner: u8) {
+    crate::fxpage::remove(owner);
     let inf = info();
     if inf.is_null() {
         return;

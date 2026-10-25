@@ -6,10 +6,9 @@
 //   node tools/devtools/ui_shots.mjs --list
 // With no scene names every scene runs. A scene whose step fails still gets its picture (the failure is printed): a missing control is
 // itself what a before/after pair shows.
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { closeTab, connect, evaluate as cdpEvaluate, launchChrome, sleep } from './cdp.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -23,11 +22,20 @@ const out = opt('out', 'ui-shots');
 const prefix = opt('prefix', '');
 const scale = Number(opt('scale', 1));
 const port = Number(opt('port', 9611));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- the scenes ---------------------------------------------------------------------------------------------------------------------
 const WIDE = [1440, 900];
 const MIN = [700, 600];
+/** The Memory panel remembers open or closed in localStorage, which outlives a scene: open it. */
+const openMemory = (p) =>
+  p.eval(
+    "(() => { const b = document.querySelector('.memory-panel .card-toggle'); if (b && b.getAttribute('aria-expanded') === 'false') b.click(); })()",
+  );
+/** The Card panel remembers it too; the panels of the right-hand column: `want` is 'open' or 'closed'. */
+const setPanel = (p, which, want) =>
+  p.eval(
+    `(() => { const b = document.querySelector('${which === 'memory' ? '.memory-panel' : '.card-panel:not(.memory-panel)'} .card-toggle'); if (b && (b.getAttribute('aria-expanded') === 'true') !== (${want === 'open'})) b.click(); })()`,
+  );
 /** Page helpers: `p.eval(js)`, `p.click(text)`, `p.tick(labelRegexSource)`, `p.hover(selector)`, `p.wait(ms)`. */
 const SCENES = [
   { name: 'modules', q: 'mode=modules', size: WIDE },
@@ -41,6 +49,24 @@ const SCENES = [
     },
   },
   {
+    // fit: Sine is loaded on the fake device (200 KiB of the DSP area), so Wavetable does not fit next to it (the tag says so, the tooltip why) and FM 4-op is more than
+    // the device has; the line above the list is the ticked modules together against the empty device: Pluck and Wavetable (679 KiB) are too much for the 512 KiB area
+    name: 'modules-fit-ticked',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Install (Pluck|Wavetable)');
+    },
+  },
+  {
+    name: 'modules-fit-one',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Install Pluck$');
+    },
+  },
+  {
     name: 'modules-uploading',
     q: 'mode=modules&speed=0.4',
     size: WIDE,
@@ -48,6 +74,21 @@ const SCENES = [
       await p.tick('^Install (Wavetable|FM|Pluck)');
       await p.click(/^Install/);
       await p.wait(2500);
+    },
+  },
+  {
+    // the won't-fit tag's tooltip says what is short in the user-facing names; the storage line is under the device line (storage only)
+    name: 'modules-fit-tooltips',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      p.say(
+        'fit tooltips: ' +
+          (await p.eval(
+            "JSON.stringify([...document.querySelectorAll('.transfer-page .tag.warn, .transfer-page [title]')].map((e) => e.title).filter((t) => /short|fits/.test(t)))",
+          )),
+      );
+      p.say('storage line: ' + (await p.eval("document.querySelector('.devhead .storage')?.textContent")));
     },
   },
   { name: 'modules-narrow', q: 'mode=modules', size: MIN },
@@ -539,6 +580,190 @@ const SCENES = [
   { name: 'empty', q: 'mode=modules&dev=empty', size: WIDE },
   { name: 'empty-samples', q: 'mode=samples&dev=empty', size: WIDE },
   { name: 'error', q: 'mode=modules&dev=error', size: WIDE },
+  // ---- the Remote page against the Emulator page's faceplate: the same test pattern on the 128 x 64 screen ----
+  { name: 'remote-wide', q: 'page=remote', size: WIDE, steps: async (p) => p.wait(800) },
+  { name: 'remote-narrow', q: 'page=remote', size: MIN, steps: async (p) => p.wait(800) },
+  // ---- the Card panel of the Emulator page: the folder of the loaded device (preview/card-mock.ts) ----
+  { name: 'card-dn2', q: 'page=emulator&card=dn2', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'card-dt2', q: 'page=emulator&card=dt2', size: WIDE, steps: async (p) => p.wait(700) },
+  {
+    // the Digitone II takes the chosen folder at once: no reload notice
+    name: 'card-dn2-chosen',
+    q: 'page=emulator&card=dn2',
+    size: WIDE,
+    steps: async (p) => {
+      await p.click('Choose folder…');
+      await p.wait(700);
+    },
+  },
+  {
+    // the Digitakt II builds its card from the folder: the notice and "Reload now"
+    name: 'card-dt2-reload-notice',
+    q: 'page=emulator&card=dt2',
+    size: WIDE,
+    steps: async (p) => {
+      await p.click('Choose folder…');
+      await p.wait(700);
+    },
+  },
+  {
+    name: 'card-dt2-reloaded',
+    q: 'page=emulator&card=dt2',
+    size: WIDE,
+    steps: async (p) => {
+      await p.click('Choose folder…');
+      await p.wait(500);
+      await p.click('Reload now');
+      await p.wait(700);
+    },
+  },
+  { name: 'card-dt2-saved-choice', q: 'page=emulator&card=dt2&chosen=1', size: WIDE, steps: async (p) => p.wait(700) },
+  {
+    name: 'card-dt2-missing-choice',
+    q: 'page=emulator&card=dt2&chosen=1&missing=1',
+    size: WIDE,
+    steps: async (p) => p.wait(700),
+  },
+  {
+    name: 'card-dt2-use-default',
+    q: 'page=emulator&card=dt2&chosen=1',
+    size: WIDE,
+    steps: async (p) => {
+      await p.click('Use default');
+      await p.wait(700);
+    },
+  },
+  {
+    name: 'card-dt2-reload-notice-narrow',
+    q: 'page=emulator&card=dt2',
+    size: MIN,
+    steps: async (p) => {
+      await p.click('Choose folder…');
+      await p.wait(700);
+    },
+  },
+  // ---- the Memory panel (preview/memory-backend.mock.ts): bars per resource, segments per loaded module; mem=pluck|full|empty|dsp ----
+  {
+    // a Digitone II with Pluck and Remote control loaded and one module that is not in the library ("other")
+    name: 'memory-dn2',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(700);
+      p.say(
+        'segment titles: ' +
+          (await p.eval(
+            "JSON.stringify([...document.querySelectorAll('.memory-panel .seg:not(.free)')].slice(0, 6).map((e) => e.title))",
+          )),
+      );
+    },
+  },
+  { name: 'memory-dn2-full', q: 'page=emulator&card=dn2&mem=full', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'memory-dn2-dsp-full', q: 'page=emulator&card=dn2&mem=dsp', size: WIDE, steps: async (p) => p.wait(700) },
+  // the Digitakt II has no page rows: no Pages bar
+  { name: 'memory-dt2', q: 'page=emulator&card=dt2&mem=pluck', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'memory-empty', q: 'page=emulator&card=dn2&mem=empty', size: WIDE, steps: async (p) => p.wait(700) },
+  { name: 'memory-narrow', q: 'page=emulator&card=dn2&mem=pluck', size: MIN, steps: async (p) => p.wait(700) }, // closed by default at this width
+  {
+    name: 'memory-narrow-open',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: MIN,
+    steps: async (p) => {
+      await p.wait(400);
+      await openMemory(p);
+      await p.wait(400);
+    },
+  },
+  {
+    name: 'memory-remote',
+    q: 'page=remote&card=dn2&mem=full',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(500);
+      await openMemory(p);
+      await p.wait(500);
+    },
+  },
+  {
+    name: 'memory-remote-narrow',
+    q: 'page=remote&card=dn2&mem=full',
+    size: MIN,
+    steps: async (p) => {
+      await p.wait(500);
+      await openMemory(p);
+      await p.wait(500);
+    },
+  },
+  {
+    name: 'memory-collapsed',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(500);
+      await openMemory(p);
+      await p.eval("document.querySelector('.memory-panel .card-toggle').click()");
+      await p.wait(300);
+    },
+  },
+  // ---- the right-hand column of the Emulator page: the Card panel on top, the Memory panel under it, each collapsible ----
+  ...['dn2', 'dt2'].map((dev) => ({
+    name: `side-${dev}`,
+    q: `page=emulator&card=${dev}&mem=pluck`,
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(400);
+      await setPanel(p, 'card', 'open');
+      await setPanel(p, 'memory', 'open');
+      await p.wait(500);
+    },
+  })),
+  {
+    name: 'side-card-closed',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(400);
+      await setPanel(p, 'memory', 'open');
+      await setPanel(p, 'card', 'closed');
+      await p.wait(400);
+    },
+  },
+  {
+    name: 'side-memory-closed',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(400);
+      await setPanel(p, 'card', 'open');
+      await setPanel(p, 'memory', 'closed');
+      await p.wait(400);
+    },
+  },
+  {
+    // nothing in the column is open: a rail, and the faceplate has the width
+    name: 'side-rail',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(400);
+      await setPanel(p, 'card', 'closed');
+      await setPanel(p, 'memory', 'closed');
+      await p.wait(400);
+    },
+  },
+  {
+    name: 'side-narrow',
+    q: 'page=emulator&card=dn2&mem=pluck',
+    size: MIN,
+    steps: async (p) => {
+      await p.wait(400);
+      await setPanel(p, 'card', 'open');
+      await setPanel(p, 'memory', 'open');
+      await p.wait(400);
+    },
+  },
+  { name: 'emulator-faceplate-wide', q: 'page=emulator', size: WIDE },
+  { name: 'emulator-faceplate-narrow', q: 'page=emulator', size: MIN },
 ];
 
 if (args.includes('--list')) {
@@ -546,65 +771,8 @@ if (args.includes('--list')) {
   process.exit(0);
 }
 
-// ---- a minimal CDP client ----------------------------------------------------------------------------------------------------------
-function chromePath() {
-  const found = [
-    opt('chrome'),
-    process.env.CHROME,
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ].find((c) => c && fs.existsSync(c));
-  if (!found) throw new Error('no Chrome/Chromium found; pass --chrome PATH');
-  return found;
-}
-
-class Cdp {
-  constructor(ws) {
-    this.ws = ws;
-    this.id = 0;
-    this.pending = new Map();
-    ws.addEventListener('message', (m) => {
-      const msg = JSON.parse(m.data);
-      const p = msg.id && this.pending.get(msg.id);
-      if (p) {
-        this.pending.delete(msg.id);
-        if (msg.error) p.reject(new Error(msg.error.message));
-        else p.resolve(msg.result);
-      }
-    });
-  }
-  send(method, params = {}) {
-    const id = ++this.id;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-}
-
-async function connect(_url) {
-  for (let i = 0; i < 100; i++) {
-    try {
-      const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
-      const ws = new WebSocket(target.webSocketDebuggerUrl);
-      await new Promise((res, rej) => {
-        ws.addEventListener('open', res, { once: true });
-        ws.addEventListener('error', rej, { once: true });
-      });
-      return { cdp: new Cdp(ws), id: target.id };
-    } catch {
-      await sleep(150);
-    }
-  }
-  throw new Error(`cannot reach Chromium on port ${port}`);
-}
-
 function pageApi(cdp) {
-  const evaluate = async (js) => {
-    const r = await cdp.send('Runtime.evaluate', { expression: js, awaitPromise: true, returnByValue: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
+  const evaluate = (js) => cdpEvaluate(cdp, js);
   const api = {
     eval: evaluate,
     say: (m) => console.log(`  ${m}`),
@@ -719,25 +887,13 @@ function pageApi(cdp) {
 
 // ---- run -----------------------------------------------------------------------------------------------------------------------------
 fs.mkdirSync(out, { recursive: true });
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-shots-'));
-const chrome = spawn(
-  chromePath(),
-  [
-    '--headless=new',
-    `--remote-debugging-port=${port}`,
-    `--user-data-dir=${profile}`,
-    '--no-first-run',
-    '--disable-gpu',
-    '--hide-scrollbars=false',
-    'about:blank',
-  ],
-  { stdio: 'ignore' },
-);
+const chrome = launchChrome(port, opt('chrome'));
 let failed = 0;
 try {
   const chosen = names.length ? SCENES.filter((s) => names.includes(s.name)) : SCENES;
   for (const scene of chosen) {
-    const { cdp, id } = await connect();
+    const tab = await connect(port);
+    const { cdp } = tab;
     const p = pageApi(cdp);
     await cdp.send('Page.enable');
     await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -760,16 +916,9 @@ try {
     const file = path.join(out, `${prefix ? `${prefix}-` : ''}${scene.name}.png`);
     fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
     console.log(`${file}${note}`);
-    cdp.ws.close();
-    await fetch(`http://127.0.0.1:${port}/json/close/${id}`).catch(() => {});
+    await closeTab(port, tab);
   }
 } finally {
-  chrome.kill();
-  await sleep(500);
-  try {
-    fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-  } catch {
-    // Chromium may still be writing its profile in the temp folder; the system cleans it up
-  }
+  await chrome.stop();
 }
 process.exit(0);

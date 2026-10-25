@@ -9,7 +9,7 @@
 // [card.store] end_sector - first_sector
 #define STORE_SECTORS 167936
 // [card.store] header_b_sector - first_sector (store header copy B, relative to the store)
-#define STORE_HEADER_B 167933
+#define STORE_HEADER_B 167901
 // [card.store] end_sector - 2 (selection record copy A, absolute)
 #define STORE_SEL_A 48340990
 // [card.store] end_sector - 1 (selection record copy B, absolute)
@@ -52,8 +52,8 @@
 #define LIMIT_MACHINE_ROWS 8
 // [limits] arena_bytes (the module arena)
 #define LIMIT_ARENA_BYTES 524288
-// [limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY)
-#define LIMIT_FX_SLOTS 4
+// [limits] fx_slots (effects in the chain: CAPACITY's limit and the free effect rows of core/dynfx)
+#define LIMIT_FX_SLOTS 3
 // [limits] stage_bytes (the staging buffer of a .dkm file)
 #define LIMIT_STAGE_BYTES 65536
 // [digikit] peek: number of ranges
@@ -116,6 +116,106 @@
 #define PANEL_EXC_CH_7 0
 // [panel.exceptions] bit of the code
 #define PANEL_EXC_BIT_7 0
+// [fx] kit_ptr (the firmware's pointer to the live kit object)
+#define FX_KIT_PTR 2147501828
+// [fx] array_off (the kit's array of effect values, bytes from the kit object)
+#define FX_ARRAY_OFF 17716
+// [fx] page_first (the page number of the first effect page)
+#define FX_PAGE_FIRST 33
+// [fx] template_percent (a 0 .. 127 knob)
+#define FX_TPL_PERCENT 117
+// [fx] template_bipolar (a -64 .. +63 knob)
+#define FX_TPL_BIPOLAR 115
+// [fx] template_mix (the level slot: MIX)
+#define FX_TPL_MIX 121
+// [fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start)
+#define FX_STORE_OFF 96
+// [fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row)
+#define FX_STORE_HW 28
+// [fx] mark_index (the array index that holds the mark: an effect row has its values)
+#define FX_MARK_INDEX 70
+// [fx] tail_off (the u32 after the array's halfwords: the loader and saver copy it, bytes from the array)
+#define FX_TAIL_OFF 142
+// [fx] value_indices: number of indices
+#define FX_VALUES_N 24
+// [fx] track_page (the stock page the send page copies its title and level slot from; 0: no send page)
+#define FX_TRACK_PAGE 12
+// [fx] sound_off (the first Sound object in the kit object, bytes from the kit object)
+#define FX_SOUND_OFF 52
+// [fx] sound_stride (bytes between the 16 Sound objects)
+#define FX_SOUND_STRIDE 1104
+// [fx] send_template (the stock send row whose owner and key words a send knob copies)
+#define FX_SEND_TEMPLATE 68
+// [limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one)
+#define LIMIT_SEND_SLOTS 2
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_0 1
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_1 2
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_2 3
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_3 4
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_4 5
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_5 6
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_6 7
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_7 8
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_8 9
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_9 10
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_10 11
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_11 12
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_12 13
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_13 14
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_14 15
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_15 16
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_16 17
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_17 18
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_18 19
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_19 20
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_20 21
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_21 22
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_22 23
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_23 24
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_24 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_25 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_26 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_27 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_28 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_29 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_30 0
+// [fx] value_indices (an effect value index that no stock parameter uses)
+#define FX_VALUE_31 0
+// [fx] send_indices (a Sound array index the send page's knob uses)
+#define FX_SEND_IDX_0 69
+// [fx] send_indices (a Sound array index the send page's knob uses)
+#define FX_SEND_IDX_1 70
 // [digikit] peek range start (RAM the PEEK command may read)
 #define PEEK_LO_0 1073741824
 // [digikit] peek range end (exclusive)

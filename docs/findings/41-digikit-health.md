@@ -14,7 +14,7 @@ SETTINGS > DIGIKIT > HEALTH (third row, after MODULES and ABOUT). Eight rows of 
     DSP 50% MAX 51%       DSP block handler time per block, average and maximum of the last second
     RAM FREE 29.3 MB      free bytes of the firmware's 32 MiB heap
     LARGEST 16.0 MB       its largest free block
-    ARENA FREE 512 KB     the runtime's module arena
+    CPU FREE 512 KB       the runtime's module arena (CPU memory)
     DSP FREE 320 KB       the DSP code area (core/dsp-link); `--` where an image has none
     STORE USED 2 KB       the module store: sectors the current header says are used (header, table, files), in KB
     STORE FREE 11.9 MB    what a new file may still take (the room for its table entry kept back); `--` for a card with no store
@@ -101,7 +101,7 @@ guest memory, never from pixels (OLED PNGs go to `out/runs/lanes/r1-shots/` for 
 | DSP count = word 0 of the record copy | 208 422 / 208 423 | 333 850 / 334 069 |
 | page: refreshes with no key press | 3 to 7 redraws in 2 s | same |
 | the firmware drew the view (its dirty flag consumed) | yes | yes |
-| lines equal this tool's formatting of `DK_HEALTH` | `CPU 21%`, `DSP 31% MAX 31%`, `RAM FREE 26.8 MB`, `LARGEST 16.0 MB`, `ARENA FREE 512 KB`, `DSP FREE 512 KB` | `CPU 35%`, `DSP 50% MAX 50%`, `RAM FREE 29.3 MB`, `LARGEST 16.0 MB`, `ARENA FREE 512 KB`, `DSP FREE 320 KB` |
+| lines equal this tool's formatting of `DK_HEALTH` | `CPU 21%`, `DSP 31% MAX 31%`, `RAM FREE 26.8 MB`, `LARGEST 16.0 MB`, `CPU FREE 512 KB`, `DSP FREE 512 KB` | `CPU 35%`, `DSP 50% MAX 50%`, `RAM FREE 29.3 MB`, `LARGEST 16.0 MB`, `CPU FREE 512 KB`, `DSP FREE 320 KB` |
 | leaving the page stops the polling (`DKRT_POLL` 0, no more redraws) | yes | yes |
 | 0 stray writes over `cf.expansion`, 0 flush hits | 0 / 0 | 0 / 0 |
 

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import fcntl
 import itertools
 import json
 import os
@@ -33,6 +32,8 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import IO
+
+from tools.devtools import portable_flock as fcntl
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PATH = ROOT / "out" / ".benchlock"
@@ -64,6 +65,9 @@ def _gate_path(path: Path) -> Path:
 
 
 def _alive(pid: int) -> bool:
+    if os.name == "nt":
+        # os.kill(pid, 0) on Windows sends CTRL_C_EVENT instead of testing the pid.
+        return _alive_windows(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -71,6 +75,27 @@ def _alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _alive_windows(pid: int) -> bool:
+    # Windows only; the check also stops mypy on other platforms from checking the ctypes names below
+    if sys.platform != "win32":
+        raise OSError("_alive_windows runs on Windows only")
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.OpenProcess(
+        0x1000, False, pid
+    )  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED: it exists
+    try:
+        code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def holders(

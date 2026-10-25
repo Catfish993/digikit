@@ -59,8 +59,19 @@ FRAMEWORK = frozenset(
 # call it. A module of tools/device that is not listed here fails tests/devtools/test_verify.py.
 DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "__init__": (),
-    "dkupload": ("upload", "menu", "debug", "crash", "card"),
+    "dkupload": ("upload", "menu", "debug", "crash", "card", "settings"),
+    "dksettings": ("settings",),
     "dkrun": ("menu",),
+    "dkfit": (
+        "menu",
+        "live",
+        "debug",
+    ),  # the fit rule: dktransfer and dkrun use it, the `fits` part of the debug scenarios
+    "dkneeds": (
+        "menu",
+        "live",
+        "debug",
+    ),  # the needs of a .dkm, from `patchkit needs`: dktransfer, dkrun, the `inferred-needs` and `fits` parts of the debug scenarios
     "dktransfer": ("menu", "live"),
     "dkpackall": (),  # a dev task: the files the workbench reads
     "dkscreen": ("upload",),
@@ -160,6 +171,11 @@ RUNNER_KINDS: dict[str, tuple[str, ...]] = {
     "pk_digikit_upload.py": ("upload",),
     "pk_digikit_rungc.py": ("rungc",),
     "pk_digikit_pages.py": ("pages",),
+    "pk_digikit_fx.py": ("fx",),
+    "pk_digikit_fxsend.py": ("fxsend",),
+    "pk_digikit_fxroute.py": ("fxroute",),
+    "pk_digikit_fxroutes.py": ("fxroutes",),
+    "pk_digikit_settings.py": ("settings",),
 }
 
 

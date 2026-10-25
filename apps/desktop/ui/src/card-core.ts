@@ -19,6 +19,18 @@ export interface CardFolder {
   /** The card has writes the folder does not hold yet. */
   behind?: boolean;
   error: string | null;
+  /** The loaded device (`dt2`, `dn2`): the folder belongs to it. */
+  device?: string;
+  /** `plus_drive/<device>/`. */
+  default_folder?: string | null;
+  /** The user chose the folder (the Card panel's "Choose folder..."), else it is the default. */
+  custom?: boolean;
+  /** A saved choice whose folder is gone: the default is used instead. */
+  chosen_missing?: string | null;
+  /** The folder the next load uses. */
+  next_folder?: string | null;
+  /** `next_folder` is not `folder` yet: the device's card is built from the folder, so it takes the new one at the next load. */
+  reload_needed?: boolean;
 }
 
 /** "never", "just now", "12 s ago", "3 min ago", "2 h ago". */
@@ -74,3 +86,19 @@ export function fileGroups(c: CardFolder): CardGroup[] {
 
 /** The name of a file inside its group: the path without the top folder. */
 export const nameInGroup = (path: string, folder: string): string => (folder ? path.slice(folder.length + 1) : path);
+
+/** What waits for a reload, or what is wrong with the saved choice; '' when there is nothing to say. */
+export function folderNotice(c: CardFolder): string {
+  if (c.reload_needed && c.next_folder) {
+    return `The card is built from its folder when it loads. A reload makes it use ${shortFolder(c.next_folder)}; until then changes go to ${shortFolder(c.folder)}.`;
+  }
+  if (c.chosen_missing)
+    return `The folder you chose, ${shortFolder(c.chosen_missing)}, is missing. The default folder is used.`;
+  return '';
+}
+
+/** "Use default" is offered while a folder of the user's is saved for the device (even a missing one). */
+export const canUseDefault = (c: CardFolder): boolean => !!c.custom || !!c.chosen_missing;
+
+/** The folder the "Choose folder..." dialog starts in: the one the card uses next. */
+export const pickStart = (c: CardFolder): string | null => c.next_folder ?? c.folder;

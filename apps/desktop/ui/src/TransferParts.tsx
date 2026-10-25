@@ -94,8 +94,6 @@ export interface ListRowProps {
   version?: string;
   /** The size, right-aligned. */
   size?: string;
-  /** The tooltip of the size. */
-  sizeTitle?: string;
   status?: ChipStatus;
 }
 
@@ -141,9 +139,7 @@ export function ListRow(props: ListRowProps): JSX.Element {
         <span class="vers">{props.version}</span>
       </Show>
       <Show when={props.status}>{(st) => <Chip status={st()} />}</Show>
-      <span class="size" title={props.sizeTitle}>
-        {props.size ?? ''}
-      </span>
+      <span class="size">{props.size ?? ''}</span>
     </li>
   );
 }
@@ -415,7 +411,14 @@ export function DevicePane(props: {
       <div class="devhead">
         <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
         <Show when={deviceInfo()}>
-          {(d) => <span class="meta">{infoLine(targetLabel(target()), d().name, d().runtime, d().free)}</span>}
+          {(d) => (
+            <>
+              <span class="meta">{infoLine(targetLabel(target()), d().name, d().runtime, d().free)}</span>
+              <Show when={d().storage}>
+                <span class="meta storage">{d().storage}</span>
+              </Show>
+            </>
+          )}
         </Show>
       </div>
       <div class="listarea">{props.children}</div>

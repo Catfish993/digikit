@@ -19,7 +19,7 @@ use std::{
 
 use elektron_native_boot::{
     Emulator,
-    sharc_peer::{IdleLoop, NativeDsp, ThreadedPeer, open_engine_patched, period_from_env},
+    sharc_peer::{IdleLoop, period_from_env},
 };
 use emmc_card::Card;
 
@@ -177,10 +177,18 @@ pub fn boot_emulator_to_ready(
     };
     let sample_link = dsp.sample_link == Some(device_profile::SampleLink::Lp0);
     emulator.enable_ssi_diagnostic(96_000)?;
-    let (peer, handle, shared) = ThreadedPeer::spawn(
-        move || open_engine_patched(&image, &state, base, dsp_patch.as_ref(), idle).map(NativeDsp),
+    let (peer, handle, shared) = crate::dsp_core::spawn_dsp(
+        crate::dsp_core::Core::for_device(&profile.device),
+        crate::dsp_core::EngineInputs {
+            image,
+            state,
+            clock_base: base,
+            patch: dsp_patch,
+            idle,
+        },
         period_from_env(),
-        idle.range,
+        false,
+        false,
     )?;
     if sample_link {
         peer.enable_sample_link();

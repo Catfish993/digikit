@@ -15,6 +15,10 @@ DAC side of the whole run.
             channels 2 to 15 bit-identical to stock (the effect is in USB MAIN and does not touch the track outputs); PCM -6.0206 dB within 2 ulps.
           the same image with the gain word set to 1.0 with `dsp.patch`: master, rings equal to stock again.
           the same image with the chain row's `enabled` word cleared in mid-run: master, rings equal to stock after the fade-out block.
+  send    the send route of core/fx (Digitakt II finding 62, Digitone II finding 67: the send bus is the sum of the voice slots of the track): the image with `core/fx` and `test/fx-gain`, the row's route word set to 1 and send amounts set with
+          `dsp.patch` before the note (no amount: PCM, master, return and rings equal stock, the effect ran, the master chain did not run it; an amount on the playing
+          track: the send bus is the track times the squared amount, the FX return is the stock return plus 0.5 x the bus, bit for bit; half the amount: the bus is
+          (64/127)^2 of the full one; an amount on a silent track: all equal stock; MIX 0.5: half the return).
 
 The note's frame count is the same in every run (the steps are instruction counts), so the snapshots of two runs are the same moment.
 Requires DIGI_EMUD (the digi-emud binary of `mise run emu:serve -- --build-only`) or builds it.
@@ -39,6 +43,21 @@ from tools.patchkit import pk_proofkit as K  # noqa: E402
 from tools.patchkit.patched_audio_check import DN2_NOTE, TRIG1  # noqa: E402
 
 FW = {"dt2": "1.17", "dn2": "1.12"}
+RETURN_BUS = 0x254778  # Digitakt II: the FX return bus (anchor dsp.fx.return)
+TRACK_BUS = 0x252DF8  # the 16 track buses, 0x100 bytes apart (anchor dsp.fx.trackbus)
+RETURN_BUS_DN2 = 0x25B868  # Digitone II: the FX return bus (anchor dsp.fx.return)
+SLOT_BUS = 0x257EE8  # Digitone II: the 16 voice slots' buses, 0x100 bytes apart (anchor dsp.fx.slotbus)
+SLOT_MAP = (
+    0x257898  # Digitone II: the slot -> track map, 16 halfwords (anchor dsp.fx.slotmap)
+)
+W_MIX, W_WAS, W_DIS, W_NFAULT, W_ROUTE, W_AMT0 = (
+    13,
+    12,
+    14,
+    17,
+    18,
+    19,
+)  # words of a chain row (core/fx module.toml)
 EXTRA = 150  # frames after the note has started, to the snapshot
 CORE = "core/fx@0.1.0"
 GAIN = "test/fx-gain@0.1.0"
@@ -70,6 +89,8 @@ def play(
     patches: list[str],
     mid_patch: list[str] | None,
     frame_hint: int | None,
+    extras: dict[str, tuple[int, int]] | None = None,
+    audio_s: float = 1.0,
 ):
     """Restart, apply the DSP patches, play the note with the PCM tap on, stop EXTRA frames after the note started
     (MID_PATCH is applied half way) and return (pcm, snapshot)."""
@@ -79,7 +100,7 @@ def play(
     if device == "dn2":
         emu.call("pcm.tap", action="capture", path=str(wav))
         emu.schedule(DN2_NOTE)
-        emu.run_until(audio_s=1.0, timeout_wall_s=900)
+        emu.run_until(audio_s=audio_s, timeout_wall_s=900)
     else:
         emu.step(20_000_000)
         emu.call("pcm.tap", action="capture", path=str(wav))
@@ -94,7 +115,13 @@ def play(
     emu.call("run_until", frames=fr + EXTRA)
     frame = emu.call("status")["dsp_frames"]
     snap = R.snap(emu, device, frame)
+    extra = {
+        k: bytes.fromhex(emu.dsp_peek(addr, n)["hex"].replace("??", "00"))
+        for k, (addr, n) in (extras or {}).items()
+    }
     emu.call("pcm.tap", action="capture_stop")
+    if extras is not None:
+        return hook_ab.read_wav(wav), snap, extra
     return hook_ab.read_wav(wav), snap
 
 
@@ -138,6 +165,8 @@ class FxProof(K.Proof):
         name: str,
         mods: list[str],
         runs: dict[str, tuple[list[str], list[str] | None]],
+        extras: dict[str, tuple[int, int]] | None = None,
+        audio_s: float = 1.0,
     ):
         """Start a daemon, load the image (stock when MODS is empty) and play each run of RUNS (name -> (patches, mid patch))."""
         a = self.args
@@ -156,6 +185,8 @@ class FxProof(K.Proof):
                     patches,
                     mid,
                     None,
+                    extras,
+                    audio_s,
                 )
         return image, out
 
@@ -264,6 +295,178 @@ class FxProof(K.Proof):
         }
         (self.out / "report.json").write_text(json.dumps(out, indent=1))
 
+    def part_send(self) -> None:
+        """The send route: `test/fx-gain` (0.5) in the chain with route 1 and send amounts written with `dsp.patch` before the note."""
+        a = self.args
+        dn2 = a.device == "dn2"
+        # the Digitone II's scheduled note sounds from 0.46 s and has decayed to 0.002 at 1.1 s: the snapshot is taken while it sounds
+        snap_s = 0.5 if dn2 else 1.0
+        t0 = time.monotonic()
+        extras = {
+            "ret": (RETURN_BUS_DN2 if dn2 else RETURN_BUS, 256),
+            "trk": (SLOT_BUS, 16 * 256) if dn2 else (TRACK_BUS, 512),
+            "row": (0, 0),
+        }
+        if dn2:
+            extras["map"] = (SLOT_MAP, 32)
+        _, st = self._run_image(
+            "stock",
+            [],
+            {"run": ([], None)},
+            {k: v for k, v in extras.items() if k != "row"},
+            snap_s,
+        )
+        image = Image(a.device, ["core/fx", "test/fx-gain"])
+        rows = image.sym[f"{CORE}:fx.rows"]
+        bus_at = image.sym[f"{CORE}:_fxs_bus"] + 4
+        ex = {
+            "ret": extras["ret"],
+            "trk": extras["trk"],
+            "bus": (bus_at, 256),
+            "row": (rows, 96),
+        }
+        if dn2:
+            ex["map"] = extras["map"]
+
+        def w(word: int, value: int) -> str:
+            return f"DM {rows + 4 * word:x} {value:08x}"
+
+        route = w(W_ROUTE, 1)
+        runs = {
+            "master": ([], None),  # route 0: the master chain, as before
+            "send0": ([route], None),  # route 1, no amount
+            "on1": (
+                [route, w(W_AMT0, 0x7F)],
+                None,
+            ),  # amount 127 on track 1 (the TRIG 1 sample)
+            "half": ([route, w(W_AMT0, 0x40)], None),
+            "on2": ([route, w(W_AMT0, 0x7F00)], None),  # amount 127 on track 2 (silent)
+            "mixhalf": ([route, w(W_AMT0, 0x7F), w(W_MIX, 0x3F000000)], None),
+        }
+        _, out = self._run_image("send", ["core/fx", "test/fx-gain"], runs, ex, snap_s)
+        self.timings["run_s"] = time.monotonic() - t0
+        pcm0, s0, x0 = st["run"]
+        floats = lambda b: struct.unpack(f"<{len(b) // 4}f", b)  # noqa: E731
+        ret0 = floats(x0["ret"])
+        m0 = s0.master_floats()
+        pm, sm, xm = out["master"]
+        self.check(
+            "route 0 (master chain): master = 0.5 x stock, exactly, as before",
+            all(
+                h == R.f32(m * 0.5) for h, m in zip(sm.master_floats(), m0, strict=True)
+            ),
+        )
+        self.check(
+            "route 0: the send hook adds nothing to the FX return (equal to stock)",
+            xm["ret"] == x0["ret"],
+        )
+        p1, s1, x1 = out["send0"]
+        row1 = struct.unpack("<24I", x1["row"])
+        r = hook_ab.compare(pcm0, p1, 1.0)
+        self.check(
+            "route 1, all amounts 0: PCM is bit-identical to stock",
+            bool(r["identical"] and r["active_samples"] > 1000),
+            f"{r['active_samples']} active samples",
+        )
+        for what, ok in same(s0, s1).items():
+            self.check(f"route 1, all amounts 0: {what} equals stock", ok)
+        self.check(
+            "route 1, all amounts 0: the FX return equals stock, the send bus is silent",
+            x1["ret"] == x0["ret"] and all(v == 0.0 for v in floats(x1["bus"])),
+        )
+        self.check(
+            "route 1: the effect ran (was 1, no fault) and the master chain skipped it (master is stock, not 0.5 x stock)",
+            row1[W_WAS] == 1
+            and row1[W_NFAULT] == 0
+            and row1[W_DIS] == 0
+            and s1.master == s0.master,
+            f"was {row1[W_WAS]} faults {row1[W_NFAULT]}",
+        )
+        # an amount on the playing track
+        p2, s2, x2 = out["on1"]
+        bus = floats(x2["bus"])
+        ret = floats(x2["ret"])
+        if dn2:
+            # the track's sound: the slot buses of the stock run whose map entry names track 1 (the slots are summed in order, as the send mix does)
+            smap = struct.unpack("<16h", x0["map"])
+            sl = floats(x0["trk"])
+            trk0 = [0.0] * 64
+            for v in range(16):
+                if smap[v] == 0:
+                    trk0 = [
+                        R.f32(p + q)
+                        for p, q in zip(trk0, sl[64 * v : 64 * v + 64], strict=True)
+                    ]
+        else:
+            # the track bus after the block (the post-master stage scales it in place)
+            trk0 = list(floats(x0["trk"])[:64])
+        peak = max(abs(v) for v in bus)
+        ratios = [
+            b / t
+            for b, t in zip(bus, trk0, strict=True)
+            if abs(t) > 0.01 * max(abs(v) for v in trk0)
+        ]
+        k = sum(ratios) / len(ratios)
+        spread = max(abs(q / k - 1.0) for q in ratios)
+        self.check(
+            "route 1, amount 127 on track 1: the send bus is a constant multiple of the track bus (the multiple is the post-master scale, 1 / "
+            f"{1 / k:.5f}; relative spread {spread:.1e}), on a sound",
+            peak > 1e-3 and spread < 1e-5,
+            f"peak {peak:.4f}, multiple {k:.6f}",
+        )
+        want = tuple(
+            R.f32(r0 + R.f32(R.f32(0.5 * b) * 1.0))
+            for r0, b in zip(ret0, bus, strict=True)
+        )
+        self.check(
+            "route 1, amount 127 on track 1: the FX return = stock return + 0.5 x the send bus, bit for bit",
+            ret == want,
+            f"{sum(x != y for x, y in zip(ret, want, strict=True))} of 64 words differ",
+        )
+        r2 = hook_ab.compare(pcm0, p2, 1.0)
+        self.check(
+            "route 1, amount 127 on track 1: the master mixes the return (PCM differs from stock, same length)",
+            bool(not r2["identical"] and r2["length_equal"]),
+            f"max err {r2['max_err_ulps']:.0f} ulps",
+        )
+        # half the amount: (64 / 127) squared
+        _, s3, x3 = out["half"]
+        bus3 = floats(x3["bus"])
+        q = [b3 / b for b3, b in zip(bus3, bus, strict=True) if abs(b) > 0.01 * peak]
+        want_q = (64 / 127) ** 2
+        self.check(
+            f"route 1, amount 64: the send bus is (64/127)^2 = {want_q:.6f} of the amount-127 bus",
+            max(abs(v / want_q - 1.0) for v in q) < 1e-5,
+            f"ratios {min(q):.6f} to {max(q):.6f}",
+        )
+        # an amount on a silent track
+        p4, s4, x4 = out["on2"]
+        r4 = hook_ab.compare(pcm0, p4, 1.0)
+        self.check(
+            "route 1, amount 127 on track 2 (silent): the send bus is silent and PCM, master and FX return equal stock",
+            bool(r4["identical"])
+            and s4.master == s0.master
+            and x4["ret"] == x0["ret"]
+            and all(v == 0.0 for v in floats(x4["bus"])),
+        )
+        # MIX is the return level
+        _, s5, x5 = out["mixhalf"]
+        bus5, ret5 = floats(x5["bus"]), floats(x5["ret"])
+        want5 = tuple(
+            R.f32(r0 + R.f32(R.f32(0.5 * b) * 0.5))
+            for r0, b in zip(ret0, bus5, strict=True)
+        )
+        self.check(
+            "route 1, MIX 0.5: the FX return = stock return + 0.5 x 0.5 x the send bus, bit for bit",
+            ret5 == want5 and max(abs(v) for v in bus5) > 1e-3,
+        )
+        (self.out / "send-report.json").write_text(
+            json.dumps(
+                {"multiple": k, "spread": spread, "peak": peak, "rows": list(row1)},
+                indent=1,
+            )
+        )
+
 
 PARTS = [
     K.Part("empty", "stock vs empty chain", FxProof.part_empty, True, 90),
@@ -271,6 +474,13 @@ PARTS = [
         "gain",
         "0.5 effect: master, DAC ring, USB ring; unity; off",
         FxProof.part_gain,
+        True,
+        240,
+    ),
+    K.Part(
+        "send",
+        "send route: amounts, return bus, MIX; stock equality",
+        FxProof.part_send,
         True,
         240,
     ),

@@ -7,6 +7,7 @@
 //! [[machine]]  id, name, short, clone_of, knobs = [...], level   (up to the device's knob count; [machine.dn2] overrides)
 //! [[page]]     id, machine, name, title                           (only on devices whose knobs live in a page)
 //! [[voice]]    machine, entry | render [, note_on, desc]          (machine id -> DSP entry symbols; desc: `dk_machine_desc`)
+//! [[fx]]       id, process, desc [, defaults]                      (a run-time effect: DSP symbols; desc: `dk_fx_desc`; `.dkm` only)
 //! ```
 //!
 //! `lower` turns them, per device, into the `[[entry]]` rows the frameworks (`core/machines`, `core/params`,
@@ -262,6 +263,65 @@ pub struct VoiceDef {
     pub desc: Option<String>,
     #[serde(default)]
     pub devices: Vec<String>,
+}
+
+/// A run-time effect (`[[fx]]`, DSP section version 4 of a `.dkm`; docs/design/digikit-dkm.md): `process` is the global text symbol of its process routine
+/// (sdk/dk_fx.h), `desc` the data symbol of its `dk_fx_desc` (n_params and state_bytes come from it), `defaults` the words p0 ... of its row (at most
+/// `n_params`, the words the DSP reads as they are; none: all 0). Only the packer reads it: a patched-in effect is an `[[entry]]` row of the registry `fx`.
+///
+/// An effect with a `tab` has a page of its own in the FX view (docs/design/digikit-registry.md "Effect pages"): `tab` is the label of the page's tab
+/// (1 to 3 characters), `title` the page title (up to 23), `mix` the default of the MIX knob on the level slot (0 to 127; the adapter blends dry and wet, the
+/// effect writes only the wet signal), `route` and `routes` the default route and the allowed ones (`"master"`, `"send"`) and `knob` the knobs, up to 7: knob i is parameter word p_i, shown at `position` of the 8 knob positions of the page
+/// (default: i). A knob's value reaches the effect as a float in [`min`, `max`]; its default fills p_i of the row (so `defaults` names no word a knob has).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FxDef {
+    pub id: String,
+    pub process: String,
+    pub desc: String,
+    #[serde(default)]
+    pub defaults: Vec<u32>,
+    #[serde(default)]
+    pub devices: Vec<String>,
+    #[serde(default)]
+    pub tab: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    /// The MIX knob's default, 0 to 127.
+    #[serde(default = "default_mix")]
+    pub mix: i64,
+    #[serde(default)]
+    pub knob: Vec<FxKnob>,
+    /// Where the effect runs when the settings do not say otherwise: `"master"` (the default) or `"send"` (a send bus: one amount for each track).
+    #[serde(default)]
+    pub route: Option<String>,
+    /// The routes the user may choose in DIGIKIT > FX ROUTES, a non-empty list of `"master"` and `"send"`. Left out: `["master"]`, or `["send", "master"]`
+    /// when `route = "send"` (see `register::fx_routes`).
+    #[serde(default)]
+    pub routes: Option<Vec<String>>,
+}
+
+fn default_mix() -> i64 {
+    127
+}
+
+/// One knob of an effect page (`[[fx.knob]]`).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FxKnob {
+    /// The long name shown while the knob is turned (1 to 23 characters).
+    pub name: String,
+    /// The label under the knob (1 to 6 characters).
+    pub short: String,
+    pub min: f64,
+    pub max: f64,
+    pub default: f64,
+    /// `percent` (0 .. 127, the default) or `bipolar` (-64 .. +63).
+    #[serde(default)]
+    pub display: Option<String>,
+    /// The knob position on the page, 0 to 7 (default: the knob's place in the list).
+    #[serde(default)]
+    pub position: Option<u32>,
 }
 
 pub fn has_typed(m: &Manifest) -> bool {

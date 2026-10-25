@@ -26,6 +26,62 @@ def test_docs_select_no_steps() -> None:
     assert verify.steps_for(["AGENTS.md"]) == ()
 
 
+UI_FILES = [
+    "apps/desktop/ui/src/Console.tsx",
+    "apps/desktop/ui/src/console.css",
+    "apps/desktop/ui/preview/sim.ts",
+    "apps/web/src/components/PatchGallery.tsx",
+    "apps/web/src/styles/site.css",
+    "apps/web/tests/gallery.test.mjs",
+    "docs/TESTING.md",
+]
+
+
+def test_ui_only_change_skips_smoke() -> None:
+    for path in UI_FILES:
+        steps = verify.steps_for([path])
+        assert "smoke" not in steps, path
+    steps = verify.steps_for(UI_FILES)
+    assert "smoke" not in steps
+    assert "web" in steps  # the UI steps themselves still run
+
+
+def test_ui_change_with_one_other_file_keeps_smoke() -> None:
+    assert "smoke" in verify.steps_for([*UI_FILES, "tools/device/dkscreen.py"])
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "apps/desktop/src-tauri/src/main.rs",
+        "apps/web/src/pages/patch.astro",
+        "apps/web/src/modules/dktransfer.ts",
+        "apps/web/src/patch/patchkit-core.ts",
+        "modules/core/runtime/module.toml",
+        "tests/patchkit/smoke/matrix.toml",
+    ],
+)
+def test_non_ui_paths_keep_smoke(path: str) -> None:
+    assert "smoke" in verify.steps_for([*UI_FILES, path])
+    assert not verify.ui_only([path])
+
+
+def test_docs_only_stays_empty() -> None:
+    assert verify.steps_for(["docs/x.md", "README.md"]) == ()
+    assert not verify.ui_only([])
+
+
+def test_explain_says_why_smoke_is_skipped(capsys: pytest.CaptureFixture[str]) -> None:
+    def run(files: list[str]) -> str:
+        steps = verify.steps_for(files)
+        verify.explain(steps, files, [], per_file=True)
+        return capsys.readouterr().out
+
+    assert "smoke: skipped, UI-only change" in run(UI_FILES)
+    assert "smoke: skipped" not in run([*UI_FILES, "tools/device/dkscreen.py"])
+    assert "smoke: skipped" not in run(["docs/x.md"])
+
+
 def test_changed_pk_test_runs_itself_and_the_gate() -> None:
     assert "python-tests" in verify.steps_for(["tests/patchkit/test_pk_cf.py"])
     tests = verify.python_tests(["tests/patchkit/test_pk_cf.py"], False)

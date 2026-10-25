@@ -21,8 +21,11 @@ pub mod card;
 pub mod crash;
 pub mod dlog;
 mod dsp;
+pub mod fxpage;
+mod fxsend;
 mod loader;
 pub mod registry;
+pub mod settings;
 mod sha256;
 pub mod store;
 mod table;
@@ -168,6 +171,12 @@ pub fn flush(start: u32, len: u32) {
 
 pub fn device() -> u32 {
     unsafe { read_volatile(addr_of!(dkrt_device_id)) }
+}
+
+/// The effects the image takes at run time: CAPACITY's limit for `FX_SLOTS`. The free effect rows of `core/dynfx` (0 on an image without it, so a device
+/// that cannot load effects yet reports 0).
+pub fn fx_slots() -> u32 {
+    unsafe { dsp::fx_free_rows() }
 }
 
 /// The device's short name as the INFO reply gives it: 3 characters and a NUL.
@@ -749,7 +758,8 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
         Some((used, _)) => used,
         None => 0,
     };
-    let entries: [(u8, u32, u32, u32); 12] = [
+    let (set_limit, set_used) = settings::capacity();
+    let entries: [(u8, u32, u32, u32); 14] = [
         (CAPK_MODULES, MAX_MODULES as u32, mods, 0),
         (CAPK_SELECTION, dkrt_sdk::SEL_MAX as u32, boot::selected(), 0),
         (CAPK_ARENA, arena, arena - af, al),
@@ -759,9 +769,11 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
         (CAPK_VOICE_ROWS, vrows, vused, 0),
         (CAPK_PARAM_ROWS, param.0, param.1, 0),
         (CAPK_PAGE_ROWS, page.0, page.1, 0),
-        (CAPK_FX_SLOTS, dkrt_sdk::device::LIMIT_FX_SLOTS, 0, 0),
+        (CAPK_FX_SLOTS, fx_slots(), dsp::fx_used(), 0),
         (CAPK_MAP_ENTRIES, dkrt_sdk::sel::MAP_N as u32, assign::map_used(), 0),
         (CAPK_STORE, st_total, st_used, 0),
+        (CAPK_SETTINGS, set_limit, set_used, 0),
+        (CAPK_SEND_SLOTS, fxsend::slots(), fxsend::used(), 0),
     ];
     let mut k = 0;
     while k < entries.len() && (k as u32) < max {
@@ -840,6 +852,14 @@ pub unsafe extern "C" fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32 {
     E_NOT_FOUND
 }
 
+/// The `index`th loaded effect that has a page (row order) into `out`: its tab, module id, allowed routes, default route, the route it runs on and the route the settings
+/// give it (DIGIKIT > FX ROUTES). 0, or `E_NOT_FOUND` past the end. UI task.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_fx(index: u32, out: *mut DkrtFx) -> i32 {
+    init_once();
+    fxsend::fx_entry(index, &mut *out)
+}
+
 // ---- boot-time loading (finding 37) ---------------------------------------------------------------------------------------
 
 /// `dkrt_selection_get(out)`: the saved selection (what the next boot loads). Always 0.
@@ -899,7 +919,7 @@ unsafe fn card_busy() -> bool {
     read_volatile(ESDHC_PRSSTAT as *const u32) & 7 != 0
 }
 
-/// `dkrt_restart()`: save the working state (`save_working_state`), then the firmware's own soft reset: interrupts masked, console drained,
+/// `dkrt_restart()`: write pending settings (`settings::flush_if_dirty`), save the working state (`save_working_state`), then the firmware's own soft reset: interrupts masked, console drained,
 /// DDR word 0 cleared, `0x80` into `RCM.RCR`. Returns only when it refuses (`E_CARD_BUSY`: a card transfer is in flight; the
 /// check is made again with interrupts masked, when no other task can start one).
 #[no_mangle]
@@ -908,6 +928,8 @@ pub unsafe extern "C" fn dkrt_restart() -> i32 {
     if card_busy() {
         return E_CARD_BUSY;
     }
+    // a settings change younger than the write delay would be lost to the reset: write it now (a failure is in the log; the restart goes on)
+    settings::flush_if_dirty();
     dlog::ev(logk::MENU, dlog::INFO, [logk::MENU_RESTART, 0, 0, 0, 0]);
     save_working_state();
     let sr = dkrt_irq_mask();
@@ -929,6 +951,8 @@ pub unsafe extern "C" fn dkrt_tick() {
     upload::restart_poll();
     crash::install();
     dsp::step();
+    fxpage::tick();
+    settings::tick();
     dlog::tick();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));
@@ -949,6 +973,8 @@ pub unsafe extern "C" fn dkrt_tick() {
             card::probe(mb.arg.as_ptr())
         } else if cmd == CMD_DEBUG {
             boot::debug_set(*mb.arg.as_ptr() != 0)
+        } else if cmd >= CMD_SETTINGS_PUT && cmd <= CMD_SETTINGS_FLUSH {
+            settings::mailbox(cmd, mb.arg.as_mut_ptr())
         } else {
             E_FORMAT
         };

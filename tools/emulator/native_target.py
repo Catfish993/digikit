@@ -75,12 +75,18 @@ def gen_from_env(
 
 
 def target_dir(
-    gen: str | os.PathLike[str] | None = None, variant: str = ""
+    gen: str | os.PathLike[str] | None = None,
+    variant: str = "",
+    second: str | os.PathLike[str] | None = None,
 ) -> pathlib.Path:
-    """Target dir for a gen (default: the SHARC_GEN_DIR environment variable)."""
+    """Target dir for a gen (default: the SHARC_GEN_DIR environment variable); with a SECOND gen (the
+    second-core build, SHARC_GEN_DIR_2) the key names both."""
     if gen is None:
         gen = gen_from_env()
-    path = TARGET_ROOT / gen_key(gen)
+    key = gen_key(gen)
+    if second is not None and str(second) != "":
+        key = f"{key}+{gen_key(second)}"
+    path = TARGET_ROOT / key
     return path / variant if variant else path
 
 

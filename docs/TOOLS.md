@@ -183,7 +183,9 @@ Run output goes to `out/runs/<scenario-or-kind>/<stamp>/` ([INSTRUMENTATION.md](
 | `tools/patchkit/machinepatch.py` / `tools/patchkit/machinebuild.py` | Plan and build the static MAIN OS patches for an eighth machine. |
 | `tools/coldfire/isacheck.py` | Refuse any instruction a ColdFire V4e (ISA_A/B/C + EMAC) does not have, in a `.dko.json`, an ELF object or an archive; `--committed` scans every committed module object (finding 35). Also runs inside `pk_link.check_isa`. |
 | `tools/patchkit/pk_cdemo.py` | `proof`: boot with `test/c-demo` (64-bit divide, remainder, multiply, shifts through the ColdFire libgcc helpers) selected in a card's selection record and compare its results with Python (finding 35). |
-| `tools/device/dkupload.py` | Module upload over USB SysEx (`info`, `ls`, `put FILE [PATH]`, `rm`, `clear`; two requests in flight; the emulator through `midi.usb.in/out`, or a real device with python-rtmidi, never run against hardware by the lane that wrote it); the framing of `docs/design/digikit-upload.md` (finding 43). |
+| `tools/device/dksettings.py` | The settings record on the host (`python -m tools.device.dksettings FILE [--json]`): decode, encode, which copy is in use, the keys by owner printed as what they hold; the same rules as `dkrt_sdk::settings` and `patchkit store dump`, kept equal by `sdk/settings-vectors.json` (finding 63). |
+| `patchkit store dump` (`packages/patchkit/src/storedump.rs`) | Digikit's own data on a card image (the emulator's card files, a `card.overlay` laid over one with `--overlay`, or a raw dump with `--base-sector`): the store header and files, the selection record, the settings record with both copies and every entry decoded; `--json`; `--record FILE` for one settings record saved with `dkupload settings -o FILE` (docs/design/digikit-store.md, "Reading our data locally"). |
+| `tools/device/dkupload.py` | Module upload over USB SysEx (`info`, `ls`, `put FILE [PATH]`, `rm`, `clear`, `settings [-o FILE]` reads the settings record; two requests in flight; the emulator through `midi.usb.in/out`, or a real device with python-rtmidi, never run against hardware by the lane that wrote it); the framing of `docs/design/digikit-upload.md` (finding 43). |
 | `tools/device/dklog.py` | The runtime's debug log over USB SysEx (`follow`, `crash`, `peek`, `info`; `level` reads or sets the log levels, LOGCFG, runtime 0.1.0; `follow --level L --module NAME` filters). Event kinds come from `tools/device/dklog_kinds.py`, generated from `sdk/sdk.toml` by `mise run gen:modules`. |
 | `tools/patchkit/pk_ctxprobe.py` | The SHARC context registers at the voice hook in the coupled emulator (what `core/dsp-voice` records for `dl_diag`: M5, M6, M7, M13, M14, M15, I6, I7, B7, L7, MODE1 and two heartbeats), also as the ColdFire's record copy shows them; `--cost` prints the DSP cycles per block for a paired A/B of two module versions (finding 45). |
 | `tools/patchkit/pk_digikit_upload.py` | The `upload` kind of the digikit scenarios: ops, power cuts (the runtime's `DKRT_UPLOAD_CUT` knob), stock MidiRpc unchanged, an upload during playback, the +Drive round trip (finding 43). |
@@ -330,6 +332,28 @@ runner = sharc_run.Runner(loaded_memory, start=0x1c4ecf)
 result = runner.run(max_steps=20000)
 print(result.halt.reason, result.instructions_per_second)
 ```
+
+### `tools/sharc_dev/sharc_accesses.py`
+
+A step's data accesses, read from the trace events the runner's forms record
+(`load`, `store`, `load-pey`, `store-pey`, with space, address and width). It is
+for tools that measure a run: cycle models, DM/PM bus checks, write watches.
+Use it instead of wrapping `sharc_core.memory._dm_read` or `_dm_write`. The forms
+modules import those names directly, so a wrapper on the memory module misses
+most of their accesses.
+
+```py
+from tools.sharc_dev.sharc_accesses import enable, step_accesses
+enable(runner.state)                  # a saved snapshot may have events off
+start = len(runner.state.trace)
+...                                   # one step
+for a in step_accesses(runner.state.trace[start:]):
+    a.kind, a.space, a.address, a.width   # "r"/"w", "DM"/"PM", byte address, bytes
+del runner.state.trace[:-1]           # keep the trace bounded
+```
+
+Python runner only. The native engine has `SHARC_WWATCH`
+(`docs/INSTRUMENTATION.md`).
 
 ### `tools/sharc_dev/sharc_worklist.py`
 

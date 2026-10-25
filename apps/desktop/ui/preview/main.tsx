@@ -8,9 +8,41 @@ import '@web/styles/site.css';
 import '../src/console.css';
 import '../src/native.css';
 import { installNativeFeel } from '../src/native';
+import LivePanel from '@web/components/LivePanel';
+import { panels } from '@web/data/faceplates';
+import RemotePage from '../src/RemotePage';
+import SidePanels from '../src/SidePanels';
 import TransferPage from '../src/TransferPage';
 import { setLocalFolder, setMode } from '../src/transfer-state';
+import { cardDevice, reloadCard } from './card-mock';
+import { installRemoteMock, testPattern } from './remote-mock';
 import { SAMPLES_ROOT, control, sim } from './sim';
+
+// ?page=transfer (default) | remote | emulator: the Emulator page shows the faceplate only (the real one needs the emulator) with the same
+// markup as ../src/Console.tsx, to put its screen next to the Remote page's.
+const page = new URLSearchParams(location.search).get('page') ?? 'transfer';
+if (page === 'remote') installRemoteMock();
+const emulatorFaceplate = () => (
+  <div class="emu-row">
+    <main class="stage" aria-label="front panel">
+      <div class="surface">
+        <LivePanel
+          panel={panels[cardDevice]}
+          runtime={() => undefined}
+          onError={() => {}}
+          ref={(api) => queueMicrotask(() => api.showFrame(testPattern()))}
+        />
+      </div>
+    </main>
+    <SidePanels
+      visible
+      card
+      reload={reloadCard}
+      session={() => Promise.resolve({} as never)}
+      where={() => 'the emulator'}
+    />
+  </div>
+);
 
 installNativeFeel();
 setMode(sim.mode);
@@ -19,7 +51,7 @@ setLocalFolder(sim.folder === 'none' ? '' : SAMPLES_ROOT);
 
 render(
   () => (
-    <div class="console">
+    <div class="console" style={{ '--accent': panels.dn2.accent, '--func-legend': panels.dn2.func_legend }}>
       <header class="topbar">
         <span class="path">
           UI preview: fake device (state in the address: ?dev=ok|empty|noreply|error|slow &amp; folder=files|empty|none
@@ -31,18 +63,24 @@ render(
           <button type="button" class="side toggle" aria-label="Collapse the sidebar">
             <span>«</span>
           </button>
-          <button type="button" class="side">
+          <button type="button" class={page === 'emulator' ? 'side on' : 'side'}>
             <span>Emulator</span>
           </button>
-          <button type="button" class="side on" aria-current="page">
+          <button type="button" class={page === 'transfer' ? 'side on' : 'side'}>
             <span>Transfer</span>
           </button>
-          <button type="button" class="side">
+          <button type="button" class={page === 'remote' ? 'side on' : 'side'}>
             <span>Remote</span>
           </button>
         </nav>
         <div class="content">
-          <TransferPage />
+          {page === 'remote' ? (
+            <RemotePage fallbackDevice="dn2" />
+          ) : page === 'emulator' ? (
+            emulatorFaceplate()
+          ) : (
+            <TransferPage />
+          )}
         </div>
       </div>
     </div>

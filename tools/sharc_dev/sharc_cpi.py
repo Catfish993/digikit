@@ -31,6 +31,7 @@ from collections import Counter, defaultdict
 
 from tools import python_env
 from tools.sharc_dev import sharc_timing as T
+from tools.sharc_dev.sharcimm import name_address
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SHARCDB = ROOT / "out" / "sharcdb"
@@ -94,7 +95,7 @@ def load_instructions(image: str, pcs: set[int]) -> dict[int, T.Ins]:
     db.execute("create temp table want(sw integer primary key)")
     db.executemany("insert into want values (?)", [(p,) for p in pcs])
     rows = db.execute(
-        "select i.sw, i.width, i.mnemonic, i.cond from insn i join want w on w.sw = i.sw where i.image = ?",
+        "select i.sw, i.width, i.mnemonic, i.cond, i.form from insn i join want w on w.sw = i.sw where i.image = ?",
         (image,),
     ).fetchall()
     defs: dict[int, list[tuple[str, str]]] = defaultdict(list)
@@ -122,7 +123,7 @@ def load_instructions(image: str, pcs: set[int]) -> dict[int, T.Ins]:
     ):
         edges[frm].append((to, kind, delayed or 0))
     out: dict[int, T.Ins] = {}
-    for sw, width, text, cond in rows:
+    for sw, width, text, cond, form in rows:
         text = text or ""
         kinds = {k for _, k, _ in edges.get(sw, [])}
         branch = ""
@@ -156,7 +157,28 @@ def load_instructions(image: str, pcs: set[int]) -> dict[int, T.Ins]:
             targets=targets,
             loop_end=loop_end,
             loop_counter=counter,
+            extra={"form": form or ""},
         )
+    db.close()
+    return out
+
+
+def mmr_targets(image: str, pcs: set[int]) -> dict[int, list[tuple[bool, int]]]:
+    """Per PC, the (write, address) of each MMR-range access whose address sharcdb resolved: an absolute
+    operand (mem_access) or a pointer it followed (ptr)."""
+    db = sqlite3.connect(f"file:{SHARCDB / (image + '.sqlite')}?mode=ro", uri=True)
+    db.execute("create temp table want(sw integer primary key)")
+    db.executemany("insert into want values (?)", [(p,) for p in pcs])
+    out: dict[int, list[tuple[bool, int]]] = defaultdict(list)
+    for sql in (
+        "select m.sw, m.direction, m.abs_address from mem_access m join want w on w.sw = m.sw "
+        "where m.image = ? and m.abs_address is not null",
+        "select p.sw, p.direction, p.address from ptr p join want w on w.sw = p.sw "
+        "where p.image = ? and p.address is not null",
+    ):
+        for sw, direction, address in db.execute(sql, (image,)):
+            if 0x30000 <= address < 0x40000000:
+                out[sw].append((str(direction or "").startswith("w"), address))
     db.close()
     return out
 
@@ -195,6 +217,8 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
         acc("dag_load_to_use", T.scale(T.dag_use(ia, ib), n))
         acc("float_forward", T.scale(T.float_forward(ia, ib), n))
         acc("float_to_move", T.scale(T.float_to_move(ia, ib), n))
+        acc("cjump_frame_use", T.scale(T.cjump_frame_use(ia, ib), n))
+        acc("anomaly_20000072", T.scale(T.anomaly_20000072(ia, ib), n))
     # branches against the simulated BTB (engine side: 128 sets x 2 ways, 2-bit counters)
     branch_pcs = [p for p in prof.btb if p in insns]
     res["btb"] = {
@@ -304,7 +328,43 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
             2 * T.EXT_FILL[2] * d_miss * share_ext,
         ),
     )
-    acc("mmr_access", T.scale(T.MMR_ACCESS, far["mmr"]))
+    # MMR accesses by peripheral where sharcdb resolved the address (EE-412 Table 6, Table 4-43), else the
+    # assumed MMR_ACCESS
+    targets = mmr_targets(
+        image,
+        {
+            p
+            for p, slots in prof.mem.items()
+            if p in busy_pcs and (slots[0][7] or slots[1][7])
+        },
+    )
+    by_peripheral: Counter = Counter()
+    priced = 0
+    for p, slots in prof.mem.items():
+        n = slots[0][7] + slots[1][7] if p in busy_pcs else 0
+        if not n:
+            continue
+        found = [(w, a) for w, a in targets.get(p, ())]
+        costs = [(w, a, T.mmr_cost(name_address(a), w)) for w, a in found]
+        costs = [c for c in costs if c[2] is not None]
+        if not costs:
+            continue
+        each = T.scale(
+            T.add(*(c[2] for c in costs)) if len(costs) > 1 else costs[0][2],
+            1 / len(costs),
+        )
+        acc("mmr_access", T.scale(each, n))
+        priced += n
+        for _w, a, _ in costs:
+            by_peripheral[(name_address(a) or "?").split("_")[0]] += n / len(costs)
+    acc("mmr_access", T.scale(T.MMR_ACCESS, far["mmr"] - priced))
+    res["mmr"] = {
+        "accesses": far["mmr"],
+        "priced_by_peripheral": priced,
+        "by_peripheral_per_block": {
+            k: v / blocks for k, v in by_peripheral.most_common()
+        },
+    }
     res["data"] = far
     res["data_by_bucket"] = {
         name: sum(s[i] for slots in prof.mem.values() for s in slots)
@@ -349,8 +409,8 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
 
 
 STALL_RULES = {
-    "dag_load_to_use", "float_forward", "float_to_move", "branch_cond", "branch_uncond", "loop_exit",
-    "pm_conflict_cache", "same_block",
+    "dag_load_to_use", "float_forward", "float_to_move", "cjump_frame_use", "anomaly_20000072", "branch_cond",
+    "branch_uncond", "loop_exit", "pm_conflict_cache", "same_block",
 }  # fmt: skip
 MEMORY_RULES = {"l2_code_fill", "l2_data_fill", "ext_data_fill", "mmr_access"}
 
