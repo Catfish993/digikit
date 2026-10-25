@@ -271,7 +271,7 @@ pub struct VoiceDef {
 ///
 /// An effect with a `tab` has a page of its own in the FX view (docs/design/digikit-registry.md "Effect pages"): `tab` is the label of the page's tab
 /// (1 to 3 characters), `title` the page title (up to 23), `mix` the default of the MIX knob on the level slot (0 to 127; the adapter blends dry and wet, the
-/// effect writes only the wet signal) and `knob` the knobs, up to 7: knob i is parameter word p_i, shown at `position` of the 8 knob positions of the page
+/// effect writes only the wet signal), `route` and `routes` the default route and the allowed ones (`"master"`, `"send"`) and `knob` the knobs, up to 7: knob i is parameter word p_i, shown at `position` of the 8 knob positions of the page
 /// (default: i). A knob's value reaches the effect as a float in [`min`, `max`]; its default fills p_i of the row (so `defaults` names no word a knob has).
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -292,6 +292,13 @@ pub struct FxDef {
     pub mix: i64,
     #[serde(default)]
     pub knob: Vec<FxKnob>,
+    /// Where the effect runs when the settings do not say otherwise: `"master"` (the default) or `"send"` (a send bus: one amount for each track).
+    #[serde(default)]
+    pub route: Option<String>,
+    /// The routes the user may choose in DIGIKIT > FX ROUTES, a non-empty list of `"master"` and `"send"`. Left out: `["master"]`, or `["send", "master"]`
+    /// when `route = "send"` (see `register::fx_routes`).
+    #[serde(default)]
+    pub routes: Option<Vec<String>>,
 }
 
 fn default_mix() -> i64 {

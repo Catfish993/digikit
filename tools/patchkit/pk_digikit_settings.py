@@ -303,6 +303,36 @@ def run_settings(c: Any) -> None:
             )
             c.done(rig)
 
+    def part_restart() -> None:
+        """A put and then at once a restart: `dkrt_restart` writes the pending record first, so the value is not lost to the 2 s delay."""
+        with c.rig(img, ours, "set-restart", cf_only=cf_only) as rig:
+            up = uploader(rig)
+            put(rig, ROUTE, b"\x01")
+            flags, _, _, _ = up.settings_record()
+            c.check(
+                "restart: right after a put the change is not on the card yet (SETTINGS flag bit 0)",
+                flags & 1 == 1 and not set(written(rig)) & settings_area,
+                f"flags {flags} writes {[hex(x) for x in written(rig)]}",
+            )
+            rig.restart()
+            ev = events(rig, "SETTINGS_LOAD")
+            n, v = get(rig, ROUTE)
+            c.check(
+                "restart: a restart at once after the put keeps it: the boot reads copy A (state 1, copy 0, seq 1, 1 entry) and the value is there",
+                len(ev) == 1
+                and ev[0][4][:3] == (1, 0, 1)
+                and ev[0][4][4] == 1
+                and (n, v) == (1, b"\x01"),
+                f"{ev} {(n, v)}",
+            )
+            only = set(written(rig)) - {st.sel_a, st.sel_b}
+            c.check(
+                "restart: the only store sector written besides the selection record is settings copy A",
+                only == {st.set_a},
+                f"{[hex(x) for x in sorted(only)]}",
+            )
+            c.done(rig)
+
     def part_blank() -> None:
         with c.rig(img, blank, "set-blank", cf_only=cf_only) as rig:
             ci = rig.card_info()
@@ -499,6 +529,7 @@ def run_settings(c: Any) -> None:
 
     c.parallel(
         part_main,
+        part_restart,
         part_blank,
         part_overlap,
         part_oldcard,

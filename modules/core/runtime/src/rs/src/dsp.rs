@@ -215,6 +215,8 @@ pub struct DspState {
     /// Per effect row: the route and the four amount words to publish (before the pc: a send effect never runs on the master).
     pub fx_route: [u32; MAX_FX],
     pub fx_amt: [[u32; 4]; MAX_FX],
+    /// Per effect row: the flags word of its record (`FXF_*`: the routes the effect may run on and its default route; 0 = master only).
+    pub fx_flags: [u32; MAX_FX],
     /// Per module record: the effect rows it owns (bit mask).
     pub mod_fx: [u32; crate::MAX_MODULES],
 }
@@ -314,6 +316,15 @@ pub unsafe fn fx_row_of(owner: u8, ordinal: u32) -> Option<usize> {
         k += 1;
     }
     None
+}
+
+/// The flags word of the record that effect row `k` was claimed for (`FXF_SEND`, `FXF_NOMASTER`, `FXF_DEFAULT_SEND`; 0 for a free row).
+pub unsafe fn fx_flags_of(k: usize) -> u32 {
+    if k < MAX_FX {
+        ds().fx_flags[k]
+    } else {
+        0
+    }
 }
 
 /// Set the MIX word an effect row publishes (before its rows go out) and the defaults of its parameter words are the record's.
@@ -645,6 +656,11 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         {
             return E_DSP_FORMAT;
         }
+        // the routes: send allowed (bit 0), master not allowed (bit 1), default send (bit 2); the default must be an allowed route (0 is a record before the routes)
+        let fl = rd32(e.add(16));
+        if fl & !7 != 0 || (fl & 6 != 0 && fl & 1 == 0) || (fl & 2 != 0 && fl & 4 == 0) {
+            return E_DSP_FORMAT;
+        }
         let dd = s.add((image_off + desc) as usize);
         if rd32le(dd) != FX_DESC_MAGIC || rd32le(dd.add(4)) != 1 || rd32le(dd.add(8)) != np || rd32le(dd.add(12)) != state {
             return E_DSP_FORMAT;
@@ -874,6 +890,7 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
         d.fx_mix[frow] = MIX_ONE;
         d.fx_route[frow] = 0;
         d.fx_amt[frow] = [0; 4];
+        d.fx_flags[frow] = rd32(e.add(16));
         d.fx_owner[frow] = rec as u8 + 1;
         d.fx_pub[frow] = 0;
         fclaimed |= 1 << frow;
@@ -920,6 +937,7 @@ unsafe fn unreserve(rec: usize) {
             d.fx_mix[k] = MIX_ONE;
             d.fx_route[k] = 0;
             d.fx_amt[k] = [0; 4];
+            d.fx_flags[k] = 0;
         }
         k += 1;
     }

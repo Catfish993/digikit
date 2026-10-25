@@ -852,6 +852,14 @@ pub unsafe extern "C" fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32 {
     E_NOT_FOUND
 }
 
+/// The `index`th loaded effect that has a page (row order) into `out`: its tab, module id, allowed routes, default route, the route it runs on and the route the settings
+/// give it (DIGIKIT > FX ROUTES). 0, or `E_NOT_FOUND` past the end. UI task.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_fx(index: u32, out: *mut DkrtFx) -> i32 {
+    init_once();
+    fxsend::fx_entry(index, &mut *out)
+}
+
 // ---- boot-time loading (finding 37) ---------------------------------------------------------------------------------------
 
 /// `dkrt_selection_get(out)`: the saved selection (what the next boot loads). Always 0.
@@ -911,7 +919,7 @@ unsafe fn card_busy() -> bool {
     read_volatile(ESDHC_PRSSTAT as *const u32) & 7 != 0
 }
 
-/// `dkrt_restart()`: save the working state (`save_working_state`), then the firmware's own soft reset: interrupts masked, console drained,
+/// `dkrt_restart()`: write pending settings (`settings::flush_if_dirty`), save the working state (`save_working_state`), then the firmware's own soft reset: interrupts masked, console drained,
 /// DDR word 0 cleared, `0x80` into `RCM.RCR`. Returns only when it refuses (`E_CARD_BUSY`: a card transfer is in flight; the
 /// check is made again with interrupts masked, when no other task can start one).
 #[no_mangle]
@@ -920,6 +928,8 @@ pub unsafe extern "C" fn dkrt_restart() -> i32 {
     if card_busy() {
         return E_CARD_BUSY;
     }
+    // a settings change younger than the write delay would be lost to the reset: write it now (a failure is in the log; the restart goes on)
+    settings::flush_if_dirty();
     dlog::ev(logk::MENU, dlog::INFO, [logk::MENU_RESTART, 0, 0, 0, 0]);
     save_working_state();
     let sr = dkrt_irq_mask();

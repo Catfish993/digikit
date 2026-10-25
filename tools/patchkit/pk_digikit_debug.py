@@ -300,6 +300,7 @@ def run_card(c: Any) -> None:
             for _ in range(8):
                 tap("DOWN", 200)
             tap("YES", 700)  # DIGIKIT
+            tap("DOWN", 300)  # FX ROUTES
             tap("DOWN", 300)  # ABOUT
             tap("YES", 800)
             rows = about_rows(rig, plan)
@@ -1159,6 +1160,7 @@ def run_hang(c: Any) -> None:
         for _ in range(8):
             tap("DOWN", 120)
         tap("YES", 400)  # DIGIKIT
+        tap("DOWN", 200)  # FX ROUTES
         tap("DOWN", 200)  # ABOUT
         tap("YES", 500)
         rows = about_rows(rig, plan)

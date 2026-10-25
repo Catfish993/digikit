@@ -434,7 +434,7 @@ class BootProof:
                 "the card's selection is still empty", rig.sel_records() == [None, None]
             )
             self.check("changed selection: APPLY offered", self.w(rig, "DK_OFFER") == 1)
-            self.downs(rig, 2)
+            self.downs(rig, 3)  # foreign, the load line, APPLY & RESTART
             self.frame(rig, "list_ticked")
             n0 = self.w(rig, "DK_POPUPS")
             self.tap(rig, "YES", 700)  # first press
@@ -473,10 +473,11 @@ class BootProof:
                 str(recs),
             )
             self.to_digikit(rig)
-            self.downs(rig, 1)
+            self.downs(rig, 2)  # FX ROUTES, ABOUT
             self.tap(rig, "YES", 900)  # ABOUT
             self.frame(rig, "about_after_boot")
             self.tap(rig, "NO", 500)
+            self.tap(rig, "UP", 300)
             self.tap(rig, "UP", 300)
             self.tap(rig, "YES", 900)  # MODULES
             self.frame(rig, "list_after_boot")
@@ -521,7 +522,7 @@ class BootProof:
                 self.bytes_of(rig, "TICK", 3) == [0, 1, 0],
             )
             self.check("APPLY offered in safe mode", self.w(rig, "DK_OFFER") == 1)
-            self.downs(rig, 3)  # bad-sha, dyn-demo, foreign, APPLY
+            self.downs(rig, 4)  # bad-sha, dyn-demo, foreign, the load line, APPLY
             self.tap(rig, "YES", 700)  # first press: the popup
             self.tap(rig, "NO", 500)
             rig.emu.drain_events()
@@ -547,7 +548,7 @@ class BootProof:
                 str(b["results"]),
             )
             self.to_digikit(rig)
-            self.downs(rig, 1)
+            self.downs(rig, 2)  # FX ROUTES, ABOUT
             self.tap(rig, "YES", 900)
             self.frame(rig, "about_bad")
             self.finish(rig)

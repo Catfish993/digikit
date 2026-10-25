@@ -6,7 +6,7 @@
 //! record needs. A power cut in the write leaves the current copy valid. Unloaded modules keep their entries (nothing is removed but by `remove`).
 //!
 //! Callers: the UI task (the menu, `core/fxpages`) and the mailbox test commands. Not for interrupts or the MIDI task: the record is one buffer.
-//! The C ABI for core modules is `dkrt_settings_get`, `dkrt_settings_put` and `dkrt_settings_remove` below; there is no API for `.dkm` modules yet
+//! The C ABI for core modules is `dkrt_settings_get`, `dkrt_settings_put`, `dkrt_settings_remove` and `dkrt_settings_flush` below; there is no API for `.dkm` modules yet
 //! (a module will reach its own `<module id>/` prefix only).
 use crate::{block_read, block_write, card, dlog};
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
@@ -333,6 +333,26 @@ pub unsafe extern "C" fn dkrt_settings_put(key: *const u8, value: *const u8, len
 pub unsafe extern "C" fn dkrt_settings_remove(key: *const u8) -> i32 {
     crate::init_once();
     remove(key_of(key))
+}
+
+/// Write the record now when it has changes the card does not hold: 0 (also when nothing was changed), or `E_WRITE`, `E_RANGE`, `E_CARD_RO`, `E_SET_OFF`. UI task.
+pub unsafe fn flush_if_dirty() -> i32 {
+    ensure();
+    if state().off != 0 {
+        return E_SET_OFF;
+    }
+    if state().dirty == 0 {
+        return OK;
+    }
+    flush()
+}
+
+/// `dkrt_settings_flush()`: write the record to the card now when it has changes the card does not hold (a menu does this before it restarts, so the change is not lost
+/// to the 2 s delay; `dkrt_restart` does it too): 0 (also when nothing was changed), or `E_WRITE`, `E_RANGE`, `E_CARD_RO`, `E_SET_OFF`. UI task.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_settings_flush() -> i32 {
+    crate::init_once();
+    flush_if_dirty()
 }
 
 /// The mailbox test commands: `arg` = `u8 key_len`, the key, `u8 value_len`, the value (96 bytes in all). `CMD_SETTINGS_GET` answers the value's

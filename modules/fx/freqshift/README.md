@@ -14,8 +14,9 @@ The effect has a page of its own in the FX view (FUNC + FX, then UP or DOWN afte
 - **SHIFT** (first knob, shown from -64 to +63, 0 in the middle): the shift. 0 is no shift (the sound passes through the allpass pair, magnitude flat). Positive values move the frequencies up,
   negative values down. One step near 0 is about 0.1 Hz, and the steps grow exponentially to about +-2 kHz at the ends. The knob is a sweep: turning it ramps
   the shift inside each block of 32 samples and never jumps the phase, so there are no clicks.
-- **MIX** (the framework's level knob): the blend of the dry and the shifted sound. It starts at **0**, so loading the effect does not change the sound until MIX is turned up.
-  MIX 127 is only the shifted sound, 0 only the dry sound (bit for bit).
+- **MIX** (the framework's level knob). It starts at **127**. On the send route (the default on the Digitakt II) MIX is the level of the return: 127 adds the full shifted sound of the sends, 0 adds nothing.
+  As a master insert (FX ROUTES, below) MIX is the blend of the dry and the shifted sound: 127 is only the shifted sound (fully shifted), 0 only the dry sound (bit for bit). MIX is one value for both routes: after moving the
+  effect to the master, turn MIX down to hear some dry sound with the shifted one.
 
 | SHIFT | shift | | SHIFT | shift |
 | ---: | ---: | --- | ---: | ---: |
@@ -29,9 +30,14 @@ The effect has a page of its own in the FX view (FUNC + FX, then UP or DOWN afte
 
 The formula is in the cookbook (docs/findings/54-module-cookbook.md): `f = sign(v) 0.63 (2^(|v| / 5.5) - 1)` Hz.
 
+Route: the effect starts as a **send** effect (`route = "send"`, `routes = ["send", "master"]`): the FX key gets a second page with one knob **FSH** for the current track (while it turns the title says
+`FSH Send=40`), and the shifter gets the sum of the tracks' sends (amount squared, like the stock sends), so one track can be shifted while the others stay dry. A track with amount 0 is not shifted. DIGIKIT > FX ROUTES
+moves the effect to the master (after a restart), where it shifts the whole mix. A send is limited by the device's send cells (two on the Digitakt II, one on the Digitone II); an effect past the limit runs on the master. See
+`docs/findings/62-fx-send-route.md`, `64-fx-send-page.md`, `65-fx-routes.md`, `66-freqshift-send.md`, `67-fx-routes-dn2.md`.
+
 Things to know:
 
-- The input is the whole master mix (after the master mix and before the output), so every track and the send effects are shifted together. A long reverb tail that is shifted keeps moving.
+- On the master route the input is the whole master mix (after the master mix and before the output), so every track and the send effects are shifted together. A long reverb tail that is shifted keeps moving. On the send route the input is the sum of the sends only.
 - Frequencies above 18 kHz and below 30 Hz are shifted with less image rejection (the image is still 5 dB down at 5 Hz); a DC offset becomes a tone at the shift frequency.
 - A shift upward moves high frequencies past 24 kHz, where they fold back down (aliasing): a high-pitched sound shifted up by 2 kHz gets a faint reflection.
 - It costs about 4,100 DSP instructions per block of 32 samples (about 2 % of the busy budget of one effect slot; the declared maximum is 4,200).

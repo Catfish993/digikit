@@ -68,11 +68,11 @@
     .equ FX_MARK_INDEX, 0x64    /* [fx] mark_index (the array index that holds the mark: an effect row has its values) */
     .equ FX_TAIL_OFF, 0xca    /* [fx] tail_off (the u32 after the array's halfwords: the loader and saver copy it, bytes from the array) */
     .equ FX_VALUES_N, 0x18    /* [fx] value_indices: number of indices */
-    .equ FX_TRACK_PAGE, 0x0    /* [fx] track_page (the stock page the send page copies its title and level slot from; 0: no send page) */
-    .equ FX_SOUND_OFF, 0x0    /* [fx] sound_off (the first Sound object in the kit object, bytes from the kit object) */
-    .equ FX_SOUND_STRIDE, 0x0    /* [fx] sound_stride (bytes between the 16 Sound objects) */
-    .equ FX_SEND_TEMPLATE, 0x0    /* [fx] send_template (the stock send row whose owner and key words a send knob copies) */
-    .equ LIMIT_SEND_SLOTS, 0x0    /* [limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one) */
+    .equ FX_TRACK_PAGE, 0x10    /* [fx] track_page (the stock page the send page copies its title and level slot from; 0: no send page) */
+    .equ FX_SOUND_OFF, 0x34    /* [fx] sound_off (the first Sound object in the kit object, bytes from the kit object) */
+    .equ FX_SOUND_STRIDE, 0x48b    /* [fx] sound_stride (bytes between the 16 Sound objects) */
+    .equ FX_SEND_TEMPLATE, 0x44    /* [fx] send_template (the stock send row whose owner and key words a send knob copies) */
+    .equ LIMIT_SEND_SLOTS, 0x1    /* [limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one) */
     .equ FX_VALUE_0, 0x46    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_1, 0x47    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_2, 0x48    /* [fx] value_indices (an effect value index that no stock parameter uses) */
@@ -105,7 +105,7 @@
     .equ FX_VALUE_29, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_30, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
     .equ FX_VALUE_31, 0x0    /* [fx] value_indices (an effect value index that no stock parameter uses) */
-    .equ FX_SEND_IDX_0, 0x0    /* [fx] send_indices (a Sound array index the send page's knob uses) */
+    .equ FX_SEND_IDX_0, 0x64    /* [fx] send_indices (a Sound array index the send page's knob uses) */
     .equ FX_SEND_IDX_1, 0x0    /* [fx] send_indices (a Sound array index the send page's knob uses) */
     .equ PEEK_LO_0, 0x40000000    /* [digikit] peek range start (RAM the PEEK command may read) */
     .equ PEEK_HI_0, 0x466c0000    /* [digikit] peek range end (exclusive) */

@@ -1,0 +1,9 @@
+"""FX ROUTES page and the manifest's route fields, Digitone II (tests/digikit/scenarios/fx-routes-dn2.toml): the default route from the manifest, the page's rows and messages, APPLY & RESTART and the route in effect after it, the FX view's order."""
+
+import pytest
+from scen_cases import cases, run
+
+
+@pytest.mark.parametrize(("scen", "image"), cases(("fxroutes",), "dn2"))
+def test_scenario(scen, image, tmp_path_factory, request):
+    run(scen, image, tmp_path_factory, request)

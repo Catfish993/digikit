@@ -34,6 +34,10 @@ from tools.patchkit.pk_digikit_fx import (
 
 W_ROUTE, W_AMT0 = 18, 19  # row words of the send route (core/fx module.toml)
 GAIN = 0.5  # test/dyn-fx-gain
+SLOT_BUS, SLOT_BYTES = (
+    0x257EE8,
+    256,
+)  # DN2: the 16 voice slots' buses (anchor dsp.fx.slotbus; 32 left then 32 right floats each)
 
 
 def aligned(ref: np.ndarray, run: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -49,10 +53,20 @@ def aligned(ref: np.ndarray, run: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def added_factor(dry: np.ndarray, out: np.ndarray) -> float:
-    """The median of (out - dry) / dry where the dry sound is above a fifth of its peak: the factor of the part that the send adds."""
-    d, o = aligned(dry, out)
-    sel = np.abs(d) > 0.2 * float(np.abs(d).max())
-    return float(np.median((o[sel] - d[sel]) / d[sel]))
+    """The factor of the part that the send adds: OUT is the dry note times (1 + f), possibly started a few frames later than DRY (the note's start in the coupled run depends on how many
+    DSP instructions the blocks before it cost, so a heavier hook starts it later). The least-squares gain of OUT over DRY at the best frame shift (even interleaved offsets, up to 256 frames
+    either way; the shift that leaves the smallest residue, which is 0 for a note that starts together) is 1 + f. A median of ratios is noisy where the sound is quiet."""
+    pad = 600
+    n = min(len(dry), len(out)) - 2 * pad
+    d = dry[pad : pad + n].astype(np.float64)
+    dd = float(np.dot(d, d))
+    best = (float("inf"), 0.0)
+    for sh in range(-512, 513, 2):
+        o = out[pad + sh : pad + sh + n].astype(np.float64)
+        a = float(np.dot(o, d) / dd)
+        res = float(np.abs(o - a * d).max())
+        best = min(best, (res, a - 1.0))
+    return best[1]
 
 
 def run_fxsend(c: Any) -> None:
@@ -68,6 +82,7 @@ def run_fxsend(c: Any) -> None:
     sine = c.pack(SINE, "m0.dkm")
     fx_file = c.pack(FX, "m1.dkm")
     pcm: dict[str, np.ndarray] = {}
+    sounding = [0]
     counts: dict[str, tuple[int, int]] = {}
 
     def sound(rig: Any, wav: Path) -> np.ndarray:
@@ -79,8 +94,49 @@ def run_fxsend(c: Any) -> None:
         text = "".join(f"DM {base + 4 * w:x} {v:08x}\n" for w, v in words.items())
         rig.emu.patch(text=text)
 
-    def boot(tag: str, amounts: int | None) -> None:
-        """Sine and effect; AMOUNTS None: the effect stays on the master route (not used), else route 1 and the word 19 = AMOUNTS (the others 0)."""
+    def slots_sounding(rig: Any) -> int:
+        """DN2: the voice slots whose bus carries a sound in the block that ran last (the slot buses are read from the DSP memory)."""
+        raw = rig.dsp_bytes(SLOT_BUS, 16 * SLOT_BYTES)
+        f = np.frombuffer(raw, dtype="<f4").reshape(16, 64)
+        return int((np.abs(f).max(axis=1) > 1e-5).sum())
+
+    def chord(rig: Any, wav: Path) -> np.ndarray:
+        """DN2: two notes of track 1, the second while the first still sounds (a release tail): two voice slots. TRIG 1 down, up, down; the PCM is captured from the first."""
+        emu = rig.emu
+        emu.call("run_until", frames=trig)
+        emu.step(M.PRESS_OFFSET)
+        emu.call("pcm.tap", action="capture", path=str(wav))
+        btn = M.H.button(M.TRIG1)
+        emu.button(btn, True)
+        emu.call("run_until", frames=trig + 60)
+        emu.button(btn, False)
+        emu.call("run_until", frames=trig + 120)
+        emu.button(btn, True)
+        emu.call("run_until", frames=trig + 220)
+        sounding[0] = slots_sounding(rig)
+        emu.call("run_until", frames=trig + M.NOTE_FRAMES)
+        emu.call("pcm.tap", action="capture_stop")
+        emu.button(btn, False)
+        rig.s.run_ms(50)
+        rig.s.health(f"chord {rig.tag}")
+        return M.hook_ab.read_wav(wav)
+
+    def idle(rig: Any, wav: Path) -> np.ndarray:
+        """No note: the PCM of the same span as a note's."""
+        emu = rig.emu
+        emu.call("run_until", frames=trig)
+        emu.call("pcm.tap", action="capture", path=str(wav))
+        emu.call("run_until", frames=trig + M.NOTE_FRAMES // 2)
+        emu.call("pcm.tap", action="capture_stop")
+        return M.hook_ab.read_wav(wav)
+
+    def boot(
+        tag: str,
+        amounts: int | None,
+        play: Any = None,
+        words: dict[int, int] | None = None,
+    ) -> None:
+        """Sine and effect; AMOUNTS None: the effect stays on the master route (not used), else route 1 and the word 19 = AMOUNTS (the others 0, or WORDS). PLAY replaces the single note."""
         card = c.card([sine, fx_file] if amounts is not None else [sine])
         with c.rig(img, card, tag) as rig:
             info = rig.boot_info()
@@ -99,14 +155,18 @@ def run_fxsend(c: Any) -> None:
                     and row[W_ROUTE : W_AMT0 + 4] == (0,) * 5,
                     f"{[hex(x) for x in row]}",
                 )
-                set_row(rig, {W_ROUTE: 1, W_AMT0: amounts})
+                set_row(rig, {W_ROUTE: 1, W_AMT0: amounts, **(words or {})})
                 row = chain_rows(rig, slots)[0]
                 c.check(
                     f"{tag}: the route word is 1 and the amount word {amounts:#x}",
                     row[W_ROUTE] == 1 and row[W_AMT0] == amounts,
                     f"{row[W_ROUTE]} {row[W_AMT0]:#x}",
                 )
-            pcm[tag] = sound(rig, c.work / f"{tag}.wav")
+            if play is None:
+                pcm[tag] = sound(rig, c.work / f"{tag}.wav")
+            else:
+                rig.pick(rig.dyn_type(SINE, "sine"), hint)
+                pcm[tag] = play(rig, c.work / f"{tag}.wav")
             if amounts is not None:
                 rows = chain_rows(rig, slots)
                 after = rows[0]
@@ -122,18 +182,28 @@ def run_fxsend(c: Any) -> None:
                 counts[tag] = (n0, n1)
                 c.check(
                     f"{tag}: the effect's call counter goes up by one a block: the send hook runs it and the master chain does not",
-                    n0 > 1000 and 90 <= n1 - n0 <= 110,
+                    n0 > 1000 and (90 <= n1 - n0 <= 110 or play is idle),
                     f"{n0} then {n1}",
                 )
             c.done(rig)
 
-    c.parallel(
+    dn2 = c.device == "dn2"
+    boots = [
         lambda: boot("dry", None),
         lambda: boot("zero", 0),
         lambda: boot("other", 0x7F00),
         lambda: boot("full", 0x7F),
         lambda: boot("half", 0x40),
-    )
+    ]
+    if dn2:  # the Digitone II sums voice slots into the tracks: a chord, and slots that are free
+        boots += [
+            lambda: boot("chordzero", 0, chord),
+            lambda: boot("chordfull", 0x7F, chord),
+            lambda: boot(
+                "idle", 0x7F7F7F7F, idle, {19 + k: 0x7F7F7F7F for k in range(1, 4)}
+            ),
+        ]
+    c.parallel(*boots)
     dry = pcm["dry"]
     c.check(
         "dry: the sine is audible",
@@ -150,8 +220,9 @@ def run_fxsend(c: Any) -> None:
             bool(r["identical"]) and abs(r["shift"]) <= 128,
             f"onset shift {r['shift']}, max err {r.get('max_abs_err')}",
         )
-    e_full = added_factor(dry, pcm["full"])
-    e_half = added_factor(dry, pcm["half"])
+    # the reference of the factor is the run with the effect loaded and no amount (`zero`, equal to the dry PCM): a run without the effect module starts the note some 60 samples earlier
+    e_full = added_factor(pcm["zero"], pcm["full"])
+    e_half = added_factor(pcm["zero"], pcm["half"])
     ratio = e_half / e_full if e_full else float("nan")
     want = (64 / 127) ** 2
     c.check(
@@ -169,4 +240,21 @@ def run_fxsend(c: Any) -> None:
         not bool(scaled(dry, pcm["full"], 1.0)["identical"]),
         "",
     )
+    if dn2:
+        e_chord = added_factor(pcm["chordzero"], pcm["chordfull"])
+        c.check(
+            f"chord: the two notes of track 1 sound in {sounding[0]} voice slots at once",
+            sounding[0] >= 2,
+            f"{sounding[0]} slots with a sound",
+        )
+        c.check(
+            f"chord: with an amount of 127 on track 1 the return carries the sum of the slots: the PCM is the chord without an amount times {1 + e_chord:.5f}",
+            abs(e_chord / GAIN - 1.0) < 1e-3,
+            f"added factor {e_chord:.5f}",
+        )
+        c.check(
+            "idle: with an amount of 127 on all 16 tracks and no note (every slot free) the PCM is silent",
+            len(pcm["idle"]) > 1000 and float(np.abs(pcm["idle"]).max()) == 0.0,
+            f"peak {float(np.abs(pcm['idle']).max()):.2e}",
+        )
     c.common_checks()

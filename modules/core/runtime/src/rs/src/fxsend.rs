@@ -1,7 +1,9 @@
 //! Send effects: the route of a run-time effect and its send amounts, one for each track (docs/findings/64-fx-send-page.md; the DSP side is finding 62).
 //!
-//! A digikit effect runs on the master chain or on a send bus. The route is a setting (`fx/route/<module id>`, one byte, 1 = send; step 2's store) and is read when the
-//! effect is registered, at the boot; the device limits the send effects (`[limits] send_slots`, `fxpages_info` word 39: the cells of the send page); an effect past the limit
+//! A digikit effect runs on the master chain or on a send bus. The route is a setting (`fx/route/<module id>`, one byte, 0 master, 1 send; step 2's store) and is read when the
+//! effect is registered, at the boot. The effect's record says which routes are allowed and which is the default (`[[fx]] route`, `routes` of the manifest; flags word of the
+//! record): the default is used when the setting is not there or names a route the effect does not allow. DIGIKIT > FX ROUTES (`core/digikit-menu`) writes the setting through
+//! `dkrt_settings_put`, and lists the effects with `dkrt_fx`; the device limits the send effects (`[limits] send_slots`, `fxpages_info` word 39: the cells of the send page); an effect past the limit
 //! stays on the master. A send effect has a cell on the send page (the second page of the track FX key, `core/fxpages`): one knob row (`params.fs<c>`) whose value is the halfword
 //! `Sound[send_indices[c]]` of the current track's Sound object, so the firmware's own page code shows, edits and draws it (`FSH Send=40`). The row has the value class of the
 //! kit's Delay rows (no p-lock) and no CC.
@@ -20,6 +22,13 @@ use crate::fxpage::{self, iw, rd, rd16, wr, wr16};
 use crate::{dsp, registry, settings};
 use core::ptr::addr_of_mut;
 use dkrt_sdk::*;
+
+/// The routes of an effect (`dkrt_sdk::DkrtFx`), and the bits of the flags word of its record (docs/design/digikit-dkm.md).
+const ROUTE_MASTER: u8 = 1;
+const ROUTE_SEND: u8 = 2;
+const FXF_SEND: u32 = 1;
+const FXF_NOMASTER: u32 = 2;
+const FXF_DEFAULT_SEND: u32 = 4;
 
 /// Cells of the send page the image can have at most (`[limits.max] send_slots`).
 pub const SEND_MAX: usize = 2;
@@ -62,6 +71,9 @@ pub struct SendState {
     pub puts: u32,
     /// The tracks (bit mask) whose Sound array gets the stored amounts before it is read.
     pub restore: u32,
+    /// Per effect row: the routes the effect allows (`ROUTE_*` bits) and its default route (`ROUTE_*`), from its record.
+    pub allow: [u8; fxpage::MAX_FX],
+    pub dflt: [u8; fxpage::MAX_FX],
     /// Per effect row: 1 when it runs on a send bus, its cell + 1, the length of its module id and the id.
     pub route: [u8; fxpage::MAX_FX],
     pub cell: [u8; fxpage::MAX_FX],
@@ -109,6 +121,63 @@ pub unsafe fn slots() -> u32 {
         return 0;
     }
     iw(inf, w::CELLS).min(SEND_MAX as u32)
+}
+
+/// The routes of a record's flags word: (allowed `ROUTE_*` bits, default `ROUTE_*`). The loader has checked the word.
+fn routes_of(flags: u32) -> (u8, u8) {
+    let mut allow = 0;
+    if flags & FXF_NOMASTER == 0 {
+        allow |= ROUTE_MASTER;
+    }
+    if flags & FXF_SEND != 0 {
+        allow |= ROUTE_SEND;
+    }
+    (allow, if flags & FXF_DEFAULT_SEND != 0 { ROUTE_SEND } else { ROUTE_MASTER })
+}
+
+/// The route effect row `k` has in the settings, as `ROUTE_*`: the stored one when the effect allows it, else its default. UI task.
+unsafe fn saved_route(k: usize) -> u8 {
+    let s = ss();
+    let mut key = [0u8; KEY_MAX];
+    let kn = key_of(&mut key, b"fx/route/", &s.id[k], s.idlen[k] as usize);
+    let mut v = [0u8; 4];
+    if settings::get(&key[..kn], &mut v) == 1 {
+        let r = if v[0] == 1 { ROUTE_SEND } else if v[0] == 0 { ROUTE_MASTER } else { 0 };
+        if r != 0 && s.allow[k] & r != 0 {
+            return r;
+        }
+    }
+    s.dflt[k]
+}
+
+/// Effect `index` (0 ..) in row order, among the rows that have a page: the entry for DIGIKIT > FX ROUTES. 0, or `E_NOT_FOUND` past the end. UI task.
+pub unsafe fn fx_entry(index: u32, out: &mut DkrtFx) -> i32 {
+    let s = ss();
+    let mut seen = 0;
+    let mut k = 0;
+    while k < fxpage::MAX_FX {
+        if fxpage::page_owner(k) != 0 {
+            if seen == index {
+                out.row = k as u32;
+                out.allowed = s.allow[k] as u32;
+                out.default = s.dflt[k] as u32;
+                out.running = if s.route[k] != 0 { ROUTE_SEND as u32 } else { ROUTE_MASTER as u32 };
+                out.saved = saved_route(k) as u32;
+                out.tab = [0; 8];
+                fxpage::tab_of(k, &mut out.tab);
+                out.id = s.id[k];
+                return OK;
+            }
+            seen += 1;
+        }
+        k += 1;
+    }
+    E_NOT_FOUND
+}
+
+/// Does effect row `k` run on a send bus (the FX view lists the send effects before the master effects).
+pub fn is_send(k: usize) -> bool {
+    k < fxpage::MAX_FX && ss().route[k] != 0
 }
 
 /// Send effects loaded (CAPACITY `used`).
@@ -167,12 +236,17 @@ unsafe fn publish_count(inf: *const u32) {
 /// Effect row `k` (module record `owner - 1`, tab string `tab`) has been registered: read its route and amounts from the settings and, for a send effect within the limit, give it a
 /// cell of the send page. The route and the four amount words go to the DSP with the row (`dsp::fx_set_route`).
 pub unsafe fn apply(k: usize, owner: u8, tab: *const u8) {
-    let inf = info();
-    if inf.is_null() || k >= fxpage::MAX_FX || owner == 0 {
+    if k >= fxpage::MAX_FX || owner == 0 {
         return;
     }
     let s = ss();
-    release(inf, k);
+    let inf = info();
+    if !inf.is_null() {
+        release(inf, k);
+    }
+    let (allow, dflt) = routes_of(dsp::fx_flags_of(k));
+    s.allow[k] = allow;
+    s.dflt[k] = dflt;
     let m = &crate::st().modules[owner as usize - 1];
     let mut n = 0;
     while n < 31 && m.name[n] != 0 {
@@ -184,11 +258,12 @@ pub unsafe fn apply(k: usize, owner: u8, tab: *const u8) {
         n += 1;
     }
     s.idlen[k] = crate::cstr_len(m.name.as_ptr(), 32) as u8;
+    // an image with no send page (no cells) has every effect on the master, whatever the settings say
+    if inf.is_null() {
+        return;
+    }
+    let want = saved_route(k) == ROUTE_SEND;
     let mut key = [0u8; KEY_MAX];
-    let mut v = [0u8; 4];
-    let kn = key_of(&mut key, b"fx/route/", &s.id[k], s.idlen[k] as usize);
-    let r = settings::get(&key[..kn], &mut v);
-    let want = r == 1 && v[0] == 1;
     let mut a = [0u8; TRACKS];
     let kn = key_of(&mut key, b"fx/send/", &s.id[k], s.idlen[k] as usize);
     if settings::get(&key[..kn], &mut a) != TRACKS as i32 {
@@ -245,6 +320,8 @@ pub unsafe fn apply(k: usize, owner: u8, tab: *const u8) {
         publish_count(inf);
     }
     dsp::fx_set_route(k, s.route[k] as u32, s.dsp[k]);
+    // the FX view lists the send effects first: the list is built again now that the route is known
+    fxpage::relist();
 }
 
 /// Give back the cell of effect row `k` (if it has one).
@@ -270,12 +347,16 @@ unsafe fn release(inf: *const u32, k: usize) {
 
 /// The effect row `k` is gone (its module was removed): its cell and its state.
 pub unsafe fn remove(k: usize) {
-    let inf = info();
-    if inf.is_null() || k >= fxpage::MAX_FX {
+    if k >= fxpage::MAX_FX {
         return;
     }
-    release(inf, k);
+    let inf = info();
+    if !inf.is_null() {
+        release(inf, k);
+    }
     let s = ss();
+    s.allow[k] = 0;
+    s.dflt[k] = 0;
     s.amt[k] = [0; TRACKS];
     s.dsp[k] = [0; 4];
     s.idlen[k] = 0;

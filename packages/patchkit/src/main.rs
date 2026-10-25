@@ -494,10 +494,13 @@ plan.json {}",
                 let mut fxs: Vec<patchkit::dkmdsp::FxSpec> = vec![];
                 let mut pages = vec![];
                 for (i, f) in dev_fx.iter().enumerate() {
+                    let (routes, route) = patchkit::register::fx_routes(id, f)?;
                     fxs.push(patchkit::dkmdsp::FxSpec {
                         process: f.process.clone(),
                         desc: f.desc.clone(),
                         defaults: patchkit::register::fx_defaults(id, f)?,
+                        routes,
+                        route,
                     });
                     if let Some(p) = patchkit::register::effect_page(id, i, f)? {
                         pages.push(p);

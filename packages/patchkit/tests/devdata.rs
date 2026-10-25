@@ -327,7 +327,8 @@ fn the_effect_page_rows_are_eight_parameter_rows_for_each_fx_slot() {
         if let Some(track_page) = t["fx"].get("track_page").and_then(|v| v.as_integer()) {
             let send = t["limits"]["send_slots"].as_integer().unwrap() as u64;
             let n = t["fx"]["send_indices"].as_array().unwrap().len() as u64;
-            assert!(track_page > 0 && send <= n && send <= send_rows && send_rows == n, "{file}: {send} {n} {send_rows}");
+            // the rows are shared by both devices (as many as the device with the most send cells); a device uses n of them
+            assert!(track_page > 0 && send <= n && n <= send_rows, "{file}: {send} {n} {send_rows}");
             let (off, stride) = (
                 t["fx"]["sound_off"].as_integer().unwrap(),
                 t["fx"]["sound_stride"].as_integer().unwrap(),

@@ -8,7 +8,7 @@ A scenario is a TOML file in `tests/digikit/scenarios/`:
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc" | "pages" | "fx" | "fxsend" | "fxroute" | "settings"
+    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc" | "pages" | "fx" | "fxsend" | "fxroute" | "fxroutes" | "settings"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -53,6 +53,9 @@ Kinds:
              one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
   fxsend     a run-time effect on the send route of `core/fx` (Digitakt II): the row's route and amount words are written with `dsp.patch`; no amount, or an amount on a silent track, leaves the PCM
              dry bit for bit; an amount on the playing track adds the effect's return (the amount squared, as the stock sends); the effect runs once a block; tools/patchkit/pk_digikit_fxsend.py.
+  fxroutes   SETTINGS > DIGIKIT > FX ROUTES and the manifest's route fields (`route`, `routes` of `[[fx]]`; Digitakt II): a send-default effect starts on the send route, the page lists each
+             effect as `<TAB>  SEND` or `<TAB>  MASTER`, YES switches the pending route (MASTER ONLY, SEND ONLY and NO SEND SLOT are messages), APPLY & RESTART writes the settings and restarts and the
+             route is in effect after it (row word, FX key page, PCM, `patchkit store dump`), the FX view lists send effects first; tools/patchkit/pk_digikit_fxroutes.py.
   settings   the settings store of the runtime (docs/design/digikit-store.md, "The settings record"): a key put through the mailbox is written 2 s after the last change to the copy that is not
              current (A, then B, then A), never to anything else in the store range; a soft restart reads it back; the SETTINGS command and CAPACITY kind SETTINGS report it; `patchkit store dump`
              decodes the card the guest left; a blank card is claimed first; a torn newer copy leaves the older one; tools/patchkit/pk_digikit_settings.py.
@@ -63,9 +66,10 @@ Kinds:
   fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II and Digitone II): Save Kit and Load Kit restore them to the
              same effect (kit array, DSP row, PCM, pages) and give another effect, an empty row or a stock kit the defaults, never a zero on the way to the DSP; a project; another
              pattern's kit; tools/patchkit/pk_digikit_fxpersist.py.
-  fxshift    the frequency shifter `digikit/freqshift` (Digitakt II): its page (tab FSH, title Freq Shifter, SHIFT bipolar, MIX default 0), loading it leaves the PCM bit for bit as it was, MIX up and SHIFT 0
-             keeps the sine, turning SHIFT moves the sine by the shift of the routine's mapping in either direction with the image 40 dB down, Save Kit and Load Kit give SHIFT back;
-             tools/patchkit/pk_digikit_fxshift.py.
+  fxshift    the frequency shifter `digikit/freqshift` (Digitakt II and Digitone II; the manifest says send, MIX 127): its page (tab FSH, title Freq Shifter, SHIFT bipolar, MIX default 127), on the master route (stored `master` on
+             the Digitakt II, the fallback on the Digitone II, which has no send cells) MIX 0 leaves the PCM bit for bit as it was, MIX 127 and SHIFT 0 keeps the sine, turning SHIFT moves the sine by the shift of the routine's
+             mapping in either direction with the image 40 dB down, Save Kit and Load Kit give SHIFT back; on the Digitakt II also the send route (the default): an amount on track 1 gives a return of amount^2 x MIX x the shifted
+             track (compared with the float32 model), an amount on another track adds nothing; tools/patchkit/pk_digikit_fxshift.py.
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
@@ -1165,12 +1169,12 @@ def check_memory_page(c: Ctx, rig: B.BootRig, plan: Any) -> None:
         rig.s.do_tap(key)
         rig.s.run_ms(gap_ms)
 
-    tap("NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MEMORY (the fourth row)
+    tap("NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MEMORY (the fifth row)
     tap("SETTINGS", 600)
     for _ in range(8):
         tap("DOWN", 200)
     tap("YES", 700)
-    for _ in range(3):
+    for _ in range(4):
         tap("DOWN", 200)
     tap("YES", 700)
     base, n = plan.addr("DK_MEM"), rig.w(plan.addr("DK_MEM_N"))
@@ -1409,6 +1413,12 @@ def run_fxroute(c: Ctx) -> None:
     from tools.patchkit import pk_digikit_fxroute as FR
 
     FR.run_fxroute(c)
+
+
+def run_fxroutes(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxroutes as FRS
+
+    FRS.run_fxroutes(c)
 
 
 def run_settings(c: Ctx) -> None:
@@ -1858,13 +1868,13 @@ def run_live_remote(c: Ctx) -> None:
             time.sleep(wait)
 
         def menu_remote() -> None:
-            """SETTINGS > DIGIKIT (the ninth row) > REMOTE (the sixth row of the DIGIKIT page), one press: the switch toggles."""
+            """SETTINGS > DIGIKIT (the ninth row) > REMOTE (the seventh row of the DIGIKIT page), one press: the switch toggles."""
             tap("NO", 2)
             tap("SETTINGS", 3)
             for _ in range(8):
                 tap("DOWN")
             tap("YES", 3)
-            for _ in range(5):
+            for _ in range(6):
                 tap("DOWN")
             tap("YES", 2)
             tap("NO", 2)
@@ -1989,6 +1999,7 @@ def run_live_remote_keys(c: Ctx) -> None:
         for _ in range(8):
             tap("DOWN")
         tap("YES", 3)  # the DIGIKIT menu, the cursor on MODULES
+        tap("DOWN")  # FX ROUTES
         tap("DOWN")  # ABOUT
         tap("YES", 3)  # the ABOUT page
         base = H.plan_symbol(plan, "DK_ABOUT")
@@ -2140,6 +2151,7 @@ KINDS = {
     "fx": run_fx,
     "fxsend": run_fxsend,
     "fxroute": run_fxroute,
+    "fxroutes": run_fxroutes,
     "settings": run_settings,
     "fxpage": run_fxpage,
     "fxpersist": run_fxpersist,

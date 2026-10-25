@@ -61,6 +61,8 @@ results.
     int      dkrt_settings_get(const char *key, uint8_t *buf, uint32_t cap);      // digikit's settings record (0.5.1, finding 63): the value's length, or a negative E_SET_* code
     int      dkrt_settings_put(const char *key, const uint8_t *value, uint32_t len);  // 0 or E_SET_*; written to the card 2 s after the last change
     int      dkrt_settings_remove(const char *key);                               // 0 (also when the key was not there)
+    int      dkrt_settings_flush(void);                                           // write the record to the card now if it has unwritten changes (a menu does this before a restart)
+    int      dkrt_fx(uint32_t index, DkrtFx *out);                                // the loaded effects that have a page: tab, module id, allowed routes, default, route in force, saved route (FX ROUTES, FX routing step 4); E_NOT_FOUND past the end
     uint32_t dkrt_blocks(void);             // DSP blocks since boot (1500 per second), 0 without core/health: a clock for a UI
     void    dkrt_poll_set(uintptr_t fn);    // fn() is called at the end of every UI-loop pass in the UI task (0 removes it); one caller
 
@@ -191,7 +193,7 @@ module down again (`loader::undo_early`, the only user of the take-down). Until 
 present-state register shows a transfer, checked again with interrupts masked), `dkrt_boot_info(out *mut DkrtBootInfo)`. Mailbox: `CMD_SELECT`,
 `CMD_SELECT_ONE` (one copy, for the power-cut test), `CMD_RESTART`, `CMD_HEALTH` (6: `dkrt_health` into the exported `DKRT_HEALTH`), `CMD_CARD_PROBE` 7, `CMD_DEBUG` 8, `CMD_SETTINGS_PUT`/`_GET`/`_REMOVE`/`_FLUSH` 9 to 12 (the settings store's test hooks). `dkrt_status` and `dkrt_module` keep their meaning for this session.
 
-**Restart.** `dkrt_restart`: refuse during a card transfer; save the working state the way the firmware does before an OS update
+**Restart.** `dkrt_restart`: refuse during a card transfer; write a pending settings record (finding 65: a settings change younger than the 2 s delay survives the restart); save the working state the way the firmware does before an OS update
 (`save_working_state`, `DKRT_SAVE_MODE`: the project into the arena, then the arena into the boot record; finding 40); mask interrupts; the firmware's own
 sequence: wait (bounded) for the console UART8 to empty, clear DDR word 0 through the uncached alias, 25 nops, `0x80` into `RCM.RCR`
 (`0xEC090000`). A restart loses the unsaved edits that the firmware itself would lose at that point; finding 40 measured it: panel pattern and sound edits do not reach the arena, so the menu asks the player to save the project first.

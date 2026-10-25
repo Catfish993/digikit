@@ -193,7 +193,7 @@ The bytes after `used` are not part of the record (a shorter record written over
 crc32 and entries hold (every entry inside `used`, every key legal, no key twice). A reader takes the valid copy with the higher `seq` (equal: A); no valid copy is an empty record. The shared vectors
 `sdk/settings-vectors.json` (valid records with their decoded entries and a refused record for each rule, with the first rule it breaks) are checked by the Rust SDK tests, by `patchkit store dump` and by the Python reader.
 
-**Keys by owner.** A key is `<owner prefix><module id>` or, later, `<module id>/...`. Now: `fx/route/<module id>` (1 byte: 0 master, 1 send) and `fx/send/<module id>` (16 bytes: the amount 0 to 127 of each track). The
+**Keys by owner.** A key is `<owner prefix><module id>` or, later, `<module id>/...`. Now: `fx/route/<module id>` (1 byte: 0 master, 1 send; absent, or a route the effect's manifest does not allow: the manifest's default `route`; written by DIGIKIT > FX ROUTES) and `fx/send/<module id>` (16 bytes: the amount 0 to 127 of each track). The
 prefixes and how a reader prints their values are `[[settings.key]]` of `sdk/sdk.toml` (generated). A key of another shape is stored and printed as text or hex. **Reserved, not built:** a run-time module (a `.dkm`) will
 reach only the keys that start with its own module id and a `/`; there is no module API yet (the runtime-internal functions below and the exported C functions for `core/*` modules are all there is).
 Unloaded modules keep their entries: nothing removes a key but `remove`.
@@ -215,7 +215,7 @@ Unloaded modules keep their entries: nothing removes a key but `remove`.
 
 **API.** Runtime-internal Rust: `settings::get(key, &mut buf) -> len | error`, `put(key, value) -> 0 | error`, `remove(key) -> 0 | error`, `flush()`. Exported C for `core/*` modules (task context, the module links them by symbol like the menu links the selection functions):
 `int dkrt_settings_get(const char *key, u8 *buf, u32 cap)` (the value's length, or `E_SET_NOKEY` -68, `E_SET_KEY` -66, `E_SET_VALUE` -69 when `cap` is too small), `int dkrt_settings_put(const char *key, const u8 *value, u32 len)` (0, `E_SET_KEY`, `E_SET_VALUE`,
-`E_SET_FULL` -67) and `int dkrt_settings_remove(const char *key)` (0, also when the key was not there). Mailbox test commands: `CMD_SETTINGS_PUT` 9, `_GET` 10, `_REMOVE` 11, `_FLUSH` 12.
+`E_SET_FULL` -67) and `int dkrt_settings_remove(const char *key)` (0, also when the key was not there) and `int dkrt_settings_flush(void)` (write the record now when it has changes the card does not hold; `dkrt_restart` does the same before it resets, so no restart path loses a change younger than the 2 s delay; a menu calls it to show a write error first: 0, also when nothing changed, or `E_WRITE`, `E_RANGE`, `E_CARD_RO`, `E_SET_OFF`). Mailbox test commands: `CMD_SETTINGS_PUT` 9, `_GET` 10, `_REMOVE` 11, `_FLUSH` 12.
 
 **Reading it from a device** (read only): the SysEx command `SETTINGS` 0x19 (capability bit 11): body `u32 offset, u16 length` (1 to 768); reply `u8 flags` (bit 0: changes not on the card yet), `u8 copy` (the card's current copy: 0 A, 1 B, 2 none), `u32 seq` (the card's),
 `u32 used`, then the record's bytes from `offset`. It answers from the RAM record (sealed with the card's `seq` when it has changes), so a host reads one valid record in pieces; `E_SET_NOKEY` when the card has no record and nothing was put. Host: `uv run python -m tools.device.dkupload --emu|--port NAME settings [-o FILE] [--json]`.

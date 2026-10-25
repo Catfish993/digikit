@@ -76,7 +76,7 @@ STATUS: dict[int, tuple[str, str]] = {
     -69: ("E_SET_VALUE", "a settings value is too long, or the buffer is too small"),
     -70: (
         "E_SET_OFF",
-        "the settings store is off (an older store on the card reaches into its area, or the card has no store)",
+        "settings store off: an older store reaches its area, or no store",
     ),
 }
 

@@ -201,6 +201,23 @@ pub struct DkrtModule {
     pub dsp_size: u32,
 }
 
+/// `dkrt_fx` result: one effect with a page (FX routing, finding 62 to 65). Routes are bit masks: 1 master, 2 send.
+#[repr(C)]
+pub struct DkrtFx {
+    /// The effect's row in the chain.
+    pub row: u32,
+    /// The routes the effect's record allows (`routes` of the manifest) and its default (`route`).
+    pub allowed: u32,
+    pub default: u32,
+    /// The route it runs on in this boot, and the route the settings give it now (the stored one when allowed, else the default): they differ after a change before the restart.
+    pub running: u32,
+    pub saved: u32,
+    /// The tab label of its page (NUL-terminated, up to 3 characters).
+    pub tab: [u8; 8],
+    /// The id of its module (NUL-terminated): the settings key is `fx/route/<id>`.
+    pub id: [u8; 32],
+}
+
 /// Text for a result code, for a menu line (upper case, at most 14 characters). A table, not a `match`: the compiler turns a
 /// dense `match` into a PC-relative jump table that is not ColdFire code.
 pub fn result_text(code: i32) -> &'static str {

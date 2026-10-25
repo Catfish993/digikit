@@ -252,16 +252,50 @@ unsafe fn rebuild_list(inf: *const u32) {
         wr(list + 4 * n, rd(stock + 4 * n));
         n += 1;
     }
-    let mut k = 0;
-    while k < iw(inf, w::PAGES) as usize && k < MAX_FX {
-        if s.owner[k] != 0 && n < cap {
-            wr(list + 4 * n, iw(inf, w::FIRST) + k as u32);
-            n += 1;
+    // the send effects first, then the master effects, each in row order (FX routing: the send effects are the ones the track FX key has a page for)
+    let mut pass = 0;
+    while pass < 2 {
+        let mut k = 0;
+        while k < iw(inf, w::PAGES) as usize && k < MAX_FX {
+            if s.owner[k] != 0 && n < cap && crate::fxsend::is_send(k) == (pass == 0) {
+                wr(list + 4 * n, iw(inf, w::FIRST) + k as u32);
+                n += 1;
+            }
+            k += 1;
         }
-        k += 1;
+        pass += 1;
     }
     // no page of ours: the count 0 keeps the stock list (the hook in the builder)
     wr(iw(inf, w::COUNT), if n == n_stock { 0 } else { n });
+}
+
+/// Build the page list again (a route changed the order).
+pub unsafe fn relist() {
+    let inf = info();
+    if !inf.is_null() {
+        rebuild_list(inf);
+    }
+}
+
+/// The module record + 1 that owns the page of effect row `k` (0: no page).
+pub fn page_owner(k: usize) -> u8 {
+    if k < MAX_FX {
+        fs().owner[k]
+    } else {
+        0
+    }
+}
+
+/// The tab label of the page of effect row `k` (up to 3 characters) into `out`.
+pub fn tab_of(k: usize, out: &mut [u8; 8]) {
+    if k < MAX_FX {
+        let t = &fs().tab[k];
+        let mut i = 0;
+        while i < 8 && t[i] != 0 {
+            out[i] = t[i];
+            i += 1;
+        }
+    }
 }
 
 /// Fill the page, the parameter rows and the list for the EFFECT record at `b` of module `owner` (module record + 1). The effect's row in the chain has been

@@ -17,7 +17,7 @@ bytes yet, so nothing here is **[V]**), **[O]** open. Pieces: `modules/core/fx/s
 At the entry of the master function the sends driver has finished: the track buses are intact (the stage after the master, `FUN_1c14e7`, probably scales them in place: at the end of a block the track bus is 3.1261 x the bus the effect saw, a constant over all samples, in the proof) and the return is
 written and not yet read. The return is mixed into the master at unity: with `test/fx-gain` (0.5) on a track of amount 127 the PCM is the dry PCM times 1.50000, the added part is 0.5 x the track x 1.0000
 (scenario `fx-send-dt2`). The rules hold on 1.16 (the DSP blobs are byte-identical; the rules are in `[[anchor_rule]]` of `core/fx`, resolved into `devices/ports/dt2-1.16.toml` and `dt2-1.17.toml`).
-The Digitone II has the same stages (master function `FUN_1c1f1e`, finding 53; track buses by `0x258f68 + (slot << 8)` with a slot-to-track map at `0x257898`, return `0x25b868`) and is **not wired** [O].
+The Digitone II has the same stages (master function `FUN_1c1f1e`, finding 53; track buses by `0x258f68 + (slot << 8)` with a slot-to-track map at `0x257898`, return `0x25b868`) and is wired since step 6 **[C]** (finding 67: the send bus is the sum over the 16 voice slots).
 
 ## The row **[D]**
 
@@ -76,8 +76,8 @@ master row to run, in the quick scan (the scan counts at the first send row and 
 
 ## Open **[O]**
 
-- The runtime writes route and amounts since step 3 (finding 64: `fxsend.rs`, the load sequence of `dsp.rs`, route and amounts before the pc; a freed row gets both reset to 0 after its pc); the route is the setting `fx/route/<module id>`, the amounts `fx/send/<module id>`, the knobs the send page of the FX key, the limit of two send effects `send_slots` (`fx_slots` stays 3 in total). The manifest `route` and the FX ROUTES page are step 4.
+- The runtime writes route and amounts since step 3 (finding 64: `fxsend.rs`, the load sequence of `dsp.rs`, route and amounts before the pc; a freed row gets both reset to 0 after its pc); the route is the setting `fx/route/<module id>`, the amounts `fx/send/<module id>`, the knobs the send page of the FX key, the limit of two send effects `send_slots` (`fx_slots` stays 3 in total). **[C]** Step 4 (finding 65) added the manifest's `route` and `routes` (the default route and the allowed ones, in the flags word of the effect record) and the FX ROUTES page: the route of a row is the stored `fx/route/<id>` when the effect allows it, else the manifest's default (master when the manifest says nothing); an effect that allows only the master never takes route 1.
 - A send effect has a wet-only return: the stock sends' own return levels (the per-effect return knobs in the master, `0x2526e0` ff.) are not modelled; MIX is the only level.
-- The Digitone II port (anchors for `FUN_1c1f1e`, the slot-to-track map of its sends, return `0x25b868`) is not done; `core/fx` builds the send object for the Digitakt II only.
+- **[C]** The Digitone II port is done in step 6 (finding 67): `core/fx` builds `fxsend-dn2.s` for it, anchors `dsp.fx.send`, `dsp.fx.slotbus`, `dsp.fx.slotmap`, `dsp.fx.return` in `dn2-1.11.toml` and `dn2-1.12.toml`.
 - The first block of a send row is a fade-in of the return (as the master route's), with the gains ramping from 0 at the same time: about 1 block (0.67 ms) of ramp.
 - A second agent checks the sites against the image bytes before the marks become [V].

@@ -139,15 +139,15 @@
 // [fx] value_indices: number of indices
 #define FX_VALUES_N 24
 // [fx] track_page (the stock page the send page copies its title and level slot from; 0: no send page)
-#define FX_TRACK_PAGE 0
+#define FX_TRACK_PAGE 16
 // [fx] sound_off (the first Sound object in the kit object, bytes from the kit object)
-#define FX_SOUND_OFF 0
+#define FX_SOUND_OFF 52
 // [fx] sound_stride (bytes between the 16 Sound objects)
-#define FX_SOUND_STRIDE 0
+#define FX_SOUND_STRIDE 1163
 // [fx] send_template (the stock send row whose owner and key words a send knob copies)
-#define FX_SEND_TEMPLATE 0
+#define FX_SEND_TEMPLATE 68
 // [limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one)
-#define LIMIT_SEND_SLOTS 0
+#define LIMIT_SEND_SLOTS 1
 // [fx] value_indices (an effect value index that no stock parameter uses)
 #define FX_VALUE_0 70
 // [fx] value_indices (an effect value index that no stock parameter uses)
@@ -213,7 +213,7 @@
 // [fx] value_indices (an effect value index that no stock parameter uses)
 #define FX_VALUE_31 0
 // [fx] send_indices (a Sound array index the send page's knob uses)
-#define FX_SEND_IDX_0 0
+#define FX_SEND_IDX_0 100
 // [fx] send_indices (a Sound array index the send page's knob uses)
 #define FX_SEND_IDX_1 0
 // [digikit] peek range start (RAM the PEEK command may read)

@@ -13,6 +13,15 @@
 |              stock test is redone and its `bne.b` follows.
 |   fxp_graph  FxPageView::vfunc_4 skips the filter graph over the knobs 5 and 6 on page 15 (`cmp.l D0,D5; beq.w`); the effect pages skip it too.
 |
+| Two hooks and a page row make the send page (FX routing, finding 64): the second page of the track FX key for the effects that run on a send bus.
+|
+|   fxp_acc    (above) also answers the page number FX_PAGE_FIRST + LIMIT_FX_SLOTS with the send row (the row after the effect rows): the name, the title and the level slot are
+|              the track FX page's (the stock accessor is called for FX_TRACK_PAGE each time), the knob cells are the runtime's (`params.fs0` and `fs1`, one for each send effect).
+|   fxp_keylist  the track FX key's page list: the builder pushes the count (`moveq 1,D1`) and loads the address of its one-page list (`move.l #list,D0`). While `fxp_send_count` is
+|              not 0 (a loaded effect has the send route; the runtime sets it before the view is built) the count is 2 and the list is {FX_TRACK_PAGE, the send page}.
+|   fxp_sound  the end of the firmware's sound loader (`FUN_400dd34e`, a Sound object and its record: Load Kit, a pattern's kit, a project): counts the loads in `fxp_nsound`.
+|              The loader zeroes the Sound array indices of the send knobs (the memset of its 101 halfwords); the runtime writes the stored amounts back when the count changed.
+|
 | Three more hooks keep the effect values with the kit (persistence, finding 61). The firmware's kit loader and saver call one function each for the effect value
 | array (the kit's "Fx" object of 101 halfwords) and its storage record of 0xa0 bytes; the stock functions move 46 halfwords by tables and ignore 28 spare
 | halfwords at FX_STORE_OFF. The hooks sit on the last instruction of each function (and of the initialiser of the array), so every kit load and save goes through them
@@ -49,14 +58,31 @@
 fxp_acc:
     move.l  4(%sp),%d0
     subi.l  #FX_PAGE_FIRST,%d0
+    cmpi.l  #LIMIT_FX_SLOTS+1,%d0
+    bcc.s   1f                          | not one of our pages (also a number below the first)
     cmpi.l  #LIMIT_FX_SLOTS,%d0
-    bcc.s   1f                          | not an effect page (also a number below the first)
+    beq.s   2f                          | the send page
     moveq   #ROW_SIZE,%d1
     muls.l  %d1,%d0
     addi.l  #fxp_rows,%d0
     rts
 1:  move.l  4(%sp),%d0                  | the displaced instructions
     moveq   #FX_PAGE_FIRST-1,%d1         | (the stock bound: the pages below FX_PAGE_FIRST)
+    jmp     _fp_acc + 6
+2:  move.l  #FX_TRACK_PAGE,-(%sp)       | the send page: the track FX page's name, title and level slot, from the stock accessor
+    jsr     fxp_stock_acc
+    addq.l  #4,%sp
+    movea.l %d0,%a0
+    lea     fxp_send_row,%a1
+    move.l  (%a0),(%a1)                 | name
+    move.l  4(%a0),4(%a1)               | title
+    move.l  8+4*8(%a0),8+4*8(%a1)       | the level slot (the ninth code)
+    move.l  %a1,%d0
+    rts
+
+fxp_stock_acc:                          | the stock accessor, called as a function: the page number at 4(SP)
+    move.l  4(%sp),%d0
+    moveq   #FX_PAGE_FIRST-1,%d1
     jmp     _fp_acc + 6
 
     .globl fxp_list
@@ -68,6 +94,23 @@ fxp_list:
     jmp     _fp_list + 6
 1:  move.l  #_fp_stock,%d0              | the displaced instruction
     jmp     _fp_list + 6
+
+    .globl fxp_keylist
+fxp_keylist:
+    move.l  fxp_send_count,%d0
+    beq.s   1f
+    move.l  %d0,(%sp)                   | the count the builder pushed (the stock 1)
+    move.l  #fxp_key_list,%d0
+    jmp     _fp_keylist + 6
+1:  move.l  #_fp_keystock,%d0           | the displaced instruction
+    jmp     _fp_keylist + 6
+
+    .globl fxp_sound
+fxp_sound:
+    addq.l  #1,fxp_nsound               | D0 (the loader's result) is not touched
+    movem.l (%sp),%d2-%d4/%a2-%a6       | the displaced instructions
+    lea     0x20(%sp),%sp
+    jmp     _fp_sound + 8
 
     .globl fxp_label
 fxp_label:
@@ -203,10 +246,12 @@ fxp_init:
 
     .section .rodata
     .balign 4
+fxp_key_list:
+    .long   FX_TRACK_PAGE, FX_PAGE_FIRST + LIMIT_FX_SLOTS
     .globl fxpages_info
 fxpages_info:
     .long   0x46585047                  |  0 'FXPG'
-    .long   1                           |  4 version
+    .long   2                           |  4 version (2: the send page words from byte 156)
     .long   DEVICE_ID                   |  8 device ([digikit] id: 2 = dn2)
     .long   fxp_rows                    | 12 the page rows (ROW_SIZE bytes each: name, title, 9 codes)
     .long   ROW_SIZE                    | 16 row size
@@ -241,11 +286,24 @@ fxp_vidx:
     .long   fxp_ninit                   | 144 kit initialisations that went through the init hook
     .long   FX_MARK_INDEX               | 148 the array index of the mark
     .long   FXP_MARK                    | 152 the mark's value
+    .long   LIMIT_SEND_SLOTS            | 156 send cells (knobs of the send page; effects that can run on a send bus)
+    .long   fxp_send_row                | 160 the send page's row (ROW_SIZE bytes: name, title, 9 codes; the runtime writes the codes of the cells)
+    .long   fxp_send_count              | 164 the count cell of the track FX key's list (0: the stock list; 2: the send page follows; the runtime writes it before the view is built)
+    .long   _fp_p_send                  | 168 the parameter code of send cell 0 (`params.fs0`); cell c is + c
+    .long   FX_SEND_IDX_0               | 172 the Sound array index of cell 0
+    .long   FX_SEND_IDX_1               | 176 and of cell 1
+    .long   FX_SEND_TEMPLATE            | 180 the stock send row whose owner and key words a send knob copies
+    .long   FX_SOUND_OFF                | 184 the first Sound object in the kit object (bytes from the kit object)
+    .long   FX_SOUND_STRIDE             | 188 bytes between the 16 Sound objects
+    .long   fxp_nsound                  | 192 sound loads that went through the loader hook
 
     .bss
     .balign 4
-    .globl fxp_rows, fxp_list_buf, fxp_count, fxp_ids, fxp_defs, fxp_last_load, fxp_nload, fxp_nsave, fxp_last_save, fxp_load_src, fxp_save_dst, fxp_ninit
+    .globl fxp_send_row, fxp_send_count, fxp_nsound, fxp_rows, fxp_list_buf, fxp_count, fxp_ids, fxp_defs, fxp_last_load, fxp_nload, fxp_nsave, fxp_last_save, fxp_load_src, fxp_save_dst, fxp_ninit
 fxp_rows:     .space ROW_SIZE * LIMIT_FX_SLOTS
+fxp_send_row: .space ROW_SIZE           | the row after the effect rows: the send page (the accessor's index LIMIT_FX_SLOTS)
+fxp_send_count: .space 4
+fxp_nsound:   .space 4
 fxp_list_buf: .space 4 * LIST_WORDS
 fxp_count:    .space 4
 fxp_ids:      .space 2 * ROWS

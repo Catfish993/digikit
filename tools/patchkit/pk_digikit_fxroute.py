@@ -2,7 +2,7 @@
 """The `fxroute` kind of the digikit scenarios: the send page of the track FX key (FX routing step 3; docs/findings/64-fx-send-page.md).
 
 Run by `tools/patchkit/pk_digikit_scen.py` (scenario `fx-route-dt2`). The image is the runtime with `core/dynfx` and `core/fxpages`; the sound is the run-time machine `test/sine` on
-track 1, the effect `test/dyn-fx-gain` (and, for the limit, the same file under two more names). The route of an effect is a setting (`fx/route/<module id>`): it is put on the card
+track 1, the effect `test/dyn-fx-gain-both` (the same gain and page as `test/dyn-fx-gain`, route fields master plus send; and, for the limit, the same file under two more names). The route of an effect is a setting (`fx/route/<module id>`): it is put on the card
 before the boot, as the runtime's settings copy A (the record format of step 2), so no restart is needed. Boots, each in its own daemon:
 
   base    an image without `core/fxpages`, the sine alone: the screenshot of the FX key and the PCM that the send page must not change.
@@ -33,18 +33,22 @@ from tools.patchkit import pk_device
 from tools.patchkit import pk_digikit_project as P
 from tools.patchkit import pk_dkrt_machine as M
 from tools.patchkit.pk_digikit_debug import uploader
-from tools.patchkit.pk_digikit_fx import FX, SINE, chain_rows, scaled
+from tools.patchkit.pk_digikit_fx import SINE, chain_rows, scaled
 from tools.patchkit.pk_digikit_fxpage import Shots, profile, u16
 from tools.patchkit.pk_digikit_fxpersist import KIT_AREAS, Run
 from tools.patchkit.pk_digikit_fxsend import GAIN, added_factor
 from tools.patchkit.pk_digikit_settings import DELAY_MS, sector_bytes
 from tools.patchkit.pk_harness import button
 
+FX = "test/dyn-fx-gain-both"  # `route = "master"`, `routes = ["master", "send"]`: test/dyn-fx-gain allows the master only (finding 65), so a stored `send` would not hold
 W_ROUTE, W_AMT0 = 18, 19  # row words of the send route (core/fx module.toml)
 ENC_A, ENC_B = "ENC A", "ENC B"
 SOUND_ARRAY = 0x14
 AMOUNT = 40  # the amount the scenario turns to: the display says `Send=40`
-IDX = (69, 70)  # [fx] send_indices
+CLASSES = {
+    "dt2": 0x4293C040,
+    "dn2": 0x4243425C,
+}  # the second per-code table (value-class objects of 0x44 bytes; the accessor of core/params' anchor cf.params.t2)
 
 
 def route_key(name: str) -> bytes:
@@ -70,6 +74,9 @@ def run_fxroute(c: Any) -> None:
     slots = pk_device.limits(c.device).fx_slots
     send_slots = pk_device.limits(c.device).send_slots
     cfg = profile(c.device)
+    IDX = cfg[
+        "send_indices"
+    ]  # the Sound array indices of the send cells ([fx] send_indices)
     st = c.store
     img = c.image_for(RT + ",core/dynfx,core/fxpages", "fxroute")
     img0 = c.image_for(RT + ",core/dynfx", "fxroute-base")
@@ -236,7 +243,9 @@ def run_fxroute(c: Any) -> None:
             reg_rows, reg_size, reg_first, tpl_off = (
                 rig.w(dri + 4 * i) for i in (21, 22, 23, 28)
             )
-            classes = 0x4293C040  # the second per-code table: value-class objects of 0x44 bytes (core/params)
+            classes = CLASSES[
+                c.device
+            ]  # the second per-code table: value-class objects of 0x44 bytes (core/params)
 
             def lockable(code: int) -> bool:
                 return rig.w(classes + 0x44 * code) & 9 == 0
@@ -285,8 +294,7 @@ def run_fxroute(c: Any) -> None:
             before = sound_image(rig, 0)
             c.check(
                 "send: the knob reads 0 (no amount stored) on both Sound indices of the page",
-                before[SOUND_ARRAY // 2 + IDX[0]] == 0
-                and before[SOUND_ARRAY // 2 + IDX[1]] == 0,
+                all(before[SOUND_ARRAY // 2 + i] == 0 for i in IDX),
                 f"{before[SOUND_ARRAY // 2 + IDX[0]]:#x}",
             )
             set_amount(rig, ENC_A, 0, AMOUNT)
@@ -415,7 +423,7 @@ def run_fxroute(c: Any) -> None:
                 f"nload {loaded} restores {rig.w(fxs + 16)}",
             )
             c.check(
-                "kit: after the load Sound[69] of track 1 shows 40 and of track 2 100 again (restored from the settings, not zero)",
+                "kit: after the load Sound[send index] of track 1 shows 40 and of track 2 100 again (restored from the settings, not zero)",
                 amount_shown(rig, 0) == AMOUNT and amount_shown(rig, 1) == 100,
                 f"{amount_shown(rig, 0)} {amount_shown(rig, 1)}",
             )
@@ -485,12 +493,19 @@ def run_fxroute(c: Any) -> None:
             tap(rig, "FX", 400)
             shots.take(rig, "page2")
             set_amount(rig, ENC_A, 0, 20, 0)
-            set_amount(rig, ENC_B, 0, 30, 1)
+            if send_slots >= 2:
+                set_amount(rig, ENC_B, 0, 30, 1)
             rig.s.run_ms(300)
             a, b = dsp_amount(rig, slots, 0, 0), dsp_amount(rig, slots, 1, 0)
             c.check(
-                "limit: the two knobs set their own effects' amounts (20 for the first, 30 for the second); the third row has none",
-                a == 20 and b == 30 and dsp_amount(rig, slots, 2, 0) == 0,
+                (
+                    "limit: the two knobs set their own effects' amounts (20 for the first, 30 for the second); the third row has none"
+                    if send_slots >= 2
+                    else "limit: the one knob sets its effect's amount (20); the second and third row have none (no cell: they stay on the master)"
+                ),
+                a == 20
+                and (b == 30 if send_slots >= 2 else b == 0)
+                and dsp_amount(rig, slots, 2, 0) == 0,
                 f"{a} {b} {dsp_amount(rig, slots, 2, 0)}",
             )
             c.done(rig)

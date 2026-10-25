@@ -299,7 +299,7 @@ E_SET_KEY = { code = -66, text = "a settings key breaks the rules (1 to 47 print
 E_SET_FULL = { code = -67, text = "the settings area is full" }
 E_SET_NOKEY = { code = -68, text = "no such settings key (or no settings record)" }
 E_SET_VALUE = { code = -69, text = "a settings value is too long, or the buffer is too small" }
-E_SET_OFF = { code = -70, text = "the settings store is off (an older store on the card reaches into its area, or the card has no store)" }
+E_SET_OFF = { code = -70, text = "settings store off: an older store reaches its area, or no store" }
 
 [protocol.caps]     # INFO capability bits (bit numbers of the `caps` word)
 LOG = 0

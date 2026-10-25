@@ -75,6 +75,10 @@ _fp_p_first = "params.fp0.index"
 _fp_load = "cf.fxpages.load"
 _fp_save = "cf.fxpages.save"
 _fp_init = "cf.fxpages.init"
+_fp_keylist = "cf.fxpages.keylist"
+_fp_keystock = "cf.fxpages.keystock"
+_fp_sound = "cf.fxpages.sound"
+_fp_p_send = "params.fs0.index"
 
 [[op]]
 op = "hook"
@@ -146,7 +150,7 @@ anchor = "cf.fxpages.keylist"
 offset = 0
 to = "fxp_keylist"
 displaced = "drop"
-devices = ["dt2"]
+devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
@@ -155,7 +159,7 @@ anchor = "cf.fxpages.sound"
 offset = 0
 to = "fxp_sound"
 displaced = "drop"
-devices = ["dt2"]
+devices = ["dt2", "dn2"]
 
 [[claim]]
 resource = "cf.fxpages.acc"
@@ -717,7 +721,7 @@ slot = 0
 min = 0
 max = 0
 default = 0
-devices = ["dt2"]
+devices = ["dt2", "dn2"]
 
 [[entry]]
 registry = "params"
@@ -729,4 +733,39 @@ slot = 0
 min = 0
 max = 0
 default = 0
-devices = ["dt2"]
+devices = ["dt2", "dn2"]
+
+# The send page and the sound loader on the Digitone II (finding 67): the same sites as the Digitakt II's, found by their own hashes.
+# The FX view builder FUN_40060e72 (hash of the list rule) builds the track FX key's one-page view from the rodata list {16} (page 16: the track FX page): `move.l #list,D0` (6 bytes) at +0x67a,
+# the count `moveq 1,D1` pushed before it.
+[[anchor_rule]]
+name = "cf.fxpages.keylist"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "8fb9057131b85c6b6ab80d28a4e37a8b"
+offset = 0x67a
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.fxpages.keystock"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "8fb9057131b85c6b6ab80d28a4e37a8b"
+offset = 0x67c
+len = 4
+mark = "D"
+
+# The end of the firmware's sound loader FUN_400dd34e (A2 = the Sound object, A3 = the record, D0 = the result; it zeroes the object's 101 parameter halfwords first): the common exit,
+# `movem.l (SP),{D2 D3 D4 A2 A3 A4 A5 A6}; lea (0x20,SP),SP` (8 bytes), then the `rts`. The hook counts the load.
+[[anchor_rule]]
+name = "cf.fxpages.sound"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "f766c42c6be0674aadb1177f3f536367"
+offset = 0x3d8
+len = 8
+mark = "D"

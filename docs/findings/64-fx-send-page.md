@@ -34,7 +34,7 @@ CAPACITY has a new kind `SEND_SLOTS` (14): limit = the image's send cells (0 wit
 
 ## The flow at run time **[D]**
 
-`fxsend::apply` (when `fxpage::apply` registers an effect row, at the boot): read `fx/route/<module id>` (one byte, 1 = send; absent = master) and `fx/send/<module id>` (16 amounts) from the settings (step 2); a send effect takes the next free cell while cells are left (an effect beyond the limit
+`fxsend::apply` (when `fxpage::apply` registers an effect row, at the boot): read `fx/route/<module id>` (one byte, 1 = send, 0 = master; **[C]** step 4: absent, or a route that the effect's record does not allow, gives the manifest's default `route`, which is master when the manifest says nothing; finding 65) and `fx/send/<module id>` (16 amounts) from the settings (step 2); a send effect takes the next free cell while cells are left (an effect beyond the limit
 stays on the master); the cell's knob row is written (label `<tab> Send`, short name the tab, Sound index 69 or 70, class and owner as above) and its code goes into the send row; the route and the four amount words are published with the DSP row (the load sequence of `dsp.rs` writes them before the pc, so a send
 effect never runs on the master; a freed row gets route and amounts 0 first). `fxsend::tick` (once per UI-loop pass):
 
@@ -43,10 +43,14 @@ effect never runs on the master; a freed row gets route and amounts 0 first). `f
 2. Each array is read: a value that is not the last one written or seen is a knob turn: the amount `raw >> 8` (clamped to 127) is the effect's new amount for that track, `settings::put("fx/send/<id>")` (written to the card 2 s after the last change) and the DSP amount word
    (one word a pass through window 2, shared with the effect pages' values, one transfer at a time).
 
+**The order of the FX view (step 4).** The page list of FUNC + FX (`fxpage::rebuild_list`) is DEL, REV, CHO, then the send effects, then the master effects, each group in row order; `fxsend::apply` builds the list again once the route of the row is known (`fxpage::relist`), so the order holds from the boot on and needs no hook (finding 65 has the proof).
+
 Kits saved by stock firmware, or before the module existed, simply show the stored (global) amounts. A kit never holds an amount: the saver has no slot for the indices. Copying a track copies the Sound object, so the copy carries the amount and the next pass adopts it as a turn (a copied track
 has the amount of its source; a feature). A page cell's randomise, copy and reload walk the page's cells and so touch the amounts (acceptable).
 
 ## Proof **[D]** (scenario `fx-route-dt2`, quick tier; results below are from the final run)
+
+**[C]** Step 4 (finding 65): the scenario's effect is `test/dyn-fx-gain-both` (`route = "master"`, `routes = ["master", "send"]`; same gain, same page, tab GAN). `test/dyn-fx-gain` has no route fields and so allows the master only: a stored `send` for it is ignored. The first run of this scenario in the gate (it had no test file before step 4's `tests/digikit/test_fxroute_dt2.py`) found that.
 
 All 43 checks pass (345 s, 33 emulators; `pk_digikit_scen run fx-route-dt2 --image dt2-1.17`). Screenshots (3x): `out/runs/lanes/fxr-shots/` (`stock-fx1`, `send-page1`, `send-page2-track1`, `send-turning` = `GAN Send=40`, `send-page2-track1-40`, `send-page2-track2-0`, `send-turning-track2`, `limit-page2`).
 
@@ -70,8 +74,8 @@ All 43 checks pass (345 s, 33 emulators; `pk_digikit_scen run fx-route-dt2 --ima
 
 ## Open **[O]**
 
-- The Digitone II has none of it (`core/fxpages` object of version 1; step 6 needs its own hooks, anchors `FUN_40060e72` `+0x67a`, the Sound loader `FUN_400dd34e` `+0x3d8`, index 100 in the Sound array, and a poke test of index 65).
-- The route is read at the boot: a changed route (step 4: the FX ROUTES page) shows after a restart, as the F4 pages do.
+- **[C]** The Digitone II has the send page since step 6 (finding 67: the hooks `FUN_40060e72` `+0x67a` and the Sound loader `FUN_400dd34e` `+0x3d8`, Sound index 100, `send_slots` 1; the poke test of index 65 is recorded there).
+- The route is read at the boot: a changed route (DIGIKIT > FX ROUTES, step 4, finding 65) shows after a restart, as the F4 pages do.
 - `Sound::updateMirror` maps indices of 0x45 and up to record slot 0 on its notify path **[O]**: the encoder path writes only the SRAM mirror; the scenario shows that turning the knob moves no other word of the Sound object and that a project save has the same sound bytes with or without the amount.
   Other notify paths (MIDI CC in, the sound pool copy) are not exercised.
 - A second agent checks the two new sites and the row class against the image bytes before the marks become **[V]**.

@@ -243,8 +243,10 @@ def test_the_manifest_declares_the_page_and_the_knob():
         "fshift",
         "FSH",
         "Freq Shifter",
-        0,
+        127,
     )
+    # a send effect that may move to the master (step 5): MIX is the return level, so its default is 127
+    assert (fx["route"], fx["routes"]) == ("send", ["send", "master"])
     (knob,) = fx["knob"]
     assert (knob["short"], knob["name"], knob["display"]) == (
         "SHIFT",

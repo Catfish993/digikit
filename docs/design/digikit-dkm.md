@@ -162,11 +162,16 @@ All integers are big endian. Offsets are from the start of the section.
 - **Effects** (version 4): 64 bytes each, the effects of the FX contract (`sdk/dk_fx.h`) that the module brings, from the manifest's `[[fx]]` (`id`, `process`: the process
   routine's global symbol, `desc`: the `dk_fx_desc` data symbol, `defaults`: the words p0 ... of the row, at most `n_params`, the words the DSP reads as they are;
   `devices`). Record: 0 `process` (image byte offset of the routine), 4 `desc` (image byte offset of its `dk_fx_desc`), 8 `state_bytes`, 12 `n_params` (both
-  from the descriptor, which the packer reads and checks: magic `DKFX`, contract 1, `n_params` at most 8, `state_bytes` a multiple of 4), 16 flags (0), 20 to 51 the words
+  from the descriptor, which the packer reads and checks: magic `DKFX`, contract 1, `n_params` at most 8, `state_bytes` a multiple of 4), 16 flags (the routes, below; 0 = master only), 20 to 51 the words
   p0 to p7 of the row (0 where the manifest gives none), 52 to 63 reserved 0. The effect's state is not a symbol of the object: the runtime reserves
   `align8(state_bytes)` for each record in the module's range, behind the image, the bss and the voice states, in record order (the adapter zeroes the state when the effect
   switches on). The process routine's pc at placement `B` is `0xb80000 + (B - 0x20000000 + process) / 2` (as a voice's). The runtime checks the record against the descriptor in the
   image (a record that says more state than the descriptor, or another parameter count, is `E_DSP_FORMAT`).
+  **Flags (the routes, FX routing step 4).** From the manifest's `[[fx]] route` and `routes`: bit 0 `FXF_SEND` (1): the effect may run on a send bus; bit 1 `FXF_NOMASTER` (2): it may not run on the master chain; bit 2 `FXF_DEFAULT_SEND` (4): its
+  default route is the send bus. The master is always allowed unless bit 1 says not, so the word 0 that every record made before the routes has means "master only, default master": an old `.dkm` loads unchanged, and a module that leaves the
+  fields out packs to the same bytes as before. The values the packer writes: 0 master only; 1 allowed both, default master (`route = "master"`, `routes = ["master", "send"]`); 5 both, default send (`route = "send"` with `routes` left out); 7 send only
+  (`routes = ["send"]`). Other combinations (a default that is not allowed, a bit above 4, bit 1 without bit 0 or without bit 2) are refused by the packer's parser and by the loader (`E_DSP_FORMAT`). The runtime uses the default when the settings
+  have no `fx/route/<module id>` and when the stored route is not allowed; a runtime older than the flags ignores them (the effect runs on the master). The contract version is not changed: the record layout only gives a meaning to a word that was 0.
 - **Image**: the linked bytes at the nominal base; every relocated field holds `S + A`. The sections are text, data, bss in that order,
   so a `.PKBSS` buffer (pluck's 256 KiB delay lines) follows the sent bytes in the reserved range.
 

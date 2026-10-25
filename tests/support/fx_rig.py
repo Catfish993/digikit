@@ -23,6 +23,9 @@ from tools.patchkit import pk_build, pk_sharc
 ROOT = dv.ROOT
 ADAPTER = ROOT / "modules/core/fx/src/dsp/fx.s"
 SEND = ROOT / "modules/core/fx/src/dsp/fxsend.s"  # the send route's hook (Digitakt II)
+SEND_DN2 = (
+    ROOT / "modules/core/fx/src/dsp/fxsend-dn2.s"
+)  # the same with the slot mix (Digitone II)
 EFFECTS = ROOT / "tests/support/fx_effects.s"
 CODE_BASE = 0xB90000
 DATA_BASE = 0x200A0000
@@ -33,6 +36,10 @@ TRACKBUS = (
     0x2009F000  # the 16 track buses of 64 floats (32 left, 32 right), 0x100 bytes apart
 )
 TRACKS = 16
+SLOTBUS = TRACKBUS  # Digitone II: the 16 voice slots' buses lie where the Digitakt II has its track buses
+SLOTMAP = 0x2009E800  # Digitone II: the slot-to-track map, 16 halfwords in 8 words
+# Digitone II: the slot fade flags, 16 bytes in 4 words (0x2578b8 behind the map at 0x257898)
+FADETAB = SLOTMAP + 0x20
 TABLE = dv.TABLE
 ROW_WORDS = 24
 FREE_PC = 0xFFFFFFFF  # the pc of a free row (core/dynfx): the adapter skips it
@@ -148,15 +155,16 @@ def _assemble(path: Path) -> pk_sharc.SharcObject:
     return pk_sharc.assemble(pk_build.expand_includes(path.read_text(), dirs))
 
 
-def build(sources: tuple[Path, ...] = (EFFECTS,)) -> _Built:
-    key = (ADAPTER, *sources)
+def build(sources: tuple[Path, ...] = (EFFECTS,), device: str = "dt2") -> _Built:
+    key = (ADAPTER, device, *sources)
     if key not in _BUILT:
-        _BUILT[key] = _build(sources)
+        _BUILT[key] = _build(sources, device)
     return _BUILT[key]
 
 
-def _build(sources: tuple[Path, ...]) -> _Built:
-    objs = [_assemble(ADAPTER), _assemble(SEND)] + [_assemble(Path(s)) for s in sources]
+def _build(sources: tuple[Path, ...], device: str) -> _Built:
+    send = SEND_DN2 if device == "dn2" else SEND
+    objs = [_assemble(ADAPTER), _assemble(send)] + [_assemble(Path(s)) for s in sources]
     addr = DATA_BASE
     data: dict[str, int] = {}
     inits: list[tuple[int, bytes, bool]] = []
@@ -185,6 +193,9 @@ def _build(sources: tuple[Path, ...]) -> _Built:
         "_fxs_back": dv.STOCK_BP,  # one entry runs in a call: both tails end at the stand-in
         "_fxs_trackbus": TRACKBUS,
         "_fxs_return": RETURN,
+        "_fxs_slotbus": SLOTBUS,
+        "_fxs_slotmap": SLOTMAP,
+        "_fxs_fadetab": FADETAB,
         **data,
     }
     bases, base = [], CODE_BASE
@@ -214,10 +225,11 @@ class FxRig:
         seed: int = 0xD1617,
         step_limit: int = 200_000,
         record_stores: bool = False,
+        device: str = "dt2",
     ) -> None:
         if len(rows) > 4:
             raise ValueError("a chain has at most 4 effects")
-        self.built = build(sources)
+        self.built = build(sources, device)
         self.rows = rows
         self.ctx_rng = random.Random(seed)
         self.step_limit = step_limit
@@ -236,6 +248,10 @@ class FxRig:
             poke(nw(RETURN) + k, 0)
         for k in range(TRACKS * 64):
             poke(nw(TRACKBUS) + k, 0)
+        for k in range(8):
+            poke(nw(SLOTMAP) + k, 0)
+        for k in range(4):
+            poke(nw(FADETAB) + k, 0)
         for addr, raw, is_bss in b.inits:
             for k in range(len(raw) // 4):
                 w = (
@@ -290,6 +306,27 @@ class FxRig:
         """The 64 floats (32 left, 32 right) of track bus T, as the sends driver leaves them before the master function."""
         for k, x in enumerate(samples):
             self.sess.poke(nw(TRACKBUS + 0x100 * t) + k, f2w(x))
+
+    def set_slot(self, v: int, samples) -> None:
+        """Digitone II: the 64 floats of voice slot V's bus (the same cells as the Digitakt II's track buses)."""
+        self.set_track(v, samples)
+
+    def set_slotmap(self, tracks) -> None:
+        """Digitone II: the slot-to-track map, the track of each of the 16 slots (slot v in half v % 2 of word v / 2, low half first)."""
+        t = (tuple(tracks) + (0,) * TRACKS)[:TRACKS]
+        for k in range(8):
+            self.sess.poke(
+                nw(SLOTMAP) + k, (t[2 * k] & 0xFFFF) | (t[2 * k + 1] & 0xFFFF) << 16
+            )
+
+    def set_fade(self, slots) -> None:
+        """Digitone II: the slot fade flags (0x2578b8): the slots in SLOTS get the flag byte 1, the others 0."""
+        flags = [1 if v in slots else 0 for v in range(TRACKS)]
+        for k in range(4):
+            self.sess.poke(
+                nw(FADETAB) + k,
+                sum((flags[4 * k + j] & 0xFF) << (8 * j) for j in range(4)),
+            )
 
     def set_return(self, samples) -> None:
         """The FX return bus as the stock sends driver wrote it."""
