@@ -49,6 +49,128 @@ mark = "D"
 rule = "core/dynreg:cf_func"
 
 [[anchor]]
+name = "cf.fxpages.acc"
+cpu = "cf"
+kind = "code"
+addr = 0x400c2474
+len = 6
+sha256 = "0fbc1e7867ae69055826fb539800554f1e416e22a759807b3fcd56a4df09cb69"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.graph"
+cpu = "cf"
+kind = "code"
+addr = 0x4006f718
+len = 6
+sha256 = "53ffbbb789c1ba823ff9e9ce100d797b461eeeab010f7a0a1e361408e3864b9d"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.init"
+cpu = "cf"
+kind = "code"
+addr = 0x400e7038
+len = 8
+sha256 = "4a577f7d4e224f5bcdda330bfb08780933faacb4e3da1120371ac265a2d70dfd"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.keylist"
+cpu = "cf"
+kind = "code"
+addr = 0x400614ec
+len = 6
+sha256 = "db2532a0f4aa2d39743c5c012ec1e72734df064f3a0f6da333691f4dd55354d0"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.keystock"
+cpu = "cf"
+kind = "data"
+addr = 0x401e0054
+src = 0x400614ee
+len = 4
+sha256 = "5085cb99dbe1e374ccd321e5b58182d2c42cf4840c68cfab17b0618a8285e7d6"
+mark = "D"
+rule = "core/fxpages:cf_ptr"
+
+[[anchor]]
+name = "cf.fxpages.label"
+cpu = "cf"
+kind = "code"
+addr = 0x4006f4e8
+len = 6
+sha256 = "0f58cbdacf938a3290d7bf4325a58c1ba5c7acb07006506adcabc0f9c2719760"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.list"
+cpu = "cf"
+kind = "code"
+addr = 0x40061624
+len = 6
+sha256 = "76ad080f7592385a77f62c9fd682cc00a5edbd5328aa6568492c6786da599100"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.load"
+cpu = "cf"
+kind = "code"
+addr = 0x400dcdbe
+len = 6
+sha256 = "8c43b637a3dd07ac9ffee1129e624be4f7b06b0834456c407b02fc6fd4886270"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.save"
+cpu = "cf"
+kind = "code"
+addr = 0x400dce10
+len = 6
+sha256 = "3c3db38ec05af3bf3ca1fa20e6e812a24358cf2392410d08907821ad3db68dfd"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.sound"
+cpu = "cf"
+kind = "code"
+addr = 0x400dd5c2
+len = 8
+sha256 = "e29c1ee7f8818f91edabfb124326f44a7703b9c4532f7911594ff19c3a2366a5"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.stock"
+cpu = "cf"
+kind = "data"
+addr = 0x401e0038
+src = 0x40061626
+len = 12
+sha256 = "8a1d949b9d59346870a857492339efba05fcbc30c997e5771d58a045e6d9f2e7"
+mark = "D"
+rule = "core/fxpages:cf_ptr"
+
+[[anchor]]
+name = "cf.fxpages.stock_n"
+cpu = "cf"
+kind = "code"
+addr = 0x40061616
+len = 2
+sha256 = "771260b3e7ad3e3bbe992aa16c9958440f42bf5762b268b299898d6eefe67772"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
 name = "cf.machines.dispatch"
 cpu = "cf"
 kind = "code"
@@ -1942,6 +2064,39 @@ mark = "D"
 rule = "core/fx:sharc_func"
 
 [[anchor]]
+name = "dsp.fx.fadetab"
+cpu = "sharc"
+kind = "value"
+addr = 0x2578b8
+src = 0x28383f38
+len = 6
+sha256 = "da2f6230e452b659110c71849a3a7601d8988b1331c52532f36ca619976ba988"
+mark = "D"
+rule = "core/fx:sharc_literal"
+
+[[anchor]]
+name = "dsp.fx.return"
+cpu = "sharc"
+kind = "value"
+addr = 0x25b868
+src = 0x283841f4
+len = 6
+sha256 = "a62e3c98b36fa14462b9c1e93654bd149db22b37389cfa7aa416f08484caa796"
+mark = "D"
+rule = "core/fx:sharc_literal"
+
+[[anchor]]
+name = "dsp.fx.send"
+cpu = "sharc"
+kind = "code"
+addr = 0x28383e3c
+pm = 0x1c1f1e
+len = 6
+sha256 = "0ad5c8265b09589e8868e2655f7dc35c9c80639b753938cdf1ccfc010795b937"
+mark = "D"
+rule = "core/fx:sharc_func"
+
+[[anchor]]
 name = "dsp.fx.sidechain_filter_word"
 cpu = "sharc"
 kind = "value"
@@ -1951,6 +2106,28 @@ len = 6
 sha256 = "e1448b7785185b63ba33eab08d216f7efca68e58eb194042c7c45df0f948d4f1"
 mark = "D"
 rule = "digikit/master-drive:sharc_mem_addr"
+
+[[anchor]]
+name = "dsp.fx.slotbus"
+cpu = "sharc"
+kind = "value"
+addr = 0x257ee8
+src = 0x28383f44
+len = 6
+sha256 = "755c309ea0c06ad44a2d3c02238a2aa00fdbb0d2981ce91ad867b19a135fd539"
+mark = "D"
+rule = "core/fx:sharc_literal"
+
+[[anchor]]
+name = "dsp.fx.slotmap"
+cpu = "sharc"
+kind = "value"
+addr = 0x257898
+src = 0x28383f3e
+len = 6
+sha256 = "6db9c65fe73f25ee4576d8f982e8c4f77e0db853092746b76fec905e99115629"
+mark = "D"
+rule = "core/fx:sharc_literal"
 
 [[anchor]]
 name = "dsp.master.float_buf"

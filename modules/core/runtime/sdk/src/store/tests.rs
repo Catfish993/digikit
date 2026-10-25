@@ -121,7 +121,12 @@ fn crc32_matches_the_zlib_check_value() {
 
 #[test]
 fn the_geometry_is_the_documented_one() {
-    assert_eq!(LAY.header_b(), SECTORS - 3);
+    assert_eq!(TAIL, 35);
+    assert_eq!(LAY.header_b(), SECTORS - 35);
+    assert_eq!(LAY.limit(), SECTORS - 35);
+    assert_eq!(LAY.set_a(), FIRST + SECTORS - 34);
+    assert_eq!(LAY.set_b(), FIRST + SECTORS - 18);
+    assert_eq!(LAY.set_b() + 16, LAY.sel_a());
     assert_eq!(LAY.sel_a(), FIRST + SECTORS - 2);
     assert_eq!(LAY.sel_b(), FIRST + SECTORS - 1);
     assert_eq!(table_sectors(0), 0);
@@ -235,7 +240,7 @@ fn a_remove_drops_the_entry_and_the_space_is_used_again() {
     // the 100 sectors where f2 was are free: a file of 100 sectors goes there
     assert_eq!(first_fit_then(&mut w, &h, 100), Some(110));
     let big = unsafe { largest_gap(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, &[]) }.unwrap();
-    assert_eq!(big, SECTORS - 3 - 310);
+    assert_eq!(big, SECTORS - TAIL - 310);
     // an extent the caller reserves is not given out
     assert_eq!(unsafe { first_fit(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, 100, &[(110, 60)]) }.unwrap(), Some(310));
 }
@@ -275,7 +280,7 @@ fn many_entries_are_streamed_through_small_buffers() {
     assert_eq!((f.0, f.1.first), (599, 1599));
     // the table check holds, and the free-space figure counts the room for one more entry
     assert_eq!(unsafe { table_crc(&IO, &LAY, h.table_first, h.table_sectors, w.a.0.as_mut_ptr(), 4096) }.unwrap(), h.table_crc);
-    assert_eq!(free_sectors(&LAY, &h), SECTORS - 3 - h.used - table_sectors(601));
+    assert_eq!(free_sectors(&LAY, &h), SECTORS - TAIL - h.used - table_sectors(601));
 }
 
 #[test]
@@ -515,4 +520,29 @@ fn a_commit_during_a_stable_read_is_never_half_seen() {
         assert!(hc == 2 || hc == 3, "{hc}");
         assert_eq!(count, n);
     }
+}
+
+#[test]
+fn a_store_that_reaches_into_the_tail_is_not_used() {
+    // A store written before the settings area had a tail of 3 sectors: a file may lie where the settings copies and header B are now.
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    let end = LAY.header_b();
+    // a file that ends exactly at header B is fine (the allocator's own limit)
+    insert(&mut w, "last", end - 4, 4 * 512, &[]).unwrap();
+    let t = state(&mut w).unwrap();
+    assert!(!unsafe { reaches_tail(&IO, &LAY, &t.h, w.a.0.as_mut_ptr(), 4096) }.unwrap());
+    // one sector more, into the settings area: both header copies say so, and there is no usable copy (a reader never takes it as a store)
+    insert(&mut w, "late", end - 2, 4 * 512, &[]).unwrap_or_else(|e| panic!("{e}"));
+    let h = current(&mut w);
+    assert_eq!(h.count, 0, "the store is not read: `current` falls back to the empty store");
+    assert_eq!(state(&mut w).err(), Some(E_BAD_STORE));
+    // a table in the tail
+    fresh();
+    let mut w = work();
+    insert(&mut w, "a", 10, 512, &[]).unwrap();
+    let t = state(&mut w).unwrap();
+    let moved = Hdr { table_first: end, ..t.h };
+    assert!(unsafe { reaches_tail(&IO, &LAY, &moved, w.a.0.as_mut_ptr(), 4096) }.unwrap());
 }

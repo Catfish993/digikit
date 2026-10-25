@@ -237,10 +237,31 @@ Notes on the header:
 
 | Type | Shape of the contract | Open points |
 | --- | --- | --- |
-| FX (insert or send) | **Built (P3d-1a, `sdk/dk_fx.h`, patched-in only).** `process(state, in, params)`: `dk_fx_in` = `{in, out, block}`, the master block as 64 planar floats (32 left, then 32 right), `in` read only, `out` the adapter's scratch; `dk_fx_desc` = magic, contract, `n_params` (at most 4), `state_bytes`, `max_cycles_block`, `max_call_depth`, `stack_bytes`. The adapter `core/fx` hooks a post-master function (finding 55), checks the output (finite, below 8.0), plays dry on a fault, crossfades one block when an effect switches, and switches an effect off after 8 faults in 1500 blocks. Not built: `tail_blocks`, run-time (`.dkm`) effects, parameters (P3d-1b) | send versus insert; latency declaration |
+| FX (insert or send) | **Built (P3d-1a, `sdk/dk_fx.h`, patched-in only).** `process(state, in, params)`: `dk_fx_in` = `{in, out, block}`, the master block as 64 planar floats (32 left, then 32 right), `in` read only, `out` the adapter's scratch; `dk_fx_desc` = magic, contract, `n_params` (at most 8, 4 in the first rows), `state_bytes`, `max_cycles_block`, `max_call_depth`, `stack_bytes`. The adapter `core/fx` hooks a post-master function (finding 55), checks the output (finite, below 8.0), plays dry on a fault, crossfades one block when an effect switches, and switches an effect off after 8 faults in 1500 blocks. Run-time (`.dkm`) effects: built on the Digitakt II (F4 step 1, `[contract] fx = [1, 0]`, runtime 0.4.0: DSP section version 4, `core/dynfx`, 3 slots; finding 55). Effect pages and knobs: built on the Digitakt II (F4 step 2, runtime 0.5.0: `core/fxpages`, EFFECT record, MIX in the adapter; below). Knob values are saved with the kit (F4 step 3, Digitakt II). Insert or send (FX routing steps 1 to 4, Digitakt II; step 6: also the Digitone II, one send effect, finding 67): the manifest gives the default route and the allowed ones (`[[fx]] route`, `routes`), the user decides the route (a setting, DIGIKIT > FX ROUTES, effective after a restart) and the framework owns the send amounts (one knob per send effect on a second page of the FX key, one amount per track, kept in the settings store and the DSP row, never in a kit file); the effect's `process` is the same and never sees an amount (findings 62, 64 and 65). All of it also on the Digitone II 1.12 (F4 step 5: the same modules, device facts in `devices/digitone-ii.toml`; in the `device` patch set, not in `emulator`: the hook costs the emulator x2.4 DSP CPU there, finding 55). Not built: `tail_blocks` | send versus insert; latency declaration |
 | ColdFire service | `dkm_init`, `dkm_fini`, `dkm_slot_0` as today (`digikit-dkm.md:73-75`), plus a declared slot use and stack/heap bytes; Rust or C | which slots exist beyond 0 (`digikit-runtime.md:90-91`: 1-7 are bound and not called) |
 | UI page / key handler | needs slots 1-7 from the sequencer or key hooks | not designed; no firmware hook exists |
 | Sample / data | no code; a `.dkm` with a data section | store layout (`digikit-store.md`) |
+
+#### 4.2.1 An effect with a page of its own (Digitakt II, F4 step 2)
+
+An `[[fx]]` with a `tab` has a page in the FX view; the runtime builds the page and its knob rows from the module's records, with no effect-specific code (finding 61,
+`docs/design/digikit-registry.md` "Effect pages"; the cookbook is `.agents/skills/digikit-module/references/contract-fx.md`, "Define an effect with its own page").
+
+| Manifest key | Meaning | Limit |
+| --- | --- | --- |
+| `[[fx]] tab` | the page's tab label | 1 to 3 characters |
+| `[[fx]] title` | the page title (the view adds `(n/N)`); mixed case like stock, the firmware font draws a capital Q like an O | 1 to 23 characters |
+| `[[fx]] mix` | default of the MIX knob on the page's level slot | 0 to 127 (default 127) |
+| `[[fx]] route` | the route the effect starts on when the settings do not say: `master` (an insert on the master chain, the default) or `send` (a send bus: one amount per track, set on the FX key's second page) | `master` or `send` |
+| `[[fx]] routes` | the routes the user may choose in DIGIKIT > FX ROUTES | a non-empty list of `master` and `send`, no repeat, containing `route`; left out: `["master"]`, or `["send", "master"]` when `route = "send"`; a send route needs a `tab` |
+| `[[fx.knob]] name`, `short` | the long name shown while the knob turns, the label under it | 23 and 6 characters |
+| `[[fx.knob]] min`, `max`, `default` | the float range the effect gets, and the default (also the word's value at load) | `min < max`, the default inside |
+| `[[fx.knob]] display` | `percent` (0 .. 127) or `bipolar` (-64 .. +63) | |
+| `[[fx.knob]] position` | the place on the page, 0 to 7 (default: the knob's place in the list) | distinct |
+
+Knob i is the parameter word p_i of the effect's row (7 knobs, p0 to p6); MIX is not a word: it is the adapter's dry/wet blend of the row (`master = dry + mix * (wet - dry)`, 0 is the dry signal bit for bit).
+The page lives with the effect row (3 on the Digitakt II); its value indices in the kit, the page numbers and the template rows are device facts (`[fx]` of the device file), its patch-time
+resources are `core/fxpages`. The packer writes the page as a `register` record of kind 4 (EFFECT) next to the effect's DSP record. The values are saved with the kit with the effect's ID (`register::effect_id`: module id and effect id): Load Kit gives an effect its stored values only when the ID in its row is its own, else the manifest's defaults. Not supported: p-locks, modulation, MIDI CC.
 
 ## 5. The adapter
 
@@ -395,6 +416,14 @@ INFO (`upload.rs:470-493`, `digikit-upload.md:61`) keeps its layout (commands ar
 dsp range, state bytes, voices, health state, faults) and the free/largest figures for both memories; LIST keeps listing store files with `size` and `sha256`. INFO's flags gain "a module is disabled".
 `dkrt_module` (`lib.rs:671`) returns the same record through the C ABI so the DIGIKIT menu can show it (`digikit-runtime.md:58`).
 
+### 6.5 What fits (built, docs/plans/what-fits.md)
+
+A module does not say what a load takes: the needs are inferred from the file's contents by one function (`dkneeds::needs_of`, docs/design/digikit-dkm.md, "Needs are inferred from the contents"), so a contributed or hand-built `.dkm` cannot misreport them;
+the runtime checks the same limits at load anyway. The menu runs it on the card's files, patchkit and its wasm on the host (`patchkit needs`, `pk_needs`). One rule, `fits_now(needs, capacity)`, compares them with the device's CAPACITY and names the first short resource
+(`dkrt_fit` for the menu, `dkfit.ts` for the host app, `dkfit.py` for the tools; `sdk/fit-vectors.json` keeps the three equal). The DIGIKIT menu's MODULES rows show the memory a module takes and `x` when it will not fit
+next to the ticked ones; the line above APPLY & RESTART gives the DSP and the CPU memory of the ticked set (`DSP 85% CPU 1%`); the Transfer page tags each library module `fits` or `won't fit` and says whether the ticked set fits together; the Memory panel of the desktop app (Emulator and Remote pages) shows what each loaded module takes of each resource the device limits; `dk run` refuses a module that does not fit unless `--force`; `module:check` prints the needs
+and whether the module fits an empty device. Because the module set is fixed per session, a selection is checked against the limits with the other ticked modules taken out, not against what is loaded now.
+
 ## 7. The manifest
 
 Author concepts only. Firmware codes move to the device profile.
@@ -482,9 +511,9 @@ Run-time checks that stay because they cannot be made at build time: clamp (kept
 ```
 mise run module:new machine NAME      create modules/machines/NAME from the template: module.toml, src/dsp/NAME.s with the three symbols and a silent render,
                                       tests/test_NAME.py (sound tests), gallery/icon.svg, a type number in types.toml, builds it
-mise run module:check NAME            build (pk_build), static checks (section 8), conformance on every device in `devices`, then the module's own tests
+mise run module:check NAME            build (pk_build), static checks (section 8), conformance on every device in `devices`, then the module's own tests, the packed size, the inferred needs and whether the module fits an empty device (6.5)
 mise run module:pack NAME [--device]  .dkm (what `patchkit pack` does)
-dk run NAME                           build, pack, upload, select, restart a device or the emulator, wait for the boot, report the log (tools/device/dkrun.py)
+dk run NAME                           build, pack, check that it fits (6.5; `--force` uploads a module that does not), upload, select, restart a device or the emulator, wait for the boot, report the log (tools/device/dkrun.py)
 mise run module:emu NAME              the same through the emulator Target (Phase 11 item 6)
 ```
 

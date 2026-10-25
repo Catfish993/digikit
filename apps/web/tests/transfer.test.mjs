@@ -23,6 +23,8 @@ import {
   localTags,
   MODES,
   parseMode,
+  storageLine,
+  tickedFit,
   warningText,
 } from '../../desktop/ui/src/transfer-core.ts';
 
@@ -252,7 +254,13 @@ test('the tags: only what says something; the usual state has none', () => {
   const fit = localTags({ ...sine, warnings: ['arena 2 MiB is more than the free 1 MiB'] });
   assert.deepEqual(
     [fit[0].text, fit[0].tone, fit[0].title],
-    ['fit', 'warn', 'arena 2 MiB is more than the free 1 MiB'],
+    ["won't fit", 'warn', 'arena 2 MiB is more than the free 1 MiB'],
+  );
+  assert.deepEqual(texts(localTags({ ...sine, fits: true })), ['fits'], 'a module that fits says so');
+  assert.deepEqual(
+    texts(localTags({ ...sine, fits: true, loaded: true, on_card: 'yes' })),
+    ['on device'],
+    'a loaded one says nothing of fit',
   );
   // On device: loaded first, then how the file stands against the library
   assert.deepEqual(texts(deviceTags(pluck)), ['loaded'], 'the same as the library is not said');
@@ -289,5 +297,54 @@ test('the device line: the free space in GiB from 1 GiB up, the same line for bo
     infoLine('Emulator', 'Digitone II', '0.4.1', 19508 * 1024 * 1024),
     'Emulator · Digitone II · runtime 0.4.1 · 19.05 GiB free',
   );
+  assert.equal(infoLine('Emulator', 'Digitakt II', '0.4.1', undefined), 'Emulator · Digitakt II · runtime 0.4.1');
+});
+
+test('the ticked modules together: the sum rule against the device limits, in list order', () => {
+  const caps = {
+    MODULES: { limit: 8, used: 3, largest: 0 }, // what is loaded now does not count: the next boot starts empty
+    SELECTION: { limit: 8, used: 3, largest: 0 },
+    ARENA: { limit: 524288, used: 9000, largest: 100 },
+    STAGE: { limit: 65536, used: 0, largest: 65536 },
+    DSP_AREA: { limit: 524288, used: 400000, largest: 100 },
+  };
+  const m = (id, dsp) =>
+    row(id, 'Machines', { label: id, needs: { file_size: 900, ARENA: 64, DSP_AREA: dsp, DSP_ALIGN: 8 } });
+  const v = {
+    device: 'dt2',
+    runtime: '0.3.0',
+    free_bytes: 0,
+    loaded: [],
+    capacity: caps,
+    card_only: [],
+    modules: [m('a', 300000), m('b', 300000), m('c', 1000)],
+  };
+  assert.equal(tickedFit({ ...v, capacity: null }, new Set(['a'])), null, 'no CAPACITY, no verdict');
+  assert.equal(tickedFit(v, new Set()), null, 'nothing ticked');
+  assert.deepEqual(tickedFit(v, new Set(['a'])), { text: 'The ticked module fits the device.', tone: 'ok' });
+  assert.deepEqual(tickedFit(v, new Set(['a', 'c'])), {
+    text: 'The 2 ticked modules fit the device together.',
+    tone: 'ok',
+  });
+  const two = tickedFit(v, new Set(['a', 'b']));
+  assert.equal(two.tone, 'warn');
+  assert.match(two.text, /^b does not fit with the ticked modules before it: DSP memory 293 KiB needed, 219 KiB free$/);
+  const alone = tickedFit({ ...v, modules: [m('big', 600000)] }, new Set(['big']));
+  assert.match(alone.text, /^big does not fit the device: DSP memory 586 KiB needed, 511 KiB free$/);
+});
+
+test('the storage line of Modules mode: files on the card, their size and the free space; no memory wording', () => {
+  // three files of 100 bytes on the card (pluck, effect, junk), 1000 bytes free
+  assert.equal(storageLine(view), 'Modules: 3 files, 300 B · 1000 B free');
+  assert.equal(
+    storageLine({ ...view, modules: [], card_only: [view.card_only[0]], free_bytes: 3.5 * 2 ** 30 }),
+    'Modules: 1 file, 100 B · 3.50 GiB free',
+  );
+  assert.equal(
+    storageLine({ ...view, modules: [], card_only: [], free_bytes: 2 ** 30 }),
+    'Modules: 0 files, 0 B · 1.00 GiB free',
+  );
+  assert.doesNotMatch(storageLine(view), /arena|memory|DSP|RAM/i);
+  // free space is in the storage line, not in the device line, in Modules mode
   assert.equal(infoLine('Emulator', 'Digitakt II', '0.4.1', undefined), 'Emulator · Digitakt II · runtime 0.4.1');
 });

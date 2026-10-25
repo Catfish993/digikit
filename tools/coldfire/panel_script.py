@@ -251,7 +251,7 @@ def pattern_temp() -> Script:
 
 
 def _to_digikit(s: Script) -> Script:
-    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (MODULES, ABOUT)."""
+    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (MODULES, FX ROUTES, ABOUT)."""
     _settings(s)
     for _ in range(8):
         s.tap(DOWN, gap=15_000_000)
@@ -281,7 +281,7 @@ def digikit_about_script() -> Script:
     """DIGIKIT > ABOUT, then NO back to the DIGIKIT view."""
     s = boot()
     _to_digikit(s)
-    s.tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("about")
+    s.tap(DOWN, gap=KEY).tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("about")
     return s.tap(NO, gap=G).frame("back_main")
 
 

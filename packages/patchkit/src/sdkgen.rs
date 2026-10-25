@@ -39,6 +39,7 @@ struct Sdk {
     protocol: Protocol,
     limits: LimitsSection,
     capacity: Capacity,
+    settings: Settings,
     load: Load,
 }
 /// The SysEx protocol's numbers: `[protocol]` of `sdk/sdk.toml`.
@@ -66,6 +67,33 @@ struct Protocol {
 struct Capacity {
     kinds: BTreeMap<String, u8>,
 }
+/// `[settings]`: the settings record's area and its keys (docs/design/digikit-store.md, "The settings record").
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Settings {
+    /// Copies of the record (the runtime writes the one that is not current): 2.
+    pub copies: u32,
+    /// Sectors of one copy.
+    pub sectors: u32,
+    pub key_max: u32,
+    pub value_max: u32,
+    /// The keys by owner: a key that starts with `prefix` is decoded as `value` by the host readers.
+    pub key: Vec<SettingsKey>,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SettingsKey {
+    pub prefix: String,
+    pub value: String,
+}
+
+/// `[settings]` of the `sdk/sdk.toml` this crate was built with (the device files' `settings_sectors` must equal `copies * sectors`).
+pub fn settings() -> Settings {
+    parse(include_str!("../../../sdk/sdk.toml"))
+        .expect("sdk/sdk.toml parses")
+        .settings
+}
+
 /// `[limits]` of `sdk/sdk.toml`: only the contract maxima, `[limits.max]`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -80,6 +108,7 @@ pub struct LimitsMax {
     pub modules: u64,
     pub map_entries: u64,
     pub fx_slots: u64,
+    pub send_slots: u64,
     pub dsp_area_bytes: u64,
     pub param_rows: u64,
     pub page_rows: u64,
@@ -326,6 +355,37 @@ fn parse(text: &str) -> Result<Sdk> {
             return Err(err!("{SOURCE}: capacity kind {v} ({n}) is 0 or twice"));
         }
     }
+    let st = &sdk.settings;
+    if st.copies != 2 || st.sectors == 0 || st.key_max == 0 || st.key_max > 255 || st.value_max == 0
+    {
+        return Err(err!(
+            "{SOURCE}: [settings] needs 2 copies, a size, a key limit of 1 to 255 and a value limit"
+        ));
+    }
+    // a record holds its header (18 bytes), one entry of the longest key and the longest value must fit in a copy
+    if u64::from(st.sectors) * 512 < 18 + 3 + u64::from(st.key_max) + u64::from(st.value_max) {
+        return Err(err!(
+            "{SOURCE}: [settings] a copy is too small for one entry of the longest key and value"
+        ));
+    }
+    for (i, k) in st.key.iter().enumerate() {
+        if !["u8", "route", "u8x16"].contains(&k.value.as_str()) {
+            return Err(err!(
+                "{SOURCE}: [[settings.key]] {}: unknown value kind {}",
+                k.prefix,
+                k.value
+            ));
+        }
+        if k.prefix.is_empty()
+            || !k.prefix.ends_with('/')
+            || st.key[..i].iter().any(|o| o.prefix == k.prefix)
+        {
+            return Err(err!(
+                "{SOURCE}: [[settings.key]] prefix {:?} is empty, does not end in / or is twice",
+                k.prefix
+            ));
+        }
+    }
     for (what, table) in [("protocol", &p.status), ("load", &sdk.load.status)] {
         for (i, (n, s)) in table.iter().enumerate() {
             if s.code >= 0 || (what == "protocol" && s.code < -128) {
@@ -464,13 +524,38 @@ fn rust(sdk: &Sdk) -> String {
     let m = &sdk.limits.max;
     let _ = writeln!(s, "    pub const SEL_MAX: usize = {};", m.modules);
     let _ = writeln!(s, "    pub const MAP_N: usize = {};", m.map_entries);
-    s.push_str("}\n\npub mod proto {\n");
+    s.push_str("}\n\n");
+    s.push_str(&rust_settings(sdk));
+    s.push_str("\npub mod proto {\n");
     s.push_str(&proto_consts(sdk, "    ", "i32"));
     s.push_str("}\n\npub mod load {\n");
     for (n, st) in by_code(&sdk.load.status) {
         let _ = writeln!(s, "    pub const {n}: i32 = {};", st.code);
     }
     s.push_str("}\n");
+    s
+}
+
+/// The settings record's constants (`[settings]`), for `gen_sdk.rs`.
+fn rust_settings(sdk: &Sdk) -> String {
+    let st = &sdk.settings;
+    let mut s = String::from(
+        "/// The settings record (`[settings]`): the area of one copy, the key and value limits and the keys by owner.\npub mod settings {\n",
+    );
+    let _ = writeln!(s, "    pub const SECTORS: u32 = {};", st.sectors);
+    let _ = writeln!(s, "    pub const COPIES: u32 = {};", st.copies);
+    let _ = writeln!(s, "    pub const KEY_MAX: usize = {};", st.key_max);
+    let _ = writeln!(s, "    pub const VALUE_MAX: usize = {};", st.value_max);
+    s.push_str("    /// (prefix, how a host reader decodes the value)\n");
+    let _ = writeln!(
+        s,
+        "    pub const KEYS: [(&str, &str); {}] = [",
+        st.key.len()
+    );
+    for k in &st.key {
+        let _ = writeln!(s, "        ({:?}, {:?}),", k.prefix, k.value);
+    }
+    s.push_str("    ];\n}\n");
     s
 }
 
@@ -534,7 +619,17 @@ fn python_proto(sdk: &Sdk) -> String {
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "    {n:?}: {k},");
     }
-    s.push_str("}\n");
+    let st = &sdk.settings;
+    let _ = write!(
+        s,
+        "}}\n\nSETTINGS_SECTORS = {}  # one copy of the settings record\nSETTINGS_COPIES = {}\nSETTINGS_KEY_MAX = {}\nSETTINGS_VALUE_MAX = {}\n",
+        st.sectors, st.copies, st.key_max, st.value_max
+    );
+    s.push_str("\n# (prefix, how a host reader decodes the value)\nSETTINGS_KEYS: tuple[tuple[str, str], ...] = (\n");
+    for k in &st.key {
+        let _ = writeln!(s, "    ({:?}, {:?}),", k.prefix, k.value);
+    }
+    s.push_str(")\n");
     s
 }
 

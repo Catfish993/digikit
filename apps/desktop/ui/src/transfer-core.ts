@@ -5,6 +5,7 @@
 // selection, made in SETTINGS > DIGIKIT > MODULES on the device and applied there.
 
 import { formatBytes } from '../../../web/src/modules/backend.ts';
+import { describeShort, emptyCaps, fitsSet } from '../../../web/src/modules/dkfit.ts';
 import type { Group, TransferEvent, TransferRow, TransferView } from '../../../web/src/modules/dktransfer.ts';
 export type { Group, TransferEvent, TransferRow, TransferView };
 export const GROUPS: Group[] = ['Machines', 'Effects', 'Tools'];
@@ -27,6 +28,13 @@ export function freeText(bytes: number): string {
 /** The line of the On device column, the same in both modes: the target, the device, its runtime and the free space (left out when unknown). */
 export function infoLine(target: string, device: string, runtime: string, free: number | undefined): string {
   return [target, device, `runtime ${runtime}`, ...(free === undefined ? [] : [`${freeText(free)} free`])].join(' · ');
+}
+
+/** The storage line of Modules mode, under the device line: the module files on the card (the rows of the list) and the free space of the store. Storage only: no memory. */
+export function storageLine(view: TransferView): string {
+  const rows = onDevice(view);
+  const bytes = rows.reduce((n, r) => n + r.file_size, 0);
+  return `Modules: ${rows.length} file${rows.length === 1 ? '' : 's'}, ${formatBytes(bytes)} · ${freeText(view.free_bytes)} free`;
 }
 
 /** The key of a row in the tick set. */
@@ -101,8 +109,8 @@ export interface RowTag {
   tone: 'ok' | 'warn' | 'dim';
 }
 
-/** The tags of a library module in the "On your computer" list: a test module, what the device holds of it, a fit warning. Nothing is said
- * of a module that is not on the device (that is the usual state), and nothing of a fit that has no warning. */
+/** The tags of a library module in the "On your computer" list: a test module, what the device holds of it, and whether it fits the device
+ * (from the needs inferred from its contents, next to the modules loaded now; the tooltip says what is short). A loaded module says nothing of fit. */
 export function localTags(r: TransferRow): RowTag[] {
   const out: RowTag[] = [];
   if (r.test) out.push({ text: 'test', tone: 'dim' });
@@ -110,8 +118,40 @@ export function localTags(r: TransferRow): RowTag[] {
   else if (r.on_card === 'other version')
     out.push({ text: 'differs', title: 'A different build is on the device; Install replaces it', tone: 'warn' });
   const w = warningText(r);
-  if (w) out.push({ text: 'fit', title: w, tone: 'warn' });
+  if (w) out.push({ text: "won't fit", title: w, tone: 'warn' });
+  else if (r.fits === true && !r.loaded)
+    out.push({ text: 'fits', title: 'Fits the device next to the modules loaded now', tone: 'dim' });
   return out;
+}
+
+/**
+ * The line for the ticked modules: do they fit the device together? The next boot loads the selection into an empty runtime, so the ticked modules
+ * are taken in list order out of the device's limits (the sum rule: it does not model fragmentation, so it is conservative) and what is on the
+ * device now is not counted. null when nothing is ticked or the device gave no CAPACITY.
+ */
+export function tickedFit(view: TransferView, ticks: Set<string>): { text: string; tone: 'ok' | 'warn' } | null {
+  const rows = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && r.needs);
+  if (!rows.length || !view.capacity) return null;
+  const short = fitsSet(
+    rows.map((r) => r.needs!),
+    emptyCaps(view.capacity),
+  );
+  if (!short)
+    return {
+      text:
+        rows.length === 1
+          ? 'The ticked module fits the device.'
+          : `The ${rows.length} ticked modules fit the device together.`,
+      tone: 'ok',
+    };
+  const name = rows[short.index].label ?? rows[short.index].name;
+  return {
+    text:
+      short.index === 0
+        ? `${name} does not fit the device: ${describeShort(short)}`
+        : `${name} does not fit with the ticked modules before it: ${describeShort(short)}`,
+    tone: 'warn',
+  };
 }
 
 /** The tags of a file of the "On device" list: a loaded module says so first; a file the library does not have, and one that differs from

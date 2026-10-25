@@ -2,7 +2,7 @@
 # NO STORE); ABOUT shows the runtime; NO leaves. The entry, the main page and the MEMORY page are pinned as frames (hashes in
 # tests/patchkit/smoke/goldens.json): the pages have no glyphs, and MEMORY (a text page) has no highlighted row. MODULES and ABOUT
 # are checked by the state the menu draws them from, not by pixels: ABOUT by the rows it keeps in DK_ABOUT, MEMORY also by those
-# in DK_MEM, MODULES by the store state of its list (2 = no store, no rows). A key on a text page must not fault, and one DOWN must not change the frame (the cursor moves, unseen).
+# in DK_MEM, MODULES by the store state of its list (2 = no store, no rows), FX ROUTES by the rows it keeps in DK_FXR (no effect is loaded: NO EFFECTS LOADED). A key on a text page must not fault, and one DOWN must not change the frame (the cursor moves, unseen).
 [test]
 name = "menu"
 devices = ["dt2", "dn2"]
@@ -77,6 +77,20 @@ tap = "YES"
 [[step]]
 wait_ms = 600
 [[step]]
+expect_text = {rows = "DK_FXR", count = "DK_FXR_N", stride = 24, has = ["NO EFFECTS LOADED"]}
+[[step]]
+tap = "NO"
+[[step]]
+wait_ms = 400
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 300
+[[step]]
+tap = "YES"
+[[step]]
+wait_ms = 600
+[[step]]
 expect_text = {rows = "DK_ABOUT", count = "DK_ABOUT_N", stride = 24, has = ["RUNTIME {runtime}", "BOOT: 0 OF 0 OK"]}
 [[step]]
 tap = "DOWN"
@@ -105,7 +119,7 @@ tap = "YES"
 [[step]]
 wait_ms = 600
 [[step]]
-expect_text = {rows = "DK_MEM", count = "DK_MEM_N", stride = 24, has = ["ARENA .......... 0%", "MODS  .......... 0/8"]}
+expect_text = {rows = "DK_MEM", count = "DK_MEM_N", stride = 24, has = ["CPU   .......... 0%", "MODS  .......... 0/8"]}
 [[step]]
 expect_frame = "digikit_memory"
 [[step]]

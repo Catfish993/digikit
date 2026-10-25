@@ -3,6 +3,7 @@
 // folder of built modules (src-tauri/src/library.rs) and the MIDI port (src-tauri/src/midi_port.rs).
 // Nothing is built here and no process is started: `mise run module:pack-all` (run by `mise run workbench`) fills the folder.
 import { invoke } from '@tauri-apps/api/core';
+import { DkNeeds } from '@web/modules/dkneeds';
 import { hexSha256, storePath } from '@web/modules/dkupload-core';
 import {
   buildView,
@@ -18,13 +19,26 @@ import { PAUSED, session as running } from './target';
 
 export { PAUSED };
 
+let needsReader: Promise<DkNeeds> | undefined;
+/** What a .dkm takes of the device: patchkit.wasm's `pk_needs`, loaded once through the native `patchkit_wasm` (a failed load is tried again at the next use). */
+function needs(): Promise<DkNeeds> {
+  needsReader ??= invoke<ArrayBuffer>('patchkit_wasm')
+    .then((b) => DkNeeds.create(b))
+    .catch((e) => {
+      needsReader = undefined;
+      throw e;
+    });
+  return needsReader;
+}
+
 /** The built modules of the device's folder, read again each time (a rebuild in a terminal shows up at the next Refresh). */
 export async function loadLibrary(device: string): Promise<LibraryModule[]> {
+  const reader = await needs();
   const files = await invoke<{ path: string; size: number }[]>('lib_scan', { device });
   const out: LibraryModule[] = [];
   for (const f of files) {
     const bytes = new Uint8Array(await invoke<ArrayBuffer>('lib_read', { device, path: f.path }));
-    const m = await libraryModule(bytes);
+    const m = await libraryModule(bytes, (b) => reader.of(b));
     if (m) out.push(m);
   }
   return out;

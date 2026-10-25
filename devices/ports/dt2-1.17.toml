@@ -49,6 +49,128 @@ mark = "D"
 rule = "core/dynreg:cf_func"
 
 [[anchor]]
+name = "cf.fxpages.acc"
+cpu = "cf"
+kind = "code"
+addr = 0x400c898a
+len = 6
+sha256 = "4804747ca9c54fb6cf82b4a21415559c390b2b2f9fc4f3cea86546d00ee4dc72"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.graph"
+cpu = "cf"
+kind = "code"
+addr = 0x40074ff8
+len = 6
+sha256 = "53ffbbb789c1ba823ff9e9ce100d797b461eeeab010f7a0a1e361408e3864b9d"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.init"
+cpu = "cf"
+kind = "code"
+addr = 0x400e56f4
+len = 8
+sha256 = "4a577f7d4e224f5bcdda330bfb08780933faacb4e3da1120371ac265a2d70dfd"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.keylist"
+cpu = "cf"
+kind = "code"
+addr = 0x40066c44
+len = 6
+sha256 = "9951c87f5e3da5a81d18412e10f408789618612ea30687e2d7d00dd91fc28210"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.keystock"
+cpu = "cf"
+kind = "data"
+addr = 0x401f7864
+src = 0x40066c46
+len = 4
+sha256 = "c22ceee66b8ab104483c83053173b33f992dd4fcb457284c60ef9d699a1c7059"
+mark = "D"
+rule = "core/fxpages:cf_ptr"
+
+[[anchor]]
+name = "cf.fxpages.label"
+cpu = "cf"
+kind = "code"
+addr = 0x40074dc8
+len = 6
+sha256 = "35f57655f91d71a8d4c1dd465632547a68ea7c6814c466a9430d1c62b275418d"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.list"
+cpu = "cf"
+kind = "code"
+addr = 0x40066d7c
+len = 6
+sha256 = "cb9235a0e00ad183906dcd946e2fb745f18e0456498088a6469d74c139c1fd91"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.load"
+cpu = "cf"
+kind = "code"
+addr = 0x400daf86
+len = 6
+sha256 = "1bf979bceba284ebeb6068fa83c174989ff44a30ab610c291d1fe98aa4a5fee0"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.save"
+cpu = "cf"
+kind = "code"
+addr = 0x400dafd8
+len = 6
+sha256 = "4a7a0b462f93dfe8d42afbe0502eb1f06970acdd552e0ce265cc62a24cefb7b1"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.sound"
+cpu = "cf"
+kind = "code"
+addr = 0x400db802
+len = 8
+sha256 = "e29c1ee7f8818f91edabfb124326f44a7703b9c4532f7911594ff19c3a2366a5"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
+name = "cf.fxpages.stock"
+cpu = "cf"
+kind = "data"
+addr = 0x401f7848
+src = 0x40066d7e
+len = 12
+sha256 = "bfd5f7f71e0ebd97c6d7602bc0b575381d1f92dd55f3dd82ef39410f8bf04625"
+mark = "D"
+rule = "core/fxpages:cf_ptr"
+
+[[anchor]]
+name = "cf.fxpages.stock_n"
+cpu = "cf"
+kind = "code"
+addr = 0x40066d6e
+len = 2
+sha256 = "771260b3e7ad3e3bbe992aa16c9958440f42bf5762b268b299898d6eefe67772"
+mark = "D"
+rule = "core/fxpages:cf_func"
+
+[[anchor]]
 name = "cf.machines.clone.0"
 cpu = "cf"
 kind = "code"
@@ -2033,6 +2155,28 @@ mark = "D"
 rule = "core/fx:sharc_func"
 
 [[anchor]]
+name = "dsp.fx.return"
+cpu = "sharc"
+kind = "value"
+addr = 0x254778
+src = 0x28384356
+len = 6
+sha256 = "3932e45090598a01c6dcf67b7e60d4ff2396a86678f32ef3f77c85c443cf3b0c"
+mark = "D"
+rule = "core/fx:sharc_literal"
+
+[[anchor]]
+name = "dsp.fx.send"
+cpu = "sharc"
+kind = "code"
+addr = 0x283840f6
+pm = 0x1c207b
+len = 6
+sha256 = "38f4bac2d1d011adec0a045b52d0a7983bed95c2bbb204a73c0ee02a2889f6fa"
+mark = "D"
+rule = "core/fx:sharc_func"
+
+[[anchor]]
 name = "dsp.fx.sidechain_filter_word"
 cpu = "sharc"
 kind = "value"
@@ -2042,6 +2186,17 @@ len = 6
 sha256 = "ae63d81c7590510eecbe4b07ca65a9d9ad423a26ba301415a978a351fc4003d6"
 mark = "D"
 rule = "digikit/master-drive:sharc_mem_addr"
+
+[[anchor]]
+name = "dsp.fx.trackbus"
+cpu = "sharc"
+kind = "value"
+addr = 0x252df8
+src = 0x283841d4
+len = 6
+sha256 = "3a8591d6327b894d4752994602cc41d1c1854613ec4e3c3f2b98868398434d00"
+mark = "D"
+rule = "core/fx:sharc_literal"
 
 [[anchor]]
 name = "dsp.machines.selector_data"

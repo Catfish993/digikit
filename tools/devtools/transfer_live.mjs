@@ -3,10 +3,10 @@
 // its control socket (the same `midi.usb.in` / `midi.usb.out` the desktop page reaches with `emu_call`). It is a dev tool: the app itself
 // starts no process. Start the target first (`mise run emu:serve -- FIRMWARE --free`, or a daemon with `run.mode free`), then:
 //
-//     node tools/devtools/transfer_live.mjs SOCKET [--restart] [--delete]
+//     node tools/devtools/transfer_live.mjs SOCKET [--module ID] [--restart] [--delete]
 //
-// It reads the library folder out/modules/<device>/ (mise run module:pack-all), lists, installs the first Machines module that is on no
-// card yet, lists again, SELECTs it (the page never does; the check does to see a module load), optionally RESTARTs and checks MODULES,
+// It reads the library folder out/modules/<device>/ (mise run module:pack-all), lists, installs the module `--module ID` (default: the first
+// Machines module that is on no card yet), lists again, SELECTs it (the page never does; the check does to see a module load), optionally RESTARTs and checks MODULES,
 // and optionally deletes the file. Exit code 0 when every step did what it should.
 import net from 'node:net';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -23,9 +23,10 @@ import {
 
 const [socketPath, ...flags] = process.argv.slice(2);
 if (!socketPath) {
-  console.error('usage: node tools/devtools/transfer_live.mjs SOCKET [--restart] [--delete]');
+  console.error('usage: node tools/devtools/transfer_live.mjs SOCKET [--module ID] [--restart] [--delete]');
   process.exit(2);
 }
+const moduleId = flags.includes('--module') ? flags[flags.indexOf('--module') + 1] : undefined;
 
 // ---- JSON-RPC over the control socket ----
 const sock = net.connect(socketPath);
@@ -104,12 +105,21 @@ const library = (await Promise.all(files.map(async (f) => libraryModule(new Uint
 check('the library folder has modules', library.length > 0, `${library.length} in ${relative('.', dir)}`);
 
 const before = await buildView(s, library);
-const target = before.modules.find((m) => m.group === 'Machines' && m.on_card === 'no' && !m.test);
+const target = before.modules.find((m) =>
+  moduleId ? m.id === moduleId : m.group === 'Machines' && m.on_card === 'no' && !m.test,
+);
+if (moduleId)
+  check(
+    `the list has ${moduleId} (Tools group, version, size)`,
+    !!target,
+    JSON.stringify(target && [target.group, target.version, target.file_size, target.on_card]),
+  );
 check(
-  'the list has a machine that is not on the card',
+  'the list has a module to install',
   !!target,
   JSON.stringify(before.modules.map((m) => [m.id, m.on_card, m.loaded])),
 );
+if (!target) process.exit(1);
 const events = [];
 const out = await install(s, [target.id], library, (e) => events.push(e));
 check(
@@ -139,6 +149,11 @@ if (flags.includes('--restart')) {
     r.loaded.includes(target.name),
     `${r.loaded} ${ev.map((e) => e.event)}`,
   );
+  if (target.id === 'digikit/remote') {
+    // a service module: its STATE answers (E_PROTO when it is not loaded); the REMOTE switch itself belongs to the device's menu
+    const st = await s.remoteState().catch((e) => e);
+    check('digikit/remote: STATE reports the module loaded', !(st instanceof Error), JSON.stringify(st));
+  }
 }
 if (flags.includes('--delete')) {
   const del = await deleteFiles(s, [target.path]);

@@ -109,7 +109,7 @@ def expected_lines(h: dict) -> list[str]:
         )
     )
     out.append("LARGEST " + (size_text(h["heap_largest"]) if f & F_HEAP else "--"))
-    out.append("ARENA FREE " + size_text(h["arena_free"]))
+    out.append("CPU FREE " + size_text(h["arena_free"]))
     out.append(
         "DSP FREE " + (size_text(h["dsp_area_free"]) if h["dsp_area_total"] else "--")
     )
@@ -209,7 +209,8 @@ class HealthProof:
             self.tap("DOWN", 200)
         self.tap("YES", 700)  # DIGIKIT
         self.tap("DOWN", 200)
-        self.tap("DOWN", 200)  # MODULES, ABOUT, HEALTH
+        self.tap("DOWN", 200)
+        self.tap("DOWN", 200)  # MODULES, FX ROUTES, ABOUT, HEALTH
         self.tap("YES", 700)
 
     def frame(self, name: str) -> str:

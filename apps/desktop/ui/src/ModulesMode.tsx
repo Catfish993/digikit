@@ -33,6 +33,7 @@ import {
   eventText,
   installModules,
   localTags,
+  tickedFit,
   onDeviceWithPending,
   rowKey,
   rowStatus,
@@ -239,41 +240,53 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
       >
         <Show when={lastView()} fallback={<p class="empty">{busy() ? `${busy()}…` : 'No module list yet.'}</p>}>
           {(v) => (
-            <For each={available(v(), showTests())}>
-              {(g) => (
-                <div class="group">
-                  <h4>{g.group}</h4>
-                  <Show
-                    when={g.rows.length}
-                    fallback={<p class="empty">{g.group === 'Effects' ? 'No run-time effects yet.' : 'None.'}</p>}
+            <>
+              <Show when={tickedFit(v(), ticks())}>
+                {(f) => (
+                  <p
+                    class="fitline"
+                    classList={{ [f().tone]: true }}
+                    title="The ticked modules together against the device's limits, as the next boot loads them (nothing else counted)"
                   >
-                    <ul class="rows">
-                      <For each={g.rows}>
-                        {(r) => (
-                          <ListRow
-                            rowKey={rowKey(r)}
-                            selected={ticks().has(rowKey(r))}
-                            onSelect={r.id ? (e) => lsel.click(rowKey(r), e) : undefined}
-                            check={{
-                              label: `Install ${label(r)}`,
-                              checked: ticks().has(rowKey(r)),
-                              disabled: writing(busy()),
-                              onChange: () => lsel.tick(rowKey(r)),
-                            }}
-                            name={label(r)}
-                            title={r.id ?? r.path}
-                            tags={localTags(r)}
-                            version={r.version ?? ''}
-                            size={formatBytes(r.file_size)}
-                            sizeTitle={r.arena !== undefined ? `arena ${r.arena} B, DSP ${r.dsp} B` : ''}
-                          />
-                        )}
-                      </For>
-                    </ul>
-                  </Show>
-                </div>
-              )}
-            </For>
+                    {f().text}
+                  </p>
+                )}
+              </Show>
+              <For each={available(v(), showTests())}>
+                {(g) => (
+                  <div class="group">
+                    <h4>{g.group}</h4>
+                    <Show
+                      when={g.rows.length}
+                      fallback={<p class="empty">{g.group === 'Effects' ? 'No run-time effects yet.' : 'None.'}</p>}
+                    >
+                      <ul class="rows">
+                        <For each={g.rows}>
+                          {(r) => (
+                            <ListRow
+                              rowKey={rowKey(r)}
+                              selected={ticks().has(rowKey(r))}
+                              onSelect={r.id ? (e) => lsel.click(rowKey(r), e) : undefined}
+                              check={{
+                                label: `Install ${label(r)}`,
+                                checked: ticks().has(rowKey(r)),
+                                disabled: writing(busy()),
+                                onChange: () => lsel.tick(rowKey(r)),
+                              }}
+                              name={label(r)}
+                              title={r.id ?? r.path}
+                              tags={localTags(r)}
+                              version={r.version ?? ''}
+                              size={formatBytes(r.file_size)}
+                            />
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </>
           )}
         </Show>
       </LocalPane>

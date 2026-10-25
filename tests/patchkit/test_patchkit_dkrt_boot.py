@@ -70,8 +70,9 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
-    # the record (4 tests) and the version 3 store: format, table stream, free space, power cuts, header copies, a read against a commit (finding 43), the card-write range (finding 46)
-    assert r.returncode == 0 and "19 passed; 0 failed" in r.stdout, r.stdout
+    # the record (4 tests), the version 3 store: format, table stream, free space, power cuts, header copies, a read against a commit (finding 43), the card-write range (finding 46),
+    # and the settings record (15 tests, the shared vectors included: the test reads sdk/settings-vectors.json)
+    assert r.returncode == 0 and "35 passed; 0 failed" in r.stdout, r.stdout
 
 
 def test_the_store_profile_reserves_the_two_record_sectors():
@@ -83,7 +84,8 @@ def test_the_store_profile_reserves_the_two_record_sectors():
         assert store["end_sector"] == s.first + s.sectors
         assert store["first_sector"] == s.first
         assert store["selection_sectors"] == 2
-        assert store["header_b_sector"] == store["end_sector"] - 2 - 1
+        assert store["settings_sectors"] == 32
+        assert store["header_b_sector"] == store["end_sector"] - 2 - 32 - 1
         assert store["header_b_sector"] == s.header_b
         assert (s.sel_a, s.sel_b) == (store["end_sector"] - 2, store["end_sector"] - 1)
 

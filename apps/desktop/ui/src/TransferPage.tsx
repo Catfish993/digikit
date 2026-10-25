@@ -16,7 +16,7 @@ import { target, targetLabel } from './target';
 import { transferBackend } from './transfer-backend';
 import { samplesBar } from './samples-core';
 import TransferBar from './TransferBar';
-import { MODES, modulesBar, parseMode } from './transfer-core';
+import { MODES, modulesBar, parseMode, storageLine } from './transfer-core';
 import { writing, type PageCtx } from './TransferParts';
 import {
   log,
@@ -55,7 +55,7 @@ async function read(): Promise<void> {
   const v = await transferBackend.list();
   setLastView(v);
   const { name, samples } = await deviceStorage(v.device);
-  setDeviceInfo({ name, samples, runtime: v.runtime, free: v.free_bytes, canMkdir: false });
+  setDeviceInfo({ name, samples, runtime: v.runtime, storage: storageLine(v), canMkdir: false });
 }
 
 export default function TransferPage(): JSX.Element {

@@ -285,6 +285,8 @@ pub unsafe extern "C" fn dkrt_boot() {
     dlog::ev(logk::BOOT_START, dlog::INFO, [RUNTIME_VERSION, crate::device(), r.stable_blocks, r.seq, r.boot_counter]);
     // the card's area: ours, blank or neither (read-only), before anything is written
     card::check();
+    // the settings record (the fx routes and send amounts): into RAM before the UI starts
+    crate::settings::load();
     // the crash record and the RAM probe of the boot before
     crash::keep_probe();
     if crash::at_boot() {

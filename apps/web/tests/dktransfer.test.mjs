@@ -48,6 +48,16 @@ function dkm(name, { machine = 0, fx = 0, service = 1, size = 700, dsp = 0, vers
   return b;
 }
 
+/**
+ * The needs reader of these tests. The needs are inferred by Rust (packages/dkneeds, through patchkit.wasm: dkneeds.test.mjs runs the real one on
+ * real files); a fake module here has only a header, so a stand-in gives the fit logic its input: the arena block of image 100 and bss 20, and the
+ * DSP area the fake's DSP size word holds.
+ */
+const needsOf = (b) => {
+  const dsp = new DataView(b.buffer, b.byteOffset, b.length).getUint32(0x9c);
+  return { file_size: b.length, ARENA: 120, DSP_AREA: dsp, DSP_ALIGN: dsp ? 8 : 0 };
+};
+
 const ST = { E_STATE: -53, E_NOFILE: -59, E_HASH: -56, E_FULL: -52, E_OFFSET: -54 };
 
 /** The device: files, a selection, a log, modules, and a RESTART that is silent for a while and then boots again. */
@@ -66,6 +76,7 @@ class FakeDevice {
     this.queue = [];
     this.free = 1 << 20; // INFO's u32 free_bytes
     this.storeKib = null; // CAPACITY's STORE limit in KiB (null: the entry is left out); 1024 KiB are used
+    this.caps = null; // INFO's capability word (null: every capability)
     this.pending = 0; // after a RESTART: requests that are still answered by the old boot before the reset
   }
   reply(cmd, seq, status, body = new Uint8Array()) {
@@ -113,7 +124,7 @@ class FakeDevice {
             be32(1),
             be32(this.log.length),
             be32(0x000204),
-            be32(Object.values(CAP).reduce((a, bit) => a | (1 << bit), 0)),
+            be32(this.caps ?? Object.values(CAP).reduce((a, bit) => a | (1 << bit), 0)),
           ),
         );
       }
@@ -394,21 +405,30 @@ test('header, library module, the merged list', async () => {
   const pluck = dkm('digikit/pluck', { machine: 1, dsp: 64, size: 900 });
   const sine = dkm('test/sine', { machine: 1, dsp: 400, size: 800 });
   const tool = dkm('digikit/tool', { service: 1, size: 500 });
-  assert.deepEqual(
-    [headerInfo(pluck).group, headerInfo(pluck).version, headerInfo(pluck).arena, headerInfo(pluck).dsp],
-    ['Machines', '0.1.2', 120, 64],
-  );
+  assert.deepEqual([headerInfo(pluck).group, headerInfo(pluck).version], ['Machines', '0.1.2']);
   assert.equal(headerInfo(dkm('a', { fx: 1 })).group, 'Effects');
   assert.equal(headerInfo(tool).group, 'Tools');
   assert.equal(headerInfo(new Uint8Array(300)), null);
   assert.equal(await libraryModule(new Uint8Array(300)), null);
-  const lm = await libraryModule(pluck);
+  const lm = await libraryModule(pluck, needsOf);
   assert.deepEqual(
     [lm.id, lm.label, lm.test, lm.path, lm.file_size, lm.sha256],
     ['digikit/pluck', 'pluck', false, 'modules/pluck.dkm', 900, hex(sha(pluck))],
   );
+  assert.deepEqual([lm.needs.ARENA, lm.needs.DSP_AREA, lm.needs.file_size], [120, 64, 900]);
+  // no reader, or a file the reader says the loader would refuse: no needs, so no fit verdict (the device still refuses what does not load)
+  assert.equal((await libraryModule(pluck)).needs, null);
+  assert.equal((await libraryModule(pluck, () => null)).needs, null);
+  const unknown = mergeView(
+    [await libraryModule(pluck, () => null)],
+    [],
+    [],
+    { MODULES: { limit: 8, used: 8, largest: 0 } },
+    {},
+  );
+  assert.deepEqual([unknown.modules[0].warnings, unknown.modules[0].needs], [[], undefined]);
 
-  const library = [await libraryModule(sine), lm, await libraryModule(tool)];
+  const library = [await libraryModule(sine, needsOf), lm, await libraryModule(tool, needsOf)];
   const card = [
     { path: 'modules/pluck.dkm', size: 900, sha256: hex(sha(pluck)) }, // same file
     { path: 'modules/tool.dkm', size: 500, sha256: 'ff' }, // same path, other bytes
@@ -416,6 +436,7 @@ test('header, library module, the merged list', async () => {
     { path: 'modules/junk.dkm', size: 9, sha256: 'bb' },
   ];
   const headers = { 'modules/other.dkm': dkm('someone/effect', { fx: 1, size: 700 }), 'modules/junk.dkm': null };
+  // the device has 1000 bytes of DSP area, 50 of them in one free piece (a loaded module sits in the rest)
   const cap = {
     MODULES: { limit: 8, used: 1, largest: 0 },
     ARENA: { limit: 1000, used: 0, largest: 300 },
@@ -433,7 +454,18 @@ test('header, library module, the merged list', async () => {
   );
   assert.equal(by['digikit/tool'].on_card, 'other version');
   assert.deepEqual([by['test/sine'].on_card, by['test/sine'].fits, by['test/sine'].test], ['no', false, true]); // DSP 400 > largest 50
-  assert.match(by['test/sine'].warnings[0], /DSP area/);
+  assert.match(
+    by['test/sine'].warnings[0],
+    /DSP memory 350 bytes short; fits when the modules loaded now are not selected/,
+  );
+  // more than the device has at all: no way out by deselecting
+  const huge = await libraryModule(dkm('test/huge', { machine: 1, dsp: 2000, size: 800 }), needsOf);
+  assert.match(
+    mergeView([huge], [], [], cap, {}).modules[0].warnings[0],
+    /DSP memory .* short; more than this device has/,
+  );
+  // a capacity without a kind (an older runtime) does not judge it
+  assert.equal(mergeView(library, [], [], { MODULES: cap.MODULES }, {}).modules[1].fits, true);
   const extra = Object.fromEntries(v.card_only.map((r) => [r.path, r]));
   assert.deepEqual(
     [extra['modules/other.dkm'].group, extra['modules/other.dkm'].loaded, extra['modules/other.dkm'].name],
@@ -449,7 +481,7 @@ test('buildView reads the device: INFO, LIST, MODULES, CAPACITY and the headers 
   dev.files.set('modules/pluck.dkm', pluck);
   dev.files.set('modules/other.dkm', dkm('someone/effect', { fx: 1, size: 700 }));
   dev.loaded = ['digikit/pluck'];
-  const view = await buildView(session(dev), [await libraryModule(pluck)]);
+  const view = await buildView(session(dev), [await libraryModule(pluck, needsOf)]);
   assert.deepEqual(
     [view.device, view.runtime, view.free_bytes, view.loaded],
     ['dt2', '0.2.4', 1 << 20, ['digikit/pluck']],
@@ -457,6 +489,39 @@ test('buildView reads the device: INFO, LIST, MODULES, CAPACITY and the headers 
   assert.equal(view.modules[0].on_card, 'yes');
   assert.deepEqual([view.card_only[0].group, view.card_only[0].version], ['Effects', '0.1.2']);
   assert.ok(dev.seen.includes('READ') && dev.seen.includes('MODULES') && dev.seen.includes('CAPACITY'));
+});
+
+test('Modules mode lists the modules/ folder only: the samples/ of a version 3 store stay out (with and without FOLDERS)', async () => {
+  const pluck = dkm('digikit/pluck', { machine: 1, dsp: 64, size: 900 });
+  const withSamples = () => {
+    const dev = new FakeDevice();
+    dev.files.set('modules/pluck.dkm', pluck);
+    dev.files.set('modules/other.dkm', dkm('someone/effect', { fx: 1, size: 700 }));
+    dev.files.set('samples/01', new Uint8Array(3000).fill(7));
+    dev.files.set('samples/ff_ht_bass_drop_A#', new Uint8Array(500).fill(9));
+    dev.files.set('samples/Drums/kick.wav', new Uint8Array(400).fill(3));
+    dev.dirs.add('samples/empty');
+    return dev;
+  };
+  const lib = [await libraryModule(pluck, needsOf)];
+  const rows = (v) => [...v.modules, ...v.card_only].map((r) => r.path ?? r.id).sort();
+  // FOLDERS: the device filters by the LIST prefix, and the host does not read the other files' headers
+  const dev = withSamples();
+  const view = await buildView(session(dev), lib);
+  assert.deepEqual(rows(view), ['modules/other.dkm', 'modules/pluck.dkm'].sort());
+  assert.deepEqual(
+    view.card_only.map((r) => r.name),
+    ['someone/effect'],
+  );
+  // a runtime without FOLDERS answers every entry to a LIST: the host filters
+  const old = withSamples();
+  old.caps = Object.values(CAP).reduce((a, bit) => a | (1 << bit), 0) & ~(1 << CAP.FOLDERS);
+  assert.deepEqual(rows(await buildView(session(old), lib)), ['modules/other.dkm', 'modules/pluck.dkm'].sort());
+  // install compares with the modules/ entries too, and leaves the samples alone
+  const events = [];
+  await install(session(dev), ['digikit/pluck'], lib, (e) => events.push(e));
+  assert.ok(events.some((e) => e.event === 'skip'));
+  assert.equal(dev.files.size, 5);
 });
 
 test('free space above 4 GiB: INFO saturates at 2^32 - 1, CAPACITY STORE (KiB) does not, and the view uses it', async () => {
@@ -485,7 +550,7 @@ test('install: skip the same sha256, upload the rest with capped progress, VERIF
   const out = await install(
     session(dev, { chunk: 512 }),
     ['digikit/pluck', 'test/big'],
-    [await libraryModule(pluck), await libraryModule(big)],
+    [await libraryModule(pluck, needsOf), await libraryModule(big, needsOf)],
     (e) => events.push(e),
   );
   assert.deepEqual(out, { uploaded: ['test/big'], selected: [], restarted: false });
@@ -504,7 +569,10 @@ test('install: skip the same sha256, upload the rest with capped progress, VERIF
     events.filter((e) => e.event === 'verify').map((e) => e.ok),
     [true, true],
   );
-  await assert.rejects(install(session(dev), ['digikit/none'], [await libraryModule(pluck)]), /not a run-time module/);
+  await assert.rejects(
+    install(session(dev), ['digikit/none'], [await libraryModule(pluck, needsOf)]),
+    /not a run-time module/,
+  );
 });
 
 test('install: a VERIFY that does not match is an error', async () => {
@@ -513,7 +581,7 @@ test('install: a VERIFY that does not match is an error', async () => {
   const m = dkm('digikit/pluck', { machine: 1 });
   const events = [];
   await assert.rejects(
-    install(session(dev), ['digikit/pluck'], [await libraryModule(m)], (e) => events.push(e)),
+    install(session(dev), ['digikit/pluck'], [await libraryModule(m, needsOf)], (e) => events.push(e)),
     /did not keep the file/,
   );
   assert.deepEqual(events.at(-1), { event: 'verify', id: 'digikit/pluck', path: 'modules/pluck.dkm', ok: false });

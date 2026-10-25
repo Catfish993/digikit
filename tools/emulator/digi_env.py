@@ -78,6 +78,11 @@ def register_gen(image: pathlib.Path | str, gen: pathlib.Path | str) -> None:
     GEN_INDEX.write_text(json.dumps(index, indent=1, sort_keys=True) + "\n")
 
 
+def exe_name(name: str) -> str:
+    """A cargo binary's file name on this host: NAME, or NAME.exe on Windows."""
+    return name + ".exe" if os.name == "nt" else name
+
+
 def generated_dir(
     environ: Environ | None = None, image: pathlib.Path | str | None = None
 ) -> pathlib.Path:

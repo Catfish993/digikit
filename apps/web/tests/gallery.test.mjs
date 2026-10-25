@@ -40,10 +40,11 @@ test('bundle lists the committed modules and ports', () => {
   );
   assert.ok(bundle.modules.some((m) => m.manifest.includes('id = "digikit/master-gain"')));
   assert.equal(bundle.ports.length, readdirSync(join(root, 'devices/ports')).length);
-  // committed content only: nothing generated under out/ and no firmware-sized blobs
+  // committed content only: nothing generated under out/ and no firmware-sized blobs (a firmware section is several MiB;
+  // the bundle is 2.2 MB since the settings store and the send route, 1.9 MB before)
   const json = JSON.stringify(bundle);
   assert.ok(!json.includes('out/modules'));
-  assert.ok(json.length < 2 * 1024 * 1024);
+  assert.ok(json.length < 3 * 1024 * 1024);
 });
 
 test('bundle carries the device knob models and the gallery JSON of typed modules', () => {

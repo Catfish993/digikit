@@ -37,6 +37,9 @@ pub struct Manifest {
     pub page: Vec<crate::typed::PageDef>,
     #[serde(default)]
     pub voice: Vec<crate::typed::VoiceDef>,
+    /// Run-time effects (`[[fx]]`); read by `patchkit pack` only.
+    #[serde(default)]
+    pub fx: Vec<crate::typed::FxDef>,
     /// `[[gen]]`: files `patchkit gen` writes from device data (`crate::devgen`).
     #[serde(default, rename = "gen")]
     pub gens: Vec<GenDef>,

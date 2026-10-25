@@ -1347,7 +1347,7 @@ mod tests {
             .unwrap()
             .unwrap();
             assert_eq!(read.entries.len(), 1);
-            assert_eq!(store.header_b(), store.end_sector - 3);
+            assert_eq!(store.header_b(), store.end_sector - 35);
             let limit = store.store_limit() as usize * 512;
             let fits = |bytes: usize| {
                 build_tree_image(

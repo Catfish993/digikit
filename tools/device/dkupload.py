@@ -8,6 +8,7 @@
     uv run python -m tools.device.dkupload --emu put build/m.dkm modules/m.dkm
     uv run python -m tools.device.dkupload --emu rm modules/m.dkm
     uv run python -m tools.device.dkupload --emu clear
+    uv run python -m tools.device.dkupload --emu settings [-o FILE] [--json]   # the settings record (read only); FILE goes to `patchkit store dump --record FILE`
     uv run python -m tools.device.dkupload --emu --run-dir out/runs/patchkit/run-NAME put build/m.dkm   # a scenario's daemon, not the desktop app's
     uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info    # a real device (not exercised in CI)
     uv run python -m tools.device.dkupload --emu remote state              # digikit/remote (docs/plans/remote-control.md): the REMOTE switch
@@ -27,6 +28,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
+import json
 import struct
 import sys
 import time
@@ -54,6 +56,7 @@ from tools.device.dkproto import (
     CMD_READ,
     CMD_RESTART,
     CMD_SELECT,
+    CMD_SETTINGS,
     CMD_VERIFY,
     LOAD_STATUS,
     VERSION,
@@ -524,6 +527,30 @@ class Uploader:
             raise UploadError(-50, "read: malformed reply")
         return struct.unpack_from(">I", b, 0)[0], b[4:]
 
+    def settings_record(self) -> tuple[int, int, int, bytes]:
+        """SETTINGS (runtime 0.5.1, capability SETTINGS), read only: the settings record as the runtime holds it (docs/design/digikit-store.md), read in pieces of 768 bytes:
+        `(flags, copy, seq, bytes)`. `flags` bit 0: the runtime has changes the card does not hold yet (the runtime writes 2 s after the last change); `copy`: the card's
+        current copy (0 A, 1 B, 2 none); `seq`: the card's. The bytes are one record (`tools.device.dksettings.decode`, `patchkit store dump --record`). Raises
+        `UploadError`: E_SET_NOKEY when the card has no record and none was made."""
+        out = b""
+        total = None
+        head = (0, 2, 0)
+        while total is None or len(out) < total:
+            b = self._ok(
+                CMD_SETTINGS, "settings", struct.pack(">IH", len(out), READ_MAX)
+            )
+            if len(b) < 10:
+                raise UploadError(-50, "settings: malformed reply")
+            flags, copy, seq, used = struct.unpack_from(">BBII", b, 0)
+            if total is None:
+                total, head = used, (flags, copy, seq)
+            elif (flags, copy, seq, used) != (*head, total):
+                raise UploadError(-50, "settings: the record changed while it was read")
+            if len(b) == 10:
+                raise UploadError(-50, "settings: empty piece")
+            out += b[10:]
+        return head[0], head[1], head[2], out
+
     def verify(
         self, path: str, offset: int | None = None, length: int | None = None
     ) -> str:
@@ -753,6 +780,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("path")
     sub.add_parser("clear")
     p = sub.add_parser(
+        "settings",
+        help="read the settings record (digikit's own settings: fx routes and send amounts); read only",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="save the record's bytes here (for `patchkit store dump --record FILE`)",
+    )
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser(
         "read", help="print or save a store file (or a byte range of it)"
     )
     p.add_argument("path")
@@ -811,6 +849,29 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 for line in hex_lines(data, args.offset):
                     print(line)
+        elif args.cmd == "settings":
+            from tools.device import dksettings
+
+            flags, copy, seq, raw = up.settings_record()
+            rec = dksettings.decode(raw)
+            if args.output:
+                args.output.write_bytes(raw)
+                print(f"settings record: {len(raw)} bytes to {args.output}")
+            if rec is None:
+                print(
+                    f"error: the record is not valid ({dksettings.why(raw)})",
+                    file=sys.stderr,
+                )
+                return 1
+            if not args.output:
+                where = "none" if copy == 2 else "AB"[copy]
+                state = "; changes not on the card yet" if flags & 1 else ""
+                print(f"card copy {where}, seq {seq}{state}")
+                print(
+                    json.dumps(dksettings.as_json(rec), indent=2)
+                    if args.json
+                    else "\n".join(dksettings.lines(rec))
+                )
         elif args.cmd == "rm":
             up.rm(args.path)
         elif args.cmd == "clear":

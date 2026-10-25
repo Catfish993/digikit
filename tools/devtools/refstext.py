@@ -36,6 +36,23 @@ def sha256(path):
     return h.hexdigest()
 
 
+def require_poppler(run=subprocess.run):
+    """Stop unless `pdftotext` is poppler's. xpdf's `-layout` (Git for Windows ships xpdf 4.00) lets a
+    table's right-hand column drift off its rows: in the HWR's register tables the reset values land
+    on other registers' lines, silently (PKTE0_OUTBUF_DECR read 0x1F instead of 0, SPU0_SECURECTL had
+    none), and tools.sharc_dev.sharc_cold_state then boots a DSP that halts on an unknown MMR."""
+    done = run(["pdftotext", "-v"], capture_output=True, text=True)
+    version = (done.stdout or "") + (done.stderr or "")
+    if "poppler" not in version.lower():
+        first = (
+            version.strip().splitlines()[0] if version.strip() else "no version output"
+        )
+        raise SystemExit(
+            f"refstext: pdftotext is not poppler's ({first}). Install poppler "
+            "(poppler-utils, or brew install poppler): xpdf's -layout shifts table columns."
+        )
+
+
 def extract(pdf, out):
     import fitz  # PyMuPDF
 
@@ -48,6 +65,7 @@ def extract(pdf, out):
             if json.load(f).get("sha256") == digest:
                 return stem, None
 
+    require_poppler()
     text = subprocess.run(
         ["pdftotext", "-layout", pdf, "-"], check=True, capture_output=True
     ).stdout.decode("utf-8", "replace")

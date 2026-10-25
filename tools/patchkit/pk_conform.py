@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import dataclasses
 import random
+import struct
 import tomllib
 from dataclasses import dataclass, field
 from functools import cache
@@ -431,15 +432,32 @@ class FxSpec:
     sources: tuple[Path, ...]  # the DSP sources of the module
     process: str
     desc: str
-    state: str
+    state: str  # "": a run-time effect (`[[fx]]`), whose state the runtime reserves (the rig does the same)
+    knobs: tuple[
+        tuple[float, float], ...
+    ] = ()  # (min, max) of the page knob that feeds parameter word i (a run-time effect with a page)
 
     @property
     def label(self) -> str:
         return f"{self.module}@fx"
 
 
+def fx_word(spec: FxSpec, j: int, raw: int) -> int:
+    """The parameter word j for the case value RAW (0 .. FX_PARAM_MAX): the raw integer, or for a knob of a page the float32 that the runtime
+    sends, `min + (max - min) * raw / 0x7f00`."""
+    if j >= len(spec.knobs):
+        return raw
+    lo, hi = spec.knobs[j]
+
+    def f(x: float) -> float:
+        return float(struct.unpack("<f", struct.pack("<f", x))[0])
+
+    v = f(f(lo) + f(f(hi) - f(lo)) * f(f(raw) / f(FX_PARAM_MAX)))
+    return int(struct.unpack("<I", struct.pack("<f", v))[0])
+
+
 def fx_spec(mid: str) -> FxSpec | None:
-    """The spec of effect module MID, or None when it has no `[[entry]] registry = "fx"` row with a DSP object."""
+    """The spec of effect module MID, or None when it has no `[[entry]] registry = "fx"` row (patched in) and no `[[fx]]` record (run time) with a DSP object."""
     if mid.split("/")[0] == "core":
         return None
     moddir = modroots.module_dir(mid)
@@ -456,6 +474,20 @@ def fx_spec(mid: str) -> FxSpec | None:
                 e["pc"],
                 e["desc"],
                 e["state"],
+            )
+    for fx in man.get("fx", []):
+        if isinstance(fx.get("process"), str) and isinstance(fx.get("desc"), str):
+            sources = tuple(s for d in DEVICES for s in _dsp_sources(man, moddir, d))
+            if not sources:
+                return None
+            return FxSpec(
+                mid,
+                moddir,
+                tuple(dict.fromkeys(sources)),
+                fx["process"],
+                fx["desc"],
+                "",
+                tuple((float(k["min"]), float(k["max"])) for k in fx.get("knob", [])),
             )
     return None
 

@@ -733,115 +733,62 @@ def _card_run(monkeypatch, tmp_path, device):
     return scope, calls, built, syx
 
 
-def test_plus_drive_folder_is_the_default_card(monkeypatch, tmp_path):
+def test_the_launcher_leaves_the_device_folder_to_the_controller(monkeypatch, tmp_path):
     scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
     root = tmp_path / "pd"
     monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
-    folder = _folder(root, "dt2", {"digikit/modules/test.dkm": b"x"})
+    _folder(root, "dt2", {"digikit/modules/test.dkm": b"x"})
     scope["main"]([str(syx), "--cf-only"])
-    assert built == [(folder, syx, "dt2")]
-    # The app is told the folder the card came from: it exports the firmware's changes there on exit.
-    assert calls[-1][1:] == [
-        str(syx),
-        "--card-image",
-        str(tmp_path / "card.img"),
-        "--card-folder",
-        str(folder.resolve()),
-        # and the module store is mirrored to the same folder while the emulator runs
-        "--mirror-dir",
-        str(folder.resolve()),
-    ]
+    # No card is built here and no folder is named: the controller builds the card of every load from the loaded device's folder
+    # (plus_drive/<device>/ or the one the user chose in the Card panel) and mirrors the module store to it.
+    assert built == []
+    assert calls[-1][1:] == [str(syx), "--device-folders"]
 
 
-def test_patched_image_gets_the_card_of_its_stock_base(monkeypatch, tmp_path):
+def test_no_syx_argument_takes_the_same_way(monkeypatch, tmp_path):
     scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
-    stock = tmp_path / "stock.syx"
-    stock.write_bytes(b"stock")
-    monkeypatch.setattr(digi_env, "patch_base", lambda path: ("dt2", "ab" * 32))
-    monkeypatch.setattr(digi_env, "stock_for_sha", lambda digest: stock)
-    root = tmp_path / "pd"
-    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
-    folder = _folder(root, "dt2", {"digikit/modules/test.dkm": b"x"})
-    scope["main"]([str(syx), "--cf-only"])
-    # the builder gets the stock image; the app boots the patched one
-    assert built == [(folder, stock, "dt2")]
-    assert calls[-1][1] == str(syx)
-
-
-def test_no_sync_keeps_the_folder_but_turns_the_exit_export_and_the_mirror_off(
-    monkeypatch, tmp_path
-):
-    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
-    root = tmp_path / "pd"
-    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
-    folder = _folder(root, "dt2", {"a.wav": b"x"})
-    scope["main"]([str(syx), "--cf-only", "--no-sync"])
-    assert calls[-1][1:] == [
-        str(syx),
-        "--card-image",
-        str(tmp_path / "card.img"),
-        "--card-folder",
-        str(folder.resolve()),
-        "--no-card-sync",
-    ]
-
-
-def test_launcher_without_syx_argument_gets_the_firmware_and_card(
-    monkeypatch, tmp_path
-):
-    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
-    root = tmp_path / "pd"
-    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
     monkeypatch.setenv("DIGI_EMU_SYX", str(syx))
-    folder = _folder(root, "dt2", {"a.wav": b"x"})
     scope["main"](["--cf-only"])
+    assert built == []
+    assert calls[-1][1:] == ["--device-folders"]
+
+
+def test_no_sync_turns_the_exit_export_and_the_mirror_off(monkeypatch, tmp_path):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    scope["main"]([str(syx), "--cf-only", "--no-sync"])
+    assert calls[-1][1:] == [str(syx), "--device-folders", "--no-card-sync"]
+
+
+def test_a_folder_given_on_the_command_line_is_the_first_loads_card_and_mirror(
+    monkeypatch, tmp_path
+):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    here = tmp_path / "mine"
+    here.mkdir()
+    (here / "a.wav").write_bytes(b"x")
+    scope["main"]([str(syx), "--cf-only", "--plus-drive", str(here)])
+    assert built == [(here, syx, "dt2")]
     assert calls[-1][1:] == [
         str(syx),
         "--card-image",
         str(tmp_path / "card.img"),
         "--card-folder",
-        str(folder.resolve()),
+        str(here.resolve()),
+        "--device-folders",
+        # the folder of the first load only: the controller uses the device's own folder for the next device
         "--mirror-dir",
-        str(folder.resolve()),
+        str(here.resolve()),
     ]
-
-
-def test_other_devices_folder_and_empty_folders_are_ignored(monkeypatch, tmp_path):
-    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
-    root = tmp_path / "pd"
-    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
-    _folder(root, "dn2", {".mmcfs/projects/0000.bin": b"x"})
-    (root / "dt2").mkdir()
-    scope["main"]([str(syx), "--cf-only"])
-    assert built == []
-    # no card is built from it, but the module store is still mirrored to plus_drive/<device>/
-    assert calls[-1][1:] == [str(syx), "--mirror-dir", str((root / "dt2").resolve())]
-
-
-def test_dn2_takes_only_mmcfs_and_digikit(monkeypatch, tmp_path):
-    scope = launcher()
-    has = scope["plus_drive_has_content"]
-    folder = _folder(tmp_path, "dn2", {"samples/a.wav": b"x", ".DS_Store": b""})
-    assert has(folder, "dt2") is True
-    assert has(folder, "dn2") is False
-    _folder(tmp_path, "dn2", {".mmcfs/kits/0001.bin": b"x"})
-    assert has(folder, "dn2") is True
-    only_store = _folder(tmp_path / "s", "dn2", {"digikit/m.dkm": b"x"})
-    assert has(only_store, "dn2") is True
-
-
-def test_explicit_card_image_or_unknown_firmware_skips_the_folder(
-    monkeypatch, tmp_path
-):
-    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
-    root = tmp_path / "pd"
-    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
-    _folder(root, "dt2", {"a.wav": b"x"})
-    scope["main"]([str(syx), "--cf-only", "--card-image", "mine.img"])
-    assert built == []
-    monkeypatch.setattr(digi_env, "device_for_syx", lambda path: None)
-    scope["main"]([str(syx), "--cf-only"])
-    assert built == []
+    scope["main"]([str(syx), "--cf-only", "--plus-drive", str(here), "--no-sync"])
+    assert calls[-1][1:] == [
+        str(syx),
+        "--card-image",
+        str(tmp_path / "card.img"),
+        "--card-folder",
+        str(here.resolve()),
+        "--no-card-sync",
+        "--device-folders",
+    ]
 
 
 def test_plus_drive_and_samples_options(monkeypatch, tmp_path):
