@@ -207,6 +207,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
 STEPS = (
     "build",
     "desktop",
+    "host",
     "web",
     "runtime-fixture",
     "pins",
@@ -333,15 +334,21 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     ),
     (
         (
+            "packages/control-client/",
+            "packages/test-support/",
+            "tests/regression/",
+            "vitest.host.config.ts",
+            "packages/dk-session/tests/",
+        ),
+        ("host",),
+    ),
+    (
+        (
             ".oxlintrc.json",
             ".prettierrc.json",
             ".prettierignore",
             ".editorconfig",
-            "packages/control-client/",
             "packages/dk-session/",
-            "packages/test-support/",
-            "tests/regression/",
-            "vitest.host.config.ts",
         ),
         ("web",),
     ),
@@ -631,6 +638,8 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
             and any(path.startswith(triggers) for _, triggers, _ in PY_SUITES)
         ):
             wanted.add("python-tests")
+    if "web" in wanted:
+        wanted.add("host")
     # The patchkit smoke matrix runs whenever the gate runs anything, except for the narrowly
     # documented complete change sets above (docs-only: nothing at all).
     if wanted and not smoke_reason(files):
@@ -998,25 +1007,32 @@ def desktop_check(gate: Gate) -> None:
     gate.run("desktop", cmd, env=env)
 
 
+def host_check(gate: Gate) -> None:
+    gate.run("host-lint", ["pnpm", "exec", "oxlint"])
+    gate.run("host-format", ["pnpm", "exec", "prettier", "--check", "."])
+    gate.run("host-tests", ["pnpm", "test:host", "--maxWorkers", str(gate.share())])
+    gate.run(
+        "control-client-types",
+        ["pnpm", "--filter", "@digi/control-client", "typecheck"],
+    )
+    gate.run("dk-session-types", ["pnpm", "--filter", "@digi/dk-session", "typecheck"])
+    gate.run(
+        "test-support-types", ["pnpm", "--filter", "@digi/test-support", "typecheck"]
+    )
+    gate.run("regression-types", ["pnpm", "--filter", "@digi/regression", "typecheck"])
+
+
 def web_check(gate: Gate) -> None:
     web = ROOT / "apps" / "web"
     gate.run(
         "patchkit-wasm", [*PY, "-m", "tools.emulator.native_wasm", "--patchkit-only"]
     )
-    gate.run("web-lint", ["pnpm", "exec", "oxlint"])
-    gate.run("web-format", ["pnpm", "exec", "prettier", "--check", "."])
     gate.run(
         "web-tests",
         ["node", f"--test-concurrency={gate.share()}", "--test", "tests/*.test.mjs"],
         cwd=web,
     )
     gate.run("web-types", ["pnpm", "--filter", "@digi/web", "check"])
-    gate.run("host-tests", ["pnpm", "test:host", "--maxWorkers", str(gate.share())])
-    gate.run("dk-session-types", ["pnpm", "--filter", "@digi/dk-session", "typecheck"])
-    gate.run(
-        "test-support-types", ["pnpm", "--filter", "@digi/test-support", "typecheck"]
-    )
-    gate.run("regression-types", ["pnpm", "--filter", "@digi/regression", "typecheck"])
 
 
 # Steps that need a built binary: DN2 steps the DN2 coupled-run, DT2 steps the DT2 one.
@@ -1086,6 +1102,8 @@ def plan(
     for the build that makes its binary; rust-tests waits for `build` when that runs (both fill the
     prod target dir, so the generated core compiles once)."""
     nodes = list(steps)
+    if "web" in nodes and "host" not in nodes:
+        nodes.append("host")
     wanted = {
         "build": any(s in DN2_BINARY for s in steps),
         "build-dt2": any(s in DT2_BINARY for s in steps),
@@ -1099,6 +1117,8 @@ def plan(
     for node in nodes:
         if node in chain:
             deps[node] = tuple(chain[: chain.index(node)])
+        elif node == "web":
+            deps[node] = ("host",)
         elif node in DN2_BINARY:
             deps[node] = ("build",)
         elif node in DT2_BINARY:
@@ -1417,6 +1437,8 @@ def run_step(gate: Gate, step: str) -> None:
             gate.shared_env.update(json.loads(env_file.read_text()))
     elif step == "desktop":
         desktop_check(gate)
+    elif step == "host":
+        host_check(gate)
     elif step == "web":
         web_check(gate)
     elif step == "runtime-fixture":
@@ -1486,7 +1508,7 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
     gets a share of the cores, which sets its inner pools, and the shares of the running nodes never
     add up to more than the budget. python-tests is one job per file (expand_python) in the same
     queue, longest first. Each step's output is buffered and printed whole when it finishes. A step
-    whose build failed is skipped. Returns (node, seconds) in completion order.
+    whose prerequisite failed is skipped. Returns (node, seconds) in completion order.
     Writes jobs.tsv (node, start, end, share, load average at start and end) to the run directory."""
     nodes, deps = plan(steps, gate.py_tests)
     gate.py_files = [rel for rel, _ in python_files(gate.py_tests)]
@@ -1527,7 +1549,7 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                     pending.remove(node)
                     failed_nodes.add(node)
                     if not verify_budget.is_file_job(node):
-                        print(f"SKIP {node}: its build failed", flush=True)
+                        print(f"SKIP {node}: a prerequisite failed", flush=True)
                     with gate.lock:
                         gate.failed.append(node)
                 elif node == "python-tests" and all(d in done for d in deps[node]):
@@ -1583,6 +1605,10 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                     times.append((node, time.monotonic() - began))
                 if any(line.startswith("FAIL") for line in lines):
                     failed_nodes.add(node)
+                    if not verify_budget.is_file_job(node):
+                        with gate.lock:
+                            if node not in gate.failed:
+                                gate.failed.append(node)
                 else:
                     done.add(node)
     header = "node\tstart_s\tend_s\tshare\tload_start\tload_end"

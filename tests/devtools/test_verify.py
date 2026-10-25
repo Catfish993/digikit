@@ -724,21 +724,20 @@ def test_unknown_module_path_stays_broad() -> None:
     [
         "packages/dk-session/src/dkupload-core.ts",
         "packages/dk-session/src/gen_proto.ts",
-        "packages/dk-session/tests/emu-usb-transport.test.ts",
         "packages/dk-session/package.json",
     ],
 )
 def test_dk_session_routes_to_host_with_conservative_smoke(
     path: str,
 ) -> None:
-    assert verify.steps_for([path]) == ("web", "smoke")
+    assert verify.steps_for([path]) == ("host", "web", "smoke")
 
 
-def test_root_host_config_routes_to_web_with_conservative_smoke() -> None:
-    assert verify.steps_for(["vitest.host.config.ts"]) == ("web", "smoke")
+def test_root_host_config_routes_to_host_with_conservative_smoke() -> None:
+    assert verify.steps_for(["vitest.host.config.ts"]) == ("host", "smoke")
 
 
-def test_web_check_runs_consolidated_host_and_owner_checks(
+def test_host_check_runs_consolidated_host_and_owner_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: dict[str, list[str]] = {}
@@ -748,8 +747,7 @@ def test_web_check_runs_consolidated_host_and_owner_checks(
         lambda self, name, cmd, **kwargs: calls.update({name: cmd}),
     )
     monkeypatch.setattr(verify.Gate, "share", lambda self: 3)
-    verify.web_check(object.__new__(verify.Gate))
-    assert calls["web-types"] == ["pnpm", "--filter", "@digi/web", "check"]
+    verify.host_check(object.__new__(verify.Gate))
     assert calls["host-tests"] == ["pnpm", "test:host", "--maxWorkers", "3"]
     assert (
         not {"dk-session-tests", "test-support-tests", "regression-host"} & calls.keys()
@@ -772,13 +770,47 @@ def test_web_check_runs_consolidated_host_and_owner_checks(
         "@digi/dk-session",
         "typecheck",
     ]
-    assert {
-        "patchkit-wasm",
-        "web-lint",
-        "web-format",
-        "web-tests",
-        "web-types",
-    } <= calls.keys()
+    assert calls["control-client-types"] == [
+        "pnpm",
+        "--filter",
+        "@digi/control-client",
+        "typecheck",
+    ]
+    assert {"host-lint", "host-format"} <= calls.keys()
+    assert not any("wasm" in str(cmd) or "@digi/web" in cmd for cmd in calls.values())
+    assert not any(name.startswith("web-") for name in calls)
+
+
+def test_web_check_only_runs_browser_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, list[str]] = {}
+    monkeypatch.setattr(
+        verify.Gate,
+        "run",
+        lambda self, name, cmd, **kwargs: calls.update({name: cmd}),
+    )
+    monkeypatch.setattr(verify.Gate, "share", lambda self: 3)
+    verify.web_check(object.__new__(verify.Gate))
+    assert set(calls) == {"patchkit-wasm", "web-tests", "web-types"}
+    assert calls["web-tests"][1] == "--test-concurrency=3"
+
+
+def test_host_and_app_changes_keep_both_checks() -> None:
+    assert verify.steps_for(
+        ["packages/control-client/src/client.ts", "apps/web/src/components/X.tsx"]
+    ) == ("host", "web", "smoke")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/dk-session/tests/emu-usb-transport.test.ts",
+        "packages/control-client/package.json",
+        "packages/test-support/tsconfig.json",
+        "tests/regression/host/runtime.test.ts",
+    ],
+)
+def test_host_paths_do_not_select_browser_checks(path: str) -> None:
+    assert verify.steps_for([path]) == ("host", "smoke")
 
 
 def test_web_only_for_what_it_reads() -> None:
@@ -833,6 +865,7 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
         "tools/patchkit/pk_digikit_upload.py",
     ]
     assert verify.steps_for(files) == (
+        "host",
         "web",
         "python-tests",
         "rust-tests",
@@ -961,7 +994,7 @@ def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
     ],
 )
 def test_runtime_fixture_sources_select_host_checks(path: str) -> None:
-    assert verify.steps_for([path]) == ("web", "smoke")
+    assert verify.steps_for([path]) == ("host", "smoke")
 
 
 @pytest.mark.parametrize("mid", ["digikit/remote", *sorted(verify_route.FRAMEWORK)])
@@ -1096,7 +1129,7 @@ def test_runtime_fixture_command_is_sequential(monkeypatch: pytest.MonkeyPatch) 
 
 def test_runtime_fixture_host_paths_do_not_select_device_acceptance() -> None:
     assert verify.steps_for(["tests/regression/host/runtime.test.ts"]) == (
-        "web",
+        "host",
         "smoke",
     )
 
@@ -1147,3 +1180,38 @@ def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
     assert env["DIGI_EMUD_DT2"] == f"/{prefix}/dt2-emud"
     assert env["DIGI_EMUD_DN2"] == f"/{prefix}/dn2-emud"
     assert not gate.failed
+
+
+def test_mise_host_task_selects_only_host() -> None:
+    import tomllib
+
+    tasks = tomllib.loads((ROOT / "mise.toml").read_text())["tasks"]
+    assert tasks["verify:host"]["run"] == (
+        "uv run python -m tools.devtools.verify --only host"
+    )
+    assert "depends" not in tasks["verify:host"]
+
+
+@pytest.mark.parametrize("steps", [("host",), ("web",)])
+def test_failed_host_subcheck_persists_for_rerun_and_blocks_web(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, steps: tuple[str, ...]
+) -> None:
+    calls: list[str] = []
+
+    def fail_host(gate: verify.Gate, node: str) -> None:
+        calls.append(node)
+        assert node == "host"
+        gate.report("host-format", "exit 1", 0, "bad format")
+
+    monkeypatch.setattr(verify, "run_step", fail_host)
+    gate = verify.Gate(tmp_path, budget=2)
+    gate.py_tests = []
+    verify.run_steps(gate, steps)
+    assert calls == ["host"]
+    assert gate.failed.count("host") == 1
+    failed = [step for step in gate.failed if step in verify.STEPS]
+    assert verify.rerun_plan({"failed": failed, "py_tests": []}) == (
+        tuple(step for step in verify.STEPS if step in {"host", *steps}),
+        [],
+    )
+    assert ("web" in gate.failed) == ("web" in steps)

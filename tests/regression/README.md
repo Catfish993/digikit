@@ -46,7 +46,11 @@ cleanup and USB wiring without firmware, native builds or daemons. Package-local
 the other three packages likewise select their own project. The root config uses explicit host-only
 includes and defaults to one worker; `--maxWorkers N` overrides it. Optional JUnit output uses Vitest's
 native CLI, for example `pnpm test:host --reporter=default --reporter=junit --outputFile=out/host-junit.xml`.
-The existing `web` step runs all four host projects once with its worker budget, alongside type checks.
+The `host` step runs all four host projects once with its worker budget, alongside global lint/format
+and control-client, shared-session, test-support and regression type checks. Explicit `--only host`
+requires no native/WASM build or device inputs. `web` retains browser tests, Astro and patchkit WASM,
+and depends on `host`, including with `--only web`. Normal host-path routing still adds conservative
+smoke; no smoke exemptions were added.
 Consumer typecheck/check scripts explicitly generate `@digi/dk-session` declarations first; its runtime
 export still resolves to the existing TypeScript source. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
 

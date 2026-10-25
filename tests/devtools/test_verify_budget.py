@@ -187,7 +187,7 @@ def test_builds_are_a_chain_and_steps_wait_for_theirs() -> None:
 
 def test_no_build_node_without_a_step_that_needs_it() -> None:
     nodes, deps = verify.plan(("rust-tests", "web"), None)
-    assert sorted(nodes) == ["rust-tests", "web"]
+    assert sorted(nodes) == ["host", "rust-tests", "web"]
     assert deps["rust-tests"] == ()
     nodes, _ = verify.plan(("python-tests",), ["tests/devtools/test_verify.py"])
     assert "build-daemons" not in nodes
@@ -583,3 +583,23 @@ def test_runtime_fixture_waits_for_its_entire_reservation() -> None:
     assert budget.admit("runtime-fixture") is None
     budget.release("web")
     assert budget.admit("runtime-fixture") == 2
+
+
+@pytest.mark.parametrize("steps", [("web",), ("host", "web"), verify.STEPS])
+def test_web_plan_requires_host_once(steps: tuple[str, ...]) -> None:
+    nodes, deps = verify.plan(steps, [])
+    assert nodes.count("host") == 1
+    assert deps["web"] == ("host",)
+    assert deps["host"] == ()
+
+
+def test_explicit_host_plan_has_no_build_or_device_prerequisites() -> None:
+    assert verify.plan(("host",), []) == (["host"], {"host": ()})
+    assert "host" in verify.EVERYTHING
+    assert "web" in verify.EVERYTHING
+
+
+def test_host_budget_reports_only_node_pool() -> None:
+    assert verify_budget.WANT["host"] == 0.15
+    assert verify_budget.SHOWN["host"] == ("node",)
+    assert verify_budget.workers_for("host", 3).node == 3
