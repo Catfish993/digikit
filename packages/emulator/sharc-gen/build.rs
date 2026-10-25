@@ -2,25 +2,37 @@
 // never under native/. SHARC_GEN_DIR names a directory written by
 // tools/sharc_dev/sharc_transpile.py (syms.rs, tables.rs, core_i.rs, core_g.rs) and
 // optionally tools/sharc_dev/sharc_rsgen.py (image.rs and the block files it
-// includes). Without it the crate builds the runtime only.
+// includes). Without it the crate builds the runtime only. The package sharc-gen-2 compiles the same
+// sources from SHARC_GEN_DIR_2, so one binary can hold two generated cores.
 use std::env;
 use std::path::Path;
+
+/// The variable that names this instance's generated core directory.
+fn gen_dir_var() -> &'static str {
+    match env::var("CARGO_PKG_NAME").as_deref() {
+        Ok("sharc-gen-2") => "SHARC_GEN_DIR_2",
+        _ => "SHARC_GEN_DIR",
+    }
+}
 
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(sharc_gen)");
     println!("cargo:rustc-check-cfg=cfg(sharc_image)");
     println!("cargo:rustc-check-cfg=cfg(sharc_gen_version)");
-    println!("cargo:rerun-if-env-changed=SHARC_GEN_DIR");
-    let Ok(dir) = env::var("SHARC_GEN_DIR") else {
+    // The second instance (package sharc-gen-2, same sources) reads SHARC_GEN_DIR_2; both emit the
+    // directory as SHARC_GEN_DIR to their own crate, which is the name the generated files include.
+    let var = gen_dir_var();
+    println!("cargo:rerun-if-env-changed={var}");
+    let Ok(dir) = env::var(var) else {
         return;
     };
     let dir = Path::new(&dir);
     for name in ["syms.rs", "tables.rs", "core_i.rs", "core_g.rs"] {
         if !dir.join(name).is_file() {
-            panic!("SHARC_GEN_DIR={} has no {name}", dir.display());
+            panic!("{var}={} has no {name}", dir.display());
         }
     }
-    let dir = dir.canonicalize().expect("SHARC_GEN_DIR");
+    let dir = dir.canonicalize().expect("generated core directory");
     println!("cargo:rustc-cfg=sharc_gen");
     if dir.join("image.rs").is_file() {
         println!("cargo:rustc-cfg=sharc_image");

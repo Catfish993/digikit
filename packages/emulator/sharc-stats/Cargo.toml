@@ -1,0 +1,14 @@
+[package]
+name = "sharc-stats"
+license.workspace = true
+repository.workspace = true
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Counters and profiles the SHARC+ engine reports (shared by the engine instances of the two generated cores)"
+
+[dependencies]
+
+[lib]
+name = "sharc_stats"
+crate-type = ["rlib"]

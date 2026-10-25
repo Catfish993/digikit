@@ -1713,12 +1713,20 @@ impl FastTier for FastEngine {
     }
 }
 
+/// The environment variable of the fast-tier region lists for this engine instance: regions and cluster roots
+/// are addresses in one device's DSP image, so the second instance (`sharc_second`, the second generated core)
+/// reads its own, `SHARC_FAST_REGIONS_2` and `SHARC_BLOCKTRANS_2`.
+const fn region_env(first: &'static str, second: &'static str) -> &'static str {
+    if cfg!(sharc_second) { second } else { first }
+}
+
 /// `SHARC_BLOCKTRANS=0xb8276c,...` (hex cluster roots).
 pub fn blocktrans_roots() -> Vec<u32> {
-    let mut text = std::env::var("SHARC_BLOCKTRANS").unwrap_or_default();
+    let name = region_env("SHARC_BLOCKTRANS", "SHARC_BLOCKTRANS_2");
+    let mut text = std::env::var(name).unwrap_or_default();
     if let Some(path) = text.strip_prefix('@') {
         text = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("SHARC_BLOCKTRANS=@{path}: {e}"))
+            .unwrap_or_else(|e| panic!("{name}=@{path}: {e}"))
             .replace(char::is_whitespace, ",");
     }
     text
@@ -1731,12 +1739,13 @@ pub fn blocktrans_roots() -> Vec<u32> {
 /// `SHARC_FAST_REGIONS=0x1c399a,...` (hex entry PCs) as a fast tier.
 /// `SHARC_FAST_AUTO=threshold,min_insns[,blocks]` adds run-time selection.
 pub fn from_env() -> Option<FastEngine> {
-    let mut text = std::env::var("SHARC_FAST_REGIONS").unwrap_or_default();
+    let name = region_env("SHARC_FAST_REGIONS", "SHARC_FAST_REGIONS_2");
+    let mut text = std::env::var(name).unwrap_or_default();
     // `@FILE`: the PC list (hex, separated by commas or white space) is in FILE
     // (a program database's blocks or instructions do not fit in the environment).
     if let Some(path) = text.strip_prefix('@') {
         text = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("SHARC_FAST_REGIONS=@{path}: {e}"))
+            .unwrap_or_else(|e| panic!("{name}=@{path}: {e}"))
             .replace(char::is_whitespace, ",");
     }
     let pcs: Vec<u32> = text

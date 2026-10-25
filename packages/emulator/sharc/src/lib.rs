@@ -34,12 +34,11 @@ mod irq_probe;
 pub mod fast;
 pub mod frames;
 mod live_capture;
-mod region_profile;
 pub mod sha256;
 pub mod vectors;
 mod pc_dump;
 mod write_watch;
-pub use region_profile::{RegionCost, RegionEntryProfile, RegionProfile};
+pub use sharc_stats::{ModelStats, RegionCost, RegionEntryProfile, RegionProfile, TierCounters};
 
 #[cfg(feature = "region-profile")]
 use std::time::Instant;
@@ -339,55 +338,6 @@ pub struct CodeCheck {
     pub entries_barred: u64,
 }
 
-/// What the run-time model gate decided (diagnostic counters).
-#[derive(Clone, Copy, Debug)]
-pub struct ModelStats {
-    /// Block calls made with a model on.
-    pub gated: u64,
-    /// Dispatch attempts at a block the generator did not class model-safe.
-    pub unsafe_block: u64,
-    /// Attempts refused because an interrupt source was latched and enabled
-    /// (it is taken, or deferred by a delay slot or loop, by the interpreter).
-    pub irq_deferred: u64,
-    /// Attempts refused because the core timer was within one tick of expiry
-    /// or a bank or PC-stack change was still in flight.
-    pub timer_gated: u64,
-    /// Block exits through TRAP_BLOCK_MODEL (a peripheral store).
-    pub mmr_exits: u64,
-    /// Attempts refused because the loaded code differs from the code the
-    /// blocks were generated from.
-    pub code_mismatch: u64,
-    /// `verify_code` runs (a write to a code-watched page since the last
-    /// check), the wall time they took, and the interpreted instructions at
-    /// or above the end of the generated image's code (appended module code).
-    pub code_verifies: u64,
-    pub code_verify_ns: u64,
-    pub interp_appended: u64,
-    /// Interrupts the engine actually entered (`_enter_interrupt` succeeded).
-    pub irq_taken: u64,
-    /// `irq_taken` by source, indexed by the IRPTL/IMASK bit number
-    /// (`mask.trailing_zeros()`; the entry takes one source bit at a time).
-    pub irq_by_vector: [u64; 64],
-}
-
-impl Default for ModelStats {
-    fn default() -> Self {
-        ModelStats {
-            gated: 0,
-            unsafe_block: 0,
-            irq_deferred: 0,
-            timer_gated: 0,
-            mmr_exits: 0,
-            code_mismatch: 0,
-            code_verifies: 0,
-            code_verify_ns: 0,
-            interp_appended: 0,
-            irq_taken: 0,
-            irq_by_vector: [0; 64],
-        }
-    }
-}
-
 /// What a block call needs besides its function: the instruction limit that
 /// keeps the core timer from expiring inside it, and the timer count to
 /// advance afterwards.
@@ -404,41 +354,6 @@ struct BlockPlan {
     /// block code must end the call at the instruction that empties it
     /// (`St::stop_at_loop_empty`), and the fast tier does not run.
     stop_loop_empty: bool,
-}
-
-/// Cumulative instruction counts by execution tier (cheap to read: the
-/// engine keeps them anyway). `block_instructions` includes the fast tier's.
-#[derive(Clone, Debug, Default)]
-pub struct TierCounters {
-    pub icount: u64,
-    /// Instructions replayed analytically by the idle-loop skip.
-    pub idle_skipped: u64,
-    pub idle_skips: u64,
-    /// Instructions run one at a time by the interpreter.
-    pub interpreted: u64,
-    pub block_entries: u64,
-    pub block_instructions: u64,
-    pub block_traps: u64,
-    pub traps: u64,
-    /// Fast-tier counters (all zero without a fast tier).
-    pub fast_present: bool,
-    pub fast_insns: u64,
-    pub fast_runs: u64,
-    pub fast_calls: u64,
-    pub fast_built: u64,
-    pub fast_refused: u64,
-    pub fast_armed: u64,
-    pub fast_compile_ns: u64,
-    pub fast_build_ns: u64,
-    pub fast_declined: [u64; 5],
-    /// Code-identity checks (see `ModelStats`): `Mem::code_gen`, the checks
-    /// that ran, their wall time, the dispatches they refused, and the
-    /// interpreted instructions in appended code.
-    pub code_gen: u64,
-    pub code_verifies: u64,
-    pub code_verify_ns: u64,
-    pub code_mismatch: u64,
-    pub interp_appended: u64,
 }
 
 /// Idle-skip counters (diagnostic).
@@ -572,6 +487,19 @@ fn image_blocks() -> &'static [(u32, BlockFn)] {
     #[cfg(not(all(sharc_gen, sharc_image)))]
     {
         &[]
+    }
+}
+
+/// The name of the DSP image the linked generated core was made for (`dn2-1.11`; `none` without an
+/// image). A binary with two cores picks the one whose name starts with the firmware's device id.
+pub fn gen_image_name() -> &'static str {
+    #[cfg(all(sharc_gen, sharc_image))]
+    {
+        generated::image::IMAGE
+    }
+    #[cfg(not(all(sharc_gen, sharc_image)))]
+    {
+        "none"
     }
 }
 
@@ -2346,7 +2274,7 @@ impl Engine {
 
 /// Allocate a host-transfer buffer, including in WebAssembly where JavaScript
 /// cannot supply an allocation owned by Rust. Release with the same length.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub extern "C" fn sharc_native_alloc(len: usize) -> *mut u8 {
     let bytes = vec![0u8; len].into_boxed_slice();
     Box::into_raw(bytes) as *mut u8
@@ -2354,7 +2282,7 @@ pub extern "C" fn sharc_native_alloc(len: usize) -> *mut u8 {
 
 /// # Safety
 /// PTR and LEN must be an outstanding allocation from sharc_native_alloc.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         // SAFETY: caller supplies the allocation and its original length.
@@ -2365,7 +2293,7 @@ pub unsafe extern "C" fn sharc_native_free(ptr: *mut u8, len: usize) {
 /// # Safety
 /// IMAGE must point to IMAGE_LEN readable bytes (a tools/sharc_dev/sharc_transpile_run.py
 /// `pack_image` blob).
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_create(image: *const u8, image_len: usize) -> *mut Engine {
     let bytes = if image.is_null() {
         &[][..]
@@ -2381,7 +2309,7 @@ pub unsafe extern "C" fn sharc_native_create(image: *const u8, image_len: usize)
 
 /// # Safety
 /// HANDLE must come from sharc_native_create and not be used afterwards.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_destroy(handle: *mut Engine) {
     if !handle.is_null() {
         // SAFETY: created by Box::into_raw in sharc_native_create.
@@ -2391,7 +2319,7 @@ pub unsafe extern "C" fn sharc_native_destroy(handle: *mut Engine) {
 
 /// # Safety
 /// HANDLE from sharc_native_create; BLOB points to BLOB_LEN bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_import_state(
     handle: *mut Engine,
     blob: *const u8,
@@ -2407,7 +2335,7 @@ pub unsafe extern "C" fn sharc_native_import_state(
 
 /// # Safety
 /// HANDLE from sharc_native_create; OUT points to OUT_CAP writable bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_export_state(
     handle: *mut Engine,
     out: *mut u8,
@@ -2426,7 +2354,7 @@ pub unsafe extern "C" fn sharc_native_export_state(
 
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_step(handle: *mut Engine, n: u32) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2435,7 +2363,7 @@ pub unsafe extern "C" fn sharc_native_step(handle: *mut Engine, n: u32) -> i32 {
 
 /// # Safety
 /// HANDLE from sharc_native_create; OUT points to OUT_CAP writable bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_halt_reason(
     handle: *mut Engine,
     out: *mut u8,
@@ -2462,7 +2390,7 @@ pub unsafe extern "C" fn sharc_native_halt_reason(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_set_option(handle: *mut Engine, key: u32, value: i64) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2473,7 +2401,7 @@ pub unsafe extern "C" fn sharc_native_set_option(handle: *mut Engine, key: u32, 
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; the pointers cover their lengths.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_set_provisional(
     handle: *mut Engine,
     name: *const u8,
@@ -2509,7 +2437,7 @@ pub unsafe extern "C" fn sharc_native_set_provisional(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; BLOB points to BLOB_LEN bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_exec_insn(
     handle: *mut Engine,
     blob: *const u8,
@@ -2539,7 +2467,7 @@ pub unsafe extern "C" fn sharc_native_exec_insn(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; OUT points to OUT_CAP u64s.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_stats(
     handle: *mut Engine,
     out: *mut u64,
@@ -2579,7 +2507,7 @@ pub unsafe extern "C" fn sharc_native_stats(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; OUT points to OUT_CAP writable bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_profile(
     handle: *mut Engine,
     kind: u32,
@@ -2653,7 +2581,7 @@ impl Engine {
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_set_reg(
     handle: *mut Engine,
     code: u32,
@@ -2679,7 +2607,7 @@ pub unsafe extern "C" fn sharc_native_set_reg(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_get_reg(handle: *mut Engine, code: u32) -> u64 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2694,7 +2622,7 @@ pub unsafe extern "C" fn sharc_native_get_reg(handle: *mut Engine, code: u32) ->
 ///
 /// # Safety
 /// HANDLE from sharc_native_create, or null.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_get_pc(handle: *mut Engine) -> i64 {
     if handle.is_null() {
         return -1;
@@ -2708,7 +2636,7 @@ pub unsafe extern "C" fn sharc_native_get_pc(handle: *mut Engine) -> i64 {
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; DATA points to LEN bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_poke(
     handle: *mut Engine,
     address: u64,
@@ -2726,7 +2654,7 @@ pub unsafe extern "C" fn sharc_native_poke(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_peek(handle: *mut Engine, address: u64, width: u32) -> i64 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2742,7 +2670,7 @@ pub unsafe extern "C" fn sharc_native_peek(handle: *mut Engine, address: u64, wi
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_sec_raise(handle: *mut Engine, sid: u32) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2754,7 +2682,7 @@ pub unsafe extern "C" fn sharc_native_sec_raise(handle: *mut Engine, sid: u32) -
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_dma_start(handle: *mut Engine, base: u32) -> i64 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2766,7 +2694,7 @@ pub unsafe extern "C" fn sharc_native_dma_start(handle: *mut Engine, base: u32) 
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_dma_done(handle: *mut Engine, base: u32, sid: u32) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2781,7 +2709,7 @@ pub unsafe extern "C" fn sharc_native_dma_done(handle: *mut Engine, base: u32, s
 /// # Safety
 /// HANDLE from sharc_native_create; FRAME points to LEN readable bytes and
 /// OUT to LEN writable bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_spi2_exchange(
     handle: *mut Engine,
     frame: *const u8,
@@ -2808,7 +2736,7 @@ pub unsafe extern "C" fn sharc_native_spi2_exchange(
 /// # Safety
 /// HANDLE from sharc_native_create; BLOCK points to LEN readable bytes (or is
 /// null with LEN 0) and OUT to OUT_CAP writable bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_sport_block(
     handle: *mut Engine,
     block: *const u8,
@@ -2841,7 +2769,7 @@ pub unsafe extern "C" fn sharc_native_sport_block(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_fresh_call(
     handle: *mut Engine,
     pc: u32,
@@ -2857,7 +2785,7 @@ pub unsafe extern "C" fn sharc_native_fresh_call(
 ///
 /// # Safety
 /// OUT points to OUT_CAP writable bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_info(out: *mut u8, out_cap: usize) -> i32 {
     let info = build_info();
     if info.len() > out_cap {

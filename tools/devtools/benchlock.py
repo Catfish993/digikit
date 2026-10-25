@@ -78,6 +78,9 @@ def _alive(pid: int) -> bool:
 
 
 def _alive_windows(pid: int) -> bool:
+    # Windows only; the check also stops mypy on other platforms from checking the ctypes names below
+    if sys.platform != "win32":
+        raise OSError("_alive_windows runs on Windows only")
     import ctypes
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
