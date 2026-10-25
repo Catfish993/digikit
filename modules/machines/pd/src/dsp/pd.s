@@ -47,6 +47,7 @@ _pd_render:
     DM(0, I3) = R0;                       // phase 1
     DM(1, I3) = R0;                       // phase 2
     DM(2, I3) = R0;                       // spare
+    DM(7, I3) = R0;                       // snap flag 0: the first block writes the curve numbers straight to the target
     R0 = 0x40000000;
     DM(3, I3) = R0;                       // s1 = 2
     R0 = 0x3f2aaaab;
@@ -79,6 +80,20 @@ _pd_booted:
 
 
     // ---- DETUNE -> increment 2 = increment 1 x (1 + detune x 0.03) ----
+    R1 = 0x38010204;
+    R0 = DM(3, I1);                       // FOLD, the fourth parameter
+    F0 = FLOAT R0;
+    F0 = F0 * F1;                         // 0 .. 1
+    R1 = 0x40400000;                      // 3.0
+    NOP;
+    F0 = F0 * F1;
+    R1 = 0x3f800000;                      // 1.0
+    NOP;
+    F0 = F0 + F1;                         // fold gain 1 .. 4
+    R1 = F0;
+    NOP;
+    DM(8, I3) = R1;                       // word 7 is the snap flag, word 8 the fold gain
+
     R1 = 0x38010204;
     R0 = DM(2, I1);
     F0 = FLOAT R0;
@@ -140,7 +155,7 @@ _pd_booted:
     // and the warp would re-converge over ~12 ms -- a timbre chirp on the onset, which no level ramp can hide. After
     // that they slew, because a curve change that snaps steps the waveform (the click at the square/resonance
     // boundary). ----
-    R0 = DM(7, I3);                       // 0 on the note-on block
+    R0 = DM(7, I3);                       // snap flag: 0 on the note-on block (note_on and the bootstrap write 0)
     R0 = PASS R0;
     IF EQ JUMP _pd_snap;
     R2 = DM(3, I3);
@@ -197,6 +212,8 @@ _pd_snap:
     NOP;
     DM(5, I3) = R2;                       // b2
 _pd_slewed:
+    R0 = 1;
+    DM(7, I3) = R0;                       // later blocks slew (R0 is free here: the next line reloads it)
 
     // ---- constants and state ----
     R0 = DM(DK_IN_W_OUT, I2);
@@ -315,6 +332,15 @@ _pd_slewed:
     F3 = F5 + F2;
     NOP;
     F3 = F3 * F4;                        // x 0.5: the pair spans +-1
+    R0 = DM(8, I3);                       // fold gain
+    F0 = PASS R0;
+    NOP;
+    F3 = F3 * F0;
+    NOP;
+    F2 = MIN(F3, F11);
+    R0 = 0xbf800000;                      // -1
+    NOP;
+    F3 = MAX(F2, F0);
     NOP;
     F3 = F3 * F9;                        // level
 
@@ -338,17 +364,20 @@ _pd_note_on:
     // The phases ARE reset (the adapter zeroes state_clear_bytes, the two leading words), so a note starts at
     // sin(0) = 0 -- the same starting condition a sample has. Free-running phases were measured starting a retriggered
     // sine at full amplitude (-0.216), which is a step with a fast amp attack and reads as a click on anything
-    // sine-like. The curve numbers past the cleared words are left alone.
+    // sine-like. The curve numbers past the cleared words are left alone; only the snap flag (word 7, outside the
+    // cleared bytes) is zeroed, so render writes the curve numbers straight to the target on the note-on block.
+    I3 = R4;
     R0 = 0;
+    DM(7, I3) = R0;
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
 .GLOBAL _pd_desc;
 .VAR _pd_desc = DK_MAGIC;
 .VAR _pd_desc1 = DK_MACHINE_V1;
-.VAR _pd_desc2 = 3;                       // n_params
+.VAR _pd_desc2 = 4;                       // n_params
 .VAR _pd_desc3 = DK_MAX_VOICES;
-.VAR _pd_desc4 = 28;                      // state bytes (7 words: 2 phases, spare, 3 curve numbers, magic)
+.VAR _pd_desc4 = 36;                      // state bytes (9 words: 2 phases, spare, 3 curve numbers, magic, snap flag, fold gain)
 .VAR _pd_desc5 = 8;                       // the two phases are zeroed at note-on (see _pd_note_on)
 .VAR _pd_desc6 = 1200;                    // max cycles per block
 .VAR _pd_desc7 = 200;

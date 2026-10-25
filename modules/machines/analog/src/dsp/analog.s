@@ -12,16 +12,16 @@
 //   1 DETUNE  0 = unison, 1 = 3 % apart (on two saws that is the rolling reese beat)
 //   2 WAVE    0 saw -> 1/3 triangle -> 2/3 pulse (5 %) -> 1 square (50 %): one continuous slider, and it shapes the
 //             oscillators themselves, so there is no second oscillator and no blend level
-//   4 SUB     sub level over 0 .. 3/4, wave folding over 3/4 .. 1 (below 3/4 nothing folds)
+//   4 SUB     sub level, 0 .. 1 over the whole range (a square one octave down)
+//   5 FOLD    wave-folder drive on the oscillators only, 1 .. 4 (0 = no fold); the sub is added after the folder
 //
-// The adapter maps module parameters by position in the device's param_slots [1, 2, 4, 5]; the three parameters here
-// take 1, 2 and 4 (3 is the sample slot, 0 and 7 are the stock tune and level), so four features have to fit in three
-// knobs and the folder shares SUB.
+// The adapter maps module parameters by position in the device's param_slots [1, 2, 4, 5]: the four parameters here
+// take all four (3 is the sample slot, 0 and 7 are the stock tune and level).
 //
 // No drive and no noise: the FX overdrive works on the oscillators as it does on a sample, and sample-rate and
 // bit-rate reduction crunch them, so both knobs are better spent on the shape and the sub.
 //
-// State (5 words = 20 bytes; nothing is cleared at note-on): phase 1, phase 2, sub phase, fold drive, magic.
+// State (6 words = 24 bytes; nothing is cleared at note-on): phase 1, phase 2, sub phase, fold drive, magic, note-on ramp counter.
 //
 // Register map. F and R are one file, so nothing may collide, and a constant must never land on a register that holds a
 // signal. Persistent through the sample loop:
@@ -112,7 +112,7 @@ _va_booted:
     NOP;
     F7 = F12 + F0;
 
-    // ---- WAVE shape, and the SUB knob, whose top quarter is the wave folder ----
+    // ---- WAVE shape, the SUB level and the FOLD drive ----
     R1 = 0x38010204;                      // 1 / 32512
     R0 = DM(1, I1);
     F0 = FLOAT R0;
@@ -120,29 +120,20 @@ _va_booted:
 
     R0 = DM(2, I1);
     F0 = FLOAT R0;
-    F0 = F0 * F1;                         // s = 0 .. 1
-    R1 = 0x3f400000;                      // 0.75
+    F5 = F0 * F1;                         // SUB level, the whole range (v0.11 ended the 3/4 cap)
+
+    R0 = DM(3, I1);
+    F0 = FLOAT R0;
+    F0 = F0 * F1;                         // FOLD 0 .. 1
+    R1 = 0x40400000;                      // 3.0
     NOP;
-    F2 = MIN(F0, F1);                     // the sub part, capped at 3/4
-    R1 = 0x3faaaaab;                      // 4/3
-    NOP;
-    F5 = F2 * F1;                         // sub level 0 .. 1
-    R1 = 0x3f400000;                      // 0.75
-    NOP;
-    F2 = F0 - F1;                         // what is left above 3/4
-    NOP;
-    R1 = 0;                               // 0.0
-    NOP;
-    F2 = MAX(F2, F1);                     // 0 .. 0.25
-    R1 = 0x41000000;                      // 8.0 = 2 gain per unit of the fold range
-    NOP;
-    F2 = F2 * F1;                         // drive - 1, 0 .. 2
+    F0 = F0 * F1;
     R1 = 0x3f800000;                      // 1.0
     NOP;
-    F2 = F2 + F1;                         // drive 1 .. 3
-    R2 = F2;
+    F0 = F0 + F1;                         // fold drive 1 .. 4
+    R2 = F0;
     NOP;
-    DM(3, I3) = R2;                       // state word 3: the drive the loop reads
+    DM(3, I3) = R2;                       // state word 3: the drive the reflection folder reads
 
     R0 = DM(DK_IN_W_OUT, I2);
     I0 = R0;
@@ -298,6 +289,9 @@ _va_booted:
     F4 = F4 * F5;                         // sub level
     F3 = F3 + F4;
     NOP;
+    // (the fold itself is the reflection folder above, which already reads the gain from state word 3. This used to
+    // carry a second, clamping folder on top of it -- two folds on one signal, the second multiplying a value the first
+    // had consumed, which is why the knob appeared dead.)
     F3 = F3 * F9;                         // level
 
     // ---- advance the phases ----

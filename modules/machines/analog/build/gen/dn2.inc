@@ -10,6 +10,7 @@
 #define ANALOG_KNOB1_FRAME_OFF 1
 #define ANALOG_KNOB2_FRAME_OFF 2
 #define ANALOG_KNOB4_FRAME_OFF 4
+#define ANALOG_KNOB5_FRAME_OFF 5
 #define ANALOG_KNOB7_FRAME_OFF 7
 #define ANALOG_DETUNE_KNOB 1 // knob position
 #define ANALOG_DETUNE_SLOT 26 // engine or sound-array slot
@@ -32,3 +33,10 @@
 #define ANALOG_SUB_MIN 0
 #define ANALOG_SUB_MAX 32512
 #define ANALOG_SUB_DEFAULT 0
+#define ANALOG_FOLD_KNOB 5 // knob position
+#define ANALOG_FOLD_SLOT 30 // engine or sound-array slot
+#define ANALOG_FOLD_FRAME_OFF 5 // halfwords from knob 0 of the same track
+#define ANALOG_FOLD_MIRROR 30 // index in the parameter table
+#define ANALOG_FOLD_MIN 0
+#define ANALOG_FOLD_MAX 32512
+#define ANALOG_FOLD_DEFAULT 0
