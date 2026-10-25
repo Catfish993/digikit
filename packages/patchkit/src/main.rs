@@ -8,6 +8,9 @@ use patchkit::port::Registry;
 use patchkit::verify;
 use std::path::{Path, PathBuf};
 
+#[cfg(not(target_arch = "wasm32"))]
+mod storedump;
+
 const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
 
   inspect X.syx                          device, version, port, patch record
@@ -29,6 +32,9 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          --json: one object, file -> the needs or {\"error\": text}; exit 1 when a file has none
   dkm-dsp-image FILE BASE [NAME=VALUE..]  the relocated DSP image of a .dkm at the L2 byte address BASE (hex)
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
+  store dump IMAGE [--device dt2|dn2] [--overlay FILE] [--base-sector N] [--json]   digikit's own data on a card image or a raw sector dump:
+                                         the store header and files, the selection record, the settings record (both copies, the one in use,
+                                         every entry decoded); `store dump --record FILE` reads one settings record file (docs/design/digikit-store.md)
   list                                   modules under modules/ and ports under devices/ports/
   gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
                                          a SHARC include per device, gallery JSON
@@ -150,6 +156,13 @@ fn run(a: Args) -> Result<()> {
             for (id, d, s) in rep.sections {
                 println!("section {id}  {d} bytes decoded, {s} stored");
             }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        "store" => {
+            if rest.first().map(String::as_str) != Some("dump") {
+                return Err(Error(USAGE.into()));
+            }
+            storedump::run(&rest[1..]).map_err(Error)?;
         }
         "list" => {
             let reg = registry(&a.root)?;

@@ -8,7 +8,7 @@ A scenario is a TOML file in `tests/digikit/scenarios/`:
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc" | "pages" | "fx"
+    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc" | "pages" | "fx" | "fxsend" | "fxroute" | "settings"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -51,6 +51,11 @@ Kinds:
   fx         effects loaded at run time (DSP section version 4, `core/dynfx`; Digitakt II and Digitone II): the sine and `test/dyn-fx-gain` selected at boot play as the
              dry sine times the gain, the chain's row, MODULES and CAPACITY say so, deselecting the effect and restarting gives the dry PCM again, and
              one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
+  fxsend     a run-time effect on the send route of `core/fx` (Digitakt II): the row's route and amount words are written with `dsp.patch`; no amount, or an amount on a silent track, leaves the PCM
+             dry bit for bit; an amount on the playing track adds the effect's return (the amount squared, as the stock sends); the effect runs once a block; tools/patchkit/pk_digikit_fxsend.py.
+  settings   the settings store of the runtime (docs/design/digikit-store.md, "The settings record"): a key put through the mailbox is written 2 s after the last change to the copy that is not
+             current (A, then B, then A), never to anything else in the store range; a soft restart reads it back; the SETTINGS command and CAPACITY kind SETTINGS report it; `patchkit store dump`
+             decodes the card the guest left; a blank card is claimed first; a torn newer copy leaves the older one; tools/patchkit/pk_digikit_settings.py.
   fxpage     the FX view pages and knobs of run-time effects (`core/fxpages`; Digitakt II and Digitone II): with no effect loaded the three stock pages draw and play as on an image without
              the pages; with `test/dyn-fx-gain` the view has a fourth page (tab GAN, title Test Gain, the GAIN knob and MIX), turning the knobs changes the PCM as
              declared (gain, MIX 0 = dry bit for bit, MIX 127 = wet, the linear blend between), and deselecting the effect and restarting brings the three pages and
@@ -364,8 +369,13 @@ class Ctx:
             for k in self.totals:
                 self.totals[k] += w[k]
 
-    def common_checks(self, firmware_areas: tuple[tuple[int, int], ...] = ()) -> None:
-        """The checks every scenario ends with. FIRMWARE_AREAS: sector ranges (first, end) below 0x50000 that the scenario makes the firmware write on purpose (the kit library of a Save Kit)."""
+    def common_checks(
+        self,
+        firmware_areas: tuple[tuple[int, int], ...] = (),
+        store_extra: frozenset[int] = frozenset(),
+    ) -> None:
+        """The checks every scenario ends with. FIRMWARE_AREAS: sector ranges (first, end) below 0x50000 that the scenario makes the firmware write on purpose (the kit library of a Save Kit).
+        STORE_EXTRA: store-range sectors besides the two selection sectors that the scenario writes on purpose (the settings copies)."""
         t = self.totals
         self.check(
             "write-watch on cf.expansion over every boot: no stray write",
@@ -373,9 +383,14 @@ class Ctx:
             str(t),
         )
         self.check("flush check over every boot: no hit", t["flush_hits"] == 0, str(t))
-        stray = sorted(self.store_writes - {self.store.sel_a, self.store.sel_b})
+        stray = sorted(
+            self.store_writes - {self.store.sel_a, self.store.sel_b} - store_extra
+        )
         self.check(
-            "card writes in the store range: only the two selection sectors",
+            "card writes in the store range: only the two selection sectors"
+            + (
+                " and the sectors the scenario writes on purpose" if store_extra else ""
+            ),
             not stray,
             f"wrote {sorted(hex(s) for s in self.store_writes)}",
         )
@@ -1384,6 +1399,24 @@ def run_fx(c: Ctx) -> None:
     FX.run_fx(c)
 
 
+def run_fxsend(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxsend as FXS
+
+    FXS.run_fxsend(c)
+
+
+def run_fxroute(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxroute as FR
+
+    FR.run_fxroute(c)
+
+
+def run_settings(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_settings as SET
+
+    SET.run_settings(c)
+
+
 def run_fxpage(c: Ctx) -> None:
     from tools.patchkit import pk_digikit_fxpage as FP
 
@@ -2105,6 +2138,9 @@ KINDS = {
     "live": run_live,
     "pages": run_pages,
     "fx": run_fx,
+    "fxsend": run_fxsend,
+    "fxroute": run_fxroute,
+    "settings": run_settings,
     "fxpage": run_fxpage,
     "fxpersist": run_fxpersist,
     "fxshift": run_fxshift,

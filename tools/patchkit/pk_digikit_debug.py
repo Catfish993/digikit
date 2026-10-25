@@ -26,6 +26,7 @@ from typing import Any
 
 from tools.device import dklog as L
 from tools.device import dkupload as DK
+from tools.device.dkproto import SETTINGS_SECTORS
 from tools.patchkit import pk_device
 from tools.patchkit import pk_digikit_upload as U
 from tools.patchkit import pk_dkrt_boot as B
@@ -772,8 +773,11 @@ def part_modules(c: Any, img: Any) -> None:
             "PARAM_ROWS": lim.param_rows,
             "PAGE_ROWS": lim.page_rows,
             "FX_SLOTS": pk_device.effective_fx_slots(lim, rig.plan),
+            "SEND_SLOTS": pk_device.effective_send_slots(c.device, rig.plan),
             "MAP_ENTRIES": pk_device.contract_max()["map_entries"],
             "STORE": c.store.limit // 2,  # KiB
+            "SETTINGS": SETTINGS_SECTORS
+            * 512,  # bytes of one copy (sdk/sdk.toml [settings])
         }
         c.check(
             "INFO sets the CAPACITY capability, and CAPACITY lists every kind with the device file's limit",

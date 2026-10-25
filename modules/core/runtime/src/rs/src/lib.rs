@@ -22,8 +22,10 @@ pub mod crash;
 pub mod dlog;
 mod dsp;
 pub mod fxpage;
+mod fxsend;
 mod loader;
 pub mod registry;
+pub mod settings;
 mod sha256;
 pub mod store;
 mod table;
@@ -756,7 +758,8 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
         Some((used, _)) => used,
         None => 0,
     };
-    let entries: [(u8, u32, u32, u32); 12] = [
+    let (set_limit, set_used) = settings::capacity();
+    let entries: [(u8, u32, u32, u32); 14] = [
         (CAPK_MODULES, MAX_MODULES as u32, mods, 0),
         (CAPK_SELECTION, dkrt_sdk::SEL_MAX as u32, boot::selected(), 0),
         (CAPK_ARENA, arena, arena - af, al),
@@ -769,6 +772,8 @@ pub unsafe extern "C" fn dkrt_capacity(out: *mut DkrtCap, max: u32) -> u32 {
         (CAPK_FX_SLOTS, fx_slots(), dsp::fx_used(), 0),
         (CAPK_MAP_ENTRIES, dkrt_sdk::sel::MAP_N as u32, assign::map_used(), 0),
         (CAPK_STORE, st_total, st_used, 0),
+        (CAPK_SETTINGS, set_limit, set_used, 0),
+        (CAPK_SEND_SLOTS, fxsend::slots(), fxsend::used(), 0),
     ];
     let mut k = 0;
     while k < entries.len() && (k as u32) < max {
@@ -937,6 +942,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     crash::install();
     dsp::step();
     fxpage::tick();
+    settings::tick();
     dlog::tick();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));
@@ -957,6 +963,8 @@ pub unsafe extern "C" fn dkrt_tick() {
             card::probe(mb.arg.as_ptr())
         } else if cmd == CMD_DEBUG {
             boot::debug_set(*mb.arg.as_ptr() != 0)
+        } else if cmd >= CMD_SETTINGS_PUT && cmd <= CMD_SETTINGS_FLUSH {
+            settings::mailbox(cmd, mb.arg.as_mut_ptr())
         } else {
             E_FORMAT
         };

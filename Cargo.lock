@@ -3064,8 +3064,11 @@ version = "0.1.0"
 dependencies = [
  "coldfire",
  "dkneeds",
+ "dkrt-sdk",
  "dkupload",
  "dt2-firmware-loader",
+ "emmc-card",
+ "plusdrive-format",
  "serde",
  "serde_json",
  "sha2",

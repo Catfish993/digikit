@@ -86,6 +86,12 @@ position = 0            # 0 to 7: the place on the page (default: the knob's pla
   (`pk_digikit_scen run fx-pages-dt2`) is the proof for the fixture: the page's screenshots, the PCM at the knobs' values, MIX 0 equal to the dry sound.
   `tests/digikit/scenarios/fx-persist-dt2.toml` and `fx-persist-dn2.toml` (`pk_digikit_scen run fx-persist-dt2`) prove the saved values: Save Kit and Load Kit, a kit without the effect, the effects in the other rows, a project, another pattern's kit.
 
+- **Insert or send (the framework's choice).** An effect runs on the master chain (an insert) or on a send bus; the user decides (a setting, `fx/route/<module id>`; the FX ROUTES page and the manifest default come with FX routing step 4), not the effect, and the same
+  `process` routine serves both: on a send it gets the sum of the tracks' send amounts as its input block, and its wet output times MIX is added to the FX return. **The send amounts are framework-owned**: one knob for each send effect on a second page of the track FX
+  key (the label is your `tab`, `<tab> Send=40` while it turns), one amount for each track, kept in the settings store and the DSP row, never in your state or parameter words and never in a kit or pattern file. The effect never sees an amount and has no way to
+  read or set it; MIX is the return level of a send. The device allows two send effects at a time (`send_slots`); an effect beyond that stays an insert. Author's rules: do not assume you are the last in a chain, and write the wet signal only (a send effect has no dry path).
+  Digitakt II only for now. See `docs/findings/62-fx-send-route.md` and `64-fx-send-page.md`.
+
 Judged by `tests/modules/test_fx_conformance.py` (`mise run module:check NAME`): signals, parameter limits, modulation, switching, a long run;
 checks: returns, registers, the adapter did not refuse a block, write set, instruction budget (about 23,000 for the effect, 900 for the adapter).
 Template (patched in): `tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s`. Emulator proof of the adapter: `tools/patchkit/pk_proof_fx.py`. The conformance suite judges patched-in effects (an `[[entry]] registry = "fx"` row) and run-time effects (a `[[fx]]` record: the rig reserves the state the runtime would, and a page knob's range gives the float of each parameter word the cases use); the scenarios above prove the page and the loading.

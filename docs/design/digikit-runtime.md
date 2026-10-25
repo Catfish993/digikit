@@ -58,6 +58,9 @@ results.
     int32_t dkrt_module(uint32_t index, DkrtModule *out);   // name, version, base, size, slot mask, store path; E_NOT_FOUND past the end
     void    dkrt_health(DkrtHealth *out);   // CPU load, DSP block time, heap, arena, DSP area (finding 41; needs core/health for the first three)
     uint32_t dkrt_capacity(DkrtCap *out, uint32_t max);   // the CAPACITY entries (kind, limit, used, largest); returns how many (0.2.3, finding 57)
+    int      dkrt_settings_get(const char *key, uint8_t *buf, uint32_t cap);      // digikit's settings record (0.5.1, finding 63): the value's length, or a negative E_SET_* code
+    int      dkrt_settings_put(const char *key, const uint8_t *value, uint32_t len);  // 0 or E_SET_*; written to the card 2 s after the last change
+    int      dkrt_settings_remove(const char *key);                               // 0 (also when the key was not there)
     uint32_t dkrt_blocks(void);             // DSP blocks since boot (1500 per second), 0 without core/health: a clock for a UI
     void    dkrt_poll_set(uintptr_t fn);    // fn() is called at the end of every UI-loop pass in the UI task (0 removes it); one caller
 
@@ -186,7 +189,7 @@ module down again (`loader::undo_early`, the only user of the take-down). Until 
 **API** (C ABI, `dkrt-sdk`): `dkrt_selection_get(out *mut DkrtSelection) -> i32`, `dkrt_selection_set(sel *const DkrtSelection) -> i32`
 (0, `E_SEL_PATH`, `E_SEL_COUNT`, `E_SEL_WRITE`), `dkrt_restart() -> i32` (returns only when it refuses: `E_CARD_BUSY` when the eSDHC
 present-state register shows a transfer, checked again with interrupts masked), `dkrt_boot_info(out *mut DkrtBootInfo)`. Mailbox: `CMD_SELECT`,
-`CMD_SELECT_ONE` (one copy, for the power-cut test), `CMD_RESTART`, `CMD_HEALTH` (6: `dkrt_health` into the exported `DKRT_HEALTH`). `dkrt_status` and `dkrt_module` keep their meaning for this session.
+`CMD_SELECT_ONE` (one copy, for the power-cut test), `CMD_RESTART`, `CMD_HEALTH` (6: `dkrt_health` into the exported `DKRT_HEALTH`), `CMD_CARD_PROBE` 7, `CMD_DEBUG` 8, `CMD_SETTINGS_PUT`/`_GET`/`_REMOVE`/`_FLUSH` 9 to 12 (the settings store's test hooks). `dkrt_status` and `dkrt_module` keep their meaning for this session.
 
 **Restart.** `dkrt_restart`: refuse during a card transfer; save the working state the way the firmware does before an OS update
 (`save_working_state`, `DKRT_SAVE_MODE`: the project into the arena, then the arena into the boot record; finding 40); mask interrupts; the firmware's own

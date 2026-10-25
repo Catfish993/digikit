@@ -35,6 +35,7 @@ import sys
 
 from tools import python_env
 from tools.coldfire import arena_safety, panel_script
+from tools.device.dkproto import SETTINGS_SECTORS
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 GOLDEN = ROOT / "tests" / "golden" / "digikit_menu_frames.json"
@@ -640,9 +641,14 @@ def main(argv=None) -> int:
     for name in (
         "DKRT_STORE_PEEK",
         "DKRT_STORE_FP",
-    ):  # the store's header and fingerprint sectors: DMA targets too
+        "DKRT_SETTINGS_HDR",
+    ):  # the store's header and fingerprint sectors, the settings record's header sector: DMA targets too
         with contextlib.suppress(Exception):  # an image without them
             holes.append((plan.addr(name), 512))
+    with contextlib.suppress(
+        Exception
+    ):  # the settings record's RAM copy: the boot's card read of the settings area
+        holes.append((plan.addr("DKRT_SETTINGS"), SETTINGS_SECTORS * 512))
     holes.sort()
     ranges, at = [], lo
     for start, size in holes:

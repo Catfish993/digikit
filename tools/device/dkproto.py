@@ -16,6 +16,7 @@ CMD: dict[str, int] = {
     "READ": 0x16,
     "VERIFY": 0x17,
     "MKDIR": 0x18,
+    "SETTINGS": 0x19,
     "LOG": 0x20,
     "PEEK": 0x21,
     "LOGCFG": 0x22,
@@ -35,6 +36,7 @@ CMD_ABORT = 0x15
 CMD_READ = 0x16
 CMD_VERIFY = 0x17
 CMD_MKDIR = 0x18
+CMD_SETTINGS = 0x19
 CMD_LOG = 0x20
 CMD_PEEK = 0x21
 CMD_LOGCFG = 0x22
@@ -65,6 +67,17 @@ STATUS: dict[int, tuple[str, str]] = {
     -63: ("E_PEEK", "PEEK range not allowed, or length 0 or over 512"),
     -64: ("E_CMD_RANGE", "command range not reserved, taken, or empty"),
     -65: ("E_DISABLED", "a guarded command range is switched off (DIGIKIT > REMOTE)"),
+    -66: (
+        "E_SET_KEY",
+        "a settings key breaks the rules (1 to 47 printable ASCII characters)",
+    ),
+    -67: ("E_SET_FULL", "the settings area is full"),
+    -68: ("E_SET_NOKEY", "no such settings key (or no settings record)"),
+    -69: ("E_SET_VALUE", "a settings value is too long, or the buffer is too small"),
+    -70: (
+        "E_SET_OFF",
+        "the settings store is off (an older store on the card reaches into its area, or the card has no store)",
+    ),
 }
 
 LOAD_STATUS: dict[int, tuple[str, str]] = {
@@ -121,6 +134,7 @@ CAP: dict[str, int] = {
     "VERIFY": 8,
     "SERVICE_CMDS": 9,
     "FOLDERS": 10,
+    "SETTINGS": 11,
 }
 
 RANGES: dict[str, tuple[int, int]] = {
@@ -143,4 +157,17 @@ CAPACITY_KINDS: dict[str, int] = {
     "FX_SLOTS": 10,
     "MAP_ENTRIES": 11,
     "STORE": 12,
+    "SETTINGS": 13,
+    "SEND_SLOTS": 14,
 }
+
+SETTINGS_SECTORS = 16  # one copy of the settings record
+SETTINGS_COPIES = 2
+SETTINGS_KEY_MAX = 47
+SETTINGS_VALUE_MAX = 1024
+
+# (prefix, how a host reader decodes the value)
+SETTINGS_KEYS: tuple[tuple[str, str], ...] = (
+    ("fx/route/", "route"),
+    ("fx/send/", "u8x16"),
+)

@@ -8,6 +8,7 @@ import tomllib
 
 from support.paths import REPO_ROOT
 
+from tools.device import dkproto
 from tools.patchkit import modroots, pk_device, port_resolve
 
 ROOT = REPO_ROOT
@@ -29,6 +30,12 @@ def test_the_store_geometry_is_the_device_files() -> None:
         assert s.header_b == card["header_b_sector"]
         assert (s.sel_a, s.sel_b) == (card["end_sector"] - 2, card["end_sector"] - 1)
         assert card["selection_sectors"] == 2
+        # header B, the settings record (two copies of the sdk's size), the selection record
+        assert card["settings_sectors"] == 2 * dkproto.SETTINGS_SECTORS
+        assert s.header_b == card["end_sector"] - 2 - card["settings_sectors"] - 1
+        assert s.set_a == card["end_sector"] - 2 - card["settings_sectors"]
+        assert s.set_b == s.set_a + dkproto.SETTINGS_SECTORS
+        assert s.set_b + dkproto.SETTINGS_SECTORS == s.sel_a
         # the store lies above the MmcFs write guard and ends with the card (finding 59)
         assert s.first > 0x457FFF
         assert s.end == pk_device.load(dev)["card"]["total_sectors"]

@@ -204,10 +204,12 @@ fn a_limit_above_the_contract_maximum_is_refused() {
         ),
         (8, 8, 4, 16, 8)
     );
+    assert_eq!(max.send_slots, 2);
     Facts::from_texts([dt2.as_str(), dn2.as_str()]).unwrap();
     for (what, from, to) in [
         ("modules", "modules = 8", "modules = 9"),
         ("fx_slots", "fx_slots = 3", "fx_slots = 5"),
+        ("send_slots", "send_slots = 2", "send_slots = 3"),
         ("param_rows", "param_rows = 16", "param_rows = 17"),
         (
             "dsp_area_bytes",
@@ -291,7 +293,14 @@ fn the_effect_page_rows_are_eight_parameter_rows_for_each_fx_slot() {
         .manifest
         .entry
         .iter()
-        .filter(|e| e.registry == "params")
+        .filter(|e| e.registry == "params" && e.id.starts_with("fp"))
+        .count() as u64;
+    // and one more row for each send cell of the send page (`[limits] send_slots`, finding 64)
+    let send_rows = m
+        .manifest
+        .entry
+        .iter()
+        .filter(|e| e.registry == "params" && e.id.starts_with("fs"))
         .count() as u64;
     assert!(
         m.manifest
@@ -314,6 +323,17 @@ fn the_effect_page_rows_are_eight_parameter_rows_for_each_fx_slot() {
             "{file}: a value index for each parameter row"
         );
         assert_eq!(t["fx"]["page_first"].as_integer(), Some(first), "{file}");
+        // the send page (finding 64): a device that has one lists the Sound indices of its cells and a Sound layout that ends before the Fx array; its cells are parameter rows of core/fxpages
+        if let Some(track_page) = t["fx"].get("track_page").and_then(|v| v.as_integer()) {
+            let send = t["limits"]["send_slots"].as_integer().unwrap() as u64;
+            let n = t["fx"]["send_indices"].as_array().unwrap().len() as u64;
+            assert!(track_page > 0 && send <= n && send <= send_rows && send_rows == n, "{file}: {send} {n} {send_rows}");
+            let (off, stride) = (
+                t["fx"]["sound_off"].as_integer().unwrap(),
+                t["fx"]["sound_stride"].as_integer().unwrap(),
+            );
+            assert_eq!(off + 16 * stride, t["fx"]["array_off"].as_integer().unwrap(), "{file}");
+        }
         // the values and the mark are indices of the array that no stock parameter uses; the u32 behind the array
         assert_eq!(
             t["fx"]["tail_off"].as_integer(),

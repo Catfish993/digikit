@@ -22,11 +22,17 @@ from tools.patchkit import pk_build, pk_sharc
 
 ROOT = dv.ROOT
 ADAPTER = ROOT / "modules/core/fx/src/dsp/fx.s"
+SEND = ROOT / "modules/core/fx/src/dsp/fxsend.s"  # the send route's hook (Digitakt II)
 EFFECTS = ROOT / "tests/support/fx_effects.s"
 CODE_BASE = 0xB90000
 DATA_BASE = 0x200A0000
 DATA_END = 0x20100000
 MASTER = 0x2009E000  # byte address of the 64 master floats
+RETURN = 0x2009E400  # the FX return bus: 64 floats (the send route adds to it)
+TRACKBUS = (
+    0x2009F000  # the 16 track buses of 64 floats (32 left, 32 right), 0x100 bytes apart
+)
+TRACKS = 16
 TABLE = dv.TABLE
 ROW_WORDS = 24
 FREE_PC = 0xFFFFFFFF  # the pc of a free row (core/dynfx): the adapter skips it
@@ -35,7 +41,7 @@ AUTO_STATES = 4  # a Row with `state=""` (a run-time effect has no state symbol:
 AUTO_STATE_BYTES = 4096  # this many bytes of poisoned bss each
 nw = dv.nw
 # the row words (core/fx module.toml)
-PC, DESC, STATE, ENABLED, P0, WAS, MIX, DIS, WSTART, WCOUNT, NFAULT = (
+PC, DESC, STATE, ENABLED, P0, WAS, MIX, DIS, WSTART, WCOUNT, NFAULT, ROUTE, AMT0 = (
     0,
     1,
     2,
@@ -47,7 +53,10 @@ PC, DESC, STATE, ENABLED, P0, WAS, MIX, DIS, WSTART, WCOUNT, NFAULT = (
     15,
     16,
     17,
+    18,
+    19,
 )
+ROUTE_MASTER, ROUTE_SEND = 0, 1
 ONE = 0x3F800000  # 1.0f: the default mix of a row
 # registers the stock function expects back (callee-saved, its arguments) and the markers they carry into the hook
 MARKS = {f"R{n}": 0x7000 + n for n in range(16)}
@@ -96,7 +105,11 @@ class Row:
     enabled: int = 1
     params: tuple[int, ...] = (0, 0, 0, 0)
     desc: str = "_te_desc"
-    mix: int = ONE  # row word 13: the dry/wet blend (a float, 0 = dry, 1.0 = wet)
+    mix: int = ONE  # row word 13: the dry/wet blend (a float, 0 = dry, 1.0 = wet); on a send row the return level
+    route: int = ROUTE_MASTER  # row word 18: 0 master chain, 1 send bus
+    amounts: tuple[
+        int, ...
+    ] = ()  # row words 19 to 22: the send amounts of the 16 tracks, bytes 0 to 127 (fewer than 16: the rest 0)
 
 
 @dataclass
@@ -108,6 +121,7 @@ class Block:
     ctx_bad: list[str]  # context registers that did not come back
     regs_bad: list[str]  # marked registers that did not come back
     raw: dict = field(default_factory=dict)
+    ret: tuple[float, ...] = ()  # the 64 floats of the FX return bus after the hook
 
 
 @dataclass
@@ -142,7 +156,7 @@ def build(sources: tuple[Path, ...] = (EFFECTS,)) -> _Built:
 
 
 def _build(sources: tuple[Path, ...]) -> _Built:
-    objs = [_assemble(ADAPTER)] + [_assemble(Path(s)) for s in sources]
+    objs = [_assemble(ADAPTER), _assemble(SEND)] + [_assemble(Path(s)) for s in sources]
     addr = DATA_BASE
     data: dict[str, int] = {}
     inits: list[tuple[int, bytes, bool]] = []
@@ -168,6 +182,9 @@ def _build(sources: tuple[Path, ...]) -> _Built:
         "_fx_table": TABLE,
         "_fx_master": MASTER,
         "_fx_back": dv.STOCK_BP,
+        "_fxs_back": dv.STOCK_BP,  # one entry runs in a call: both tails end at the stand-in
+        "_fxs_trackbus": TRACKBUS,
+        "_fxs_return": RETURN,
         **data,
     }
     bases, base = [], CODE_BASE
@@ -182,10 +199,10 @@ def _build(sources: tuple[Path, ...]) -> _Built:
     ext = {**externs, **syms}
     linked = [pk_sharc.link(o, b, ext) for o, b in zip(objs, bases, strict=True)]
     code = tuple(
-        (b, b + len(o.section) // 2) for o, b in zip(objs[1:], bases[1:], strict=True)
+        (b, b + len(o.section) // 2) for o, b in zip(objs[2:], bases[2:], strict=True)
     )
     return _Built(
-        linked, data, inits, syms, code, tuple(r for rs in own[1:] for r in rs)
+        linked, data, inits, syms, code, tuple(r for rs in own[2:] for r in rs)
     )
 
 
@@ -216,6 +233,9 @@ class FxRig:
             poke(nw(TABLE) + k, 0)
         for k in range(64):
             poke(nw(MASTER) + k, 0)
+            poke(nw(RETURN) + k, 0)
+        for k in range(TRACKS * 64):
+            poke(nw(TRACKBUS) + k, 0)
         for addr, raw, is_bss in b.inits:
             for k in range(len(raw) // 4):
                 w = (
@@ -234,6 +254,13 @@ class FxRig:
             poke(base + STATE, b.data[self.state_symbol(i)])
             poke(base + ENABLED, r.enabled)
             poke(base + MIX, r.mix)
+            poke(base + ROUTE, r.route)
+            amounts = (tuple(r.amounts) + (0,) * TRACKS)[:TRACKS]
+            for w in range(4):
+                poke(
+                    base + AMT0 + w,
+                    sum((amounts[4 * w + b] & 0xFF) << (8 * b) for b in range(4)),
+                )
             for j, p in enumerate(r.params):
                 poke(base + P0 + j, p & 0xFFFFFFFF)
         if self.record_stores:
@@ -259,8 +286,50 @@ class FxRig:
         return self.sess.peek(nw(self.built.data[name]) + k) or 0
 
     # -- a block ---------------------------------------------------------------------------------------------------------
+    def set_track(self, t: int, samples) -> None:
+        """The 64 floats (32 left, 32 right) of track bus T, as the sends driver leaves them before the master function."""
+        for k, x in enumerate(samples):
+            self.sess.poke(nw(TRACKBUS + 0x100 * t) + k, f2w(x))
+
+    def set_return(self, samples) -> None:
+        """The FX return bus as the stock sends driver wrote it."""
+        for k, x in enumerate(samples):
+            self.sess.poke(nw(RETURN) + k, f2w(x))
+
+    def set_amounts(self, i: int, amounts, route: int = ROUTE_SEND) -> None:
+        """Row I: the route word and the 16 amount bytes (words 19 to 22)."""
+        amounts = (tuple(amounts) + (0,) * TRACKS)[:TRACKS]
+        self.set_row_word(i, ROUTE, route)
+        for w in range(4):
+            self.set_row_word(
+                i,
+                AMT0 + w,
+                sum((amounts[4 * w + b] & 0xFF) << (8 * b) for b in range(4)),
+            )
+
+    def bus(self) -> tuple[float, ...]:
+        """The send bus as the last send block built it (32 left, 32 right)."""
+        at = nw(self.built.data["_fxs_bus"]) + 1
+        return tuple(w2f(self.sess.peek(at + k) or 0) for k in range(64))
+
+    def prev_gains(self, i: int) -> tuple[float, ...]:
+        at = nw(self.built.data["_fxs_prev"]) + 16 * i
+        return tuple(w2f(self.sess.peek(at + k) or 0) for k in range(16))
+
+    def send_block(
+        self, master=None, ctx: dict | str | None = None, regs: dict | None = None
+    ) -> Block:
+        """One block of the send hook (the master function's entry): the tracks, the return and the master as set before the call."""
+        return self.block(
+            master if master is not None else [0.0] * 64, ctx, regs, entry="_fxs_entry"
+        )
+
     def block(
-        self, master, ctx: dict | str | None = None, regs: dict | None = None
+        self,
+        master,
+        ctx: dict | str | None = None,
+        regs: dict | None = None,
+        entry: str = "_fx_entry",
     ) -> Block:
         if ctx is None:
             ctx = dv.draw_context(self.ctx_rng)
@@ -277,7 +346,7 @@ class FxRig:
         call_regs = {**marks, **ctx, "I6": dv.STACK, "I7": dv.STACK}
         names = tuple(sorted(marks))
         res = self.sess.call(
-            "_fx_entry",
+            entry,
             call_regs,
             max_steps=self.step_limit,
             read_regs=("I6", "I7", *names, *dv.CONTEXT_REGS),
@@ -285,6 +354,7 @@ class FxRig:
         halt = res["halt"]
         returned = halt["reason"] == "breakpoint" and res["final_pc_sw"] == dv.STOCK_BP
         out = tuple(w2f(self.sess.peek(nw(MASTER) + k) or 0) for k in range(64))
+        ret = tuple(w2f(self.sess.peek(nw(RETURN) + k) or 0) for k in range(64))
         mask = 0xFFFFFFFF
         ctx_bad = [
             n for n in dv.CONTEXT_REGS if (res["regs"][n] or 0) & mask != ctx[n] & mask
@@ -301,6 +371,7 @@ class FxRig:
             ctx_bad if returned else [],
             regs_bad if returned else [],
             res,
+            ret,
         )
 
     # -- the module's view ------------------------------------------------------------------------------------------------

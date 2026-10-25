@@ -62,6 +62,19 @@ struct FxDoc {
     mark_index: u64,
     /// The byte offset of the u32 after the array's halfwords (the stock loader and saver move it with `move.l (0x98,record),(tail,array)`).
     tail_off: u64,
+    /// The send page (FX routing): the stock page it copies its title and level slot from, the address of the table of the 16 Sound object pointers, the stock send row
+    /// whose owner and key words a send knob copies, and the Sound array indices the send knobs use (the first `[limits] send_slots` of them). All 0 / empty where the
+    /// device has no send page yet.
+    #[serde(default)]
+    track_page: u64,
+    #[serde(default)]
+    sound_off: u64,
+    #[serde(default)]
+    sound_stride: u64,
+    #[serde(default)]
+    send_template: u64,
+    #[serde(default)]
+    send_indices: Vec<u64>,
 }
 /// `[input]`: which input backend the device uses (a name of `INPUT_BACKENDS`); the profile chooses, the code of core/input has one backend each.
 #[derive(Deserialize)]
@@ -119,6 +132,7 @@ struct Limits {
     arena_bytes: u64,
     stage_bytes: u64,
     fx_slots: u64,
+    send_slots: u64,
     param_rows: u64,
     page_rows: u64,
 }
@@ -157,6 +171,7 @@ struct Store {
     first_sector: u64,
     end_sector: u64,
     selection_sectors: u64,
+    settings_sectors: u64,
     header_b_sector: u64,
 }
 
@@ -190,6 +205,11 @@ struct FxF {
     store_halfwords: u64,
     mark_index: u64,
     tail_off: u64,
+    track_page: u64,
+    sound_off: u64,
+    sound_stride: u64,
+    send_template: u64,
+    send_indices: Vec<u64>,
 }
 /// A device's input facts: the backend (index into `INPUT_BACKENDS` plus 1; 0 none) and the panel's key code layout.
 #[derive(Debug, Default)]
@@ -225,6 +245,7 @@ struct LimitsF {
     arena_bytes: u64,
     stage_bytes: u64,
     fx_slots: u64,
+    send_slots: u64,
     // Not written into the generated files (the runtime reads the rows from core/dynreg's device object): checked against the maxima only.
     #[allow(dead_code)]
     param_rows: u64,
@@ -258,6 +279,7 @@ struct StoreF {
     first: u64,
     end: u64,
     selection_sectors: u64,
+    settings_sectors: u64,
     header_b: u64,
 }
 
@@ -300,7 +322,7 @@ impl Facts {
             }
             check_limits(&short, &l, k.dsp_area_bytes, &crate::sdkgen::limits_max())?;
             let input = input_facts(&short, d.input, d.panel)?;
-            let fx = fx_facts(&short, d.fx, l.fx_slots)?;
+            let fx = fx_facts(&short, d.fx, l.fx_slots, l.send_slots)?;
             let adapter = adapter_facts(
                 &short,
                 d.adapter.and_then(|a| a.machine),
@@ -335,6 +357,7 @@ impl Facts {
                             first: s.first_sector,
                             end: s.end_sector,
                             selection_sectors: s.selection_sectors,
+                            settings_sectors: s.settings_sectors,
                             header_b: s.header_b_sector,
                         },
                         limits: LimitsF {
@@ -343,6 +366,7 @@ impl Facts {
                             arena_bytes: l.arena_bytes,
                             stage_bytes: l.stage_bytes,
                             fx_slots: l.fx_slots,
+                            send_slots: l.send_slots,
                             param_rows: l.param_rows,
                             page_rows: l.page_rows,
                         },
@@ -388,6 +412,7 @@ fn check_limits(
     for (name, v, m) in [
         ("modules", l.modules, max.modules),
         ("fx_slots", l.fx_slots, max.fx_slots),
+        ("send_slots", l.send_slots, max.send_slots),
         ("param_rows", l.param_rows, max.param_rows),
         ("page_rows", l.page_rows, max.page_rows),
         (
@@ -418,11 +443,13 @@ const ADM_NO_SLOT: i64 = 255;
 pub const INPUT_BACKENDS: [&str; 1] = ["panel-uart"];
 /// The most exceptions to the linear key codes a device file may list.
 const PANEL_EXC_MAX: usize = 8;
+/// Entries of `[fx] send_indices` the generated files carry (the cells of the send page; the contract maximum of `send_slots`).
+const FX_SEND_MAX: usize = 2;
 /// Entries of `[fx] value_indices` the generated files carry (`DK_FX_MAX` effects of 8 values).
 const FX_VALUES_MAX: usize = 32;
 
 /// Check `[fx]`: a multiple of 8 distinct indices (below 256), enough for the device's effect slots.
-fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64) -> Result<FxF> {
+fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64, send_slots: u64) -> Result<FxF> {
     let Some(f) = f else {
         return Ok(FxF::default());
     };
@@ -431,6 +458,23 @@ fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64) -> Result<FxF> {
         return Err(err!(
             "{short}: [fx] value_indices must list a multiple of 8 indices, at least 8 for each of the {fx_slots} effect slots, at most {FX_VALUES_MAX}"
         ));
+    }
+    // the send page: a device that has one lists an index (a Sound array index below 256, distinct) for each of its send slots
+    if f.track_page != 0 {
+        let mut seen = std::collections::BTreeSet::new();
+        if (f.send_indices.len() as u64) < send_slots
+            || f.send_indices.len() > FX_SEND_MAX
+            || f.send_indices.iter().any(|i| *i > 255 || !seen.insert(*i))
+            || f.sound_stride == 0
+            || f.sound_off + 16 * f.sound_stride > f.array_off
+            || f.send_template > 0xffff
+        {
+            return Err(err!(
+                "{short}: [fx] send_indices must list at least [limits] send_slots ({send_slots}) and at most {FX_SEND_MAX} distinct numbers below 256; send_template a parameter code; the 16 Sound objects (sound_off, sound_stride) end before array_off"
+            ));
+        }
+    } else if !f.send_indices.is_empty() {
+        return Err(err!("{short}: [fx] send_indices needs track_page"));
     }
     let mut seen = std::collections::BTreeSet::new();
     if f.value_indices.iter().any(|i| *i > 255 || !seen.insert(*i)) {
@@ -482,6 +526,11 @@ fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64) -> Result<FxF> {
         store_halfwords: f.store_halfwords,
         mark_index: f.mark_index,
         tail_off: f.tail_off,
+        track_page: f.track_page,
+        sound_off: f.sound_off,
+        sound_stride: f.sound_stride,
+        send_template: f.send_template,
+        send_indices: f.send_indices,
     })
 }
 
@@ -775,9 +824,18 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "{dev}: [card.store] selection_sectors must be 2 (the runtime writes two copies of the selection record)"
         ));
     }
-    if s.header_b != s.end - s.selection_sectors - 1 {
+    let set = crate::sdkgen::settings();
+    if s.settings_sectors != u64::from(set.copies) * u64::from(set.sectors) {
         return Err(err!(
-            "{dev}: [card.store] header_b_sector must be the sector before the selection record"
+            "{dev}: [card.store] settings_sectors must be {} (sdk/sdk.toml [settings]: {} copies of {} sectors)",
+            u64::from(set.copies) * u64::from(set.sectors),
+            set.copies,
+            set.sectors
+        ));
+    }
+    if s.header_b != s.end - s.selection_sectors - s.settings_sectors - 1 {
+        return Err(err!(
+            "{dev}: [card.store] header_b_sector must be the sector before the settings record, which lies before the selection record"
         ));
     }
     let b = &e.board;
@@ -1060,6 +1118,31 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             fx.value_indices.len() as u64,
             "[fx] value_indices: number of indices",
         ),
+        (
+            "FX_TRACK_PAGE",
+            fx.track_page,
+            "[fx] track_page (the stock page the send page copies its title and level slot from; 0: no send page)",
+        ),
+        (
+            "FX_SOUND_OFF",
+            fx.sound_off,
+            "[fx] sound_off (the first Sound object in the kit object, bytes from the kit object)",
+        ),
+        (
+            "FX_SOUND_STRIDE",
+            fx.sound_stride,
+            "[fx] sound_stride (bytes between the 16 Sound objects)",
+        ),
+        (
+            "FX_SEND_TEMPLATE",
+            fx.send_template,
+            "[fx] send_template (the stock send row whose owner and key words a send knob copies)",
+        ),
+        (
+            "LIMIT_SEND_SLOTS",
+            if fx.track_page == 0 { 0 } else { e.limits.send_slots },
+            "[limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one)",
+        ),
     ] {
         v.push(c(name, value, PerDevice, note));
     }
@@ -1069,6 +1152,14 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             fx.value_indices.get(i).copied().unwrap_or(0),
             PerDevice,
             "[fx] value_indices (an effect value index that no stock parameter uses)",
+        ));
+    }
+    for (i, name) in FX_SEND_IDX.iter().enumerate() {
+        v.push(c(
+            name,
+            fx.send_indices.get(i).copied().unwrap_or(0),
+            PerDevice,
+            "[fx] send_indices (a Sound array index the send page's knob uses)",
         ));
     }
     for i in 0..PEEK_MAX {
@@ -1119,6 +1210,7 @@ const PANEL_EXC_BIT: [&str; PANEL_EXC_MAX] = [
     "PANEL_EXC_BIT_6",
     "PANEL_EXC_BIT_7",
 ];
+const FX_SEND_IDX: [&str; FX_SEND_MAX] = ["FX_SEND_IDX_0", "FX_SEND_IDX_1"];
 const FX_VALUE: [&str; FX_VALUES_MAX] = [
     "FX_VALUE_0",
     "FX_VALUE_1",

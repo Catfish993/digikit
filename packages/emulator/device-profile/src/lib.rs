@@ -812,7 +812,12 @@ mod tests {
             assert!(layout.regions.iter().all(|r| r.sectors == 0x8000));
             let store = layout.store.as_ref().unwrap();
             assert_eq!(store.end_sector, layout.total_sectors);
-            assert_eq!(store.header_b(), store.end_sector - 3);
+            assert_eq!(
+                store.header_b(),
+                store.end_sector - 35,
+                "header B, 32 settings sectors, 2 selection sectors"
+            );
+            assert_eq!(store.settings_a(), store.end_sector - 34);
             assert!(
                 store.first_sector > 0x457fff,
                 "the store lies above the MmcFs write guard"
@@ -839,13 +844,13 @@ mod tests {
             error.contains("[card]") && error.contains("overlaps"),
             "{error}"
         );
-        // the store runs past the card, or header B is not the sector before the selection record
+        // the store runs past the card, or header B is not the sector before the settings record
         let bad = DT2.replace(
             "end_sector = 0x2e1a000\nselection",
             "end_sector = 0x2e1b000\nselection",
         );
         assert!(Registry::parse(&[("dt2", &bad)]).is_err());
-        let bad = DT2.replace("header_b_sector = 0x2e19ffd", "header_b_sector = 0x2e19ff0");
+        let bad = DT2.replace("header_b_sector = 0x2e19fdd", "header_b_sector = 0x2e19ff0");
         assert!(Registry::parse(&[("dt2", &bad)]).is_err());
         let bad = DT2.replace("bitmap_bytes = 16", "bitmap_bytes = 8");
         assert!(Registry::parse(&[("dt2", &bad)]).is_err());

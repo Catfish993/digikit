@@ -59,7 +59,8 @@ FRAMEWORK = frozenset(
 # call it. A module of tools/device that is not listed here fails tests/devtools/test_verify.py.
 DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "__init__": (),
-    "dkupload": ("upload", "menu", "debug", "crash", "card"),
+    "dkupload": ("upload", "menu", "debug", "crash", "card", "settings"),
+    "dksettings": ("settings",),
     "dkrun": ("menu",),
     "dkfit": (
         "menu",
@@ -171,6 +172,8 @@ RUNNER_KINDS: dict[str, tuple[str, ...]] = {
     "pk_digikit_rungc.py": ("rungc",),
     "pk_digikit_pages.py": ("pages",),
     "pk_digikit_fx.py": ("fx",),
+    "pk_digikit_fxsend.py": ("fxsend",),
+    "pk_digikit_settings.py": ("settings",),
 }
 
 

@@ -16,6 +16,7 @@ export const CMD = {
   READ: 0x16,
   VERIFY: 0x17,
   MKDIR: 0x18,
+  SETTINGS: 0x19,
   LOG: 0x20,
   PEEK: 0x21,
   LOGCFG: 0x22,
@@ -49,6 +50,11 @@ export const STATUS: [number, string, string][] = [
   [-63, 'E_PEEK', 'PEEK range not allowed, or length 0 or over 512'],
   [-64, 'E_CMD_RANGE', 'command range not reserved, taken, or empty'],
   [-65, 'E_DISABLED', 'a guarded command range is switched off (DIGIKIT > REMOTE)'],
+  [-66, 'E_SET_KEY', 'a settings key breaks the rules (1 to 47 printable ASCII characters)'],
+  [-67, 'E_SET_FULL', 'the settings area is full'],
+  [-68, 'E_SET_NOKEY', 'no such settings key (or no settings record)'],
+  [-69, 'E_SET_VALUE', 'a settings value is too long, or the buffer is too small'],
+  [-70, 'E_SET_OFF', 'the settings store is off (an older store on the card reaches into its area, or the card has no store)'],
 ];
 
 /** [code, name, text] */
@@ -106,6 +112,7 @@ export const CAP = {
   VERIFY: 8,
   SERVICE_CMDS: 9,
   FOLDERS: 10,
+  SETTINGS: 11,
 } as const;
 
 /** The command numbers a module may register: [first, last]. */
@@ -130,6 +137,8 @@ export const CAPACITY_KINDS = {
   FX_SLOTS: 10,
   MAP_ENTRIES: 11,
   STORE: 12,
+  SETTINGS: 13,
+  SEND_SLOTS: 14,
 } as const;
 
 /** The `kind` of a LOG event. */
@@ -165,4 +174,6 @@ export const LOG_KIND = {
   TABLE_BAD: 29,
   MACHINE_TYPE_ASSIGNED: 30,
   MACHINE_TYPE_EVICTED: 31,
+  SETTINGS_LOAD: 32,
+  SETTINGS_WRITE: 33,
 } as const;

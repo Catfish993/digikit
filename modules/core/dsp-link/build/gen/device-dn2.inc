@@ -9,7 +9,7 @@
 // [card.store] end_sector - first_sector
 #define STORE_SECTORS 39952384
 // [card.store] header_b_sector - first_sector (store header copy B, relative to the store)
-#define STORE_HEADER_B 39952381
+#define STORE_HEADER_B 39952349
 // [card.store] end_sector - 2 (selection record copy A, absolute)
 #define STORE_SEL_A 48340990
 // [card.store] end_sector - 1 (selection record copy B, absolute)
@@ -138,6 +138,16 @@
 #define FX_TAIL_OFF 202
 // [fx] value_indices: number of indices
 #define FX_VALUES_N 24
+// [fx] track_page (the stock page the send page copies its title and level slot from; 0: no send page)
+#define FX_TRACK_PAGE 0
+// [fx] sound_off (the first Sound object in the kit object, bytes from the kit object)
+#define FX_SOUND_OFF 0
+// [fx] sound_stride (bytes between the 16 Sound objects)
+#define FX_SOUND_STRIDE 0
+// [fx] send_template (the stock send row whose owner and key words a send knob copies)
+#define FX_SEND_TEMPLATE 0
+// [limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one)
+#define LIMIT_SEND_SLOTS 0
 // [fx] value_indices (an effect value index that no stock parameter uses)
 #define FX_VALUE_0 70
 // [fx] value_indices (an effect value index that no stock parameter uses)
@@ -202,6 +212,10 @@
 #define FX_VALUE_30 0
 // [fx] value_indices (an effect value index that no stock parameter uses)
 #define FX_VALUE_31 0
+// [fx] send_indices (a Sound array index the send page's knob uses)
+#define FX_SEND_IDX_0 0
+// [fx] send_indices (a Sound array index the send page's knob uses)
+#define FX_SEND_IDX_1 0
 // [digikit] peek range start (RAM the PEEK command may read)
 #define PEEK_LO_0 1073741824
 // [digikit] peek range end (exclusive)

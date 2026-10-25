@@ -261,6 +261,13 @@ pub const CMD_HEALTH: u32 = 6;
 pub const CMD_CARD_PROBE: u32 = 7;
 /// Test hook: `arg[0]` = 1 or 0: `dkrt_debug_set` (the menu's DEBUG row); the answer is its result.
 pub const CMD_DEBUG: u32 = 8;
+/// Test hooks of the settings store (`settings.rs` of the runtime): `arg` = `u8 key_len`, the key, `u8 value_len`, the value (96 bytes in all). `CMD_SETTINGS_PUT` and
+/// `CMD_SETTINGS_REMOVE` answer their result; `CMD_SETTINGS_GET` answers the value's length (or a negative code) and leaves the value at the start of `arg`;
+/// `CMD_SETTINGS_FLUSH` writes the record now (the runtime writes it 2 s after the last change).
+pub const CMD_SETTINGS_PUT: u32 = 9;
+pub const CMD_SETTINGS_GET: u32 = 10;
+pub const CMD_SETTINGS_REMOVE: u32 = 11;
+pub const CMD_SETTINGS_FLUSH: u32 = 12;
 
 /// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
 /// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
@@ -463,6 +470,9 @@ pub struct Mailbox {
 
 /// The module and sample store, version 3 (docs/design/digikit-store.md).
 pub mod store;
+
+/// The settings record, two copies before the selection record (docs/design/digikit-store.md, "The settings record").
+pub mod settings;
 
 /// State of the card's store area as the runtime found it at boot (`DkrtDiag::card_state`; docs/findings/46-digikit-debug.md).
 pub const CARD_UNKNOWN: u32 = 0;
