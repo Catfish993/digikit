@@ -13,17 +13,20 @@
               "param": "bd_bend",
               "slot": 26
             },
-            null,
-            null,
             {
               "param": "bd_index",
-              "slot": 29
+              "slot": 27
             },
             null,
             {
               "param": "bd_ratio",
-              "slot": 31
+              "slot": 29
             },
+            {
+              "param": "bd_noise",
+              "slot": 30
+            },
+            null,
             {
               "slot": 32,
               "stock": 209
@@ -48,17 +51,20 @@
               "param": "bd_bend",
               "slot": 1
             },
-            null,
-            null,
             {
               "param": "bd_index",
-              "slot": 4
+              "slot": 2
             },
             null,
             {
               "param": "bd_ratio",
-              "slot": 6
+              "slot": 4
             },
+            {
+              "param": "bd_noise",
+              "slot": 5
+            },
+            null,
             {
               "slot": 7,
               "stock": 209
@@ -98,7 +104,7 @@
         "min": 0,
         "name": "FM Index",
         "short": "INDEX",
-        "slot": 29,
+        "slot": 27,
         "template": 209
       },
       {
@@ -108,7 +114,17 @@
         "min": 0,
         "name": "Ratio",
         "short": "RATIO",
-        "slot": 31,
+        "slot": 29,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "bd_noise",
+        "max": 32512,
+        "min": 0,
+        "name": "Noise",
+        "short": "NOISE",
+        "slot": 30,
         "template": 209
       }
     ],
@@ -130,7 +146,7 @@
         "min": 0,
         "name": "FM Index",
         "short": "INDEX",
-        "slot": 4,
+        "slot": 2,
         "template": 209
       },
       {
@@ -140,7 +156,17 @@
         "min": 0,
         "name": "Ratio",
         "short": "RATIO",
-        "slot": 6,
+        "slot": 4,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "bd_noise",
+        "max": 32512,
+        "min": 0,
+        "name": "Noise",
+        "short": "NOISE",
+        "slot": 5,
         "template": 209
       }
     ]

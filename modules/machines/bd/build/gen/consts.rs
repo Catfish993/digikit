@@ -9,8 +9,9 @@ pub mod dn2 {
     pub const BD_TYPE: u32 = 0xf; // permanent machine type number
     pub const BD_KNOB0_FRAME_OFF: u32 = 0x0;
     pub const BD_KNOB1_FRAME_OFF: u32 = 0x1;
+    pub const BD_KNOB2_FRAME_OFF: u32 = 0x2;
     pub const BD_KNOB4_FRAME_OFF: u32 = 0x4;
-    pub const BD_KNOB6_FRAME_OFF: u32 = 0x6;
+    pub const BD_KNOB5_FRAME_OFF: u32 = 0x5;
     pub const BD_KNOB7_FRAME_OFF: u32 = 0x7;
     pub const BD_BEND_KNOB: u32 = 0x1; // knob position
     pub const BD_BEND_SLOT: u32 = 0x1a; // engine or sound-array slot
@@ -19,20 +20,27 @@ pub mod dn2 {
     pub const BD_BEND_MIN: u32 = 0x0;
     pub const BD_BEND_MAX: u32 = 0x7f00;
     pub const BD_BEND_DEFAULT: u32 = 0x4000;
-    pub const BD_INDEX_KNOB: u32 = 0x4; // knob position
-    pub const BD_INDEX_SLOT: u32 = 0x1d; // engine or sound-array slot
-    pub const BD_INDEX_FRAME_OFF: u32 = 0x4; // halfwords from knob 0 of the same track
-    pub const BD_INDEX_MIRROR: u32 = 0x1d; // index in the parameter table
+    pub const BD_INDEX_KNOB: u32 = 0x2; // knob position
+    pub const BD_INDEX_SLOT: u32 = 0x1b; // engine or sound-array slot
+    pub const BD_INDEX_FRAME_OFF: u32 = 0x2; // halfwords from knob 0 of the same track
+    pub const BD_INDEX_MIRROR: u32 = 0x1b; // index in the parameter table
     pub const BD_INDEX_MIN: u32 = 0x0;
     pub const BD_INDEX_MAX: u32 = 0x7f00;
     pub const BD_INDEX_DEFAULT: u32 = 0x2000;
-    pub const BD_RATIO_KNOB: u32 = 0x6; // knob position
-    pub const BD_RATIO_SLOT: u32 = 0x1f; // engine or sound-array slot
-    pub const BD_RATIO_FRAME_OFF: u32 = 0x6; // halfwords from knob 0 of the same track
-    pub const BD_RATIO_MIRROR: u32 = 0x1f; // index in the parameter table
+    pub const BD_RATIO_KNOB: u32 = 0x4; // knob position
+    pub const BD_RATIO_SLOT: u32 = 0x1d; // engine or sound-array slot
+    pub const BD_RATIO_FRAME_OFF: u32 = 0x4; // halfwords from knob 0 of the same track
+    pub const BD_RATIO_MIRROR: u32 = 0x1d; // index in the parameter table
     pub const BD_RATIO_MIN: u32 = 0x0;
     pub const BD_RATIO_MAX: u32 = 0x7f00;
     pub const BD_RATIO_DEFAULT: u32 = 0x0;
+    pub const BD_NOISE_KNOB: u32 = 0x5; // knob position
+    pub const BD_NOISE_SLOT: u32 = 0x1e; // engine or sound-array slot
+    pub const BD_NOISE_FRAME_OFF: u32 = 0x5; // halfwords from knob 0 of the same track
+    pub const BD_NOISE_MIRROR: u32 = 0x1e; // index in the parameter table
+    pub const BD_NOISE_MIN: u32 = 0x0;
+    pub const BD_NOISE_MAX: u32 = 0x7f00;
+    pub const BD_NOISE_DEFAULT: u32 = 0x0;
 
     /// Halfword index in the DSP's frame copy of the word at `offset` of `track` (voice).
     pub const fn frame_halfword(track: u32, offset: u32) -> u32 {
@@ -48,8 +56,9 @@ pub mod dt2 {
     pub const BD_TYPE: u32 = 0xf; // permanent machine type number
     pub const BD_KNOB0_FRAME_OFF: u32 = 0x0;
     pub const BD_KNOB1_FRAME_OFF: u32 = 0x1;
+    pub const BD_KNOB2_FRAME_OFF: u32 = 0x2;
     pub const BD_KNOB4_FRAME_OFF: u32 = 0x6;
-    pub const BD_KNOB6_FRAME_OFF: u32 = 0x8;
+    pub const BD_KNOB5_FRAME_OFF: u32 = 0x7;
     pub const BD_KNOB7_FRAME_OFF: u32 = 0x9;
     pub const BD_BEND_KNOB: u32 = 0x1; // knob position
     pub const BD_BEND_SLOT: u32 = 0x1; // engine or sound-array slot
@@ -58,20 +67,27 @@ pub mod dt2 {
     pub const BD_BEND_MIN: u32 = 0x0;
     pub const BD_BEND_MAX: u32 = 0x7f00;
     pub const BD_BEND_DEFAULT: u32 = 0x4000;
-    pub const BD_INDEX_KNOB: u32 = 0x4; // knob position
-    pub const BD_INDEX_SLOT: u32 = 0x4; // engine or sound-array slot
-    pub const BD_INDEX_FRAME_OFF: u32 = 0x6; // halfwords from knob 0 of the same track
-    pub const BD_INDEX_MIRROR: u32 = 0x1f; // index in the parameter table
+    pub const BD_INDEX_KNOB: u32 = 0x2; // knob position
+    pub const BD_INDEX_SLOT: u32 = 0x2; // engine or sound-array slot
+    pub const BD_INDEX_FRAME_OFF: u32 = 0x2; // halfwords from knob 0 of the same track
+    pub const BD_INDEX_MIRROR: u32 = 0x1b; // index in the parameter table
     pub const BD_INDEX_MIN: u32 = 0x0;
     pub const BD_INDEX_MAX: u32 = 0x7f00;
     pub const BD_INDEX_DEFAULT: u32 = 0x2000;
-    pub const BD_RATIO_KNOB: u32 = 0x6; // knob position
-    pub const BD_RATIO_SLOT: u32 = 0x6; // engine or sound-array slot
-    pub const BD_RATIO_FRAME_OFF: u32 = 0x8; // halfwords from knob 0 of the same track
-    pub const BD_RATIO_MIRROR: u32 = 0x21; // index in the parameter table
+    pub const BD_RATIO_KNOB: u32 = 0x4; // knob position
+    pub const BD_RATIO_SLOT: u32 = 0x4; // engine or sound-array slot
+    pub const BD_RATIO_FRAME_OFF: u32 = 0x6; // halfwords from knob 0 of the same track
+    pub const BD_RATIO_MIRROR: u32 = 0x1f; // index in the parameter table
     pub const BD_RATIO_MIN: u32 = 0x0;
     pub const BD_RATIO_MAX: u32 = 0x7f00;
     pub const BD_RATIO_DEFAULT: u32 = 0x0;
+    pub const BD_NOISE_KNOB: u32 = 0x5; // knob position
+    pub const BD_NOISE_SLOT: u32 = 0x5; // engine or sound-array slot
+    pub const BD_NOISE_FRAME_OFF: u32 = 0x7; // halfwords from knob 0 of the same track
+    pub const BD_NOISE_MIRROR: u32 = 0x20; // index in the parameter table
+    pub const BD_NOISE_MIN: u32 = 0x0;
+    pub const BD_NOISE_MAX: u32 = 0x7f00;
+    pub const BD_NOISE_DEFAULT: u32 = 0x0;
 
     /// Halfword index in the DSP's frame copy of the word at `offset` of `track` (voice).
     pub const fn frame_halfword(track: u32, offset: u32) -> u32 {

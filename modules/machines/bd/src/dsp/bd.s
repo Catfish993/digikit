@@ -6,9 +6,10 @@
 //  envelope, so the whole thing punches downward while the clang rings out. A sample cannot do that; this is the
 //  instrument people mean when they ask for an FM kick.
 //
-//    carrier   f(t) = f0 * (1 + 2.5 * BEND * env^2)       env falls over 40 blocks, about 58 ms
-//    modulator f(t) = carrier * (0.25 + 3.75 * RATIO)     1:1 smooth, 1:2 bright, non-integer ratios metallic
-//    index     I(t) = 8 * INDEX * (1 - n/20)^2            modulation depth, gone in about 29 ms
+//    carrier   f(t) = f0 * (1 + 2.5 * BEND * env^2)       env = 1 - n/40: falls over 40 blocks, about 27 ms
+//    modulator f(t) = carrier * (0.25 + 3.75 * RATIO)     1:1 smooth (RATIO 0.2), 1:2 bright, non-integer ratios metallic
+//    index     I(t) = 3 * INDEX * (1 - n/112)^2           modulation depth in cycles, gone after 112 blocks (about 75 ms)
+//    noise     white noise * NOISE * (1 - n/60)           gone after 60 blocks (40 ms)
 //    out       sin(2 pi (carrier phase + I * sin(2 pi modulator phase)))
 //
 //  The amplitude decay is the track's AMP envelope, so the machine only has to sound right for the first 50 ms.
@@ -18,7 +19,7 @@
 //
 //  Register map (F and R are one file):
 //    F13 carrier phase   F15 modulator phase   F12 carrier inc   F14 modulator inc
-//    F7 base inc   F10 ratio   F9 level   F6 BEND   F5 INDEX   F11 1.0   F4 0.5   F8 0.25
+//    F7 base inc   F10 ratio (4.0 in the loop) F9 level   F6 BEND   F5 INDEX   F11 1.0   F4 0.5   F8 0.25
 //    per-sample scratch: F0 F1 F2 F3
 // =====================================================================
 #include "dk_machine.inc"
@@ -91,19 +92,17 @@ _bd_render:
     NOP;
     F2 = F2 * F2;                         // squared: quickest at the strike
     F1 = F2 * F6;                         // BEND * env
+    R3 = 0x40200000;                      // 2.5
     NOP;
-    F1 = F1 + F1;                         // x2
-    F3 = F1 * F4;                         // x0.5
-    NOP;
-    F1 = F1 + F3;                         // x2.5
+    F1 = F1 * F3;                         // 2.5 BEND env
     F1 = F1 + F11;                        // 1 + 2.5 BEND env
     NOP;
     F12 = F7 * F1;                        // carrier increment
     F14 = F12 * F10;                      // modulator increment, by ratio
 
-    // index: I = 8 INDEX (1 - n/20)^2
-    R1 = 0x3c124925;                      // 0.0089 = 1/112: the index lasts 112 blocks, about 160 ms. At 1/20 it was
-    NOP;                                  // gone in 29 ms, so every sideband sat inside the transient and the body the
+    // index: I = 3 INDEX (1 - n/112)^2
+    R1 = 0x3c124925;                      // 0.0089 = 1/112: the index lasts 112 blocks, about 75 ms. At 1/20 it was
+    NOP;                                  // gone in 13 ms, so every sideband sat inside the transient and the body the
     F2 = F0 * F1;                         // ear hears afterwards was an unmodulated sine -- heard as 'a click'
     R1 = 0x3f800000;                      // 1.0
     NOP;
@@ -114,14 +113,14 @@ _bd_render:
     NOP;
     F2 = F2 * F2;
     F2 = F2 * F5;                         // x INDEX
-    R1 = 0x40400000;                      // 3.0: two cycles of excursion, which is real FM. Now that the phase is
-    NOP;                                  // wrapped before the sine, the polynomial is valid there; before the wrap
-    F2 = F2 * F1;                         // this had to be half a cycle and the modulation was barely audible
+    R1 = 0x40400000;                      // 3.0: up to three cycles of excursion, which is real FM. The phase is
+    NOP;                                  // wrapped before the sine (any value in -3 .. 4 is reduced to 0 .. 1), so
+    F2 = F2 * F1;                         // the polynomial is always inside its range
     R1 = F2;
     DM(3, I3) = R1;                       // the index for this block
 
-    // noise envelope: (1 - n/60), about 87 ms, so NOISE turns the drum into a snare or a hat
-    R1 = 0x3d088889;                      // 1/60
+    // noise envelope: (1 - n/60), 40 ms, so NOISE turns the drum into a snare or a hat
+    R1 = 0x3c888889;                      // 1/60
     NOP;
     F2 = F0 * F1;
     R1 = 0x3f800000;                      // 1.0
@@ -146,6 +145,7 @@ _bd_render:
     R15 = DM(2, I3);                      // modulator phase
     R4 = 0x3f000000;                      // 0.5
     R8 = 0x3e800000;                      // 0.25
+    R10 = 0x40800000;                     // 4.0: whole cycles added before the floor of the modulated phase
     LCNTR = DK_BLOCK, DO _bd_last UNTIL LCE;
 
     // ---- modulator: sin(2 pi modulator phase) ----
@@ -186,15 +186,13 @@ _bd_render:
     NOP;
     F0 = F0 + F13;                        // the modulated phase
     NOP;
-    // wrap it into [0, 1) before the sine. The excursion is at most about a cycle either way, so a couple of
-    // conditional subtractions are enough -- and without this the polynomial reads *outside* its range and what comes
-    // out is a folded wave, which is why INDEX only brightened and RATIO only clicked: no real sidebands at all
-    F1 = F0 - F11;                        // -1
-    IF GE F0 = PASS F1;
-    F1 = F0 - F11;
-    IF GE F0 = PASS F1;
-    F1 = F0 + F11;                        // +1
-    IF LT F0 = PASS F1;
+    // wrap it into [0, 1) before the sine, or the polynomial reads outside its range and gives a folded wave. The
+    // phase is F13 (0 .. 1) + I m (|I m| < 3), so it lies in (-3, 4). Add 4.0 to make it positive, then take the
+    // fraction with TRUNC (truncation is the floor for a positive value). The 4.0 is a whole number of cycles.
+    F0 = F0 + F10;                        // + 4.0: now in (1, 8)
+    R1 = TRUNC F0;                        // floor
+    F1 = FLOAT R1;
+    F0 = F0 - F1;                         // fraction, 0 <= F0 < 1
     NOP;
     F0 = F0 - F4;
     NOP;
@@ -224,7 +222,7 @@ _bd_render:
     R1 = LSHIFT R0 BY 13;
     R0 = R0 XOR R1;
     R1 = -17;
-    R1 = ASHIFT R0 BY R1;
+    R1 = LSHIFT R0 BY R1;
     R0 = R0 XOR R1;
     R1 = LSHIFT R0 BY 5;
     R0 = R0 XOR R1;
@@ -263,8 +261,9 @@ _bd_render:
     F0 = F13 - F11;
     IF GE F13 = PASS F0;
     F15 = F15 + F14;
-    F0 = F15 - F11;
-    IF GE F15 = PASS F0;
+    R1 = TRUNC F15;                       // F15 >= 0, so this is the floor; F14 can exceed 1
+    F1 = FLOAT R1;
+    F15 = F15 - F1;                       // 0 <= F15 < 1
 _bd_last: MODIFY(I0, 4);
 
     DM(0, I3) = R13;
@@ -283,9 +282,9 @@ _bd_note_on:
 .GLOBAL _bd_desc;
 .VAR _bd_desc = DK_MAGIC;
 .VAR _bd_desc1 = DK_MACHINE_V1;
-.VAR _bd_desc2 = 3;
+.VAR _bd_desc2 = 4;                       // n_params: BEND, INDEX, RATIO, NOISE
 .VAR _bd_desc3 = DK_MAX_VOICES;
-.VAR _bd_desc4 = 32;                      // carrier phase, counter, modulator phase, index, modulator value
+.VAR _bd_desc4 = 32;                      // 8 words: carrier phase, counter, mod phase, index, mod value, noise state, noise env, noise level
 .VAR _bd_desc5 = 12;                      // phase, counter, modulator phase zeroed at note-on
 .VAR _bd_desc6 = 1200;
 .VAR _bd_desc7 = 200;
