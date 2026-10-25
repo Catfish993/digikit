@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { BUTTONS, button, encoder, golden, validateRuntimeInputs } from '../src/index.ts';
 
 test('key names follow the Python harness table', () => {

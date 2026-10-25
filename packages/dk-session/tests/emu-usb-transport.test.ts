@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { EmuUsbTransport, EMU_RPC_CHUNK, type EmuRpcCall } from '../src/index.ts';
 
 function adapter(replies: { hex?: string }[] = []) {

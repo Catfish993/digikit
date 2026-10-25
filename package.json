@@ -14,12 +14,14 @@
     "fmt": "prettier --write .",
     "fmt:check": "prettier --check .",
     "test": "pnpm --filter @digi/web test:audio",
-    "test:regression": "pnpm --filter @digi/regression test"
+    "test:regression": "pnpm --filter @digi/regression test",
+    "test:host": "vitest run --config vitest.host.config.ts"
   },
   "devDependencies": {
     "eslint-plugin-solid": "0.18.1",
     "oxlint": "1.87.0",
     "prettier": "3.9.9",
-    "prettier-plugin-astro": "1.1.1"
+    "prettier-plugin-astro": "1.1.1",
+    "vitest": "3.2.4"
   }
 }

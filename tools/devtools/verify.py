@@ -341,6 +341,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "packages/dk-session/",
             "packages/test-support/",
             "tests/regression/",
+            "vitest.host.config.ts",
         ),
         ("web",),
     ),
@@ -1010,13 +1011,11 @@ def web_check(gate: Gate) -> None:
         cwd=web,
     )
     gate.run("web-types", ["pnpm", "--filter", "@digi/web", "check"])
-    gate.run("dk-session-tests", ["pnpm", "--filter", "@digi/dk-session", "test"])
+    gate.run("host-tests", ["pnpm", "test:host", "--maxWorkers", str(gate.share())])
     gate.run("dk-session-types", ["pnpm", "--filter", "@digi/dk-session", "typecheck"])
-    gate.run("test-support-tests", ["pnpm", "--filter", "@digi/test-support", "test"])
     gate.run(
         "test-support-types", ["pnpm", "--filter", "@digi/test-support", "typecheck"]
     )
-    gate.run("regression-host", ["pnpm", "--filter", "@digi/regression", "test:host"])
     gate.run("regression-types", ["pnpm", "--filter", "@digi/regression", "typecheck"])
 
 

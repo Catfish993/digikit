@@ -734,7 +734,11 @@ def test_dk_session_routes_to_host_with_conservative_smoke(
     assert verify.steps_for([path]) == ("web", "smoke")
 
 
-def test_web_check_runs_dk_session_owner_checks(
+def test_root_host_config_routes_to_web_with_conservative_smoke() -> None:
+    assert verify.steps_for(["vitest.host.config.ts"]) == ("web", "smoke")
+
+
+def test_web_check_runs_consolidated_host_and_owner_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: dict[str, list[str]] = {}
@@ -743,28 +747,25 @@ def test_web_check_runs_dk_session_owner_checks(
         "run",
         lambda self, name, cmd, **kwargs: calls.update({name: cmd}),
     )
-    monkeypatch.setattr(verify.Gate, "share", lambda self: 1)
+    monkeypatch.setattr(verify.Gate, "share", lambda self: 3)
     verify.web_check(object.__new__(verify.Gate))
     assert calls["web-types"] == ["pnpm", "--filter", "@digi/web", "check"]
-    assert calls["regression-host"] == [
-        "pnpm",
-        "--filter",
-        "@digi/regression",
-        "test:host",
-    ]
+    assert calls["host-tests"] == ["pnpm", "test:host", "--maxWorkers", "3"]
+    assert (
+        not {"dk-session-tests", "test-support-tests", "regression-host"} & calls.keys()
+    )
     assert calls["regression-types"] == [
         "pnpm",
         "--filter",
         "@digi/regression",
         "typecheck",
     ]
-    assert calls["test-support-tests"] == [
+    assert calls["test-support-types"] == [
         "pnpm",
         "--filter",
         "@digi/test-support",
-        "test",
+        "typecheck",
     ]
-    assert calls["dk-session-tests"] == ["pnpm", "--filter", "@digi/dk-session", "test"]
     assert calls["dk-session-types"] == [
         "pnpm",
         "--filter",

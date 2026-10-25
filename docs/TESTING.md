@@ -146,8 +146,12 @@ installs digikit/remote and checks ABOUT text and encoder-driven OLED changes on
 It runs with `--full` or explicit `--only runtime-fixture`, preserving the migrated remote-keys scenario’s
 original full tier. Normal verification, including broad routing/core/unknown changes, excludes this step;
 runtime cases and helpers retain cheap host checks in `web`, and module/tool routes retain their existing
-Python/Rust and smoke selections. See [regression fixture details](../tests/regression/README.md). Host-only:
-`pnpm --filter @digi/regression test:host`; `pnpm --filter @digi/regression typecheck` explicitly generates
+Python/Rust and smoke selections. See [regression fixture details](../tests/regression/README.md).
+Host-only: `pnpm test:host` runs the root `vitest.host.config.ts` projects `control-client`,
+`test-support`, `dk-session` and `regression-host`, with explicit host-only includes and one worker by
+default (override with `--maxWorkers N`). The `web` step runs this command once with its budget share;
+package-local test commands select their named project from the same config. These checks require no
+firmware, native builds or daemons. `pnpm --filter @digi/regression typecheck` explicitly generates
 shared-session declarations first. Device-only, after binary freshness and ready-input provenance review:
 
 ```sh

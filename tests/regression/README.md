@@ -39,8 +39,14 @@ There is no audio, so nothing here checks sound, DSP faults or audio-dependent U
 
 ## Patched runtime fixture
 
-`pnpm --filter @digi/regression test:host` runs the mocked startup, cleanup and USB wiring checks without
-firmware, native builds or daemons. These checks and package/type checks run in the existing `web` step.
+`pnpm test:host` at the repository root runs four named projects from `vitest.host.config.ts`:
+`control-client`, `test-support`, `dk-session` and `regression-host`. The package-local
+`pnpm --filter @digi/regression test:host` selects only `regression-host`, covering mocked startup,
+cleanup and USB wiring without firmware, native builds or daemons. Package-local `test` scripts for
+the other three packages likewise select their own project. The root config uses explicit host-only
+includes and defaults to one worker; `--maxWorkers N` overrides it. Optional JUnit output uses Vitest's
+native CLI, for example `pnpm test:host --reporter=default --reporter=junit --outputFile=out/host-junit.xml`.
+The existing `web` step runs all four host projects once with its worker budget, alongside type checks.
 Consumer typecheck/check scripts explicitly generate `@digi/dk-session` declarations first; its runtime
 export still resolves to the existing TypeScript source. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
 
