@@ -13,7 +13,7 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.devtools import verify, verify_pre, verify_route  # noqa: E402
+from tools.devtools import changed_tests, verify, verify_pre, verify_route  # noqa: E402
 from tools.patchkit import modroots  # noqa: E402
 
 
@@ -111,7 +111,6 @@ def test_representative_module_runtime_and_core_routes_stay_conservative() -> No
         "smoke",
     )
     assert verify.steps_for(["modules/core/runtime/src/rs/src/upload.rs"]) == (
-        "runtime-fixture",
         "python-tests",
         "rust-tests",
         "smoke",
@@ -428,7 +427,7 @@ def test_mise_new_task_routes_like_its_tool() -> None:
         ["tools/device/dkrun.py"],
         {"tools/device/dkrun.py": "mise.toml task dk:run"},
     )
-    assert verify.steps_for(got[0]) == ("runtime-fixture", "python-tests", "smoke")
+    assert verify.steps_for(got[0]) == ("python-tests", "smoke")
     # only the description or the alias changed: the same tool
     again = task.replace('description = "x"', 'description = "y"')
     assert verify_route.mise_paths(old + task, old + again) == got
@@ -714,7 +713,7 @@ def test_dependents_follow_requires_and_shared_sources() -> None:
 
 def test_unknown_module_path_stays_broad() -> None:
     steps = verify.steps_for(["modules/no/such/module.toml"])
-    assert {"python-tests", "rust-tests", "web", "runtime-fixture"} <= set(steps)
+    assert {"python-tests", "rust-tests", "web"} <= set(steps)
     assert {"tests/patchkit", "tests/digikit"} <= selected(
         "modules/no/such/module.toml"
     )
@@ -729,10 +728,10 @@ def test_unknown_module_path_stays_broad() -> None:
         "packages/dk-session/package.json",
     ],
 )
-def test_dk_session_routes_to_host_and_runtime_with_conservative_smoke(
+def test_dk_session_routes_to_host_with_conservative_smoke(
     path: str,
 ) -> None:
-    assert verify.steps_for([path]) == ("web", "runtime-fixture", "smoke")
+    assert verify.steps_for([path]) == ("web", "smoke")
 
 
 def test_web_check_runs_dk_session_owner_checks(
@@ -820,7 +819,7 @@ def test_gate_files_always_run() -> None:
 
 def test_runtime4_merge_runs_no_pcm_step() -> None:
     """The range 457f515b..29086ff7 (one mise.toml task, device tools, runtime objects) ran all 13
-    steps; its files now select web, runtime acceptance, Rust and Python tests, without PCM steps."""
+    steps; its files now select web, Rust and Python tests, without PCM steps."""
     files = [
         "modules/core/digikit-menu/build/digikit-menu-rs.dko.json",
         "modules/core/runtime/build/runtime.dko.json",
@@ -834,7 +833,6 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
     ]
     assert verify.steps_for(files) == (
         "web",
-        "runtime-fixture",
         "python-tests",
         "rust-tests",
         "smoke",
@@ -961,14 +959,16 @@ def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
         "tests/regression/runtime/dn2.test.ts",
     ],
 )
-def test_runtime_fixture_sources_select_acceptance(path: str) -> None:
-    assert verify.steps_for([path]) == ("web", "runtime-fixture", "smoke")
+def test_runtime_fixture_sources_select_host_checks(path: str) -> None:
+    assert verify.steps_for([path]) == ("web", "smoke")
 
 
 @pytest.mark.parametrize("mid", ["digikit/remote", *sorted(verify_route.FRAMEWORK)])
-def test_runtime_fixture_retains_migrated_remote_module_selection(mid: str) -> None:
+def test_runtime_fixture_module_sources_keep_host_checks(mid: str) -> None:
     path = (modroots.module_dir(mid) / "module.toml").relative_to(ROOT).as_posix()
-    assert "runtime-fixture" in verify.steps_for([path])
+    steps = verify.steps_for([path])
+    assert "runtime-fixture" not in steps
+    assert "python-tests" in steps
 
 
 @pytest.mark.parametrize(
@@ -979,8 +979,8 @@ def test_runtime_fixture_retains_migrated_remote_module_selection(mid: str) -> N
         "dkupload",
     ],
 )
-def test_runtime_fixture_follows_previous_live_tool_selection(stem: str) -> None:
-    assert "runtime-fixture" in verify.steps_for([f"tools/device/{stem}.py"])
+def test_runtime_fixture_live_tools_keep_host_checks(stem: str) -> None:
+    assert verify.steps_for([f"tools/device/{stem}.py"]) == ("python-tests", "smoke")
 
 
 @pytest.mark.parametrize(
@@ -992,14 +992,75 @@ def test_runtime_fixture_follows_previous_live_tool_selection(stem: str) -> None
         "packages/emulator/control/src/runtime_patch.rs",
     ],
 )
-def test_runtime_fixture_follows_patch_tool_and_loaded_image_sources(path: str) -> None:
-    assert "runtime-fixture" in verify.steps_for([path])
+def test_runtime_fixture_patch_and_loaded_image_sources_keep_host_checks(
+    path: str,
+) -> None:
+    steps = verify.steps_for([path])
+    assert "runtime-fixture" not in steps
+    assert "python-tests" in steps
 
 
 def test_runtime_fixture_does_not_follow_an_unrelated_leaf() -> None:
     assert "runtime-fixture" not in verify.steps_for(
         ["modules/fx/master-gain/src/cf/gain.s"]
     )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tools/devtools/verify.py",
+        "tools/devtools/verify_route.py",
+        "tools/sharc_dev/sharc_core/state.py",
+        "packages/emulator/sharc-gen/src/lib.rs",
+        "mise.toml",
+        "modules/no/such/module.toml",
+        "tools/device/unknown.py",
+        "unknown.file",
+    ],
+)
+def test_normal_broad_and_fallback_routes_exclude_runtime_fixture(
+    path: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert "runtime-fixture" not in verify.EVERYTHING
+    assert "runtime-fixture" not in verify.route(path)[1]
+    assert "runtime-fixture" not in verify.steps_for([path])
+    monkeypatch.setattr(verify, "changed_files", lambda *_: [path])
+    # Keep mise.toml as the conservative broad route, without reading git history.
+    monkeypatch.setattr(verify, "expand_mise", lambda files, *_: (files, {}))
+    assert verify.main(["--explain"]) == 0
+    assert "runtime-fixture" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tools/devtools/verify.py",
+        "tools/sharc_dev/sharc_core/state.py",
+        "tests/regression/runtime/dt2.test.ts",
+        "tools/device/dkupload.py",
+    ],
+)
+def test_changed_tests_gate_adds_exclude_runtime_fixture(path: str) -> None:
+    sel = changed_tests.select([path])
+    assert not any("runtime-fixture" in line for line in sel.gate_adds)
+
+
+@pytest.mark.parametrize("flags", [["--only", "runtime-fixture"], ["--full"]])
+def test_runtime_fixture_full_or_explicit_planning(
+    flags: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("DIGIKIT_TIER", "quick")
+    assert "runtime-fixture" in verify.STEPS
+    assert verify.main(["--explain", *flags]) == 0
+    out = capsys.readouterr().out
+    steps = next(line for line in out.splitlines() if line.startswith("steps: "))
+    assert "runtime-fixture" in steps
+    if "--only" in flags:
+        assert steps == "steps: runtime-fixture"
+        assert "build-daemons" not in out
 
 
 def test_runtime_fixture_explicit_plan_never_builds_but_waits_for_existing_build() -> (

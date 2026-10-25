@@ -44,11 +44,11 @@ firmware, native builds or daemons. These checks and package/type checks run in 
 Consumer typecheck/check scripts explicitly generate `@digi/dk-session` declarations first; its runtime
 export still resolves to the existing TypeScript source. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
 
-The `runtime-fixture` gate step runs only the two runtime boot acceptance cases, sequentially, with one
+The `runtime-fixture` gate step runs the two migrated remote-keys acceptance cases, sequentially, with one
 fresh coupled daemon per device. It requests `firmware.load {runtime:true, start:"auto"}` and the existing
 `emulator` patch set/cache, then selects free mode. It checks reported patch identity, ready/free status
-and health; host tests cover the `DkSession`/`EmuUsbTransport` wiring and pending-request cancellation.
-It does not install modules or assert remote-control behavior. Stock restart and instruction-step waits
+and health, then installs digikit/remote and checks ABOUT text and the encoder-driven OLED change.
+Host tests cover the `DkSession`/`EmuUsbTransport` wiring and pending-request cancellation. Stock restart and instruction-step waits
 are rejected for runtime sessions. Cleanup cancels protocol requests and closes the owned daemon; an
 unresponsive quit has a ten-second child termination deadline. Runtime startup expires after 120 seconds,
 actively aborting socket/handshake setup and awaiting owned-daemon cleanup before the 150-second hook
@@ -69,8 +69,8 @@ DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_EMUD_DN2=/path/to/dn2-emud \
 
 The step shares the gate CPU budget (one coupled daemon, two cores; use a budget of at least two).
 Selecting it alone adds no build prerequisite. When another selected step already requires
-`build-daemons`, it waits for that build and uses its published per-device binary paths. Changes to the runtime
-cases/configuration, shared regression fixture, session lifecycle, input provenance or daemon shutdown
-select acceptance as well as host checks; ordinary host test edits select host checks only. Broader gate
-selection retains its existing conservative smoke rules. Module installation, scenario migration,
-reuse/reset and snapshots remain later work.
+`build-daemons`, it waits for that build and uses its published per-device binary paths. The step runs
+with `--full` or explicit `--only runtime-fixture`, preserving the migrated scenario’s original full tier.
+Normal verification selects host checks for runtime cases and helpers, with existing Python/Rust and
+conservative smoke routes for modules and tools; even broad changes exclude this device acceptance step.
+Further scenario migration, reuse/reset and snapshots remain later work.

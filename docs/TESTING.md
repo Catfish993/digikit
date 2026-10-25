@@ -130,21 +130,23 @@ smoke is skipped and `--explain` prints `smoke: skipped, UI-only change`. It is 
 
 | Changed | Steps | Python test files |
 | --- | --- | --- |
-| `mise.toml` | A changed task routes like the tool its `run` names (`-m tools.x.y`, a script, a pytest path, `pnpm`). Broad (every step): a change outside `[tasks]`, a `verify`, `build`, `gen` or `setup` task, a task key other than run/depends/description/alias, a `run` that names no repo file (`dev:plusdrive`). | those of the tool |
+| `mise.toml` | A changed task routes like the tool its `run` names (`-m tools.x.y`, a script, a pytest path, `pnpm`). Broad (every normal step): a change outside `[tasks]`, a `verify`, `build`, `gen` or `setup` task, a task key other than run/depends/description/alias, a `run` that names no repo file (`dev:plusdrive`). | those of the tool |
 | a module of `tools/device` | `python-tests` | the tests that import it (directly or through another `tools/device` module) and the digikit tests of the scenario kinds whose runners call it (`DEVICE_KINDS`) |
 | a file of a module under `modules/` | `python-tests`, `rust-tests` (affected crates), `web` only for what the gallery bundle reads (not `src/`, `sdk/`, `tests/`, `*.md`). Never a PCM step. | Framework modules (`FRAMEWORK`: runtime, dsp-voice, dsp-link, machines, params, dynreg, dyndsp, digikit-menu, health, expansion): all of `tests/patchkit` and `tests/digikit`. Other modules: the test files that name the module or a module that requires it or builds from its sources, and the digikit test files of the scenarios that name it (TOML or runner code) |
 | a scenario file of `tests/digikit/scenarios` | `python-tests` | the test files that run its kind, and `test_scenarios.py` |
 | `tests/digikit/test_*.py`, `tests/patchkit/test_*.py` | `python-tests` | the file itself |
 | another `.py` file of `tools/` or `tests/` | by its prefix (RULES) | the tests that reach it in the import graph (`changed_tests.gate_tests`: imports through any chain, a helper imported by its pytest path, a module started by name with `-m` or a script path; imports inside a function of a tools module do not count), and the PY_SUITES that list files. A suite with a test directory (`tests/patchkit`, `tests/digikit`, `tests/modules`, `tests/control`) triggers only on other files (Rust, ports, module folders) and on a module the root conftest reaches |
 | `packages/dkupload/` | `rust-tests`, `web` | |
-| `tools/devtools/verify.py`, `verify_route.py` | every step | every suite |
+| `tools/devtools/verify.py`, `verify_route.py` | every normal step | every suite |
 | generated-core inputs, emulator crates, `sharc_dev` | as before (broad) | as before |
 
 
-The targeted `runtime-fixture` step checks patched runtime boot/load identity, ready/free status and health
-on DT2 1.17 and DN2 1.12. Changes to its cases/configuration/shared fixture, Session/input provenance or
-control-client lifecycle select it alongside cheap host checks in `web`; ordinary host-test changes do not
-select device acceptance. See [regression fixture details](../tests/regression/README.md). Host-only:
+The `runtime-fixture` step checks patched runtime boot/load identity, ready/free status and health, then
+installs digikit/remote and checks ABOUT text and encoder-driven OLED changes on DT2 1.17 and DN2 1.12.
+It runs with `--full` or explicit `--only runtime-fixture`, preserving the migrated remote-keys scenario’s
+original full tier. Normal verification, including broad routing/core/unknown changes, excludes this step;
+runtime cases and helpers retain cheap host checks in `web`, and module/tool routes retain their existing
+Python/Rust and smoke selections. See [regression fixture details](../tests/regression/README.md). Host-only:
 `pnpm --filter @digi/regression test:host`; `pnpm --filter @digi/regression typecheck` explicitly generates
 shared-session declarations first. Device-only, after binary freshness and ready-input provenance review:
 

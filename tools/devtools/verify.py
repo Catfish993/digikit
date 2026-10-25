@@ -284,9 +284,12 @@ CHECK_NO_AOT_K = (
     " or test_delay_default_feedback_minus_6_db or test_srr_rate_falls or test_chorus_rate_rises_with_speed"
     " or test_reverb_rt60_rises_with_decay"
 )
-EVERYTHING = tuple(s for s in STEPS if s not in ("tier-sweep", "dt2-tier-sweep"))
+# Normal broad verification excludes full-tier or explicitly requested steps.
+EVERYTHING = tuple(
+    s for s in STEPS if s not in ("runtime-fixture", "tier-sweep", "dt2-tier-sweep")
+)
 FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
-# A change to the routing itself selects every step and the whole python plan: a routing bug
+# A change to the routing itself selects every normal step and the whole python plan: a routing bug
 # would otherwise drop coverage without anyone seeing it.
 SELF_BROAD = ("tools/devtools/verify.py", "tools/devtools/verify_route.py")
 # Paths that cannot change what the patchkit smoke matrix runs: the desktop console UI (TS, TSX, CSS, its
@@ -388,13 +391,13 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "tools/patchkit/patchkit.py",
             "tests/patchkit/",
         ),
-        ("rust-tests", "python-tests", "web", "runtime-fixture"),
+        ("rust-tests", "python-tests", "web"),
     ),
     # the Rust crate behind the browser upload (cdylib for packages/dkupload and apps/web/tests/dkupload.test.mjs)
     (("packages/dkupload/",), ("rust-tests", "web")),
     (
         ("packages/emulator/control/",),
-        ("desktop", "rust-tests", "card", "python-tests", "runtime-fixture"),
+        ("desktop", "rust-tests", "card", "python-tests"),
     ),
     (
         (
@@ -498,15 +501,6 @@ def route(path: str) -> tuple[str, tuple[str, ...]]:
     """How one changed path is routed: (matched prefix or "docs"/"fallback", steps)."""
     if path.endswith(".md"):
         return "docs", ()  # documentation selects no steps
-    if path in (
-        "packages/test-support/src/session.ts",
-        "packages/test-support/src/inputs.ts",
-        "packages/control-client/src/daemon.ts",
-        "packages/control-client/src/client.ts",
-        "tests/regression/support.ts",
-        "tests/regression/vitest.runtime.config.ts",
-    ) or path.startswith(("tests/regression/runtime/", "packages/dk-session/")):
-        return "runtime fixture", ("web", "runtime-fixture")
     found = verify_route.fine(path)
     if found is not None:
         return found.label, found.steps
