@@ -2,12 +2,13 @@
 //! C ABI, `libsharc_native.dylib`), as a [`SharcCore`].
 //!
 //! This is the OS-specific edge of the SHARC frame source: `dlopen`/`dlsym`
-//! from the platform's C library (declared here, no crate). The frame logic
+//! from the platform's C library, or `LoadLibraryW`/`GetProcAddress` on
+//! Windows (declared here, no crate; module `dl`). The frame logic
 //! itself (`sharc_source`) only sees the [`SharcCore`] trait, so a build
 //! that links `packages/emulator/sharc` directly (e.g. for WASM) can implement the
 //! trait over its `Engine` instead.
 
-use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::ffi::{CString, c_void};
 use std::path::Path;
 
 use std::sync::Arc;
@@ -16,13 +17,86 @@ use crate::sharc_source::{
     AfterEnd, CaptureSource, CoreStats, LivePack, LiveSource, Peek, SharcCore,
 };
 
-unsafe extern "C" {
-    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-    fn dlerror() -> *mut c_char;
+/// The platform's dynamic loader: `dlopen`/`dlsym` on Unix, `LoadLibraryW`/`GetProcAddress` on Windows.
+#[cfg(unix)]
+mod dl {
+    use std::ffi::{CStr, CString, c_char, c_int, c_void};
+    use std::path::Path;
+
+    unsafe extern "C" {
+        fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        fn dlerror() -> *mut c_char;
+    }
+
+    const RTLD_NOW: c_int = 2;
+
+    fn last_error() -> String {
+        // SAFETY: dlerror returns NULL or a NUL-terminated thread-local string.
+        let p = unsafe { dlerror() };
+        if p.is_null() {
+            "unknown dlopen error".to_string()
+        } else {
+            // SAFETY: non-NULL, NUL-terminated (above).
+            unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+        }
+    }
+
+    pub fn open(path: &Path) -> Result<*mut c_void, String> {
+        let c = CString::new(path.to_string_lossy().as_bytes())
+            .map_err(|_| "library path contains NUL".to_string())?;
+        // SAFETY: C is a valid NUL-terminated path.
+        let lib = unsafe { dlopen(c.as_ptr(), RTLD_NOW) };
+        if lib.is_null() {
+            Err(format!("dlopen {}: {}", path.display(), last_error()))
+        } else {
+            Ok(lib)
+        }
+    }
+
+    pub fn symbol(lib: *mut c_void, name: &CStr) -> *mut c_void {
+        // SAFETY: LIB is a live dlopen handle, NAME NUL-terminated.
+        unsafe { dlsym(lib, name.as_ptr()) }
+    }
 }
 
-const RTLD_NOW: c_int = 2;
+#[cfg(windows)]
+mod dl {
+    use std::ffi::{CStr, c_char, c_void};
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+
+    unsafe extern "system" {
+        fn LoadLibraryW(name: *const u16) -> *mut c_void;
+        fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
+        fn GetLastError() -> u32;
+    }
+
+    pub fn open(path: &Path) -> Result<*mut c_void, String> {
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: WIDE is a NUL-terminated UTF-16 path.
+        let lib = unsafe { LoadLibraryW(wide.as_ptr()) };
+        if lib.is_null() {
+            // SAFETY: no other call ran in between.
+            Err(format!(
+                "LoadLibraryW {}: error {}",
+                path.display(),
+                unsafe { GetLastError() }
+            ))
+        } else {
+            Ok(lib)
+        }
+    }
+
+    pub fn symbol(lib: *mut c_void, name: &CStr) -> *mut c_void {
+        // SAFETY: LIB is a live module handle, NAME NUL-terminated.
+        unsafe { GetProcAddress(lib, name.as_ptr()) }
+    }
+}
 
 type Handle = *mut c_void;
 type CreateFn = unsafe extern "C" fn(*const u8, usize) -> Handle;
@@ -58,30 +132,12 @@ struct Api {
     info: InfoFn,
 }
 
-fn last_dl_error() -> String {
-    // SAFETY: dlerror returns NULL or a NUL-terminated thread-local string.
-    let p = unsafe { dlerror() };
-    if p.is_null() {
-        "unknown dlopen error".to_string()
-    } else {
-        // SAFETY: non-NULL, NUL-terminated (above).
-        unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
-    }
-}
-
 impl Api {
     fn load(path: &Path) -> Result<Api, String> {
-        let c = CString::new(path.to_string_lossy().as_bytes())
-            .map_err(|_| "library path contains NUL".to_string())?;
-        // SAFETY: C is a valid NUL-terminated path.
-        let lib = unsafe { dlopen(c.as_ptr(), RTLD_NOW) };
-        if lib.is_null() {
-            return Err(format!("dlopen {}: {}", path.display(), last_dl_error()));
-        }
+        let lib = dl::open(path)?;
         let sym = |name: &str| -> Result<*mut c_void, String> {
             let n = CString::new(name).expect("symbol name");
-            // SAFETY: LIB is a live dlopen handle, N a NUL-terminated name.
-            let p = unsafe { dlsym(lib, n.as_ptr()) };
+            let p = dl::symbol(lib, &n);
             if p.is_null() {
                 Err(format!("{}: missing symbol {name}", path.display()))
             } else {
