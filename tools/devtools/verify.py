@@ -303,6 +303,13 @@ UI_ONLY: tuple[str, ...] = (
     "docs/*",
     "*.md",
 )
+# Exact non-runtime maintenance paths whose existing Python coverage is sufficient. Keep this a
+# table, not a prefix rule: a neighbouring devtools or settings path stays conservative.
+SMOKE_EXEMPT: dict[str, str] = {
+    "tools/devtools/agent_guard.py": "agent guard",
+    "tools/devtools/pathcheck.py": "path checker",
+    ".claude/settings.json": "agent settings",
+}
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
@@ -578,11 +585,33 @@ def python_tests(files: list[str], full: bool) -> list[str]:
     return [path for path, _ in python_test_plan(files, full)]
 
 
+def ui_only_path(path: str) -> bool:
+    """Whether one path matches the UI-only smoke exemption."""
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in UI_ONLY)
+
+
 def ui_only(files: list[str]) -> bool:
     """Whether every changed file matches UI_ONLY (no file: False)."""
-    return bool(files) and all(
-        any(fnmatch.fnmatchcase(path, pattern) for pattern in UI_ONLY) for path in files
-    )
+    return bool(files) and all(ui_only_path(path) for path in files)
+
+
+def smoke_reason(files: list[str]) -> str | None:
+    """Why this complete changed-file set may skip the smoke matrix, if any."""
+    if ui_only(files):
+        return "UI-only change"
+    maintenance: list[str] = []
+    ui = False
+    for path in files:
+        if ui_only_path(path):
+            ui = True
+        elif reason := SMOKE_EXEMPT.get(path):
+            maintenance.append(reason)
+        else:
+            return None
+    if maintenance:
+        kind = "UI-only and smoke-exempt" if ui else "smoke-exempt"
+        return f"{kind} maintenance change ({', '.join(sorted(maintenance))})"
+    return None
 
 
 def steps_for(files: list[str]) -> tuple[str, ...]:
@@ -596,9 +625,9 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
             and any(path.startswith(triggers) for _, triggers, _ in PY_SUITES)
         ):
             wanted.add("python-tests")
-    # the patchkit smoke matrix runs whenever the gate runs anything, except for UI-only change sets
-    # (docs-only: nothing at all)
-    if wanted and not ui_only(files):
+    # The patchkit smoke matrix runs whenever the gate runs anything, except for the narrowly
+    # documented complete change sets above (docs-only: nothing at all).
+    if wanted and not smoke_reason(files):
         wanted.add("smoke")
     return tuple(s for s in STEPS if s in wanted)
 
@@ -1251,8 +1280,16 @@ def explain(
             note = f"  [{origin[path]}]" if origin and path in origin else ""
             print(f"  {path} -> {label} -> {', '.join(wanted) or 'no steps'}{note}")
     print(f"steps: {', '.join(steps) or 'nothing to run'}")
-    if per_file and steps and "smoke" not in steps and ui_only(files):
-        print("smoke: skipped, UI-only change")
+    if per_file and steps and "smoke" not in steps and (reason := smoke_reason(files)):
+        print(f"smoke: skipped, {reason}")
+    elif per_file and "smoke" in steps:
+        conservative = [
+            path
+            for path in files
+            if path not in SMOKE_EXEMPT and not ui_only_path(path)
+        ]
+        if conservative:
+            print(f"smoke: selected, conservative path: {', '.join(conservative)}")
     if "rust-tests" in steps:
         scope = ", ".join(rust_packages) if rust_packages else "whole workspace"
         print(f"rust-tests packages: {scope}")

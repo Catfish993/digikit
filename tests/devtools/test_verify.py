@@ -50,6 +50,37 @@ def test_ui_change_with_one_other_file_keeps_smoke() -> None:
     assert "smoke" in verify.steps_for([*UI_FILES, "tools/device/dkscreen.py"])
 
 
+SMOKE_EXEMPT_FILES = [
+    "tools/devtools/agent_guard.py",
+    "tools/devtools/pathcheck.py",
+    ".claude/settings.json",
+]
+
+
+def test_exact_maintenance_paths_skip_smoke_but_keep_python_coverage() -> None:
+    for path in SMOKE_EXEMPT_FILES:
+        assert verify.steps_for([path]) == ("python-tests",)
+        assert set(verify.PY_GATE) <= set(verify.python_tests([path], False))
+    assert verify.steps_for(SMOKE_EXEMPT_FILES) == ("python-tests",)
+    assert "tests/devtools/test_agent_guard.py" in verify.python_tests(
+        ["tools/devtools/agent_guard.py"], False
+    )
+    assert "tests/devtools/test_pathcheck.py" in verify.python_tests(
+        ["tools/devtools/pathcheck.py"], False
+    )
+
+
+def test_smoke_exempt_paths_are_exact_and_mixed_changes_stay_conservative() -> None:
+    assert "smoke" in verify.steps_for(["tools/devtools/pathchecks.py"])
+    assert "smoke" not in verify.steps_for(
+        ["tools/devtools/pathcheck.py", "apps/web/src/components/PatchGallery.tsx"]
+    )
+    assert "smoke" in verify.steps_for([*SMOKE_EXEMPT_FILES, "unknown/file.txt"])
+    assert "smoke" in verify.steps_for(
+        ["tools/devtools/pathcheck.py", "modules/fx/master-gain/src/cf/gain.s"]
+    )
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -71,6 +102,22 @@ def test_docs_only_stays_empty() -> None:
     assert not verify.ui_only([])
 
 
+def test_representative_module_runtime_and_core_routes_stay_conservative() -> None:
+    assert verify.steps_for(["modules/fx/master-gain/src/cf/gain.s"]) == (
+        "python-tests",
+        "rust-tests",
+        "smoke",
+    )
+    assert verify.steps_for(["modules/core/runtime/src/rs/src/upload.rs"]) == (
+        "python-tests",
+        "rust-tests",
+        "smoke",
+    )
+    assert (
+        verify.steps_for(["tools/sharc_dev/sharc_core/state.py"]) == verify.EVERYTHING
+    )
+
+
 def test_explain_says_why_smoke_is_skipped(capsys: pytest.CaptureFixture[str]) -> None:
     def run(files: list[str]) -> str:
         steps = verify.steps_for(files)
@@ -78,7 +125,16 @@ def test_explain_says_why_smoke_is_skipped(capsys: pytest.CaptureFixture[str]) -
         return capsys.readouterr().out
 
     assert "smoke: skipped, UI-only change" in run(UI_FILES)
+    assert (
+        "smoke: skipped, UI-only and smoke-exempt maintenance change (path checker)"
+        in run(
+            ["apps/web/src/components/PatchGallery.tsx", "tools/devtools/pathcheck.py"]
+        )
+    )
     assert "smoke: skipped" not in run([*UI_FILES, "tools/device/dkscreen.py"])
+    assert "smoke: selected, conservative path: unknown/file.txt" in run(
+        ["tools/devtools/pathcheck.py", "unknown/file.txt"]
+    )
     assert "smoke: skipped" not in run(["docs/x.md"])
 
 
@@ -90,9 +146,19 @@ def test_changed_pk_test_runs_itself_and_the_gate() -> None:
 
 
 def test_claude_settings_run_the_agent_guard_test() -> None:
-    assert verify.steps_for([".claude/settings.json"]) == ("python-tests", "smoke")
+    assert verify.steps_for([".claude/settings.json"]) == ("python-tests",)
     plan = [p for p, _ in verify.python_test_plan([".claude/settings.json"], False)]
     assert "tests/devtools/test_agent_guard.py" in plan
+
+
+def test_pathcheck_keeps_its_unit_and_repo_checks() -> None:
+    plan = [
+        p for p, _ in verify.python_test_plan(["tools/devtools/pathcheck.py"], False)
+    ]
+    assert {
+        "tests/devtools/test_pathcheck.py",
+        "tests/devtools/test_pathcheck_repo.py",
+    } <= set(plan)
 
 
 def test_a_python_module_selects_its_importers_not_the_directory() -> None:
@@ -796,6 +862,11 @@ def test_smoke_waits_for_build_daemons_and_runs_after_it() -> None:
     assert nodes.index("build-daemons") < nodes.index("smoke")
     assert "build" not in nodes
     assert "smoke" in verify.DAEMON_NODES
+
+
+def test_python_daemon_tests_keep_their_daemon_prerequisite_without_smoke() -> None:
+    _, deps = verify.plan(("python-tests",), ["tests/digikit/test_dkrun.py"])
+    assert deps["python-tests"] == ("build-daemons",)
 
 
 def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
