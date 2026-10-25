@@ -1928,120 +1928,6 @@ def run_live_remote(c: Ctx) -> None:
         emu.__exit__(None, None, None)
 
 
-def run_live_remote_keys(c: Ctx) -> None:
-    """The whole path: digikit/remote's KEY and TURN on a free-running daemon booted with the `emulator` patch set (REMOTE is on at the boot). Keys: SETTINGS, DOWN x8
-    (the ninth row), YES open DIGIKIT, DOWN and YES open ABOUT, whose rows the menu keeps in DK_ABOUT (`expect_text`: the runtime version; the symbol addresses come from
-    the plan of the same patch set built offline: the same modules in the same order give the same layout, and the check fails if they do not). TURN: on the main screen
-    an encoder turned by some detents changes the screen (the value label shows; polled, because it goes after a few emulated seconds)."""
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
-    from tools.firmware import config
-    from tools.patchkit import pk_dkrt as RTK
-
-    t = c.table()
-    (module,) = t["modules"]
-    dev, ver = c.image.split("-")
-    stock = config.stock(H.FIRMWARE[(dev, ver)]["syx"])
-    syx = c.work / f"plan-{dev}.syx"
-    plan_file = syx.with_suffix(".plan.json")
-    RTK.Tools().patchkit_run(
-        "apply",
-        "--firmware",
-        stock,
-        "--set",
-        t.get("patch_set", "emulator"),
-        "-o",
-        syx,
-        "--plan",
-        plan_file,
-    )
-    plan = json.loads(plan_file.read_text())
-    emu, _ = live_boot(c, "-keys")
-    try:
-        rc, ev, _ = live_tool(emu)("install", module, "--restart")
-        res = next((e for e in ev if e["event"] == "result"), {})
-        c.check(
-            "install --restart: digikit/remote loaded",
-            rc == 0 and module in res.get("loaded", []),
-            f"rc {rc} {ev[-1:] if ev else ''}",
-        )
-        time.sleep(float(t.get("settle", 10)))
-        up = DK.Uploader(TR.LiveTransport(emu))
-        c.check(
-            "REMOTE is on at the boot of the emulator set",
-            up.remote_state()["enabled"] == 1,
-            str(up.remote_state()),
-        )
-
-        shots = 0
-
-        def shot(what: str) -> None:
-            """The OLED after a step, as a PNG in the scenario's work folder (to look at when a check fails)."""
-            nonlocal shots
-            from tools.control.digi_client import oled_png
-
-            shots += 1
-            (c.work / f"keys-{shots:02d}-{what}.png").write_bytes(
-                oled_png(emu.frame()[1], 3)
-            )
-
-        def tap(name: str, wait: float = 1.2) -> None:
-            code = H.button(name)
-            up.remote_key(code, True)
-            time.sleep(0.3)
-            up.remote_key(code, False)
-            time.sleep(wait)
-            shot(name.lower())
-
-        shot("start")
-        tap("NO", 2)
-        tap("SETTINGS", 3)
-        for _ in range(8):
-            tap("DOWN")
-        tap("YES", 3)  # the DIGIKIT menu, the cursor on MODULES
-        tap("DOWN")  # FX ROUTES
-        tap("DOWN")  # ABOUT
-        tap("YES", 3)  # the ABOUT page
-        base = H.plan_symbol(plan, "DK_ABOUT")
-        n = emu.peek32(H.plan_symbol(plan, "DK_ABOUT_N")) or 0
-        rows = H.text_rows(lambda a: emu.peek32(a) or 0, base, n, 24)
-        lost = H.missing_rows(rows, ["RUNTIME {runtime}"])
-        c.check(
-            "KEY presses opened ABOUT: its rows hold the runtime version (expect_text DK_ABOUT)",
-            not lost,
-            f"rows {rows}" if not lost else f"no row {lost} in {rows}",
-        )
-        for _ in range(4):  # back to the main screen
-            tap("NO", 2)
-        # TURN: a value of the firmware changes by the detents and returns when they are turned back (the screen is the value as the firmware draws it)
-        enc, detents = int(t["encoder"]), int(t["detents"])
-        settle = float(t.get("turn_wait", 8))  # the firmware flushes a turn on its tick
-
-        def changed_from(ref: str) -> str | None:
-            """The first screen that differs from REF within the settle time (polled: the value label shows for a few emulated seconds and goes, so one look at the
-            end could miss it)."""
-            end = time.monotonic() + settle
-            while time.monotonic() < end:
-                h = emu.frame_hash()
-                if h != ref:
-                    return str(h)
-                time.sleep(0.4)
-            return None
-
-        before = emu.frame_hash()
-        up.remote_turn(enc, detents)
-        up_h = changed_from(before)
-        shot("turn+")
-        c.check(
-            "TURN reached the firmware: the screen changed (the value shows)",
-            up_h is not None,
-            f"{before[:8]} {(up_h or 'same')[:8]}",
-        )
-        up.remote_release()
-    finally:
-        emu.__exit__(None, None, None)
-
-
 def run_live(c: Ctx) -> None:
     """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
     by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
@@ -2060,8 +1946,6 @@ def run_live(c: Ctx) -> None:
         return run_live_input(c)
     if c.table().get("part") == "remote":
         return run_live_remote(c)
-    if c.table().get("part") == "remote-keys":
-        return run_live_remote_keys(c)
     (module,) = c.table()["modules"]
     dev, _ = c.image.split("-")
     emu, mirror = live_boot(c)

@@ -53,6 +53,11 @@ export class Session {
     return this.#daemon.client;
   }
 
+  /** Directory of this daemon, including its CLI discovery file. */
+  get runDir(): string {
+    return this.options.runDir ?? this.#ownedDir!;
+  }
+
   get loadResult(): FirmwareLoadResult {
     if (!this.#load) throw new Error('firmware not loaded');
     return this.#load;

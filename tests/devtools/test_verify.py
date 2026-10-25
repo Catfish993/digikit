@@ -111,6 +111,7 @@ def test_representative_module_runtime_and_core_routes_stay_conservative() -> No
         "smoke",
     )
     assert verify.steps_for(["modules/core/runtime/src/rs/src/upload.rs"]) == (
+        "runtime-fixture",
         "python-tests",
         "rust-tests",
         "smoke",
@@ -427,7 +428,7 @@ def test_mise_new_task_routes_like_its_tool() -> None:
         ["tools/device/dkrun.py"],
         {"tools/device/dkrun.py": "mise.toml task dk:run"},
     )
-    assert verify.steps_for(got[0]) == ("python-tests", "smoke")
+    assert verify.steps_for(got[0]) == ("runtime-fixture", "python-tests", "smoke")
     # only the description or the alias changed: the same tool
     again = task.replace('description = "x"', 'description = "y"')
     assert verify_route.mise_paths(old + task, old + again) == got
@@ -713,7 +714,7 @@ def test_dependents_follow_requires_and_shared_sources() -> None:
 
 def test_unknown_module_path_stays_broad() -> None:
     steps = verify.steps_for(["modules/no/such/module.toml"])
-    assert {"python-tests", "rust-tests", "web"} <= set(steps)
+    assert {"python-tests", "rust-tests", "web", "runtime-fixture"} <= set(steps)
     assert {"tests/patchkit", "tests/digikit"} <= selected(
         "modules/no/such/module.toml"
     )
@@ -728,8 +729,10 @@ def test_unknown_module_path_stays_broad() -> None:
         "packages/dk-session/package.json",
     ],
 )
-def test_dk_session_routes_to_web_with_conservative_smoke(path: str) -> None:
-    assert verify.steps_for([path]) == ("web", "smoke")
+def test_dk_session_routes_to_host_and_runtime_with_conservative_smoke(
+    path: str,
+) -> None:
+    assert verify.steps_for([path]) == ("web", "runtime-fixture", "smoke")
 
 
 def test_web_check_runs_dk_session_owner_checks(
@@ -817,7 +820,7 @@ def test_gate_files_always_run() -> None:
 
 def test_runtime4_merge_runs_no_pcm_step() -> None:
     """The range 457f515b..29086ff7 (one mise.toml task, device tools, runtime objects) ran all 13
-    steps; its files now select the web bundle, Rust and Python tests and nothing that renders."""
+    steps; its files now select web, runtime acceptance, Rust and Python tests, without PCM steps."""
     files = [
         "modules/core/digikit-menu/build/digikit-menu-rs.dko.json",
         "modules/core/runtime/build/runtime.dko.json",
@@ -829,7 +832,13 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
         "tools/patchkit/pk_digikit_scen.py",
         "tools/patchkit/pk_digikit_upload.py",
     ]
-    assert verify.steps_for(files) == ("web", "python-tests", "rust-tests", "smoke")
+    assert verify.steps_for(files) == (
+        "web",
+        "runtime-fixture",
+        "python-tests",
+        "rust-tests",
+        "smoke",
+    )
 
 
 def test_rust_scope(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -947,12 +956,50 @@ def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
         "tests/regression/support.ts",
         "tests/regression/vitest.runtime.config.ts",
         "tests/regression/runtime/acceptance.ts",
+        "tests/regression/runtime/remote.ts",
         "tests/regression/runtime/dt2.test.ts",
         "tests/regression/runtime/dn2.test.ts",
     ],
 )
 def test_runtime_fixture_sources_select_acceptance(path: str) -> None:
     assert verify.steps_for([path]) == ("web", "runtime-fixture", "smoke")
+
+
+@pytest.mark.parametrize("mid", ["digikit/remote", *sorted(verify_route.FRAMEWORK)])
+def test_runtime_fixture_retains_migrated_remote_module_selection(mid: str) -> None:
+    path = (modroots.module_dir(mid) / "module.toml").relative_to(ROOT).as_posix()
+    assert "runtime-fixture" in verify.steps_for([path])
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        *[stem for stem, kinds in verify_route.DEVICE_KINDS.items() if "live" in kinds],
+        "dkrun",
+        "dkupload",
+    ],
+)
+def test_runtime_fixture_follows_previous_live_tool_selection(stem: str) -> None:
+    assert "runtime-fixture" in verify.steps_for([f"tools/device/{stem}.py"])
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tools/patchkit/patchkit.py",
+        "packages/patchkit/src/apply.rs",
+        "devices/ports/dt2-1.17.toml",
+        "packages/emulator/control/src/runtime_patch.rs",
+    ],
+)
+def test_runtime_fixture_follows_patch_tool_and_loaded_image_sources(path: str) -> None:
+    assert "runtime-fixture" in verify.steps_for([path])
+
+
+def test_runtime_fixture_does_not_follow_an_unrelated_leaf() -> None:
+    assert "runtime-fixture" not in verify.steps_for(
+        ["modules/fx/master-gain/src/cf/gain.s"]
+    )
 
 
 def test_runtime_fixture_explicit_plan_never_builds_but_waits_for_existing_build() -> (

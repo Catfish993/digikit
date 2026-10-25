@@ -388,13 +388,13 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "tools/patchkit/patchkit.py",
             "tests/patchkit/",
         ),
-        ("rust-tests", "python-tests", "web"),
+        ("rust-tests", "python-tests", "web", "runtime-fixture"),
     ),
     # the Rust crate behind the browser upload (cdylib for packages/dkupload and apps/web/tests/dkupload.test.mjs)
     (("packages/dkupload/",), ("rust-tests", "web")),
     (
         ("packages/emulator/control/",),
-        ("desktop", "rust-tests", "card", "python-tests"),
+        ("desktop", "rust-tests", "card", "python-tests", "runtime-fixture"),
     ),
     (
         (
@@ -505,7 +505,7 @@ def route(path: str) -> tuple[str, tuple[str, ...]]:
         "packages/control-client/src/client.ts",
         "tests/regression/support.ts",
         "tests/regression/vitest.runtime.config.ts",
-    ) or path.startswith("tests/regression/runtime/"):
+    ) or path.startswith(("tests/regression/runtime/", "packages/dk-session/")):
         return "runtime fixture", ("web", "runtime-fixture")
     found = verify_route.fine(path)
     if found is not None:

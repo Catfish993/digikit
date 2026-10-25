@@ -321,10 +321,15 @@ def module_fine(path: str) -> Fine | None:
         # a file outside any module, or a module that is gone: stay broad
         return Fine(
             "modules (unknown module)",
-            ("python-tests", "rust-tests", "web"),
+            ("python-tests", "rust-tests", "web", "runtime-fixture"),
             ALL_SUITES,
         )
     steps = ["python-tests", "rust-tests"]
+    hit = dependents({mid})
+    # The migrated remote-keys workflow names digikit/remote. Framework changes previously
+    # selected it through the full digikit suite; retain that coverage after TOML removal.
+    if "digikit/remote" in hit or hit & FRAMEWORK:
+        steps.append("runtime-fixture")
     if web_reads((ROOT / path).relative_to(modroots.module_dir(mid)).as_posix()):
         steps.append("web")
     label = f"module {mid}" + (" (framework)" if mid in FRAMEWORK else "")
@@ -372,7 +377,12 @@ def device_fine(path: str) -> Fine | None:
     if kinds or stem not in DEVICE_KINDS:
         tests += scenario_tests(kinds) if stem in DEVICE_KINDS else list(ALL_SUITES)
     ordered = list(dict.fromkeys(tests))
-    return Fine(f"tools/device/{stem}", ("python-tests",), tuple(ordered))
+    steps = (
+        ("python-tests", "runtime-fixture")
+        if "live" in kinds or stem not in DEVICE_KINDS
+        else ("python-tests",)
+    )
+    return Fine(f"tools/device/{stem}", steps, tuple(ordered))
 
 
 def digikit_fine(path: str) -> Fine | None:

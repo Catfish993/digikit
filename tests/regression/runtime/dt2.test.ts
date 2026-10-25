@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import { withPatchedSession } from '../support.ts';
-import { expectRuntimeBoot } from './acceptance.ts';
+import { expectRuntimeBoot, expectRemoteKeys } from './acceptance.ts';
 
 const card = process.env.DIGI_RUNTIME_CARD;
 if (!card) throw new Error('DIGI_RUNTIME_CARD must name the generated DT2 sample directory');
@@ -12,6 +12,7 @@ const handle = withPatchedSession({
   binary,
   card,
 });
-test('DT2 1.17 runtime boots freely and stays healthy', async () => {
+test('DT2 1.17 remote keys open ABOUT and encoder TURN changes the screen', async () => {
   await expectRuntimeBoot(handle.runtime);
-});
+  await expectRemoteKeys(handle.runtime);
+}, 300_000);
