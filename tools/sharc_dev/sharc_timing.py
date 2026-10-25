@@ -37,6 +37,19 @@ FLOAT_FORWARD = 1
 # Table 4-43 "Stalls Related to Data Move Operations" (p. 4-68): float compute or multiplier operation followed by
 # a move of the result to a register outside the PE: 1.
 FLOAT_TO_MOVE = 1
+# Table 4-40 rows 1, 2 (p. 4-66): CJUMP or RFRAME, then a use of I6 as an address (`DM(I6, ..)`) or a read of
+# I6 or I7 into a register (`R0 = I6`): 6. sharcdb decodes CJUMP as form 25a and RFRAME as 25c.
+CJUMP_FRAME_TO_I6 = 6
+FRAME_FORMS = frozenset({"25a_direct", "25a_pcrel", "25c_rframe"})
+# Silicon anomaly 20000072 (ADSP-2156x anomaly list, silicon revisions 0.0 and 0.2): a floating-point compute into
+# F0 followed at once by a no-operand or single-operand compute stalls. The sheet gives no count, and the silicon
+# revision of a unit is not known here: low 0 (not affected), nominal 1, high 2.
+ANOMALY_20000072: Cost = (0.0, 1.0, 2.0)
+SINGLE_OPERAND = re.compile(
+    r"\b[RF]\d+\s*=\s*(?:pass|fpass|inc|dec|inc_c|dec_c|not|neg|fneg|abs|fabs|float|fix|trunc|mant"
+    r"|logb|recips|rsqrts|frnd)\("
+)
+
 # Table 4-35 (p. 4-64): conflict-cache miss on a PM data access: 1; two accesses to the same L1 block in one cycle: 1
 # (block arbitration, printed p. 7-14: the instruction "may take two or three core clock cycles").
 PM_CONFLICT_MISS = 1
@@ -96,6 +109,54 @@ MMR_ACCESS: Cost = (
     10.0,
     20.0,
 )  # a system MMR access is a through access (p. 8-10), "0-4" for a CMMR (Table 4-43)
+
+
+# EE-412 (ADSP-2156x SHARC+ System Optimization Techniques) Table 6, "MMR Access Latency": measured core cycles
+# (write, read) at CCLK 1 GHz, SYSCLK 500 MHz, SCLK 250 MHz, by peripheral instance. A system MMR access is a
+# through access (p. 8-10). The Digitone II's system clocks are not known here: low and nominal are the measured
+# value, high doubles it (SYSCLK at half the measured rate).
+EE412_MMR_LATENCY: dict[str, tuple[int, int]] = {
+    "FIR0": (28, 27), "IIR0": (28, 27), "MLB0": (44, 41), "MEC0": (44, 41), "CRC0": (44, 43), "CRC1": (44, 43),
+    "EMDMA0": (44, 43), "EMDMA1": (44, 43), "TAPC": (44, 41), "SMPU2": (46, 43), "SWU1": (46, 43),
+    "SWU2": (46, 43), "L2CTL0": (46, 43), "SEC0": (46, 45), "TRU0": (46, 45), "SPU0": (46, 45),
+    "RCU0": (46, 43), "CGU0": (46, 43), "CDU0": (46, 43), "DPM0": (46, 43), "PKTE0": (48, 47),
+    "TRNG0": (52, 51), "PKA0": (52, 51), "PKIC0": (52, 51), "DMC0": (60, 57), "UART0": (74, 73),
+    "PORTA": (74, 73), "WDOG1": (74, 73), "DMA1": (76, 73), "SPORT0": (76, 81), "PORTB": (76, 73),
+    "PINT0": (76, 73), "PINT1": (76, 73), "TIMER0": (76, 81), "DMA0": (78, 73), "PADS0": (78, 73),
+    "WDOG0": (78, 73), "OSPI0": (78, 73), "SPI1": (78, 81), "SPORT1": (80, 81), "UART1": (80, 73),
+    "CNT0": (80, 73), "OTPC0": (80, 73), "DAI0": (80, 81), "SPI0": (82, 81), "ASRC1": (82, 81),
+    "TMU0": (84, 81), "PCG0": (84, 81), "DAI1": (84, 81), "SPDIF0": (86, 81), "SPDIF1": (86, 81),
+    "HADC0": (88, 81), "ASRC0": (90, 81), "TWI1": (114, 121), "LP0": (117, 121), "TWI0": (118, 121),
+    "LP1": (120, 121), "SCB0": (780, 777),
+}  # fmt: skip
+# Table 4-43 (p. 4-68): a core MMR access, "0-4" cycles.
+CMMR_ACCESS: Cost = (0.0, 2.0, 4.0)
+_INSTANCE = re.compile(r"^([A-Z]+[0-9]*)")
+
+
+def mmr_cost(name: str | None, write: bool) -> Cost | None:
+    """The cost of one access to the MMR named NAME (tools.sharc_dev.sharcimm.name_address), or None when no
+    table knows its peripheral. An instance EE-412 does not list (SPORT4, say) takes the slowest listed
+    instance of its type."""
+    if not name:
+        return None
+    if name.startswith("CMMR"):
+        return CMMR_ACCESS
+    m = _INSTANCE.match(name)
+    if not m:
+        return None
+    instance = m.group(1)
+    pair = EE412_MMR_LATENCY.get(instance)
+    if pair is None:
+        kind = instance.rstrip("0123456789")
+        same = [
+            v for k, v in EE412_MMR_LATENCY.items() if k.rstrip("0123456789") == kind
+        ]
+        if not same:
+            return None
+        pair = (max(w for w, _ in same), max(r for _, r in same))
+    cycles = float(pair[0] if write else pair[1])
+    return (cycles, cycles, 2 * cycles)
 
 
 def add(a: Cost, b: Cost) -> Cost:
@@ -214,6 +275,24 @@ def float_to_move(prev: Ins, cur: Ins) -> Cost:
         if k == "move" and SYS_REG_DEST.match(r) and dest & cur.uses:
             return (float(FLOAT_TO_MOVE),) * 3
     return ZERO
+
+
+def cjump_frame_use(prev: Ins, cur: Ins) -> Cost:
+    """Table 4-40 rows 1-2: CJUMP or RFRAME, then I6 used as an address or I6/I7 read into a register: 6."""
+    if prev.extra.get("form") not in FRAME_FORMS:
+        return ZERO
+    as_address = any(base == "I6" for _, base in cur.mem)
+    read = bool({"I6", "I7"} & cur.uses) and any(k == "move" for _, k in cur.defs)
+    return (float(CJUMP_FRAME_TO_I6),) * 3 if as_address or read else ZERO
+
+
+def anomaly_20000072(prev: Ins, cur: Ins) -> Cost:
+    """Anomaly 20000072: a float compute into F0, then at once a no- or single-operand compute."""
+    if not prev.is_float or not ({"F0", "R0"} & prev.writes(("compute",))):
+        return ZERO
+    if not SINGLE_OPERAND.search(cur.text):
+        return ZERO
+    return ANOMALY_20000072
 
 
 def branch_cost_sim(ins: Ins, r: list[int]) -> Cost:
