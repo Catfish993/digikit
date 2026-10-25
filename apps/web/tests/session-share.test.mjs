@@ -2,7 +2,7 @@
 // DkSession, so their requests take turns on the one reply stream instead of stealing each other's replies.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DkSession, frame } from '../src/modules/dkupload-core.ts';
+import { DkSession, frame } from '@digi/dk-session';
 import { createSessions, targetKey } from '../../desktop/ui/src/session-core.ts';
 
 /** A device behind one reply stream, like the emulator's USB capture: any session that polls takes the next reply. It answers a request after a

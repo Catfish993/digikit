@@ -10,7 +10,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type JSX } from 'solid-js';
 import { panels } from '@web/data/faceplates';
 import { isCancelled } from '@web/modules/backend';
-import type { DkSession } from '@web/modules/dkupload-core';
+import type { DkSession } from '@digi/dk-session';
 import { cardRefresh } from './card-state';
 import { memoryOpen as open, setMemoryOpen } from './panel-open';
 import { deviceOfPort } from './remote-core';

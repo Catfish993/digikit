@@ -717,6 +717,46 @@ def test_unknown_module_path_stays_broad() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/dk-session/src/dkupload-core.ts",
+        "packages/dk-session/src/gen_proto.ts",
+        "packages/dk-session/tests/emu-usb-transport.test.ts",
+        "packages/dk-session/package.json",
+    ],
+)
+def test_dk_session_routes_to_web_with_conservative_smoke(path: str) -> None:
+    assert verify.steps_for([path]) == ("web", "smoke")
+
+
+def test_web_check_runs_dk_session_owner_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, list[str]] = {}
+    monkeypatch.setattr(
+        verify.Gate,
+        "run",
+        lambda self, name, cmd, **kwargs: calls.update({name: cmd}),
+    )
+    monkeypatch.setattr(verify.Gate, "share", lambda self: 1)
+    verify.web_check(object.__new__(verify.Gate))
+    assert calls["dk-session-tests"] == ["pnpm", "--filter", "@digi/dk-session", "test"]
+    assert calls["dk-session-types"] == [
+        "pnpm",
+        "--filter",
+        "@digi/dk-session",
+        "typecheck",
+    ]
+    assert {
+        "patchkit-wasm",
+        "web-lint",
+        "web-format",
+        "web-tests",
+        "web-types",
+    } <= calls.keys()
+
+
 def test_web_only_for_what_it_reads() -> None:
     assert "web" in verify.steps_for(["apps/web/src/x.ts"])
     assert "web" in verify.steps_for(["packages/dkupload/src/lib.rs"])

@@ -1,7 +1,7 @@
 // What the Modules panel needs from a transport. The desktop app implements it with the native commands (the running
 // emulator), the site with Web MIDI (a device). Written without TS-only runtime syntax so node can import it.
 
-import type { DkEntry, DkInfo, DkProgress } from './dkupload-core.ts';
+import type { DkEntry, DkInfo, DkProgress } from '@digi/dk-session';
 
 export interface ModuleBackend {
   /** "Emulator", "Digitakt II (USB)". */

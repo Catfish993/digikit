@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A live check of the TypeScript Transfer client (apps/web/src/modules/dkupload-core.ts, dktransfer.ts) against a running emulator, through
+// A live check of the TypeScript Transfer client (packages/dk-session/src/dkupload-core.ts, dktransfer.ts) against a running emulator, through
 // its control socket (the same `midi.usb.in` / `midi.usb.out` the desktop page reaches with `emu_call`). It is a dev tool: the app itself
 // starts no process. Start the target first (`mise run emu:serve -- FIRMWARE --free`, or a daemon with `run.mode free`), then:
 //
@@ -11,8 +11,8 @@
 import net from 'node:net';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { DkSession } from '../../apps/web/src/modules/dkupload-core.ts';
-import { splitMessages } from '../../apps/web/src/modules/dkupload-core.ts';
+import { DkSession } from '../../packages/dk-session/src/index.ts';
+import { splitMessages } from '../../packages/dk-session/src/index.ts';
 import {
   buildView,
   deleteFiles,

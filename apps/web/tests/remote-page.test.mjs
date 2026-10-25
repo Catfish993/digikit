@@ -1,7 +1,7 @@
 // The pure logic of the desktop Remote page (apps/desktop/ui/src/remote-core.ts).
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DkError } from '../src/modules/dkupload-core.ts';
+import { DkError } from '@digi/dk-session';
 import { deviceOfPort, remoteNotice, remoteRuntime } from '../../desktop/ui/src/remote-core.ts';
 
 test('the notice: nothing when REMOTE is on, how to switch it on, how to load the module', () => {

@@ -1,5 +1,5 @@
 // The site's backend for the Modules panel: Web MIDI to a device through dkupload.wasm.
-import { Dk, DkClient } from './dkupload-core.ts';
+import { Dk, DkClient } from '@digi/dk-session';
 import type { ModuleBackend } from './backend.ts';
 import { WebMidiTransport, type MidiInputLike, type MidiOutputLike } from './webmidi.ts';
 

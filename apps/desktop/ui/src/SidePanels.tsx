@@ -2,7 +2,7 @@
 // each collapsible. A closed panel keeps its title bar; when nothing in the column is open it shrinks to a narrow rail, so the faceplate
 // takes the width back. Both panels read through the one session of their target (target.ts).
 import { Show, type JSX } from 'solid-js';
-import type { DkSession } from '@web/modules/dkupload-core';
+import type { DkSession } from '@digi/dk-session';
 import CardPanel from './CardPanel';
 import MemoryPanel from './MemoryPanel';
 import { cardOpen, memoryOpen } from './panel-open';

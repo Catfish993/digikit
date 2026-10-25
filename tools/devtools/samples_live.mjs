@@ -10,7 +10,7 @@
 // writes WAV and sent bytes to DIR for the scenario's card comparison. One JSON line per check on stdout; exit code 0 when all hold.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DkSession } from '../../apps/web/src/modules/dkupload-core.ts';
+import { DkSession } from '../../packages/dk-session/src/index.ts';
 import { connect } from './emu_midi.mjs';
 import { Sample, prepareUpload } from '../../apps/web/src/modules/dksample.ts';
 import { RpcFiles, putVerified, verifyWritten } from '../../apps/web/src/modules/rpcfiles.ts';

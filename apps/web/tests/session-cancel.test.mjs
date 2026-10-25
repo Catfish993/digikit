@@ -2,7 +2,7 @@
 // and the lines the desktop pages show for them (apps/desktop/ui/src/wait-core.ts).
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DkError, DkSession } from '../src/modules/dkupload-core.ts';
+import { DkError, DkSession } from '@digi/dk-session';
 import { WAIT_QUIET_MS, failureLine, waitingLine } from '../../desktop/ui/src/wait-core.ts';
 
 /** A transport like the native MIDI wait: `recv` ends at its timeout or when the signal aborts, and never delivers a message. */

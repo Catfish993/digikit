@@ -8,7 +8,7 @@
 // One JSON line per run on stdout: wall seconds and MB/s of the upload and of VERIFY, guest instructions per file byte, the real-time factor.
 // With `--check-sizes` instead one line per file size and no timing: the hash and 8-in-7 paths of the runtime against the host's SHA-256.
 import { randomBytes } from 'node:crypto';
-import { DkSession, hexSha256 } from '../../apps/web/src/modules/dkupload-core.ts';
+import { DkSession, hexSha256 } from '../../packages/dk-session/src/index.ts';
 import { connect } from './emu_midi.mjs';
 
 const [socketPath, ...flags] = process.argv.slice(2);

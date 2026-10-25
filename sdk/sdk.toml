@@ -1,6 +1,6 @@
 # The module contract: version numbers, log kinds and the SysEx protocol numbers. `patchkit gen` writes
 # modules/core/runtime/sdk/src/gen_sdk.rs, tools/device/dklog_kinds.py, tools/device/dkproto.py and
-# packages/dkupload/src/gen_proto.rs from this file (`patchkit gen --check` fails when they are stale).
+# packages/dkupload/src/gen_proto.rs and packages/dk-session/src/gen_proto.ts from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
 version = "0.5.1"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes

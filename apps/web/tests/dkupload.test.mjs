@@ -13,7 +13,7 @@ import {
   repackMissing,
   storePath,
   hexSha256,
-} from '../src/modules/dkupload-core.ts';
+} from '@digi/dk-session';
 import { WebMidiTransport, listPorts, portLabel } from '../src/modules/webmidi.ts';
 
 const wasm = join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'public/dkupload.wasm');

@@ -1,7 +1,7 @@
 // The WAV to native sample converter and the +Drive content hash (packages/dksample, `dksample.wasm`): the code the card builder uses, so a sample sent over
 // MidiRpc is byte for byte the file the +Drive build writes. `prepareUpload` decides what a file needs before it goes to the device.
 // Written without TS-only runtime syntax so node can import it for the tests.
-import { DkError } from './dkupload-core.ts';
+import { DkError } from '@digi/dk-session';
 
 export interface SampleInfo {
   srcRate: number;

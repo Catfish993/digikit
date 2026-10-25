@@ -1,7 +1,7 @@
 // Web MIDI (with SysEx permission) as a DkTransport. The access object is passed in, so the tests give it a mock.
 // Written without TS-only runtime syntax so node can import it.
 
-import type { DkTransport } from './dkupload-core.ts';
+import type { DkTransport } from '@digi/dk-session';
 
 /** The parts of the Web MIDI API this file uses. */
 export interface MidiPortLike {

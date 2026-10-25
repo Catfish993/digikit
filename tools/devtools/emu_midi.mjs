@@ -1,7 +1,7 @@
 // The control socket of a running emulator as a `DkTransport`: JSON-RPC lines, the `midi.usb.in` / `midi.usb.out` the desktop page reaches with `emu_call`.
 // Shared by the live checks of the TypeScript clients (samples_live.mjs, samples_store_live.mjs). A dev tool: the app starts no process.
 import net from 'node:net';
-import { splitMessages } from '../../apps/web/src/modules/dkupload-core.ts';
+import { splitMessages } from '../../packages/dk-session/src/index.ts';
 
 /** Milliseconds between two polls of `midi.usb.out` while a request waits for its reply (the desktop transport polls every 10; `DIGI_POLL_MS` to try another). */
 const POLL_MS = Number(process.env.DIGI_POLL_MS ?? 10);

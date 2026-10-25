@@ -6,7 +6,7 @@
 //
 // One JSON line per run and chunk size: wall seconds, MB/s, guest instructions per byte, the real-time factor, the controller's CPU seconds.
 import { randomBytes } from 'node:crypto';
-import { DkSession } from '../../apps/web/src/modules/dkupload-core.ts';
+import { DkSession } from '../../packages/dk-session/src/index.ts';
 import { RpcFiles } from '../../apps/web/src/modules/rpcfiles.ts';
 import { connect } from './emu_midi.mjs';
 

@@ -11,7 +11,7 @@
 // the last line is the result; exit code 0 when all hold. The bytes stored are written to DIR for the scenario's comparison with the card mirror.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DkSession, hexSha256 } from '../../apps/web/src/modules/dkupload-core.ts';
+import { DkSession, hexSha256 } from '../../packages/dk-session/src/index.ts';
 import { Sample, prepareUpload } from '../../apps/web/src/modules/dksample.ts';
 import { openSamples } from '../../apps/web/src/modules/samples.ts';
 import { connect } from './emu_midi.mjs';

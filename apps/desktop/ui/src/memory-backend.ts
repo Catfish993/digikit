@@ -1,7 +1,7 @@
 // What the Memory panel reads: CAPACITY and MODULES of the device behind a session, and the local library (transfer-backend.ts: the built modules
 // of the library folder, with their needs from patchkit.wasm). The page speaks the protocol itself over the session of target.ts; no process is
 // started. The preview replaces this module (preview/memory-backend.mock.ts).
-import { DkError, hasCap, type DkSession } from '@web/modules/dkupload-core';
+import { DkError, hasCap, type DkSession } from '@digi/dk-session';
 import { buildBars, type Bar, type KnownModule } from './memory-core';
 import { loadLibrary } from './transfer-backend';
 

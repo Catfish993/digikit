@@ -1,7 +1,7 @@
 // The stock MidiRpc file commands of the Digitakt II (docs/MIDI-SYSEX-RPC.md section 12): the +Drive, the filesystem the device's own sample browser
 // lists. A generic client over `DkSession.rpc`: it knows the commands, not the device (which device uses it for samples is the profile's `[storage]`).
 // Every FsSample reply starts with a status byte, 1 for OK. Integers are big-endian. Written without TS-only runtime syntax so node can import it.
-import { DkError, be32, concat, u32 } from './dkupload-core.ts';
+import { DkError, be32, concat, u32 } from '@digi/dk-session';
 
 export const RPC_FILE = {
   STORAGE_SPACE: 0x05,

@@ -1,5 +1,5 @@
 // The glue of wait-core.ts's Activity to the app: the one tracker of the window, the transports that feed it, and the page's progress events.
-import type { DkTransport } from '@web/modules/dkupload-core';
+import type { DkTransport } from '@digi/dk-session';
 import { createActivity } from './wait-core.ts';
 
 const tracker = createActivity();

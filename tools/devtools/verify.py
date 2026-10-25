@@ -334,6 +334,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             ".prettierignore",
             ".editorconfig",
             "packages/control-client/",
+            "packages/dk-session/",
             "packages/test-support/",
             "tests/regression/",
         ),
@@ -1005,6 +1006,8 @@ def web_check(gate: Gate) -> None:
         cwd=web,
     )
     gate.run("web-types", ["npx", "astro", "check"], cwd=web)
+    gate.run("dk-session-tests", ["pnpm", "--filter", "@digi/dk-session", "test"])
+    gate.run("dk-session-types", ["pnpm", "--filter", "@digi/dk-session", "typecheck"])
 
 
 # Steps that need a built binary: DN2 steps the DN2 coupled-run, DT2 steps the DT2 one.

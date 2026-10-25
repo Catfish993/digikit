@@ -1,7 +1,7 @@
 // The workbench target: the emulator, or a MIDI port with a real device on it. Every page that talks the digikit protocol (Transfer, Remote, the
 // Memory panel) uses the one selected here, through the one session of that target. The protocol client is the same in both cases (`DkSession`); only the transport differs.
 import { createSignal } from 'solid-js';
-import { DkSession } from '@web/modules/dkupload-core';
+import { DkSession } from '@digi/dk-session';
 import { instrument } from './activity';
 import { EmuUsbTransport, emulatorMode } from './desktop-transport';
 import { closeMidiPort, MidiPortTransport, openMidiPort } from './midi-transport';

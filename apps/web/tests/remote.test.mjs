@@ -9,8 +9,8 @@ import {
   encode8in7,
   frame,
   screenPixel,
-} from '../src/modules/dkupload-core.ts';
-import { SERVICE_CMD } from '../src/modules/gen_proto.ts';
+} from '@digi/dk-session';
+import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 
 const concat = (...p) => Uint8Array.from(Buffer.concat(p.map((x) => Buffer.from(x))));
 const PREFIX = [0xf0, 0x7d, 0x64, 0x6b, 1];
