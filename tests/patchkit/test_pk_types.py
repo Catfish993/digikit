@@ -5,6 +5,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
@@ -56,9 +57,30 @@ def test_numbers_are_unique_in_range_and_never_stock() -> None:
     assert t["dt2"]["last"] < 24  # the DSP selector table was read to entry 23
 
 
+# A table with free numbers below the run-time range (the real one can be full there).
+ROOMY = """\
+[dt2]
+last = 23
+dynamic_first = 16
+
+[dt2.alloc]
+"test/a:a" = 7
+"test/b:b" = 9
+"core/dynreg:dyn16" = 16
+
+[dn2]
+last = 23
+dynamic_first = 16
+
+[dn2.alloc]
+"test/c:c" = 5
+"core/dynreg:dyn16" = 16
+"""
+
+
 def test_allocate_takes_the_next_number_and_keeps_existing_ones(tmp_path: Path) -> None:
     p = tmp_path / "types.toml"
-    p.write_text(TYPES.read_text())
+    p.write_text(ROOMY)
     before = tomllib.loads(p.read_text())
     got = pk_new.allocate("machines/foo:foo", ["dt2", "dn2"], p)
     after = tomllib.loads(p.read_text())
@@ -70,3 +92,10 @@ def test_allocate_takes_the_next_number_and_keeps_existing_ones(tmp_path: Path) 
         for k, v in before[dev]["alloc"].items():
             assert after[dev]["alloc"][k] == v
     assert pk_new.allocate("machines/foo:foo", ["dt2"], p) == {"dt2": got["dt2"]}
+
+
+def test_allocate_stops_below_the_run_time_range(tmp_path: Path) -> None:
+    p = tmp_path / "types.toml"
+    p.write_text(ROOMY.replace('"test/b:b" = 9', '"test/b:b" = 15'))
+    with pytest.raises(SystemExit, match=r"\[dt2\] is full"):
+        pk_new.allocate("machines/foo:foo", ["dt2"], p)
