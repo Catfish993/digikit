@@ -331,6 +331,28 @@ result = runner.run(max_steps=20000)
 print(result.halt.reason, result.instructions_per_second)
 ```
 
+### `tools/sharc_dev/sharc_accesses.py`
+
+A step's data accesses, read from the trace events the runner's forms record
+(`load`, `store`, `load-pey`, `store-pey`, with space, address and width). It is
+for tools that measure a run: cycle models, DM/PM bus checks, write watches.
+Use it instead of wrapping `sharc_core.memory._dm_read` or `_dm_write`. The forms
+modules import those names directly, so a wrapper on the memory module misses
+most of their accesses.
+
+```py
+from tools.sharc_dev.sharc_accesses import enable, step_accesses
+enable(runner.state)                  # a saved snapshot may have events off
+start = len(runner.state.trace)
+...                                   # one step
+for a in step_accesses(runner.state.trace[start:]):
+    a.kind, a.space, a.address, a.width   # "r"/"w", "DM"/"PM", byte address, bytes
+del runner.state.trace[:-1]           # keep the trace bounded
+```
+
+Python runner only. The native engine has `SHARC_WWATCH`
+(`docs/INSTRUMENTATION.md`).
+
 ### `tools/sharc_dev/sharc_worklist.py`
 
 Measures how much of a SHARC+ region the current language gives real p-code.
