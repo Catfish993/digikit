@@ -5,12 +5,19 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./gen_proto": "./src/gen_proto.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    },
+    "./gen_proto": {
+      "types": "./dist/gen_proto.d.ts",
+      "default": "./src/gen_proto.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test \"tests/*.test.ts\""
+    "test": "node --test \"tests/*.test.ts\"",
+    "build:types": "tsc -p tsconfig.types.json"
   },
   "devDependencies": {
     "@types/node": "22.15.0",

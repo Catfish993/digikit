@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
+import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { repoRoot, Session, type Device, type SessionOptions } from '@digi/test-support';
 
 export interface SessionHandle {
@@ -25,6 +26,59 @@ export function withSession(opts: SessionOptions & { restart?: boolean }): Sessi
     get session() {
       if (!session) throw new Error('session not started');
       return session;
+    },
+  };
+}
+
+export interface PatchedSession {
+  readonly session: Session;
+  readonly dk: DkSession;
+  close(): Promise<void>;
+}
+
+/** A fresh runtime daemon; protocol cancellation precedes daemon shutdown. No remote module is assumed installed. */
+export async function startPatchedSession(
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string },
+): Promise<PatchedSession> {
+  const session = await Session.start({
+    ...opts,
+    dsp: 'sharc',
+    runtime: { patchSet: opts.patchSet },
+  });
+  try {
+    const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
+    let closing: Promise<void> | undefined;
+    return {
+      session,
+      dk,
+      close() {
+        return (closing ??= (async () => {
+          dk.cancelPending();
+          await session.close();
+        })());
+      },
+    };
+  } catch (err) {
+    await session.close();
+    throw err;
+  }
+}
+
+/** No restart hook: every acceptance file owns a single fresh, free-running runtime. */
+export function withPatchedSession(opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string }): {
+  readonly runtime: PatchedSession;
+} {
+  let runtime: PatchedSession | undefined;
+  beforeAll(async () => {
+    runtime = await startPatchedSession(opts);
+  });
+  afterAll(async () => {
+    await runtime?.close();
+  });
+  return {
+    get runtime() {
+      if (!runtime) throw new Error('runtime not started');
+      return runtime;
     },
   };
 }

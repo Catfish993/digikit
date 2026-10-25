@@ -46,9 +46,25 @@ export interface FirmwareLoadParams {
   dsp_patch?: string;
   force?: boolean;
   auto_no?: boolean;
+  /** Patch the stock image with the device profile patch set (cached by content). */
+  runtime?: boolean;
+  patch_set?: string;
 }
 
+export type RuntimeIdentity =
+  | { patched: false; reason: string }
+  | {
+      patched: true;
+      set: string;
+      cache_hit: boolean;
+      modules: string[];
+      base_sha256: string;
+      cache_file: string;
+      seconds: number;
+    };
+
 export interface FirmwareLoadResult {
+  runtime?: RuntimeIdentity;
   start_used?: string;
   main_changed?: boolean;
   sections_changed?: unknown;
@@ -127,6 +143,8 @@ export interface LoadStatus {
 }
 
 export interface StatusResult {
+  mode?: string;
+  firmware?: { base_sha256?: string; syx_sha256?: string; injected?: boolean; runtime?: RuntimeIdentity | null } | null;
   cf: CfStatus;
   heartbeat: Heartbeat;
   /** "zero", "sharc" or "none". */

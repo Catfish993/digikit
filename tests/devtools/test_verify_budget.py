@@ -570,3 +570,16 @@ def test_file_jobs_leave_the_cores_a_waiting_step_needs() -> None:
         )
         == []
     )
+
+
+def test_runtime_fixture_reserves_one_coupled_daemon() -> None:
+    assert verify_budget.want_cores("runtime-fixture", 16) == 2
+    assert verify_budget.want_cores("runtime-fixture", 1) == 1
+
+
+def test_runtime_fixture_waits_for_its_entire_reservation() -> None:
+    budget = verify_budget.Budget(total=4)
+    budget.running["web"] = 3
+    assert budget.admit("runtime-fixture") is None
+    budget.release("web")
+    assert budget.admit("runtime-fixture") == 2

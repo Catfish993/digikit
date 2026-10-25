@@ -208,6 +208,7 @@ STEPS = (
     "build",
     "desktop",
     "web",
+    "runtime-fixture",
     "pins",
     "check",
     "check-no-aot",
@@ -497,6 +498,15 @@ def route(path: str) -> tuple[str, tuple[str, ...]]:
     """How one changed path is routed: (matched prefix or "docs"/"fallback", steps)."""
     if path.endswith(".md"):
         return "docs", ()  # documentation selects no steps
+    if path in (
+        "packages/test-support/src/session.ts",
+        "packages/test-support/src/inputs.ts",
+        "packages/control-client/src/daemon.ts",
+        "packages/control-client/src/client.ts",
+        "tests/regression/support.ts",
+        "tests/regression/vitest.runtime.config.ts",
+    ) or path.startswith("tests/regression/runtime/"):
+        return "runtime fixture", ("web", "runtime-fixture")
     found = verify_route.fine(path)
     if found is not None:
         return found.label, found.steps
@@ -1005,9 +1015,15 @@ def web_check(gate: Gate) -> None:
         ["node", f"--test-concurrency={gate.share()}", "--test", "tests/*.test.mjs"],
         cwd=web,
     )
-    gate.run("web-types", ["npx", "astro", "check"], cwd=web)
+    gate.run("web-types", ["pnpm", "--filter", "@digi/web", "check"])
     gate.run("dk-session-tests", ["pnpm", "--filter", "@digi/dk-session", "test"])
     gate.run("dk-session-types", ["pnpm", "--filter", "@digi/dk-session", "typecheck"])
+    gate.run("test-support-tests", ["pnpm", "--filter", "@digi/test-support", "test"])
+    gate.run(
+        "test-support-types", ["pnpm", "--filter", "@digi/test-support", "typecheck"]
+    )
+    gate.run("regression-host", ["pnpm", "--filter", "@digi/regression", "test:host"])
+    gate.run("regression-types", ["pnpm", "--filter", "@digi/regression", "typecheck"])
 
 
 # Steps that need a built binary: DN2 steps the DN2 coupled-run, DT2 steps the DT2 one.
@@ -1016,7 +1032,7 @@ DN2_BINARY = ("pins", "check", "check-no-aot", "tier-quick", "tier-sweep")
 DT2_BINARY = ("dt2-tone", "dt2-check", "dt2-tier-quick", "dt2-tier-sweep")
 # Test files that drive a `digi-emud` daemon: python-tests builds the daemons once (build-daemons) when
 # its plan has one of them (a file not listed here still works: it builds the daemon itself).
-DAEMON_NODES = ("python-tests", "card", "smoke")
+DAEMON_NODES = ("python-tests", "card", "smoke", "runtime-fixture")
 DAEMON_TESTS = (
     "tests/digikit/",
     "tests/patchkit/smoke/",
@@ -1410,6 +1426,17 @@ def run_step(gate: Gate, step: str) -> None:
         desktop_check(gate)
     elif step == "web":
         web_check(gate)
+    elif step == "runtime-fixture":
+        if gate.share() < verify_budget.EMULATOR_CORES:
+            raise RuntimeError(
+                "runtime-fixture requires a shared budget of at least two cores"
+            )
+        # No implicit build: explicit runs require preflighted per-device binaries. If another
+        # selected step builds daemons, plan() orders us after it and shared_env supplies them.
+        gate.run(
+            "runtime-fixture",
+            ["pnpm", "--filter", "@digi/regression", "test:runtime"],
+        )
     elif step == "pins":
         cmd = [
             *PY,

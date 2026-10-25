@@ -286,6 +286,9 @@ importers:
       '@digi/control-client':
         specifier: workspace:*
         version: link:../../packages/control-client
+      '@digi/dk-session':
+        specifier: workspace:*
+        version: link:../../packages/dk-session
       '@digi/test-support':
         specifier: workspace:*
         version: link:../../packages/test-support

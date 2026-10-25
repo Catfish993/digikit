@@ -370,7 +370,7 @@ def is_file_job(node: str) -> bool:
 
 def want_cores(node: str, total: int) -> int:
     """The cores NODE asks for in a budget of TOTAL (an emulator pool asks for at least one process)."""
-    if is_file_job(node):
+    if is_file_job(node) or node == "runtime-fixture":
         return min(EMULATOR_CORES, total)
     cores = max(1, round(WANT.get(node, DEFAULT_WANT) * total))
     if node in EMULATOR_POOLS:
@@ -399,6 +399,8 @@ class Budget:
             raise ValueError(f"{node} is running already")
         want = want_cores(node, self.total)
         share = min(want, self.free)
+        if node == "runtime-fixture" and share < want:
+            return None  # one coupled daemon cannot run on half its reservation
         if is_file_job(node):
             if share < want:
                 return None

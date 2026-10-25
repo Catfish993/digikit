@@ -140,6 +140,28 @@ smoke is skipped and `--explain` prints `smoke: skipped, UI-only change`. It is 
 | `tools/devtools/verify.py`, `verify_route.py` | every step | every suite |
 | generated-core inputs, emulator crates, `sharc_dev` | as before (broad) | as before |
 
+
+The targeted `runtime-fixture` step checks patched runtime boot/load identity, ready/free status and health
+on DT2 1.17 and DN2 1.12. Changes to its cases/configuration/shared fixture, Session/input provenance or
+control-client lifecycle select it alongside cheap host checks in `web`; ordinary host-test changes do not
+select device acceptance. See [regression fixture details](../tests/regression/README.md). Host-only:
+`pnpm --filter @digi/regression test:host`; `pnpm --filter @digi/regression typecheck` explicitly generates
+shared-session declarations first. Device-only, after binary freshness and ready-input provenance review:
+
+```sh
+DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_EMUD_DN2=/path/to/dn2-emud \
+  DIGI_RUNTIME_CARD="$PWD/out/runs/patchkit/samples" \
+  mise run verify -- --only runtime-fixture --jobs 2
+```
+
+Use existing per-device binaries, ready inputs and generated DT2 card samples. The step runs one fresh
+coupled daemon at a time, waits for its full two-core reservation, and fails with a budget below two.
+Selecting it alone adds no build; if another selected step requires `build-daemons`, acceptance waits
+for that node and uses its published PGO copies or plain binary paths. Missing prerequisites fail rather
+than triggering an automatic build. Each runtime startup has a 120-second deadline with awaited daemon
+cleanup (at most ten more seconds); the Vitest hook limit is 150 seconds. Module installation/remote
+behavior, snapshot/reuse and Python scenario migration are outside this boot fixture's assertions.
+
 `PY_GATE` runs in every case: lint, types, pathcheck and `tests/patchkit/test_pk_current.py` (`pk_build build-all --check` and the port files). Not run by any pytest file: the scenario kinds `rungc` and `pages`, and the module smoke
 cells (`uv run python -m tools.patchkit.pk_harness run`; the `smoke` step of `verify` runs them). A new `tools/device` module must be listed in `DEVICE_KINDS`
 (a test fails until it is).

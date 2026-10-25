@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,4 +59,13 @@ export function resolveInputs(device: Device, firmware: string): ReadyInputs {
     }
   }
   return ready;
+}
+
+/** Runtime boots require ready inputs from this stock image, without forced interrupt state. */
+export function validateRuntimeInputs(inputs: ReadyInputs): void {
+  const source = JSON.parse(fs.readFileSync(path.join(inputs.readyDir, 'SOURCE.json'), 'utf8'));
+  const sha256 = createHash('sha256').update(fs.readFileSync(inputs.syx)).digest('hex');
+  if (source.syx_sha256 !== sha256 || source.intc_force !== false) {
+    throw new Error(`${inputs.readyDir}: runtime ready provenance mismatch (stock SHA-256 or intc_force)`);
+  }
 }

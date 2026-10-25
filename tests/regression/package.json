@@ -5,13 +5,16 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "pnpm --filter @digi/dk-session build:types && tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:update": "UPDATE_GOLDENS=1 vitest run"
+    "test:update": "UPDATE_GOLDENS=1 vitest run",
+    "test:runtime": "vitest run --config vitest.runtime.config.ts",
+    "test:host": "vitest run --config vitest.host.config.ts"
   },
   "dependencies": {
     "@digi/control-client": "workspace:*",
-    "@digi/test-support": "workspace:*"
+    "@digi/test-support": "workspace:*",
+    "@digi/dk-session": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.15.0",

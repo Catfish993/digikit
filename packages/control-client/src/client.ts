@@ -34,6 +34,8 @@ interface Pending {
 }
 
 export interface ConnectOptions {
+  /** Abort socket connection and the hello handshake. */
+  signal?: AbortSignal;
   /** Most events kept for `events()`; the oldest are dropped past this. Default 10000. */
   maxBufferedEvents?: number;
 }
@@ -230,7 +232,7 @@ function opt(params: Record<string, unknown>): Record<string, unknown> {
 /** Connect to a control socket and run the `hello` handshake. */
 export function connect(socketPath: string, options: ConnectOptions = {}): Promise<Client> {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection(socketPath);
+    const socket = net.createConnection({ path: socketPath, signal: options.signal });
     socket.once('error', reject);
     socket.once('connect', () => {
       socket.off('error', reject);

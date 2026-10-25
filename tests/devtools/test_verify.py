@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -741,6 +743,25 @@ def test_web_check_runs_dk_session_owner_checks(
     )
     monkeypatch.setattr(verify.Gate, "share", lambda self: 1)
     verify.web_check(object.__new__(verify.Gate))
+    assert calls["web-types"] == ["pnpm", "--filter", "@digi/web", "check"]
+    assert calls["regression-host"] == [
+        "pnpm",
+        "--filter",
+        "@digi/regression",
+        "test:host",
+    ]
+    assert calls["regression-types"] == [
+        "pnpm",
+        "--filter",
+        "@digi/regression",
+        "typecheck",
+    ]
+    assert calls["test-support-tests"] == [
+        "pnpm",
+        "--filter",
+        "@digi/test-support",
+        "test",
+    ]
     assert calls["dk-session-tests"] == ["pnpm", "--filter", "@digi/dk-session", "test"]
     assert calls["dk-session-types"] == [
         "pnpm",
@@ -914,3 +935,106 @@ def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out
     assert "smoke" in out
     assert "pins" not in out
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/test-support/src/session.ts",
+        "packages/test-support/src/inputs.ts",
+        "packages/control-client/src/daemon.ts",
+        "packages/control-client/src/client.ts",
+        "tests/regression/support.ts",
+        "tests/regression/vitest.runtime.config.ts",
+        "tests/regression/runtime/acceptance.ts",
+        "tests/regression/runtime/dt2.test.ts",
+        "tests/regression/runtime/dn2.test.ts",
+    ],
+)
+def test_runtime_fixture_sources_select_acceptance(path: str) -> None:
+    assert verify.steps_for([path]) == ("web", "runtime-fixture", "smoke")
+
+
+def test_runtime_fixture_explicit_plan_never_builds_but_waits_for_existing_build() -> (
+    None
+):
+    nodes, deps = verify.plan(("runtime-fixture",))
+    assert nodes == ["runtime-fixture"]
+    assert deps["runtime-fixture"] == ()
+    nodes, deps = verify.plan(("runtime-fixture", "smoke"))
+    assert "build-daemons" in nodes
+    assert deps["runtime-fixture"] == ("build-daemons",)
+
+
+def test_runtime_fixture_command_is_sequential(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+    monkeypatch.setattr(verify.Gate, "share", lambda self: 2)
+    monkeypatch.setattr(verify.Gate, "step_env", lambda self: {"DIGI_JOBS": "1"})
+    monkeypatch.setattr(
+        verify.Gate,
+        "run",
+        lambda self, name, cmd, **kwargs: calls.append((name, cmd, kwargs)),
+    )
+    verify.run_step(object.__new__(verify.Gate), "runtime-fixture")
+    assert calls == [
+        (
+            "runtime-fixture",
+            ["pnpm", "--filter", "@digi/regression", "test:runtime"],
+            {},
+        )
+    ]
+
+
+def test_runtime_fixture_host_paths_do_not_select_device_acceptance() -> None:
+    assert verify.steps_for(["tests/regression/host/runtime.test.ts"]) == (
+        "web",
+        "smoke",
+    )
+
+
+def test_runtime_fixture_rejects_insufficient_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(verify.Gate, "step_env", lambda self: {"DIGI_JOBS": "1"})
+    monkeypatch.setattr(verify.Gate, "share", lambda self: 1)
+    with pytest.raises(RuntimeError, match="at least two cores"):
+        verify.run_step(object.__new__(verify.Gate), "runtime-fixture")
+
+
+@pytest.mark.parametrize("from_build", [False, True])
+def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    from_build: bool,
+) -> None:
+    monkeypatch.setenv("PATH", "/host/tool/bin")
+    monkeypatch.setenv("DIGI_EMUD_DT2", "/supplied/dt2-emud")
+    monkeypatch.setenv("DIGI_EMUD_DN2", "/supplied/dn2-emud")
+    monkeypatch.setenv("DIGI_RUNTIME_CARD", "/supplied/samples")
+    monkeypatch.setattr(verify.verify_budget, "machine_cargo_cap", lambda: 1)
+    monkeypatch.setattr(verify.benchlock, "hold", lambda *_args: nullcontext())
+    environments: list[dict[str, str]] = []
+
+    def capture(
+        cmd: list[str], *, env: dict[str, str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert cmd == ["pnpm", "--filter", "@digi/regression", "test:runtime"]
+        environments.append(env)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(verify.subprocess, "run", capture)
+    gate = verify.Gate(tmp_path, budget=2)
+    gate.local.node = "runtime-fixture"
+    if from_build:
+        gate.shared_env.update(
+            {"DIGI_EMUD_DT2": "/built/dt2-emud", "DIGI_EMUD_DN2": "/built/dn2-emud"}
+        )
+    verify.run_step(gate, "runtime-fixture")
+    assert len(environments) == 1
+    env = environments[0]
+    assert env["PATH"] == "/host/tool/bin"
+    assert env["DIGI_RUNTIME_CARD"] == "/supplied/samples"
+    prefix = "built" if from_build else "supplied"
+    assert env["DIGI_EMUD_DT2"] == f"/{prefix}/dt2-emud"
+    assert env["DIGI_EMUD_DN2"] == f"/{prefix}/dn2-emud"
+    assert not gate.failed
