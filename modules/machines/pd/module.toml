@@ -29,8 +29,9 @@ render = "_pd_render"
 note_on = "_pd_note_on"
 desc = "_pd_desc"
 
-# SAMPLE's TUNE (0xca) and LEV (0xd1) at the ends. Parameters take the first positions of the device's
-# param_slots list -- 1, 2 and 4 on the Digitakt II -- whatever positions are written here.
+# SAMPLE's TUNE (0xca) and LEV (0xd1) at the ends. The DSP reads params[i] from the knob at param_slots[i]
+# (Digitakt II 1.17: 1, 2, 4, 5). The positions in knobs below also set the UI slot, the p-lock slot, the frame
+# offsets and the generated files, so they must equal param_slots.
 [[machine]]
 id = "pd"
 name = "Phase Dist"

@@ -57,7 +57,7 @@ default = 0x0000
 
 [[param]]
 id = "analog_sub"
-name = "Sub / Fold"
+name = "Sub"
 short = "SUB"
 template = 0xd1
 min = 0

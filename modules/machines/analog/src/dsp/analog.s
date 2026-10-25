@@ -12,16 +12,16 @@
 //   1 DETUNE  0 = unison, 1 = 3 % apart (on two saws that is the rolling reese beat)
 //   2 WAVE    0 saw -> 1/3 triangle -> 2/3 pulse (5 %) -> 1 square (50 %): one continuous slider, and it shapes the
 //             oscillators themselves, so there is no second oscillator and no blend level
-//   4 SUB     sub level over 0 .. 3/4, wave folding over 3/4 .. 1 (below 3/4 nothing folds)
+//   4 SUB     sub level, 0 .. 1 over the whole range (a square one octave down)
+//   5 FOLD    wave-folder drive on the oscillators only, 1 .. 4 (0 = no fold); the sub is added after the folder
 //
-// The adapter maps module parameters by position in the device's param_slots [1, 2, 4, 5]; the three parameters here
-// take 1, 2 and 4 (3 is the sample slot, 0 and 7 are the stock tune and level), so four features have to fit in three
-// knobs and the folder shares SUB.
+// The adapter maps module parameters by position in the device's param_slots [1, 2, 4, 5]: the four parameters here
+// take all four (3 is the sample slot, 0 and 7 are the stock tune and level).
 //
 // No drive and no noise: the FX overdrive works on the oscillators as it does on a sample, and sample-rate and
 // bit-rate reduction crunch them, so both knobs are better spent on the shape and the sub.
 //
-// State (5 words = 20 bytes; nothing is cleared at note-on): phase 1, phase 2, sub phase, fold drive, magic.
+// State (6 words = 24 bytes; nothing is cleared at note-on): phase 1, phase 2, sub phase, fold drive, magic, note-on ramp counter.
 //
 // Register map. F and R are one file, so nothing may collide, and a constant must never land on a register that holds a
 // signal. Persistent through the sample loop:
@@ -112,7 +112,7 @@ _va_booted:
     NOP;
     F7 = F12 + F0;
 
-    // ---- WAVE shape, and the SUB knob, whose top quarter is the wave folder ----
+    // ---- WAVE shape, the SUB level and the FOLD drive ----
     R1 = 0x38010204;                      // 1 / 32512
     R0 = DM(1, I1);
     F0 = FLOAT R0;

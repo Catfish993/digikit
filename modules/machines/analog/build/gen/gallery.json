@@ -22,7 +22,10 @@
               "param": "analog_sub",
               "slot": 29
             },
-            null,
+            {
+              "param": "analog_fold",
+              "slot": 30
+            },
             null,
             {
               "slot": 32,
@@ -57,7 +60,10 @@
               "param": "analog_sub",
               "slot": 4
             },
-            null,
+            {
+              "param": "analog_fold",
+              "slot": 5
+            },
             null,
             {
               "slot": 7,
@@ -106,9 +112,19 @@
         "id": "analog_sub",
         "max": 32512,
         "min": 0,
-        "name": "Sub / Fold",
+        "name": "Sub",
         "short": "SUB",
         "slot": 29,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "analog_fold",
+        "max": 32512,
+        "min": 0,
+        "name": "Fold",
+        "short": "FOLD",
+        "slot": 30,
         "template": 209
       }
     ],
@@ -138,9 +154,19 @@
         "id": "analog_sub",
         "max": 32512,
         "min": 0,
-        "name": "Sub / Fold",
+        "name": "Sub",
         "short": "SUB",
         "slot": 4,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "analog_fold",
+        "max": 32512,
+        "min": 0,
+        "name": "Fold",
+        "short": "FOLD",
+        "slot": 5,
         "template": 209
       }
     ]
