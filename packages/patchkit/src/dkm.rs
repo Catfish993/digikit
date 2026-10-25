@@ -335,18 +335,25 @@ pub fn pack_full_max(
         },
     );
     put(&mut f, H_VERSION, o.version);
-    // contracts: api always; machine with a DSP section or a machine record; service with slot functions or a real `dkm_init`/`dkm_fini` (not the stub)
+    // contracts: api always; machine with a DSP section (that is not only effects) or a machine record; fx with an effect record; service with slot functions or a real `dkm_init`/`dkm_fini` (not the stub)
     let sdk = crate::sdkgen::embedded();
     let has_service = !slots.is_empty() || has_obj && (init.is_some() || fini.is_some());
     let none = (0, 0);
+    // a DSP section of version 4 with effects and no voice implements the fx contract and not the machine contract (a machine needs a voice or a record)
+    let word = |off: usize| {
+        dsp.get(off..off + 4)
+            .map_or(0, |b| u32::from_be_bytes(b.try_into().unwrap()))
+    };
+    let has_fx = word(4) == crate::dkmdsp::VERSION_4 && word(0x38) > 0;
+    let fx_only = has_fx && word(0x30) == 0;
     let pairs = [
         sdk.api,
-        if dsp.is_empty() && !has_machine_record(reg) {
+        if (dsp.is_empty() || fx_only) && !has_machine_record(reg) {
             none
         } else {
             sdk.machine
         },
-        none,
+        if has_fx { sdk.fx } else { none },
         if has_service { sdk.service } else { none },
     ];
     for (i, (maj, min)) in pairs.iter().enumerate() {
@@ -713,6 +720,7 @@ mod tests {
                 voices,
                 ranges: [0; 8],
             }],
+            fxs: vec![],
         }
         .encode()
     }
@@ -818,6 +826,8 @@ mod tests {
         assert_eq!(dkneeds::LEN_PARAM as usize, r::LEN_PARAM);
         assert_eq!(dkneeds::LEN_MACHINE as usize, r::LEN_MACHINE);
         assert_eq!(dkneeds::LEN_PAGE as usize, r::LEN_PAGE);
+        assert_eq!(dkneeds::KIND_EFFECT, r::KIND_EFFECT);
+        assert_eq!(dkneeds::LEN_EFFECT as usize, r::LEN_EFFECT);
         assert_eq!(dkneeds::MAX_RECORDS as usize, r::MAX_RECORDS);
         use crate::dkmdsp as d;
         assert_eq!(dkneeds::DSP_MAGIC, d::MAGIC);

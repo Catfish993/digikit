@@ -117,6 +117,9 @@ Time (release build): the first patch of a 1.17 or 1.12 image takes about 1.3 s,
 (`step` fails with `exception vector N`), because an exception in the firmware is a bug the harness must see. The setting is kept for every runtime
 installed later, so it holds across a soft reset. A soft reset also carries the RAM range `[digikit] keep_base .. + keep_bytes` of the device file into the new
 cold boot (a model of a device whose RAM survives a reset; `docs/findings/46-digikit-debug.md`).
+The old runtime keeps stepping while the cold boot runs on its worker; when the boot is installed, a `step` or `run_until` job in flight ends at once
+(its result has `runtime_replaced: true`), so the new runtime starts at the same instruction in every run and not at a count that depends on the host's speed
+(`docs/findings/55-fx-adapter.md`). A harness waits for the `firmware.loaded` event (it is sent before the job's reply).
 
 `leds.get` returns `{led_revision, leds, rgb}`: `leds` is 128 hex digits (64 LED values), `rgb` 384 hex digits
 (64 x r, g, b) or null until any is set. It reads the emulator's current state and does not consume it from the UI.

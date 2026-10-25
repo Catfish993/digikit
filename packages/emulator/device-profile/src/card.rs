@@ -81,11 +81,15 @@ pub struct StoreLayout {
     pub end_sector: u64,
     /// The last `selection_sectors` sectors of the range hold the runtime's selection record (two copies of one sector, the
     /// runtime writes them with the firmware's block write; docs/design/digikit-store.md). The store builder keeps its files out
-    /// of them: its limit is `end_sector - first_sector - selection_sectors`.
+    /// of them: its limit is `end_sector - first_sector - selection_sectors - settings_sectors - 1`.
     #[serde(default = "default_selection_sectors")]
     pub selection_sectors: u64,
+    /// The `settings_sectors` sectors before the selection record hold the runtime's settings record (two copies of
+    /// `sdk/sdk.toml [settings] sectors`; docs/design/digikit-store.md, "The settings record"). The store builder keeps its files out of them.
+    #[serde(default = "default_settings_sectors")]
+    pub settings_sectors: u64,
     /// Absolute sector of the second store header copy (version 2, docs/design/digikit-store.md): the sector just before the
-    /// selection record. Absent: `end_sector - selection_sectors - 1`.
+    /// settings record. Absent: `end_sector - selection_sectors - settings_sectors - 1`.
     #[serde(default)]
     pub header_b_sector: Option<u64>,
 }
@@ -94,10 +98,15 @@ impl StoreLayout {
     /// Absolute sector of header copy B.
     pub fn header_b(&self) -> u64 {
         self.header_b_sector
-            .unwrap_or(self.end_sector - self.selection_sectors - 1)
+            .unwrap_or(self.end_sector - self.selection_sectors - self.settings_sectors - 1)
     }
 
-    /// Sectors a store (header A, table, data) may use from `first_sector`: the range without header B and the selection record.
+    /// Absolute sector of settings record copy A; copy B follows `settings_sectors / 2` sectors later.
+    pub fn settings_a(&self) -> u64 {
+        self.end_sector - self.selection_sectors - self.settings_sectors
+    }
+
+    /// Sectors a store (header A, table, data) may use from `first_sector`: the range without header B, the settings record and the selection record.
     pub fn store_limit(&self) -> u64 {
         self.header_b() - self.first_sector
     }
@@ -105,6 +114,10 @@ impl StoreLayout {
 
 fn default_selection_sectors() -> u64 {
     2
+}
+
+fn default_settings_sectors() -> u64 {
+    32
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -228,9 +241,10 @@ impl CardLayout {
             }
             // header A, header B, the selection record and at least a few sectors of table and data
             if store.header_b() <= store.first_sector + 16
-                || store.header_b() + 1 + store.selection_sectors != store.end_sector
+                || store.header_b() + 1 + store.settings_sectors + store.selection_sectors
+                    != store.end_sector
             {
-                return Err("store header copy B must be the sector before the selection record, with room before it".into());
+                return Err("store header copy B must be the sector before the settings record, which lies before the selection record, with room before it".into());
             }
             spans.push(("store".into(), store.first_sector, store.end_sector));
         }

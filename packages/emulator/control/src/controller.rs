@@ -3491,6 +3491,7 @@ impl Actor {
                 self.install_patched_audio(install)
             }
         };
+        let installed = result.is_ok();
         self.emit(
             "firmware.loaded",
             json!({"ok": result.is_ok(), "seconds": seconds,
@@ -3500,6 +3501,18 @@ impl Actor {
             report["seconds"] = seconds.into();
             self.envelope(report)
         }));
+        // The old runtime kept stepping while the boot ran on its worker. A step or run-until job in flight has its target counted
+        // on that runtime (`icount + n`): left alone, it would run the new runtime up to that count, a number of instructions that
+        // depends on how far the old runtime had got when the boot finished (host timing). End it at the install instead, so every
+        // run starts the new runtime at the same instruction.
+        if installed
+            && matches!(
+                self.job.as_ref().map(|j| &j.kind),
+                Some(JobKind::Steps { .. } | JobKind::Until(_))
+            )
+        {
+            self.finish_job(Ok(json!({"runtime_replaced": true})));
+        }
     }
 }
 
@@ -3954,13 +3967,18 @@ mod tests {
         std::fs::write(&card, vec![0u8; 512]).unwrap();
         let main = "ab".repeat(32);
         let key = |main: &str, card: Option<&std::path::Path>| {
-            patched_pair_key(main, &image, &idle, card).unwrap()
+            patched_pair_key(main, &image, &idle, card, b"").unwrap()
         };
         let base = key(&main, None);
         assert_eq!(base, key(&main, None), "stable");
         assert!(base.starts_with("abababababababab-"));
         assert_ne!(base, key(&"cd".repeat(32), None), "another MAIN");
         assert_ne!(base, key(&main, Some(&card)), "a card");
+        assert_ne!(
+            base,
+            patched_pair_key(&main, &image, &idle, None, b"keep-ram:x").unwrap(),
+            "another cold boot input"
+        );
         std::fs::write(&idle, b"idle two").unwrap();
         assert_ne!(base, key(&main, None), "another DSP cold state");
         std::fs::write(&idle, b"idle one").unwrap();

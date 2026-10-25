@@ -1,0 +1,51 @@
+[module]
+id = "digikit/freqshift"
+version = "0.1.0"
+name = "Frequency shifter"
+category = "fx"
+type = "fx"
+author = "digikit"
+status = "experimental"
+summary = "Moves every frequency up or down by the same number of Hz."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# An effect loaded at run time on the Digitakt II (docs/findings/55-fx-adapter.md): `patchkit pack digikit/freqshift --device dt2 -o freqshift.dkm` makes the
+# .dkm. The digikit runtime sends the DSP object to the DSP and publishes a free effect row of core/dynfx (state reserved behind the image).
+# The routine and the float32 model that defines it: src/dsp/freqshift.s, tools/patchkit/freqshift_ref.py. Cookbook entry: docs/findings/54-module-cookbook.md.
+[[object]]
+path = "build/freqshift-dsp.dko.json"
+sources = ["src/dsp/freqshift.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]
+
+# One effect, `fshift` (the effect ID of saved kits is made from the module id and this id: never rename either). Its page after CHO in the FX view:
+# tab FSH, title Freq Shifter, one knob SHIFT on the first position, and the framework's MIX knob. The effect starts as a send effect (docs/findings/62-fx-send-route.md,
+# 65-fx-routes.md): a send has no dry path of its own, so MIX is the return level and starts at 127 (0 would add nothing). The user may move it to the master
+# (DIGIKIT > FX ROUTES); as a master insert MIX 127 is the fully shifted sound, and MIX is one value for both routes. SHIFT is bipolar: the shown value -64 .. +63 is the float the routine reads (0 is no shift; |v| = 1 is about 0.1 Hz,
+# the ends about +-2 kHz, exponential in between; the table is in the cookbook).
+[[fx]]
+id = "fshift"
+process = "_fs_process"
+desc = "_fs_desc"
+tab = "FSH"
+title = "Freq Shifter"
+mix = 127
+route = "send"
+routes = ["send", "master"]
+devices = ["dt2", "dn2"]
+
+[[fx.knob]]
+name = "Freq Shift"
+short = "SHIFT"
+min = -64.0
+max = 63.0
+default = 0.0
+display = "bipolar"
+position = 0

@@ -8,7 +8,7 @@ A scenario is a TOML file in `tests/digikit/scenarios/`:
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc" | "pages"
+    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc" | "pages" | "fx" | "fxsend" | "fxroute" | "fxroutes" | "settings"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -48,6 +48,28 @@ Kinds:
              out/runs/lanes/b-rungC/ (tools/patchkit/pk_digikit_rungc.py).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
              added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
+  fx         effects loaded at run time (DSP section version 4, `core/dynfx`; Digitakt II and Digitone II): the sine and `test/dyn-fx-gain` selected at boot play as the
+             dry sine times the gain, the chain's row, MODULES and CAPACITY say so, deselecting the effect and restarting gives the dry PCM again, and
+             one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
+  fxsend     a run-time effect on the send route of `core/fx` (Digitakt II): the row's route and amount words are written with `dsp.patch`; no amount, or an amount on a silent track, leaves the PCM
+             dry bit for bit; an amount on the playing track adds the effect's return (the amount squared, as the stock sends); the effect runs once a block; tools/patchkit/pk_digikit_fxsend.py.
+  fxroutes   SETTINGS > DIGIKIT > FX ROUTES and the manifest's route fields (`route`, `routes` of `[[fx]]`; Digitakt II): a send-default effect starts on the send route, the page lists each
+             effect as `<TAB>  SEND` or `<TAB>  MASTER`, YES switches the pending route (MASTER ONLY, SEND ONLY and NO SEND SLOT are messages), APPLY & RESTART writes the settings and restarts and the
+             route is in effect after it (row word, FX key page, PCM, `patchkit store dump`), the FX view lists send effects first; tools/patchkit/pk_digikit_fxroutes.py.
+  settings   the settings store of the runtime (docs/design/digikit-store.md, "The settings record"): a key put through the mailbox is written 2 s after the last change to the copy that is not
+             current (A, then B, then A), never to anything else in the store range; a soft restart reads it back; the SETTINGS command and CAPACITY kind SETTINGS report it; `patchkit store dump`
+             decodes the card the guest left; a blank card is claimed first; a torn newer copy leaves the older one; tools/patchkit/pk_digikit_settings.py.
+  fxpage     the FX view pages and knobs of run-time effects (`core/fxpages`; Digitakt II and Digitone II): with no effect loaded the three stock pages draw and play as on an image without
+             the pages; with `test/dyn-fx-gain` the view has a fourth page (tab GAN, title Test Gain, the GAIN knob and MIX), turning the knobs changes the PCM as
+             declared (gain, MIX 0 = dry bit for bit, MIX 127 = wet, the linear blend between), and deselecting the effect and restarting brings the three pages and
+             the dry PCM back; screenshots with `DIGIKIT_SHOTS=DIR`; tools/patchkit/pk_digikit_fxpage.py.
+  fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II and Digitone II): Save Kit and Load Kit restore them to the
+             same effect (kit array, DSP row, PCM, pages) and give another effect, an empty row or a stock kit the defaults, never a zero on the way to the DSP; a project; another
+             pattern's kit; tools/patchkit/pk_digikit_fxpersist.py.
+  fxshift    the frequency shifter `digikit/freqshift` (Digitakt II and Digitone II; the manifest says send, MIX 127): its page (tab FSH, title Freq Shifter, SHIFT bipolar, MIX default 127), on the master route (stored `master` on
+             the Digitakt II, the fallback on the Digitone II, which has no send cells) MIX 0 leaves the PCM bit for bit as it was, MIX 127 and SHIFT 0 keeps the sine, turning SHIFT moves the sine by the shift of the routine's
+             mapping in either direction with the image 40 dB down, Save Kit and Load Kit give SHIFT back; on the Digitakt II also the send route (the default): an amount on track 1 gives a return of amount^2 x MIX x the shifted
+             track (compared with the float32 model), an amount on another track adds nothing; tools/patchkit/pk_digikit_fxshift.py.
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
@@ -351,7 +373,13 @@ class Ctx:
             for k in self.totals:
                 self.totals[k] += w[k]
 
-    def common_checks(self) -> None:
+    def common_checks(
+        self,
+        firmware_areas: tuple[tuple[int, int], ...] = (),
+        store_extra: frozenset[int] = frozenset(),
+    ) -> None:
+        """The checks every scenario ends with. FIRMWARE_AREAS: sector ranges (first, end) below 0x50000 that the scenario makes the firmware write on purpose (the kit library of a Save Kit).
+        STORE_EXTRA: store-range sectors besides the two selection sectors that the scenario writes on purpose (the settings copies)."""
         t = self.totals
         self.check(
             "write-watch on cf.expansion over every boot: no stray write",
@@ -359,21 +387,38 @@ class Ctx:
             str(t),
         )
         self.check("flush check over every boot: no hit", t["flush_hits"] == 0, str(t))
-        stray = sorted(self.store_writes - {self.store.sel_a, self.store.sel_b})
+        stray = sorted(
+            self.store_writes - {self.store.sel_a, self.store.sel_b} - store_extra
+        )
         self.check(
-            "card writes in the store range: only the two selection sectors",
+            "card writes in the store range: only the two selection sectors"
+            + (
+                " and the sectors the scenario writes on purpose" if store_extra else ""
+            ),
             not stray,
             f"wrote {sorted(hex(s) for s in self.store_writes)}",
         )
         outside = sorted(
             x
             for x in self.all_writes
-            if x < FIRMWARE_FIRST and x not in (self.store.sel_a, self.store.sel_b)
+            if x < FIRMWARE_FIRST
+            and x not in (self.store.sel_a, self.store.sel_b)
+            and not any(lo <= x < hi for lo, hi in firmware_areas)
         )
         self.check(
-            "card writes elsewhere: only the firmware's own working project and project slots (sectors from 0x50000)",
+            "card writes elsewhere: only the firmware's own working project and project slots (sectors from 0x50000)"
+            + (
+                " and the areas the scenario writes on purpose"
+                if firmware_areas
+                else ""
+            ),
             not outside,
-            f"{len(self.all_writes)} sectors, below 0x50000: {[hex(x) for x in outside[:6]]}",
+            f"{len(self.all_writes)} sectors, below 0x50000: {[hex(x) for x in outside[:6]]}"
+            + "".join(
+                f"; in {hex(lo)}..{hex(hi)}: {len(inside)} sectors {hex(min(inside))}..{hex(max(inside))}"
+                for lo, hi in firmware_areas
+                if (inside := [x for x in self.all_writes if lo <= x < hi])
+            ),
         )
 
     def common_checks_upload(self, project_writes_ok: bool = True) -> None:
@@ -1124,12 +1169,12 @@ def check_memory_page(c: Ctx, rig: B.BootRig, plan: Any) -> None:
         rig.s.do_tap(key)
         rig.s.run_ms(gap_ms)
 
-    tap("NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MEMORY (the fourth row)
+    tap("NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MEMORY (the fifth row)
     tap("SETTINGS", 600)
     for _ in range(8):
         tap("DOWN", 200)
     tap("YES", 700)
-    for _ in range(3):
+    for _ in range(4):
         tap("DOWN", 200)
     tap("YES", 700)
     base, n = plan.addr("DK_MEM"), rig.w(plan.addr("DK_MEM_N"))
@@ -1350,6 +1395,54 @@ def run_pages(c: Ctx) -> None:
     from tools.patchkit import pk_digikit_pages as PG
 
     PG.run_pages(c)
+
+
+def run_fx(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fx as FX
+
+    FX.run_fx(c)
+
+
+def run_fxsend(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxsend as FXS
+
+    FXS.run_fxsend(c)
+
+
+def run_fxroute(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxroute as FR
+
+    FR.run_fxroute(c)
+
+
+def run_fxroutes(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxroutes as FRS
+
+    FRS.run_fxroutes(c)
+
+
+def run_settings(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_settings as SET
+
+    SET.run_settings(c)
+
+
+def run_fxpage(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxpage as FP
+
+    FP.run_fxpage(c)
+
+
+def run_fxpersist(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxpersist as FPS
+
+    FPS.run_fxpersist(c)
+
+
+def run_fxshift(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_fxshift as FSH
+
+    FSH.run_fxshift(c)
 
 
 def live_boot(c: Ctx, tag: str = "", patch_set: str | None = None) -> tuple[Any, Path]:
@@ -1775,13 +1868,13 @@ def run_live_remote(c: Ctx) -> None:
             time.sleep(wait)
 
         def menu_remote() -> None:
-            """SETTINGS > DIGIKIT (the ninth row) > REMOTE (the sixth row of the DIGIKIT page), one press: the switch toggles."""
+            """SETTINGS > DIGIKIT (the ninth row) > REMOTE (the seventh row of the DIGIKIT page), one press: the switch toggles."""
             tap("NO", 2)
             tap("SETTINGS", 3)
             for _ in range(8):
                 tap("DOWN")
             tap("YES", 3)
-            for _ in range(5):
+            for _ in range(6):
                 tap("DOWN")
             tap("YES", 2)
             tap("NO", 2)
@@ -1906,6 +1999,7 @@ def run_live_remote_keys(c: Ctx) -> None:
         for _ in range(8):
             tap("DOWN")
         tap("YES", 3)  # the DIGIKIT menu, the cursor on MODULES
+        tap("DOWN")  # FX ROUTES
         tap("DOWN")  # ABOUT
         tap("YES", 3)  # the ABOUT page
         base = H.plan_symbol(plan, "DK_ABOUT")
@@ -2054,6 +2148,14 @@ def run_live(c: Ctx) -> None:
 KINDS = {
     "live": run_live,
     "pages": run_pages,
+    "fx": run_fx,
+    "fxsend": run_fxsend,
+    "fxroute": run_fxroute,
+    "fxroutes": run_fxroutes,
+    "settings": run_settings,
+    "fxpage": run_fxpage,
+    "fxpersist": run_fxpersist,
+    "fxshift": run_fxshift,
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,

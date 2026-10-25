@@ -200,7 +200,7 @@ def feature_variant(features: str | None = None) -> str:
 
 def binary_path(device: str = "dn2", image=None) -> pathlib.Path:
     target = native_target.target_dir(generated(device, image), feature_variant())
-    return target / "release" / BINARY_NAME
+    return target / "release" / digi_env.exe_name(BINARY_NAME)
 
 
 def cargo(args: list[str]) -> list[str]:
@@ -225,7 +225,7 @@ def build(device: str = "dn2", image=None) -> pathlib.Path:
         done = subprocess.run(command, cwd=ROOT, env=env, check=False)
     if done.returncode != 0:
         raise SystemExit(done.returncode)
-    binary = target / "release" / BINARY_NAME
+    binary = target / "release" / digi_env.exe_name(BINARY_NAME)
     if not binary.is_file():
         raise SystemExit(f"coupled: build left no binary at {binary}")
     return binary

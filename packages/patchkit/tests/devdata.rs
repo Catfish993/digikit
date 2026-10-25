@@ -60,12 +60,21 @@ fn the_runtime_constants_are_the_device_files_numbers() {
         "DSP_BLOCK_CYCLES: u32 = 0xa2c2b;",
         "KEEP_BASE: u32 = 0x47fe0000;",
         "KEEP_BYTES: u32 = 0x1000;",
-        "LIMIT_FX_SLOTS: u32 = 0x4;",
     ] {
         assert!(rs.contains(want), "{want}");
     }
+    // the effect slots differ per device (the Digitakt II reserves 3 run-time effect rows, core/dynfx): not in the shared file
+    assert!(
+        !rs.contains("LIMIT_FX_SLOTS"),
+        "the effect slots differ per device"
+    );
     let dn2 = get("build/gen/device-dn2.inc");
     assert!(dn2.contains(".equ DEVICE_ID, 0x2 "), "{dn2}");
+    assert!(dn2.contains(".equ LIMIT_FX_SLOTS, 0x3 "), "{dn2}");
+    assert!(
+        get("build/gen/device-dt2.inc").contains(".equ LIMIT_FX_SLOTS, 0x3 "),
+        "dt2"
+    );
     // the store area of each device ([card.store], docs/design/digikit-store.md): DN2 from 0x800000, DT2 after the +Drive, both to the end of the card
     for (inc, first, sectors) in [
         (dn2, "0x800000", "0x261a000"),
@@ -195,10 +204,12 @@ fn a_limit_above_the_contract_maximum_is_refused() {
         ),
         (8, 8, 4, 16, 8)
     );
+    assert_eq!(max.send_slots, 2);
     Facts::from_texts([dt2.as_str(), dn2.as_str()]).unwrap();
     for (what, from, to) in [
         ("modules", "modules = 8", "modules = 9"),
-        ("fx_slots", "fx_slots = 4", "fx_slots = 5"),
+        ("fx_slots", "fx_slots = 3", "fx_slots = 5"),
+        ("send_slots", "send_slots = 2", "send_slots = 3"),
         ("param_rows", "param_rows = 16", "param_rows = 17"),
         (
             "dsp_area_bytes",
@@ -219,7 +230,7 @@ fn a_limit_above_the_contract_maximum_is_refused() {
     let bad = dn2.replace("page_rows = 8", "page_rows = 9");
     assert!(Facts::from_texts([dt2.as_str(), bad.as_str()]).is_err());
     // a value below the maximum is a device choice and is accepted
-    let less = dt2.replace("fx_slots = 4", "fx_slots = 2");
+    let less = dt2.replace("fx_slots = 3", "fx_slots = 2");
     Facts::from_texts([less.as_str(), dn2.as_str()]).unwrap();
 }
 
@@ -239,6 +250,109 @@ fn machine_rows_are_the_run_time_machine_types_of_types_toml() {
         e.contains("machine_rows") && e.contains("types.toml"),
         "{e}"
     );
+}
+
+#[test]
+fn the_free_effect_rows_are_the_devices_fx_slots() {
+    // core/dynfx reserves one free row of the effect chain for each of the device's effect slots (docs/design/digikit-dkm.md); both devices have it
+    let lib = Library::scan_repo(&root()).unwrap();
+    let dynfx = lib.get("core/dynfx").unwrap();
+    let rows = dynfx
+        .manifest
+        .entry
+        .iter()
+        .filter(|e| e.registry == "fx")
+        .count() as u64;
+    for file in ["digitakt-ii", "digitone-ii"] {
+        let t: toml::Value = toml::from_str(
+            &std::fs::read_to_string(root().join(format!("devices/{file}.toml"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            rows,
+            t["limits"]["fx_slots"].as_integer().unwrap() as u64,
+            "{file}"
+        );
+    }
+    assert!(
+        dynfx
+            .manifest
+            .module
+            .ports
+            .iter()
+            .all(|p| p.starts_with("dt2-") || p.starts_with("dn2-"))
+    );
+}
+
+#[test]
+fn the_effect_page_rows_are_eight_parameter_rows_for_each_fx_slot() {
+    // core/fxpages reserves 7 knobs and MIX for each effect slot; the device file's [fx] has a value index for each of them (docs/design/digikit-registry.md "Effect pages")
+    let lib = Library::scan_repo(&root()).unwrap();
+    let m = lib.get("core/fxpages").unwrap();
+    let rows = m
+        .manifest
+        .entry
+        .iter()
+        .filter(|e| e.registry == "params" && e.id.starts_with("fp"))
+        .count() as u64;
+    // and one more row for each send cell of the send page (`[limits] send_slots`, finding 64)
+    let send_rows = m
+        .manifest
+        .entry
+        .iter()
+        .filter(|e| e.registry == "params" && e.id.starts_with("fs"))
+        .count() as u64;
+    assert!(
+        m.manifest
+            .module
+            .ports
+            .iter()
+            .all(|p| p.starts_with("dt2-") || p.starts_with("dn2-"))
+    );
+    // (device file, the number of stock pages: the firmware's page accessor has that many rows, the effect pages follow them, the array's halfwords: 71 / 101)
+    for (file, first, array_hw) in [("digitakt-ii", 33, 71), ("digitone-ii", 37, 101)] {
+        let t: toml::Value = toml::from_str(
+            &std::fs::read_to_string(root().join(format!("devices/{file}.toml"))).unwrap(),
+        )
+        .unwrap();
+        let slots = t["limits"]["fx_slots"].as_integer().unwrap() as u64;
+        assert_eq!(rows, 8 * slots, "{file}");
+        let idx = t["fx"]["value_indices"].as_array().unwrap();
+        assert!(
+            idx.len() as u64 >= rows,
+            "{file}: a value index for each parameter row"
+        );
+        assert_eq!(t["fx"]["page_first"].as_integer(), Some(first), "{file}");
+        // the send page (finding 64): a device that has one lists the Sound indices of its cells and a Sound layout that ends before the Fx array; its cells are parameter rows of core/fxpages
+        if let Some(track_page) = t["fx"].get("track_page").and_then(|v| v.as_integer()) {
+            let send = t["limits"]["send_slots"].as_integer().unwrap() as u64;
+            let n = t["fx"]["send_indices"].as_array().unwrap().len() as u64;
+            // the rows are shared by both devices (as many as the device with the most send cells); a device uses n of them
+            assert!(track_page > 0 && send <= n && n <= send_rows, "{file}: {send} {n} {send_rows}");
+            let (off, stride) = (
+                t["fx"]["sound_off"].as_integer().unwrap(),
+                t["fx"]["sound_stride"].as_integer().unwrap(),
+            );
+            assert_eq!(off + 16 * stride, t["fx"]["array_off"].as_integer().unwrap(), "{file}");
+        }
+        // the values and the mark are indices of the array that no stock parameter uses; the u32 behind the array
+        assert_eq!(
+            t["fx"]["tail_off"].as_integer(),
+            Some(2 * array_hw),
+            "{file}"
+        );
+        let mark = t["fx"]["mark_index"].as_integer().unwrap();
+        assert!(mark < array_hw, "{file}");
+        assert!(
+            idx.iter().all(|i| i.as_integer().unwrap() < array_hw),
+            "{file}"
+        );
+        // persistence: the kit's spare storage halfwords hold the values and one ID for each row (finding 61), inside the 0xa0-byte record, after its 46 used halfwords and before its u32 at 0x98
+        let off = t["fx"]["store_off"].as_integer().unwrap() as usize;
+        let hw = t["fx"]["store_halfwords"].as_integer().unwrap() as usize;
+        assert!(idx.len() + idx.len() / 8 <= hw, "{file}");
+        assert!(off >= 4 + 2 * 46 && off + 2 * hw <= 0x98, "{file}");
+    }
 }
 
 #[test]
@@ -327,6 +441,9 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             all.sort();
             let mut want: Vec<&str> = RT021_MODULES.to_vec();
             want.extend(extra);
+            // run-time effects (core/dynfx and the chain it reserves rows in): both devices have them in both sets (the Digitone II's emulator set since the engine bars only the
+            // changed blocks: the hook costs x1.01 DSP CPU there, finding 55)
+            want.extend(["core/dynfx", "core/fx", "core/fxpages"]);
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);
         }

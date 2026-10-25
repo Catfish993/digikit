@@ -14,5 +14,4 @@
     .equ LIMIT_MODULES, 0x8    /* [limits] modules (module records) */
     .equ LIMIT_MACHINE_ROWS, 0x8    /* [limits] machine_rows (run-time machine and voice rows) */
     .equ LIMIT_ARENA_BYTES, 0x80000    /* [limits] arena_bytes (the module arena) */
-    .equ LIMIT_FX_SLOTS, 0x4    /* [limits] fx_slots (effects in the chain; reported by the runtime's CAPACITY) */
     .equ LIMIT_STAGE_BYTES, 0x10000    /* [limits] stage_bytes (the staging buffer of a .dkm file) */

@@ -13,13 +13,14 @@ The fix: build under one lock (`build_lock`) and run an immutable copy named by 
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import hashlib
 import os
 import pathlib
 import shutil
 import time
 from collections.abc import Iterator
+
+from tools.devtools import portable_flock as fcntl
 
 KEEP_SECONDS = 24 * 3600
 
@@ -28,7 +29,9 @@ KEEP_SECONDS = 24 * 3600
 def build_lock(target: pathlib.Path) -> Iterator[None]:
     """An exclusive inter-process lock for building into (and copying out of) `target`."""
     target.mkdir(parents=True, exist_ok=True)
-    with open(target / ".stablebin.lock", "w") as handle:
+    with open(
+        target / ".stablebin.lock", "a"
+    ) as handle:  # "a": never truncate a locked file
         fcntl.flock(handle, fcntl.LOCK_EX)
         try:
             yield

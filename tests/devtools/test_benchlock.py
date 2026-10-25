@@ -150,7 +150,7 @@ def test_cli_run_exit_code_and_blocking(lock):
 
 def _gate_busy(lock) -> bool:
     """True when something (an exclusive waiter) holds the gate file."""
-    import fcntl
+    from tools.devtools import portable_flock as fcntl
 
     gate = lock.with_name(lock.name + ".gate")
     if not gate.exists():

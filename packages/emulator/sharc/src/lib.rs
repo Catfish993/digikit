@@ -27,6 +27,7 @@
 //! caller then lets the Python core execute it (tools/sharc_dev/sharc_transpile_run.py).
 
 pub mod canon;
+mod code_diff;
 mod cycmix;
 mod diag;
 mod irq_probe;
@@ -291,6 +292,15 @@ pub struct Engine {
     /// a code range that no longer matches (sorted), or None for every entry.
     /// Other blocks keep running.
     code_barred: Option<Vec<u32>>,
+    /// Per code range: the hash it last failed with and the PCs whose loaded
+    /// instruction differs from the generated table (None: too many, or
+    /// unknown), so a re-check with the same words decodes nothing.
+    code_diffs: std::collections::HashMap<usize, (String, Option<Vec<u32>>)>,
+    parity_logged: bool,
+    /// Of the last `verify_code` that found a mismatch: the PCs whose loaded
+    /// instruction differs from the generated table, the ranges barred as a
+    /// whole (too many differing PCs, or none found), and the entry PCs barred.
+    pub code_check: CodeCheck,
     /// The first PC past the generated image's code ranges: code at or above
     /// it was appended by a patch (counted in `model_stats.interp_appended`).
     appended_from: u32,
@@ -318,6 +328,14 @@ pub struct Engine {
     /// Any of `cov`, `hist`, `wwatch`, `pcdump` is set: the interpreter loop
     /// tests this one flag per instruction and nothing else when it is off.
     diag_on: bool,
+}
+
+/// The last code check that found a mismatch (`Engine::verify_code`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CodeCheck {
+    pub changed_pcs: u64,
+    pub ranges_whole: u64,
+    pub entries_barred: u64,
 }
 
 /// What a block call needs besides its function: the instruction limit that
@@ -633,6 +651,9 @@ impl Engine {
             code_known: false,
             code_ok: false,
             code_barred: None,
+            code_diffs: Default::default(),
+            parity_logged: false,
+            code_check: CodeCheck::default(),
             appended_from: u32::MAX,
             fast: None,
             fast_auto: false,
@@ -1125,7 +1146,11 @@ impl Engine {
 
     /// Check the loaded code against the generator's per-range hashes; with
     /// per-region data, record which entries a mismatch bars (`code_barred`)
-    /// and end chains at them.
+    /// and end chains at them. A range whose hash differs is narrowed down:
+    /// the loaded words are decoded and compared with the generated
+    /// instruction table, and only the regions with a block that holds a
+    /// differing PC are barred (`code_diff`). A range that cannot be narrowed
+    /// down (too many differing PCs, or none) bars all its regions.
     fn verify_code(&mut self) -> bool {
         #[cfg(all(sharc_gen, sharc_image))]
         {
@@ -1142,33 +1167,57 @@ impl Engine {
                 }
                 let mut h = sha256::Sha256::new();
                 h.update(&bytes);
-                if frames::hex(&h.finish()) != want {
-                    bad.push(i);
+                let got = frames::hex(&h.finish());
+                if got != want {
+                    bad.push((i, got));
                 }
             }
             if bad.is_empty() {
+                if !self.parity_logged && std::env::var_os("SHARC_CODE_PARITY").is_some() {
+                    self.parity_logged = true;
+                    let (checked, n, first) = self.code_parity();
+                    eprintln!("code parity: {checked} PCs compared, {n} differ {first:x?}");
+                }
                 self.code_barred = Some(Vec::new());
                 return true;
             }
             #[cfg(sharc_region_entries)]
             {
+                let mut whole = Vec::new();
+                let mut changed = Vec::new();
+                for (i, got) in bad {
+                    match self.range_changes(i, got) {
+                        Some(pcs) if !pcs.is_empty() => changed.extend(pcs),
+                        _ => whole.push(i),
+                    }
+                }
+                changed.sort_unstable();
                 let range_of = |pc: u32| {
                     let i = ranges.partition_point(|r| r.0 <= pc).checked_sub(1)?;
                     (pc < ranges[i].0 + ranges[i].1).then_some(i)
                 };
-                let mut barred = Vec::new();
-                for entries in generated::image::REGION_ENTRIES {
-                    if entries
-                        .iter()
-                        .any(|&pc| range_of(pc).is_none_or(|i| bad.contains(&i)))
-                    {
-                        barred.extend_from_slice(entries);
-                    }
-                }
-                barred.sort_unstable();
-                barred.dedup();
+                let barred = code_diff::barred_entries(
+                    generated::image::REGION_ENTRIES,
+                    &changed,
+                    |pc| range_of(pc).is_none_or(|i| whole.contains(&i)),
+                );
                 for &pc in &barred {
                     self.s.chain_stop_add(pc);
+                }
+                self.code_check = CodeCheck {
+                    changed_pcs: changed.len() as u64,
+                    ranges_whole: whole.len() as u64,
+                    entries_barred: barred.len() as u64,
+                };
+                if std::env::var_os("SHARC_CODE_LOG").is_some() {
+                    eprintln!(
+                        "code check: {} differing PCs {:x?}, {} ranges barred whole {:x?}, {} entries barred",
+                        changed.len(),
+                        &changed[..changed.len().min(32)],
+                        whole.len(),
+                        whole.iter().map(|&i| ranges[i].0).collect::<Vec<_>>(),
+                        barred.len()
+                    );
                 }
                 self.code_barred = Some(barred);
             }
@@ -1183,6 +1232,56 @@ impl Engine {
             // No generated image: there is no block code to protect.
             true
         }
+    }
+
+    /// The PCs of code range RANGE (hash GOT, which differs from the
+    /// generator's) where the loaded instruction is not the generated one;
+    /// None when there are too many. Remembered per range and hash.
+    #[cfg(all(sharc_gen, sharc_image, sharc_region_entries))]
+    fn range_changes(&mut self, range: usize, got: String) -> Option<Vec<u32>> {
+        if let Some((hash, pcs)) = self.code_diffs.get(&range)
+            && *hash == got
+        {
+            return pcs.clone();
+        }
+        let (start, len, _) = generated::image::CODE_RANGES[range];
+        let pcs = self.changed_pcs_in(start, len, code_diff::MAX_CHANGED);
+        self.code_diffs.insert(range, (got, pcs.clone()));
+        pcs
+    }
+
+    #[cfg(all(sharc_gen, sharc_image))]
+    fn changed_pcs_in(&mut self, start: u32, len: u32, cap: usize) -> Option<Vec<u32>> {
+        let s = &mut self.s;
+        code_diff::changed_pcs(
+            start,
+            len,
+            |pc| generated::image::insn_at(pc as Int).map(code_diff::InsnKey),
+            |pc| {
+                rt::bnd::decode_at(s, (), None, pc as Int)
+                    .ok()
+                    .map(code_diff::InsnKey)
+            },
+            cap,
+        )
+    }
+
+    /// Compare the loaded code of every generated range with the generated
+    /// instruction table: (the number of PCs compared, the number that
+    /// differ, the first 64 of those). On an unpatched image none differ.
+    #[cfg(all(sharc_gen, sharc_image))]
+    pub fn code_parity(&mut self) -> (usize, usize, Vec<u32>) {
+        let mut diffs = Vec::new();
+        let mut checked = 0;
+        for &(start, len, _) in generated::image::CODE_RANGES {
+            checked += (start..start + len)
+                .filter(|&pc| generated::image::insn_at(pc as Int).is_some())
+                .count();
+            diffs.extend(self.changed_pcs_in(start, len, usize::MAX - 1).unwrap_or_default());
+        }
+        let n = diffs.len();
+        diffs.truncate(64);
+        (checked, n, diffs)
     }
 
     /// Watch the pages that hold generated block code (runtime decoding).

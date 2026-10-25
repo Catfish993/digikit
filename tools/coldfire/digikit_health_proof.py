@@ -209,7 +209,8 @@ class HealthProof:
             self.tap("DOWN", 200)
         self.tap("YES", 700)  # DIGIKIT
         self.tap("DOWN", 200)
-        self.tap("DOWN", 200)  # MODULES, ABOUT, HEALTH
+        self.tap("DOWN", 200)
+        self.tap("DOWN", 200)  # MODULES, FX ROUTES, ABOUT, HEALTH
         self.tap("YES", 700)
 
     def frame(self, name: str) -> str:

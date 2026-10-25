@@ -1,0 +1,48 @@
+[module]
+id = "test/dyn-fx-gain-sendonly"
+version = "0.1.0"
+name = "FX gain sendonly (run time)"
+category = "test"
+type = "fx"
+author = "digikit"
+status = "experimental"
+summary = "Test effect of the FX contract with the route fields of the manifest (route = send, routes = send only): the same gain as test/dyn-fx-gain, for the FX ROUTES scenario."
+dynamic = true
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# `patchkit pack test/dyn-fx-gain-sendonly --device dt2 -o fx-gain-sendonly.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
+# publishes a free effect row of core/dynfx for the effect (state reserved behind the image, p0 at its default).
+[[object]]
+path = "build/dyn-fx-gain-sendonly-dsp.dko.json"
+sources = ["src/dsp/dyn_fx_gain_sendonly.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]
+
+# One effect: its process routine and `dk_fx_desc` (sdk/dk_fx.h), and its page in the FX view (docs/design/digikit-registry.md "Effect pages"): the tab GSO, the title,
+# one knob GAIN on the first position (p0, 0 to 1.27: the shown value 0 .. 127 is the gain in percent, so the default 50 is 0.5) and the MIX knob, default 127 (wet).
+[[fx]]
+id = "gain"
+process = "_gso_process"
+desc = "_gso_desc"
+tab = "GSO"
+title = "Test Gain Send Only"
+mix = 127
+route = "send"
+routes = ["send"]
+devices = ["dt2", "dn2"]
+
+[[fx.knob]]
+name = "Gain"
+short = "GAIN"
+min = 0.0
+max = 1.27
+default = 0.5
+display = "percent"
+position = 0

@@ -17,11 +17,13 @@ Not covered: a DSP transfer that fails (`E_DSP_XFER`) and anything that needs th
 from __future__ import annotations
 
 import functools
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from tools.device import dkneeds
 from tools.device import dkupload as DK
+from tools.device.dkproto import SETTINGS_SECTORS
 from tools.patchkit import pk_capacity as P
 from tools.patchkit import pk_device
 from tools.patchkit import pk_digikit_debug as D
@@ -70,8 +72,14 @@ def _cap_ok(
         "PARAM_ROWS": (lim.param_rows, None, 0),
         "PAGE_ROWS": (lim.page_rows, None, 0),
         "FX_SLOTS": (lim.fx_slots, 0, 0),
+        "SEND_SLOTS": (lim.send_slots, 0, 0),
         "MAP_ENTRIES": (pk_device.contract_max()["map_entries"], None, 0),
         "STORE": (store_kib, None, 0),  # the area in KiB (devices/*.toml [card.store])
+        "SETTINGS": (
+            SETTINGS_SECTORS * 512,
+            None,
+            0,
+        ),  # one copy of the settings record, in bytes (sdk/sdk.toml [settings])
     }
     return set(cap) == set(want) and all(
         (cap[k]["limit"], cap[k]["largest"]) == (v[0], v[2])
@@ -122,7 +130,11 @@ def boot_checks(
     )
     cap = up.capacity()
     m["cap"] = cap
-    lim = pk_device.limits(c.device)
+    lim = replace(
+        pk_device.limits(c.device),
+        fx_slots=pk_device.effective_fx_slots(pk_device.limits(c.device), rig.plan),
+        send_slots=pk_device.effective_send_slots(c.device, rig.plan),
+    )
     rows = 0
     for x in mods:
         rows |= x["rows"]
@@ -353,7 +365,7 @@ def run_inferred_needs(c: Any) -> None:
     from tools.device import dktransfer as T
 
     skip = set(c.table().get("exclude", []))
-    # `static`: core modules patched in besides the runtime, for the modules that import from them (core/input)
+    # `static`: core modules patched in besides the runtime, for the modules that import from them (core/input) or take rows in them (core/dynfx)
     img = c.image_for(",".join([B.RT, *c.table().get("static", [])]), "run")
     found: list[tuple[str, str]] = []
     packs: list[str] = []
@@ -389,6 +401,7 @@ def run_inferred_needs(c: Any) -> None:
                 "ARENA": n["ARENA"] + n["ARENA_XFER"],
                 "DSP_AREA": n["DSP_AREA"],
                 "VOICE_ROWS": n["VOICE_ROWS"],
+                "FX_SLOTS": n["FX_SLOTS"],  # the effect rows are claimed with the range
             }
             if (
                 not dsp

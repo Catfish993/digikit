@@ -18,6 +18,10 @@ before it goes near the device.
   Digitakt II go to its +Drive over USB. The workbench's Transfer page has a Modules and a Samples tab for both.
 - **Run-time machines:** new machine types next to the stock ones, with their own parameters and DSP code. A safety
   guard mutes a misbehaving machine instead of silencing the whole device.
+- **Run-time effects:** up to 3 effects of your own, each with its own page in FUNC + FX. An effect runs as a master insert or
+  as a send effect like delay, reverb and chorus, with a send amount for each track on a second page of the FX key; the
+  route is chosen in SETTINGS > DIGIKIT > FX ROUTES. Digikit's settings live in its own store on the card, not in your
+  projects or kits.
 - **Emulator:** the real firmware (ColdFire and SHARC DSP) runs on your computer, with the front panel, display and audio.
 - **Module tests:** every machine is checked against a standard set of tests (parameter limits, modulation, long
   notes), in seconds, before it reaches a device.
@@ -29,6 +33,7 @@ before it goes near the device.
 | --- | --- | --- | --- |
 | [digikit runtime](modules/core/runtime/README.md) | Menu, module loading, upload, debug log | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
 | [PLUCK](modules/machines/pluck/README.md) | Plucked-string synth: decay, pick position, brightness, colour. A run-time module: load it with `mise run dk:run` | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
+| [Frequency shifter](modules/fx/freqshift/README.md) | Moves every frequency up or down by the same number of Hz (an FX page with SHIFT and MIX). A run-time module; a send effect by default, or a master insert | Digitakt II, Digitone II | not yet |
 | [Master gain](modules/fx/master-gain/README.md) | Scales the master output by a set gain | Digitakt II, Digitone II | not yet |
 | [Master drive](modules/fx/master-drive/README.md) | Soft-clip saturation on the master output | Digitakt II, Digitone II | not yet |
 | [XSLICE](tests/fixtures/modules/xslice/README.md) | A copy of MANUAL SLICE under its own name (a demonstration) | Digitakt II | not yet |

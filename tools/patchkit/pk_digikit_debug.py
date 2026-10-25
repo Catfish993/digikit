@@ -26,6 +26,7 @@ from typing import Any
 
 from tools.device import dklog as L
 from tools.device import dkupload as DK
+from tools.device.dkproto import SETTINGS_SECTORS
 from tools.patchkit import pk_device
 from tools.patchkit import pk_digikit_upload as U
 from tools.patchkit import pk_dkrt_boot as B
@@ -299,6 +300,7 @@ def run_card(c: Any) -> None:
             for _ in range(8):
                 tap("DOWN", 200)
             tap("YES", 700)  # DIGIKIT
+            tap("DOWN", 300)  # FX ROUTES
             tap("DOWN", 300)  # ABOUT
             tap("YES", 800)
             rows = about_rows(rig, plan)
@@ -771,9 +773,12 @@ def part_modules(c: Any, img: Any) -> None:
             "VOICE_ROWS": lim.machine_rows,
             "PARAM_ROWS": lim.param_rows,
             "PAGE_ROWS": lim.page_rows,
-            "FX_SLOTS": lim.fx_slots,
+            "FX_SLOTS": pk_device.effective_fx_slots(lim, rig.plan),
+            "SEND_SLOTS": pk_device.effective_send_slots(c.device, rig.plan),
             "MAP_ENTRIES": pk_device.contract_max()["map_entries"],
             "STORE": c.store.limit // 2,  # KiB
+            "SETTINGS": SETTINGS_SECTORS
+            * 512,  # bytes of one copy (sdk/sdk.toml [settings])
         }
         c.check(
             "INFO sets the CAPACITY capability, and CAPACITY lists every kind with the device file's limit",
@@ -1155,6 +1160,7 @@ def run_hang(c: Any) -> None:
         for _ in range(8):
             tap("DOWN", 120)
         tap("YES", 400)  # DIGIKIT
+        tap("DOWN", 200)  # FX ROUTES
         tap("DOWN", 200)  # ABOUT
         tap("YES", 500)
         rows = about_rows(rig, plan)

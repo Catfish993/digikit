@@ -894,6 +894,9 @@ mod coupled {
         }
         /// Replace the PCM capture with one for `path` (no length limit).
         pub(super) fn capture_pcm(&mut self, path: &std::path::Path) -> Result<(), String> {
+            // The DSP worker runs ahead of the host by a number of frames that depends on host timing. Drain them first, so that the
+            // capture starts at the frame the ColdFire has sent (the same stream position in every run), not at a varying one.
+            self.sync();
             let capture = PcmCapture::open(path, u64::MAX);
             if let Some(error) = capture.error {
                 return Err(format!("{}: {error}", path.display()));

@@ -567,6 +567,16 @@ state = "_fg_state"      # .PKBSS _fg_state, <state_bytes>;
 
 `tests/fixtures/modules/fx-gain` (0.5 gain) is the example and the fixture of `core/fx`'s tests; `fx-nan` is the negative one. An empty chain plays the stock audio.
 
+On the Digitakt II and the Digitone II an effect can also be a run-time module (`dynamic = true`, a `.dkm`): it declares `[[fx]]` with `process`, `desc` and `defaults` instead of the `[[entry]]` row, has no
+state symbol (the runtime reserves `state_bytes` of its descriptor) and takes one of the 3 free rows that `core/dynfx` reserves. Example and fixture: `tests/fixtures/modules/dyn-fx-gain`
+(contract and rules: the "Run-time effects" part of `contract-fx.md`; format: `docs/design/digikit-dkm.md`). With a `tab`, a `title` and `[[fx.knob]]` entries the effect also gets a page of its
+own after CHO in the FX view (up to 7 knobs and MIX; `core/fxpages` reserves the page, the cookbook is "Define an effect with its own page" in `contract-fx.md`, the design is "Effect pages" in
+`docs/design/digikit-registry.md`, finding 61). `route` (`"master"` or `"send"`, default `"master"`) and `routes` (the allowed routes; default `["master"]`, or
+`["send", "master"]` when `route = "send"`) say where the effect may run: as a master insert after the master mix, or as a send effect next to DEL, REV and CHO,
+with a send amount for each track on a second page of the track's FX key (Digitakt II 2 send effects, Digitone II 1: `[limits] send_slots`). The user picks the route in
+SETTINGS > DIGIKIT > FX ROUTES. The framework owns the routes, the send amounts and MIX (the return level on a send); the effect's routine is the same on both routes.
+A send route needs a `tab` (findings 62 to 67; the routes rule in "Define an effect with its own page" of `contract-fx.md`).
+
 The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and
 `modules/core/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,

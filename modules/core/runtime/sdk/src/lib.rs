@@ -201,6 +201,23 @@ pub struct DkrtModule {
     pub dsp_size: u32,
 }
 
+/// `dkrt_fx` result: one effect with a page (FX routing, finding 62 to 65). Routes are bit masks: 1 master, 2 send.
+#[repr(C)]
+pub struct DkrtFx {
+    /// The effect's row in the chain.
+    pub row: u32,
+    /// The routes the effect's record allows (`routes` of the manifest) and its default (`route`).
+    pub allowed: u32,
+    pub default: u32,
+    /// The route it runs on in this boot, and the route the settings give it now (the stored one when allowed, else the default): they differ after a change before the restart.
+    pub running: u32,
+    pub saved: u32,
+    /// The tab label of its page (NUL-terminated, up to 3 characters).
+    pub tab: [u8; 8],
+    /// The id of its module (NUL-terminated): the settings key is `fx/route/<id>`.
+    pub id: [u8; 32],
+}
+
 /// Text for a result code, for a menu line (upper case, at most 14 characters). A table, not a `match`: the compiler turns a
 /// dense `match` into a PC-relative jump table that is not ColdFire code.
 pub fn result_text(code: i32) -> &'static str {
@@ -261,6 +278,13 @@ pub const CMD_HEALTH: u32 = 6;
 pub const CMD_CARD_PROBE: u32 = 7;
 /// Test hook: `arg[0]` = 1 or 0: `dkrt_debug_set` (the menu's DEBUG row); the answer is its result.
 pub const CMD_DEBUG: u32 = 8;
+/// Test hooks of the settings store (`settings.rs` of the runtime): `arg` = `u8 key_len`, the key, `u8 value_len`, the value (96 bytes in all). `CMD_SETTINGS_PUT` and
+/// `CMD_SETTINGS_REMOVE` answer their result; `CMD_SETTINGS_GET` answers the value's length (or a negative code) and leaves the value at the start of `arg`;
+/// `CMD_SETTINGS_FLUSH` writes the record now (the runtime writes it 2 s after the last change).
+pub const CMD_SETTINGS_PUT: u32 = 9;
+pub const CMD_SETTINGS_GET: u32 = 10;
+pub const CMD_SETTINGS_REMOVE: u32 = 11;
+pub const CMD_SETTINGS_FLUSH: u32 = 12;
 
 /// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
 /// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
@@ -463,6 +487,9 @@ pub struct Mailbox {
 
 /// The module and sample store, version 3 (docs/design/digikit-store.md).
 pub mod store;
+
+/// The settings record, two copies before the selection record (docs/design/digikit-store.md, "The settings record").
+pub mod settings;
 
 /// State of the card's store area as the runtime found it at boot (`DkrtDiag::card_state`; docs/findings/46-digikit-debug.md).
 pub const CARD_UNKNOWN: u32 = 0;
