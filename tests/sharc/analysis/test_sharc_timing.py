@@ -115,3 +115,65 @@ def test_check_fixes():
     assert ins(0x100, "IDLE").is_idle
     assert t.RTI_FLUSH == 7
     assert t.SAME_BLOCK == (1, 1, 2)
+
+
+def test_cjump_and_rframe_to_i6():
+    # Table 4-40 rows 1-2: CJUMP or RFRAME, then I6 as an address or I6/I7 read into a register: 6.
+    cjump = ins(
+        0x100, "CALL (linked, delayed)  target=0xb80020", extra={"form": "25a_direct"}
+    )
+    rframe = ins(
+        0x100,
+        "(return-frame delay slot: 25c_rframe)",
+        nbytes=2,
+        extra={"form": "25c_rframe"},
+    )
+    use = ins(
+        0x103,
+        "R0 = DM(I6 - 3)",
+        defs=[("R0", "mem_load")],
+        uses=["I6"],
+        mem=[("DM", "I6")],
+    )
+    read = ins(0x103, "R2 = I7", defs=[("R2", "move")], uses=["I7"])
+    assert t.cjump_frame_use(cjump, use) == (6.0, 6.0, 6.0)
+    assert t.cjump_frame_use(rframe, read) == (6.0, 6.0, 6.0)
+    # I7 as an address (the call's own pushes) is not in the table, and nor is an ordinary instruction before.
+    push = ins(0x103, "DM(I7, M7) = R2", uses=["I7", "M7", "R2"], mem=[("DM", "I7")])
+    assert t.cjump_frame_use(cjump, push) == t.ZERO
+    plain = ins(0x100, "R1 = R2 + R3", defs=[("R1", "compute")], extra={"form": "2a"})
+    assert t.cjump_frame_use(plain, use) == t.ZERO
+
+
+def test_anomaly_20000072():
+    # A float compute into F0, then at once a single-operand compute: stalls (count unpublished).
+    f0 = ins(0x100, "F0 = fadd(F1, F2)", defs=[("R0", "compute")], uses=["R1", "R2"])
+    single = ins(0x103, "R10 = pass(R11)", defs=[("R10", "compute")], uses=["R11"])
+    assert t.anomaly_20000072(f0, single) == t.ANOMALY_20000072
+    two = ins(
+        0x103, "R10 = add(R11, R12)", defs=[("R10", "compute")], uses=["R11", "R12"]
+    )
+    assert t.anomaly_20000072(f0, two) == t.ZERO
+    f1 = ins(0x100, "F1 = fadd(F1, F2)", defs=[("R1", "compute")], uses=["R1", "R2"])
+    assert t.anomaly_20000072(f1, single) == t.ZERO
+    load = ins(
+        0x100,
+        "F0 = DM(I4, M6)",
+        defs=[("R0", "mem_load")],
+        uses=["I4"],
+        mem=[("DM", "I4")],
+    )
+    assert t.anomaly_20000072(load, single) == t.ZERO
+
+
+def test_mmr_cost_from_ee412():
+    # EE-412 Table 6 (write, read) at 1 GHz / 500 MHz: SPORT0 76 / 81; high doubles it.
+    assert t.mmr_cost("SPORT0_DIV_A", write=False) == (81.0, 81.0, 162.0)
+    assert t.mmr_cost("SPORT0_DIV_A", write=True) == (76.0, 76.0, 152.0)
+    # An instance the table does not list takes the slowest listed instance of its type.
+    assert t.mmr_cost("SPORT4_CTL_A", write=True) == (80.0, 80.0, 160.0)
+    assert t.mmr_cost("SEC0+0x10", write=False) == (45.0, 45.0, 90.0)
+    # Core MMRs: Table 4-43, 0-4.
+    assert t.mmr_cost("CMMR_MODE1", write=True) == t.CMMR_ACCESS
+    assert t.mmr_cost("NOSUCH0_X", write=True) is None
+    assert t.mmr_cost(None, write=True) is None
