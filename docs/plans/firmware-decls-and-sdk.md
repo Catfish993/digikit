@@ -19,8 +19,9 @@ Branch: `sdk/firmware-decls`. Started 2026-10-27. Targets: DT2 OS 1.17, DN2 OS 1
 - No Rust proc macros. `module.toml` stays the authored manifest, and a per-module header is generated from it.
 - Catalogue the firmware first, then design the declaration format against what the catalogue finds. Declare an anchor
   when a feature uses it, not all candidates up front.
-- Syntakt: ColdFire CPUs only. Never modify, emulate or reconfigure the FPGA (syx section 1). Runs in parallel as
-  read-only work; DT2/DN2 come first.
+- Syntakt: ColdFire CPUs only. Never modify, emulate or reconfigure the FPGA (syx section 1). DT2/DN2 come first; the
+  Syntakt emulator boot waits until after step 9, and steps 3 and 9 report a portability count on 1.42.
+- The anchor review page and the anchor reference docs come from one generator.
 
 ## Today (summary)
 
@@ -53,8 +54,13 @@ parallel.
 - [x] `fw.py catalog` queries it (filters: tag, top N, unreviewed).
 - [x] The firmware-query skill documents it; the digikit-module skill points to it for "find the firmware function
       you need".
-- [ ] Agents pre-label the top ~300 rows (role guess from decompilation, [O]).
-- [ ] Review page for the top ~300 rows (keep / skip / later, with name and note). Reviewed rows seed step 3.
+- [ ] Graph context per row: the classes of the callers, and the named or anchored callees. A helper called from one
+      class only gets a working name such as `ListView::helper_3` ([O]).
+- [ ] Groups: community detection (networkx) on the UI call subgraph, about 30-50 groups, each with its classes,
+      strings and members. Export the subgraph as JSON as well.
+- [ ] Agents pre-label the top groups and their rows (role guess from decompilation, [O]).
+- [ ] Review page: group -> rows -> call neighbourhood per row, with keep / skip / later, a name and a note. Reviewed
+      rows seed step 3. The page is the review view of the reference docs in step 5 (same generator).
 
 Proof: the tool runs in seconds on both images; one unit test of the rule suggestion.
 
@@ -63,12 +69,21 @@ unnamed helpers with many UI callers, so review needs the pre-labels.
 
 ### 1b. SHARC catalogue (read-only, before step 3)
 
-- [ ] The same ranking for the DSP images from the sharcdb (`tools/sharc_dev/sharc.py`), seeded by the existing
-      `dsp.*` and `dl.*` anchors and the voice, effect and master paths. It shows which shapes (functions, literals,
-      tables, memory words) the declaration format must cover, and which stock routines step 7 could reuse.
+- [x] Read-only probe of the DSP images (sharcdb, `tools/sharc_dev/sharc.py`), seeded by the `cpu = "sharc"` anchors
+      and the frame, voice and master paths of finding 53.
+- [ ] Move the shared parts of the catalogue code (rule suggestion with ordinal, grade, score, sqlite/TSV writer) out
+      of `atlas.py` into one module used by both CPUs. The ColdFire catalogue must stay byte-identical.
+- [ ] DSP collector: hash pairing between DT2 and DN2 plus call-shape pairing, stability against 1.15C / 1.10E,
+      anchors from the rules, role from the call path. The DSP score rewards role path, profile heat and a unique hash,
+      not UI callers.
+- [ ] `fw.py catalog` covers both CPUs; skill docs and one unit test.
 
-Today's SHARC anchors: 19 on DT2 1.17 and 18 on DN2 1.12 (`dsp.fx`, `dsp.master`, `dsp.voice`, `dsp.machines`, `dl`),
-rule kinds `sharc_func`, `sharc_literal`, `sharc_table`, `sharc_mem_addr`.
+Probe results 2026-10-27 [D]: DT2 1,147 functions, DN2 1,078. The DSP images are byte-identical across 1.16 -> 1.17
+and 1.11 -> 1.12 (finding 53), so stability is measured against 1.15C / 1.10E. 143 / 142 catalogue rows, 87 / 90 with a
+byte-identical twin on the other device. The 15 / 14 SHARC anchors (plus 4 `dl.cf.*` on the ColdFire) sit in 8 / 7
+functions, and most of those functions are device-specific, so each device keeps its own rules. Shared building blocks,
+byte-identical on both devices: block biquad, saturator, envelope generator, block copy/fill, one filter type, powf,
+divide and reciprocal square root with Newton steps. The `functions.label` heuristic is unreliable; use finding 53.
 
 ### 2. Clean-up and deletions (no Rust)
 
@@ -87,9 +102,15 @@ Proof: `patchkit gen --check`, port files byte-identical, pathcheck.
 - [ ] `port_resolve.py` reads `devices/fw/`; the 201 rules move there mechanically.
 - [ ] Replace the `pk_*_rules*.py` generators with `catalog emit-rule ADDR`; retire literal tables in
       `machineprofile.py` and `cf_names.py` as their consumers move to anchors.
-- [ ] Add a vtable-slot rule kind (about 63% of candidates have no unique hash).
+- [ ] Add a vtable-slot rule kind (about 63% of ColdFire candidates have no unique hash) and an ordinal for
+      `sharc_func` (fixes most of the 182 shared DSP hashes on DT2).
+- [ ] Hooks declare their register contract: inputs, clobbered and preserved registers, and the DSP mode (modify
+      registers, SIMD). Today this is prose in findings 45 and 53.
+- [ ] One naming rule: `<cpu>.<subsystem>.<kind>.<name>`, named after the firmware, not after our module.
+      `dkrt.*`, `dl.*`, `health.*` and `input.*` get firmware names; old names stay as aliases until the move is done.
+- [ ] Portability count: how many declarations resolve on Syntakt 1.42 (today 27 of 172 ColdFire rules).
 
-Proof: every `devices/ports/*.toml` is byte-identical before and after the move.
+Proof: every `devices/ports/*.toml` is byte-identical before and after the move (aliases keep the old names).
 
 ### 4. Rust build speed (before the next m68k Rust build)
 
@@ -105,6 +126,8 @@ Proof: cold and warm build of `core/digikit-menu` before and after; objects byte
 - [ ] Hook trampolines are generated from hook declarations. Hand assembly remains only where code enters at a patch
       site with the displaced code's registers.
 - [ ] `[object.externs]` is removed.
+- [ ] Reference docs: one page per subsystem with each declared anchor (signature, devices, rule, mark, status), from
+      the same generator as the step 1 review page.
 
 Proof: applied-patch bytes identical for the core modules.
 
@@ -119,11 +142,19 @@ Proof: applied-patch bytes identical for the core modules.
 
 Proof: `module:check` for pluck and freqshift; a new C module built in under a second.
 
-### 7. SHARC C pilot (bounded, 1 day)
+### 7. SHARC kernels, style and C pilot
 
-- [ ] Control code in C (note_on, parameter mapping) plus block-level assembly kernels from the SDK. A call costs about
-      25 instructions per 32-sample block, under one per sample.
-- [ ] Pluck's string loop in C against the assembly, cycles measured in the emulator.
+- [ ] Study the shared stock building blocks from step 1b with the public manuals in `out/refs/` (see
+      `docs/sharc/SOURCES.md`): 2x oversampling with a half-band decimator, per-sample parameter ramps, circular-buffer
+      delay, reciprocal with Newton steps. Results in one findings file. We learn idioms only; no firmware code is
+      copied into the repo.
+- [ ] A short style guide for readable SHARC assembly (register naming, macros, block-loop layout).
+- [ ] SDK DSP kernels (filter, saturator, envelope, ramp, delay), written from those idioms and measured in the emulator.
+      Compare with calling the firmware's own kernel through a runtime import (byte-identical on DT2 and DN2): less DSP
+      memory, but tied to firmware behaviour.
+- [ ] C pilot (1 day): control code in C (note_on, parameter mapping) calling the block-level kernels. A call costs
+      about 25 instructions per 32-sample block, under one per sample. Pluck's string loop in C against the assembly,
+      cycles measured in the emulator.
 
 Decision: offer `--lang c` for SHARC glue, or keep assembly only.
 
@@ -140,18 +171,28 @@ Proof: screenshots of both tabs before Em tries them.
 
 ### 9. UI runtime services
 
-- [ ] Menus, lists and scrollbars exposed through adapters with a device-agnostic API, from the reviewed catalogue.
+- [ ] A generated `<dk/ui.h>` with concepts, not firmware classes: menu and menu item, list, value, text, plus
+      `dk_ui_has(cap)`. A missing feature reads as false or as a weak import of 0, never as a crash.
+- [ ] A `core/ui` adapter per device implements it with that device's anchors (e.g. DT2 `SourcePageView` against DN2
+      `MultiSourcePageView`). A new device adds an adapter and anchors; modules and the header do not change.
+- [ ] Portability count on Syntakt 1.42 for the UI declarations.
 
 Sized after step 1.
 
-### Syntakt track (parallel, read-only first)
+### Syntakt track (lower priority: S3 after step 9)
+
+The ColdFire runtime needs about 36 of the 145 missed rules (runtime, menu, health, input). The rest are DT2/DN2 sound
+engine rules (machines, parameters, FX pages, DSP link). After step 3, `catalog emit-rule` re-derives many from the
+strict and vtable pairs: about 0.5-1 day.
 
 - [x] S1. Static onboarding: identify the images (MAIN at 0x40000400; section 7, raw ColdFire code, possibly the second
       CPU), build cfdb and a separate Ghidra project, dry-run all rules on 1.42, and propose `devices/syntakt.toml`.
 - [x] S2. Static trace of how MAIN talks to the second CPU and starts the FPGA (interface only), what the boot waits
       for, and how the container seal key is derived. **Decision point.**
-- [ ] S3. Emulator boot to the main screen, with the FPGA interface stubbed (1-2 days, after S2).
-- [ ] Write the S1/S2 results to `docs/findings/` (one file, all marks [D]/[O]).
+- [x] Write the S1/S2 results to `docs/findings/70-syntakt-1-42.md`.
+- [ ] S3 (after step 9). Emulator boot to the main screen, with the FPGA status and the peer interface stubbed
+      (1.5-2 days).
+- [ ] S4. Re-derive the ColdFire runtime anchors on 1.42; no-seal container path in patchkit.
 
 S1/S2 results 2026-10-27 [D]: cfdb `st-1.42-emac` built (13,073 functions, under `out/`). 27 of 172 ColdFire rules
 resolve on 1.42 (DT2 and DN2 controls: all hit); `cfmatch` pairs 67% of DT2 functions. Section 7 is a separate
@@ -161,10 +202,11 @@ has no HMAC seal, so patchkit needs a no-seal path instead of a key.
 
 ## Estimates
 
-Steps 1-8: about 7-10 agent days. Steps 1-5 high confidence (mechanical, byte-identical proofs, much deletion);
+Steps 1-8: about 8-11 agent days (1b adds 5-7 agent hours; step 7 grows with the kernel work). Steps 1-5 high confidence (mechanical, byte-identical proofs, much deletion);
 6 and 8 medium; 7 decides itself in a day; 9 depends on the catalogue. Syntakt S1-S2: 1.5-2 days; audio beyond the
 ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27: plan written. Step 1 tool done (not committed); pre-labels and review page next. S1/S2 done.
+2026-10-27: plan written. Step 1 tool committed (bcd88027). 1b probe, S1/S2 and finding 70 done. Next: graph context
+and groups in the catalogue, the shared catalogue module and the DSP collector, then pre-labels and the review page.
