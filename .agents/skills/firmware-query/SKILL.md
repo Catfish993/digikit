@@ -44,6 +44,10 @@ It adds the table `catalog` to `out/atlas/<image>.sqlite` and writes `out/atlas/
     fw.py catalog -i dt2-1.17 --grade --top 20          # best anchor candidates
     fw.py catalog menu -i dt2-1.17 --tag near:cf.menu   # TERM matches name, class, hint or tags
     fw.py catalog -i dn2-1.12 --tag role:model
+    fw.py catalog -i dt2-1.17 --groups --top 20         # groups by size
+    fw.py catalog -i dt2-1.17 --group 3 --top 50        # rows of one group
+
+Review by group first, then rows. The build also writes `out/atlas/<image>-catalog-groups.tsv` (table `catalog_groups`) and `out/atlas/<image>-catalog-graph.json` (nodes and call edges between catalog rows). A group is a Louvain community of the call graph between catalog rows; group -1 is a row alone.
 
 | column | meaning |
 | --- | --- |
@@ -54,6 +58,10 @@ It adds the table `catalog` to `out/atlas/<image>.sqlite` and writes `out/atlas/
 | anchors | existing anchors in the function (these score lower) |
 | rule_kind, rule_ordinal, rule_both | suggested rule (cf_func, vtable_slot, none) and whether it is the same on both devices |
 | anchor_grade, score | 1 when a hash rule fits both devices and versions; ranking |
+| caller_classes | up to 3 classes whose vfuncs call it, as `Class:count` |
+| callees_known | up to 3 callees that are anchored or named, most called first |
+| work_name | working name of a `FUN_` row: `Class::helper_XXXX`, `str:HINT` or `calls:NAME`; empty otherwise |
+| group | call-graph group id, -1 when alone |
 
 Marks stay [D]/[O] until a second check against image bytes. "No callers" needs `tools/coldfire/refscan.py`.
 

@@ -1060,7 +1060,13 @@ def _atlas_one(image: str, term: str, per: int) -> list[str]:
 
 
 def cmd_catalog(
-    image: str, term: str, tag: str | None, top: int, grade: bool
+    image: str,
+    term: str,
+    tag: str | None,
+    top: int,
+    grade: bool,
+    group: int | None = None,
+    groups: bool = False,
 ) -> list[str]:
     """Rows of the atlas `catalog` table (candidate anchor functions), best score first."""
     short = short_image(image)
@@ -1076,10 +1082,42 @@ def cmd_catalog(
             "no catalog for %s: run uv run python -m tools.coldfire.atlas catalog %s OTHER"
             " (e.g. dt2-1.17 dn2-1.12)" % (short, short)
         )
+    if (groups or group is not None) and not _has(con, "catalog_groups"):
+        raise FwError(
+            "no catalog groups for %s: re-run uv run python -m tools.coldfire.atlas catalog %s OTHER"
+            " (e.g. dt2-1.17 dn2-1.12)" % (short, short)
+        )
+    if groups:
+        grows = con.execute(
+            "SELECT id, size, anchored, grade, top_classes, top_strings, top_tags, best "
+            "FROM catalog_groups ORDER BY size DESC, id LIMIT %d" % top
+        ).fetchall()
+        out = ["catalog groups %s: %d shown" % (short, len(grows))]
+        for gid, size, anc, gr, tcl, tst, ttg, best in grows:
+            out.append(
+                "grp=%d size=%d anchored=%d grade=%d best=%08x classes=%s tags=%s%s"
+                % (
+                    gid,
+                    size,
+                    anc,
+                    gr,
+                    best,
+                    tcl or "-",
+                    ttg or "-",
+                    " strings=" + repr(tst) if tst else "",
+                )
+            )
+        return out
     where = ["1"]
-    args: list[str] = []
+    args: list[Any] = []
+    if group is not None:
+        where.append('"group"=?')
+        args.append(group)
     if term:
-        where.append("(name LIKE ?1 OR class LIKE ?1 OR hint LIKE ?1 OR tags LIKE ?1)")
+        where.append(
+            "(name LIKE ?%d OR class LIKE ?%d OR hint LIKE ?%d OR tags LIKE ?%d)"
+            % ((len(args) + 1,) * 4)
+        )
         args.append("%" + term + "%")
     if tag:
         where.append("(',' || tags) LIKE ?%d" % (len(args) + 1))
@@ -1090,28 +1128,31 @@ def cmd_catalog(
     total = con.execute("SELECT count(*) " + sql, args).fetchone()[0]
     rows = con.execute(
         "SELECT addr, score, anchor_grade, name, class, tags, ui_callers, hint, pair_addr, "
-        "pair_method, rule_kind, rule_ordinal, anchors "
+        'pair_method, rule_kind, rule_ordinal, anchors, work_name, "group", caller_classes '
         + sql
         + " ORDER BY score DESC, addr LIMIT %d" % top,
         args,
     ).fetchall()
     out = ["catalog %s: %d rows match, %d shown" % (short, total, len(rows))]
-    for a, sc, g, name, cls, tags, uic, hint, pa, pm, rk, ro, anch in rows:
+    for a, sc, g, name, cls, tags, uic, hint, pa, pm, rk, ro, anch, wn, grp, by in rows:
         rule = rk if ro is None else "%s#%d" % (rk, ro)
         out.append(
-            "%08x %5.2f %s %s%s  %s  ui=%d rule=%s pair=%s%s%s"
+            "%08x %5.2f %s %s%s%s grp=%d  %s  ui=%d rule=%s pair=%s%s%s%s"
             % (
                 a,
                 sc,
                 "G" if g else "-",
                 name,
+                " [%s]" % wn if wn else "",
                 " (%s)" % cls if cls else "",
+                grp,
                 tags,
                 uic,
                 rule,
                 "%08x/%s" % (pa, pm) if pa is not None else "-",
                 " " + repr(hint) if hint else "",
                 " anchored=" + anch if anch else "",
+                " by=" + by if by and not cls else "",
             )
         )
     return out
@@ -1186,6 +1227,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--tag", help="tag prefix, e.g. near:cf.menu, role:model, term:fx")
     sp.add_argument("--top", type=int, default=30)
     sp.add_argument("--grade", action="store_true", help="only anchor_grade=1")
+    sp.add_argument("--group", type=int, help="only rows of this group id")
+    sp.add_argument(
+        "--groups", action="store_true", help="list the groups (top N by size)"
+    )
     sp = common(sub.add_parser("batch", help="run many queries from FILE or - (stdin)"))
     sp.add_argument("file")
     return p
@@ -1215,7 +1260,15 @@ def run(
         if not image:
             raise FwError("no image: pass -i dt2-1.17 or set FW_IMAGE")
         return capped(
-            cmd_catalog(image, " ".join(args.term), args.tag, args.top, args.grade),
+            cmd_catalog(
+                image,
+                " ".join(args.term),
+                args.tag,
+                args.top,
+                args.grade,
+                args.group,
+                args.groups,
+            ),
             cap,
         )
     if c == "port":

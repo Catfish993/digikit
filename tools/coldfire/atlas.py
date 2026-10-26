@@ -39,6 +39,7 @@ section for parameter names (out/sections/<image>/section_3_MAIN_OS.bin).
 from __future__ import annotations
 
 import argparse
+import collections
 import glob
 import json
 import os
@@ -938,7 +939,149 @@ CATALOG_COLUMNS = (
     ("rule_both", "INTEGER"),
     ("anchor_grade", "INTEGER"),
     ("score", "REAL"),
+    ("caller_classes", "TEXT"),
+    ("callees_known", "TEXT"),
+    ("work_name", "TEXT"),
+    ("group", "INTEGER"),
 )
+
+GROUP_COLUMNS = (
+    ("id", "INTEGER"),
+    ("size", "INTEGER"),
+    ("anchored", "INTEGER"),
+    ("grade", "INTEGER"),
+    ("top_classes", "TEXT"),
+    ("top_strings", "TEXT"),
+    ("top_tags", "TEXT"),
+    ("best", "INTEGER"),
+)
+TOP_CALLER_CLASSES = 3
+TOP_CALLEES_KNOWN = 3
+HINT_NAME_CHARS = 16
+
+
+def is_unnamed(name: str) -> bool:
+    return name.startswith(("FUN_", "thunk_FUN_"))
+
+
+def work_name(
+    name: str,
+    caller_classes_counts: dict[str, int],
+    hint: str,
+    callees_known: Sequence[str],
+) -> str:
+    """Working name of an unnamed function, '' for a named one.
+
+    `caller_classes_counts` maps a class to the number of its vfuncs that call the function.
+    The hex digits of the name are the address, so its last 4 digits make the helper name.
+    """
+    if not is_unnamed(name):
+        return ""
+    if len(caller_classes_counts) == 1:
+        cls, n = next(iter(caller_classes_counts.items()))
+        if n >= 2:
+            return "%s::helper_%s" % (cls, name[-4:].lower())
+    if hint:
+        return "str:" + hint[:HINT_NAME_CHARS]
+    if callees_known:
+        return "calls:" + callees_known[0]
+    return ""
+
+
+def number_groups(communities: Iterable[Iterable[int]]) -> dict[int, int]:
+    """Address -> group id. Biggest community first, then lowest address; singletons get -1."""
+    sets = sorted((sorted(c) for c in communities), key=lambda c: (-len(c), c[0]))
+    out: dict[int, int] = {}
+    gid = 0
+    for members in sets:
+        if len(members) < 2:
+            ids = -1
+        else:
+            ids = gid
+            gid += 1
+        for a in members:
+            out[a] = ids
+    return out
+
+
+def _count_list(counts: dict[str, int], limit: int) -> list[tuple[str, int]]:
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
+
+
+def group_edges(
+    addrs: Iterable[int], callee_n: dict[int, collections.Counter[int]]
+) -> dict[tuple[int, int], int]:
+    """Undirected edges (low, high) -> call sites in either direction, between `addrs`."""
+    nodes = set(addrs)
+    out: dict[tuple[int, int], int] = {}
+    for f in nodes:
+        for t, n in callee_n.get(f, {}).items():
+            if t in nodes and t != f:
+                key = (f, t) if f < t else (t, f)
+                out[key] = out.get(key, 0) + n
+    return out
+
+
+# Louvain resolution: 2.0 gives about 50 groups of 10+ rows on DT2 1.17 (1.0 gives 23, with two of 600+ rows).
+GROUP_RESOLUTION = 2.0
+
+
+def louvain_groups(
+    addrs: Iterable[int], edges: dict[tuple[int, int], int]
+) -> dict[int, int]:
+    import networkx as nx
+
+    g = nx.Graph()
+    g.add_nodes_from(sorted(addrs))
+    g.add_weighted_edges_from((a, b, w) for (a, b), w in sorted(edges.items()))
+    comms = nx.community.louvain_communities(
+        g, weight="weight", resolution=GROUP_RESOLUTION, seed=0
+    )
+    return number_groups(comms)
+
+
+def _parse_counts(text: str) -> list[tuple[str, int]]:
+    # Class names can hold commas (template arguments), so match "name:count" up to the next "," or the end.
+    return [(k, int(n)) for k, n in re.findall(r"(.+?):(\d+)(?:,|$)", text)]
+
+
+def catalog_group_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per group (id >= 0) with a summary of its members."""
+    members: dict[int, list[dict[str, Any]]] = {}
+    for r in rows:
+        if r["group"] >= 0:
+            members.setdefault(r["group"], []).append(r)
+    out = []
+    for gid in sorted(members):
+        ms = members[gid]
+        classes: dict[str, int] = {}
+        hints: dict[str, int] = {}
+        tags: dict[str, int] = {}
+        for r in ms:
+            if r["class"]:
+                classes[r["class"]] = classes.get(r["class"], 0) + 1
+            for c, n in _parse_counts(r["caller_classes"]):
+                classes[c] = classes.get(c, 0) + n
+            if r["hint"]:
+                hints[r["hint"]] = hints.get(r["hint"], 0) + 1
+            for t in r["tags"].split(","):
+                if t:
+                    k = t.split(":")[0]
+                    tags[k] = tags.get(k, 0) + 1
+        best = min(ms, key=lambda r: (-r["score"], r["addr"]))
+        out.append(
+            {
+                "id": gid,
+                "size": len(ms),
+                "anchored": sum(1 for r in ms if r["anchors"]),
+                "grade": sum(1 for r in ms if r["anchor_grade"] == 1),
+                "top_classes": ",".join("%s:%d" % kv for kv in _count_list(classes, 5)),
+                "top_strings": " | ".join(k for k, _n in _count_list(hints, 3)),
+                "top_tags": ",".join("%s:%d" % kv for kv in _count_list(tags, 5)),
+                "best": best["addr"],
+            }
+        )
+    return out
 
 
 def suggest_rule(
@@ -1000,6 +1143,8 @@ class CatImg:
         self.ui_text: dict[int, str] = {}
         self.anch: dict[int, list[str]] = {}
         self.stable: dict[int, int] = {}
+        self.callee_n: dict[int, collections.Counter[int]] = {}
+        self.caller_cls: dict[int, collections.Counter[str]] = {}
 
 
 def _anchor_functions(
@@ -1088,6 +1233,9 @@ def collect_catalog(image: str) -> CatImg:
                 role_own[classes[c]].add(t)
     callees: dict[int, set[int]] = collections.defaultdict(set)
     callers: dict[int, set[int]] = collections.defaultdict(set)
+    callee_n: dict[int, collections.Counter[int]] = collections.defaultdict(
+        collections.Counter
+    )
     for f, t in db.execute(
         "SELECT from_func, to_func FROM edges WHERE image=? AND to_func IS NOT NULL "
         "AND kind IN ('call','jump') AND from_func!=to_func",
@@ -1096,6 +1244,15 @@ def collect_catalog(image: str) -> CatImg:
         if f in fn and t in fn:
             callees[f].add(t)
             callers[t].add(f)
+            callee_n[f][t] += 1
+    d.callee_n = dict(callee_n)
+    for t, fs in callers.items():
+        cc: collections.Counter[str] = collections.Counter()
+        for f in fs:
+            for c in {o or c for c, o in d.vt.get(f, ())}:
+                cc[c] += 1
+        if cc:
+            d.caller_cls[t] = cc
     cnt: collections.Counter[int] = collections.Counter()
     for f in ui_vf:
         for t in callees[f]:
@@ -1169,7 +1326,15 @@ def catalog_rows(
         strs = d.strf.get(f, set())
         anchors = d.anch.get(f, [])
         callers = d.ui_callers.get(f, 0)
-        hint = d.ui_text[min(strs)][:32] if strs else ""
+        hint = " ".join(d.ui_text[min(strs)].split())[:32] if strs else ""
+        cc = d.caller_cls.get(f, collections.Counter())
+        known: list[str] = []
+        by_calls = sorted(d.callee_n.get(f, {}).items(), key=lambda kv: (-kv[1], kv[0]))
+        for t, _n in by_calls:
+            nm = d.anch[t][0] if t in d.anch else d.fn[t][0]
+            if (t in d.anch or not is_unnamed(nm)) and nm not in known:
+                known.append(nm)
+        known = known[:TOP_CALLEES_KNOWN]
         rows.append(
             {
                 "addr": f,
@@ -1196,8 +1361,20 @@ def catalog_rows(
                 "score": catalog_score(
                     grade, method, callers, len(strs), tags, anchors
                 ),
+                "caller_classes": ",".join(
+                    "%s:%d" % kv for kv in _count_list(dict(cc), TOP_CALLER_CLASSES)
+                ),
+                "callees_known": ",".join(known),
+                "work_name": work_name(name, dict(cc), hint, known),
+                "group": -1,
             }
         )
+    ids = louvain_groups(
+        [r["addr"] for r in rows],
+        group_edges([r["addr"] for r in rows], d.callee_n),
+    )
+    for r in rows:
+        r["group"] = ids.get(r["addr"], -1)
     return rows
 
 
@@ -1230,6 +1407,57 @@ def write_catalog(image: str, rows: list[dict[str, Any]], out_dir: str) -> None:
             fh.write("\t".join(cells) + "\n")
 
 
+def write_catalog_groups(
+    image: str,
+    rows: list[dict[str, Any]],
+    edges: dict[tuple[int, int], int],
+    out_dir: str,
+) -> int:
+    """Write table catalog_groups, the groups TSV and the graph JSON; return the group count."""
+    groups = catalog_group_rows(rows)
+    con = sqlite3.connect(os.path.join(out_dir, image + ".sqlite"))
+    con.execute("DROP TABLE IF EXISTS catalog_groups")
+    con.execute(
+        "CREATE TABLE catalog_groups (%s)"
+        % ", ".join('"%s" %s' % c for c in GROUP_COLUMNS)
+    )
+    insert(con, "catalog_groups", groups)
+    con.commit()
+    con.close()
+    with open(os.path.join(out_dir, image + "-catalog-groups.tsv"), "w") as fh:
+        fh.write("\t".join(c for c, _t in GROUP_COLUMNS) + "\n")
+        for g in groups:
+            fh.write(
+                "\t".join(
+                    "0x%08x" % g[c] if c == "best" else str(g[c])
+                    for c, _t in GROUP_COLUMNS
+                )
+                + "\n"
+            )
+    graph = {
+        "image": image,
+        "nodes": [
+            {
+                "addr": "0x%08x" % r["addr"],
+                "name": r["name"],
+                "work_name": r["work_name"],
+                "class": r["class"],
+                "group": r["group"],
+                "score": round(r["score"], 2),
+                "anchors": r["anchors"],
+            }
+            for r in sorted(rows, key=lambda r: r["addr"])
+        ],
+        "edges": [
+            ["0x%08x" % a, "0x%08x" % b, w] for (a, b), w in sorted(edges.items())
+        ],
+    }
+    with open(os.path.join(out_dir, image + "-catalog-graph.json"), "w") as fh:
+        json.dump(graph, fh, indent=1)
+        fh.write("\n")
+    return len(groups)
+
+
 def catalog(image: str, other_image: str, out_dir: str = fw.ATLAS_DIR) -> int:
     from tools.coldfire import cfmatch
 
@@ -1245,17 +1473,21 @@ def catalog(image: str, other_image: str, out_dir: str = fw.ATLAS_DIR) -> int:
     for n, d, o, pair in ((names[0], a, b, fwd), (names[1], b, a, rev)):
         rows = catalog_rows(d, o, pair)
         write_catalog(n, rows, out_dir)
+        n_groups = write_catalog_groups(
+            n, rows, group_edges([r["addr"] for r in rows], d.callee_n), out_dir
+        )
         counts: dict[str, int] = {}
         for r in rows:
             for t in r["tags"].split(","):
                 key = t.split(":")[0]
                 counts[key] = counts.get(key, 0) + 1
         print(
-            "%s: rows=%d anchor_grade=%d tags: %s"
+            "%s: rows=%d anchor_grade=%d groups=%d tags: %s"
             % (
                 n,
                 len(rows),
                 sum(r["anchor_grade"] for r in rows),
+                n_groups,
                 " ".join("%s=%d" % kv for kv in sorted(counts.items())),
             )
         )
