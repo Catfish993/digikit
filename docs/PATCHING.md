@@ -226,7 +226,7 @@ mise run patch:port                             # the four supported firmwares
 ```
 
 A port records the anchors that modules need (address, length, SHA-256 of the bytes there) and the free regions of
-one stock image. It is generated from the `[[anchor_rule]]` entries of the modules and is deterministic: resolving a
+one stock image. It is generated from the rules declared in `devices/fw/` and is deterministic: resolving a
 supported firmware again leaves `git status` clean. A rule that matches nothing, or more than one place, is an error;
 that is how a new firmware shows which rules need work. A firmware without a port file has no compatible modules.
 
@@ -262,7 +262,7 @@ frameworks are modules built on them. One implementation serves the command line
 ### Ports and anchors
 
 Modules never contain addresses. A firmware site is a named **anchor** (`dsp.master.q31_call`,
-`cf.machines.dispatch`). The module that needs it declares how to find it with an `[[anchor_rule]]`, and
+`cf.machines.dispatch`). A rule in `devices/fw/` ([design](design/firmware-decls.md)) declares how to find it, and
 `patch:port` turns the rules into the lockfile. Rule kinds:
 
 - SHARC+: `sharc_func` (a function found by its relocation-insensitive hash, plus an offset), `sharc_literal`,
@@ -289,7 +289,7 @@ modules/<category>/<name>/
   gallery/icon.svg     the gallery card's icon
 ```
 
-The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `[[anchor_rule]]`, `[[section]]`,
+The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `[[section]]`,
 `[[registry]]` (with `[[registry.field]]`) and `[[entry]]`. Every key is listed in
 [modules/README.md](../modules/README.md).
 

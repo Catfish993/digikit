@@ -77,7 +77,7 @@ after this change, pass.
   (`FUN_4019c928`), gets the Brain singleton (`FUN_40198948`) and its view manager (`FUN_40030a42`: Brain + 0x40), adds the view
   (`FUN_4011bdaa(manager, &sp, 0)`) and releases the count holders (`FUN_40197a4a`). The menu does the same with its own text. The
   helpers are templates that many callers share, so their hashes repeat (26 functions hash alike); the anchors are the call operands inside
-  `FUN_400a4832` (`cf_ptr` rules, `tools/patchkit/pk_menu_rules.py`), six new anchors resolved on all four images (the call sites sit at
+  `FUN_400a4832` (`cf_ptr` rules, `c4d86e4e:tools/patchkit/pk_menu_rules.py`), six new anchors resolved on all four images (the call sites sit at
   the same offsets; `devices/ports/*.toml` got six `[[anchor]]` blocks each). The popup is a framed box, takes the key focus and goes
   with NO, about 25 characters wide on one line. The text is copied from a static buffer `POPUP`, which the proof reads back.
 - **Texts.** A popup and the answer rows name the reason and the file: `BAD-IMPORT.DKM: NO IMPORT`; the rows read `NO IMPORT +1` (more

@@ -9,8 +9,7 @@
 
 Writes `modules/<category>/<name>/`: `module.toml`, `src/cf/<name>.c` and/or `src/dsp/<name>.s`, `tests/smoke.toml`
 (the quick tests `module:dev` and `patch:test` run), `README.md`, `gallery/icon.svg`; then builds the objects with
-tools/patchkit/pk_build.py, so the template is known to compile. The DSP stub reuses the anchor rules of digikit/master-gain (rules
-only: masked signatures and hashes, never firmware bytes). A new module claims `dsp.master.hook` when it has a DSP
+tools/patchkit/pk_build.py, so the template is known to compile. The DSP stub uses the master anchors declared in devices/fw/dsp/master.toml. A new module claims `dsp.master.hook` when it has a DSP
 part, so it conflicts with digikit/master-gain: pick one at a time until the master-fx framework (Phase 3) exists.
 
 `--machine` takes `AUTHOR/NAME` and writes a run-time machine of the SDK contract: a copy of tests/fixtures/modules/sine (one DSP
@@ -39,7 +38,7 @@ CF_C = """/* {id}: ColdFire code in the expansion region (cf.expansion).
  *
  * The core/expansion loader copies code, data and bss here before the reset clear; nothing calls this module yet.
  * Hook it with an `[[op]]` in module.toml (op = "retarget": rewrite a jsr/bsr/jmp at an anchor to a symbol of this
- * object). Anchors come from `[[anchor_rule]]` (masked signatures, never addresses); build with
+ * object). Anchors are declared in devices/fw/ (masked signatures, never addresses); build with
  * `mise run module:build -- modules/{id}`. */
 
 const unsigned {sym}_version = 1;
@@ -163,20 +162,6 @@ to = "{sym}_hook"
 [[claim]]
 resource = "dsp.master.hook"
 """)
-        donor = tomllib.loads(
-            (MODULES / "fx" / "master-gain" / "module.toml").read_text()
-        )
-        for rule in donor["anchor_rule"]:
-            lines = ["", "[[anchor_rule]]"]
-            for k, v in rule.items():
-                lines.append(
-                    f'{k} = "{v}"'
-                    if isinstance(v, str)
-                    else f"{k} = {v:#x}"
-                    if k == "offset"
-                    else f"{k} = {v}"
-                )
-            parts.append("\n".join(lines) + "\n")
     return "".join(parts)
 
 

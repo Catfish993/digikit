@@ -79,15 +79,3 @@ append = { registry = "rdemo", row = ["$value", "u8:$index", "u16:rdemo.first"] 
 
 [[claim]]
 resource = "test.demo.kit_setter"
-
-# Kit::vfunc_12 on DT2 1.16 and 1.17 (the first function of its hash by address)
-[[anchor_rule]]
-name = "test.demo.kit_setter"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "de5ffecfc0d23b984befde7b3cbb97be"
-ordinal = 0
-offset = 0x0
-len = 14
-mark = "D"

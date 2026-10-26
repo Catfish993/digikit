@@ -113,26 +113,6 @@ devices = ["dn2"]
 [[claim]]
 resource = "cf.dynreg.list_copy"
 
-[[anchor_rule]]
-name = "cf.dynreg.list_copy"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "7c680e4200eed1964a22109ee2d43932"
-offset = 0x13e
-len = 6
-mark = "D"
-
-[[anchor_rule]]
-name = "cf.dynreg.list_copy"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "69828342bcd67f7587f7d51d4c4a6575"
-offset = 0xde
-len = 6
-mark = "D"
-
 # ---- reserved rows -------------------------------------------------------------------------------------------------------
 
 # Machines: the permanent numbers are the run-time range of types.toml (key "core/dynreg:dyn<N>").
@@ -652,4 +632,3 @@ name = ""
 title = ""
 machine = 0x7fffffff
 devices = ["dn2"]
-

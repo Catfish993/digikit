@@ -8,4 +8,4 @@ and 1.17, Digitone II OS 1.11 and 1.12, emulator only.
 The machine-view hook and the three in-use anchors of hot reload are archived (`docs/plans/digikit-hot-reload.md`).
 
 How it works and its limits: `docs/design/digikit-registry.md`. Test modules: `test/dyn-xslice`, `test/dyn-params` (Digitakt II), `test/dyn-dn2`
-(Digitone II). Anchor rules: `uv run python -m tools.patchkit.pk_dynreg_rules --device dn2`.
+(Digitone II). Anchor rules: declared in `devices/fw/dynreg.toml`.

@@ -8,7 +8,7 @@ manifest reference. Rules that apply to every module:
 
 - **No firmware bytes in a module.** A `write` carries the SHA-256 of the bytes it replaces, never the bytes.
   Tables of the stock firmware are copied from the user's image at patch time (`[[section]]`).
-- **No addresses in a module.** Every firmware site is a named anchor, found by an `[[anchor_rule]]`.
+- **No addresses in a module.** Every firmware site is a named anchor, found by a rule declared in `devices/fw/`.
 - **Do not name or copy the vendor DSP toolchain or its files.** Cite public manuals only
   ([docs/sharc/SOURCES.md](../docs/sharc/SOURCES.md)).
 - Nothing patched has run on a device. Say "emulator only" in the gallery text until it has.
@@ -211,11 +211,12 @@ What registers are free at a hook site is the module's business: document it in 
 | `resource` | name of the resource, for example `dsp.master.hook` or `cf.reset.init_calls` |
 | `devices` | optional device filter |
 
-### `[[anchor_rule]]`
+### Anchor rules (`devices/fw/`)
 
-How `mise run patch:port` finds a firmware site. It writes the result (address, length, SHA-256) into
+A module manifest has no rules. Rules are declared in `devices/fw/*.toml` ([design](../docs/design/firmware-decls.md)).
+They tell `mise run patch:port` how to find a firmware site. It writes the result (address, length, SHA-256) into
 `devices/ports/*.toml`. The same anchor name may have one rule per device (`devices = [...]`). A rule that finds no
-match or two matches is an error.
+match or two matches is an error. The keys below go in the `rule` table of a declaration.
 
 Common keys: `name`, `cpu` (`cf` or `sharc`), `kind`, `devices`, `mark` (`"D"`: measured or read once; use `"V"` only
 after a second agent checked it), `offset`, `len` (bytes).
@@ -233,19 +234,17 @@ after a second agent checked it), `offset`, `len` (bytes).
 | `cf_reset_init_calls`, `cf_reset_helper` | `which = "copy"\|"clear"` | the reset-path calls (used by `core/expansion`) |
 
 ```toml
-[[anchor_rule]]
+# devices/fw/<subsystem>.toml
+[[site]]
 name = "dsp.master.q31_call"
 cpu = "sharc"
-kind = "sharc_func"
-reloc_hash = "65c7ebdfe23c9a760bc6077a912e16c0474c182ee9849925cb0c10af0689f984"
-offset = 0x15c
-len = 6
+rule = { kind = "sharc_func", reloc_hash = "65c7ebdfe23c9a760bc6077a912e16c0474c182ee9849925cb0c10af0689f984", offset = 0x15c, len = 6 }
 mark = "D"
 ```
 
 To write a SHARC rule for a site: `uv run python -m tools.patchkit.port_resolve rule-sharc dt2-1.17 0x1c7734 --len 6` prints the
-hash and offset. ColdFire rules come from the function hashes of the `cfdb` database (`tools/coldfire/cf.py`,
-`tools/patchkit/pk_machine_rules.py` as an example generator). Then run `mise run patch:port` and check that the diff of
+hash and offset. ColdFire rules come from the function hashes of the `cfdb` database (`tools/coldfire/cf.py`; the
+`catalog emit-rule` command will print them, see the design). Then run `mise run patch:port` and check that the diff of
 `devices/ports/` shows your anchors on every firmware you claim. Full syntax: the docstring of `tools/patchkit/port_resolve.py`.
 
 ### `[[registry]]` and `[[registry.field]]`

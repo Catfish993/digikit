@@ -1,0 +1,11 @@
+# Anchors of the test modules.
+# Moved from module manifests; names unchanged (step 3, docs/design/firmware-decls.md).
+
+# Kit::vfunc_12 on DT2 1.16 and 1.17 (the first function of its hash by address)
+[[fn]]
+name = "test.demo.kit_setter"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "de5ffecfc0d23b984befde7b3cbb97be", ordinal = 0, offset = 0x0, len = 14 }
+mark = "D"
+users = ["test/registry-demo"]

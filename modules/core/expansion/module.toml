@@ -40,23 +40,3 @@ symbol = "pk_loader"
 
 [[claim]]
 resource = "cf.reset.init_calls"
-
-[[anchor_rule]]
-name = "cf.reset.init_calls"
-cpu = "cf"
-kind = "cf_reset_init_calls"
-mark = "D"
-
-[[anchor_rule]]
-name = "cf.reset.copy_helper"
-cpu = "cf"
-kind = "cf_reset_helper"
-which = "copy"
-mark = "D"
-
-[[anchor_rule]]
-name = "cf.reset.clear_helper"
-cpu = "cf"
-kind = "cf_reset_helper"
-which = "clear"
-mark = "D"

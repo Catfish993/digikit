@@ -24,12 +24,13 @@ def test_the_site_scan_finds_references_and_clamp_bounds_but_not_loop_ends():
 
 
 def test_rules_are_declared_for_the_three_anchors():
-    with open(
-        os.path.join(ROOT, "modules", "core", "params", "module.toml"), "rb"
-    ) as f:
-        m = tomllib.load(f)
+    params_rules = [
+        r
+        for r in pr.fw_rules(REPO_ROOT)
+        if r["name"].startswith("cf.params.") and r["_source"] == "fw/params"
+    ]
     for device in ("dt2", "dn2"):
-        rules = {r["name"]: r for r in m["anchor_rule"] if r["devices"] == [device]}
+        rules = {r["name"]: r for r in params_rules if device in r["devices"]}
         assert set(rules) == {
             "cf.params.t1",
             "cf.params.ref",
@@ -43,7 +44,10 @@ def test_rules_are_declared_for_the_three_anchors():
             len(rules["cf.params.t2"]["hash"]) == 32
             and rules["cf.params.t2"]["len"] == 10
         )
-    assert all(r["devices"] in (["dt2"], ["dn2"]) for r in m["anchor_rule"])
+    # The table scans are DT2/DN2-specific: every rule must name its devices, so a new device never matches by accident.
+    assert all(
+        r.get("devices") and set(r["devices"]) <= {"dt2", "dn2"} for r in params_rules
+    )
 
 
 @pytest.mark.parametrize("version", ["1.17"])

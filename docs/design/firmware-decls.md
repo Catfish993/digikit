@@ -19,6 +19,7 @@ firmware.
    no longer hold `[[anchor_rule]]`.
 2. Each entry is one declaration: a function, a data object, a value, a site list, a hook site or a struct. It has a
    name, the devices it exists on, a rule per device (or one shared rule), a type, a mark and a short description.
+   `users` lists the modules that use it (provenance only; the linker does not read it).
 3. Names follow `<cpu>.<subsystem>.<kind>.<name>` with a fixed subsystem list. Old names stay as aliases until every
    user has moved.
 4. `port_resolve.py` reads `devices/fw/` and writes `devices/ports/<dev>-<os>.toml` as today. Rule kinds and matching do
@@ -68,7 +69,7 @@ generation: an `fn` becomes a callable binding, a `site` never does.
 ### A function shared by both devices
 
 ```toml
-# devices/fw/view.toml
+# the view subsystem file (written by the rename commit)
 [[fn]]
 name = "cf.view.fn.push"
 aliases = ["cf.menu.fn.view_add"]

@@ -3,19 +3,24 @@
 
     uv run python -m tools.patchkit.port_resolve resolve FIRMWARE.syx [--out devices/ports/NAME.toml]
     uv run python -m tools.patchkit.port_resolve resolve-all [--root DIR]      # the four supported firmwares
-    uv run python -m tools.patchkit.port_resolve rule-sharc IMAGE PC [--len N] # print an anchor_rule for a SHARC pc
+    uv run python -m tools.patchkit.port_resolve rule-sharc IMAGE PC [--len N] # print a devices/fw rule for a SHARC pc
 
 A port (devices/ports/<short>-<version>.toml) records, for one stock `.syx` (keyed by its sha256), the
 named anchors the modules and frameworks need (address, length, sha256 of the bytes there; never the bytes),
 the allocatable regions and the container limits. patchkit only reads it and verifies the hashes.
 
-Anchors are declared by the modules that need them, as `[[anchor_rule]]` entries in module.toml:
+Anchors are declared in devices/fw/<subsystem>.toml (docs/design/firmware-decls.md), not in module manifests. One
+entry is one declaration; its `rule` is shared, or `rule.dt2` / `rule.dn2` give one rule per device:
 
-    [[anchor_rule]]
+    [[fn]]
     name = "dsp.master.q31_call"     # the anchor's name
-    devices = ["dt2"]                # rules are per device; the same name may have one rule per device
-    kind = "sharc_func"              # see below
-    ...
+    cpu = "sharc"
+    devices = ["dt2"]                # the devices that have it; the entry is skipped on the others
+    rule = { kind = "sharc_func", reloc_hash = "...", offset = 0x0, len = 6 }   # kind: see below
+    mark = "D"
+
+The tables fn, site, data and value hold single anchors and sites holds multi-site rules. The tables hook and struct
+are not resolved. An unknown table is an error.
 
 Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py):
 
@@ -75,7 +80,6 @@ import tomllib
 from pathlib import Path
 
 from tools.firmware import config
-from tools.patchkit import modroots
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -121,14 +125,37 @@ def ported_firmware(root: Path = ROOT) -> list[str]:
     return [p["filename"] for p in load_profiles(root).values() if p["port"]]
 
 
-def module_rules(root: Path) -> list[dict]:
+RULE_TABLES = ("fn", "site", "data", "value", "sites")
+UNRESOLVED_TABLES = ("hook", "struct")
+
+
+def fw_rules(root: Path) -> list[dict]:
+    """The rules of devices/fw/**/*.toml, one dict per device filter, with `_source` = "fw/<file without .toml>"."""
+    fw = root / "devices" / "fw"
     rules = []
-    for m in (
-        m for r in modroots.REPO_ROOTS for m in sorted((root / r).rglob("module.toml"))
-    ):
-        d = tomllib.loads(m.read_text())
-        for r in d.get("anchor_rule", []):
-            rules.append({**r, "_module": d["module"]["id"]})
+    for f in sorted(fw.rglob("*.toml")):
+        source = "fw/" + f.relative_to(fw).with_suffix("").as_posix()
+        for table, entries in tomllib.loads(f.read_text()).items():
+            if table in UNRESOLVED_TABLES:
+                continue
+            if table not in RULE_TABLES:
+                raise ResolveError(f"{f}: unknown table [[{table}]]")
+            for e in entries:
+                rule = e["rule"]
+                if "kind" in rule:
+                    shared = [(e.get("devices"), rule)]
+                else:
+                    shared = [([dev], r) for dev, r in rule.items()]
+                for devices, r in shared:
+                    out = {"name": e["name"]}
+                    if "cpu" in e:
+                        out["cpu"] = e["cpu"]
+                    out.update({k: v for k, v in r.items() if k != "mark"})
+                    out["mark"] = r.get("mark", e.get("mark", "D"))
+                    if devices:
+                        out["devices"] = devices
+                    out["_source"] = source
+                    rules.append(out)
     return rules
 
 
@@ -574,7 +601,7 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
     cf = CfFacts(f"{device}-{version}", secs[3])
     anchors = []
     pending = []
-    for rule in module_rules(root):
+    for rule in fw_rules(root):
         if rule.get("devices") and device not in rule["devices"]:
             continue
         if rule.get("kind") in MULTI_KINDS:
@@ -590,7 +617,7 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
                 "name": rule["name"],
                 "cpu": rule.get("cpu", "sharc"),
                 "mark": rule.get("mark", "D"),
-                "rule": f"{rule['_module']}:{rule['kind']}",
+                "rule": f"{rule['_source']}:{rule['kind']}",
                 **a,
             }
         )
@@ -602,11 +629,11 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
                     "name": f"{rule['name']}.{i}",
                     "cpu": "cf",
                     "mark": rule.get("mark", "D"),
-                    "rule": f"{rule['_module']}:{rule['kind']}",
+                    "rule": f"{rule['_source']}:{rule['kind']}",
                     **a,
                 }
             )
-    # one anchor name may be declared by several modules; they must agree
+    # one anchor name may be declared more than once; the resolved anchors must agree
     seen: dict[str, dict] = {}
     unique = []
     for a in anchors:
@@ -617,9 +644,7 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
         elif {k: v for k, v in prev.items() if k != "rule"} != {
             k: v for k, v in a.items() if k != "rule"
         }:
-            raise ResolveError(
-                f"anchor {a['name']} resolves differently for two modules"
-            )
+            raise ResolveError(f"anchor {a['name']} resolves differently for two rules")
     # Built-in anchor: the whole MAIN OS image, for modules that write at fixed offsets of one pinned firmware.
     main_dest = prof["patch"]["main_dest"]
     anchors.append(
@@ -687,10 +712,10 @@ def cmd_rule_sharc(a: argparse.Namespace) -> int:
     print(
         f"# {a.image}: function {entry:#x}..{end:#x}; {n} function(s) share this hash"
     )
-    print(f'reloc_hash = "{h}"')
-    print(f"offset = {a.pc - entry:#x}")
-    if a.len:
-        print(f"len = {a.len}")
+    length = f", len = {a.len}" if a.len else ""
+    print(
+        f'rule = {{ kind = "sharc_func", reloc_hash = "{h}", offset = {a.pc - entry:#x}{length} }}'
+    )
     del dsp_patch
     return 0
 

@@ -56,7 +56,7 @@ same reader. The menu has its own tables of result texts (`TEXT_RUNTIME`, `TEXT_
 
 - The menu uses the firmware's own classes: a `MenuItem` from the firmware's builder, `VerticalMenuView` objects (created on first
   use, kept for ever), `std::function` objects with our own manager and invoker, the view stack push. Findings:
-  [28](../../../docs/findings/28-digikit-menu.md), [34](../../../docs/findings/34-digikit-robustness.md), [38](../../../docs/findings/38-digikit-menu-restart.md). Anchors: `tools/patchkit/pk_menu_rules.py` writes the rules of `module.toml`.
+  [28](../../../docs/findings/28-digikit-menu.md), [34](../../../docs/findings/34-digikit-robustness.md), [38](../../../docs/findings/38-digikit-menu-restart.md). Anchors: the rules are declared in `devices/fw/menu.toml`.
 - The table buffer (16 KiB) and the view objects come from the firmware heap, so the module RAM is written by this code only. The
   runtime's staging buffer is written by the card DMA, by design (the proof leaves it out of the write-watch).
 - Proof: `uv run python -m tools.coldfire.digikit_menu_proof run [--image dn2-1.11] [--regress] [--quick] [--only-boot]`.

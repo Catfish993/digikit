@@ -1,0 +1,121 @@
+# Firmware menu classes and the SETTINGS item list: ColdFire anchors.
+# Moved from module manifests; names unchanged (step 3, docs/design/firmware-decls.md).
+
+[[fn]]
+name = "cf.menu.fn.blk_read"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "dcf1d4873d4a4fb5ac903e8ada9c1a12", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[data]]
+name = "cf.menu.fn.brain"
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x46, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.menu.fn.invalidate"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "06c561b63ac3ef5d6fd66758337bb31f", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.menu.fn.item_builder"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "e115e0c084b379e732551b9618d56beb", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.menu.fn.make_sp"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "e427a70e2c95815987c648e84eba4737", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[data]]
+name = "cf.menu.fn.mgr_of"
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x4e, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.menu.fn.new"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0dcb1d56c454607ae1698e4eeff299e7", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[data]]
+name = "cf.menu.fn.popup_make"
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x32, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.menu.fn.push"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "5e689a4fa65d49640663c7bce736d9ea", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[data]]
+name = "cf.menu.fn.sp_move"
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x40, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[data]]
+name = "cf.menu.fn.sp_release"
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x58, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.menu.fn.str_ctor"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0b0f2cd7a2d5144343e1fd5ad21658be", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.menu.fn.str_dtor"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "f1d2e07e127babad6c183b5ca51041d1", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[data]]
+name = "cf.menu.fn.view_add"
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x60, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.menu.fn.view_ctor"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "78a29b8d6b996f37e90aa83cbf1eb73d", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[site]]
+name = "cf.menu.icon_ref"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "8db782f6fd735f89d3b7c856316c0b90", offset = 0x382, len = 6 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[site]]
+name = "cf.menu.settings_tail"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "8db782f6fd735f89d3b7c856316c0b90", offset = 0x3a8, len = 8 }
+mark = "D"
+users = ["core/digikit-menu"]

@@ -3,12 +3,12 @@
 import os
 import tomllib
 
-import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 
 from tools.emulator import card_overlay  # noqa: E402
+from tools.patchkit import port_resolve  # noqa: E402
 
 
 def record(sector: int, mask_bytes: dict[int, int]) -> bytes:
@@ -61,8 +61,13 @@ def test_framework_rules_are_declared_once_per_site():
         os.path.join(ROOT, "modules", "core", "machines", "module.toml"), "rb"
     ) as f:
         m = tomllib.load(f)
-    # a site may have one rule per device (the Digitone II rules reuse the names)
-    keys = [(r["name"], tuple(r.get("devices", []))) for r in m["anchor_rule"]]
+    # the rules are declared in devices/fw/; a site may have one rule per device (the Digitone II rules reuse the names)
+    machine_rules = [
+        r
+        for r in port_resolve.fw_rules(REPO_ROOT)
+        if r["name"].startswith(("cf.machines.", "dsp.machines."))
+    ]
+    keys = [(r["name"], tuple(r.get("devices", []))) for r in machine_rules]
     assert len(keys) == len(set(keys))
     # every anchor a hook, write, section or extern of the manifest names has a rule for each device it is active on
     rules = {(n, dev) for n, d in keys for dev in d}
@@ -79,18 +84,7 @@ def test_framework_rules_are_declared_once_per_site():
         if name:
             for dev in devs:
                 assert (name, dev) in rules, (name, dev)
-    for r in m["anchor_rule"]:
+    for r in machine_rules:
         if r["kind"] == "cf_func":
             assert len(r["hash"]) == 32 and r["len"] > 0
             assert r["devices"] in (["dt2"], ["dn2"])
-
-
-@pytest.mark.skipif(
-    not os.path.exists(os.path.join(ROOT, "out", "cfdb", "dt2-1.17-emac.sqlite")),
-    reason="needs the 1.17 cfdb",
-)
-def test_rules_match_one_function_on_1_17():
-    from tools.patchkit import pk_machine_rules
-
-    rules = pk_machine_rules.build_rules("dt2-1.17")
-    assert pk_machine_rules.check(rules, "dt2-1.17") == []

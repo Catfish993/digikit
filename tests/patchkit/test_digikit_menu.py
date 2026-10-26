@@ -4,7 +4,6 @@ The emulator proof is tools/coldfire/digikit_menu_proof.py (minutes); these are 
 
 import json
 import subprocess
-import tomllib
 
 import pytest
 from support.paths import REPO_ROOT
@@ -14,7 +13,7 @@ ROOT = REPO_ROOT
 from tools.coldfire import arena_safety, digikit_menu_proof  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
-from tools.patchkit import pk_build, pk_menu_rules, pk_toolchains  # noqa: E402
+from tools.patchkit import pk_build, pk_toolchains  # noqa: E402
 
 MODULE = ROOT / "modules/core/digikit-menu"
 IMAGES = {
@@ -30,26 +29,6 @@ def test_committed_objects_are_current_and_plain_coldfire():
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
     pk_build.build_module(MODULE, check=True)
-
-
-def test_every_rule_resolves_on_every_port():
-    """Each anchor of pk_menu_rules is in all four port files, with the same length."""
-    names = {n for n, _a, _l, _k in pk_menu_rules.SITES}
-    lens = {n: ln for n, _a, ln, _k in pk_menu_rules.SITES}
-    for image in IMAGES:
-        port = tomllib.loads((ROOT / "devices" / "ports" / f"{image}.toml").read_text())
-        have = {a["name"]: a for a in port["anchor"]}
-        assert names <= set(have), (image, names - set(have))
-        for n in names:
-            assert have[n]["len"] == lens[n], (image, n)
-
-
-def test_module_toml_rules_are_the_generated_ones():
-    """The [[anchor_rule]] blocks of module.toml are the output of pk_menu_rules (one place for the sites)."""
-    text = (MODULE / "module.toml").read_text()
-    assert text.strip().endswith(
-        pk_menu_rules.render(pk_menu_rules.build_rules("dt2-1.16")).strip()
-    )
 
 
 def patchkit(*args):

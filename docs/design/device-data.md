@@ -61,7 +61,7 @@ shared file until it is done.
    device objects of `core/runtime`, `core/dynreg`, `core/dyndsp`, `core/dsp-link` include the generated `device-<dev>.inc`).
    `core/dynreg` and `core/dyndsp` need `DYN_TYPES` rows each (`tests/patchkit/test_pk_device.py` checks it).
 5. `patchkit gen`, `uv run python -m tools.patchkit.pk_build build-all`, `uv run python -m tools.patchkit.port_resolve resolve-all`.
-   The anchors of a new firmware are `[[anchor_rule]]`s of the modules, as before.
+   The anchors of a new firmware are rules in `devices/fw/` ([firmware-decls.md](firmware-decls.md)).
 6. Still outside the data: `pk_harness.py` (firmware table, panel buttons), the `Fixed(...)` address tables of the emulator and the
    web app's device list (`apps/web/src/data/device-profiles.ts`).
 

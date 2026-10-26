@@ -1014,7 +1014,7 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 ## core.machines: N added machine types on Digitakt II 1.17 (patchkit Phase 3)
 
 Plan: `docs/plans/patchkit.md` (Phase 3). Code: `a1cf1df^:native/patchkit/src/machines.rs` (the Rust generator, removed in a1cf1df), `modules/core/machines`,
-`tests/fixtures/modules/xslice`, `tests/fixtures/modules/machine-clone`, `tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
+`tests/fixtures/modules/xslice`, `tests/fixtures/modules/machine-clone`, `c4d86e4e:tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
 `tools/emulator/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
 stated. A second agent verified **[V]** the static facts: the 24-site count, the list allocation sites (`pea 0x1c` and
 `lea 0x1c(A0)` on DT2; `pea 0x14` on DN2 at `0x4004d8e0`), `FUN_400da23e` (typearg), the vector-191 type store, the 7th
@@ -1044,7 +1044,7 @@ generates, from the image being patched and from nothing stored in the repo:
 
 All 24 ColdFire sites are `[[anchor_rule]]` entries of `kind = "cf_func"` (new rule kind of `tools/patchkit/port_resolve.py`): the
 cfdb `h_strict` hash of the containing function (address operands masked: no firmware bytes), the ordinal among
-functions with that hash (two of the three name accessors share one), the offset and the length. `tools/patchkit/pk_machine_rules.py`
+functions with that hash (two of the three name accessors share one), the offset and the length. `c4d86e4e:tools/patchkit/pk_machine_rules.py`
 writes them from the 1.16 profile and checks them against 1.17 (every function matches by hash, one each). Each
 generated patch checks the shape of the bytes it replaces (`moveq #6,D1; cmp.l ...` and so on) and fails with a message
 otherwise. No patchkit op was added: the generator creates the objects and the patches itself; the "relocate a table"
@@ -1256,7 +1256,7 @@ emulator (health asserted after every input; the numbers below are 1.17):
 
 Emulator only, nothing flashed, one agent, not checked by a second one: **[D]** unless marked. Code:
 `a1cf1df^:native/patchkit/src/machines/dn2.rs` (the Digitone II part of `machines.rs`: the Digitakt code paths for rank,
-per-type byte, clone tests and the DSP selector table are skipped on `dn2`), rules `tools/patchkit/pk_machine_rules_dn2.py`
+per-type byte, clone tests and the DSP selector table are skipped on `dn2`), rules `c4d86e4e:tools/patchkit/pk_machine_rules_dn2.py`
 (`cf_func` hashes, 1.12 reference, 1.11 resolves every one), module `tests/fixtures/modules/dn2-clone` (a clone of FM TONE as
 type 5), proof `tools/patchkit/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `a1cf1df^:native/patchkit/tests/machines.rs`
 (DN2 1.12 and 1.11 patch; the Digitakt output is byte-identical to the previous patchkit for `core/machines` +
@@ -1316,7 +1316,7 @@ raised to `6 + N`; the sound record's type byte is at `+0xf4`, saved by `FUN_400
 ## DN2 parameter pages: what an added machine's own SYN pages need (wave 7, lane fastweb) **[D]**
 
 Digitone II 1.12 (1.11 by function hash and by the table scan). One agent, static reading plus emulator probes
-(`tools/coldfire/dn2_probe.py`, `tools/coldfire/dn2_pages.py`, `tools/coldfire/cf_wordscan.py`, `tools/patchkit/pk_params_rules_dn2.py`); not checked by a
+(`tools/coldfire/dn2_probe.py`, `tools/coldfire/dn2_pages.py`, `tools/coldfire/cf_wordscan.py`, `c4d86e4e:tools/patchkit/pk_params_rules_dn2.py`); not checked by a
 second agent. Nothing flashed. **[C]** to "core.machines on Digitone II 1.12" above where stated.
 
 ### The layers, from the knob to the engine word
@@ -1384,7 +1384,7 @@ Screens: `out/runs/dn2-shots/` (`dn2_probe.py shots`).
 5. **Not needed:** the machine descriptor (nine zeros), the persistence immediate (already raised), any change to the sound
    array, the DSP frame (slots 25..65 are carried as they are).
 
-Anchors (proposed; `tools/patchkit/pk_params_rules_dn2.py` prints and `--check dn2-1.11` verifies them; the page, slot and reader
+Anchors (proposed; `c4d86e4e:tools/patchkit/pk_params_rules_dn2.py` prints and `--check dn2-1.11` verifies them; the page, slot and reader
 sites above are the existing `cf.machines.typemap.*` anchors plus new `cf.machines.reader_call.9..` byte-shape ones):
 
 ```toml

@@ -1,0 +1,86 @@
+# SHARC anchors: effect send, return and buses.
+# Moved from module manifests; names unchanged (step 3, docs/design/firmware-decls.md).
+
+# The hook: the first instruction of a function that the block orchestrator calls once per block after the master mix and before the USB pack
+# (48 bits, `I7 = MODIFY(I7, imm)`, one caller). The rules hold on the older versions: the DSP blobs of 1.16/1.17 and of 1.11/1.12 are byte-identical.
+# The site decides what the emulator's AOT core loses (a patched code range bars the generated regions of that range; finding 55):
+#   Digitakt II FUN_1c80f2 (called at 0x1c311f, a block copy of 25 words' range): x1.02 DSP CPU. The first choice, H1 (FUN_1c14e7 at 0x1c30a0,
+#   range 334 words) cost x1.47.
+#   Digitone II FUN_1c244d (H1, called at 0x1c307b, also packs the USB stream; range 3482 words with the block orchestrator): x3.09. No cheaper
+#   site is between the master and the pack (the master function's own range of 1221 words costs x1.62 and its end is not a 48-bit site).
+[[fn]]
+name = "dsp.fx.entry"
+cpu = "sharc"
+rule.dt2 = { kind = "sharc_func", reloc_hash = "7a928b18c09b0bf52532b537d848258a23ae185e83113d920b592fd6ad4569df", offset = 0x0, len = 6 }
+rule.dn2 = { kind = "sharc_func", reloc_hash = "0655a833019771f60976478adc8625fad9fec2879dc1156c2fc50d621cea2974", offset = 0x0, len = 6 }
+mark = "D"
+users = ["core/fx"]
+
+[[value]]
+name = "dsp.fx.fadetab"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_literal", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x7e }
+mark = "D"
+users = ["core/fx"]
+
+[[value]]
+name = "dsp.fx.return"
+cpu = "sharc"
+rule.dt2 = { kind = "sharc_literal", reloc_hash = "cd922cc4821f7d3912560bd7e559ebe263957a4e55d8a784b0ce16bf06dd7454", offset = 0x130 }
+rule.dn2 = { kind = "sharc_literal", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x1dc }
+mark = "D"
+users = ["core/fx"]
+
+# The send route's sites (Digitakt II FUN_1c207b, the master function; one reloc hash for all three, offsets in parcels from its entry, finding 62):
+#   the hook, its first instruction (called at 0x1c3099; `I7 = modify(I7, -0x14)`, 48 bits);
+#   the track bus base, the literal `I13 = 0x252df8` of the master's loop over the 16 tracks (0x100 bytes apart; at 0x1c20ea);
+#   the FX return bus, the literal `I5 = 0x254778` where the master mixes it (at 0x1c21ab).
+# The DSP blobs of 1.16 and 1.17 are byte-identical, so the rules hold on both. The Digitone II has the same stages (FUN_1c1f1e, finding 53), not wired yet.
+# The Digitone II's send route (FUN_1c1f1e, the master function; one reloc hash for all four, offsets in parcels from its entry, finding 67):
+#   the hook, its first instruction (called at 0x1c305d; `I7 = modify(I7, -16)`, 48 bits);
+#   the slot buses' base, the literal `I4 = 0x257ee8` of the loop that sums the 16 voice slots into the track buses (0x100 bytes a slot; at 0x1c1fa2);
+#   the slot-to-track map, the literal `I2 = 0x257898` of the same loop (at 0x1c1f9f; 16 halfwords, slot v in half v % 2 of word v / 2);
+#   the FX return bus, the literal `I2 = 0x25b868` where the master mixes it (at 0x1c20fa).
+# The DSP blobs of 1.11 and 1.12 are byte-identical, so the rules hold on both.
+[[fn]]
+name = "dsp.fx.send"
+cpu = "sharc"
+rule.dt2 = { kind = "sharc_func", reloc_hash = "cd922cc4821f7d3912560bd7e559ebe263957a4e55d8a784b0ce16bf06dd7454", offset = 0x0, len = 6 }
+rule.dn2 = { kind = "sharc_func", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x0, len = 6 }
+mark = "D"
+users = ["core/fx"]
+
+# The Sidechain Filter word (fx[66]) in the DSP's copy of the frame: the address in the stock reader's short-word load
+# (DT2 0x256008, DN2 0x25ced8; finding 04). The reading function differs per device.
+[[value]]
+name = "dsp.fx.sidechain_filter_word"
+cpu = "sharc"
+rule.dt2 = { kind = "sharc_mem_addr", reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780", offset = 0x459 }
+rule.dn2 = { kind = "sharc_mem_addr", reloc_hash = "4cc8a46bca990a7bd883d1784307a9cd72aa828a1ae846977e337fbc5c54c010", offset = 0x87d }
+mark = "D"
+users = ["digikit/master-drive"]
+
+[[value]]
+name = "dsp.fx.slotbus"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_literal", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x84 }
+mark = "D"
+users = ["core/fx"]
+
+[[value]]
+name = "dsp.fx.slotmap"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_literal", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x81 }
+mark = "D"
+users = ["core/fx"]
+
+[[value]]
+name = "dsp.fx.trackbus"
+cpu = "sharc"
+devices = ["dt2"]
+rule = { kind = "sharc_literal", reloc_hash = "cd922cc4821f7d3912560bd7e559ebe263957a4e55d8a784b0ce16bf06dd7454", offset = 0x6f }
+mark = "D"
+users = ["core/fx"]

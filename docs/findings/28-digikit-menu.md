@@ -31,7 +31,7 @@ same card writes on the patched and the stock image (`--regress`; not run on 1.1
   displaced instructions run, then back into the rebuild. Reason: the restore sees the DIGIKIT row, so a rebuild with DIGIKIT
   selected (the Project observer rebuilds) keeps the cursor on it. All four images have the same instruction stream in this function
   (identical masked hash), so one rule serves them.
-- Anchors (`tools/patchkit/pk_menu_rules.py`, `cf_func` rules by function hash; unique and equal on all four images): the hook site,
+- Anchors (`c4d86e4e:tools/patchkit/pk_menu_rules.py`, `cf_func` rules by function hash; unique and equal on all four images): the hook site,
   operator new `FUN_4011e674`, item builder `FUN_401158b0`, `VerticalMenuView` constructor `0x40119c8c`, the shared_ptr helper
   `0x40119dda`, push `0x4011a2b2`, string constructor and destructor `0x401e7a64`/`0x401e5fb4`, block read `0x4012deda`,
   `View::invalidate` `0x4011ae46`, and the `pea (icon).l` instruction of the SYSTEM row (`cf.menu.icon_ref`).
