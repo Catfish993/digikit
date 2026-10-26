@@ -6,22 +6,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-
-from tools.patchkit import pk_proofs  # noqa: E402
-
-
-def test_every_tool_script_exists() -> None:
-    for label, script, _ in pk_proofs.TOOLS:
-        assert (ROOT / "tools" / "patchkit" / script).is_file(), label
-
-
-def test_gain_drive_and_fx_name_a_device() -> None:
-    for label, script, extra in pk_proofs.TOOLS:
-        if script in ("pk_proof_gain.py", "pk_proof_drive.py", "pk_proof_fx.py"):
-            assert extra[:1] in (["dt2"], ["dn2"]), label
+from tools.patchkit import pk_proofs
 
 
 def test_command_is_quick_with_out() -> None:

@@ -179,8 +179,15 @@ description = "Slow pytest runs and the ignored Rust gates that have private fix
 # --- lint ---
 
 [tasks."lint:py"]
-run = "uv run python -m pytest -q tests/devtools/test_lint.py"
-description = "ruff check and ruff format --check on the CLEAN list of tests/devtools/test_lint.py"
+run = [
+  "uv run python -m ruff check --no-cache",
+  "uv run python -m ruff format --check --no-cache",
+]
+description = "ruff check and ruff format --check on the files of [tool.ruff].include in pyproject.toml"
+
+[tasks."test:pypy"]
+run = "uv run --no-project --python pypy3.11 --with pytest --with networkx python -m pytest -q tests/sharc/semantics/test_sharc_compute_mr.py tests/sharc/semantics/test_sharc_compute_table.py tests/sharc/trace/test_sharc_trace_control.py tests/sharc/trace/test_sharc_trace_memory.py tests/sharc/trace/test_sharc_trace_ureg.py tests/sharc/trace/test_sharc_trace_branches.py tests/sharc/trace/test_sharc_trace_addressing.py tests/sharc/trace/test_sharc_trace_cli.py tests/sharc/trace/test_sharc_trace_flags.py tests/sharc/trace/test_sharc_trace_float.py tests/sharc/trace/test_sharc_trace_realblob.py tests/sharc/trace/test_sharc_trace_mult.py tests/sharc/trace/test_sharc_trace_alu.py tests/sharc/trace/test_sharc_trace_forms.py tests/sharc/trace/test_sharc_trace_simd.py tests/sharc/semantics/test_sharc_denormal.py tests/sharc/semantics/test_sharc_run.py tests/sharc/analysis/test_sharc_contract.py"
+description = "The SHARC core's tests under PyPy 3.11 (slow; needs uv and a PyPy download)"
 
 [tasks."lint:web"]
 run = "pnpm lint"

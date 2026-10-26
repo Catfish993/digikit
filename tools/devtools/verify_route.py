@@ -339,7 +339,7 @@ def refs(text: str) -> set[str]:
 
 
 # The scenario runners (tools/patchkit/pk_digikit_*.py) name modules in code, not only in the scenario
-# TOMLs (test/dyn-dsp-hang in the debug runner). A module a runner names selects the kinds the runner
+# TOMLs (test/dyn-guard-nan in the debug runner). A module a runner names selects the kinds the runner
 # serves; a runner not listed here serves every kind.
 RUNNER_KINDS: dict[str, tuple[str, ...]] = {
     "pk_digikit_debug.py": ("card", "debug", "crash"),
@@ -456,9 +456,9 @@ def scenario_refs() -> dict[str, tuple[str, frozenset[str]]]:
 
 
 def scenario_tests(kinds: set[str]) -> list[str]:
-    """The digikit test files that run scenarios of KINDS, plus the well-formedness test."""
+    """The digikit test files that run scenarios of KINDS."""
     files = {f for k in kinds for f in kind_files().get(k, ())}
-    return ["tests/digikit/test_scenarios.py", *sorted(files)]
+    return sorted(files)
 
 
 def module_tests(mid: str) -> list[str]:

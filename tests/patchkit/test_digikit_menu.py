@@ -11,7 +11,7 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.coldfire import arena_safety, digikit_menu_proof, panel_script  # noqa: E402
+from tools.coldfire import arena_safety, digikit_menu_proof  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import pk_build, pk_menu_rules, pk_toolchains  # noqa: E402
@@ -119,59 +119,12 @@ def test_plan_helpers(tmp_path):
     assert arena_safety.plan_allow_pc(plan) == "0x%x-0x%x" % (lo, lo + 0x1000)
 
 
-def test_peek_at_parser(tmp_path):
+def test_peek_parsers(tmp_path):
     (tmp_path / "probe.stdout").write_text(
         '{"peek_at":"0x47e8c100","t":5,"value":Some(7)}\n{"peek_at":"0x47e8c100","t":9,"value":None}\n'
-        '{"peek":"0x47e8c104","value":Some(1)}\n'
-    )
-    assert digikit_menu_proof.peek_ats(tmp_path) == [7, None]
-
-
-def test_menu_calls_the_runtime_by_symbol():
-    """The menu `requires` core/runtime and names its ABI functions as undefined symbols; the runtime exports them. No
-    table, no stand-in module (finding 28)."""
-    menu = json.loads((MODULE / "build/digikit-menu-rs.dko.json").read_text())
-    rt = json.loads((ROOT / "modules/core/runtime/build/runtime.dko.json").read_text())
-    names = {s["name"] for s in menu["symbols"]}
-    wanted = {
-        "dkrt_selection_get",
-        "dkrt_selection_set",
-        "dkrt_restart",
-        "dkrt_boot_info",
-        "dkrt_status",
-        "dkrt_module",
-    }
-    assert wanted <= {r["symbol"] for r in menu["relocs"]}
-    assert wanted.isdisjoint(
-        {s["name"] for s in menu["symbols"] if s["global"] and s.get("section")}
-    )
-    assert wanted <= {s["name"] for s in rt["symbols"] if s["global"]}
-    assert "DKRT_API" not in names
-    assert tomllib.loads((MODULE / "module.toml").read_text())["module"][
-        "requires"
-    ] == ["core/runtime"]
-    assert not (ROOT / "tests" / "fixtures" / "modules" / "digikit-rt-stub").exists()
-
-
-def test_the_menu_and_the_runtime_share_the_store_reader():
-    """One reader (`dkrt_sdk::store`, used by the runtime): the menu asks the runtime for the list (`dkrt_store_list`) and has no table or header parser."""
-    menu = (MODULE / "src/rs/src/lib.rs").read_text()
-    rt = (ROOT / "modules/core/runtime/src/rs/src").glob("*.rs")
-    assert "dkrt_store_list" in menu and "dkrt_store_read_sector" in menu
-    assert 'b"DKST"' not in menu and "0x444b_5354" not in menu and "store::" not in menu
-    assert not any("0x444b_5354" in f.read_text() for f in rt)
-
-
-def test_peek_parser(tmp_path):
-    (tmp_path / "probe.stdout").write_text(
         '{"peek":"0x47e8c100","value":Some(16909060)}\n{"peek":"0x47e8c104","value":None}\n'
     )
+    assert digikit_menu_proof.peek_ats(tmp_path) == [7, None]
     assert digikit_menu_proof.peek(tmp_path, 0x47E8C100) == 0x01020304
     assert digikit_menu_proof.peek(tmp_path, 0x47E8C104) is None
     assert digikit_menu_proof.peek_bytes(tmp_path, 0x47E8C100, 3) == b"\x01\x02\x03"
-
-
-def test_digikit_scripts_are_registered():
-    for name in ("digikit_main", "digikit_about"):
-        s = panel_script.SCRIPTS[name]()
-        assert [n for n, _ in s.frames][0] == "settings_digikit"

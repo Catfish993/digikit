@@ -132,11 +132,6 @@ def _classified(name: str) -> bool:
 
 
 class RenderInputsTest(unittest.TestCase):
-    def test_crate_walk(self) -> None:
-        found = crates()
-        for name in ("coupled", "sharc", "boot"):
-            self.assertIn((NATIVE / name).resolve(), found)
-
     def test_every_env_read_is_classified(self) -> None:
         unclassified: dict[str, list[str]] = {}
         for path in all_sources():

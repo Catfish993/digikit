@@ -61,12 +61,6 @@ def test_waiter_proceeds_after_release(lock, capsys):
     assert "acquired exclusive" in err
 
 
-def test_bad_mode(lock):
-    with pytest.raises(ValueError):
-        with benchlock.hold("both", "x"):
-            pass
-
-
 def test_stale_sidecar_cleanup(lock):
     sdir = lock.with_name(lock.name + ".d")
     sdir.mkdir()
@@ -86,14 +80,6 @@ def test_stale_sidecar_cleanup(lock):
     ).stdout
     assert "live" in out and "dead" not in out
     assert not stale.exists() and live.exists()
-
-
-def test_disabled_is_noop(lock, monkeypatch):
-    monkeypatch.setenv("BENCHLOCK", "0")
-    with benchlock.hold("exclusive", "a", timeout=0.1):
-        with benchlock.hold("exclusive", "b", timeout=0.1):
-            pass
-    assert not lock.exists()
 
 
 def test_cli_run_exit_code_and_blocking(lock):

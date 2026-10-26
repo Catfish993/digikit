@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { repoRoot, type Device, type Session } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
-import { withPatchedSession, type PatchedSession } from '../support.ts';
+import { expectRuntimeBoot, withPatchedSession, type PatchedSession } from '../support.ts';
 
 export const DEVICES = ['dt2', 'dn2'] as const;
 export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
@@ -26,7 +26,14 @@ export function runtimeTests(
   for (const device of opts.devices ?? DEVICES) {
     describe(`${device.toUpperCase()} ${FIRMWARE[device]}`, () => {
       const handle = withPatchedSession(liveOptions(device, opts));
-      test(name, () => body(handle.runtime), opts.timeout);
+      test(
+        name,
+        async () => {
+          await expectRuntimeBoot(handle.runtime);
+          await body(handle.runtime);
+        },
+        opts.timeout,
+      );
     });
   }
 }

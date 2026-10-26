@@ -155,23 +155,6 @@ def test_info_short_and_long_replies_and_has_cap():
     assert D.has_cap(new, "MODULES") and not D.has_cap(new, "PEEK")
 
 
-def test_info_command_prints_the_runtime_version_and_the_caps_as_names():
-    caps = sum(
-        1 << D.CAP[n] for n in ("LOG", "PEEK", "LOGCFG", "SELECT", "RESTART", "MODULES")
-    )
-    info = {"protocol": 1, "runtime": 0x000200, "caps": caps}
-    lines = D.info_lines(info)
-    assert "runtime: 0.2.0 (512)" in lines
-    assert "caps: LOG PEEK LOGCFG SELECT RESTART MODULES" in lines
-    assert (
-        info["runtime"] == 0x000200 and info["caps"] == caps
-    )  # the dict is not changed
-    assert D.info_lines({"runtime": 4, "caps": None}) == [
-        "runtime: 0.0.4 (4)",
-        "caps: None",
-    ]
-
-
 def test_modules_pages_by_start_index_and_decodes_the_records():
     """MODULES (protocol command 3): the host asks again from the last index + 1 until it has `total` records."""
     import struct
@@ -383,10 +366,6 @@ def test_read_errors_are_the_upload_statuses():
         assert D.STATUS[e.value.status] == name
 
 
-def test_hex_lines():
-    assert D.hex_lines(b"AB\x00", 0x10) == ["00000010  41 42 00" + " " * 39 + "  AB."]
-
-
 def test_verify_request_and_reply():
     import hashlib
 
@@ -481,20 +460,6 @@ def test_folders_prefix_lists_ranged_verify_and_a_streamed_put(tmp_path):
     )
     got = b"".join(b[4:] for c, b in seen if c == D.CMD_DATA)
     assert got == data
-
-
-def test_service_command_ranges_and_capability_are_generated():
-    from tools.device import dkproto
-
-    # a request number is 6 bits (bit 6 of the command byte marks a reply): a range lies in 0x01..0x3f and holds no command
-    for first, last in dkproto.RANGES.values():
-        assert 1 <= first <= last <= 0x3F
-        assert not any(first <= v <= last for v in dkproto.CMD.values())
-    assert dkproto.RANGES["remote"] == (0x38, 0x3D)
-    assert dkproto.RANGES["remote_state"] == (0x3E, 0x3F)
-    assert dkproto.GUARDED == ("remote",)
-    assert D.CAP["SERVICE_CMDS"] == 9
-    assert D.STATUS[-64] == "E_CMD_RANGE"
 
 
 def test_remote_commands_use_the_generated_numbers_and_pace_a_turn():

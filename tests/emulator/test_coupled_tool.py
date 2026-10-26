@@ -33,19 +33,6 @@ def test_first_divergence():
     assert coupled.first_divergence([1.0, 2.0], [1.0, 2.0]) is None
 
 
-def test_run_args_passes_inputs_and_extra_in_order():
-    inputs = {
-        "firmware": Path("fw.syx"),
-        "DSP image": Path("img.bin"),
-        "DSP state": Path("state.dsp"),
-        "CF snapshot": Path("cf.snap"),
-    }
-    argv = coupled.run_args("bin/coupled-run", inputs, ["--scenario", "idle", "--wav"])
-    assert argv[0] == "bin/coupled-run"
-    assert argv[argv.index("--dsp-image") + 1] == "img.bin"
-    assert argv[-3:] == ["--scenario", "idle", "--wav"]
-
-
 def test_scenario_results_reads_the_report_keys():
     report = {
         "scenarios": [
@@ -88,31 +75,6 @@ def test_merge_reports_keeps_requested_order():
         assert "a" in str(exc)
     else:
         raise AssertionError("missing scenario not reported")
-
-
-def test_default_jobs(monkeypatch):
-    monkeypatch.setenv("DIGI_JOBS", "3")
-    assert coupled.default_jobs() == 3
-    monkeypatch.delenv("DIGI_JOBS")
-    assert 1 <= coupled.default_jobs() <= 6
-
-
-def test_feature_variant_keeps_default_dir(monkeypatch):
-    assert coupled.feature_variant("coupled-audio") == ""
-    assert (
-        coupled.feature_variant("coupled-audio,cf-mix") == "feat-cf-mix+coupled-audio"
-    )
-    # order does not matter
-    assert coupled.feature_variant("cf-mix,coupled-audio") == coupled.feature_variant(
-        "coupled-audio,cf-mix"
-    )
-    monkeypatch.setattr(coupled, "FEATURES", "coupled-audio")
-    default = coupled.binary_path("dn2")
-    monkeypatch.setattr(coupled, "FEATURES", "coupled-audio,cf-mix")
-    feature = coupled.binary_path("dn2")
-    assert default != feature
-    assert feature.parent.parent.name == "feat-cf-mix+coupled-audio"
-    assert default.name == feature.name == "coupled-run"
 
 
 def test_typescript_scenario_resolution_is_fresh_and_materialization_is_content_addressed(

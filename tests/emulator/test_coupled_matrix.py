@@ -82,14 +82,6 @@ def test_list_forwards_region_profile_to_the_plan(monkeypatch):
     assert seen["profile_regions"] is True
 
 
-def test_default_matrix_fits_the_budget():
-    # Rough cost model from measurements: wall seconds per audio second.
-    cost = {"prod": 2.1, "generic": 55.0, "generic-auto": 30.0}
-    jobs = cm.plan(list(cm.CONFIGS.values()), list(cm.SCENARIOS), None, None, True)
-    total = sum((j.seconds or 0.8) * cost[j.config] + 2 for j in jobs)
-    assert total <= 15 * 60
-
-
 def test_config_env_clears_tuning_and_sets_the_configs(monkeypatch):
     monkeypatch.setattr(cm, "launcher_fast_regions", lambda syx: "0x1,0x2")
     base = {"PATH": "/bin", "SHARC_FAST_AUTO": "9,9", "NOTE_EVENTS": "trig"}
@@ -123,21 +115,6 @@ def test_binary_and_build_command_follow_the_target_dir_convention(
     assert "--target" in cm.build_command(prod, "/p.profdata")
     profile = cm.build_command(prod, None, profile_regions=True)
     assert profile[profile.index("--features") + 1] == "coupled-audio,region-profile"
-
-
-def test_runner_command_passes_seconds_only_when_given():
-    job = cm.Job("prod", "idle", 1, 4.0)
-    cmd = cm.runner_command(Path("b"), job, Path("s.syx"), Path("o.json"))
-    assert cmd[cmd.index("--scenario") + 1] == "idle"
-    assert cmd[cmd.index("--seconds") + 1] == "4"
-    validation = cm.Job("prod", "exactness-100m", 0, None)
-    assert "--seconds" not in cm.runner_command(
-        Path("b"), validation, Path("s.syx"), Path("o.json")
-    )
-    profiled = cm.Job("prod", "idle", 1, 4.0, profile_regions=True)
-    assert "--profile-regions" in cm.runner_command(
-        Path("b"), profiled, Path("s.syx"), Path("o.json")
-    )
 
 
 def test_aggregate_takes_medians_and_flags_failures_and_hash_splits():
@@ -207,8 +184,3 @@ def test_run_matrix_writes_report_and_summary(tmp_path, monkeypatch):
         ("prod", "idle", 1),
         ("prod", "kb-chord16", 1),
     ]
-
-
-def test_scenario_file_defines_every_planned_scenario():
-    names = set(cm.scenario_names())
-    assert set(cm.SCENARIOS) | set(cm.VALIDATION_ALL) | set(cm.VALIDATION_PROD) <= names

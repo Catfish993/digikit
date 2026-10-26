@@ -12,6 +12,7 @@ import ast
 import re
 import subprocess
 import time
+import tomllib
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
@@ -318,16 +319,12 @@ JS_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
 
 
 def typed_files() -> list[str]:
-    """Read the existing static TYPED owner list without importing its tests."""
-    tree = ast.parse(
-        (ROOT / "tests/devtools/test_types.py").read_text(encoding="utf-8")
-    )
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == "TYPED" for t in node.targets
-        ):
-            return list(ast.literal_eval(node.value))
-    raise SystemExit("test:changed: no TYPED list in tests/devtools/test_types.py")
+    """The mypy file list of [tool.mypy].files in pyproject.toml."""
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    files = config.get("tool", {}).get("mypy", {}).get("files")
+    if not files:
+        raise SystemExit("test:changed: no [tool.mypy].files in pyproject.toml")
+    return list(files)
 
 
 def host_plan(files: list[str]) -> list[tuple[str, list[str] | None, str]]:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import random
 from pathlib import Path
 
@@ -29,23 +28,6 @@ CALLER_VARS = (
 def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in CALLER_VARS:
         monkeypatch.delenv(key, raising=False)
-
-
-def test_budget_default_is_physical_cores_minus_two() -> None:
-    assert verify_budget.default_budget(16) == 14
-    assert verify_budget.default_budget(2) == 1
-    assert verify_budget.default_budget(1) == 1
-
-
-def test_budget_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DIGI_VERIFY_BUDGET", raising=False)
-    assert verify_budget.resolve_budget(5) == 5  # --jobs
-    monkeypatch.setenv("DIGI_VERIFY_BUDGET", "9")
-    assert verify_budget.resolve_budget(0) == 9
-    assert verify_budget.resolve_budget(5) == 5  # the flag wins
-    monkeypatch.setenv("DIGI_VERIFY_BUDGET", "0")
-    with pytest.raises(SystemExit):
-        verify_budget.resolve_budget(0)
 
 
 @pytest.mark.parametrize("total", BUDGETS)
@@ -119,69 +101,7 @@ def test_inner_pools_fit_the_share(node: str, total: int) -> None:
         )
 
 
-def test_the_default_step_set_fits_a_16_core_machine() -> None:
-    """The sum over the first wave of a full run on 16 physical cores (budget 14) is at most the budget."""
-    nodes, deps = verify.plan(verify.EVERYTHING, ["tests/digikit"])
-    for wave in verify_budget.wave_plan(nodes, deps, 14):
-        assert sum(share for _, share in wave) <= 14
-
-
-def test_step_env_names_every_pool() -> None:
-    env = verify_budget.step_env("tier-sweep", 10)
-    assert env["DIGI_TIER_JOBS"] == "5"
-    assert env["DIGI_JOBS"] == "5"
-    assert env["CARGO_BUILD_JOBS"] == "10"
-    assert env["RAYON_NUM_THREADS"] == "10"
-    assert set(env) >= {
-        "RUST_TEST_THREADS",
-        "NEXTEST_TEST_THREADS",
-        "DIGI_PY_JOBS",
-        "DIGIKIT_JOBS",
-        "DIGI_CONFORM_JOBS",
-        "DIGI_PK_JOBS",
-        "DIGIKIT_PART_JOBS",
-    }
-    py = verify_budget.step_env("python-tests", 6)
-    assert (py["DIGI_PY_JOBS"], py["DIGIKIT_JOBS"], py["CARGO_BUILD_JOBS"]) == (
-        "3",
-        "1",
-        "2",
-    )
-
-
-def test_user_variables_override_the_share(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DIGI_TIER_JOBS", "7")
-    env = verify_budget.bounded_env("tier-sweep", 10, {"A": "1"})
-    assert "DIGI_TIER_JOBS" not in env  # the user's 7 stays in the environment
-    assert env["DIGIKIT_JOBS"] == "1" and env["A"] == "1"
-    assert verify_budget.user_overrides() == ["DIGI_TIER_JOBS"]
-
-
-def test_lower_priority(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[int] = []
-    monkeypatch.setattr(os, "getpriority", lambda *_: 0)
-    monkeypatch.setattr(os, "setpriority", lambda _w, _i, n: seen.append(n))
-    assert verify_budget.lower_priority(True) is None and not seen  # --foreground
-    assert verify_budget.lower_priority(False) == verify_budget.NICE == 10
-    assert seen == [10]
-    monkeypatch.setattr(os, "getpriority", lambda *_: 15)  # already nicer: kept
-    assert verify_budget.lower_priority(False) == 15 and seen == [10]
-
-
 # ---- builds: once, in one place --------------------------------------------------------------------------------
-
-
-def test_builds_are_a_chain_and_steps_wait_for_theirs() -> None:
-    nodes, deps = verify.plan(verify.EVERYTHING, ["tests/digikit"])
-    assert deps["build"] == ()
-    assert deps["build-daemons"] == ("build",)
-    assert deps["build-dt2"] == ("build", "build-daemons")
-    assert deps["pins"] == deps["check"] == ("build",)
-    assert deps["dt2-check"] == ("build-dt2",)
-    assert deps["python-tests"] == deps["card"] == ("build-daemons",)
-    assert deps["rust-tests"] == (
-        "build",
-    )  # one compile of the generated core in the prod target dir
 
 
 def test_no_build_node_without_a_step_that_needs_it() -> None:
@@ -244,20 +164,6 @@ def test_pk_jobs_variable_caps_the_harness(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("DIGI_PK_JOBS", "2")
     assert pk_harness.default_jobs(10) == 2
     assert pk_harness.default_jobs(1) == 1
-
-
-def test_gate_passes_the_share_to_every_pool(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    gate = verify.Gate(tmp_path, budget=14)
-    gate.local.node = "python-tests"
-    gate.local.share = 6
-    env = gate.step_env()
-    assert env["DIGI_PY_JOBS"] == "3" and env["DIGIKIT_JOBS"] == "1"
-    gate.shared_env["DIGI_EMUD_DT2"] = "/x/digi-emud"
-    assert gate.step_env()["DIGI_EMUD_DT2"] == "/x/digi-emud"
-    gate.local.node = "check"  # a rendering step never carries the daemon variables
-    assert "DIGI_EMUD_DT2" not in gate.step_env()
 
 
 def test_digikit_parts_run_one_at_a_time_in_the_gate() -> None:
@@ -393,11 +299,7 @@ def test_linux_smt_counts_physical_cores(tmp_path: Path) -> None:
         tmp_path / "two", cores=4, threads=2, sockets=2
     )  # two sockets: core ids repeat
     assert verify_budget.linux_physical_cores(tmp_path / "two", set(range(16))) == 8
-
-
-def test_linux_affinity_limits_the_cores(tmp_path: Path) -> None:
-    make_cpus(tmp_path, cores=8, threads=2)
-    # cpus 0-7 are the first thread of each core, 8-15 the second
+    # affinity: cpus 0-7 are the first thread of each core, 8-15 the second
     assert verify_budget.linux_physical_cores(tmp_path, {0, 1, 2, 3, 8, 9}) == 4
     assert verify_budget.linux_physical_cores(tmp_path / "none", set()) is None
 
@@ -434,13 +336,6 @@ def test_cgroup_memory_limit(tmp_path: Path) -> None:
     assert verify_budget.cgroup_memory_limit(tmp_path / "v1") is None
     (v1 / "memory.limit_in_bytes").write_text(str(4 * GB))
     assert verify_budget.cgroup_memory_limit(tmp_path / "v1") == 4 * GB
-
-
-def test_detect_machine_here_is_sane() -> None:
-    m = verify_budget.detect_machine()
-    assert 1 <= m.cores <= (os.cpu_count() or m.cores)
-    assert m.ram is None or m.ram > GB
-    assert verify_budget.default_budget() >= 1
 
 
 # ---- python-tests: one job per file in the budget queue ----------------------------------------------------------

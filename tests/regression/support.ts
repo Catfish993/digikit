@@ -83,14 +83,14 @@ export async function expectRuntimeBoot({ session, dk }: PatchedSession): Promis
   await session.expectNoFault('runtime boot');
 }
 
-/** No restart hook: every acceptance file owns a single fresh, free-running runtime, checked at boot. */
+/** No restart hook: every acceptance file owns a single fresh, free-running runtime. Vitest forbids `expect.poll` in
+ * `beforeAll`, so each test calls `expectRuntimeBoot` itself. */
 export function withPatchedSession(opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string }): {
   readonly runtime: PatchedSession;
 } {
   let runtime: PatchedSession | undefined;
   beforeAll(async () => {
     runtime = await startPatchedSession(opts);
-    await expectRuntimeBoot(runtime);
   });
   afterAll(async () => {
     await runtime?.close();

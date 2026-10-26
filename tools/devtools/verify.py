@@ -33,7 +33,7 @@ for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups in
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
 check-no-aot runs 17 native FX assertions even with --full (--all-no-aot: 61 normally, 191 with --full).
 Normal routing includes relevant stock, runtime and module acceptance; full tier sweeps stay explicit.
-python-tests runs the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
+python-tests runs the PY_CHECKS commands (ruff, ruff format, mypy, pathcheck), the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
 every changed tests/**/test_*.py, and the
@@ -58,6 +58,7 @@ import fnmatch
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -92,17 +93,20 @@ DT2_FX_FILES = (
     "tests/regression/scenarios/dt2-trackfx.ts",
     "tests/regression/scenarios/dt2-sendfx.ts",
 )
-# python-tests always runs PY_GATE: lint, types, paths and the staleness checks (built module objects and
-# port files match their sources). A suite of PY_SUITES, (name, trigger prefixes, test paths), runs when a
+# python-tests always runs PY_GATE (the staleness checks: built module objects and port files match their
+# sources) and PY_CHECKS (lint, format, types, paths). A suite of PY_SUITES, (name, trigger prefixes, test paths), runs when a
 # changed file starts with one of its prefixes (all suites with --full); a suite with a test directory
 # triggers only on files that are not Python modules of tools/ or tests/, which select the tests that
 # reach them in the import graph instead (changed_tests.gate_tests). Test paths may be globs or
 # directories; one that matches nothing is an error.
-PY_GATE = (
-    "tests/devtools/test_lint.py",
-    "tests/devtools/test_types.py",
-    "tests/devtools/test_pathcheck_repo.py",
-    "tests/patchkit/test_pk_current.py",
+PY_GATE = ("tests/patchkit/test_pk_current.py",)
+# Plain commands python-tests runs as sub-checks (label "python-tests:NAME"): lint, format, types, paths.
+# ruff and mypy read their file lists from pyproject.toml.
+PY_CHECKS: tuple[tuple[str, list[str]], ...] = (
+    ("ruff", [sys.executable, "-m", "ruff", "check", "--no-cache"]),
+    ("ruff-format", [sys.executable, "-m", "ruff", "format", "--check", "--no-cache"]),
+    ("mypy", [sys.executable, "-m", "mypy"]),
+    ("pathcheck", [sys.executable, "-m", "tools.devtools.pathcheck"]),
 )
 PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
@@ -1485,8 +1489,13 @@ def finish_python(gate: Gate) -> None:
     bad = test_outcomes.write_reports(out, records, python_timeout()) if records else []
     text = "\n".join(test_outcomes.record_line(r) for r in records)
     (gate.out / "python-tests.log").write_text(text + "\n")
+    for label, cmd in PY_CHECKS:
+        gate.run(f"python-tests:{label}", cmd)
+    checks = [n for n in gate.failed if n.startswith("python-tests:")]
     problem: str | None = None
-    if bad or lost:
+    if checks:
+        problem = f"checks failed: {', '.join(checks)}"
+    elif bad or lost:
         shown = ", ".join([*bad, *lost][:10])
         problem = f"{len(bad) + len(lost)} files failed: {shown}"
     elif records:

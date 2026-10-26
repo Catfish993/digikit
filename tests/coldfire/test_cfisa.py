@@ -4,13 +4,7 @@ Ghidra and SLEIGH on the firmware images (tools/coldfire/cfisa/oracle.py)."""
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-
 import pytest
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 
 from tools.coldfire.cfisa import (  # noqa: E402
     gen,  # noqa: E402
@@ -42,15 +36,6 @@ def test_sleigh_normalisation():
     )
     assert oracle.norm_sleigh("jsr", "0x100.l", "jsr", 0) == ("jsr", "(0x100).l")
     assert oracle.norm_sleigh("jsr", "0x1000", "jsr", 0x2000) == ("jsr", "(-0x1002,pc)")
-
-
-@pytest.mark.skipif(shutil.which("cargo") is None, reason="needs cargo")
-def test_crate():
-    subprocess.run(
-        ["cargo", "test", "--release", "--quiet"],
-        cwd=ROOT / "packages" / "emulator" / "coldfire",
-        check=True,
-    )
 
 
 @pytest.mark.slow

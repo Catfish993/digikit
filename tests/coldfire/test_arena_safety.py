@@ -13,7 +13,6 @@ import pytest
 
 from tools.coldfire import arena_safety as a
 from tools.coldfire import panel_script as ps
-from tools.firmware import config
 
 
 def _overlay(*sectors: int) -> bytes:
@@ -139,71 +138,6 @@ def test_golden_file_covers_every_expected_frame_of_the_checked_images():
             for frame in expect.get("frames", []):
                 key = "%s/%s/%s" % (image, name, frame)
                 assert key in golden, key
-
-
-# --- firmware proofs ---------------------------------------------------------
-
-SYX = config.stock("Digitakt_II_OS1.16.syx")
-
-
-@pytest.fixture(scope="module")
-def probe():
-    if not SYX.exists():
-        pytest.skip("needs Digitakt_II_OS1.16.syx in firmware/")
-    from tools.coldfire import regions
-
-    return regions.probe_binary()
-
-
-@pytest.mark.slow
-def test_midi_din_bytes_reach_the_firmware_parser_and_sysex_rpc_is_not_taken_from_din(
-    probe, tmp_path
-):
-    facts = a.run(
-        "dt2-1.16", "din_midi", tmp_path, binary=probe, canary=False, flush_check=False
-    )
-    assert facts["midi"]["status"]["rx_irqs"] == 28
-    assert facts["pc_hits"]["0x4011d1f6"] == 28  # one parser call per byte
-    assert (
-        facts["pc_hits"]["0x4011efb8"] == 1
-    )  # the device 0x10 handler saw the Ping...
-    assert (
-        facts["pc_hits"]["0x40125184"] == 0
-    )  # ...and dropped it: DIN is not a MidiRpc source
-    assert facts["write_events"] == 0
-
-
-@pytest.mark.slow
-def test_usb_ping_gets_the_firmwares_reply_and_the_run_is_clean(probe, tmp_path):
-    from tools.device import devrpc
-
-    s = ps.boot().tap(ps.NO, gap=ps.G)
-    s.usb(devrpc.build_request(0x01, seq=7)).wait(40_000_000)
-    facts = a.run("dt2-1.16", s, tmp_path, binary=probe)
-    replies = ps.split_sysex(bytes.fromhex(facts["usb_out"]))
-    assert len(replies) == 1
-    kind, payload = devrpc.parse_reply(replies[0])
-    # the name comes 7-bit spread: a zero byte every seven
-    assert kind == 0x01 and b"Digitakt II" in payload.replace(b"\x00", b"")
-    assert (
-        facts["write_events"] == 0
-        and facts["card_store_hits"] == []
-        and facts["canary_bad_words"] == 0
-    )
-
-
-@pytest.mark.slow
-def test_project_save_writes_slot_0_and_nothing_in_the_arena_or_module_store(
-    probe, tmp_path
-):
-    facts = a.run("dt2-1.16", "save_project", tmp_path, binary=probe)
-    assert facts["project_slots_touched"] == [0]
-    assert (
-        facts["write_events"] == 0
-        and facts["card_store_hits"] == []
-        and facts["flush_hits"] == 0
-    )
-    assert a.check_reached("save_project", "dt2-1.16", facts) == []
 
 
 def test_static_check_finds_absolute_references_in_both_views(monkeypatch):

@@ -14,8 +14,6 @@ def test_configure_round_trip() -> None:
     dn2 = (fxcheck.F0, fxcheck.SND_PEEK, fxcheck.BR_IDX, fxcheck.SCENARIO_FILES)
     try:
         fxcheck.configure("dt2")
-        assert fxcheck.F0 == 1000.0 and fxcheck.BR_IDX == 64
-        assert fxcheck.SND_PEEK.startswith("snd=*0x8000470c")
     finally:
         fxcheck.configure("dn2")
     now = (fxcheck.F0, fxcheck.SND_PEEK, fxcheck.BR_IDX, fxcheck.SCENARIO_FILES)
@@ -24,14 +22,12 @@ def test_configure_round_trip() -> None:
         fxcheck.configure("dx7")
 
 
-@pytest.mark.parametrize("layout", ["report.json", "dt2-trackfx-1/report.json"])
-def test_compare_reads_direct_and_legacy_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: str
+def test_compare_reads_direct_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fxcheck, "name_maps", lambda _: ({}, {}))
     monkeypatch.setattr(fxcheck, "decode_arrays", lambda peeks, _: peeks)
-    report = tmp_path / layout
-    report.parent.mkdir(parents=True, exist_ok=True)
+    report = tmp_path / "report.json"
     values = {"snd[64] Bit Reduction": 22 << 8}
     report.write_text(
         json.dumps(

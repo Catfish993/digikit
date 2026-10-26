@@ -71,15 +71,24 @@ def test_pk_sharc_selects_the_routine_tests_and_no_sharc_semantics() -> None:
     assert not any(t.startswith("tests/sharc/") for t in tests)
 
 
-def test_changed_test_selects_itself() -> None:
-    sel = changed_tests.select(["tests/devtools/test_verify.py"])
-    assert sel.tests["tests/devtools/test_verify.py"] == "changed"
-
-
-def test_support_module_selects_importers() -> None:
-    sel = changed_tests.select(["tests/support/machine_rig.py"])
+@pytest.mark.parametrize(
+    "path, own_reason",
+    [
+        ("tests/devtools/test_verify.py", "changed"),  # a changed test selects itself
+        ("tests/support/machine_rig.py", None),  # a support module selects importers
+    ],
+)
+def test_changed_test_or_support_module_selects_tests(
+    path: str, own_reason: str | None
+) -> None:
+    sel = changed_tests.select([path])
     assert sel.tests
-    assert all("via" in r or "imports" in r or "runs" in r for r in sel.tests.values())
+    if own_reason:
+        assert sel.tests[path] == own_reason
+    else:
+        assert all(
+            "via" in r or "imports" in r or "runs" in r for r in sel.tests.values()
+        )
 
 
 def test_selection_never_holds_a_directory() -> None:
@@ -250,13 +259,3 @@ def test_unselected_audited_gate_units_are_still_deferred(
         ),
     )
     assert "Python: tests/devtools/test_verify_budget.py" in capsys.readouterr().out
-
-
-def test_docs_do_not_claim_unselected_python_gate_coverage(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    files = ["docs/TESTING.md"]
-    changed_tests.print_deferred(files, changed_tests.select(files))
-    output = capsys.readouterr().out
-    assert "Python:" not in output
-    assert "python-tests:" not in output

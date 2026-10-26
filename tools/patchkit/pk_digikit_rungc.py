@@ -88,55 +88,7 @@ class Reporter:
         self.checks.append((name, bool(ok), detail))
 
 
-@contextlib.contextmanager
-def _env(name: str, value: str | None):
-    old = os.environ.get(name)
-    if value is None:
-        os.environ.pop(name, None)
-    else:
-        os.environ[name] = value
-    try:
-        yield
-    finally:
-        if old is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = old
-
-
 def run_rungc(c: Any) -> None:
-    """The scenario. `[rungc] uninit = "HEXSEED"` runs every emulator with SHARC_UNINIT (finding 49): SHARC memory that nothing loaded or
-    wrote reads as a seeded non-zero pattern instead of zeros. `[rungc] variant = "MODULE"` with `defines = ["NAME"]` runs it with that module
-    built with those options (tools/patchkit/pk_variant.py; the bisect of finding 49, docs/PATCHING.md "Rung C2"): the machine's DSP routine is
-    never called and the checks of step 4 expect the stock path for the added type (breadcrumb stage 3) instead of dispatches; with
-    `routine = true` the variant keeps the registered path (the C3 variants of finding 49 section 9) and the checks are those of the plain rung C.
-    `[rungc] irq_probe = "tick"|"sft3"|"both"|"HEXMASK"` (with `irq_every = N`) runs the main image with SHARC_IRQ_PROBE over the wrapper's code:
-    the core takes the kernel's interrupts between any two instructions of the hook (finding 49 section 9; no patched-in twin, no PCM comparison)."""
-    d = c.scen.data["rungc"]
-    seed, variant = d.get("uninit"), d.get("variant")
-    root = None
-    if variant:
-        from tools.patchkit import pk_variant
-
-        root = str(pk_variant.make(variant, list(d["defines"]), c.scen.name))
-        c.report["variant"] = {"module": variant, "defines": d["defines"], "root": root}
-    if seed:
-        c.report["sharc_uninit"] = str(seed)
-    with _env("SHARC_UNINIT", str(seed) if seed else None), _env("DIGI_PK_ROOT", root):
-        return _run_rungc(
-            c,
-            bool(variant) and not d.get("routine"),
-            d.get("irq_probe"),
-            int(d.get("irq_every", 1)),
-        )
-
-
-PROBE_MASKS = {"tick": 0x400000, "sft3": 0x80000000, "both": 0x80400000}
-
-
-def _run_rungc(
-    c: Any, bisect: bool = False, probe: str | None = None, every: int = 1
-) -> None:
     from tools.coldfire import digikit_menu_proof as D
 
     shots = out_dir()
@@ -164,11 +116,7 @@ def _run_rungc(
     )
 
     # ---- the twin: test/patched-pluck patched in, the PCM the run-time machine has to equal ----------------------------------------
-    ref_img = (
-        None
-        if bisect or probe
-        else c.image_for(M.MODULES_STATIC + ",test/patched-pluck", "ref")
-    )
+    ref_img = c.image_for(M.MODULES_STATIC + ",test/patched-pluck", "ref")
     ref: dict[str, Any] = {}
 
     def ref_boot() -> None:
@@ -209,11 +157,8 @@ def _run_rungc(
         assert rc == 0
         return DBG.events(rig)
 
-    run_dirs: list[Path] = []
-
     def main_run() -> None:
         with c.rig(img, card, "rungc") as rig:
-            run_dirs.append(rig_run_dir(rig))
             b0 = rig.boot_info()
             snap(rig, "00-main-screen")
             evs = log_to(rig, "boot1.log")
@@ -385,23 +330,6 @@ def _run_rungc(
             rig.s.run_ms(500)
             evs = log_to(rig, "boot2-after-note.log")
             c.report["dsp_counters"] = {"before": n_disp0, "after": n_disp1}
-            if bisect:
-                dd = n_disp1["dispatches"] - n_disp0["dispatches"]
-                db = n_disp1["voice_beat"] - n_disp0["voice_beat"]
-                c.check(
-                    "bisect build: nearly every block passes stage 3 twice (the two voices of track 1; the dispatch counter counts the passes; at most 10 % of the blocks without), no routine is called (returns 0)",
-                    dd > 1000
-                    and 1.8 * db <= dd <= 2 * db + 4
-                    and n_disp1["returns"] == 0,
-                    f"{dd} passes in {db} blocks, returns {n_disp1['returns']}",
-                )
-                c.check(
-                    "bisect build: the voice hook's heartbeat rises while the note is held; no DSP_STOPPED in the log",
-                    db > 0 and not [e for e in evs if e[2] == L.K["DSP_STOPPED"]],
-                    f"{n_disp0['voice_beat']} -> {n_disp1['voice_beat']}",
-                )
-                c.done(rig)
-                return
             c.check(
                 "the DSP's counters: dispatches to the registered type rise while the note sounds and every one returned (dispatches - returns is 0 or 1)",
                 n_disp1["dispatches"] > n_disp0["dispatches"] + 1000
@@ -432,41 +360,7 @@ def _run_rungc(
             )
             c.done(rig)
 
-    probe_spec = None
-    if probe:
-        # the registered path (from the instruction after the scan's last branch to the stock path's label) and the breadcrumb routine:
-        # the stock path runs for all 32 voices of every block, so the whole wrapper would swamp the core with interrupts.
-        # `_dv_scan + 15` short words is the first instruction after the scan's last branch (`R0 = I4`, which keeps the row for the guard; `I12 = R2` follows) in every build of the wrapper.
-        mask = PROBE_MASKS.get(probe) or int(probe, 16)
-        reg_lo, reg_hi = plan.addr("_dv_scan") + 15, plan.addr("_dv_stock")
-        probe_spec = f"{reg_lo:x}-{reg_hi:x},{plan.addr('_dv_crumb'):x}-{plan.addr('_dv_exp2'):x}:{mask:x}:{every}"
-        c.report["irq_probe"] = probe_spec
-    with _env("SHARC_IRQ_PROBE", probe_spec):
-        c.parallel(*([main_run] if bisect or probe else [ref_boot, main_run]))
-    if probe_spec:
-        # the emulator prints its probe counters when it exits (the rig's `with` has ended): the run that held the note has the largest count
-        import re
-
-        stats = []
-        for rd in run_dirs:
-            for line in (rd / "daemon.stderr").read_text(errors="replace").splitlines():
-                m = re.search(
-                    r"irq_probe: .* (\d+) latched, (\d+) interrupts taken \((.*)\)",
-                    line,
-                )
-                if m:
-                    stats.append((int(m.group(1)), int(m.group(2)), m.group(3)))
-        best = max(stats, default=(0, 0, ""))
-        c.report["irq_probe_stats"] = {
-            "latched": best[0],
-            "taken": best[1],
-            "by_bit": best[2],
-        }
-        c.check(
-            "the probe latched interrupts inside the wrapper (so the pass above is a pass with interrupts taken between its instructions)",
-            best[0] > 10000 and best[1] >= best[0] // 2,
-            f"{best[0]} latched, {best[1]} interrupts taken ({best[2]})",
-        )
+    c.parallel(ref_boot, main_run)
     rep = Reporter()
     pcm = ref.get("pcm")
     run_wav = c.work / "run.wav"

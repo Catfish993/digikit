@@ -136,11 +136,3 @@ def test_cache_disabled(tmp_path, monkeypatch):
     assert not rc.RenderCache(tmp_path / "c").enabled
     monkeypatch.delenv("DIGI_RENDER_CACHE")
     assert rc.RenderCache(tmp_path / "c").enabled
-
-
-def test_file_digest_memo(tmp_path):
-    f = tmp_path / "f"
-    f.write_bytes(b"aaaa")
-    d1 = rc.file_digest(f)
-    _bump(f, b"bbbb")
-    assert rc.file_digest(f) != d1

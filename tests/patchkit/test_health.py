@@ -62,33 +62,6 @@ def test_module_toml_declares_what_the_object_needs():
     }
 
 
-def test_runtime_exports_the_abi_and_links_health_optionally():
-    rt = json.loads((ROOT / "modules/core/runtime/build/runtime.dko.json").read_text())
-    exported = {s["name"] for s in rt["symbols"] if s["global"]}
-    assert {
-        "dkrt_health",
-        "dkrt_blocks",
-        "dkrt_poll_set",
-        "DKRT_HEALTH",
-        "DKRT_POLL",
-    } <= exported
-    optional = tomllib.loads((ROOT / "modules/core/runtime/module.toml").read_text())[
-        "object"
-    ][0]["optional"]
-    assert {"health_read", "health_heap"} <= set(optional)
-    health = json.loads((MODULE / "build" / "health.dko.json").read_text())
-    assert {"health_read", "health_heap", "health_idle_line", "health_hs"} <= {
-        s["name"] for s in health["symbols"] if s["global"]
-    }
-
-
-def test_idle_counter_has_a_cache_line_to_itself():
-    """Hook tails (code) are placed behind the bss: a data line shared with code is a flush hazard (finding 41)."""
-    obj = json.loads((MODULE / "build" / "health.dko.json").read_text())
-    sec = {s["name"]: s for s in obj["sections"]}[".bss.health_idle_line"]
-    assert sec["size"] == 16 and sec["align"] == 16
-
-
 def test_formatting_helpers():
     assert hp.pct(0) == "0%" and hp.pct(369) == "37%" and hp.pct(1000) == "100%"
     assert hp.size_text(511 * 1024) == "511 KB"

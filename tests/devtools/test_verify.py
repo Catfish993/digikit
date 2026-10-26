@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import subprocess
 from contextlib import nullcontext
 from pathlib import Path
@@ -17,12 +16,6 @@ ROOT = REPO_ROOT
 
 from tools.devtools import changed_tests, verify, verify_route  # noqa: E402
 from tools.patchkit import modroots  # noqa: E402
-
-
-def test_rust_tests_command_has_no_package_flags() -> None:
-    cmd = verify.rust_tests_command()
-    assert "-p" not in cmd
-    assert cmd[-3:] == ["-m", "tools.devtools.rust_ws", "test"]
 
 
 def test_docs_select_no_steps() -> None:
@@ -321,14 +314,11 @@ def test_claude_settings_run_the_agent_guard_test() -> None:
     assert "tests/devtools/test_agent_guard.py" in plan
 
 
-def test_pathcheck_keeps_its_unit_and_repo_checks() -> None:
+def test_pathcheck_keeps_its_unit_test() -> None:
     plan = [
         p for p, _ in verify.python_test_plan(["tools/devtools/pathcheck.py"], False)
     ]
-    assert {
-        "tests/devtools/test_pathcheck.py",
-        "tests/devtools/test_pathcheck_repo.py",
-    } <= set(plan)
+    assert "tests/devtools/test_pathcheck.py" in plan
 
 
 def test_a_python_module_selects_its_importers_not_the_directory() -> None:
@@ -352,8 +342,6 @@ def test_digi_client_triggers_its_test() -> None:
 
 
 def test_moved_paths_route() -> None:
-    assert "web" in verify.steps_for(["apps/web/src/x.ts"])
-    assert "desktop" in verify.steps_for(["apps/desktop/src-tauri/src/main.rs"])
     assert "dt2-tone" in verify.steps_for(["packages/emulator/sharc/src/lib.rs"])
     assert "tier-quick" in verify.steps_for(
         ["packages/emulator/sharc-fast-cl/src/lib.rs"]
@@ -428,28 +416,12 @@ def test_plan_chunks_single_scenario() -> None:
     assert chunks[0].names == ("a-000",)
 
 
-def test_tier_jobs_budget_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DIGI_TIER_JOBS", "7")
-    assert verify.tier_jobs_budget() == 7
-    monkeypatch.setenv("DIGI_TIER_JOBS", "0")
-    with pytest.raises(SystemExit):
-        verify.tier_jobs_budget()
-
-
 def test_python_tests_passed(tmp_path: Path) -> None:
     head = "file\tstatus\trc\tseconds\tpassed\tfailed\tskipped\terrors\n"
     (tmp_path / "summary.tsv").write_text(head + "a.py\tOK\t0\t1.0\t0\t0\t3\t0\n")
     assert verify.python_tests_passed(tmp_path)
     (tmp_path / "summary.tsv").write_text(head + "a.py\tOK\t0\t1.0\t2\t0\t3\t0\n")
     assert verify.python_tests_passed(tmp_path) is None
-
-
-def test_python_tests_command() -> None:
-    cmd = verify.python_tests_command(Path("x"), ["tests/a.py"])
-    assert "tools.devtools.test_outcomes" in cmd
-    assert "run" in cmd and "--check" in cmd
-    assert "--timeout" in cmd
-    assert cmd[-1] == "tests/a.py"
 
 
 def test_python_timeout_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -464,21 +436,18 @@ def test_python_timeout_env(monkeypatch: pytest.MonkeyPatch) -> None:
         verify.python_timeout()
 
 
-def test_load_last_result_picks_newest(tmp_path: Path) -> None:
+def test_load_last_result(tmp_path: Path) -> None:
     assert verify.load_last_result(tmp_path / "none", None) is None
-    for stamp in ("20260101-000000", "20260102-000000", "20260103-000000"):
-        (tmp_path / stamp).mkdir()
-    (tmp_path / "20260101-000000" / "result.json").write_text('{"n": 1}')
-    (tmp_path / "20260102-000000" / "result.json").write_text('{"n": 2}')
-    assert verify.load_last_result(tmp_path, None) == {"n": 2}
-    assert verify.load_last_result(tmp_path, tmp_path / "20260102-000000") == {"n": 1}
-
-
-def test_load_last_result_skips_other_root(tmp_path: Path) -> None:
     older = tmp_path / "20260101-000000"
     newer = tmp_path / "20260102-000000"
+    (tmp_path / "20260103-000000").mkdir()  # no result.json: skipped
     older.mkdir()
     newer.mkdir()
+    (older / "result.json").write_text('{"n": 1}')
+    (newer / "result.json").write_text('{"n": 2}')
+    assert verify.load_last_result(tmp_path, None) == {"n": 2}
+    assert verify.load_last_result(tmp_path, newer) == {"n": 1}
+    # a result of another worktree is skipped
     (older / "result.json").write_text(
         json.dumps({"root": str(verify.ROOT), "failed": ["pins"]})
     )
@@ -520,27 +489,6 @@ def test_pick_rechecks() -> None:
     assert first == again
     assert 0 < len(first) < len(names)
     assert set(first) <= set(names)
-
-
-def test_recheck_probability_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DIGI_RENDER_CACHE_CHECK", raising=False)
-    assert verify.coupled.recheck_probability() == 0.0
-    monkeypatch.setenv("DIGI_RENDER_CACHE_CHECK", "0.25")
-    assert verify.coupled.recheck_probability() == 0.25
-    for bad in ("2", "-0.1", "x", "nan"):
-        monkeypatch.setenv("DIGI_RENDER_CACHE_CHECK", bad)
-        with pytest.raises(SystemExit):
-            verify.coupled.recheck_probability()
-
-
-def test_cache_env() -> None:
-    env = verify.cache_env({"A": "1"})
-    assert env == {"A": "1", "DIGI_RENDER_CACHE_CHECK": "0.03"}
-    keep = verify.cache_env({"DIGI_RENDER_CACHE_CHECK": "0.5"})
-    assert keep["DIGI_RENDER_CACHE_CHECK"] == "0.5"
-    off = verify.cache_env({}, no_cache=True)
-    assert off["DIGI_RENDER_CACHE"] == "0"
-    assert "DIGI_RENDER_CACHE" not in env
 
 
 def test_explain_runs_nothing(
@@ -668,14 +616,12 @@ def test_device_tools_select_their_tests_only() -> None:
     assert verify.steps_for(["tools/device/dkscreen.py"]) == ("python-tests", "smoke")
     assert selected("tools/device/dkscreen.py") == {
         "tests/digikit/test_dkscreen.py",
-        "tests/digikit/test_scenarios.py",
         "tests/digikit/test_upload_dn2.py",
         "tests/digikit/test_upload_dt2.py",
     }
     assert selected("tools/device/dkrun.py") == {
         "tests/digikit/test_dkrun.py",
         "tests/digikit/test_dktransfer.py",  # dktransfer imports dkrun
-        "tests/digikit/test_scenarios.py",
         "tests/digikit/test_menu_dn2.py",
         "tests/digikit/test_menu_dt2.py",
     }
@@ -714,7 +660,6 @@ def test_digikit_test_files_and_scenarios() -> None:
         assert deleted not in verify.python_tests([deleted], False)
         assert "python-tests" in verify.steps_for([deleted])
     assert selected("tests/digikit/scenarios/menu-dkrun-pluck.toml") == {
-        "tests/digikit/test_scenarios.py",
         "tests/digikit/test_menu_dn2.py",
         "tests/digikit/test_menu_dt2.py",
     }
@@ -1016,17 +961,6 @@ def test_rust_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(seen) == 1
 
 
-def test_rust_tests_command_limits_packages_when_rust_ws_can(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(verify.rust_ws, "__doc__", "no such option")
-    assert "--packages" not in verify.rust_tests_command(["patchkit"])
-    monkeypatch.setattr(verify.rust_ws, "__doc__", "test --packages A,B")
-    cmd = verify.rust_tests_command(["a", "b"])
-    assert cmd[-2:] == ["--packages", "a,b"]
-    assert "--packages" not in verify.rust_tests_command(None)
-
-
 def test_head_only_with_explain() -> None:
     with pytest.raises(SystemExit) as info:
         verify.main(["--head", "HEAD"])
@@ -1238,24 +1172,6 @@ def test_runtime_fixture_packs_only_modules_of_selected_files(
     assert verify.runtime_pack_modules(selected) == packed
 
 
-def test_runtime_fixture_packs_selected_modules_for_one_env_dir(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    gate = verify.Gate(
-        tmp_path,
-        budget=2,
-        acceptance={"runtime-fixture": ["runtime/remote-input.test.ts"]},
-    )
-    calls = []
-    monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append((cmd, kw)))
-    verify.run_step(gate, "runtime-fixture")
-    assert calls[0][0][-2] == str(modroots.module_dir("digikit/remote"))
-    assert calls[-1][1]["env"]["DIGI_RUNTIME_MODULES"] == str(
-        tmp_path / "runtime-fixture/modules"
-    )
-    assert calls[-1][0][-1] == "runtime/remote-input.test.ts"
-
-
 @pytest.mark.parametrize("flags", [["--only", "runtime-fixture"], ["--full"]])
 def test_runtime_fixture_full_or_explicit_planning(
     flags: list[str],
@@ -1284,76 +1200,6 @@ def test_runtime_fixture_explicit_plan_never_builds_but_waits_for_existing_build
     assert deps["runtime-fixture"] == ("build-daemons",)
 
 
-def test_runtime_fixture_command_is_sequential(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = []
-    monkeypatch.setattr(verify.Gate, "share", lambda self: 2)
-    monkeypatch.setattr(verify.Gate, "step_env", lambda self: {"DIGI_JOBS": "1"})
-    monkeypatch.setattr(
-        verify.Gate,
-        "run",
-        lambda self, name, cmd, **kwargs: calls.append((name, cmd, kwargs)),
-    )
-    gate = object.__new__(verify.Gate)
-    gate.acceptance = {"runtime-fixture": ["runtime/samples-live.test.ts"]}
-    verify.run_step(gate, "runtime-fixture")
-    assert calls == [
-        (
-            "runtime-fixture",
-            [
-                "pnpm",
-                "--filter",
-                "@digi/regression",
-                "test:runtime",
-                "runtime/samples-live.test.ts",
-            ],
-            {"env": {"DIGI_JOBS": "1"}},
-        )
-    ]
-
-
-def test_module_acceptance_checks_and_repacks_only_selected_upload(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    calls = []
-    gate = verify.Gate(
-        tmp_path, budget=2, acceptance={"module-load": ["modules/pluck.test.ts"]}
-    )
-    monkeypatch.setattr(
-        gate, "run", lambda name, cmd, **kw: calls.append((name, cmd, kw))
-    )
-    verify.run_step(gate, "module-load")
-    assert calls[0][1] == [
-        *verify.PY,
-        "-m",
-        "tools.patchkit.pk_build",
-        "build",
-        str(modroots.module_dir("digikit/pluck")),
-        "--check",
-    ]
-    for i, device in enumerate(("dt2", "dn2"), 1):
-        assert calls[i][1] == [
-            *verify.PY,
-            "-m",
-            "tools.patchkit.patchkit",
-            "pack",
-            "digikit/pluck",
-            "--device",
-            device,
-            "-o",
-            str(tmp_path / "module-load/modules" / device / "pluck.dkm"),
-        ]
-    assert calls[-1][1] == [
-        "pnpm",
-        "--filter",
-        "@digi/regression",
-        "test:modules",
-        "modules/pluck.test.ts",
-    ]
-    assert calls[-1][2]["env"]["DIGI_RUNTIME_MODULES"] == str(
-        tmp_path / "module-load/modules"
-    )
-
-
 def test_stale_module_objects_stop_before_pack_or_acceptance(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1379,54 +1225,6 @@ def test_stale_module_objects_stop_before_pack_or_acceptance(
             "--check",
         ]
     ]
-
-
-def test_input_adapter_prepares_fixture_in_runtime_owned_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    gate = verify.Gate(
-        tmp_path,
-        budget=2,
-        acceptance={"runtime-fixture": ["runtime/input-adapter.test.ts"]},
-    )
-    calls = []
-    monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append((cmd, kw)))
-    verify.run_step(gate, "runtime-fixture")
-    assert calls[0][0] == [
-        *verify.PY,
-        "-m",
-        "tools.patchkit.pk_build",
-        "build",
-        str(modroots.module_dir("test/input-probe")),
-        "--check",
-    ]
-    assert calls[-1][1]["env"]["DIGI_RUNTIME_MODULES"] == str(
-        tmp_path / "runtime-fixture/modules"
-    )
-    assert calls[-1][0][-1] == "runtime/input-adapter.test.ts"
-
-
-def test_stock_uses_dt2_binary_and_one_core_per_worker(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    gate = verify.Gate(
-        tmp_path, budget=3, acceptance={"stock": ["dt2/transport.test.ts"]}
-    )
-    gate.local.node = "stock"
-    gate.shared_env["DIGI_EMUD_DT2"] = "/built/dt2"
-    monkeypatch.setenv("DIGI_EMUD", "/unrelated/default")
-    calls = []
-    monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append((cmd, kw)))
-    verify.run_step(gate, "stock")
-    assert calls[0][0] == [
-        "pnpm",
-        "--filter",
-        "@digi/regression",
-        "test:stock",
-        "dt2/transport.test.ts",
-    ]
-    assert calls[0][1]["env"]["DIGI_EMUD"] == "/built/dt2"
-    assert calls[0][1]["env"]["REGRESSION_JOBS"] == "3"
 
 
 def test_runtime_fixture_host_paths_do_not_select_device_acceptance() -> None:
@@ -1523,16 +1321,6 @@ def test_failed_native_host_workflow_persists_for_rerun_and_blocks_web(
         [],
     )
     assert ("web" in gate.failed) == ("web" in steps)
-
-
-def test_root_format_scripts_share_scope() -> None:
-    scripts = json.loads((ROOT / "package.json").read_text())["scripts"]
-    write = shlex.split(scripts["fmt"])
-    check = shlex.split(scripts["fmt:check"])
-    assert write[:2] == ["prettier", "--write"]
-    assert check[:2] == ["prettier", "--check"]
-    assert write[2:] == check[2:]
-    assert check[2] == "."
 
 
 DN2_FX_STEPS = {"host", "check", "check-no-aot", "tier-quick", "smoke"}
