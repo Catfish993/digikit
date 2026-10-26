@@ -100,17 +100,9 @@ depends = ["scenario:build"]
 run = "uv run python -m tools.emulator.coupled scenario --all --no-build"
 description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python -m tools.emulator.coupled scenario --all --device dt2"
 
-[tasks."scenario:check"]
-run = "DIGI_FX_SWEEP=0 DIGI_FX_NO_AOT_SUBSET=0 pnpm --filter @digi/regression test:fx"
-description = "Native Vitest DN2 FX oracles: 61 quick assertions, existing binary and ready inputs required; no build"
-
 [tasks."scenario:check:dt2"]
 run = "uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slow --sweep -q"
 description = "Oracle tests for the DT2 FX scenarios on the one-sample card (about 2 min)"
-
-[tasks."scenario:sweep"]
-run = "DIGI_FX_SWEEP=1 DIGI_FX_NO_AOT_SUBSET=0 pnpm --filter @digi/regression test:fx"
-description = "Native Vitest DN2 FX full sweeps: 191 assertions across 134 scenarios; no build"
 
 [tasks."scenario:replay"]
 run = "uv run python -m tools.emulator.coupled replay"
@@ -149,7 +141,7 @@ description = "Host lint/format, five Vitest projects and package type checks in
 
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"
-description = "Exactness gate, every step; the AOT = no-AOT sweep runs the fixed subset (`-- --all-no-aot`: all 134 FX scenarios); only after generated-core changes"
+description = "Full gate including explicit runtime acceptance, 191 DN2 FX assertions and tier-sweep in place of tier-quick; no-AOT retains the fixed subset (`-- --all-no-aot`: all 134 scenarios and 191 assertions); DT2 full tier sweep requires -- --dt2; only after generated-core changes"
 
 # --- tests ---
 
@@ -157,9 +149,13 @@ description = "Exactness gate, every step; the AOT = no-AOT sweep runs the fixed
 run = "pnpm test:host"
 description = "Run the host-only Vitest projects with the native test runner; no native/WASM build or device checks"
 
+[tasks."test:stock"]
+run = "pnpm --filter @digi/regression test"
+description = "Stock DT2 1.17 zero-DSP UI/sequencer goldens; accepts Vitest filters; requires existing DIGI_EMUD binary, stock firmware and complete ready inputs; starts owned daemons, no implicit build, no audio coverage"
+
 [tasks."test:fx"]
 run = "pnpm --filter @digi/regression test:fx"
-description = "DN2 stock audio oracles (existing binary and ready inputs; no build; DIGI_FX_SWEEP=1 adds all47)"
+description = "DN2 stock FX oracles: 61 quick assertions; DIGI_FX_SWEEP=1 selects all 191 across 134 scenarios (existing binary and ready inputs; no build)"
 
 [tasks."test:runtime"]
 run = "pnpm --filter @digi/regression test:runtime"
@@ -290,7 +286,7 @@ description = "Compile module sources to build/*.dko.json: mise run module:build
 
 [tasks."module:check"]
 run = "uv run python -m tools.patchkit.pk_modcheck"
-description = "Check one module: `module:check NAME [--device dt2|dn2]`. A machine module runs the conformance suite (tests/modules/test_machine_conformance.py: every parameter at its limits, notes, modulation, long notes, retriggers; finite, bounded, returns, within the instruction budget), then the module's own tests (modules/<group>/<name>/tests, tests/**/test_*<name>*.py). Prints the packed size by section per device (or why it is not packed)"
+description = "Check one module: module:check ID [--device dt2|dn2]. Machine/effect conformance plus own tests in one pytest process; own tests may build or launch an emulator. Service/raw modules without tests can succeed with nothing to run; not an all-module patched load proof. After passing tests, reports packed size/fit per device (or why it is not packed)"
 
 [tasks."module:audit"]
 run = "uv run python -m tools.patchkit.pk_modaudit"

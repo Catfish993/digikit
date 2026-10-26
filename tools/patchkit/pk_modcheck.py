@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""patchkit: check one module the way the merge gate would, without a patched image or an emulator.
+"""patchkit: check one module with its conformance suite and own tests.
 
     uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2]      (mise run module:check NAME)
 
 NAME is a module id (`digikit/pluck`) or its last part (`pluck`). An effect module runs tests/modules/test_fx_conformance.py. A machine module (tools/patchkit/pk_conform.py) runs the conformance
-suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). Then the module's own tests
-run: `modules/<group>/<name>/tests/test_*.py`, and until the tests move there, the test files under tests/ whose file name carries the
+suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/test_*.py`, and until the tests move there, the test files under tests/ whose file name carries the
 module's name (`pluck` -> tests/patchkit/test_pluck*.py). One pytest process runs all of them; the exit code is pytest's.
+Own tests may build or launch an emulator. Service/raw modules with neither conformance nor own tests return success
+with nothing to run. This command does not prove every module loads in patched firmware.
 """
 
 from __future__ import annotations

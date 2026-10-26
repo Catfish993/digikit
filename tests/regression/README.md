@@ -17,8 +17,11 @@ Each test file starts one daemon (`withSession` in `support.ts`) and restarts it
 ## Run
 
 ```
-DIGI_EMUD=/path/to/emud pnpm --filter @digi/regression test      # or: pnpm test:regression at the root
+DIGI_EMUD=/path/to/emud mise run test:stock
+DIGI_EMUD=/path/to/emud mise run test:stock -- dt2/pages  # native Vitest filter
 ```
+
+The stock task uses the existing package test command (`pnpm test:regression` at the root remains available). It never builds: supply a current `DIGI_EMUD` binary, stock DT2 1.17 firmware and the complete ready-input set validated by `resolveInputs` (CF snapshot, DSP image and DSP state, even though the run uses zero DSP). Missing inputs fail. Host, stock FX and patched-runtime acceptance have separate `test:host`, `test:fx` and `test:runtime` tasks.
 
 Env: `REGRESSION_JOBS` (parallel files, default 4), `REGRESSION_JUNIT=1` (writes `out/regression/junit.xml`).
 

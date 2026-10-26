@@ -2,7 +2,7 @@
 
     uv run python -m tools.devtools.verify                  # steps for the uncommitted changes
     uv run python -m tools.devtools.verify --base BRANCH    # a lane: its commits since BRANCH plus uncommitted changes
-    uv run python -m tools.devtools.verify --full           # every step (the tier sweep on NO_AOT_SUBSET; --all-no-aot: all 134 scenarios)
+    uv run python -m tools.devtools.verify --full           # full acceptance and tier-sweep (NO_AOT_SUBSET; --all-no-aot: all 134 scenarios)
     uv run python -m tools.devtools.verify --full --dt2     # plus the full DT2 FX tier sweep
     uv run python -m tools.devtools.verify --only pins,check
     uv run python -m tools.devtools.verify --rerun-failed   # only the steps that failed in the last run
@@ -11,7 +11,7 @@
     uv run python -m tools.devtools.verify --full --all-no-aot   # AOT = no-AOT equality on every FX scenario, not the fixed subset
     uv run python -m tools.devtools.verify --explain        # show the routing and the plan, run nothing
     uv run python -m tools.devtools.verify --base A --head B --explain   # the same for the commits A..B
-(`mise run verify:pre` is the quick lane check, tools/devtools/verify_pre.py; this is the merge gate.)
+(Use owner checks while iterating; `mise run verify:pre` is an optional combined preflight, tools/devtools/verify_pre.py.)
 
 CPU budget (tools/devtools/verify_budget.py, docs/TESTING.md "CPU budget"): the whole gate has a budget of
 cores (--jobs N, DIGI_VERIFY_BUDGET, else the physical cores - 2); a step starts when its share is free and
@@ -31,7 +31,8 @@ times of earlier runs (tools/devtools/verify_times.py; DIGI_PY_TIMEOUT per file 
 tier steps run NO_AOT_SUBSET (a fixed subset of the FX scenarios, documented there; --all-no-aot: every seventh
 for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups into small chunks of scenarios and run
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
-check-no-aot runs 17 of the 61 quick native FX assertions (--all-no-aot: all).
+check-no-aot runs 17 native FX assertions even with --full (--all-no-aot: 61 normally, 191 with --full).
+Normal routing excludes runtime-fixture and full tier sweeps; runtime-fixture is explicit/full-only.
 python-tests runs the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
@@ -501,7 +502,7 @@ def expand_mise(
     files: list[str], base: str, head: str | None
 ) -> tuple[list[str], dict[str, str]]:
     """Replace a changed mise.toml by the paths of the tools its changed tasks run (a broad
-    change keeps mise.toml, which selects every step). Also returns path -> origin note."""
+    change keeps mise.toml, which selects every normal step). Also returns path -> origin note."""
     if "mise.toml" not in files:
         return files, {}
     since = merge_base(base, head)
@@ -1674,7 +1675,11 @@ def main(argv: list[str] | None = None) -> int:
         help="with --explain: the commits BASE..HEAD instead of the working tree "
         "(files are read from the current tree)",
     )
-    ap.add_argument("--full", action="store_true", help="every step, full tier sweep")
+    ap.add_argument(
+        "--full",
+        action="store_true",
+        help="full acceptance including runtime-fixture and tier-sweep (DT2 full sweep with --dt2)",
+    )
     ap.add_argument("--only", help=f"comma-separated steps from: {', '.join(STEPS)}")
     ap.add_argument(
         "--dt2",

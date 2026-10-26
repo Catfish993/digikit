@@ -71,8 +71,8 @@ only valid for the firmware and ready snapshot they were recorded with.
 DN2 trackFX/sendFX live in `tests/regression/scenarios` as compact TypeScript sources and native Vitest assertions. [The coverage map](../regression/scenarios/README.md) records all 134 scenarios and 191 assertion identities. Python retains DT2 oracles and shared rendering/NumPy analysis. Plain `pytest tests` excludes the slow DT2 tests.
 
 ```sh
-mise run scenario:check       # 61 quick DN2 assertions, no build
-mise run scenario:sweep       # all 191 DN2 assertions, no build
+mise run test:fx              # 61 quick DN2 assertions, no build
+DIGI_FX_SWEEP=1 mise run test:fx # all 191 DN2 assertions, no build
 mise run test:fx -- -t 'test_delay_spacing fast'  # selected cases + references only
 mise run scenario:check:dt2   # existing Python DT2 suite
 ```
