@@ -36,7 +36,7 @@ Started 2026-10-27. Targets: DT2 OS 1.17, DN2 OS 1.12, Syntakt OS 1.42.
 Other drift: `sdk/dk_machine.h` is a hand copy of `sdk.toml`; `[targets]` repeats `[module].ports`; C cache keys do not
 hash headers; `MODULE-AUTHORING.md` says `build/` is not committed but the web gallery needs the committed `.dko.json`.
 
-Rust builds are slow by layout: `out/cache/rust` holds one target dir per worktree and module (73 dirs, 3.3 GB), each
+(Corrected by the step 4 baseline: a module build is not slow.) At the start of this plan, `out/cache/rust` holds one target dir per worktree and module (73 dirs, 3.3 GB), each
 with its own `-Zbuild-std` of `core`, the codegen backend is a debug build (`pk_toolchains.py:83`), and each build copies
 the crate to a new temp dir. Content modules do not compile Rust: machines and effects are SHARC assembly.
 
@@ -141,8 +141,11 @@ pairs carry the same values as their new names. The rule generators are deleted.
 
 ### 4. Rust build speed (before the next m68k Rust build)
 
-- [ ] One shared target dir keyed by the toolchain pin; a prebuilt `core`/`compiler_builtins` sysroot instead of
-      `-Zbuild-std`; a release build of the codegen backend; a stable staging path per module.
+- [x] One shared target dir keyed by the toolchain pin (`pk_rust.target_dir()`), with a file lock over the cargo run
+      and the copy of the library, so two worktrees building one crate cannot swap libraries.
+- Dropped after the baseline (Em, 2026-10-27): the prebuilt sysroot, the release backend and the stable staging path.
+  They would save a few seconds per cold build, and the cache key cannot see them, so a wrong build could pass as
+  "unchanged".
 
 Proof: cold and warm build of `core/digikit-menu` before and after; objects byte-identical.
 
@@ -152,6 +155,11 @@ warm 0.6 s. Objects stayed byte-identical. **[C]** The earlier "Rust builds are 
 module build is not slow; the per-worktree target dirs only cost the first ~10 s build in each new lane plus disk
 (73 dirs, 3.3 GB). The cache key does not include the backend build mode or a sysroot, so those changes need
 `build_module(check=True)` on all five committed Rust objects as proof.
+
+Result [D]: all five Rust objects (`core/digikit-menu`, `core/runtime`, the rust-demo, dyn-demo and dyn-demo-stray
+fixtures) rebuild into the shared dir byte-identical to the committed ones. First build after the switch:
+`digikit-menu` 9.8 s (it builds `core` once), then `runtime` 2.4 s and each fixture 0.5 s; warm 0.6 s. The old
+per-worktree dirs in `out/cache/rust` are no longer used.
 
 ### 5. Generated bindings
 
@@ -264,5 +272,5 @@ ColdFire side is out of scope.
 ## Status at end of session
 
 2026-10-27: plan written. Steps 1 and 1b done; S1/S2 and findings 70 and 71 done. Review page generator in the repo
-(`tools/firmware/catalog_page.py`); Em reviews later. Steps 2 and 3 done (hook register contracts move to step 5). Next: step 4, Rust build speed, before the first
-m68k Rust build in step 5.
+(`tools/firmware/catalog_page.py`); Em reviews later. Steps 2, 3 and 4 done (hook register contracts move to step 5); step 7 study done. Next: step 5, generated
+bindings.

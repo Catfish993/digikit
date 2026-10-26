@@ -18,6 +18,7 @@ comes back through a0 from Rust but in d0:d1 from C; finding 23 S1b), statics on
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import os
 import re
@@ -171,7 +172,16 @@ def stage_crate(manifest: Path, root: Path) -> Path:
     return _stage(manifest, root / "crate", root / "crate" / ".deps", seen)
 
 
-def build_staticlib(manifest: Path) -> Path:
+def target_dir() -> Path:
+    """The cargo target dir, shared by every module, worktree and lane that uses the same toolchain pin: `core` and
+    `compiler_builtins` are built once per pin instead of once per module and worktree."""
+    t = pk_toolchains
+    return CACHE / f"{t.RUST_NIGHTLY}-cg{t.CG_REV[:12]}-jit{t.GCC_JIT_REV[:12]}"
+
+
+def build_staticlib(manifest: Path, out_dir: Path) -> Path:
+    """Build the crate and copy its static library into `out_dir`. A lock on the shared target dir covers the cargo
+    run and the copy, so a build of the same crate from another worktree cannot replace the library in between."""
     require_toolchain()
     manifest = manifest.resolve()
     meta = tomllib.loads(manifest.read_text())
@@ -180,21 +190,26 @@ def build_staticlib(manifest: Path) -> Path:
         raise RustBuildError(f'{manifest}: [lib] crate-type must be ["staticlib"]')
     if meta.get("profile", {}).get("release", {}).get("panic") != "abort":
         raise RustBuildError(f'{manifest}: [profile.release] panic must be "abort"')
-    target_dir = CACHE / f"{ROOT.name}-{manifest.parent.parent.parent.name}"
+    tdir = target_dir()
+    tdir.mkdir(parents=True, exist_ok=True)
     env = pk_toolchains.codegen_gcc_env(RUSTFLAGS_EXTRA)
     target = pk_toolchains.rust_target_json()
-    with tempfile.TemporaryDirectory(prefix="pk-rust-src-") as stage:
+    with (
+        open(tdir / ".pk-rust.lock", "w") as lock,
+        tempfile.TemporaryDirectory(prefix="pk-rust-src-") as stage,
+    ):
+        fcntl.flock(lock, fcntl.LOCK_EX)
         staged = stage_crate(manifest, Path(stage))
         cmd = [
             "cargo", f"+{pk_toolchains.RUST_NIGHTLY}", "rustc", "--release", *CARGO_ARGS,
-            "--target", str(target), "--target-dir", str(target_dir),
+            "--target", str(target), "--target-dir", str(tdir),
             "--manifest-path", str(staged),
         ]  # fmt: skip
         _run(cmd, env=env, cwd=staged.parent)
-    lib = target_dir / target.stem / "release" / f"lib{name}.a"
-    if not lib.exists():
-        raise RustBuildError(f"{lib} was not produced")
-    return lib
+        lib = tdir / target.stem / "release" / f"lib{name}.a"
+        if not lib.exists():
+            raise RustBuildError(f"{lib} was not produced")
+        return Path(shutil.copy2(lib, out_dir / lib.name))
 
 
 def _members(lib: Path, workdir: Path) -> list[Path]:
@@ -237,10 +252,10 @@ def check_flags(blob: bytes, what: str) -> None:
 
 def build_object(manifest: Path, out: Path) -> list[str]:
     """Crate -> one relocatable ELF at `out`. Returns the exported symbols."""
-    lib = build_staticlib(manifest)
     crate = tomllib.loads(manifest.read_text())["package"]["name"].replace("-", "_")
     with tempfile.TemporaryDirectory(prefix="pk-rust-") as d:
         work = Path(d)
+        lib = build_staticlib(manifest, work)
         members = _members(lib, work)
         exports: list[str] = []
         for m in members:

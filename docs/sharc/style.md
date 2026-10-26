@@ -8,7 +8,7 @@ assembler upper-cases macro text, so write numbers as decimal after `+` (the gen
 
 ## 1. File layout
 
-One `.s` file per module (or one per kernel in `sdk/dsp/` later). Order:
+One `.s` file per module (later, one per SDK kernel in a DSP folder under `sdk`). Order:
 
 1. Header comment: what the module is, the state layout, the block algorithm in plain maths (pluck does this well).
 2. `#include "dk_machine.inc"` (or `dk_fx.inc`; never both in one file, they define `DK_BLOCK` twice).
