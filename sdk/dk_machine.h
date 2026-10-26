@@ -1,25 +1,14 @@
 /* sdk/dk_machine.h -- the machine contract, version DK_MACHINE_V1 (docs/design/module-sdk.md 4.1).
-   The numbers are also in sdk/sdk.toml [machine], from which `patchkit gen` writes sdk/dk_machine.inc for assembly. */
+   The numbers are in sdk/sdk.toml [machine], from which `patchkit gen` writes sdk/dk_machine_consts.h (included here) and
+   sdk/dk_machine.inc for assembly.
+   Constants: DK_MACHINE_V1 contract version; DK_BLOCK samples per call, 48 kHz, both devices; DK_MAX_PARAMS hard cap (the device
+   profile gives the real maximum); DK_MAX_VOICES voices a machine runs at once on any device; DK_LEVEL_BOUND |sample| above this is a
+   fault (+18 dB over full scale); DK_MAGIC 'DKMA', the first word of dk_machine_desc.
+   dk_status, returned by render: DK_OK block written, voice continues; DK_DONE block written (may be silence), voice has ended.
+   dk_param_kind: DK_P_PERCENT word 0 .. 0x7f00, UI 0 .. 127; DK_P_BIPOLAR 0x4000 at rest, UI -64 .. +63; DK_P_ENUM n steps,
+   word = step * 256; DK_P_PITCH semitone offset, 0x4000 at rest, the adapter adds it to `pitch`. */
 #include <stdint.h>
-
-#define DK_MACHINE_V1   1               /* contract version                                                   */
-#define DK_BLOCK        32              /* samples per call, 48 kHz, both devices                             */
-#define DK_MAX_PARAMS   8               /* hard cap; the device profile gives the real maximum                */
-#define DK_MAX_VOICES   16              /* voices a machine runs at once on any device                        */
-#define DK_LEVEL_BOUND  8.0f            /* |sample| above this is a fault (+18 dB over full scale)            */
-#define DK_MAGIC        0x444b4d41u     /* 'DKMA', the first word of dk_machine_desc                          */
-
-typedef enum {                          /* returned by render                                                 */
-    DK_OK   = 0,                        /* block written, voice continues                                     */
-    DK_DONE = 1,                        /* block written (may be silence); voice has ended                    */
-} dk_status;
-
-typedef enum {                          /* parameter kinds                                                    */
-    DK_P_PERCENT = 0,                   /* word 0 .. 0x7f00, UI 0 .. 127                                      */
-    DK_P_BIPOLAR = 1,                   /* 0x4000 at rest, UI -64 .. +63                                      */
-    DK_P_ENUM    = 2,                   /* n steps, word = step * 256                                         */
-    DK_P_PITCH   = 3,                   /* semitone offset, 0x4000 at rest; the adapter adds it to `pitch`    */
-} dk_param_kind;
+#include "dk_machine_consts.h"
 
 typedef struct dk_voice_in {            /* per call, built by the adapter                                     */
     int32_t  pitch;                     /* semitones << 8 (MIDI note 60 = 60 << 8), the device's tune added   */

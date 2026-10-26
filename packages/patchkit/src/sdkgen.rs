@@ -17,6 +17,10 @@ pub const PY_OUT: &str = "tools/device/dklog_kinds.py";
 pub const INC_OUT: &str = "sdk/dk_machine.inc";
 /// The generated SHARC+ include of the FX contract, relative to the repository root.
 pub const FX_INC_OUT: &str = "sdk/dk_fx.inc";
+/// The generated C header of the machine contract's numbers, relative to the repository root.
+pub const C_MACHINE_OUT: &str = "sdk/dk_machine_consts.h";
+/// The generated C header of the FX contract's numbers, relative to the repository root.
+pub const C_FX_OUT: &str = "sdk/dk_fx_consts.h";
 /// The generated Python protocol numbers, relative to the repository root.
 pub const PROTO_PY_OUT: &str = "tools/device/dkproto.py";
 /// The generated Rust protocol numbers of the host client, relative to the repository root.
@@ -810,6 +814,92 @@ fn fx_inc(sdk: &Sdk) -> String {
     s
 }
 
+/// The C header of a contract's numbers: guarded `#define` lines, then the enums, then the byte and word offsets of the fields.
+/// `enums` lists (type name, test for the names of its members); the other constants are macros. The values are the ones of the
+/// `.inc` file; a `_MAGIC` is printed in hex and `DK_LEVEL_BOUND_BITS` also as the float `DK_LEVEL_BOUND`.
+fn c_consts(
+    guard: &str,
+    view: &str,
+    consts: &[MachineConst],
+    enums: &[(&str, fn(&str) -> bool)],
+    prefix: &str,
+    structs: [(&str, &[String]); 2],
+) -> String {
+    let mut s = format!("/* {HEADER} */\n/* The hand-written view is sdk/{view}. */\n#ifndef {guard}\n#define {guard}\n\n");
+    let in_enum = |n: &str| enums.iter().any(|(_, f)| f(n));
+    for c in consts.iter().filter(|c| !in_enum(&c.name)) {
+        if c.name.ends_with("_MAGIC") {
+            let _ = writeln!(s, "#define {} 0x{:08x}u", c.name, c.value);
+        } else {
+            let _ = writeln!(s, "#define {} {}", c.name, c.value);
+        }
+        if c.name == "DK_LEVEL_BOUND_BITS" {
+            let _ = writeln!(s, "#define DK_LEVEL_BOUND {:?}f", f32::from_bits(c.value));
+        }
+    }
+    for (ty, f) in enums {
+        let _ = writeln!(s, "\ntypedef enum {{");
+        for c in consts.iter().filter(|c| f(&c.name)) {
+            let _ = writeln!(s, "    {} = {},", c.name, c.value);
+        }
+        let _ = writeln!(s, "}} {ty};");
+    }
+    s.push('\n');
+    for (name, fields) in structs {
+        for (i, f) in fields.iter().enumerate() {
+            let _ = writeln!(s, "#define {prefix}{name}_{} {}", f.to_uppercase(), i * 4);
+        }
+        let _ = writeln!(s, "#define {prefix}{name}_BYTES {}", fields.len() * 4);
+        for (i, f) in fields.iter().enumerate() {
+            let _ = writeln!(s, "#define {prefix}{name}_W_{} {i}", f.to_uppercase());
+        }
+        let _ = writeln!(s, "#define {prefix}{name}_WORDS {}", fields.len());
+    }
+    let _ = writeln!(s, "\n#endif /* {guard} */");
+    s
+}
+
+/// `sdk/dk_machine_consts.h`: the numbers of `sdk/dk_machine.h`.
+fn machine_consts_h(sdk: &Sdk) -> String {
+    let m = &sdk.machine;
+    c_consts(
+        "DK_MACHINE_CONSTS_H",
+        "dk_machine.h",
+        &m.consts,
+        &[
+            ("dk_status", is_machine_status),
+            ("dk_param_kind", is_param_kind),
+        ],
+        "DK_",
+        [("IN", m.voice_in.as_slice()), ("DESC", m.desc.as_slice())],
+    )
+}
+
+/// `sdk/dk_fx_consts.h`: the numbers of `sdk/dk_fx.h`.
+fn fx_consts_h(sdk: &Sdk) -> String {
+    let m = &sdk.fx;
+    c_consts(
+        "DK_FX_CONSTS_H",
+        "dk_fx.h",
+        &m.consts,
+        &[("dk_fx_status", is_fx_status)],
+        "DK_FX_",
+        [("IN", m.fx_in.as_slice()), ("DESC", m.desc.as_slice())],
+    )
+}
+
+fn is_machine_status(n: &str) -> bool {
+    n == "DK_OK" || n == "DK_DONE"
+}
+
+fn is_param_kind(n: &str) -> bool {
+    n.starts_with("DK_P_")
+}
+
+fn is_fx_status(n: &str) -> bool {
+    n == "DK_FX_OK"
+}
+
 /// The outputs from the text of `sdk/sdk.toml`: (path relative to the repository root, text).
 pub fn render(text: &str) -> Result<Vec<(String, String)>> {
     let sdk = parse(text)?;
@@ -818,6 +908,8 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
         (PY_OUT.to_string(), python(&sdk)?),
         (INC_OUT.to_string(), machine_inc(&sdk)),
         (FX_INC_OUT.to_string(), fx_inc(&sdk)),
+        (C_MACHINE_OUT.to_string(), machine_consts_h(&sdk)),
+        (C_FX_OUT.to_string(), fx_consts_h(&sdk)),
         (PROTO_PY_OUT.to_string(), python_proto(&sdk)),
         (PROTO_RS_OUT.to_string(), rust_proto(&sdk)),
         (PROTO_TS_OUT.to_string(), ts_proto(&sdk)),

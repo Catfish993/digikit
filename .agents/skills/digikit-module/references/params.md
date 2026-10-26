@@ -164,14 +164,14 @@ Request: "a plucked string with four knobs: decay, pick position, brightness, co
 | limit | value | source |
 | --- | --- | --- |
 | knobs per machine | 8 (dt2 and dn2) | `devices/digitakt-ii.toml:296`, `devices/digitone-ii.toml:287` |
-| parameter words the DSP receives | `DK_MAX_PARAMS` = 8 in the contract; `param_slots` has 4 on each device, so 4 are filled | `sdk/dk_machine.h:7`, `sdk/sdk.toml:22`, `devices/*.toml` |
+| parameter words the DSP receives | `DK_MAX_PARAMS` = 8 in the contract; `param_slots` has 4 on each device, so 4 are filled | `sdk/sdk.toml:23` (generated into `sdk/dk_machine_consts.h`), `devices/*.toml` |
 | `[[param]]` per module (run-time pack) | 16 | `register.rs:40,248-255` |
 | machines per module | 8 | `register.rs:41` |
 | pages per module | 8 | `register.rs:42` |
 | records in a register section | 32 | `register.rs:35` |
 | `param_slots` entries | at most 8, each 0 to 7, none also in `reserved_slots` | `devgen.rs:338-356` |
 
-- `DK_MAX_PARAMS` is "a hard cap; the device profile gives the real maximum" (`sdk/dk_machine.h:7`). The profile value is `param_slots`: 4.
+- `DK_MAX_PARAMS` is "a hard cap; the device profile gives the real maximum" (`sdk/dk_machine.h`). The profile value is `param_slots`: 4.
 - The build refuses what section 3 lists, plus the length and range rules in section 2. It does not refuse a parameter outside
   `param_slots` or a `default` outside `min` .. `max` (not found).
 - A fixed machine type number is never written for a run-time machine; leave `type_hint` out unless you need the old number

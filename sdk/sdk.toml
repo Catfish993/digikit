@@ -1,6 +1,7 @@
 # The module contract: version numbers, log kinds and the SysEx protocol numbers. `patchkit gen` writes
 # modules/core/runtime/sdk/src/gen_sdk.rs, tools/device/dklog_kinds.py, tools/device/dkproto.py and
-# packages/dkupload/src/gen_proto.rs and packages/dk-session/src/gen_proto.ts from this file (`patchkit gen --check` fails when they are stale).
+# packages/dkupload/src/gen_proto.rs, packages/dk-session/src/gen_proto.ts, sdk/dk_machine.inc, sdk/dk_fx.inc, sdk/dk_machine_consts.h and
+# sdk/dk_fx_consts.h from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
 version = "0.5.1"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
@@ -13,8 +14,8 @@ machine = [1, 0]
 fx = [1, 0]         # run-time effects (sdk/dk_fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
 
-# The machine contract's numbers (sdk/dk_machine.h is the hand-written C view; packages/patchkit/tests/sdkgen.rs keeps the two equal).
-# `patchkit gen` writes sdk/dk_machine.inc from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
+# The machine contract's numbers (sdk/dk_machine.h is the hand-written C view; it includes the generated sdk/dk_machine_consts.h).
+# `patchkit gen` writes sdk/dk_machine.inc and sdk/dk_machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
 [machine]
 consts = [
     { name = "DK_MACHINE_V1", value = 1 },
@@ -36,8 +37,8 @@ desc = [
     "state_clear_bytes", "max_cycles_block", "max_cycles_note_on", "max_call_depth", "stack_bytes",
 ]                                                          # struct dk_machine_desc, DK_DESC_*
 
-# The FX contract's numbers (sdk/dk_fx.h is the hand-written C view; packages/patchkit/tests/sdkgen.rs keeps the two equal).
-# `patchkit gen` writes sdk/dk_fx.inc from this table. Do not include it together with dk_machine.inc (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both).
+# The FX contract's numbers (sdk/dk_fx.h is the hand-written C view; it includes the generated sdk/dk_fx_consts.h).
+# `patchkit gen` writes sdk/dk_fx.inc and sdk/dk_fx_consts.h from this table. Do not include it together with dk_machine.inc (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both).
 [fx]
 consts = [
     { name = "DK_FX_V1", value = 1 },

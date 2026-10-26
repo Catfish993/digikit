@@ -1,20 +1,14 @@
 /* sdk/dk_fx.h -- the FX contract, version DK_FX_V1 (docs/design/module-sdk.md 4.2).
    An effect processes the final stereo block of the device (the master, before the USB pack and the DAC converter).
-   The numbers are also in sdk/sdk.toml [fx], from which `patchkit gen` writes sdk/dk_fx.inc for assembly.
-   Do not include dk_fx.inc and dk_machine.inc in one assembly file (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both). */
+   The numbers are in sdk/sdk.toml [fx], from which `patchkit gen` writes sdk/dk_fx_consts.h (included here) and sdk/dk_fx.inc for assembly.
+   Do not include dk_fx.inc and dk_machine.inc in one assembly file (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both).
+   Constants: DK_FX_V1 contract version; DK_BLOCK samples per channel and call, 48 kHz, both devices; DK_FX_BLOCK floats of a block,
+   planar, 32 left, then 32 right; DK_FX_MAX_PARAMS hard cap on parameter words (the 7 knobs of a page are p0 to p6, v1 rows had 4;
+   MIX is not one: the adapter owns it); DK_FX_MAX effects in the chain (a device's `[limits] fx_slots` is at most this);
+   DK_LEVEL_BOUND |sample| above this is a fault (+18 dB over full scale); DK_FX_MAGIC 'DKFX', the first word of dk_fx_desc.
+   dk_fx_status, returned by process: DK_FX_OK out written; a negative number is a fault: the block plays dry. */
 #include <stdint.h>
-
-#define DK_FX_V1         1              /* contract version                                                   */
-#define DK_BLOCK         32             /* samples per channel and call, 48 kHz, both devices                 */
-#define DK_FX_BLOCK      64             /* floats of a block: planar, 32 left, then 32 right                  */
-#define DK_FX_MAX_PARAMS 8              /* hard cap on parameter words: the 7 knobs of a page are p0 to p6 (v1 rows had 4); MIX is not one: the adapter owns it */
-#define DK_FX_MAX        4              /* effects in the chain (a device's `[limits] fx_slots` is at most this) */
-#define DK_LEVEL_BOUND   8.0f           /* |sample| above this is a fault (+18 dB over full scale)            */
-#define DK_FX_MAGIC      0x444b4658u    /* 'DKFX', the first word of dk_fx_desc                               */
-
-typedef enum {                          /* returned by process                                                */
-    DK_FX_OK = 0,                       /* out written                                                        */
-} dk_fx_status;                         /* a negative number is a fault: the block plays dry                  */
+#include "dk_fx_consts.h"
 
 typedef struct dk_fx_in {               /* per call, built by the adapter                                     */
     const float *in;                    /* the block before this effect, DK_FX_BLOCK floats, read only        */
