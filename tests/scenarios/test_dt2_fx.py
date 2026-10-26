@@ -7,8 +7,8 @@ Scenarios are tests/scenarios/dt2-trackfx.json and dt2-sendfx.json (tools/emulat
 Each is checked twice: the read-back of the live Sound and Fx arrays (the intended
 parameter reached its value, nothing else changed) and a relationship of the
 audio against the dry reference or against its neighbours in the sweep (the
-effect moves in the expected direction). The DN2 tests (test_dn2_fx.py) are
-dropped under ``--device dt2`` and these under ``--device dn2``.
+effect moves in the expected direction). DN2 scenarios and assertions live in
+TypeScript/Vitest under tests/regression/scenarios/.
 """
 
 from __future__ import annotations

@@ -1,11 +1,11 @@
-"""Send FX sweep tooling: scenario generator and name parsing."""
+"""Send FX tooling: shared Python timeline and analysis name parsing."""
 
 from __future__ import annotations
 
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.emulator import fxcheck, gen_sendfx  # noqa: E402
+from tools.emulator import fxcheck  # noqa: E402
 from tools.emulator import scenario_dsl as d  # noqa: E402
 
 
@@ -14,24 +14,6 @@ def test_chord_latches() -> None:
     tl.chord(1000, d.FUNC, d.FX_PAGE)
     ev = [(e["button"], e["down"]) for e in tl.as_list()]
     assert ev == [(17, True), (5, True), (5, False), (17, False)]
-
-
-def test_scenarios_share_timing() -> None:
-    sc = gen_sendfx.scenarios()
-    names = [s["name"] for s in sc]
-    assert len(set(names)) == len(names)
-    for fx in ("del", "rev", "chr"):
-        grp = [
-            s
-            for s in sc
-            if s["name"].startswith(f"sf-{fx}-") and "ppwidth" not in s["name"]
-        ]
-        times = {tuple(e["at_instr"] for e in s["events"]) for s in grp}
-        assert len(times) == 1, fx
-        assert len({s["seconds"] for s in grp}) == 1
-    # the chord count selects the page: 1 Delay, 2 Reverb, 3 Chorus
-    rev = next(s for s in sc if s["name"] == "sf-rev-ref")
-    assert sum(1 for e in rev["events"] if e.get("button") == 17 and e["down"]) == 2
 
 
 def test_sf_name() -> None:

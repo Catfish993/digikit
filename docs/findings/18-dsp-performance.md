@@ -167,7 +167,7 @@ Measured 2026-10-08 on branch `work/scenario-oracles` (DN2 1.11, shared generate
 firmware blocks). Not re-checked by a second agent. Tools: `tools/devtools/perf.py --scenarios FILE
 --scenario NAME... --seconds 0` (0 = each scenario's own length) and `tools/devtools/perf_agg.py DIR...`
 (union and FX increase over the dry hold). Scenarios: `tests/scenarios/dn2.json`,
-`REF:tests/scenarios/dn2-trackfx.json`, `dn2-sendfx.json`.
+`REF:tests/scenarios/dn2-trackfx.json`, `REF:tests/scenarios/dn2-sendfx.json`.
 
 Config: **`static-insns+follow`** is the translator-only, no-AOT configuration (finding 18's
 "fast-only"; fast regions armed at every instruction, generated lowering and helpers on, AOT
@@ -574,7 +574,7 @@ brings the AOT run to its pre-step cost (1.41), so it is small.
 
 ## Tier mismatch: MODE1 read at entry **[D]**
 
-`sf-del-time-u20` (tests/scenarios/dn2-sendfx.json) rendered `67e0ea5c3f9a7166` in the default config
+`sf-del-time-u20` (REF:tests/scenarios/dn2-sendfx.json) rendered `67e0ea5c3f9a7166` in the default config
 (AOT core and fast tier) and `c4688d57f9ef9aa9` in no-AOT `static-insns+follow` (rms 0.0127184 vs
 0.0127187); finding 15 recorded it as open.
 
@@ -604,7 +604,7 @@ brings the AOT run to its pre-step cost (1.41), so it is small.
   Register bank selection: a MODE1 write that changes the bank bits is refused with the bank model. STKY is
   not lowered. ASTAT is tracked per instruction (`fm_static`); `cacc_known` is an entry property by design.
 - Tier equivalence after the fix, DN2 1.11, PCM sha256 of every scenario of `REF:tests/scenarios/dn2-trackfx.json` (47) and
-  `dn2-sendfx.json` (87), default (AOT + fast tier) against no-AOT `static-insns+follow`: 134 of 134 equal,
+  `REF:tests/scenarios/dn2-sendfx.json` (87), default (AOT + fast tier) against no-AOT `static-insns+follow`: 134 of 134 equal,
   `sf-del-time-u20` `67e0ea5c3f9a7166` in the interpreter, the default and the no-AOT config.
 - Tests: `fast_reads_mode1_as_the_region_wrote_it` (TRUNCATE on/off, ALUSAT on/off, CBUFEN on/off in the
   region; fails on `env.mode1`), `fast_mode1_write_that_enables_interrupts_matches_the_interpreter`,

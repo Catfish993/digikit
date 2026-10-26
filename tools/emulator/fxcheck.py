@@ -17,7 +17,7 @@ DN2 1.12 MAIN OS) and lists the ones that differ from the reference, and the
 per-control measures are printed in a second table. ``--ref`` overrides the
 reference.
 
-Send FX sweeps (tests/scenarios/dn2-sendfx.json, ``sf-*``): the dry reference is
+Send FX sweeps (tests/regression/scenarios/dn2-sendfx.ts, ``sf-*``): the dry reference is
 sf-dry-tap or sf-dry-hold, the read-back diff is against sf-<fx>-ref (send up,
 page at defaults), the wet signal is the scenario minus the dry reference, and
 the per-effect measures (delay echoes, reverb decay and onset, chorus
@@ -191,7 +191,7 @@ def diff_vs_dry(
 SCENARIO_FILES: tuple[str, ...] = (
     "dn2-fx.json",
     "../regression/scenarios/dn2-trackfx.ts",
-    "dn2-sendfx.json",
+    "../regression/scenarios/dn2-sendfx.ts",
 )
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
@@ -283,7 +283,7 @@ def configure(device: str) -> None:
         SCENARIO_FILES = (
             "dn2-fx.json",
             "../regression/scenarios/dn2-trackfx.ts",
-            "dn2-sendfx.json",
+            "../regression/scenarios/dn2-sendfx.ts",
         )
         DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
         SND_PEEK = "snd=*0x800052a0+0x48:202"
@@ -541,7 +541,7 @@ def plot_tf(x: ac.F, rate: int, t0: float, d: pathlib.Path, m: dict[str, Any]) -
         plt.close(fig)
 
 
-# --- send FX pages (tests/scenarios/dn2-sendfx.json) --------------------------------
+# --- send FX pages (tests/regression/scenarios/dn2-sendfx.ts) --------------------------------
 
 PRE = 0.02  # alignment pre-roll before the note onset, s
 

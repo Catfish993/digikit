@@ -704,7 +704,7 @@ failure does not come from this change.
 
 ## DN2 1.11 send FX pages swept against expected behaviour (2026-10-08)
 
-Scenarios `tests/scenarios/dn2-sendfx.json` (`tools/emulator/gen_sendfx.py`), measures
+Scenarios `tests/regression/scenarios/dn2-sendfx.ts` (canonical TypeScript source), measures
 `tools/emulator/fxcheck.py` (`sf-*`), runs `out/runs/sendfx/run1..run3`. All **[D]**:
 one run, not yet compared with a device.
 

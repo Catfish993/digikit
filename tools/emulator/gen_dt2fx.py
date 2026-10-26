@@ -4,7 +4,7 @@
     uv run python -m tools.emulator.gen_dt2fx [OUT_DIR]
 
 The names and the layout follow the DN2 files (tests/regression/scenarios/dn2-trackfx.ts,
-tools/emulator/gen_sendfx.py): `tf-<fx>-<UI>` for a track FX control raised to about UI
+tests/regression/scenarios/dn2-sendfx.ts): `tf-<fx>-<UI>` for a track FX control raised to about UI
 <UI>, `sf-<fx>-<param>-u<N>` / `-d<N>` for N events of +4 / -4 detents on a send
 FX page, so tools/emulator/fxcheck.py (`configure("dt2")`) and tests/scenarios read both.
 They need the one-sample card of tools/emulator/dt2_sample_check.py (a 1 kHz sine, 1 s):

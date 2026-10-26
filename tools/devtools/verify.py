@@ -31,7 +31,7 @@ times of earlier runs (tools/devtools/verify_times.py; DIGI_PY_TIMEOUT per file 
 tier steps run NO_AOT_SUBSET (a fixed subset of the FX scenarios, documented there; --all-no-aot: every seventh
 for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups into small chunks of scenarios and run
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
-check-no-aot runs CHECK_NO_AOT_K, 17 of the 61 oracle tests (--all-no-aot: all).
+check-no-aot runs 17 of the 61 quick native FX assertions (--all-no-aot: all).
 python-tests runs the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
@@ -84,7 +84,7 @@ from tools.emulator import (  # noqa: E402
 PY = ["uv", "run", "python"]
 FX_FILES = (
     "tests/regression/scenarios/dn2-trackfx.ts",
-    "tests/scenarios/dn2-sendfx.json",
+    "tests/regression/scenarios/dn2-sendfx.ts",
 )
 DT2_FX_FILES = ("tests/scenarios/dt2-trackfx.json", "tests/scenarios/dt2-sendfx.json")
 # python-tests always runs PY_GATE: lint, types, paths and the staleness checks (built module objects and
@@ -256,7 +256,7 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
         "tf-rev-71",
         "tf-chr-71",
     ),
-    "tests/scenarios/dn2-sendfx.json": (
+    "tests/regression/scenarios/dn2-sendfx.ts": (
         "sf-del-ref",
         "sf-del-fb-u127",
         "sf-del-ppwidth-u127",
@@ -278,16 +278,6 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
     ),
     "tests/scenarios/dt2-sendfx.json": ("sf-mst-ratio",),
 }
-# check-no-aot without --all-no-aot: 17 of the 61 oracle tests of tests/scenarios/test_dn2_fx.py (pytest -k):
-# health and read-back of one scenario per effect (voice, bit reduction, overdrive, SRR, delay, reverb, chorus)
-# and the relation test of each effect whose series renders a sweep (SRR rate, reverb RT60, chorus speed) and the delay
-# default feedback level. The tier steps compare the PCM itself on NO_AOT_SUBSET.
-CHECK_NO_AOT_K = (
-    "(test_healthy or test_readback) and "
-    "(sf-del-time-u20 or sf-rev-decay-u20 or sf-chr-speed-u20)"
-    " or test_delay_default_feedback_minus_6_db or test_chorus_rate_rises_with_speed"
-    " or test_reverb_rt60_rises_with_decay"
-)
 # Normal broad verification excludes full-tier or explicitly requested steps.
 EVERYTHING = tuple(
     s for s in STEPS if s not in ("runtime-fixture", "tier-sweep", "dt2-tier-sweep")
@@ -338,6 +328,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         (
             "tests/scenarios/dt2-",
             "tests/scenarios/test_dt2",
+            "tests/scenarios/conftest.py",
             "tools/emulator/gen_dt2fx.py",
             "tools/emulator/dt2fx.py",
         ),
@@ -1475,9 +1466,8 @@ def run_step(gate: Gate, step: str) -> None:
         ]
         gate.run("pins", cmd)
     elif step == "check":
-        gate.run("check", scenario_tests, check=pytest_ran)
         gate.run(
-            "check-trackfx",
+            "check-fx",
             ["pnpm", "--filter", "@digi/regression", "test:fx"],
             env={
                 **os.environ,
@@ -1488,15 +1478,8 @@ def run_step(gate: Gate, step: str) -> None:
             },
         )
     elif step == "check-no-aot":
-        subset = [] if gate.all_no_aot else ["-k", CHECK_NO_AOT_K]
         gate.run(
-            "check-no-aot",
-            [*scenario_tests, *subset],
-            env=no_aot_env(),
-            check=pytest_ran,
-        )
-        gate.run(
-            "check-no-aot-trackfx",
+            "check-no-aot-fx",
             ["pnpm", "--filter", "@digi/regression", "test:fx"],
             env={
                 **no_aot_env(),

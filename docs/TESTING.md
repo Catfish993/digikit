@@ -66,7 +66,7 @@ pooling/reset safety and further migrations are separate work.
 | `tests/dsp` | DSP maps and diffs, FX scenario generators, audio checks | DSP tools |
 | `tests/devtools` | Lint (ruff `CLEAN` list), types (mypy `TYPED` list), PyPy, benchlock, verify routing, test_outcomes | `tools/devtools/verify.py`, `tools/devtools/benchlock.py`, `tools/devtools/test_outcomes.py` |
 | `tests/digikit` | The digikit runtime's boot-time scenarios: data files (`scenarios/*.toml`) and the runner `tools/patchkit/pk_digikit_scen.py`; routed by the verify suite `digikit-boot`. Slow (coupled cold boots). | `modules/core/runtime`, `core/dynreg`, `core/dsp-link`, `core/dyndsp`, `core/digikit-menu`, `tools/patchkit/pk_dkrt_boot.py` |
-| `tests/scenarios` | Python sendFX and DT2 emulator scenario oracles; DN2 trackFX source/assertions live in `tests/regression/scenarios` ([coverage map](../tests/regression/scenarios/README.md)). Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenario:*`. | `tests/scenarios/`, `tools/emulator/coupled.py` |
+| `tests/scenarios` | Python DT2 emulator scenario oracles; DN2 trackFX/sendFX source/assertions live in `tests/regression/scenarios` ([coverage map](../tests/regression/scenarios/README.md)). DT2 is slow and run by `dt2-check` / `mise run scenario:check:dt2`; DN2 runs through native Vitest `check` / `mise run scenario:*`. | `tests/scenarios/`, `tools/emulator/coupled.py` |
 | `tests/support` | Helpers shared by tests. No `test_` prefix, not collected. `tests/support/paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS`. | |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures | |
 
@@ -126,13 +126,13 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run verify:host` | Native mise sequence: global JS/TS lint and format, five host Vitest projects and five package type checks. Stops at the first failure. No Python, native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
 | `mise run verify:pre` | Optional preflight (`tools/devtools/verify_pre.py`): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No explicit pin or scenario step; selected tests may build or launch a device/emulator. It prints that it is not the merge gate. | Optional combined preflight; do not routinely run after `test:changed` |
 | `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, unless every changed path is UI-only or exactly a listed smoke-exempt path); a lane checks the routing with `--explain` |
-| `mise run verify:full` | Every step (about 7 min with a warm render cache, about 20 min when DSP/native code changed). The AOT = no-AOT sweep runs the fixed subset; `-- --all-no-aot` runs all 134 scenarios and all 61 oracle tests. | Only after changes to the generated core |
+| `mise run verify:full` | Every step (about 7 min with a warm render cache, about 20 min when DSP/native code changed). The AOT = no-AOT sweep runs the fixed subset; `-- --all-no-aot` runs all 134 scenarios and all 191 oracle assertions. | Only after changes to the generated core |
 | `mise run scenario:all` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
-| `mise run test:fx` | Native Vitest stock DN2 1.12 trackFX:34 quick assertions; `DIGI_FX_SWEEP=1` selects all 79. No implicit build; requires current generated core, ready inputs, MAIN OS image and existing coupled-run binary. `DIGI_JOBS` bounds rendering (default 1). [Coverage/lifecycle](../tests/regression/scenarios/README.md). | Focused stock audio acceptance |
-| `mise run scenario:check` | Python sendFX oracles followed by native Vitest DN2 trackFX quick assertions (34); Python retains its existing build behavior | After DSP or scenario changes |
+| `mise run test:fx` | Native Vitest stock DN2 1.12 trackFX/sendFX: 61 quick assertions; `DIGI_FX_SWEEP=1` selects all 191 across 134 scenarios. No implicit build; requires current generated core, ready inputs, MAIN OS image and existing coupled-run binary. `DIGI_JOBS` bounds rendering (default 1). [Coverage/lifecycle](../tests/regression/scenarios/README.md). | Focused stock audio acceptance |
+| `mise run scenario:check` | Native Vitest DN2 trackFX/sendFX quick assertions (61), without building | After DSP or scenario changes |
 | `mise run dev:plusdrive-check` | The firmware's own view (mount, readdir, lookup, read) of an image built from a folder: nested folders, plain files, a multi-page directory, multi-extent files (about 1 min; `verify` runs it in the `card-fs` step when `packages/emulator/plusdrive/` changes) | After +Drive builder changes |
 | `mise run scenario:check:dt2` | DT2 FX oracles on the one-sample card (about 2 min) | After DT2 changes |
-| `mise run scenario:sweep` | Python sendFX full sweeps followed by all 79 Vitest trackFX assertions (47 scenarios) | Before a merge |
+| `mise run scenario:sweep` | All 191 native Vitest DN2 trackFX/sendFX assertions (134 scenarios), without building | Before a merge |
 | `mise run patch:test` | Smoke tour and module tests over `tests/patchkit/smoke/matrix.toml` | After patchkit or module changes |
 | `mise run patch:proofs` | Every emulator proof on its quick tier, in sequence | After patchkit or module changes |
 | `uv run python -m tools.devtools.test_outcomes run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
@@ -486,9 +486,9 @@ check-no-aot 1333 s).
 
 ### AOT versus interpreter equality (a fixed subset)
 
-Em approved the reduction on 2026-10-19. `check-no-aot` and the no-AOT halves of `tier-quick` / `tier-sweep` (DN2, and the interpreter-only DT2 halves) run `NO_AOT_SUBSET` / `CHECK_NO_AOT_K` of `tools/devtools/verify.py`, in routed `verify` and in `verify:full`:
+Em approved the reduction on 2026-10-19. The no-AOT halves of `tier-quick` / `tier-sweep` use `NO_AOT_SUBSET` in `tools/devtools/verify.py`; `check-no-aot` uses the corresponding native assertion memberships in `tests/regression/scenarios/dn2-trackfx.test.ts` and `dn2-sendfx.test.ts`, in routed `verify` and in `verify:full`:
 17 of the 134 DN2 FX scenarios (and 8 of 60 DT2 ones) for the PCM comparison, 17 of the 61 oracle tests for `check-no-aot`. The pick has one or two scenarios per DSP path, at the strongest setting: the voice alone (`tf-dry-hold`), bit reduction, overdrive (with the filter and routing-1 variant), SRR, track and send delay (feedback above unity, pingpong width), reverb (decay, shimmer), chorus (speed) and the master compressor (`sf-mst-ratio`, the mixer's last stage).
-`verify:full --all-no-aot` runs the old sets (tier-sweep: all 134; tier-quick: every seventh; check-no-aot: all 61). Since tier-sweep compares the same scenarios as tier-quick now, the default `--full` sweep and the routed quick tier cover the same set.
+`verify:full --all-no-aot` runs all 134 in tier-sweep, every seventh in tier-quick, and all 191 assertions in check-no-aot. Normal `verify --all-no-aot` runs the 61 quick assertions; default check-no-aot retains 17 even with full verification. Since tier-sweep compares the same scenarios as tier-quick now, the default `--full` sweep and the routed quick tier cover the same set.
 
 ## Render cache
 
@@ -498,7 +498,7 @@ A hit restores the report entry and the WAV; a miss renders as before and stores
 `--no-cache` (`tools/emulator/coupled.py scenario`) or `DIGI_RENDER_CACHE=0` disables it; `uv run python -m tools.emulator.coupled cache stats|clear` shows or empties it.
 Effect: pins, check, check-no-aot and tier-sweep render only scenarios whose inputs changed. A change to DSP or native code changes the binary hash, so everything renders again.
 
-Only emulator output is cached (the report entry and the WAV). Everything that judges a render runs fresh: check's Python oracles analyse the cached WAV, tier compares hashes, and the pins' expected hashes are part of the key.
+Only emulator output is cached (the report entry and the WAV). Everything that judges a render runs fresh: check's native Vitest oracles judge fresh NumPy analysis of the cached WAV, tier compares hashes, and the pins' expected hashes are part of the key.
 
 Two guards protect against a stale hit:
 

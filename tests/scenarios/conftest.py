@@ -24,12 +24,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 from tools.emulator import audiocheck as ac  # noqa: E402
 from tools.emulator import coupled, digi_env, fxcheck  # noqa: E402
 
-# Scenario file by name prefix and device. The standard peeks (the Sound array
-# of track 1 and the Fx array of the kit) come from fxcheck, per device.
-FILES = {
-    "dn2": {"tf": "../regression/scenarios/dn2-trackfx.ts", "sf": "dn2-sendfx.json", "fx": "dn2-fx.json"},
-    "dt2": {"tf": "dt2-trackfx.json", "sf": "dt2-sendfx.json"},
-}
+# DT2 scenario file by name prefix. Standard Sound/Fx peeks come from fxcheck.
+FILES = {"tf": "dt2-trackfx.json", "sf": "dt2-sendfx.json"}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -42,9 +38,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     parser.addoption(
         "--device",
-        default="dn2",
-        choices=["dn2", "dt2"],
-        help="device (dt2 runs test_dt2_fx.py on the one-sample card, dn2 the rest)",
+        default="dt2",
+        choices=["dt2"],
+        help="DT2 runs test_dt2_fx.py on the one-sample card; DN2 uses native Vitest",
     )
     parser.addoption(
         "--no-build",
@@ -83,10 +79,6 @@ def pytest_collection_modifyitems(
     dropped: list[pytest.Item] = []
     for item in items:
         if _mine(item):
-            want = "dt2" if item.path.name.startswith("test_dt2") else "dn2"
-            if config.getoption("--device") != want:
-                dropped.append(item)
-                continue
             item.add_marker(pytest.mark.slow)
             item.add_marker(pytest.mark.scenario)
             if "sweep" in item.keywords and not sweep:
@@ -156,8 +148,7 @@ class Renderer:
         self.events = fxcheck.scenario_events()
 
     def file_of(self, name: str) -> str:
-        files = FILES[self.device]
-        return files.get(name.split("-")[0], files.get("fx", ""))
+        return FILES[name.split("-")[0]]
 
     def need(self, names: list[str]) -> None:
         """Declare scenarios that will be asked for (rendered together)."""

@@ -3,20 +3,25 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll } from 'vitest';
 import { repoRoot } from '@digi/test-support';
-import { scenarios } from './dn2-trackfx.ts';
+import type { Scenario } from './dn2-trackfx.ts';
 
 export interface Row {
   analysis: { basic: { nonfinite: number; dc: number[]; peak: number; growth: boolean } };
   decoded: Record<string, number>;
   pcm: { shape: number[]; reference_shape: number[]; reference_equal: boolean; reference: string; mono_equal: boolean };
-  bits: Record<string, number>;
+  bits: Record<string, number | null>;
   tf: { fs_candidates: number[][] };
+  sf: Record<string, number | null>;
+  delay: { echo_onsets_s: number[] };
 }
 
-/** Batch selected stock track-FX scenarios through the existing Python renderer/analysis CLI. */
-export function trackFxRender(needs: Map<string, string[]>) {
+/** Batch selected stock FX scenarios through the existing Python renderer/analysis CLI. */
+export function fxRender(
+  needs: Map<string, string[]>,
+  { family, scenarios }: { family: string; scenarios: Scenario[] },
+) {
   const root = repoRoot();
-  const run = path.join(root, 'out', 'regression', 'trackfx', `${Date.now()}-${process.pid}`);
+  const run = path.join(root, 'out', 'regression', family, `${Date.now()}-${process.pid}`);
 
   let rows: Record<string, Row>;
   let entries: Record<string, { gates: { ok: boolean } }>;
@@ -65,7 +70,7 @@ export function trackFxRender(needs: Map<string, string[]>) {
       }
     }
     // Reports, decoded measurements and logs survive failures; PCM remains in the shared content cache.
-    if (fs.existsSync(run))
+    if (process.env.DIGI_FX_KEEP_RUNS !== '1' && fs.existsSync(run))
       for (const name of fs.readdirSync(run, { recursive: true })) {
         if (String(name).endsWith('.wav')) fs.unlinkSync(path.join(run, String(name)));
       }
@@ -75,12 +80,17 @@ export function trackFxRender(needs: Map<string, string[]>) {
     const names = new Set(selected);
     for (const name of selected) {
       const scenario = scenarios.find((s) => s.name === name)!;
-      names.add(name.includes('-flt') ? 'tf-dry-flt' : scenario.seconds < 4.5 ? 'tf-dry-hold' : 'tf-dry-tap');
+      const note = scenario.events.filter((event) => 'button' in event && event.button === 25);
+      const held = (note[1]!.at_instr - note[0]!.at_instr) / 132_000_000 > 1;
+      const prefix = name.split('-')[0];
+      names.add(name.includes('-flt') ? 'tf-dry-flt' : `${prefix}-dry-${held ? 'hold' : 'tap'}`);
+      const fx = name.split('-')[1];
+      if (prefix === 'sf' && ['del', 'rev', 'chr'].includes(fx!) && !name.endsWith('-ref')) names.add(`sf-${fx}-ref`);
       if (name.endsWith('-rt1')) names.add(name.slice(0, -4));
     }
     if (!names.size) return;
     fs.mkdirSync(run, { recursive: true });
-    console.log(`DN2 track FX artifacts: ${run} (${names.size} scenarios)`);
+    console.log(`DN2 ${family} artifacts: ${run} (${names.size} scenarios)`);
     const image = path.join(root, 'out', 'sections', 'dn2-1.12', 'section_3_MAIN_OS.bin');
     if (!fs.existsSync(image)) throw new Error(`Missing MAIN OS descriptor image: ${image}`);
     const scenarioFile = path.join(run, 'scenarios.json');

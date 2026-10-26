@@ -218,7 +218,7 @@ def test_no_aot_subset_names_exist(path: str) -> None:
 
 def test_no_aot_subset_covers_the_fx_paths() -> None:
     dn2 = set(verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-trackfx.ts"]) | set(
-        verify.NO_AOT_SUBSET["tests/scenarios/dn2-sendfx.json"]
+        verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-sendfx.ts"]
     )
     for family in ("dry", "br", "over", "srr", "del", "rev", "chr", "mst"):
         assert any(f"-{family}-" in n for n in dn2), family
@@ -228,7 +228,7 @@ def test_no_aot_subset_covers_the_fx_paths() -> None:
 
 
 def test_tier_names_subset_and_full() -> None:
-    path = "tests/scenarios/dn2-sendfx.json"
+    path = "tests/regression/scenarios/dn2-sendfx.ts"
     seconds = {f"s{i:03d}": 1.0 for i in range(20)}
     with pytest.raises(SystemExit):  # a subset name that the file lacks
         verify.tier_names(path, seconds, 7, False)
@@ -236,13 +236,6 @@ def test_tier_names_subset_and_full() -> None:
     assert verify.tier_names(path, seconds, 1, True) == sorted(seconds)
     real = {n: 1.0 for n in verify.NO_AOT_SUBSET[path]}
     assert verify.tier_names(path, real, 1, False) == list(verify.NO_AOT_SUBSET[path])
-
-
-def test_check_no_aot_selection_names_real_tests() -> None:
-    source = (REPO_ROOT / "tests/scenarios/test_dn2_fx.py").read_text()
-    for word in verify.CHECK_NO_AOT_K.replace("(", " ").replace(")", " ").split():
-        if word.startswith("test_"):
-            assert f"def {word}(" in source, word
 
 
 def test_pk_jobs_variable_caps_the_harness(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1279,6 +1279,8 @@ def test_root_format_scripts_share_scope() -> None:
     [
         "tests/regression/scenarios/dn2-trackfx.ts",
         "tests/regression/scenarios/dn2-trackfx.test.ts",
+        "tests/regression/scenarios/dn2-sendfx.ts",
+        "tests/regression/scenarios/dn2-sendfx.test.ts",
         "tests/regression/scenarios/fx-support.ts",
         "tests/regression/vitest.fx.config.ts",
     ],
@@ -1290,10 +1292,16 @@ def test_stock_audio_sources_keep_device_oracles_and_tier_checks(path: str) -> N
     assert "runtime-fixture" not in verify.steps_for([path])
 
 
+def test_python_scenario_fixture_keeps_dt2_owner_checks() -> None:
+    assert {"dt2-check", "dt2-tier-quick", "python-tests", "smoke"} <= set(
+        verify.steps_for(["tests/scenarios/conftest.py"])
+    )
+
+
 @pytest.mark.parametrize(
     "full,all_no_aot", [(False, False), (True, False), (False, True), (True, True)]
 )
-def test_trackfx_gate_tiers_override_ambient_selection(monkeypatch, full, all_no_aot):
+def test_fx_gate_tiers_override_ambient_selection(monkeypatch, full, all_no_aot):
     from types import SimpleNamespace
 
     monkeypatch.setenv("DIGIKIT_TIER", "full" if full else "quick")
@@ -1307,15 +1315,17 @@ def test_trackfx_gate_tiers_override_ambient_selection(monkeypatch, full, all_no
     )
     verify.run_step(gate, "check")
     assert calls[-1][0] == (
-        "check-trackfx",
+        "check-fx",
         ["pnpm", "--filter", "@digi/regression", "test:fx"],
     )
+    assert len(calls) == 1
     env = calls[-1][1]["env"]
     assert env["DIGI_FX_SWEEP"] == str(int(full))
     assert env["DIGI_FX_NO_AOT_SUBSET"] == "0"
     assert env["PATH"] == os.environ["PATH"]
     calls.clear()
     verify.run_step(gate, "check-no-aot")
+    assert len(calls) == 1
     env = calls[-1][1]["env"]
     assert env["DIGI_FX_SWEEP"] == str(int(full and all_no_aot))
     assert env["DIGI_FX_NO_AOT_SUBSET"] == str(int(not all_no_aot))

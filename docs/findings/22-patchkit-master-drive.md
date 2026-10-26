@@ -34,7 +34,7 @@ treats `0x5000` and below as no drive and maps `0x5000 .. 0x7f00` onto 0 .. 1. T
 
 ## Numbers **[D]**
 
-DT2: one-sample card (220 Hz sine), TRIG 1 held; DN2: the TRIG 1 note of `tests/scenarios/dn2-sendfx.json`. Same panel
+DT2: one-sample card (220 Hz sine), TRIG 1 held; DN2: the TRIG 1 note of `tests/regression/scenarios/dn2-sendfx.ts`. Same panel
 script for every run (`tools/patchkit/pk_proof_drive.py`), PCM from `pcm.tap`, left channel active part. "step" is the
 largest |x[n] - x[n-1]|.
 

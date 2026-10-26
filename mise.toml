@@ -101,16 +101,16 @@ run = "uv run python -m tools.emulator.coupled scenario --all --no-build"
 description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python -m tools.emulator.coupled scenario --all --device dt2"
 
 [tasks."scenario:check"]
-run = ["uv run python -m pytest tests/scenarios --slow -q", "DIGI_FX_SWEEP=0 DIGI_FX_NO_AOT_SUBSET=0 pnpm --filter @digi/regression test:fx"]
-description = "Oracle tests: render the DN2 FX scenarios headless and assert measured relationships (fast subset, about 3 min)"
+run = "DIGI_FX_SWEEP=0 DIGI_FX_NO_AOT_SUBSET=0 pnpm --filter @digi/regression test:fx"
+description = "Native Vitest DN2 FX oracles: 61 quick assertions, existing binary and ready inputs required; no build"
 
 [tasks."scenario:check:dt2"]
 run = "uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slow --sweep -q"
 description = "Oracle tests for the DT2 FX scenarios on the one-sample card (about 2 min)"
 
 [tasks."scenario:sweep"]
-run = ["uv run python -m pytest tests/scenarios --slow --sweep -q", "DIGI_FX_SWEEP=1 DIGI_FX_NO_AOT_SUBSET=0 pnpm --filter @digi/regression test:fx"]
-description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"
+run = "DIGI_FX_SWEEP=1 DIGI_FX_NO_AOT_SUBSET=0 pnpm --filter @digi/regression test:fx"
+description = "Native Vitest DN2 FX full sweeps: 191 assertions across 134 scenarios; no build"
 
 [tasks."scenario:replay"]
 run = "uv run python -m tools.emulator.coupled replay"

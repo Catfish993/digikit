@@ -1,14 +1,14 @@
 /** Stock DN2 1.12 coupled audio oracles; Python retains NumPy analysis and render caching. */
 import { expect, test } from 'vitest';
 import { scenarios } from './dn2-trackfx.ts';
-import { trackFxRender } from './fx-support.ts';
+import { fxRender } from './fx-support.ts';
 
 const full = process.env.DIGI_FX_SWEEP === '1';
 const noAotSubset = process.env.DIGI_FX_NO_AOT_SUBSET === '1';
 const quick = ['tf-dry-hold', ...['br', 'over', 'srr'].flatMap((fx) => [0, 44, 127].map((ui) => `tf-${fx}-${ui}`))];
 const noAotHealth = ['tf-dry-hold', 'tf-br-127', 'tf-over-127', 'tf-srr-127'];
 const needs = new Map<string, string[]>();
-const rendered = trackFxRender(needs);
+const rendered = fxRender(needs, { family: 'trackfx', scenarios });
 
 function oracle(identity: string, names: string[], sweep: boolean, body: () => void, subset = false) {
   needs.set(identity, names);

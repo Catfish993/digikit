@@ -2,7 +2,7 @@
 """Which words of the ColdFire -> DSP TX frame does a scenario's parameter change?
 
     uv run python -m tools.emulator.frame_diff dt2 REF NAME [NAME ...] [--file tests/scenarios/dt2-sendfx.json]
-    uv run python -m tools.emulator.frame_diff dn2 REF NAME ... --file tests/scenarios/dn2-sendfx.json
+    uv run python -m tools.emulator.frame_diff dn2 REF NAME ... --file tests/regression/scenarios/dn2-sendfx.ts
 
 Runs REF and the named scenarios (coupled-run, device ready inputs, DT2 on the one-sample card) with a
 guest read of the TX frame buffer at the end of each (DT2 0x80005348, 0x802 bytes; DN2 0x80005e60, 0xa80
