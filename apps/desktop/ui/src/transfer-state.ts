@@ -1,8 +1,8 @@
 // The Transfer page's state, kept for the life of the window: closing the page and opening it again shows the last list at once
 // (it is refreshed behind it), and an install's verify results stay until the next restart.
 import { createSignal } from 'solid-js';
-import type { Prepared } from '@web/modules/dksample';
-import type { SampleEntry } from '@web/modules/samples';
+import type { Prepared } from '@digi/dk-session/dksample';
+import type { SampleEntry } from '@digi/dk-session/samples';
 import type { LocalEntry, Uploads } from './samples-core';
 import { parseMode, type Progress, type TransferView, type Verified } from './transfer-core';
 

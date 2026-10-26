@@ -5,7 +5,7 @@
 import { Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import LivePanel, { type LivePanelApi } from '@web/components/LivePanel';
 import { panels } from '@web/data/faceplates';
-import type { DkSession, RemoteState } from '@web/modules/dkupload-core';
+import type { DkSession, RemoteState } from '@digi/dk-session';
 import { deviceOfPort, remoteNotice, remoteRuntime } from './remote-core';
 import SidePanels from './SidePanels';
 import TargetSelect from './TargetSelect';

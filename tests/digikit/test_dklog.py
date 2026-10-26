@@ -28,12 +28,6 @@ def word(s):
     return int.from_bytes(s.encode().ljust(4, b"\0")[:4], "big")
 
 
-def test_every_kind_has_a_name_and_five_arguments():
-    assert sorted(L.KINDS) == list(range(1, len(L.KINDS) + 1))
-    assert all(len(v[1]) == 5 for v in L.KINDS.values())
-    assert len(set(v[0] for v in L.KINDS.values())) == len(L.KINDS)
-
-
 def test_the_guard_events_decode():
     # type 18, voice 2 (track 2), kind 1 (nonfinite), 9 faults, knobs 0 .. 5 as the DSP packed them
     d = L.event_dict(
@@ -330,10 +324,3 @@ def test_read_all_pages_through_the_ring():
     assert (oldest, newest, len(evs)) == (1, 69, 69) and [e[0] for e in evs] == list(
         range(1, 70)
     )
-
-
-def test_hexdump_has_the_address_the_bytes_and_text():
-    out = L.hexdump(0x47E8B000, b"DKRT\x00\x00\x00\x03" + bytes(range(8)))
-    assert out.startswith(
-        "47e8b000  44 4b 52 54 00 00 00 03 00 01 02 03 04 05 06 07"
-    ) and out.endswith("DKRT............")

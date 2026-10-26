@@ -1,16 +1,8 @@
-"""The tests the changed files select, for a lane while it iterates. Not the merge gate.
+"""Fast host preflight for changed files; full validation belongs to `mise run verify`.
 
-    mise run test:changed [-- --base BRANCH] [--explain] [--deep] [--foreground]
-
-Selects, for the files changed since the merge base with BASE (default: the uncommitted changes): the
-changed test files, the tests that import a changed tools/ or tests/ module (through the import graph,
-following only tests/ helpers and conftest files) or run it by name in a subprocess, the tests a changed
-module of modules/ names, and the Rust tests of the affected crates. No PY_GATE, no build step (a test
-that needs a daemon builds it), digikit scenarios on the quick tier, never a test directory. It prints
-one line per check; a failed check lists the failed files, their failing tests and log paths.
-`--explain` lists each selected file with the reason and what the merge gate (`mise run verify`) adds. A test that reaches
-a changed module only through other tools modules runs with --deep. It runs at nice 10 (--foreground:
-normal priority) and sets cargo's and libtest's pools from the verify CPU budget.
+Static checks and an exact audited
+Python unit-test boundary cannot build firmware, modules, Rust or emulators.
+The existing selection/import graph below remains the full gate's coverage source.
 """
 
 from __future__ import annotations
@@ -20,7 +12,7 @@ import ast
 import re
 import subprocess
 import time
-import xml.etree.ElementTree as ET
+import tomllib
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
@@ -31,7 +23,6 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools import python_env  # noqa: E402
 from tools.devtools import (  # noqa: E402
-    test_outcomes,
     verify,
     verify_budget,
     verify_route,
@@ -315,13 +306,123 @@ def select(files: list[str], deep: bool = False) -> Selection:
     return sel
 
 
+# Audited host-only units: the tests/devtools/ files of the PY_SUITES "devtools" suite (routing/data,
+# mocked commands, bounded subprocesses). Do not infer safety from a directory or a test's name.
+FAST_PYTHON_TESTS = frozenset(
+    test
+    for name, _, tests in verify.PY_SUITES
+    if name == "devtools"
+    for test in tests
+    if test.startswith("tests/devtools/")
+)
+JS_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
+
+
+def typed_files() -> list[str]:
+    """The mypy file list of [tool.mypy].files in pyproject.toml."""
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    files = config.get("tool", {}).get("mypy", {}).get("files")
+    if not files:
+        raise SystemExit("test:changed: no [tool.mypy].files in pyproject.toml")
+    return list(files)
+
+
+def host_plan(files: list[str]) -> list[tuple[str, list[str] | None, str]]:
+    """Use Vitest's import relation, conservatively running all hosts for config changes."""
+    js = [f for f in files if f.endswith(JS_SUFFIXES)]
+    # Native forceRerunTriggers in the host config cover tests that read desktop
+    # sources/assets with fs rather than importing them, including CSS-only edits.
+    assets = [f for f in files if f.startswith("apps/desktop/ui/src/") and f not in js]
+    config = any(
+        f.endswith((".json", ".yaml", ".yml"))
+        or Path(f).name.startswith(
+            (
+                "tsconfig",
+                "vitest.",
+                "vite.",
+                ".oxlintrc",
+                ".prettierrc",
+                "prettier.config",
+            )
+        )
+        for f in files
+    )
+    if not js and not assets and not config:
+        return []
+    sources = js + assets
+    out: list[tuple[str, list[str] | None, str]] = []
+    if config or any(not (ROOT / f).is_file() for f in sources):
+        out.append(("host-tests", ["pnpm", "test:host"], ""))
+    else:
+        out.append(
+            (
+                "host-tests-related",
+                [
+                    "pnpm",
+                    "exec",
+                    "vitest",
+                    "related",
+                    "--run",
+                    "--config",
+                    "vitest.host.config.ts",
+                    "--passWithNoTests",
+                    *sources,
+                ],
+                "",
+            )
+        )
+    existing = [f for f in js if (ROOT / f).is_file()]
+    if existing:
+        out.append(("oxlint", ["pnpm", "exec", "oxlint", *existing], ""))
+    formatted = [
+        f
+        for f in files
+        if (ROOT / f).is_file()
+        and f.endswith((*JS_SUFFIXES, ".json", ".yaml", ".yml", ".css", ".astro"))
+    ]
+    if formatted:
+        out.append(
+            ("prettier", ["pnpm", "exec", "prettier", "--check", *formatted], "")
+        )
+    if js or config:
+        out.append(("types", ["pnpm", "-r", "run", "typecheck"], ""))
+    return out
+
+
 def plan(
     files: list[str], out_dir: Path, deep: bool = False
 ) -> list[tuple[str, list[str] | None, str]]:
-    """(name, command, note): a command of None is skipped, with the note why."""
-    tests = list(select(files, deep).tests)
-    scope = verify.rust_scope(files)
-    out: list[tuple[str, list[str] | None, str]] = [
+    """Only static checks and positively audited host tests, never arbitrary selected tests."""
+    py = [
+        f
+        for f in files
+        if f.endswith(".py")
+        and f.startswith(("tests/", "tools/"))
+        and (ROOT / f).is_file()
+    ]
+    typed = [
+        e for e in typed_files() if any(f == e or f.startswith(e + "/") for f in files)
+    ]
+    tests = sorted(set(select(files, deep).tests) & FAST_PYTHON_TESTS)
+    return [
+        (
+            "ruff-check",
+            [*verify.PY, "-m", "ruff", "check", "--no-cache", *py] if py else None,
+            "no changed Python files",
+        ),
+        (
+            "ruff-format",
+            [*verify.PY, "-m", "ruff", "format", "--check", "--no-cache", *py]
+            if py
+            else None,
+            "no changed Python files",
+        ),
+        (
+            "mypy",
+            [*verify.PY, "-m", "mypy", *typed] if typed else None,
+            "no changed TYPED files",
+        ),
+        ("pathcheck", [*verify.PY, "-m", "tools.devtools.pathcheck"], ""),
         (
             "python-tests",
             verify.python_tests_command(
@@ -329,213 +430,102 @@ def plan(
             )
             if tests
             else None,
-            "no test selected",
-        )
+            "no audited host Python tests selected",
+        ),
+        *host_plan(files),
     ]
-    if scope == []:
-        out.append(("rust-tests", None, "no changed file reaches a Rust test"))
-    elif scope is None:
-        out.append(
-            ("rust-tests", None, "needs the whole workspace: left to `mise run verify`")
-        )
-    else:
-        out.append(("rust-tests", verify.rust_tests_command(scope), ""))
-    return out
 
 
-def _tail(path: Path, n: int, indent: str) -> list[str]:
-    """The last N lines of the file at PATH, indented."""
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
-    return [f"{indent}{line}" for line in lines[-n:]]
-
-
-def _failing_cases(xml: Path, limit: int = 10) -> list[str]:
-    """`name: message` for the testcases of the JUnit file XML that have a failure or error child."""
-    try:
-        root = ET.parse(xml).getroot()
-    except (OSError, ET.ParseError):
-        return []
-    out: list[str] = []
-    for case in root.iter("testcase"):
-        child = case.find("failure")
-        if child is None:
-            child = case.find("error")
-        if child is None:
-            continue
-        text = child.get("message") or child.text or ""
-        first = (text.strip().splitlines() or [""])[0][:200]
-        out.append(f"    {case.get('name', '?')}: {first}")
-        if len(out) >= limit:
-            break
-    return out
-
-
-def failure_report(out_dir: Path) -> tuple[str, list[str]]:
-    """The PASS/FAIL headline of a python-tests run and the detail lines for its failed files.
-
-    Reads OUT_DIR/summary.tsv, OUT_DIR/xml/<slug>.xml and OUT_DIR/logs/<slug>.log."""
-    rows: list[dict[str, str]] = []
-    with (out_dir / "summary.tsv").open(encoding="utf-8") as f:
-        header = f.readline().rstrip("\n").split("\t")
-        for line in f:
-            if line.strip():
-                rows.append(
-                    dict(zip(header, line.rstrip("\n").split("\t"), strict=False))
-                )
-    seconds = sum(float(r.get("seconds") or 0) for r in rows)
-
-    def num(r: dict[str, str], key: str) -> int:
-        return int(r.get(key) or 0)
-
-    bad = [
-        r
-        for r in rows
-        if r["status"] != "OK" or num(r, "failed") + num(r, "errors") > 0
-    ]
-    if not bad:
-        passed = sum(num(r, "passed") for r in rows)
-        skipped = sum(num(r, "skipped") for r in rows)
-        return (
-            f"PASS python-tests: {len(rows)} files, {passed} passed, "
-            f"{skipped} skipped ({seconds:.0f} s)",
-            [],
-        )
-    head = (
-        f"FAIL python-tests: {len(bad)} of {len(rows)} files failed ({seconds:.0f} s)"
+def print_deferred(files: list[str], sel: Selection) -> None:
+    print("Deferred to `mise run verify` (fast checks do not complete validation):")
+    python_gate = "python-tests" in verify.steps_for(files)
+    gate_python = verify.python_test_plan(files, False) if python_gate else []
+    selected = (
+        set(sel.tests)
+        | set(sel.deep_only)
+        | {rel for rel, _ in verify.python_files([p for p, _ in gate_python])}
     )
-    detail: list[str] = []
-    for r in bad:
-        slug = test_outcomes.slug_of(r["file"])
-        log = out_dir / "logs" / f"{slug}.log"
-        try:
-            shown = log.relative_to(ROOT)
-        except ValueError:
-            shown = log
-        detail.append(
-            f"  {r['file']}: {r['status']}, {num(r, 'failed')} failed, "
-            f"{num(r, 'errors')} errors  (log: {shown})"
-        )
-        cases = _failing_cases(out_dir / "xml" / f"{slug}.xml")
-        detail += cases or _tail(log, 15, "    ")
-    return head, detail
-
-
-_RUST_KEEP = re.compile(r"^(---- |test result:|FAIL)|panicked at")
-
-
-def rust_failure_lines(output: str) -> list[str]:
-    """The lines of cargo OUTPUT that show a failure (at most 40), else its last 30 lines."""
-    lines = output.strip().splitlines()
-    hits = [line for line in lines if _RUST_KEEP.search(line)]
-    return hits[:40] if hits else lines[-30:]
-
-
-def _count_gate_adds(gate_adds: list[str]) -> tuple[int, int]:
-    """(steps, more python files) that the gate adds."""
-    steps = 0
-    more = 0
-    for line in gate_adds:
-        if line.startswith("steps:"):
-            steps = len(line.removeprefix("steps:").split(","))
-        m = re.match(r"python-tests: (\d+) more files", line)
-        if m:
-            more = int(m.group(1))
-    return steps, more
+    ran = set(sel.tests) & FAST_PYTHON_TESTS
+    for path in sorted(selected - ran):
+        print(f"  Python: {path}")
+    scope = verify.rust_scope(files)
+    if scope is None:
+        print("  Rust: whole workspace")
+    elif scope:
+        print(f"  Rust crates: {', '.join(scope)}")
+    for path in files:
+        print(f"  Full gate coverage: {path}")
+    for line in sel.gate_adds:
+        if python_gate or not line.startswith("python-tests:"):
+            print(f"  {line}")
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Tests the changed files select; not the merge gate."
+        description="Fast host preflight; not complete validation or the merge gate."
     )
     ap.add_argument("--base", default="HEAD", help="merge base ref (default: HEAD)")
+    ap.add_argument("--head", help="compare committed changes through this revision")
     ap.add_argument(
-        "--explain", action="store_true", help="print the selection, run nothing"
+        "--files", nargs="+", help="explicit changed paths instead of git discovery"
+    )
+    ap.add_argument(
+        "--explain", action="store_true", help="print the checks, run nothing"
     )
     ap.add_argument(
         "--deep",
         action="store_true",
-        help="also run the tests that reach a changed module only through other tools modules",
+        help="include transitive tooling import selection within the audited host boundary",
     )
     ap.add_argument(
         "--foreground",
         action="store_true",
-        help="run at normal priority (default: nice 10, like `verify`)",
+        help="run at normal priority (default: nice 10)",
     )
     args = ap.parse_args(argv)
     if not args.explain:
         verify_budget.lower_priority(args.foreground)
-    files = verify.changed_files(args.base)
-    sel = select(files, args.deep)
-    scope = verify.rust_scope(files)
-    if scope is None:
-        rust = "whole workspace, left to the gate"
-    else:
-        rust = ", ".join(scope) if scope else "no Rust test"
-    header = (
-        f"test:changed: {len(sel.tests)} test files for {len(files)} changed files "
-        f"since {args.base}; rust: {rust}"
+    files = (
+        args.files
+        if args.files is not None
+        else (
+            verify.changed_files(args.base, args.head)
+            if args.head
+            else verify.changed_files(args.base)
+        )
     )
-    if sel.deep_only and not args.deep:
-        header += f"; {len(sel.deep_only)} more with --deep"
-    print(header)
-    if args.explain:
-        for test, reason in sel.tests.items():
-            print(f"  {test}  ({reason})")
-        print("the gate adds:")
-        for line in sel.gate_adds or ["nothing"]:
-            print(f"  {line}")
+    sel = select(files, args.deep)
+    print(f"test:changed: fast preflight for {len(files)} changed files")
+    print_deferred(files, sel)
     failed: list[str] = []
     out_dir = Path("OUT") if args.explain else Path(digi_env.run_dir("test-changed"))
     for name, cmd, note in plan(files, out_dir, args.deep):
         if cmd is None:
-            if args.explain:
-                print(f"SKIP {name}: {note}", flush=True)
+            print(f"SKIP {name}: {note}", flush=True)
             continue
         if args.explain:
-            print(f"RUN  {name}: {' '.join(cmd[:8])}{' ...' if len(cmd) > 8 else ''}")
+            print(f"RUN  {name}: {' '.join(cmd)}")
             continue
         start = time.monotonic()
-        env = verify_budget.bounded_env(name, verify_budget.resolve_budget())
-        env.setdefault("DIGIKIT_TIER", "quick")  # bounded_env starts from os.environ
-        done = subprocess.run(
-            cmd, cwd=ROOT, env=python_env(env), capture_output=True, text=True
+        env = verify_budget.bounded_env(
+            "python-tests" if name == "python-tests" else "",
+            verify_budget.resolve_budget(),
         )
-        seconds = time.monotonic() - start
-        output = done.stdout + done.stderr
         if name == "python-tests":
-            report: tuple[str, list[str]] | None
-            try:
-                report = failure_report(out_dir)
-            except (OSError, KeyError):
-                report = None
-            if report is not None and not done.returncode:
-                print(report[0], flush=True)
-                continue
+            print(f"python-tests logs: {out_dir}", flush=True)
+        done = subprocess.run(cmd, cwd=ROOT, env=python_env(env))
+        if done.returncode:
             failed.append(name)
-            if report is None or report[0].startswith("PASS"):
-                tail = "\n".join(output.strip().splitlines()[-15:])
-                print(f"FAIL {name} ({seconds:.0f} s)\n{tail}", flush=True)
-            else:
-                print("\n".join([report[0], *report[1]]), flush=True)
-        elif done.returncode:
-            failed.append(name)
-            lines = "\n".join(rust_failure_lines(output))
-            print(f"FAIL {name} ({seconds:.0f} s)\n{lines}", flush=True)
-        else:
-            print(f"PASS {name} ({seconds:.0f} s)", flush=True)
+        print(
+            f"{'FAIL' if done.returncode else 'PASS'} {name} ({time.monotonic() - start:.0f} s)",
+            flush=True,
+        )
     if failed:
         print(f"test:changed: FAILED: {', '.join(failed)}.")
     elif args.explain:
         print("test:changed: explained, nothing run.")
     else:
-        steps, more = _count_gate_adds(sel.gate_adds)
-        print(
-            f"test:changed: all passed. The gate adds {steps} steps and {more} more "
-            "python files (--explain lists them)."
-        )
+        print("test:changed: fast checks passed; deferred gate coverage remains.")
     return 1 if failed else 0
 
 

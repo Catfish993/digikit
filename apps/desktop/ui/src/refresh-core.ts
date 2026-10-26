@@ -1,4 +1,4 @@
-// When the Transfer page reads by itself (pure; apps/web/tests/transfer-page-ui.test.mjs). There is no Refresh button: the page reads when it
+// When the Transfer page reads by itself (pure; apps/desktop/ui/tests/transfer-page-ui.test.ts). There is no Refresh button: the page reads when it
 // opens, when the target or the mode changes, after every job, when the window gets the focus, and the folder on the computer is watched with
 // a cheap listing every few seconds. Nothing reads while a job runs (a job that writes to the device is never disturbed).
 

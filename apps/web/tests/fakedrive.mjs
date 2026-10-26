@@ -1,8 +1,8 @@
 // A fake Digitakt II that answers the stock MidiRpc FsSample commands byte for byte (docs/MIDI-SYSEX-RPC.md section 12), as a `DkTransport` for `DkSession`.
 // Shared by the rpcfiles and samples tests.
 import assert from 'node:assert/strict';
-import { decode8in7, encode8in7 } from '../src/modules/dkupload-core.ts';
-import { RPC_FILE, TRAILER } from '../src/modules/rpcfiles.ts';
+import { decode8in7, encode8in7 } from '@digi/dk-session';
+import { RPC_FILE, TRAILER } from '@digi/dk-session/rpcfiles';
 
 export const concat = (...p) => Uint8Array.from(Buffer.concat(p.map((x) => Buffer.from(x))));
 export const be32 = (n) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);

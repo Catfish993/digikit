@@ -1,7 +1,7 @@
 // The Modules panel: the module store of a running device (or the emulator), over the upload protocol
 // (docs/design/digikit-upload.md). List, add .dkm files (picker or drag and drop), delete, repack.
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
-import { hexSha256, repackMissing, storePath, type DkEntry, type DkInfo } from '../modules/dkupload-core.ts';
+import { hexSha256, repackMissing, storePath, type DkEntry, type DkInfo } from '@digi/dk-session';
 import { errorLine, formatBytes, isCancelled, isTimeout, type ModuleBackend } from '../modules/backend.ts';
 import './modules-panel.css';
 

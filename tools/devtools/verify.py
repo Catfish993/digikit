@@ -2,7 +2,7 @@
 
     uv run python -m tools.devtools.verify                  # steps for the uncommitted changes
     uv run python -m tools.devtools.verify --base BRANCH    # a lane: its commits since BRANCH plus uncommitted changes
-    uv run python -m tools.devtools.verify --full           # every step (the tier sweep on NO_AOT_SUBSET; --all-no-aot: all 134 scenarios)
+    uv run python -m tools.devtools.verify --full           # full acceptance and tier-sweep (NO_AOT_SUBSET; --all-no-aot: all 134 scenarios)
     uv run python -m tools.devtools.verify --full --dt2     # plus the full DT2 FX tier sweep
     uv run python -m tools.devtools.verify --only pins,check
     uv run python -m tools.devtools.verify --rerun-failed   # only the steps that failed in the last run
@@ -11,7 +11,7 @@
     uv run python -m tools.devtools.verify --full --all-no-aot   # AOT = no-AOT equality on every FX scenario, not the fixed subset
     uv run python -m tools.devtools.verify --explain        # show the routing and the plan, run nothing
     uv run python -m tools.devtools.verify --base A --head B --explain   # the same for the commits A..B
-(`mise run verify:pre` is the quick lane check, tools/devtools/verify_pre.py; this is the merge gate.)
+(Use owner checks while iterating; `mise run test:changed` is the fast host preflight.)
 
 CPU budget (tools/devtools/verify_budget.py, docs/TESTING.md "CPU budget"): the whole gate has a budget of
 cores (--jobs N, DIGI_VERIFY_BUDGET, else the physical cores - 2); a step starts when its share is free and
@@ -31,11 +31,12 @@ times of earlier runs (tools/devtools/verify_times.py; DIGI_PY_TIMEOUT per file 
 tier steps run NO_AOT_SUBSET (a fixed subset of the FX scenarios, documented there; --all-no-aot: every seventh
 for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups into small chunks of scenarios and run
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
-check-no-aot runs CHECK_NO_AOT_K, 17 of the 61 oracle tests (--all-no-aot: all).
-python-tests runs the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
+check-no-aot runs 17 native FX assertions even with --full (--all-no-aot: 61 normally, 191 with --full).
+Normal routing includes relevant stock, runtime and module acceptance; full tier sweeps stay explicit.
+python-tests runs the PY_CHECKS commands (ruff, ruff format, mypy, pathcheck), the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
-every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
+every changed tests/**/test_*.py, and the
 test files that import a changed tests/support module. With
 --full it runs PY_GATE plus every suite, not all of tests/ (`mise run test` runs all of tests/).
 rust-tests runs cargo nextest run --workspace --release, or only the crates rust_ws.affected_packages names
@@ -57,6 +58,7 @@ import fnmatch
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -80,21 +82,31 @@ from tools.emulator import (  # noqa: E402
     coupled,  # noqa: E402
     digi_env,  # noqa: E402
 )
+from tools.patchkit import modroots  # noqa: E402
 
 PY = ["uv", "run", "python"]
-FX_FILES = ("tests/scenarios/dn2-trackfx.json", "tests/scenarios/dn2-sendfx.json")
-DT2_FX_FILES = ("tests/scenarios/dt2-trackfx.json", "tests/scenarios/dt2-sendfx.json")
-# python-tests always runs PY_GATE: lint, types, paths and the staleness checks (built module objects and
-# port files match their sources). A suite of PY_SUITES, (name, trigger prefixes, test paths), runs when a
+FX_FILES = (
+    "tests/regression/scenarios/dn2-trackfx.ts",
+    "tests/regression/scenarios/dn2-sendfx.ts",
+)
+DT2_FX_FILES = (
+    "tests/regression/scenarios/dt2-trackfx.ts",
+    "tests/regression/scenarios/dt2-sendfx.ts",
+)
+# python-tests always runs PY_GATE (the staleness checks: built module objects and port files match their
+# sources) and PY_CHECKS (lint, format, types, paths). A suite of PY_SUITES, (name, trigger prefixes, test paths), runs when a
 # changed file starts with one of its prefixes (all suites with --full); a suite with a test directory
 # triggers only on files that are not Python modules of tools/ or tests/, which select the tests that
 # reach them in the import graph instead (changed_tests.gate_tests). Test paths may be globs or
 # directories; one that matches nothing is an error.
-PY_GATE = (
-    "tests/devtools/test_lint.py",
-    "tests/devtools/test_types.py",
-    "tests/devtools/test_pathcheck_repo.py",
-    "tests/patchkit/test_pk_current.py",
+PY_GATE = ("tests/patchkit/test_pk_current.py",)
+# Plain commands python-tests runs as sub-checks (label "python-tests:NAME"): lint, format, types, paths.
+# ruff and mypy read their file lists from pyproject.toml.
+PY_CHECKS: tuple[tuple[str, list[str]], ...] = (
+    ("ruff", [sys.executable, "-m", "ruff", "check", "--no-cache"]),
+    ("ruff-format", [sys.executable, "-m", "ruff", "format", "--check", "--no-cache"]),
+    ("mypy", [sys.executable, "-m", "mypy"]),
+    ("pathcheck", [sys.executable, "-m", "tools.devtools.pathcheck"]),
 )
 PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
@@ -165,7 +177,6 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         (
             "tools/devtools/verify.py",
             "tools/devtools/verify_route.py",
-            "tools/devtools/verify_pre.py",
             "tools/devtools/changed_tests.py",
             "tools/devtools/agent_guard.py",
             ".claude/settings.json",
@@ -207,7 +218,11 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
 STEPS = (
     "build",
     "desktop",
+    "host",
     "web",
+    "stock",
+    "runtime-fixture",
+    "module-load",
     "pins",
     "check",
     "check-no-aot",
@@ -241,7 +256,7 @@ TIER_QUICK_EVERY = 7
 # The DT2 files have fewer scenarios (their numbers differ) and run in the interpreter alone (about 80 s per
 # audio second), so the DT2 pick is the shortest one per path.
 NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
-    "tests/scenarios/dn2-trackfx.json": (
+    "tests/regression/scenarios/dn2-trackfx.ts": (
         "tf-dry-hold",
         "tf-br-127",
         "tf-over-71",
@@ -251,7 +266,7 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
         "tf-rev-71",
         "tf-chr-71",
     ),
-    "tests/scenarios/dn2-sendfx.json": (
+    "tests/regression/scenarios/dn2-sendfx.ts": (
         "sf-del-ref",
         "sf-del-fb-u127",
         "sf-del-ppwidth-u127",
@@ -262,7 +277,7 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
         "sf-chr-speed-u127",
         "sf-mst-ratio",
     ),
-    "tests/scenarios/dt2-trackfx.json": (
+    "tests/regression/scenarios/dt2-trackfx.ts": (
         "tf-dry-hold",
         "tf-br-127",
         "tf-over-127",
@@ -271,21 +286,12 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
         "tf-rev-127",
         "tf-chr-127",
     ),
-    "tests/scenarios/dt2-sendfx.json": ("sf-mst-ratio",),
+    "tests/regression/scenarios/dt2-sendfx.ts": ("sf-mst-ratio",),
 }
-# check-no-aot without --all-no-aot: 17 of the 61 oracle tests of tests/scenarios/test_dn2_fx.py (pytest -k):
-# health and read-back of one scenario per effect (voice, bit reduction, overdrive, SRR, delay, reverb, chorus)
-# and the relation test of each effect whose series renders a sweep (SRR rate, reverb RT60, chorus speed) and the delay
-# default feedback level. The tier steps compare the PCM itself on NO_AOT_SUBSET.
-CHECK_NO_AOT_K = (
-    "(test_healthy or test_readback) and "
-    "(tf-dry-hold or tf-br-127 or tf-over-127 or tf-srr-127 or sf-del-time-u20 or sf-rev-decay-u20 or sf-chr-speed-u20)"
-    " or test_delay_default_feedback_minus_6_db or test_srr_rate_falls or test_chorus_rate_rises_with_speed"
-    " or test_reverb_rt60_rises_with_decay"
-)
+# Normal broad verification excludes full-tier or explicitly requested steps.
 EVERYTHING = tuple(s for s in STEPS if s not in ("tier-sweep", "dt2-tier-sweep"))
 FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
-# A change to the routing itself selects every step and the whole python plan: a routing bug
+# A change to the routing itself selects every normal step and the whole python plan: a routing bug
 # would otherwise drop coverage without anyone seeing it.
 SELF_BROAD = ("tools/devtools/verify.py", "tools/devtools/verify_route.py")
 # Paths that cannot change what the patchkit smoke matrix runs: the desktop console UI (TS, TSX, CSS, its
@@ -303,6 +309,25 @@ UI_ONLY: tuple[str, ...] = (
     "docs/*",
     "*.md",
 )
+# Exact maintenance paths whose existing owner host/Python coverage is sufficient. Keep this a
+# table, not a prefix rule: neighbouring helpers and configuration stay conservative.
+SMOKE_EXEMPT: dict[str, str] = {
+    "tools/devtools/agent_guard.py": "agent guard",
+    "tools/devtools/pathcheck.py": "path checker",
+    ".claude/settings.json": "agent settings",
+}
+# Host Vitest test files (vitest.host.projects.json). The host config runs them without a device, so
+# a change that only touches them cannot change the smoke matrix. Helpers, config and new files that
+# match no glob stay conservative.
+HOST_PROJECTS = ROOT / "vitest.host.projects.json"
+
+
+def host_test_globs() -> tuple[str, ...]:
+    """The test globs of the host Vitest projects (`*` crosses `/`, like UI_ONLY, so `**/` is dropped)."""
+    projects = json.loads(HOST_PROJECTS.read_text())
+    return tuple(f"{p['dir']}/{p['include']}".replace("**/", "") for p in projects)
+
+
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
@@ -312,13 +337,46 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     # the agent hook settings (tools/devtools/agent_guard.py); .claude/skills/ holds links and .agents/skills/ markdown (the skills test)
     ((".claude/", ".agents/"), ("python-tests",)),
     (
-        (
-            "tests/scenarios/dt2-",
-            "tests/scenarios/test_dt2",
-            "tools/emulator/gen_dt2fx.py",
-            "tools/emulator/dt2fx.py",
-        ),
+        ("tools/emulator/dt2fx.py",),
         ("dt2-check", "dt2-tier-quick", "python-tests"),
+    ),
+    (
+        (
+            *DT2_FX_FILES,
+            "tests/regression/scenarios/dt2-fx.test.ts",
+        ),
+        ("host", "dt2-check", "dt2-tier-quick", "python-tests"),
+    ),
+    (
+        (
+            "tests/regression/scenarios/fx-support.ts",
+            "tests/regression/vitest.config.ts",
+        ),
+        (
+            "host",
+            "check",
+            "check-no-aot",
+            "tier-quick",
+            "dt2-check",
+            "dt2-tier-quick",
+            "python-tests",
+        ),
+    ),
+    (
+        ("tests/regression/scenarios/",),
+        ("host", "check", "check-no-aot", "tier-quick"),
+    ),
+    (
+        (
+            "packages/control-client/",
+            "packages/test-support/",
+            "tests/regression/",
+            "vitest.host.config.ts",
+            "vitest.host.projects.json",
+            "packages/dk-session/tests/",
+            "apps/desktop/ui/tests/",
+        ),
+        ("host",),
     ),
     (
         (
@@ -326,14 +384,17 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             ".prettierrc.json",
             ".prettierignore",
             ".editorconfig",
-            "packages/control-client/",
-            "packages/test-support/",
-            "tests/regression/",
+            "packages/dk-session/",
         ),
         ("web",),
     ),
     (("apps/web/",), ("web",)),
-    (("apps/desktop/",), ("desktop", "web")),
+    # The mixed web samples suite still imports these desktop sources.
+    (
+        ("apps/desktop/ui/src/card-core.ts", "apps/desktop/ui/src/samples-core.ts"),
+        ("desktop", "web"),
+    ),
+    (("apps/desktop/",), ("desktop", "host")),
     (
         (
             "tools/sharc_dev/sharc_core/",
@@ -469,7 +530,7 @@ def expand_mise(
     files: list[str], base: str, head: str | None
 ) -> tuple[list[str], dict[str, str]]:
     """Replace a changed mise.toml by the paths of the tools its changed tasks run (a broad
-    change keeps mise.toml, which selects every step). Also returns path -> origin note."""
+    change keeps mise.toml, which selects every normal step). Also returns path -> origin note."""
     if "mise.toml" not in files:
         return files, {}
     since = merge_base(base, head)
@@ -485,7 +546,7 @@ def expand_mise(
     return sorted(set(rest) | set(paths)), origin
 
 
-def route(path: str) -> tuple[str, tuple[str, ...]]:
+def base_route(path: str) -> tuple[str, tuple[str, ...]]:
     """How one changed path is routed: (matched prefix or "docs"/"fallback", steps)."""
     if path.endswith(".md"):
         return "docs", ()  # documentation selects no steps
@@ -499,21 +560,33 @@ def route(path: str) -> tuple[str, tuple[str, ...]]:
     return "fallback", FALLBACK
 
 
+def route(path: str) -> tuple[str, tuple[str, ...]]:
+    """Keep the existing owner route and add relevant native acceptance."""
+    label, original = base_route(path)
+    wanted = set(original)
+    for step in verify_route.ACCEPTANCE_DIRS:
+        if verify_route.acceptance_files(step, [path]):
+            wanted.add(step)
+    return label, tuple(s for s in STEPS if s in wanted)
+
+
+def acceptance_plan(step: str, files: list[str]) -> list[str]:
+    """A broad owner must not be narrowed by a second leaf change; empty means all files."""
+    if any(step in base_route(path)[1] for path in files):
+        return []
+    return verify_route.acceptance_files(step, files)
+
+
 def is_python_source(path: str) -> bool:
-    """A .py file of tools/ or tests/ outside tests/scenarios/ (python-tests routes it by the import graph)."""
-    return (
-        path.endswith(".py")
-        and path.startswith(("tools/", "tests/"))
-        and not path.startswith("tests/scenarios/")
-    )
+    """A .py file of tools/ or tests/ (python-tests routes it by the import graph)."""
+    return path.endswith(".py") and path.startswith(("tools/", "tests/"))
 
 
 def is_changed_test(path: str) -> bool:
-    """A changed test file that python-tests runs itself (scenario tests have steps)."""
+    """A changed test file that python-tests runs itself."""
     name = path.rsplit("/", 1)[-1]
     return (
         path.startswith("tests/")
-        and not path.startswith("tests/scenarios/")
         and name.startswith("test_")
         and name.endswith(".py")
         and (ROOT / path).is_file()
@@ -578,11 +651,60 @@ def python_tests(files: list[str], full: bool) -> list[str]:
     return [path for path, _ in python_test_plan(files, full)]
 
 
+def ui_only_path(path: str) -> bool:
+    """Whether one path matches the UI-only smoke exemption."""
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in UI_ONLY)
+
+
 def ui_only(files: list[str]) -> bool:
     """Whether every changed file matches UI_ONLY (no file: False)."""
-    return bool(files) and all(
-        any(fnmatch.fnmatchcase(path, pattern) for pattern in UI_ONLY) for path in files
-    )
+    return bool(files) and all(ui_only_path(path) for path in files)
+
+
+def host_test_path(path: str) -> bool:
+    """Whether one path is a host Vitest test file (vitest.host.projects.json)."""
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in host_test_globs())
+
+
+def smoke_cells(files: list[str]) -> list[str] | None:
+    """Filter only the three audited production leaves plus existing exemptions; None means full."""
+    leaves: set[str] = set()
+    for path in files:
+        if ui_only_path(path) or path in SMOKE_EXEMPT or host_test_path(path):
+            continue
+        mid = modroots.module_id(path)
+        if mid not in verify_route.RUNTIME_UPLOADS:
+            return None
+        leaves.add(mid)
+    return verify_route.module_smoke_cells(leaves) if leaves else None
+
+
+def smoke_reason(files: list[str]) -> str | None:
+    """Why this complete changed-file set may skip the smoke matrix, if any."""
+    if ui_only(files):
+        return "UI-only change"
+    maintenance: list[str] = []
+    ui = False
+    host = False
+    for path in files:
+        if ui_only_path(path):
+            ui = True
+        elif reason := SMOKE_EXEMPT.get(path):
+            maintenance.append(reason)
+        elif host_test_path(path):
+            host = True
+        else:
+            if smoke_cells(files) == []:
+                return "audited production leaves have no dependent cells in the smoke matrix"
+            return None
+    if maintenance:
+        if host:
+            maintenance.append("host-only test")
+        kind = "UI-only and smoke-exempt" if ui else "smoke-exempt"
+        return f"{kind} maintenance change ({', '.join(sorted(maintenance))})"
+    if host:
+        return "UI-only and host-only test change" if ui else "host-only test change"
+    return None
 
 
 def steps_for(files: list[str]) -> tuple[str, ...]:
@@ -596,9 +718,11 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
             and any(path.startswith(triggers) for _, triggers, _ in PY_SUITES)
         ):
             wanted.add("python-tests")
-    # the patchkit smoke matrix runs whenever the gate runs anything, except for UI-only change sets
-    # (docs-only: nothing at all)
-    if wanted and not ui_only(files):
+    if "web" in wanted:
+        wanted.add("host")
+    # The patchkit smoke matrix runs whenever the gate runs anything, except for the narrowly
+    # documented complete change sets above (docs-only: nothing at all).
+    if wanted and not smoke_reason(files):
         wanted.add("smoke")
     return tuple(s for s in STEPS if s in wanted)
 
@@ -672,11 +796,15 @@ class Gate:
         rust_packages: list[str] | None = None,
         all_no_aot: bool = False,
         budget: int = 1,
+        acceptance: dict[str, list[str]] | None = None,
+        smoke_selection: list[str] | None = None,
     ) -> None:
         self.out = out
         self.rust_packages = rust_packages
         self.all_no_aot = all_no_aot
         self.budget = budget
+        self.acceptance = acceptance or {}
+        self.smoke_selection = smoke_selection
         # variables set by an earlier node for the later ones (the pinned PGO daemons of build-daemons)
         self.shared_env: dict[str, str] = {}
         self.py_tests = py_tests if py_tests is not None else list(PY_GATE)
@@ -963,19 +1091,21 @@ def desktop_check(gate: Gate) -> None:
     gate.run("desktop", cmd, env=env)
 
 
+def host_check(gate: Gate) -> None:
+    gate.run("host", ["pnpm", "verify:host"])
+
+
 def web_check(gate: Gate) -> None:
     web = ROOT / "apps" / "web"
     gate.run(
         "patchkit-wasm", [*PY, "-m", "tools.emulator.native_wasm", "--patchkit-only"]
     )
-    gate.run("web-lint", ["pnpm", "exec", "oxlint"])
-    gate.run("web-format", ["pnpm", "exec", "prettier", "--check", "."])
     gate.run(
         "web-tests",
         ["node", f"--test-concurrency={gate.share()}", "--test", "tests/*.test.mjs"],
         cwd=web,
     )
-    gate.run("web-types", ["npx", "astro", "check"], cwd=web)
+    gate.run("web-types", ["pnpm", "--filter", "@digi/web", "check"])
 
 
 # Steps that need a built binary: DN2 steps the DN2 coupled-run, DT2 steps the DT2 one.
@@ -984,7 +1114,14 @@ DN2_BINARY = ("pins", "check", "check-no-aot", "tier-quick", "tier-sweep")
 DT2_BINARY = ("dt2-tone", "dt2-check", "dt2-tier-quick", "dt2-tier-sweep")
 # Test files that drive a `digi-emud` daemon: python-tests builds the daemons once (build-daemons) when
 # its plan has one of them (a file not listed here still works: it builds the daemon itself).
-DAEMON_NODES = ("python-tests", "card", "smoke")
+DAEMON_NODES = (
+    "python-tests",
+    "card",
+    "smoke",
+    "stock",
+    "runtime-fixture",
+    "module-load",
+)
 DAEMON_TESTS = (
     "tests/digikit/",
     "tests/patchkit/smoke/",
@@ -1045,6 +1182,8 @@ def plan(
     for the build that makes its binary; rust-tests waits for `build` when that runs (both fill the
     prod target dir, so the generated core compiles once)."""
     nodes = list(steps)
+    if "web" in nodes and "host" not in nodes:
+        nodes.append("host")
     wanted = {
         "build": any(s in DN2_BINARY for s in steps),
         "build-dt2": any(s in DT2_BINARY for s in steps),
@@ -1058,6 +1197,8 @@ def plan(
     for node in nodes:
         if node in chain:
             deps[node] = tuple(chain[: chain.index(node)])
+        elif node == "web":
+            deps[node] = ("host",)
         elif node in DN2_BINARY:
             deps[node] = ("build",)
         elif node in DT2_BINARY:
@@ -1251,8 +1392,45 @@ def explain(
             note = f"  [{origin[path]}]" if origin and path in origin else ""
             print(f"  {path} -> {label} -> {', '.join(wanted) or 'no steps'}{note}")
     print(f"steps: {', '.join(steps) or 'nothing to run'}")
-    if per_file and steps and "smoke" not in steps and ui_only(files):
-        print("smoke: skipped, UI-only change")
+    if per_file and steps and "smoke" not in steps and (reason := smoke_reason(files)):
+        print(f"smoke: skipped, {reason}")
+    elif per_file and "smoke" in steps and (cells := smoke_cells(files)) is not None:
+        print(
+            "smoke: selected dependent matrix cells for audited production leaves: "
+            + "; ".join(cells)
+        )
+    elif per_file and "smoke" in steps:
+        conservative = [
+            path
+            for path in files
+            if path not in SMOKE_EXEMPT
+            and not ui_only_path(path)
+            and not host_test_path(path)
+        ]
+        if conservative:
+            print(f"smoke: selected, conservative path: {', '.join(conservative)}")
+    if not per_file and "smoke" in steps:
+        print("smoke: full matrix for explicit/full/rerun acceptance")
+    for step in verify_route.ACCEPTANCE_DIRS:
+        if step in steps:
+            selected = acceptance_plan(step, files)
+            print(
+                f"{step}: native Vitest files (relevant changes, or all for broad/explicit acceptance): "
+                + ", ".join(selected or ["all"])
+            )
+            if step == "module-load" or (
+                step == "runtime-fixture" and runtime_pack_modules(selected)
+            ):
+                print(
+                    f"{step}: prerequisite pk_build --check, then fresh patchkit pack into its run directory; "
+                    "may build module toolchains/patchkit CLI, never emulator daemons"
+                )
+            if step == "runtime-fixture" and (
+                not selected or "runtime/samples-live.test.ts" in selected
+            ):
+                print(
+                    f"{step}: prerequisite plusdrive CLI build (tools.firmware.plusdrive_check --build-only)"
+                )
     if "rust-tests" in steps:
         scope = ", ".join(rust_packages) if rust_packages else "whole workspace"
         print(f"rust-tests packages: {scope}")
@@ -1317,8 +1495,13 @@ def finish_python(gate: Gate) -> None:
     bad = test_outcomes.write_reports(out, records, python_timeout()) if records else []
     text = "\n".join(test_outcomes.record_line(r) for r in records)
     (gate.out / "python-tests.log").write_text(text + "\n")
+    for label, cmd in PY_CHECKS:
+        gate.run(f"python-tests:{label}", cmd)
+    checks = [n for n in gate.failed if n.startswith("python-tests:")]
     problem: str | None = None
-    if bad or lost:
+    if checks:
+        problem = f"checks failed: {', '.join(checks)}"
+    elif bad or lost:
         shown = ", ".join([*bad, *lost][:10])
         problem = f"{len(bad) + len(lost)} files failed: {shown}"
     elif records:
@@ -1329,16 +1512,64 @@ def finish_python(gate: Gate) -> None:
     gate.report("python-tests", problem, time.monotonic() - began, text)
 
 
-def run_step(gate: Gate, step: str) -> None:
-    scenario_tests = [
-        *PY,
-        "-m",
-        "pytest",
-        "tests/scenarios",
-        "--slow",
-        "-q",
-        "--no-build",
+def prepare_acceptance_modules(gate: Gate, step: str, modules: list[str]) -> Path:
+    """Check existing objects and pack fresh DKMs; each acceptance node owns its directory/logs."""
+    directory = gate.out / step / "modules"
+    checks = []
+    for mid in modules:
+        name = f"{step}-check-{mid.rsplit('/', 1)[-1]}"
+        checks.append(name)
+        gate.run(
+            name,
+            [
+                *PY,
+                "-m",
+                "tools.patchkit.pk_build",
+                "build",
+                str(modroots.module_dir(mid)),
+                "--check",
+            ],
+        )
+    if any(name in gate.failed for name in checks):
+        raise RuntimeError(
+            f"{step} requires current module build objects; see check logs"
+        )
+    packs = []
+    for device in ("dt2", "dn2"):
+        (directory / device).mkdir(parents=True, exist_ok=True)
+        for mid in modules:
+            leaf = mid.rsplit("/", 1)[-1]
+            name = f"{step}-pack-{device}-{leaf}"
+            packs.append(name)
+            gate.run(
+                name,
+                [
+                    *PY,
+                    "-m",
+                    "tools.patchkit.patchkit",
+                    "pack",
+                    mid,
+                    "--device",
+                    device,
+                    "-o",
+                    str(directory / device / f"{leaf}.dkm"),
+                ],
+            )
+    if any(name in gate.failed for name in packs):
+        raise RuntimeError(f"{step} preparation failed; see pack logs")
+    return directory
+
+
+def runtime_pack_modules(selected: list[str]) -> list[str]:
+    """Runtime fixture modules to pack for the SELECTED test files (empty: all files)."""
+    return [
+        mid
+        for mid, files in verify_route.RUNTIME_MODULES.items()
+        if not selected or set(files) & set(selected)
     ]
+
+
+def run_step(gate: Gate, step: str) -> None:
     jobs = gate.step_env()[
         "DIGI_JOBS"
     ]  # coupled-run processes at once: the node's share
@@ -1368,8 +1599,48 @@ def run_step(gate: Gate, step: str) -> None:
             gate.shared_env.update(json.loads(env_file.read_text()))
     elif step == "desktop":
         desktop_check(gate)
+    elif step == "host":
+        host_check(gate)
     elif step == "web":
         web_check(gate)
+    elif step in verify_route.ACCEPTANCE_DIRS:
+        if step != "stock" and gate.share() < verify_budget.EMULATOR_CORES:
+            raise RuntimeError(f"{step} requires a shared budget of at least two cores")
+        selected = getattr(gate, "acceptance", {}).get(step, [])
+        env = gate.step_env()
+        if step == "stock":
+            # Stock uses one stepped ColdFire thread per worker and the DT2 binary only.
+            if binary := env.get("DIGI_EMUD_DT2"):
+                env["DIGI_EMUD"] = binary
+            env["REGRESSION_JOBS"] = str(gate.share())
+        elif step == "module-load":
+            modules = [
+                m
+                for m, f in verify_route.RUNTIME_UPLOADS.items()
+                if not selected or f.removeprefix("tests/regression/") in selected
+            ]
+            env["DIGI_RUNTIME_MODULES"] = str(
+                prepare_acceptance_modules(gate, step, modules)
+            )
+        elif step == "runtime-fixture" and (modules := runtime_pack_modules(selected)):
+            env["DIGI_RUNTIME_MODULES"] = str(
+                prepare_acceptance_modules(gate, step, modules)
+            )
+        if step == "runtime-fixture" and (
+            not selected or "runtime/samples-live.test.ts" in selected
+        ):
+            gate.run(
+                "runtime-fixture:plusdrive",
+                [*PY, "-m", "tools.firmware.plusdrive_check", "--build-only"],
+            )
+        script = {
+            "stock": "test:stock",
+            "runtime-fixture": "test:runtime",
+            "module-load": "test:modules",
+        }[step]
+        gate.run(
+            step, ["pnpm", "--filter", "@digi/regression", script, *selected], env=env
+        )
     elif step == "pins":
         cmd = [
             *PY,
@@ -1383,14 +1654,28 @@ def run_step(gate: Gate, step: str) -> None:
         ]
         gate.run("pins", cmd)
     elif step == "check":
-        gate.run("check", scenario_tests, check=pytest_ran)
-    elif step == "check-no-aot":
-        subset = [] if gate.all_no_aot else ["-k", CHECK_NO_AOT_K]
         gate.run(
-            "check-no-aot",
-            [*scenario_tests, *subset],
-            env=no_aot_env(),
-            check=pytest_ran,
+            "check-fx",
+            ["pnpm", "--filter", "@digi/regression", "test:fx"],
+            env={
+                **os.environ,
+                "DIGI_FX_NO_AOT_SUBSET": "0",
+                "DIGI_FX_SWEEP": "1"
+                if os.environ.get("DIGIKIT_TIER") == "full"
+                else "0",
+            },
+        )
+    elif step == "check-no-aot":
+        gate.run(
+            "check-no-aot-fx",
+            ["pnpm", "--filter", "@digi/regression", "test:fx"],
+            env={
+                **no_aot_env(),
+                "DIGI_FX_NO_AOT_SUBSET": "0" if gate.all_no_aot else "1",
+                "DIGI_FX_SWEEP": "1"
+                if gate.all_no_aot and os.environ.get("DIGIKIT_TIER") == "full"
+                else "0",
+            },
         )
     elif step == "tier-quick":
         tier(gate, "tier-quick", TIER_QUICK_EVERY)
@@ -1406,13 +1691,29 @@ def run_step(gate: Gate, step: str) -> None:
         gate.run("card-fs-dn2", [*PY, "-m", "tools.firmware.plusdrive_check", "--dn2"])
     elif step == "smoke":
         # patchkit smoke matrix: one cell = one digi-emud daemon, so the share's emulator processes are the cells at once
-        gate.run(
-            "smoke", [*PY, "-m", "tools.patchkit.pk_harness", "run", "--jobs", jobs]
-        )
+        cmd = [*PY, "-m", "tools.patchkit.pk_harness", "run", "--jobs", jobs]
+        cells = getattr(gate, "smoke_selection", None)
+        if cells == []:
+            raise RuntimeError(
+                "empty smoke selection must skip the smoke node, not run the full matrix"
+            )
+        for cell in cells or []:
+            cmd.extend(("--cell", cell))
+        gate.run("smoke", cmd)
     elif step == "dt2-tone":
         gate.run("dt2-tone", [*PY, "-m", "tools.emulator.dt2_sample_check"])
     elif step == "dt2-check":
-        gate.run("dt2-check", [*scenario_tests, "--device", "dt2"], check=pytest_ran)
+        gate.run(
+            "dt2-check",
+            ["pnpm", "--filter", "@digi/regression", "test:fx:dt2"],
+            env={
+                **os.environ,
+                "DIGI_FX_NO_AOT_SUBSET": "0",
+                "DIGI_FX_SWEEP": "1"
+                if os.environ.get("DIGIKIT_TIER") == "full"
+                else "0",
+            },
+        )
     elif step == "dt2-tier-quick":
         tier(gate, "dt2-tier-quick", TIER_QUICK_EVERY, "dt2")
     elif step == "dt2-tier-sweep":
@@ -1426,7 +1727,7 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
     gets a share of the cores, which sets its inner pools, and the shares of the running nodes never
     add up to more than the budget. python-tests is one job per file (expand_python) in the same
     queue, longest first. Each step's output is buffered and printed whole when it finishes. A step
-    whose build failed is skipped. Returns (node, seconds) in completion order.
+    whose prerequisite failed is skipped. Returns (node, seconds) in completion order.
     Writes jobs.tsv (node, start, end, share, load average at start and end) to the run directory."""
     nodes, deps = plan(steps, gate.py_tests)
     gate.py_files = [rel for rel, _ in python_files(gate.py_tests)]
@@ -1467,7 +1768,7 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                     pending.remove(node)
                     failed_nodes.add(node)
                     if not verify_budget.is_file_job(node):
-                        print(f"SKIP {node}: its build failed", flush=True)
+                        print(f"SKIP {node}: a prerequisite failed", flush=True)
                     with gate.lock:
                         gate.failed.append(node)
                 elif node == "python-tests" and all(d in done for d in deps[node]):
@@ -1523,6 +1824,10 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                     times.append((node, time.monotonic() - began))
                 if any(line.startswith("FAIL") for line in lines):
                     failed_nodes.add(node)
+                    if not verify_budget.is_file_job(node):
+                        with gate.lock:
+                            if node not in gate.failed:
+                                gate.failed.append(node)
                 else:
                     done.add(node)
     header = "node\tstart_s\tend_s\tshare\tload_start\tload_end"
@@ -1573,7 +1878,11 @@ def main(argv: list[str] | None = None) -> int:
         help="with --explain: the commits BASE..HEAD instead of the working tree "
         "(files are read from the current tree)",
     )
-    ap.add_argument("--full", action="store_true", help="every step, full tier sweep")
+    ap.add_argument(
+        "--full",
+        action="store_true",
+        help="full acceptance including runtime-fixture and tier-sweep (DT2 full sweep with --dt2)",
+    )
     ap.add_argument("--only", help=f"comma-separated steps from: {', '.join(STEPS)}")
     ap.add_argument(
         "--dt2",
@@ -1699,6 +2008,14 @@ def main(argv: list[str] | None = None) -> int:
         rust_packages,
         all_no_aot=args.all_no_aot,
         budget=budget,
+        acceptance={
+            step: acceptance_plan(step, files) for step in verify_route.ACCEPTANCE_DIRS
+        }
+        if why not in ("--only", "--full", "--rerun-failed")
+        else {},
+        smoke_selection=smoke_cells(files)
+        if why not in ("--only", "--full", "--rerun-failed")
+        else None,
     )
     nodes, deps = plan(steps, gate.py_tests)
     print(

@@ -24,7 +24,7 @@ read DRV. The DSP word of the knob is read back with `dsp.peek`. Output files an
 committed: they derive from firmware). Needs DIGI_EMUD (the digi-emud binary of `mise run emu:serve -- --build-only`).
 Exit 0 only when every check passes. `--quick` renders stock-rest, patched-rest and patched-full only (no knob-sweep,
 no middle setting, no stock-turned control): the checks that need them are dropped or reduced. The daemon's run directory
-persists (`--run-dir`, default out/runs/patchkit/run-drive-DEV), so the cold boot of the patched MAIN is cached.
+is a temp dir (`--run-dir` keeps one); the cold boot of the patched MAIN is cached in out/runs/.cache.
 """
 
 from __future__ import annotations
@@ -193,15 +193,17 @@ class DriveProof(K.Proof):
         out = self.out
         quick = self.quick
         report: dict = {"device": dev, "stock": stock.name, "patched": patched.name}
-        run_dir = a.run_dir or ROOT / "out" / "runs" / "patchkit" / f"run-drive-{dev}"
         t0 = time.monotonic()
-        with Emu.spawn_coupled(
-            stock,
-            ready,
-            timeout=300,
-            run_dir=run_dir,
-            binary=H.daemon_binary(dev, stock),
-        ) as emu:
+        with (
+            H.run_dir_scope(f"drive-{dev}", a.run_dir) as run_dir,
+            Emu.spawn_coupled(
+                stock,
+                ready,
+                timeout=300,
+                run_dir=run_dir,
+                binary=H.daemon_binary(dev, stock),
+            ) as emu,
+        ):
             card = None
             if dev == "dt2":
                 samples = out / "samples"
@@ -309,7 +311,7 @@ def main() -> int:
     ap.add_argument(
         "--run-dir",
         type=pathlib.Path,
-        help="daemon run dir (default out/runs/patchkit/run-drive-DEV: keeps the patched boot cache)",
+        help="daemon run dir, kept (default: a temp dir; the patched boot cache lives in out/runs/.cache)",
     )
     ap.add_argument(
         "--full-events", type=int, default=60, help="knob events of the top setting"

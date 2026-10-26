@@ -10,14 +10,14 @@ given run directories. Parameter values come from the report's ``peek``
 (s16 big-endian, UI value = high byte). Writes fxcheck.json and, unless
 --no-plots, plots-<scenario>/ (audiocheck plots) into each run directory.
 
-Track FX sweeps (tests/scenarios/dn2-trackfx.json, ``tf-*``): the reference is
+Track FX sweeps (tests/regression/scenarios/dn2-trackfx.ts, ``tf-*``): the reference is
 tf-dry-hold or tf-dry-tap by hold time, every run decodes the whole peeked
 Sound and Fx arrays by parameter name (descriptor table of --image, default the
 DN2 1.12 MAIN OS) and lists the ones that differ from the reference, and the
 per-control measures are printed in a second table. ``--ref`` overrides the
 reference.
 
-Send FX sweeps (tests/scenarios/dn2-sendfx.json, ``sf-*``): the dry reference is
+Send FX sweeps (tests/regression/scenarios/dn2-sendfx.ts, ``sf-*``): the dry reference is
 sf-dry-tap or sf-dry-hold, the read-back diff is against sf-<fx>-ref (send up,
 page at defaults), the wet signal is the scenario minus the dry reference, and
 the per-effect measures (delay echoes, reverb decay and onset, chorus
@@ -188,7 +188,11 @@ def diff_vs_dry(
 
 # --- scenario files, run loading ---------------------------------------------
 
-SCENARIO_FILES: tuple[str, ...] = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
+SCENARIO_FILES: tuple[str, ...] = (
+    "dn2-fx.json",
+    "../regression/scenarios/dn2-trackfx.ts",
+    "../regression/scenarios/dn2-sendfx.ts",
+)
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
 
@@ -199,7 +203,9 @@ def scenario_events() -> dict[str, list[dict]]:
     for fn in SCENARIO_FILES:
         f = ROOT / "tests" / "scenarios" / fn
         if f.exists():
-            for s in json.loads(f.read_text())["scenarios"]:
+            from tools.emulator.coupled import scenario_document
+
+            for s in scenario_document(f)["scenarios"]:
                 out[s["name"]] = s["events"]
     return out
 
@@ -267,14 +273,21 @@ def configure(device: str) -> None:
     global F0, SCENARIO_FILES, DEFAULT_IMAGE, SND_PEEK, FX_PEEK, BR_IDX, DSEND_IDX
     if device == "dt2":
         F0 = 1000.0
-        SCENARIO_FILES = ("dt2-trackfx.json", "dt2-sendfx.json")
+        SCENARIO_FILES = (
+            "../regression/scenarios/dt2-trackfx.ts",
+            "../regression/scenarios/dt2-sendfx.ts",
+        )
         DEFAULT_IMAGE = ROOT / "out" / "sections" / "dt2-1.17" / "section_3_MAIN_OS.bin"
         SND_PEEK = "snd=*0x8000470c+0x14:142"
         FX_PEEK = "fx=*0x80004708+0:142"
         BR_IDX, DSEND_IDX = 64, 55
     elif device == "dn2":
         F0 = 261.6
-        SCENARIO_FILES = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
+        SCENARIO_FILES = (
+            "dn2-fx.json",
+            "../regression/scenarios/dn2-trackfx.ts",
+            "../regression/scenarios/dn2-sendfx.ts",
+        )
         DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
         SND_PEEK = "snd=*0x800052a0+0x48:202"
         FX_PEEK = "fx=*0x800052a4+0:202"
@@ -332,7 +345,7 @@ def snd_ui(vals: dict[str, int], idx: int) -> int | None:
     return None
 
 
-# --- per-control measures (tests/scenarios/dn2-trackfx.json) ------------------------
+# --- per-control measures (tests/regression/scenarios/dn2-trackfx.ts) ------------------------
 
 HOLD_FAMILIES = ("br", "over", "srr")
 SEND_FAMILIES = ("del", "rev", "chr")
@@ -493,7 +506,13 @@ def routing_compare(
         "release": (t0 + hold, t0 + hold + 0.3),
         "end": (t0 + hold + 0.3, n / rate),
     }
-    out: dict[str, Any] = {"max_abs_diff": float(np.abs(d).max())}
+    out: dict[str, Any] = {
+        "max_abs_diff": float(np.abs(d).max()),
+        "shape_equal": x.shape == other.shape,
+        "full_max_abs_diff": float(np.abs(x - other).max())
+        if x.shape == other.shape
+        else None,
+    }
     for k, (a, b) in spans.items():
         i, j = int(a * rate), int(b * rate)
         if j - i < 50:
@@ -531,7 +550,7 @@ def plot_tf(x: ac.F, rate: int, t0: float, d: pathlib.Path, m: dict[str, Any]) -
         plt.close(fig)
 
 
-# --- send FX pages (tests/scenarios/dn2-sendfx.json) --------------------------------
+# --- send FX pages (tests/regression/scenarios/dn2-sendfx.ts) --------------------------------
 
 PRE = 0.02  # alignment pre-roll before the note onset, s
 
@@ -794,6 +813,33 @@ def series(res: dict[str, dict[str, Any]]) -> list[str]:
     return lines
 
 
+def pcm_observations(x: ac.F, reference: ac.F | None, name: str) -> dict[str, Any]:
+    """Exact NumPy comparisons for external oracle consumers; no signal approximation."""
+    return {
+        "shape": list(x.shape),
+        "mono_equal": bool(np.array_equal(x[:, 0], x[:, 1])),
+        "reference": name,
+        "reference_shape": list(reference.shape) if reference is not None else None,
+        "reference_max_abs_diff": float(np.abs(x - reference).max())
+        if reference is not None and x.shape == reference.shape
+        else None,
+        "reference_equal": bool(np.array_equal(x, reference))
+        if reference is not None
+        else None,
+    }
+
+
+def json_measurements(value: Any) -> Any:
+    """Undefined/nonfinite measurements are null at the JSON interchange boundary."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: json_measurements(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_measurements(item) for item in value]
+    return value
+
+
 def check(
     runs: list[pathlib.Path],
     ref_name: str | None,
@@ -834,6 +880,8 @@ def check(
             "peek_ui": pui,
             "analysis": ac.analyse(x, rate),
             "onset_s": t0,
+            "decoded": dec,
+            "pcm": pcm_observations(x, ref[3] if ref else None, refs[name]),
         }
         if dec and ref and not is_ref:
             row["readback_diff"] = readback_diff(dec, decoded[refs[name]])
@@ -896,7 +944,10 @@ def check(
                 v["tf"].pop("_res", None)
             if "sf" in v:
                 v["sf"].pop("_res", None)
-        (d / "fxcheck.json").write_text(json.dumps(mine, indent=2, default=str) + "\n")
+        (d / "fxcheck.json").write_text(
+            json.dumps(json_measurements(mine), indent=2, default=str, allow_nan=False)
+            + "\n"
+        )
     return res
 
 

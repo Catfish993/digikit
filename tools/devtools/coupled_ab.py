@@ -8,7 +8,7 @@ is rebuilt in place). Default config: the fast tier and the AOT core, as
 scenario's PCM hash against the file's pin (or against the first run).
 
     uv run python -m tools.devtools.coupled_ab A=BIN_A B=BIN_B -s trig1-taps -s tf-br-127 \\
-        [--pairs 6] [--scenarios tests/scenarios/dn2-trackfx.json] [--out OUT.json]
+        [--pairs 6] [--scenarios tests/regression/scenarios/dn2-trackfx.ts] [--out OUT.json]
     uv run python -m tools.devtools.coupled_ab A=BIN --pairs 5 -s trig1-taps     # one binary: N runs
     uv run python -m tools.devtools.coupled_ab A=BIN B=BIN --patch B=X.patch ...  # one binary, image B patched
 
@@ -60,7 +60,7 @@ def one_run(
         if patch:
             extra += ["--dsp-patch", patch]
         if scenarios:
-            extra = ["--scenarios", str(pathlib.Path(scenarios).resolve())] + extra
+            extra = ["--scenarios", str(coupled.scenario_path(scenarios))] + extra
         ins, card = CARD or (coupled.inputs(device), [])
         argv = coupled.run_args(binary, ins, [*card, *extra])
         load = os.getloadavg()[0]

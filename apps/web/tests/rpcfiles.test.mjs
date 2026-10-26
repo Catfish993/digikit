@@ -3,8 +3,8 @@
 // the device's hash over the file plus a 16-byte trailer, and a verify that fails when the device stores something else.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DkSession, decode8in7 } from '../src/modules/dkupload-core.ts';
-import { RPC_CHUNK, RPC_FILE, RpcFiles, pathBytes, putVerified, verifyWritten } from '../src/modules/rpcfiles.ts';
+import { DkSession, decode8in7 } from '@digi/dk-session';
+import { RPC_CHUNK, RPC_FILE, RpcFiles, pathBytes, putVerified, verifyWritten } from '@digi/dk-session/rpcfiles';
 import { FakeDrive, hashOf } from './fakedrive.mjs';
 
 const setup = (opts) => {

@@ -8,7 +8,7 @@ A scenario is a TOML file in `tests/digikit/scenarios/`:
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc" | "pages" | "fx" | "fxsend" | "fxroute" | "fxroutes" | "settings"
+    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "pages" | "fx" | "fxsend" | "fxroute" | "fxroutes" | "settings"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -43,9 +43,6 @@ Kinds:
              `part = "guard"` (both images): the runtime guard on a NaN fixture.
   crash      a CPU exception in a module's slot: the runtime's hook records it in RAM that a soft reset keeps and resets; the next boot reports
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
-  rungc      the rehearsal of rung C on a Digitakt II (docs/PATCHING.md): the rung C image, a card with samples and a blank store, `dkupload put`,
-             the menu, APPLY & RESTART, the machine on a track, a note equal to the patched-in pluck, the DSP's counters; screenshots to
-             out/runs/lanes/b-rungC/ (tools/patchkit/pk_digikit_rungc.py).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
              added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
   fx         effects loaded at run time (DSP section version 4, `core/dynfx`; Digitakt II and Digitone II): the sine and `test/dyn-fx-gain` selected at boot play as the
@@ -84,6 +81,7 @@ daemon's own boot cache is keyed by the card path, so a repeated scenario restor
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -111,6 +109,28 @@ CACHE = ROOT / "out" / "cache" / "digikit"
 # every device with a module store and its newest image that has a port (`port = true` in the device file)
 QUICK_IMAGES = {d: pk_device.port_images(d)[-1] for d in pk_device.digikit_devices()}
 RT = B.RT
+CACHE_LIMIT = 20 * 2**30  # bytes on disk the card cache may hold
+
+
+def card_used(card: Path, written: bool) -> None:
+    """Mark a cached card as used now (its mtime orders the eviction); after a new card, delete the least recently used ones
+    while the cache holds more than CACHE_LIMIT bytes on disk (the cards are sparse). The new card stays."""
+    with contextlib.suppress(OSError):
+        os.utime(card)
+    if not written:
+        return
+    entries = []
+    for f in (CACHE / "cards").glob("*.img"):
+        with contextlib.suppress(OSError):  # a card another process deleted
+            st = f.stat()
+            entries.append((st.st_mtime, st.st_blocks * 512, f))
+    total = sum(e[1] for e in entries)
+    for _, size, f in sorted(entries):
+        if total <= CACHE_LIMIT:
+            break
+        if f != card:
+            f.unlink(missing_ok=True)
+            total -= size
 
 
 # emulated ms a rig runs after its boot before the scenario looks: the first UI-loop passes (a module's DSP part is waited for by
@@ -203,9 +223,6 @@ class Ctx:
         self.store = pk_device.store_of(
             self.env.device
         )  # the store area of this device
-        self.live_card: str | None = (
-            None  # the card file of the last `live_boot` (the DT2's)
-        )
         self.store_writes: set[int] = set()
         self.all_writes: set[int] = set()
         self.used_cards: set[str] = set()
@@ -305,7 +322,8 @@ class Ctx:
             h.update(b"foreign:%d:" % s + data)
         key = h.hexdigest()[:20]
         dst = CACHE / "cards" / f"{self.image}-{key}.img"
-        if not dst.exists():
+        written = not dst.exists()
+        if written:
             dst.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.work / f"card-{key}.img"
             if base is not None:
@@ -322,6 +340,7 @@ class Ctx:
                         f.seek(s * 512)
                         f.write(data)
             shutil.move(tmp, dst)
+        card_used(dst, written)
         return dst
 
     def rig(
@@ -1385,12 +1404,6 @@ def run_crash(c: Ctx) -> None:
     DBG.run_crash(c)
 
 
-def run_rungc(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_rungc as RC
-
-    RC.run_rungc(c)
-
-
 def run_pages(c: Ctx) -> None:
     from tools.patchkit import pk_digikit_pages as PG
 
@@ -1445,708 +1458,7 @@ def run_fxshift(c: Ctx) -> None:
     FSH.run_fxshift(c)
 
 
-def live_boot(c: Ctx, tag: str = "", patch_set: str | None = None) -> tuple[Any, Path]:
-    """A coupled daemon free-running on a stock image with the runtime patched in (the DT2 on a card built from a folder, the DN2 on none),
-    started with `--mirror-dir`; returns it and the mirror folder. The caller closes it."""
-    from tools.control.digi_client import Emu
-    from tools.firmware import config
-
-    dev, ver = c.image.split("-")
-    spec = H.FIRMWARE[(dev, ver)]
-    syx = config.stock(spec["syx"])
-    mirror = (
-        c.work / "mirror" / dev
-    )  # the plus_drive/<device>/ folder the module store is mirrored to
-    emu = Emu.spawn_coupled(
-        syx,
-        H.ROOT / spec["ready"],
-        "--mirror-dir",
-        str(mirror),
-        timeout=300,
-        binary=H.daemon_binary(dev, syx),
-        run_dir=c.work / f"live-run{tag}",
-    )
-    try:
-        if dev == "dt2":  # the DT2 boots on a card built from a folder; the DN2 on none
-            from tools.emulator import card_check
-
-            samples = H.OUT / "samples"
-            card_check.make_samples(samples)
-            card = emu.call("card.load", dir=str(samples))["card"]
-            c.live_card = card
-            emu.load(syx, runtime=True, start="auto", card=card, patch_set=patch_set)
-        else:
-            emu.load(syx, runtime=True, start="auto", patch_set=patch_set)
-        emu.call("run.mode", mode="free")
-        time.sleep(float(c.table().get("settle_s", 12)))
-        c.check("the daemon runs free", emu.status().get("mode") == "free")
-    except BaseException:
-        emu.__exit__(None, None, None)
-        raise
-    return emu, mirror
-
-
-def live_tool(emu: Any) -> Callable[..., tuple[int, list[dict[str, Any]], float]]:
-    """`tools.device.dktransfer` as a command line against the daemon: (return code, JSON events, seconds)."""
-    import subprocess
-
-    from tools import python_env
-
-    def tool(*args: str) -> tuple[int, list[dict[str, Any]], float]:
-        t0 = time.monotonic()
-        r = subprocess.run(
-            [sys.executable, "-m", "tools.device.dktransfer", "--emu"]
-            + ["--socket", emu.path, "--json", *args],
-            capture_output=True,
-            text=True,
-            cwd=ROOT,
-            env=python_env(),
-            timeout=300,
-        )
-        ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
-        return r.returncode, ev, time.monotonic() - t0
-
-    return tool
-
-
-def run_live_svc(c: Ctx) -> None:
-    """A module that registers SysEx commands (Api.register_cmds): `test/svc-echo` is installed and loaded by the runtime, then its commands
-    answer over SysEx (an echo, a status of its own), the refusals it provoked at init are the ones the runtime must give, an unregistered
-    command is E_PROTO, and INFO says the runtime has the capability."""
-    from tools.device import dkproto
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
-
-    (module,) = c.table()["modules"]
-    emu, _mirror = live_boot(c)
-    try:
-        tool = live_tool(emu)
-        rc, ev, _ = tool("install", module, "--restart")
-        res = next((e for e in ev if e["event"] == "result"), {})
-        c.check(
-            "install --restart: the module that registers commands loaded",
-            rc == 0 and module in res.get("loaded", []),
-            f"rc {rc} {ev[-1:] if ev else ''}",
-        )
-        up = DK.Uploader(TR.LiveTransport(emu))
-        info = up.info()
-        c.check(
-            "INFO: the capability for service commands",
-            DK.has_cap(info, "SERVICE_CMDS"),
-            str(info["caps"]),
-        )
-        lo, hi = dkproto.RANGES["remote_state"]
-        c.check(
-            "the remote state range is reserved",
-            (lo, hi) == (0x3E, 0x3F),
-            str((lo, hi)),
-        )
-        echo, refusals = 0x3E, 0x3F
-        status, body = up.request(echo, b"hello \x80\xff")
-        c.check(
-            "an echo command: the reply body is the request body (8-bit bytes too)",
-            status == 0 and body == b"hello \x80\xff",
-            f"{status} {body!r}",
-        )
-        status, body = up.request(echo, b"")
-        c.check("an echo of nothing", status == 0 and body == b"", f"{status} {body!r}")
-        status, body = up.request(echo, b"\xee")
-        c.check(
-            "a status of the module's own, no body",
-            status == -77 and body == b"",
-            f"{status} {body!r}",
-        )
-        status, body = up.request(echo, bytes(range(150)))
-        c.check(
-            "a 150-byte body", status == 0 and body == bytes(range(150)), f"{status}"
-        )
-        status, body = up.request(echo, bytes(range(250)))
-        c.check(
-            "a 250-byte body", status == 0 and body == bytes(range(250)), f"{status}"
-        )
-        status, body = up.request(echo, bytes(300))
-        c.check(
-            "a body over 256 bytes is refused (E_MSG)",
-            status == -50,
-            f"{status}",
-        )
-        status, body = up.request(refusals)
-        e_range = 0xC0  # E_CMD_RANGE = -64, its low byte
-        c.check(
-            "the runtime refused what it had to: outside a reserved range, over a registered one, an empty range",
-            status == 0 and list(body) == [e_range] * 3,
-            f"{status} {list(body)}",
-        )
-        status, _ = up.request(0x3D)
-        c.check("a command nobody registered is E_PROTO", status == -60, str(status))
-    finally:
-        emu.__exit__(None, None, None)
-
-
-def run_live_samples(c: Ctx) -> None:
-    """A sample sent to the +Drive over the stock MidiRpc file commands by the TypeScript client (tools/devtools/samples_live.mjs, which also
-    converts a WAV with dksample.wasm and checks the firmware's content hash against the host's), on a free-running Digitakt II. Then the card:
-    the guest's writes laid over the card, read by `plusdrive fs`, hold the file the card builder makes of the same WAV, the host's bytes plus the
-    firmware's 16-byte trailer, with the hash the firmware reported in the record."""
-    import subprocess
-
-    from tools.emulator import card_overlay
-
-    out = c.work / "samples-out"
-    emu, _mirror = live_boot(c, "-samples")
-    try:
-        r = subprocess.run(
-            ["node", "tools/devtools/samples_live.mjs", emu.path, "--out", str(out)],
-            capture_output=True, text=True, cwd=ROOT, timeout=600,
-        )  # fmt: skip
-        lines = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
-        for ln in lines:
-            if "check" in ln:
-                c.check(f"client: {ln['check']}", ln["ok"], ln["detail"])
-        info = next((ln for ln in lines if "hash" in ln), {})
-        c.check(
-            "the client ran to the end and every check held",
-            r.returncode == 0 and bool(info),
-            r.stderr[-300:],
-        )
-        c.report["firmware_hash"] = info.get("hash")
-        c.report["compared"] = info.get("compared")
-        ov = c.work / "samples.ov.bin"
-        emu.call("card.overlay", path=str(ov))
-    finally:
-        emu.__exit__(None, None, None)
-    tools = c.env.tools
-    after = c.work / "samples-after.img"
-    card_overlay.apply(Path(c.live_card or ""), ov, after)
-
-    def cat(
-        image: Path, path: str
-    ) -> Any:  # the bytes of a file: `tools.run` returns text
-        return subprocess.run(
-            [str(tools.plusdrive), "fs", "cat", str(image), path],
-            capture_output=True, cwd=ROOT, env=python_env(),
-        )  # fmt: skip
-
-    got = cat(after, "/live/test")
-    sent = (out / "sent-test.bin").read_bytes()
-    c.check(
-        "the card holds the bytes sent plus a 16-byte zero trailer",
-        got.returncode == 0 and got.stdout == sent + bytes(16),
-        f"{len(got.stdout)} bytes, sent {len(sent)}",
-    )
-    folder = c.work / "built" / "plus_drive" / "dt2"
-    folder.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(out / "test.wav", folder / "test.wav")
-    built = c.work / "built.img"
-    b = tools.run(
-        tools.plusdrive, "build", folder, "-o", built, "--device", "dt2", "--no-project"
-    )
-    want = cat(built, "/test")
-    c.check(
-        "the card equals the file the +Drive build makes of the same WAV",
-        b.returncode == 0
-        and want.returncode == 0
-        and got.stdout == want.stdout
-        and len(want.stdout) > 0x50,
-        f"{len(got.stdout)} vs {len(want.stdout)} bytes {b.stderr[-200:]}",
-    )
-    ls = tools.run(tools.plusdrive, "fs", "ls", after)
-    row = next(
-        (
-            ln.split("\t")
-            for ln in ls.stdout.splitlines()
-            if ln.startswith("live/test\t")
-        ),
-        [],
-    )
-    c.check(
-        "the record's hash|1 and size (without the trailer) are the ones the client saw",
-        len(row) == 3
-        and int(row[2], 16) == info.get("hash")
-        and int(row[1]) == len(sent) + 16,
-        str(row),
-    )
-    c.check(
-        "the card keeps no deleted file (renamed.txt) and the text file is gone",
-        not any(
-            ln.startswith("live/notes.txt") or ln.startswith("live/renamed.txt")
-            for ln in ls.stdout.splitlines()
-        ),
-    )
-
-
-def run_live_samples_store(c: Ctx) -> None:
-    """A sample sent into the `samples/` folder of the digikit store by the TypeScript samples API (tools/devtools/samples_store_live.mjs, which also
-    converts a WAV with dksample.wasm, checks VERIFY against the host's sha256, a delete, and a RESTART), on a free-running emulator whose profile
-    says `[storage] samples = "digikit"`. Then the card mirror: the folder the emulator keeps of the store holds the file the client sent."""
-    import subprocess
-
-    out = c.work / "samples-store-out"
-    storage = pk_device.load(c.env.device)["storage"]["samples"]
-    c.check(
-        'the device profile says [storage] samples = "digikit"',
-        storage == "digikit",
-        storage,
-    )
-    emu, mirror = live_boot(c, "-samples-store")
-    try:
-        r = subprocess.run(
-            ["node", "tools/devtools/samples_store_live.mjs", emu.path, "--out", str(out),
-             "--storage", storage, "--total-kib", str(c.store.limit // 2)],
-            capture_output=True, text=True, cwd=ROOT, timeout=900,
-        )  # fmt: skip
-        lines = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
-        for ln in lines:
-            if "check" in ln:
-                c.check(f"client: {ln['check']}", ln["ok"], ln["detail"])
-        res = next((ln for ln in lines if "sha256" in ln), {})
-        c.check(
-            "the client ran to the end and every check held",
-            r.returncode == 0 and bool(res),
-            r.stderr[-300:],
-        )
-        c.report["compared"] = res.get("compared")
-        synced = emu.call("card.sync")
-        mirrored = mirror / "digikit" / "samples" / "drums" / "test"
-        sent = (
-            (out / "stored-test.bin").read_bytes()
-            if (out / "stored-test.bin").is_file()
-            else b""
-        )
-        c.check(
-            "the card mirror holds the file the client sent (samples/drums/test)",
-            bool(sent) and mirrored.is_file() and mirrored.read_bytes() == sent,
-            f"{mirrored} {synced.get('files')}",
-        )
-    finally:
-        emu.__exit__(None, None, None)
-
-
-def run_live_input(c: Ctx) -> None:
-    """core/input against the emulator's own input path. The same presses are made on two free-running daemons with the same boot history (the probe installed, one restart):
-    on the first with the emulator's `input.button` / `input.turn` (the panel UART path), on the second through `test/input-probe` (SysEx
-    commands 0x38 key and 0x39 turn that call core/input; installed and loaded first). The screens must be the same after each step: the
-    firmware's decoders saw the same presses. A turn shows on the screen only some seconds later (the firmware flushes it on a tick), and the
-    emulator runs slower than real time, so each step waits `settle` seconds. The codes and the encoder come from the scenario file, the layout
-    of the codes from the device file."""
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
-
-    t = c.table()
-    (module,) = t["modules"]
-    key_a, key_b, enc, detents = t["key_a"], t["key_b"], t["encoder"], t["detents"]
-
-    def sequence(
-        emu: Any, key: Callable[[int], None], turn: Callable[[int], None]
-    ) -> list[str]:
-        out = []
-        for act in (lambda: key(key_a), lambda: turn(detents), lambda: key(key_b)):
-            act()
-            time.sleep(float(t.get("settle", 10)))
-            out.append(str(emu.frame_hash()))
-        return out
-
-    def boot_with_probe(tag: str) -> Any:
-        """A daemon with the probe installed and the device restarted once: both runs have the same boot history (the firmware's first boot and a soft
-        reset boot are not the same state, so a screen after the same keys differs between them)."""
-        emu, _ = live_boot(c, tag)
-        try:
-            rc, ev, _ = live_tool(emu)("install", module, "--restart")
-            res = next((e for e in ev if e["event"] == "result"), {})
-            c.check(
-                f"install --restart ({tag[1:]}): the probe loaded (it imports input_key and input_turn: core/input is in the image)",
-                rc == 0 and module in res.get("loaded", []),
-                f"rc {rc} {ev[-1:] if ev else ''}",
-            )
-            time.sleep(float(t.get("settle", 10)))
-        except BaseException:
-            emu.__exit__(None, None, None)
-            raise
-        return emu
-
-    emu = boot_with_probe("-stock")
-    try:
-
-        def stock_key(code: int) -> None:
-            emu.button(code, True)
-            time.sleep(0.3)
-            emu.button(code, False)
-
-        stock = sequence(emu, stock_key, lambda n: emu.turn(enc, n))
-    finally:
-        emu.__exit__(None, None, None)
-    c.check(
-        "the emulator's path: each step changes the screen",
-        len(set(stock)) == 3,
-        " ".join(h[:8] for h in stock),
-    )
-
-    emu = boot_with_probe("-probe")
-    try:
-        up = DK.Uploader(TR.LiveTransport(emu))
-        answers: list[int] = []
-
-        def probe_key(code: int) -> None:
-            answers.append(up.request(0x38, bytes((code, 1)))[0])
-            time.sleep(0.3)
-            answers.append(up.request(0x38, bytes((code, 0)))[0])
-
-        def probe_turn(n: int) -> None:
-            answers.append(up.request(0x39, bytes((enc, n & 0xFF)))[0])
-
-        probe = sequence(emu, probe_key, probe_turn)
-        c.check("every probe command answered ok", set(answers) == {0}, str(answers))
-        for name, a, b in zip(
-            ("a key", "a turn", "a second key"), probe, stock, strict=True
-        ):
-            c.check(
-                f"{name} through core/input gives the screen the panel path gave",
-                a == b,
-                f"{a[:8]} {b[:8]}",
-            )
-        # refusals: a code that is not a key, an encoder that does not exist
-        st, _ = up.request(0x38, bytes((200, 1)))
-        c.check("a code that is no key is refused (-1)", st == -1, str(st))
-        st, _ = up.request(0x39, bytes((99, 1)))
-        c.check("an encoder that does not exist is refused (-1)", st == -1, str(st))
-    finally:
-        emu.__exit__(None, None, None)
-
-
-def run_live_remote(c: Ctx) -> None:
-    """digikit/remote and the REMOTE switch, on a daemon booted with the `device` patch set (core/input in it, core/remote-open not): the switch is off
-    at the boot. The module is installed and loaded; STATE answers (it is never guarded) and says off; KEY, TURN and RELEASE are refused with
-    E_DISABLED (-65). The switch is turned on in the menu (SETTINGS > DIGIKIT > REMOTE, with the emulator's own button input): STATE says on and the commands work, TURN
-    takes at most 30 detents and the rest after the module's pacing time, a malformed body is refused; the menu turns the switch off again."""
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
-
-    t = c.table()
-    (module,) = t["modules"]
-    emu, _ = live_boot(c, "-remote", patch_set=t.get("patch_set"))
-    try:
-        rc, ev, _ = live_tool(emu)("install", module, "--restart")
-        res = next((e for e in ev if e["event"] == "result"), {})
-        c.check(
-            "install --restart: digikit/remote loaded (it imports input_key and input_turn: core/input is in the image)",
-            rc == 0 and module in res.get("loaded", []),
-            f"rc {rc} {ev[-1:] if ev else ''}",
-        )
-        time.sleep(float(t.get("settle", 10)))
-        up = DK.Uploader(TR.LiveTransport(emu))
-        enc, key = t["encoder"], t["key"]
-
-        def state() -> list[int]:
-            st, body = up.request(0x3E)
-            return [st, *body]
-
-        def cmd(n: int, body: bytes = b"") -> tuple[int, bytes]:
-            st, b = up.request(n, body)
-            return st, bytes(b)
-
-        c.check(
-            "STATE with the switch off: enabled 0, format 1, turn limit 30",
-            state() == [0, 0, 1, 30],
-            str(state()),
-        )
-        refused = [
-            cmd(0x38, bytes((key, 1)))[0],
-            cmd(0x39, bytes((enc, 1)))[0],
-            cmd(0x3A)[0],
-        ]
-        c.check(
-            "KEY, TURN and RELEASE are refused with E_DISABLED (-65) while the switch is off",
-            refused == [-65] * 3,
-            str(refused),
-        )
-
-        def tap(name: str, wait: float = 1.2) -> None:
-            code = H.button(name)
-            emu.button(code, True)
-            time.sleep(0.4)
-            emu.button(code, False)
-            time.sleep(wait)
-
-        def menu_remote() -> None:
-            """SETTINGS > DIGIKIT (the ninth row) > REMOTE (the seventh row of the DIGIKIT page), one press: the switch toggles."""
-            tap("NO", 2)
-            tap("SETTINGS", 3)
-            for _ in range(8):
-                tap("DOWN")
-            tap("YES", 3)
-            for _ in range(6):
-                tap("DOWN")
-            tap("YES", 2)
-            tap("NO", 2)
-
-        menu_remote()
-        c.check(
-            "the menu's REMOTE row turned the switch on: STATE says 1",
-            state() == [0, 1, 1, 30],
-            str(state()),
-        )
-        r = [cmd(0x38, bytes((key, 1))), cmd(0x38, bytes((key, 0))), cmd(0x3A)]
-        c.check(
-            "KEY down, KEY up and RELEASE answer ok",
-            [x[0] for x in r] == [0, 0, 0],
-            str(r),
-        )
-        c.check(
-            "a malformed KEY and an encoder that does not exist are refused (E_MSG -50)",
-            [
-                cmd(0x38, b"\x01")[0],
-                cmd(0x38, bytes((key, 2)))[0],
-                cmd(0x39, bytes((0, 1)))[0],
-            ]
-            == [-50] * 3,
-        )
-        c.check(
-            "a key that is no key is refused by the adapter (-1)",
-            cmd(0x38, bytes((127, 1)))[0] == -1,
-        )
-        st1, b1 = cmd(0x39, bytes((enc, 100)))
-        st2, b2 = cmd(0x39, bytes((enc, 100)))
-        c.check(
-            "TURN 100: the module takes 30, and 0 straight after (the firmware's clamp is respected)",
-            (st1, b1, st2, b2) == (0, bytes((30,)), 0, bytes((0,))),
-            f"{(st1, b1, st2, b2)}",
-        )
-        time.sleep(float(t.get("pace_wait", 3)))
-        st3, b3 = cmd(0x39, bytes((enc, 0x100 - 100)))
-        c.check(
-            "after the pacing time a turn back is taken (negative, within 30)",
-            st3 == 0 and len(b3) == 1 and 1 <= 256 - b3[0] <= 30,
-            f"{(st3, b3)}",
-        )
-        menu_remote()
-        c.check(
-            "the menu's REMOTE row turned the switch off again: STATE says 0, KEY is refused",
-            state() == [0, 0, 1, 30] and cmd(0x38, bytes((key, 1)))[0] == -65,
-            str(state()),
-        )
-    finally:
-        emu.__exit__(None, None, None)
-
-
-def run_live_remote_keys(c: Ctx) -> None:
-    """The whole path: digikit/remote's KEY and TURN on a free-running daemon booted with the `emulator` patch set (REMOTE is on at the boot). Keys: SETTINGS, DOWN x8
-    (the ninth row), YES open DIGIKIT, DOWN and YES open ABOUT, whose rows the menu keeps in DK_ABOUT (`expect_text`: the runtime version; the symbol addresses come from
-    the plan of the same patch set built offline: the same modules in the same order give the same layout, and the check fails if they do not). TURN: on the main screen
-    an encoder turned by some detents changes the screen (the value label shows; polled, because it goes after a few emulated seconds)."""
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
-    from tools.firmware import config
-    from tools.patchkit import pk_dkrt as RTK
-
-    t = c.table()
-    (module,) = t["modules"]
-    dev, ver = c.image.split("-")
-    stock = config.stock(H.FIRMWARE[(dev, ver)]["syx"])
-    syx = c.work / f"plan-{dev}.syx"
-    plan_file = syx.with_suffix(".plan.json")
-    RTK.Tools().patchkit_run(
-        "apply",
-        "--firmware",
-        stock,
-        "--set",
-        t.get("patch_set", "emulator"),
-        "-o",
-        syx,
-        "--plan",
-        plan_file,
-    )
-    plan = json.loads(plan_file.read_text())
-    emu, _ = live_boot(c, "-keys")
-    try:
-        rc, ev, _ = live_tool(emu)("install", module, "--restart")
-        res = next((e for e in ev if e["event"] == "result"), {})
-        c.check(
-            "install --restart: digikit/remote loaded",
-            rc == 0 and module in res.get("loaded", []),
-            f"rc {rc} {ev[-1:] if ev else ''}",
-        )
-        time.sleep(float(t.get("settle", 10)))
-        up = DK.Uploader(TR.LiveTransport(emu))
-        c.check(
-            "REMOTE is on at the boot of the emulator set",
-            up.remote_state()["enabled"] == 1,
-            str(up.remote_state()),
-        )
-
-        shots = 0
-
-        def shot(what: str) -> None:
-            """The OLED after a step, as a PNG in the scenario's work folder (to look at when a check fails)."""
-            nonlocal shots
-            from tools.control.digi_client import oled_png
-
-            shots += 1
-            (c.work / f"keys-{shots:02d}-{what}.png").write_bytes(
-                oled_png(emu.frame()[1], 3)
-            )
-
-        def tap(name: str, wait: float = 1.2) -> None:
-            code = H.button(name)
-            up.remote_key(code, True)
-            time.sleep(0.3)
-            up.remote_key(code, False)
-            time.sleep(wait)
-            shot(name.lower())
-
-        shot("start")
-        tap("NO", 2)
-        tap("SETTINGS", 3)
-        for _ in range(8):
-            tap("DOWN")
-        tap("YES", 3)  # the DIGIKIT menu, the cursor on MODULES
-        tap("DOWN")  # FX ROUTES
-        tap("DOWN")  # ABOUT
-        tap("YES", 3)  # the ABOUT page
-        base = H.plan_symbol(plan, "DK_ABOUT")
-        n = emu.peek32(H.plan_symbol(plan, "DK_ABOUT_N")) or 0
-        rows = H.text_rows(lambda a: emu.peek32(a) or 0, base, n, 24)
-        lost = H.missing_rows(rows, ["RUNTIME {runtime}"])
-        c.check(
-            "KEY presses opened ABOUT: its rows hold the runtime version (expect_text DK_ABOUT)",
-            not lost,
-            f"rows {rows}" if not lost else f"no row {lost} in {rows}",
-        )
-        for _ in range(4):  # back to the main screen
-            tap("NO", 2)
-        # TURN: a value of the firmware changes by the detents and returns when they are turned back (the screen is the value as the firmware draws it)
-        enc, detents = int(t["encoder"]), int(t["detents"])
-        settle = float(t.get("turn_wait", 8))  # the firmware flushes a turn on its tick
-
-        def changed_from(ref: str) -> str | None:
-            """The first screen that differs from REF within the settle time (polled: the value label shows for a few emulated seconds and goes, so one look at the
-            end could miss it)."""
-            end = time.monotonic() + settle
-            while time.monotonic() < end:
-                h = emu.frame_hash()
-                if h != ref:
-                    return str(h)
-                time.sleep(0.4)
-            return None
-
-        before = emu.frame_hash()
-        up.remote_turn(enc, detents)
-        up_h = changed_from(before)
-        shot("turn+")
-        c.check(
-            "TURN reached the firmware: the screen changed (the value shows)",
-            up_h is not None,
-            f"{before[:8]} {(up_h or 'same')[:8]}",
-        )
-        up.remote_release()
-    finally:
-        emu.__exit__(None, None, None)
-
-
-def run_live(c: Ctx) -> None:
-    """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
-    by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
-    guest's card writes are laid over a default blank card when the firmware was loaded without one."""
-    from tools.device import dklog as L
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
-
-    if c.table().get("part") == "svc":
-        return run_live_svc(c)
-    if c.table().get("part") == "samples":
-        return run_live_samples(c)
-    if c.table().get("part") == "samples-store":
-        return run_live_samples_store(c)
-    if c.table().get("part") == "input":
-        return run_live_input(c)
-    if c.table().get("part") == "remote":
-        return run_live_remote(c)
-    if c.table().get("part") == "remote-keys":
-        return run_live_remote_keys(c)
-    (module,) = c.table()["modules"]
-    dev, _ = c.image.split("-")
-    emu, mirror = live_boot(c)
-    try:
-        epoch0 = emu.status()["epoch"]
-        tool = live_tool(emu)
-
-        rc, ev, secs = tool("install", module, "--restart")
-        res = next((e for e in ev if e["event"] == "result"), {})
-        c.check(
-            "dktransfer install: the restart kept the upload and the selection, MODULES lists the module",
-            rc == 0 and module in res.get("loaded", []),
-            f"rc {rc} {ev[-1:] if ev else ''}",
-        )
-        c.report["install_s"] = round(secs, 1)
-        c.check("the emulator booted again (epoch)", emu.status()["epoch"] > epoch0)
-        up = DK.Uploader(TR.LiveTransport(emu))
-        c.check(
-            "the file is on the card after the soft reset",
-            [p for p, _, _ in up.ls()] == [f"modules/{module.split('/')[-1]}.dkm"],
-            str(up.ls()),
-        )
-        # the module store follows into the folder about 2 s after the guest's last card write, with the same sha256
-        path = f"modules/{module.split('/')[-1]}.dkm"
-        want = dict((p, h) for p, _, h in up.ls())[path]
-        mirrored = mirror / "digikit" / path
-
-        def sha_of(f: Path) -> str | None:
-            return hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
-
-        end = time.monotonic() + 30
-        while time.monotonic() < end and sha_of(mirrored) != want:
-            time.sleep(0.5)
-        c.check(
-            "the folder holds the module with the card's sha256 (the emulator mirrors the store after its quiet period)",
-            sha_of(mirrored) == want,
-            str(mirrored),
-        )
-        fold = emu.call("card.folder")
-        c.check(
-            "card.folder lists it with size and sha256",
-            fold["folder"] == str(mirror)
-            and fold["continuous"]
-            and [(f["path"], f["sha256"]) for f in fold["files"]] == [(path, want)],
-            str(fold),
-        )
-        # delete the selected file: DELETE does not touch the selection, so the next boot finds a selected path whose file is gone and
-        # skips it with an error line (MOD_LOAD result -1) instead of failing the boot
-        # (the boot after `install --restart` is the second boot with a selection that has not run the stable period, 30 s of DSP blocks:
-        # one more such boot would be a safe boot, so the scenario restarts once more only)
-        rc3, ev3, _ = tool("delete", path)
-        c.check(
-            "dktransfer delete: the file is gone from the card",
-            rc3 == 0 and any(e["event"] == "delete" for e in ev3) and up.ls() == [],
-            f"rc {rc3} {ev3[-1:] if ev3 else ''}",
-        )
-        # ... and the folder follows the card: the file is removed (card.sync does not wait for the quiet period)
-        synced = emu.call("card.sync")
-        c.check(
-            "card.sync removes the deleted file from the folder",
-            not mirrored.exists() and synced["files"] == [],
-            str(synced),
-        )
-        rc4, ev4, _ = tool("restart")
-        up = DK.Uploader(TR.LiveTransport(emu))
-        _, _, evs = L.read_all(up)
-        c.check(
-            "the boot after the delete skips the selected path (MOD_LOAD E_NOT_FOUND) and reaches the UI",
-            rc4 == 0
-            and any(e[2] == L.K["MOD_LOAD"] and e[4][1] == 0xFFFFFFFF for e in evs)
-            and any(e[2] == L.K["UI_FIRST"] for e in evs)
-            and [m["name"] for m in up.modules()["modules"]] == [],
-            f"rc {rc4} {ev4[-2:]} "
-            + " | ".join(
-                L.text_of(L.event_dict(e)).strip()
-                for e in evs
-                if e[2] != L.K["DSP_DIAG"]
-            ),
-        )
-    finally:
-        emu.__exit__(None, None, None)
-
-
 KINDS = {
-    "live": run_live,
     "pages": run_pages,
     "fx": run_fx,
     "fxsend": run_fxsend,
@@ -2159,7 +1471,6 @@ KINDS = {
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,
-    "rungc": run_rungc,
     "equiv": run_equiv,
     "upload": run_upload,
     "menu": run_menu,
@@ -2169,10 +1480,32 @@ KINDS = {
 }
 
 
+def finish_work_dir(work: Path, ok: bool) -> None:
+    """Remove a temporary work dir after a pass; keep it (and say so) after a failure or an exception."""
+    if ok:
+        shutil.rmtree(work, ignore_errors=True)
+    else:
+        print(f"work dir kept: {work}", file=sys.stderr, flush=True)
+
+
 def run_scenario(
     scen: Scenario, image: str, keep: Path | None = None, tier: str | None = None
 ) -> dict[str, Any]:
-    work = keep or Path(tempfile.mkdtemp(prefix=f"digikit-{scen.name}-"))
+    if keep:
+        return _run_scenario(scen, image, keep, tier)
+    work = Path(tempfile.mkdtemp(prefix=f"digikit-{scen.name}-"))
+    ok = False
+    try:
+        rep = _run_scenario(scen, image, work, tier)
+        ok = bool(rep["pass"])
+        return rep
+    finally:
+        finish_work_dir(work, ok)
+
+
+def _run_scenario(
+    scen: Scenario, image: str, work: Path, tier: str | None
+) -> dict[str, Any]:
     work.mkdir(parents=True, exist_ok=True)
     c = Ctx(scen, image, work)
     c.tier = tier or os.environ.get("DIGIKIT_TIER", "quick")
@@ -2216,11 +1549,29 @@ def run_pairs(
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """The (scenario, image) pairs in child processes, JOBS at a time, the long ones first. Returns the report of each pair (its
     `report.json`; a pair whose process died without one gets a failed report that names its log). One log per pair in KEEP (or a
-    temporary directory)."""
+    temporary directory, removed when every pair passes)."""
+    if keep:
+        return _run_pairs(pairs, tier, jobs, keep, quiet)
+    base = Path(tempfile.mkdtemp(prefix="digikit-jobs-"))
+    ok = False
+    try:
+        reports = _run_pairs(pairs, tier, jobs, base, quiet)
+        ok = all(r["pass"] for r in reports.values())
+        return reports
+    finally:
+        finish_work_dir(base, ok)
+
+
+def _run_pairs(
+    pairs: list[tuple[Scenario, str]],
+    tier: str,
+    jobs: int,
+    base: Path,
+    quiet: bool,
+) -> dict[tuple[str, str], dict[str, Any]]:
     import subprocess
     from concurrent.futures import ThreadPoolExecutor
 
-    base = keep or Path(tempfile.mkdtemp(prefix="digikit-jobs-"))
     base.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     rank = {

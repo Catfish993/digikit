@@ -15,6 +15,8 @@ export interface SpawnOptions {
   /** Wait for the socket, ms. Default 120000. */
   timeoutMs?: number;
   connect?: ConnectOptions;
+  /** Abort startup, closing the connection and awaiting this child's exit. */
+  signal?: AbortSignal;
 }
 
 export interface Daemon {
@@ -71,40 +73,67 @@ export async function spawnDaemon(opts: SpawnOptions): Promise<Daemon> {
     fs.appendFileSync(errPath, String(err));
   });
 
-  const deadline = Date.now() + (opts.timeoutMs ?? 120_000);
-  let sock: string | null = null;
-  while (!sock) {
-    if (exited !== undefined) {
-      const err = fs.readFileSync(errPath, 'utf8').trim().slice(-400);
-      throw new Error(`digi-emud exited ${exited}: ${err}`);
+  const done = new Promise<void>((resolve) => {
+    if (exited !== undefined) resolve();
+    else {
+      child.once('exit', () => resolve());
+      child.once('error', () => resolve());
     }
-    if (Date.now() > deadline) {
-      child.kill();
-      throw new Error(`digi-emud did not open its socket in ${runDir}`);
+  });
+  let killRequested = false;
+  const cancel = () => {
+    if (exited === undefined && !killRequested) {
+      killRequested = true;
+      child.kill('SIGKILL');
     }
-    sock = readSocket(runDir);
-    if (!sock) await sleep(100);
-  }
+  };
+  opts.signal?.addEventListener('abort', cancel, { once: true });
   let client: Client;
   try {
-    client = await connect(sock, opts.connect);
+    opts.signal?.throwIfAborted();
+    const deadline = Date.now() + (opts.timeoutMs ?? 120_000);
+    let sock: string | null = null;
+    while (!sock) {
+      opts.signal?.throwIfAborted();
+      if (exited !== undefined) {
+        const err = fs.readFileSync(errPath, 'utf8').trim().slice(-400);
+        throw new Error(`digi-emud exited ${exited}: ${err}`);
+      }
+      if (Date.now() > deadline) throw new Error(`digi-emud did not open its socket in ${runDir}`);
+      sock = readSocket(runDir);
+      if (!sock) await sleep(100);
+    }
+    client = await connect(sock, { ...opts.connect, signal: opts.signal ?? opts.connect?.signal });
+    if (opts.signal?.aborted) {
+      client.close();
+      opts.signal.throwIfAborted();
+    }
   } catch (err) {
-    child.kill();
+    cancel();
+    await done;
     throw err;
+  } finally {
+    opts.signal?.removeEventListener('abort', cancel);
   }
+  let closing: Promise<void> | undefined;
   return {
     client,
     process: child,
     runDir,
-    async close() {
-      if (exited === undefined) {
-        const done = new Promise<void>((resolve) => child.once('exit', () => resolve()));
-        await client.quit().catch(() => {});
-        const timer = setTimeout(() => child.kill(), 10_000);
-        await done;
-        clearTimeout(timer);
-      }
-      client.close();
+    close() {
+      return (closing ??= (async () => {
+        if (exited === undefined) {
+          const timer = setTimeout(() => {
+            client.close();
+            child.kill('SIGKILL');
+          }, 10_000);
+          // A peer that never answers quit must not postpone the child deadline.
+          void client.quit().catch(() => {});
+          await done;
+          clearTimeout(timer);
+        }
+        client.close();
+      })());
     },
   };
 }

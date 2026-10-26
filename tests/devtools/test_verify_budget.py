@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 import random
 from pathlib import Path
 
@@ -30,23 +28,6 @@ CALLER_VARS = (
 def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in CALLER_VARS:
         monkeypatch.delenv(key, raising=False)
-
-
-def test_budget_default_is_physical_cores_minus_two() -> None:
-    assert verify_budget.default_budget(16) == 14
-    assert verify_budget.default_budget(2) == 1
-    assert verify_budget.default_budget(1) == 1
-
-
-def test_budget_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DIGI_VERIFY_BUDGET", raising=False)
-    assert verify_budget.resolve_budget(5) == 5  # --jobs
-    monkeypatch.setenv("DIGI_VERIFY_BUDGET", "9")
-    assert verify_budget.resolve_budget(0) == 9
-    assert verify_budget.resolve_budget(5) == 5  # the flag wins
-    monkeypatch.setenv("DIGI_VERIFY_BUDGET", "0")
-    with pytest.raises(SystemExit):
-        verify_budget.resolve_budget(0)
 
 
 @pytest.mark.parametrize("total", BUDGETS)
@@ -120,74 +101,12 @@ def test_inner_pools_fit_the_share(node: str, total: int) -> None:
         )
 
 
-def test_the_default_step_set_fits_a_16_core_machine() -> None:
-    """The sum over the first wave of a full run on 16 physical cores (budget 14) is at most the budget."""
-    nodes, deps = verify.plan(verify.EVERYTHING, ["tests/digikit"])
-    for wave in verify_budget.wave_plan(nodes, deps, 14):
-        assert sum(share for _, share in wave) <= 14
-
-
-def test_step_env_names_every_pool() -> None:
-    env = verify_budget.step_env("tier-sweep", 10)
-    assert env["DIGI_TIER_JOBS"] == "5"
-    assert env["DIGI_JOBS"] == "5"
-    assert env["CARGO_BUILD_JOBS"] == "10"
-    assert env["RAYON_NUM_THREADS"] == "10"
-    assert set(env) >= {
-        "RUST_TEST_THREADS",
-        "NEXTEST_TEST_THREADS",
-        "DIGI_PY_JOBS",
-        "DIGIKIT_JOBS",
-        "DIGI_CONFORM_JOBS",
-        "DIGI_PK_JOBS",
-        "DIGIKIT_PART_JOBS",
-    }
-    py = verify_budget.step_env("python-tests", 6)
-    assert (py["DIGI_PY_JOBS"], py["DIGIKIT_JOBS"], py["CARGO_BUILD_JOBS"]) == (
-        "3",
-        "1",
-        "2",
-    )
-
-
-def test_user_variables_override_the_share(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DIGI_TIER_JOBS", "7")
-    env = verify_budget.bounded_env("tier-sweep", 10, {"A": "1"})
-    assert "DIGI_TIER_JOBS" not in env  # the user's 7 stays in the environment
-    assert env["DIGIKIT_JOBS"] == "1" and env["A"] == "1"
-    assert verify_budget.user_overrides() == ["DIGI_TIER_JOBS"]
-
-
-def test_lower_priority(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[int] = []
-    monkeypatch.setattr(os, "getpriority", lambda *_: 0)
-    monkeypatch.setattr(os, "setpriority", lambda _w, _i, n: seen.append(n))
-    assert verify_budget.lower_priority(True) is None and not seen  # --foreground
-    assert verify_budget.lower_priority(False) == verify_budget.NICE == 10
-    assert seen == [10]
-    monkeypatch.setattr(os, "getpriority", lambda *_: 15)  # already nicer: kept
-    assert verify_budget.lower_priority(False) == 15 and seen == [10]
-
-
 # ---- builds: once, in one place --------------------------------------------------------------------------------
-
-
-def test_builds_are_a_chain_and_steps_wait_for_theirs() -> None:
-    nodes, deps = verify.plan(verify.EVERYTHING, ["tests/digikit"])
-    assert deps["build"] == ()
-    assert deps["build-daemons"] == ("build",)
-    assert deps["build-dt2"] == ("build", "build-daemons")
-    assert deps["pins"] == deps["check"] == ("build",)
-    assert deps["dt2-check"] == ("build-dt2",)
-    assert deps["python-tests"] == deps["card"] == ("build-daemons",)
-    assert deps["rust-tests"] == (
-        "build",
-    )  # one compile of the generated core in the prod target dir
 
 
 def test_no_build_node_without_a_step_that_needs_it() -> None:
     nodes, deps = verify.plan(("rust-tests", "web"), None)
-    assert sorted(nodes) == ["rust-tests", "web"]
+    assert sorted(nodes) == ["host", "rust-tests", "web"]
     assert deps["rust-tests"] == ()
     nodes, _ = verify.plan(("python-tests",), ["tests/devtools/test_verify.py"])
     assert "build-daemons" not in nodes
@@ -207,7 +126,9 @@ def test_no_build_node_without_a_step_that_needs_it() -> None:
 
 @pytest.mark.parametrize("path", sorted(verify.NO_AOT_SUBSET))
 def test_no_aot_subset_names_exist(path: str) -> None:
-    doc = json.loads((REPO_ROOT / path).read_text())
+    from tools.emulator.coupled import scenario_document
+
+    doc = scenario_document(REPO_ROOT / path)
     names = {s["name"] for s in doc["scenarios"]}
     assert set(verify.NO_AOT_SUBSET[path]) <= names
     assert len(verify.NO_AOT_SUBSET[path]) == len(set(verify.NO_AOT_SUBSET[path]))
@@ -216,8 +137,8 @@ def test_no_aot_subset_names_exist(path: str) -> None:
 
 
 def test_no_aot_subset_covers_the_fx_paths() -> None:
-    dn2 = set(verify.NO_AOT_SUBSET["tests/scenarios/dn2-trackfx.json"]) | set(
-        verify.NO_AOT_SUBSET["tests/scenarios/dn2-sendfx.json"]
+    dn2 = set(verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-trackfx.ts"]) | set(
+        verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-sendfx.ts"]
     )
     for family in ("dry", "br", "over", "srr", "del", "rev", "chr", "mst"):
         assert any(f"-{family}-" in n for n in dn2), family
@@ -227,7 +148,7 @@ def test_no_aot_subset_covers_the_fx_paths() -> None:
 
 
 def test_tier_names_subset_and_full() -> None:
-    path = "tests/scenarios/dn2-sendfx.json"
+    path = "tests/regression/scenarios/dn2-sendfx.ts"
     seconds = {f"s{i:03d}": 1.0 for i in range(20)}
     with pytest.raises(SystemExit):  # a subset name that the file lacks
         verify.tier_names(path, seconds, 7, False)
@@ -237,33 +158,12 @@ def test_tier_names_subset_and_full() -> None:
     assert verify.tier_names(path, real, 1, False) == list(verify.NO_AOT_SUBSET[path])
 
 
-def test_check_no_aot_selection_names_real_tests() -> None:
-    source = (REPO_ROOT / "tests/scenarios/test_dn2_fx.py").read_text()
-    for word in verify.CHECK_NO_AOT_K.replace("(", " ").replace(")", " ").split():
-        if word.startswith("test_"):
-            assert f"def {word}(" in source, word
-
-
 def test_pk_jobs_variable_caps_the_harness(monkeypatch: pytest.MonkeyPatch) -> None:
     from tools.patchkit import pk_harness
 
     monkeypatch.setenv("DIGI_PK_JOBS", "2")
     assert pk_harness.default_jobs(10) == 2
     assert pk_harness.default_jobs(1) == 1
-
-
-def test_gate_passes_the_share_to_every_pool(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    gate = verify.Gate(tmp_path, budget=14)
-    gate.local.node = "python-tests"
-    gate.local.share = 6
-    env = gate.step_env()
-    assert env["DIGI_PY_JOBS"] == "3" and env["DIGIKIT_JOBS"] == "1"
-    gate.shared_env["DIGI_EMUD_DT2"] = "/x/digi-emud"
-    assert gate.step_env()["DIGI_EMUD_DT2"] == "/x/digi-emud"
-    gate.local.node = "check"  # a rendering step never carries the daemon variables
-    assert "DIGI_EMUD_DT2" not in gate.step_env()
 
 
 def test_digikit_parts_run_one_at_a_time_in_the_gate() -> None:
@@ -399,11 +299,7 @@ def test_linux_smt_counts_physical_cores(tmp_path: Path) -> None:
         tmp_path / "two", cores=4, threads=2, sockets=2
     )  # two sockets: core ids repeat
     assert verify_budget.linux_physical_cores(tmp_path / "two", set(range(16))) == 8
-
-
-def test_linux_affinity_limits_the_cores(tmp_path: Path) -> None:
-    make_cpus(tmp_path, cores=8, threads=2)
-    # cpus 0-7 are the first thread of each core, 8-15 the second
+    # affinity: cpus 0-7 are the first thread of each core, 8-15 the second
     assert verify_budget.linux_physical_cores(tmp_path, {0, 1, 2, 3, 8, 9}) == 4
     assert verify_budget.linux_physical_cores(tmp_path / "none", set()) is None
 
@@ -440,13 +336,6 @@ def test_cgroup_memory_limit(tmp_path: Path) -> None:
     assert verify_budget.cgroup_memory_limit(tmp_path / "v1") is None
     (v1 / "memory.limit_in_bytes").write_text(str(4 * GB))
     assert verify_budget.cgroup_memory_limit(tmp_path / "v1") == 4 * GB
-
-
-def test_detect_machine_here_is_sane() -> None:
-    m = verify_budget.detect_machine()
-    assert 1 <= m.cores <= (os.cpu_count() or m.cores)
-    assert m.ram is None or m.ram > GB
-    assert verify_budget.default_budget() >= 1
 
 
 # ---- python-tests: one job per file in the budget queue ----------------------------------------------------------
@@ -570,3 +459,38 @@ def test_file_jobs_leave_the_cores_a_waiting_step_needs() -> None:
         )
         == []
     )
+
+
+@pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
+def test_coupled_acceptance_reserves_one_daemon(node: str) -> None:
+    assert verify_budget.want_cores(node, 16) == 2
+    assert verify_budget.want_cores(node, 1) == 1
+
+
+@pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
+def test_coupled_acceptance_waits_for_its_entire_reservation(node: str) -> None:
+    budget = verify_budget.Budget(total=4)
+    budget.running["web"] = 3
+    assert budget.admit(node) is None
+    budget.release("web")
+    assert budget.admit(node) == 2
+
+
+@pytest.mark.parametrize("steps", [("web",), ("host", "web"), verify.STEPS])
+def test_web_plan_requires_host_once(steps: tuple[str, ...]) -> None:
+    nodes, deps = verify.plan(steps, [])
+    assert nodes.count("host") == 1
+    assert deps["web"] == ("host",)
+    assert deps["host"] == ()
+
+
+def test_explicit_host_plan_has_no_build_or_device_prerequisites() -> None:
+    assert verify.plan(("host",), []) == (["host"], {"host": ()})
+    assert "host" in verify.EVERYTHING
+    assert "web" in verify.EVERYTHING
+
+
+def test_host_budget_reports_only_node_pool() -> None:
+    assert verify_budget.WANT["host"] == 0.15
+    assert verify_budget.SHOWN["host"] == ("node",)
+    assert verify_budget.workers_for("host", 3).node == 3

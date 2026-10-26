@@ -10,6 +10,8 @@ costs time, a stale hit hides a bug).
     cache.store(key, top, entry, wav)
 
 Env: DIGI_RENDER_CACHE=0 disables the cache by default.
+DIGI_RENDER_CACHE_MAX_GB (default 30) caps the cache size; store() prunes the
+least recently used entries.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ DENYLIST: frozenset[str] = frozenset(
         "DIGI_PK_JOBS",
         "DIGI_VERIFY_BUDGET",  # the verify gate's CPU budget (tools/devtools/verify_budget.py)
         "DIGI_RENDER_CACHE",
+        "DIGI_RENDER_CACHE_MAX_GB",
         "DIGI_RENDER_CACHE_CHECK",  # cache controls, not render inputs
         "DIGI_DIAG_DIR",
         "DIGI_SPIKE_LOG",
@@ -108,6 +111,10 @@ _memo: dict[tuple[str, int, int], str] = {}
 
 def default_enabled() -> bool:
     return os.environ.get("DIGI_RENDER_CACHE") != "0"
+
+
+def max_bytes() -> int:
+    return int(float(os.environ.get("DIGI_RENDER_CACHE_MAX_GB", "30")) * (1 << 30))
 
 
 def file_digest(path: str | Path) -> str:
@@ -220,6 +227,8 @@ class RenderCache:
             return None
         if "top" not in rec or "entry" not in rec:
             return None
+        with contextlib.suppress(OSError):
+            os.utime(d)  # mtime = last use, for prune
         return rec["top"], rec["entry"], wav
 
     def store(self, key: str, top: Mapping, entry: Mapping, wav: Path) -> None:
@@ -244,6 +253,27 @@ class RenderCache:
         finally:
             if tmp.exists():
                 shutil.rmtree(tmp, ignore_errors=True)
+        self.prune(max_bytes())
+
+    def prune(self, max_bytes: int) -> int:
+        """Remove the least recently used entries until the total is <= max_bytes."""
+        sized: list[tuple[float, int, Path]] = []
+        for e in self._entries():
+            try:
+                mtime = e.stat().st_mtime
+                size = sum(f.stat().st_size for f in e.glob("*"))
+            except OSError:
+                continue
+            sized.append((mtime, size, e))
+        total = sum(s for _, s, _ in sized)
+        removed = 0
+        for _, size, e in sorted(sized, key=lambda t: t[0]):
+            if total <= max_bytes:
+                break
+            shutil.rmtree(e, ignore_errors=True)
+            total -= size
+            removed += 1
+        return removed
 
     def _entries(self) -> list[Path]:
         if not self.root.is_dir():

@@ -1,0 +1,22 @@
+{
+  "name": "@digi/dk-session",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gen_proto": "./src/gen_proto.ts",
+    "./dksample": "./src/dksample.ts",
+    "./rpcfiles": "./src/rpcfiles.ts",
+    "./samples": "./src/samples.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

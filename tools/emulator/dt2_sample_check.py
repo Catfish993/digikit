@@ -101,7 +101,7 @@ def analyse(left: list[float], rate: float = 48000.0) -> dict:
 
 def prepare() -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
     """The card, its ready state and the firmware: (syx, card, ready_dir, work)."""
-    work = ROOT / "out" / "dt2-sample-check"
+    work = digi_env.run_dir("dt2-sample-check")
     samples = work / "samples"
     write_sine(samples / "test-sine-1khz.wav")
     syx = digi_env.firmware_for("dt2")
@@ -109,7 +109,7 @@ def prepare() -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
     pinned = os.environ.get("DIGI_DT2_CARD")
     if pinned:
         # a card image kept from an earlier builder: the oracle values of
-        # tests/scenarios/test_dt2_fx.py are tied to the ready state it boots to
+        # tests/regression/scenarios/dt2-fx.test.ts are tied to the ready state it boots to
         card = pathlib.Path(pinned).resolve()
     else:
         card = ne.plusdrive_card(samples, syx, digi_env.rust_env(dict(os.environ)))

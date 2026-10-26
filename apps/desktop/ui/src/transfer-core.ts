@@ -1,5 +1,5 @@
 // The pure logic of the Transfer page (no DOM, no Tauri): the two lists, the install request, the progress bar and the texts.
-// Written without TS-only runtime syntax so node can import it (apps/web/tests/transfer.test.mjs).
+// Host tests: apps/desktop/ui/tests/transfer.test.ts.
 //
 // The page only puts files on the card (upload and verify) and restarts the device. Which modules the device loads is its own
 // selection, made in SETTINGS > DIGIKIT > MODULES on the device and applied there.

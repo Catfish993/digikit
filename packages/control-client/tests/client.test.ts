@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { connect, RpcError, type EmuEvent } from '../src/index.ts';
 
 type Handler = (method: string, params: any, reply: (msg: object) => void) => void;
@@ -126,4 +126,29 @@ test('status carries the typed CPU load', async () => {
   assert.equal(status.load?.dsp?.real_high_pct, 66.5);
   c.close();
   srv.close();
+});
+
+test('abort closes a connection whose hello handshake never replies', { timeout: 1000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-abort-'));
+  const sock = path.join(dir, 'hello.sock');
+  let accepted!: () => void;
+  const connected = new Promise<void>((resolve) => {
+    accepted = resolve;
+  });
+  const server = net.createServer((conn) => {
+    conn.on('data', () => accepted());
+  });
+  await new Promise<void>((resolve) => server.listen(sock, resolve));
+  const controller = new AbortController();
+  try {
+    const pending = connect(sock, { signal: controller.signal });
+    const rejected = assert.rejects(pending, { name: 'AbortError' });
+    await connected;
+    controller.abort();
+    await rejected;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  } finally {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

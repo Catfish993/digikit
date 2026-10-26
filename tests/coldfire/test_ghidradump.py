@@ -173,17 +173,19 @@ class DecompFilesTest(unittest.TestCase):
 
 
 class PriorTest(unittest.TestCase):
-    def test_refuses_a_directory_that_is_not_a_dump(self):
-        with tempfile.TemporaryDirectory() as d:
-            open(os.path.join(d, "something"), "w").close()
-            with self.assertRaises(SystemExit):
-                ghidradump.read_prior(d, partial=False)
-
-    def test_partial_needs_an_existing_dump(self):
-        with tempfile.TemporaryDirectory() as d:
-            self.assertIsNone(ghidradump.read_prior(d, partial=False))
-            with self.assertRaises(SystemExit):
-                ghidradump.read_prior(d, partial=True)
+    def test_dump_directory_error_paths(self):
+        cases = [
+            ("not a dump", True, False),
+            ("empty, partial", False, True),
+        ]
+        for label, populate, partial in cases:
+            with self.subTest(label), tempfile.TemporaryDirectory() as d:
+                if populate:
+                    open(os.path.join(d, "something"), "w").close()
+                else:
+                    self.assertIsNone(ghidradump.read_prior(d, partial=False))
+                with self.assertRaises(SystemExit):
+                    ghidradump.read_prior(d, partial=partial)
 
     def test_reads_the_manifest(self):
         with tempfile.TemporaryDirectory() as d:

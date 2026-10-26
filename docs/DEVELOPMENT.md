@@ -124,17 +124,17 @@ runner plays against a ready state. It reports the PCM hash and level
 ```sh
 mise run scenario:all         # every DN2 scenario; fails when a pinned PCM hash differs
 mise run scenario trig1-taps --wav
-mise run test:quick           # fast checks
-mise run test                 # pytest, cargo test --workspace, web tests, all scenario pins
-mise run test:slow            # slow runs and gates that need private fixtures
-mise run lint                 # ruff, oxlint, cargo fmt on the clean crates
-mise run verify:pre           # quick lane check, not the merge gate
-mise run verify               # the gate: the steps your changed files need
-mise run verify:full          # every step; run before merging to main
 ```
 
-`mise run verify` is the gate, not `mise run verify:pre`. Test layout and commands:
-[docs/TESTING.md](TESTING.md).
+Test levels, layout and all commands are in [docs/TESTING.md](TESTING.md). The most used:
+
+```sh
+mise run test:changed         # checks for the changed files; no builds or devices (--explain shows the selection)
+mise run test:host            # host Vitest projects; no device
+mise run verify:host          # host lint, format, tests and types
+mise run verify               # the gate: the steps your changed files need
+mise run module:check ID      # one module: conformance and its own tests
+```
 
 Pins are valid only for the firmware and ready state they were recorded with.
 

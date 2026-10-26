@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import Mock
 
 import pytest
 from support.paths import REPO_ROOT
@@ -69,15 +71,24 @@ def test_pk_sharc_selects_the_routine_tests_and_no_sharc_semantics() -> None:
     assert not any(t.startswith("tests/sharc/") for t in tests)
 
 
-def test_changed_test_selects_itself() -> None:
-    sel = changed_tests.select(["tests/devtools/test_verify.py"])
-    assert sel.tests["tests/devtools/test_verify.py"] == "changed"
-
-
-def test_support_module_selects_importers() -> None:
-    sel = changed_tests.select(["tests/support/machine_rig.py"])
+@pytest.mark.parametrize(
+    "path, own_reason",
+    [
+        ("tests/devtools/test_verify.py", "changed"),  # a changed test selects itself
+        ("tests/support/machine_rig.py", None),  # a support module selects importers
+    ],
+)
+def test_changed_test_or_support_module_selects_tests(
+    path: str, own_reason: str | None
+) -> None:
+    sel = changed_tests.select([path])
     assert sel.tests
-    assert all("via" in r or "imports" in r or "runs" in r for r in sel.tests.values())
+    if own_reason:
+        assert sel.tests[path] == own_reason
+    else:
+        assert all(
+            "via" in r or "imports" in r or "runs" in r for r in sel.tests.values()
+        )
 
 
 def test_selection_never_holds_a_directory() -> None:
@@ -98,62 +109,153 @@ def test_deep_is_a_superset() -> None:
     assert set(shallow.tests) <= set(deep.tests)
 
 
-HEADER = "file\tstatus\trc\tseconds\tpassed\tfailed\tskipped\terrors\n"
-
-
-def _write_summary(out: Path, rows: list[str]) -> None:
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "summary.tsv").write_text(HEADER + "".join(r + "\n" for r in rows))
-
-
-def test_failure_report_failed_file(tmp_path: Path) -> None:
-    _write_summary(
-        tmp_path,
-        [
-            "tests/NAME/test_ok.py\tOK\t0\t1.0\t3\t0\t0\t0",
-            "tests/NAME/test_bad.py\tFAILED\t1\t2.0\t1\t1\t0\t0",
-        ],
+@pytest.mark.parametrize("returncodes", [(0, 0), (1, 0), (0, 1), (1, 1)])
+def test_main_propagates_exit_codes_and_continues(
+    returncodes: tuple[int, int],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    names = ["python-tests", "ruff-check"]
+    monkeypatch.setattr(changed_tests.verify, "changed_files", lambda _: [])
+    monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: [])
+    monkeypatch.setattr(
+        changed_tests, "plan", lambda *args: [(n, [n], "") for n in names]
     )
-    (tmp_path / "xml").mkdir()
-    (tmp_path / "logs").mkdir()
-    (tmp_path / "xml" / "tests__NAME__test_bad.xml").write_text(
-        '<testsuite><testcase name="test_x"><failure message="AssertionError: x != y">'
-        'trace</failure></testcase><testcase name="test_y"/></testsuite>'
+    monkeypatch.setattr(changed_tests.digi_env, "run_dir", lambda _: str(tmp_path))
+    monkeypatch.setattr(changed_tests.verify_budget, "resolve_budget", lambda: 1)
+    monkeypatch.setattr(changed_tests.verify_budget, "bounded_env", lambda *args: {})
+    run = Mock(
+        side_effect=[
+            CompletedProcess([n], rc) for n, rc in zip(names, returncodes, strict=True)
+        ]
     )
-    (tmp_path / "logs" / "tests__NAME__test_bad.log").write_text("log\n")
-    head, detail = changed_tests.failure_report(tmp_path)
-    assert head.startswith("FAIL python-tests: 1 of 2 files failed")
-    assert any("tests/NAME/test_bad.py" in d and "1 failed" in d for d in detail)
-    assert any("AssertionError: x != y" in d for d in detail)
-    assert not any("test_y" in d for d in detail)
+    monkeypatch.setattr(changed_tests.subprocess, "run", run)
+
+    assert changed_tests.main(["--foreground"]) == int(any(returncodes))
+    assert [call.args[0] for call in run.call_args_list] == [[n] for n in names]
+    for call in run.call_args_list:
+        assert not {"capture_output", "stdout", "stderr", "text"} & call.kwargs.keys()
+    output = capsys.readouterr().out
+    assert f"python-tests logs: {tmp_path}" in output
+    for name, rc in zip(names, returncodes, strict=True):
+        assert f"{'FAIL' if rc else 'PASS'} {name} (" in output
+    if any(returncodes):
+        failed = ", ".join(n for n, rc in zip(names, returncodes, strict=True) if rc)
+        assert f"test:changed: FAILED: {failed}." in output
 
 
-def test_failure_report_all_ok(tmp_path: Path) -> None:
-    _write_summary(
-        tmp_path,
-        [
-            "tests/NAME/test_one.py\tOK\t0\t1.0\t3\t0\t0\t0",
-            "tests/NAME/test_two.py\tOK\t0\t1.0\t1\t0\t1\t0",
-        ],
+def test_explain_runs_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(changed_tests.verify, "changed_files", lambda _: [])
+    monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: [])
+    monkeypatch.setattr(
+        changed_tests, "plan", lambda *args: [("python-tests", ["unused"], "")]
     )
-    head, detail = changed_tests.failure_report(tmp_path)
-    assert head.startswith("PASS python-tests: 2 files, 4 passed")
-    assert detail == []
-
-
-def test_failure_report_no_xml_shows_log_tail(tmp_path: Path) -> None:
-    _write_summary(tmp_path, ["tests/NAME/test_gone.py\tNO-XML\t2\t1.0\t0\t0\t0\t0"])
-    (tmp_path / "logs").mkdir()
-    lines = [f"line {i}" for i in range(20)]
-    (tmp_path / "logs" / "tests__NAME__test_gone.log").write_text(
-        "\n".join(lines) + "\n"
-    )
-    head, detail = changed_tests.failure_report(tmp_path)
-    assert head.startswith("FAIL python-tests: 1 of 1 files failed")
-    assert detail[1:] == [f"    line {i}" for i in range(5, 20)]
-
-
-def test_explain_runs_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+    run = Mock(side_effect=AssertionError("explain must not run commands"))
+    monkeypatch.setattr(changed_tests.subprocess, "run", run)
     assert changed_tests.main(["--explain"]) == 0
-    assert "the gate adds:" in capsys.readouterr().out
-    assert Path(changed_tests.__file__).is_file()
+    run.assert_not_called()
+    output = capsys.readouterr().out
+    assert "Deferred to `mise run verify`" in output
+    assert "RUN  python-tests: unused" in output
+    assert "explained, nothing run" in output
+
+
+def test_fast_plan_defers_module_and_native_work() -> None:
+    files = [
+        "modules/core/dsp-voice/module.toml",
+        "packages/emulator/control/src/lib.rs",
+        "tools/device/dkrun.py",
+    ]
+    commands = {n: c for n, c, _ in changed_tests.plan(files, Path("OUT"))}
+    assert commands["ruff-check"][-1] == "tools/device/dkrun.py"
+    assert commands["pathcheck"]
+    assert "rust-tests" not in commands and "pk-build-check" not in commands
+    tests = commands["python-tests"] or []
+    assert not any(
+        p.startswith("tests/") and p not in changed_tests.FAST_PYTHON_TESTS
+        for p in tests
+    )
+
+
+def test_fast_python_tests_are_the_devtools_suite() -> None:
+    suite = next(
+        tests for name, _, tests in changed_tests.verify.PY_SUITES if name == "devtools"
+    )
+    assert {
+        t for t in suite if t.startswith("tests/devtools/")
+    } == changed_tests.FAST_PYTHON_TESTS
+    assert "tests/devtools/test_verify.py" in changed_tests.FAST_PYTHON_TESTS
+
+
+def test_fast_plan_runs_only_selected_audited_units(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        changed_tests,
+        "select",
+        lambda *args: changed_tests.Selection(
+            tests={
+                "tests/devtools/test_verify.py": "changed",
+                "tests/patchkit/test_pluck.py": "imports",
+            }
+        ),
+    )
+    commands = {n: c for n, c, _ in changed_tests.plan([], Path("OUT"))}
+    assert "tests/devtools/test_verify.py" in commands["python-tests"]
+    assert "tests/patchkit/test_pluck.py" not in commands["python-tests"]
+
+
+def test_host_selection_uses_native_related_for_sources_tests_and_assets() -> None:
+    for path in (
+        "packages/control-client/src/index.ts",
+        "packages/control-client/tests/client.test.ts",
+        "apps/desktop/ui/src/native.css",
+    ):
+        commands = {n: c for n, c, _ in changed_tests.host_plan([path])}
+        related = commands["host-tests-related"]
+        assert related[related.index("vitest") + 1] == "related"
+        assert "--run" in related and path in related
+        if path.endswith(".ts"):
+            assert commands["types"] == ["pnpm", "-r", "run", "typecheck"]
+        else:
+            assert "types" not in commands
+        assert not any(name.startswith("types-") for name in commands)
+    for path in (
+        "pnpm-lock.yaml",
+        "vitest.host.config.ts",
+        "packages/dk-session/package.json",
+    ):
+        commands = {n: c for n, c, _ in changed_tests.host_plan([path])}
+        assert commands["host-tests"][1] == "test:host"
+
+
+def test_deferred_output_names_python_crates_and_changed_files(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(changed_tests.verify, "python_test_plan", lambda *args: [])
+    monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: ["digi-control"])
+    changed_tests.print_deferred(
+        ["modules/core/dsp-voice/module.toml"],
+        changed_tests.Selection(tests={"tests/patchkit/test_pluck.py": "imports"}),
+    )
+    output = capsys.readouterr().out
+    assert "Python: tests/patchkit/test_pluck.py" in output
+    assert "Rust crates: digi-control" in output
+    assert "Full gate coverage: modules/core/dsp-voice/module.toml" in output
+
+
+def test_unselected_audited_gate_units_are_still_deferred(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(changed_tests.verify, "python_test_plan", lambda *args: [])
+    monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: [])
+    changed_tests.print_deferred(
+        [],
+        changed_tests.Selection(
+            deep_only={"tests/devtools/test_verify_budget.py": "deep"}
+        ),
+    )
+    assert "Python: tests/devtools/test_verify_budget.py" in capsys.readouterr().out

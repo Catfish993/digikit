@@ -310,6 +310,7 @@ def run_one(
     elif cnt is None:
         status = "NO-XML"
     else:
+        # Usable XML is not a successful process exit; write_reports checks both.
         status = "OK"
     return {
         "file": rel,
@@ -382,8 +383,12 @@ def write_reports(
         if rec["status"] == "OK":
             for c in ET.parse(xml).getroot().iter("testcase"):
                 suite.append(c)
-            continue
-        if rec["status"] == "TIMEOUT":
+            if rec["rc"] == 0 or (isinstance(cnt, tuple) and (cnt[1] or cnt[3])):
+                continue
+            message = (
+                f"pytest exit code {rec['rc']} without reported failed/error cases"
+            )
+        elif rec["status"] == "TIMEOUT":
             message = f"TIMEOUT after {timeout:g} s"
         else:
             message = f"NO-XML rc={rec['rc']}"
@@ -401,7 +406,11 @@ def write_reports(
     bad: list[str] = []
     for rec in records:
         cnt = rec["counts"]
-        if rec["status"] != "OK" or (isinstance(cnt, tuple) and (cnt[1] or cnt[3])):
+        if (
+            rec["status"] != "OK"
+            or rec["rc"] != 0
+            or (isinstance(cnt, tuple) and (cnt[1] or cnt[3]))
+        ):
             bad.append(str(rec["file"]))
     return bad
 

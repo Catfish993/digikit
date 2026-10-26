@@ -16,6 +16,8 @@ import hashlib
 import json
 import os
 import pathlib
+import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -395,7 +397,32 @@ def run_dir(kind: str, stamp: str | None = None) -> pathlib.Path:
     link.unlink(missing_ok=True)
     link.symlink_to(path.name)
     link.replace(base / "latest")
+    _prune_runs(base, path)
     return path
+
+
+KEEP_RUNS = 30
+_STAMP_RE = re.compile(r"\d{8}-\d{6}(-\d+)?")
+
+
+def _prune_runs(base: pathlib.Path, current: pathlib.Path) -> None:
+    """Keep the newest KEEP_RUNS stamped run dirs of one kind.
+
+    verify_times reads the newest 12 verify runs. Symlinks (`latest`), the new
+    dir and the latest target are never removed.
+    """
+    try:
+        keep = {current.name, os.readlink(base / "latest")}
+        runs = sorted(
+            e.name
+            for e in base.iterdir()
+            if _STAMP_RE.fullmatch(e.name) and e.is_dir() and not e.is_symlink()
+        )
+    except OSError:
+        return
+    for name in runs[:-KEEP_RUNS]:
+        if name not in keep:
+            shutil.rmtree(base / name, ignore_errors=True)
 
 
 def _w(**pairs: str) -> Callable[[str, pathlib.Path], dict[str, str]]:

@@ -1,4 +1,4 @@
-// One protocol session per target, shared by every page and panel that talks to it (pure; apps/web/tests/session-share.test.mjs). Two
+// One protocol session per target, shared by every page and panel that talks to it (pure; apps/desktop/ui/tests/session-share.test.ts). Two
 // sessions over the same link are not independent: the emulator's USB capture and a MIDI port give each reply to whichever session polls
 // first, so each would take the other's replies and both would time out. One session per link keeps its requests in one queue, in turn.
 

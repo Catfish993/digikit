@@ -1,5 +1,5 @@
 // The pure logic of the Memory panel (no DOM, no Tauri): the resources a device limits, one bar each, split into one segment per loaded module.
-// Written without TS-only runtime syntax so node can import it (apps/web/tests/memory.test.mjs).
+// Host tests: apps/desktop/ui/tests/memory.test.ts.
 //
 // The data is CAPACITY (limit and used per resource), MODULES (which modules are loaded) and, per module, what its file takes (`needs_of` of
 // packages/dkneeds, through patchkit.wasm: apps/web/src/modules/dkneeds.ts) from the matching file of the local library. What `used` holds beyond

@@ -1,7 +1,7 @@
 // The Remote page and the Emulator page's faceplate in the preview (`?page=remote`, `?page=emulator`): the device screen is a test
 // pattern, so a screenshot shows where and how large the 128 x 64 image is drawn. The Remote page is the app's own code; only the
 // DkSession methods that ask the device are replaced.
-import { DkSession } from '@web/modules/dkupload-core';
+import { DkSession } from '@digi/dk-session';
 
 /** A recognisable 128 x 64 frame in the firmware's screen layout (`screenPixel`): a frame, corner marks, a diagonal, and a bar of steps. */
 export function testPattern(): Uint8Array {

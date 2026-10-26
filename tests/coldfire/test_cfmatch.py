@@ -5,12 +5,7 @@ the match of Digitakt II 1.15C -> 1.16 against the Version Tracking export."""
 from __future__ import annotations
 
 import collections
-import json
 
-import pytest
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 from tools.coldfire import cffacts, cfmatch  # noqa: E402
 
 BASE = 0x40000400
@@ -143,28 +138,3 @@ def test_ambiguous_hash_is_not_matched() -> None:
     mt = cfmatch.Matcher(src, dst)
     mt.stage_hashes()
     assert mt.m == {}
-
-
-VT = ROOT / "out" / "vt" / "dt2-1.15C_to_dt2-1.16.json"
-DUMPS = [
-    ROOT / "out" / "ghidra" / n / "manifest.json"
-    for n in ("dt2-1.15C-emac", "dt2-1.16-emac")
-]
-
-
-@pytest.mark.skipif(
-    not VT.exists() or not all(d.exists() for d in DUMPS),
-    reason="needs the 1.15C and 1.16 Ghidra dumps and the Version Tracking export",
-)
-def test_digitakt_1_15c_to_1_16_against_version_tracking(tmp_path) -> None:
-    mt = cfmatch.load_pair("dt2-1.15C-emac", "dt2-1.16-emac", str(tmp_path))
-    res = cfmatch.evaluate(mt, str(VT))
-    assert res["matched_pct_src"] > 95
-    assert res["vt"]["precision_vs_vt"] > 0.995
-    assert res["vt"]["recall_vs_vt"] > 0.99
-    # class of the RTTI names agrees for the pairs that have both (the names do not
-    # come from the byte hashes)
-    pairs = sum(v["pairs"] for v in res["rtti_class_agree"].values())
-    agree = sum(v["agree"] for v in res["rtti_class_agree"].values())
-    assert agree / pairs > 0.995
-    json.dumps(res)

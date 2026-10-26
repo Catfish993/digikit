@@ -6,6 +6,7 @@
 !/tests/
 !/tools/
 !/package.json
+!/vitest.host.config.ts
 !/pnpm-workspace.yaml
 !/.prettierrc.json
 !/.oxlintrc.json

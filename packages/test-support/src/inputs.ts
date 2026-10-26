@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,4 +59,32 @@ export function resolveInputs(device: Device, firmware: string): ReadyInputs {
     }
   }
   return ready;
+}
+
+/** Runtime boots require ready inputs from this stock image, without forced interrupt state. */
+export function validateRuntimeInputs(inputs: ReadyInputs): void {
+  const source = JSON.parse(fs.readFileSync(path.join(inputs.readyDir, 'SOURCE.json'), 'utf8'));
+  const sha256 = createHash('sha256').update(fs.readFileSync(inputs.syx)).digest('hex');
+  if (source.syx_sha256 !== sha256 || source.intc_force !== false) {
+    throw new Error(`${inputs.readyDir}: runtime ready provenance mismatch (stock SHA-256 or intc_force)`);
+  }
+}
+
+/** Match the coupled launcher's verified fast-tier defaults for the actual stock bytes.
+ * Explicit values (including empty strings) win; DIGI_EMU_FAST=0 suppresses defaults.
+ * The daemon inherits process.env, so disabled defaults do not erase explicit settings. */
+export function coupledEnv(syx: string, environ: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  if (environ.DIGI_EMU_FAST === '0') return {};
+  const digest = createHash('sha256').update(fs.readFileSync(syx)).digest('hex');
+  const table: Record<string, { fast_regions?: string; blocktrans?: string }> = JSON.parse(
+    fs.readFileSync(path.join(repoRoot(), 'tools/emulator/fast_regions.json'), 'utf8'),
+  );
+  const entry = table[digest];
+  const defaults = { SHARC_FAST_REGIONS: entry?.fast_regions, SHARC_BLOCKTRANS: entry?.blocktrans };
+  const result: Record<string, string> = {};
+  for (const [name, value] of Object.entries(defaults)) {
+    if (environ[name] !== undefined) result[name] = environ[name];
+    else if (value) result[name] = value;
+  }
+  return result;
 }

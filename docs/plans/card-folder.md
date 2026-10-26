@@ -43,7 +43,7 @@ process; a load of another device did not touch it. The DT2 card of an Open... a
   `<app data>/dev.digiemu.panel/card-folders.json` (the controller reads and writes it; the app starts no process). "Use default" removes it. A saved folder that is gone falls back to
   the default and the panel says so. The DN2 mirrors to the new folder at once; the DT2 shows "Reload now" (the Restart path).
 - **Tests:** `devicefolders.rs` (order of choice, first-load folder and default; the file), `cards.rs` (`device_files`, keys), `packages/emulator/control/tests/device_folders.rs` (each device to its folder; a
-  choice per device, saved, applied as the device needs; the flush; a load builds the card from the folder), `apps/web/tests/card.test.mjs`, the launcher tests.
+  choice per device, saved, applied as the device needs; the flush; a load builds the card from the folder), `apps/desktop/ui/tests/card.test.ts`, the launcher tests.
 - **[O]** The DN2's immediate mirror pass replaces files of the chosen folder that have the card's path but other bytes (the old file goes to `out/plusdrive/backup/`).
 - **[O]** The DT2 card build of the app is synchronous in `firmware.load` (the old launcher build was too); a big sample folder delays an Open....
 
@@ -61,8 +61,8 @@ build; the mirror removes it.
 ## Tests
 
 `plusdrive_format::mirror` (a store image written, mirrored, replaced, deleted, emptied; a blank start removes nothing; a torn store is an error to retry; the
-folder listing), `cardmirror` (the quiet period and its restart), `apps/web/tests/card.test.mjs` (the panel's texts), the live scenario `transfer-live` on DT2 and
-DN2 (a free-running daemon with `--mirror-dir`: install through `dktransfer`, the file appears in the folder with the card's sha256, `card.folder` lists it,
+folder listing), `cardmirror` (the quiet period and its restart), `apps/desktop/ui/tests/card.test.ts` (the panel's texts), `tests/regression/runtime/transfer-live.ts` on DT2 and
+DN2 (explicit/full-only runtime acceptance) (a free-running daemon with `--mirror-dir`: install through `dktransfer`, the file appears in the folder with the card's sha256, `card.folder` lists it,
 delete and `card.sync` remove it).
 
 ## Open

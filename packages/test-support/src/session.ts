@@ -7,10 +7,11 @@ import {
   type Client,
   type Daemon,
   type EmuEvent,
+  type FirmwareLoadResult,
   type LedsResult,
   type StatusResult,
 } from '@digi/control-client';
-import { resolveInputs, type Device } from './inputs.ts';
+import { coupledEnv, resolveInputs, validateRuntimeInputs, type Device } from './inputs.ts';
 import { button, encoder } from './keys.ts';
 
 /** ColdFire instructions per emulated millisecond (the oracle clock). */
@@ -27,9 +28,15 @@ export interface SessionOptions {
   card?: string;
   /** Run directory; default a fresh temporary directory. */
   runDir?: string;
+  /** Mirror the module store under this session's run directory. */
+  mirror?: boolean;
   /** Stall threshold in emulated ms for the watchdog (default 1000, as the Python harness). */
   stallMs?: number;
   binary?: string;
+  /** Press NO automatically when ready; defaults to true. */
+  autoNo?: boolean;
+  /** Runtime boot uses firmware.load's existing patch/cache path, then runs freely. Stock defaults stay stepped. */
+  runtime?: { patchSet?: string };
 }
 
 export class Session {
@@ -37,6 +44,9 @@ export class Session {
   #daemon: Daemon;
   #events: EmuEvent[] = [];
   #ownedDir: string | null;
+  #load: FirmwareLoadResult | undefined;
+  #card: string | undefined;
+  #closing: Promise<void> | undefined;
 
   private constructor(options: SessionOptions, daemon: Daemon, ownedDir: string | null) {
     this.options = options;
@@ -48,14 +58,31 @@ export class Session {
     return this.#daemon.client;
   }
 
+  /** Directory of this daemon, including its CLI discovery file. */
+  get runDir(): string {
+    return this.options.runDir ?? this.#ownedDir!;
+  }
+
+  /** Base card image loaded for this session; guest writes remain in its overlay. */
+  get cardPath(): string | undefined {
+    return this.#card;
+  }
+
+  get loadResult(): FirmwareLoadResult {
+    if (!this.#load) throw new Error('firmware not loaded');
+    return this.#load;
+  }
+
   static async start(options: SessionOptions): Promise<Session> {
     const inp = resolveInputs(options.device, options.firmware);
+    if (options.runtime) validateRuntimeInputs(inp);
     const ownedDir = options.runDir ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'digi-session-'));
     const runDir = options.runDir ?? ownedDir!;
     const args =
       options.dsp === 'zero'
-        ? ['--dsp', 'zero', '--cf-snapshot', inp.cfSnapshot]
+        ? [...(options.runtime ? [inp.syx] : []), '--dsp', 'zero', '--cf-snapshot', inp.cfSnapshot]
         : [
+            inp.syx,
             '--auto-coupled',
             '--audio-profile-syx',
             inp.syx,
@@ -67,30 +94,76 @@ export class Session {
             inp.cfSnapshot,
             '--no-audio',
           ];
-    const daemon = await spawnDaemon({ binary: options.binary, args, runDir, timeoutMs: 300_000 });
-    const session = new Session(options, daemon, ownedDir);
-    try {
-      const c = daemon.client;
-      await c.eventsSubscribe();
-      let card: string | undefined;
-      if (options.card) card = (await c.cardLoad(options.card)).card;
-      await c.firmwareLoad({
-        syx: inp.syx,
-        start: 'snapshot',
-        force: true,
-        auto_no: true,
-        ...(card ? { card } : {}),
+    if (options.mirror) args.push('--mirror-dir', path.join(runDir, 'mirror'));
+    const controller = options.runtime ? new AbortController() : undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = controller
+      ? new Promise<never>((_resolve, reject) => {
+          // Leave time for the owned daemon's ten-second close before Vitest's 150s runtime hook deadline.
+          timer = setTimeout(() => {
+            const error = new Error('runtime startup timed out after 120000 ms');
+            controller.abort(error);
+            reject(error);
+          }, 120_000);
+        })
+      : undefined;
+    let session: Session | undefined;
+    const started = (async () => {
+      const daemon = await spawnDaemon({
+        binary: options.binary,
+        args,
+        env: options.dsp === 'sharc' ? coupledEnv(inp.syx) : undefined,
+        runDir,
+        timeoutMs: options.runtime ? 120_000 : 300_000,
+        signal: controller?.signal,
       });
-      await c.watchdogConfig(options.stallMs ?? 1000);
+      session = new Session(options, daemon, ownedDir);
+      controller?.signal.throwIfAborted();
+      const checked = async <T>(operation: Promise<T>): Promise<T> => {
+        const value = await operation;
+        controller?.signal.throwIfAborted();
+        return value;
+      };
+      const c = daemon.client;
+      await checked(c.eventsSubscribe());
+      let card: string | undefined;
+      if (options.card) card = (await checked(c.cardLoad(options.card))).card;
+      session.#card = card;
+      session.#load = await checked(
+        c.firmwareLoad({
+          syx: inp.syx,
+          start: options.runtime ? 'auto' : 'snapshot',
+          ...(options.runtime ? { runtime: true, patch_set: options.runtime.patchSet } : {}),
+          force: true,
+          auto_no: options.autoNo ?? true,
+          ...(card ? { card } : {}),
+        }),
+      );
+      await checked(c.watchdogConfig(options.stallMs ?? 1000));
+      if (options.runtime) await checked(c.call('run.mode', { mode: 'free' }));
+      return session;
+    })();
+    try {
+      return await (expired ? Promise.race([started, expired]) : started);
     } catch (err) {
-      await session.close();
+      controller?.abort(err);
+      if (session) await session.close();
+      else {
+        // A spawn still connecting owns the child: its abort path waits for exit. If a handle
+        // arrives after expiry, the signal check rejects and we close that late handle too.
+        const lateSession = await started.catch(() => session);
+        if (lateSession) await lateSession.close();
+        else if (ownedDir) fs.rmSync(ownedDir, { recursive: true, force: true });
+      }
       throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    return session;
   }
 
   /** Back to the ready state of the running firmware, modal closed; clears collected events. */
   async restart(): Promise<void> {
+    if (this.options.runtime) throw new Error('runtime sessions require a fresh daemon; restart is stock-only');
     await this.client.restart(true);
     this.#collect();
     this.#events = [];
@@ -122,6 +195,7 @@ export class Session {
 
   /** Run MS emulated milliseconds. A guest fault is recorded in `faults()` and rethrown. */
   async wait(ms: number): Promise<void> {
+    if (this.options.runtime) throw new Error('runtime sessions run freely; wait() steps stock sessions only');
     let n = Math.floor(ms * MS);
     while (n > 0) {
       const chunk = Math.min(n, MAX_STEP);
@@ -175,8 +249,13 @@ export class Session {
   }
 
   /** Quit the daemon and remove an owned temporary run directory. */
-  async close(): Promise<void> {
-    await this.#daemon.close();
-    if (this.#ownedDir) fs.rmSync(this.#ownedDir, { recursive: true, force: true });
+  close(): Promise<void> {
+    return (this.#closing ??= (async () => {
+      try {
+        await this.#daemon.close();
+      } finally {
+        if (this.#ownedDir) fs.rmSync(this.#ownedDir, { recursive: true, force: true });
+      }
+    })());
   }
 }

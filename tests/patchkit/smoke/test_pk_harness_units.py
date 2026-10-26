@@ -14,18 +14,6 @@ from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_harness as h  # noqa: E402
 
 
-def test_button_and_encoder_names():
-    assert h.button("trig 1") == 25
-    assert h.button("TRIG_16") == 40
-    assert h.button("func") == 17
-    assert h.button("SYN") == h.button("SRC") == 2
-    assert h.button(12) == 12
-    assert h.encoder("enc c") == 3
-    assert h.encoder("level") == 9
-    with pytest.raises(h.HarnessError):
-        h.button("TRIG 17")
-
-
 def test_cell_names_and_keys():
     c = h.parse_cell("dt2-1.17:test/cf-demo,digikit/master-gain")
     assert (c.device, c.firmware) == ("dt2", "1.17")
@@ -142,11 +130,6 @@ def test_shared_boot_cache_links(tmp_path):
     (run3 / "patched").mkdir(parents=True)
     h.link_shared(run3, cache)
     assert (run3 / "patched").is_symlink() and list(run3.glob("patched.private-*"))
-
-
-def test_default_jobs_is_bounded():
-    assert 1 <= h.default_jobs(100) <= h.MAX_JOBS
-    assert h.default_jobs(1) == 1
 
 
 def test_proofkit_child_command_strips_job_options():

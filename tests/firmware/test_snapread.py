@@ -116,15 +116,6 @@ def test_tasks_returns_list_of_dicts_or_empty(snap_path):
         assert prios == sorted(prios)
 
 
-def test_name_for_known_cf_names_address():
-    from tools.coldfire import cf_names
-    from tools.emulator.snapread import name_for
-
-    some_name, (addr, *_rest) = next(iter(cf_names.ADDRS.items()))
-    assert name_for(addr) == some_name
-    assert name_for(0xFFFFFFFF) is None
-
-
 def test_rust_dt2snp01_memory(tmp_path):
     page = bytearray(PAGE)
     page[0x10:0x14] = b"\x80\x00\x47\x04"

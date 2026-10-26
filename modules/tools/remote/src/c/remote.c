@@ -94,6 +94,8 @@ static int turn(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     room = d > 0 ? TURN_LIMIT - pending[enc - 1u] : TURN_LIMIT + pending[enc - 1u];
     if (room < 0)
         room = 0;
+    if (room > TURN_LIMIT)
+        room = TURN_LIMIT;
     take = d > room ? room : (d < -room ? -room : d);
     if (take == 0) {
         out[0] = 0;

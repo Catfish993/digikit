@@ -4,7 +4,7 @@
 // Nothing is built here and no process is started: `mise run module:pack-all` (run by `mise run workbench`) fills the folder.
 import { invoke } from '@tauri-apps/api/core';
 import { DkNeeds } from '@web/modules/dkneeds';
-import { hexSha256, storePath } from '@web/modules/dkupload-core';
+import { hexSha256, storePath } from '@digi/dk-session';
 import {
   buildView,
   deleteFiles,

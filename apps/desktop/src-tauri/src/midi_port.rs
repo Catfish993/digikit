@@ -1,5 +1,5 @@
 //! A real MIDI port for the digikit SysEx protocol (the desktop app's second target next to the emulator). The page speaks the protocol itself
-//! in TypeScript (`apps/web/src/modules/dkupload-core.ts`); this file only moves whole SysEx messages: it lists the ports, opens one by name
+//! in TypeScript (`packages/dk-session/src/dkupload-core.ts`); this file only moves whole SysEx messages: it lists the ports, opens one by name
 //! (input and output of the same name), sends a message and waits for the next one. No process is started. Nothing here knows a device: the
 //! port is whatever the user picks.
 use std::sync::{

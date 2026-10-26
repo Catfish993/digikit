@@ -101,8 +101,10 @@ Each task takes `-- --help`. After a change to `devices/*.toml` or `sdk/sdk.toml
   `type_hint` out.
 - **Versions.** `version` is major.minor.patch; the contract versions are in `sdk/sdk.toml`. A contract major mismatch is refused
   (`E_CONTRACT`): rebuild the module.
-- **Tests.** Run only the tests of the code you changed: `mise run test:changed`; before a commit `mise run verify:pre`. Do not run
-  the emulator when a static answer is enough, and bound every run.
+- **Tests.** Use owner checks for the code you changed (`mise run test:changed -- --explain` shows affected Python/Rust/module
+  tests). Selected tests may build or launch a device/emulator. Keep the module build, conformance and proof checks required above;
+  report any deferred coverage to the coordinator for the routed `mise run verify` gate. Do not run the emulator when a static
+  answer is enough, and bound every run.
 - Facts go in `docs/findings/` with marks ([V] verified by a second agent, [D] measured once, [O] open), not in handovers.
 
 ## References

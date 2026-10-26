@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, beforeEach } from 'vitest';
+import { afterAll, beforeAll, beforeEach, expect } from 'vitest';
+import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { repoRoot, Session, type Device, type SessionOptions } from '@digi/test-support';
 
 export interface SessionHandle {
@@ -25,6 +26,79 @@ export function withSession(opts: SessionOptions & { restart?: boolean }): Sessi
     get session() {
       if (!session) throw new Error('session not started');
       return session;
+    },
+  };
+}
+
+export interface PatchedSession {
+  readonly session: Session;
+  readonly dk: DkSession;
+  close(): Promise<void>;
+}
+
+/** A fresh runtime daemon; protocol cancellation precedes daemon shutdown. No remote module is assumed installed. */
+export async function startPatchedSession(
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string },
+): Promise<PatchedSession> {
+  const session = await Session.start({
+    ...opts,
+    dsp: 'sharc',
+    runtime: { patchSet: opts.patchSet },
+  });
+  try {
+    const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
+    let closing: Promise<void> | undefined;
+    return {
+      session,
+      dk,
+      close() {
+        return (closing ??= (async () => {
+          dk.cancelPending();
+          await session.close();
+        })());
+      },
+    };
+  } catch (err) {
+    await session.close();
+    throw err;
+  }
+}
+
+/** Boot identity and health only: runtime patch sets do not install remote-control modules. */
+export async function expectRuntimeBoot({ session, dk }: PatchedSession): Promise<void> {
+  const identity = session.loadResult.runtime;
+  expect(identity?.patched).toBe(true);
+  if (!identity?.patched) throw new Error('stock input did not produce a runtime patch identity');
+  expect(identity.set).toBe(session.options.runtime?.patchSet ?? 'emulator');
+  expect(identity.base_sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(identity.modules.length).toBeGreaterThan(0);
+  expect(identity.cache_file).toBeTruthy();
+  expect(session.loadResult.start_used).toBeTruthy();
+  await expect.poll(async () => (await session.status()).cf.ready, { timeout: 20_000 }).toBe(true);
+  const status = await session.status();
+  expect(status.mode).toBe('free');
+  expect(status.cf.ready).toBe(true);
+  expect(status.firmware?.runtime).toEqual(identity);
+  expect(dk.rpcChunk).toBe(16384);
+  await session.expectNoFault('runtime boot');
+}
+
+/** No restart hook: every acceptance file owns a single fresh, free-running runtime. Vitest forbids `expect.poll` in
+ * `beforeAll`, so each test calls `expectRuntimeBoot` itself. */
+export function withPatchedSession(opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string }): {
+  readonly runtime: PatchedSession;
+} {
+  let runtime: PatchedSession | undefined;
+  beforeAll(async () => {
+    runtime = await startPatchedSession(opts);
+  });
+  afterAll(async () => {
+    await runtime?.close();
+  });
+  return {
+    get runtime() {
+      if (!runtime) throw new Error('runtime not started');
+      return runtime;
     },
   };
 }

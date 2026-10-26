@@ -23,9 +23,6 @@ FILES = {
     ),
     "docs/handovers/h.md": "tools/old/thing.py\n",
     "docs/fixture.md": "tools/fake.py and tools/fake2.py\n",
-    "tools/devtools/move-r1.json": json.dumps(
-        {"moves": {"native/boot": "packages/emulator/boot"}}
-    ),
     "apps/web/package.json": "{}\n",
     "pnpm-lock.yaml": "tools/lock/entry.py\n",
     "blob.bin": "tools/nope.py\0",
@@ -36,7 +33,6 @@ CONFIG: dict[str, Any] = {
         "docs/handovers/",
         "pnpm-lock.yaml",
         "docs/fixture.md",
-        "tools/devtools/move-*.json",
     ],
     "generated": ["out/", "apps/web/.local"],
     "allow": [
@@ -71,15 +67,6 @@ def test_reports_only_stale_tokens(tmp_path: Path) -> None:
         ("docs/notes.md", 3, "tools/own/gone.py"),
         ("docs/notes.md", 3, "native/boot/lib.rs"),
     ]
-
-
-def test_suggestions_use_move_maps_and_unique_names(tmp_path: Path) -> None:
-    root = make_repo(tmp_path, FILES)
-    _, rows = run(root)
-    by_token = {r["token"]: r["suggestion"] for r in rows}
-    assert by_token["native/boot/lib.rs"] == "packages/emulator/boot/lib.rs (map)"
-    assert by_token["tools/mod.py"] == "tools/own/mod.py (name)"
-    assert by_token["tools/own/gone.py"] == ""
 
 
 def test_clean_repo_exits_zero(tmp_path: Path) -> None:
@@ -124,7 +111,7 @@ def test_without_exclude_the_fixture_is_scanned(tmp_path: Path) -> None:
     assert "blob.bin" not in files
 
 
-# --- refs, history, fixes -------------------------------------------------
+# --- refs, history -------------------------------------------------
 
 COMMIT = ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=0"]
 
@@ -137,17 +124,6 @@ def history_repo(tmp_path: Path) -> Path:
             "tools/gone.py": "g = 1\n",
             "tools/old/never.py": "n = 1\n",
             "tools/keep.py": "k = 1\n",
-            "tools/devtools/move-r1.json": json.dumps(
-                {
-                    "moves": {
-                        "tools/oldname": "tools/newname",
-                        "tools/oldpkg": "tools/pkg",
-                        "tools/dead": None,
-                    }
-                }
-            ),
-            "tools/newname/core.py": "c = 1\n",
-            "tools/pkg/sharc_new.py": "s = 1\n",
         },
     )
     git(root, "tag", "before")
@@ -164,9 +140,6 @@ def write_commit(root: Path, files: dict[str, str]) -> None:
     git(root, *COMMIT, "commit", "-qm", "docs")
 
 
-HCFG: dict[str, Any] = {"exclude": ["tools/devtools/move-*.json"]}
-
-
 def test_ref_paths_are_checked_at_the_ref(tmp_path: Path) -> None:
     root = history_repo(tmp_path)
     write_commit(
@@ -177,7 +150,7 @@ def test_ref_paths_are_checked_at_the_ref(tmp_path: Path) -> None:
             "notref nothing:tools/keep.py\n"
         },
     )
-    _, rows = run(root, HCFG)
+    _, rows = run(root, {})
     assert tokens(rows) == [
         ("n.md", 2, "before:tools/missing.py"),
         ("n.md", 2, "HEAD:tools/gone.py"),
@@ -186,101 +159,18 @@ def test_ref_paths_are_checked_at_the_ref(tmp_path: Path) -> None:
 
 def test_history_docs_tolerate_deleted_paths(tmp_path: Path) -> None:
     root = history_repo(tmp_path)
-    doc = "tools/gone.py tools/never_existed.py tools/oldname/core.py\n"
+    doc = "tools/gone.py tools/never_existed.py\n"
     write_commit(root, {"docs/findings/f.md": doc, "docs/other.md": doc})
-    code, rows = run(root, HCFG)
+    code, rows = run(root, {})
     assert code == 1
     got = tokens(rows)
-    # the findings file keeps only what never existed and what has a new place
+    # the findings file keeps only what never existed
     assert ("docs/findings/f.md", 1, "tools/gone.py") not in got
     assert ("docs/findings/f.md", 1, "tools/never_existed.py") in got
-    assert ("docs/findings/f.md", 1, "tools/oldname/core.py") in got
     assert ("docs/other.md", 1, "tools/gone.py") in got
     report = json.loads((root.parent / "out.json").read_text())
     assert [r["token"] for r in report["historical"]] == ["tools/gone.py"]
-    assert report["summary"] == {"stale": len(rows), "historical": 1, "fixable": 2}
-
-
-def test_fix_rewrites_mapped_and_dotted_tokens(tmp_path: Path) -> None:
-    root = history_repo(tmp_path)
-    write_commit(
-        root,
-        {
-            "docs/findings/f.md": "see tools/oldname/core.py, (tools/oldname/).\n",
-            "docs/n.md": "a tools/oldpkg.sharc_new.fn and tools/sharc_new.fn b tools/dead/x.py c tools/keep.pyx\n"
-            "unique tools/zzz/sharc_new.py end\n",
-        },
-    )
-    before = {p: (root / p).read_text() for p in ("docs/findings/f.md", "docs/n.md")}
-    (root.parent / "cfg.json").write_text(json.dumps(HCFG))
-    base = ["--root", str(root), "--config", str(root.parent / "cfg.json")]
-    pathcheck.main([*base, "--fix"])  # dry run changes nothing
-    assert {p: (root / p).read_text() for p in before} == before
-    pathcheck.main([*base, "--fix", "--apply"])
-    assert (root / "docs/findings/f.md").read_text() == (
-        "see tools/newname/core.py, (tools/newname/).\n"
-    )
-    assert (root / "docs/n.md").read_text() == (
-        "a tools/pkg/sharc_new.fn and tools/pkg/sharc_new.fn b tools/dead/x.py c tools/keep.pyx\n"
-        "unique tools/pkg/sharc_new.py end\n"
-    )
-
-
-def test_fix_deleted_uses_ref_or_deleting_commit(tmp_path: Path) -> None:
-    root = history_repo(tmp_path)
-    write_commit(
-        root,
-        {
-            "docs/n.md": "a tools/gone.py b tools/old/never.py c tools/nothing.py\n",
-            "docs/findings/h.md": "tools/gone.py\n",
-        },
-    )
-    (root.parent / "cfg.json").write_text(json.dumps(HCFG))
-    base = ["--root", str(root), "--config", str(root.parent / "cfg.json")]
-    pathcheck.main([*base, "--fix-deleted", "before", "--apply"])
-    deleter = git(
-        root, "log", "-1", "--format=%h", "--diff-filter=D", "--", "tools/gone.py"
-    ).strip()
-    assert (root / "docs/n.md").read_text() == (
-        "a before:tools/gone.py b before:tools/old/never.py c tools/nothing.py\n"
-    )
-    assert (root / "docs/findings/h.md").read_text() == "tools/gone.py\n"
-    # without the tag at hand the deleting commit is quoted
-    write_commit(root, {"docs/m.md": "x tools/old/never.py\n"})
-    pathcheck.main([*base, "--fix-deleted", "main-nonexistent", "--apply"])
-    assert (root / "docs/m.md").read_text() == f"x {deleter}^:tools/old/never.py\n"
-    # and both forms read back as valid
-    assert pathcheck.main([*base, "--paths", "docs/m.md"]) == 0
-
-
-def test_file_lists_are_not_suggested(tmp_path: Path) -> None:
-    root = make_repo(
-        tmp_path, {"tools/a/mod.py": "x\n", "docs/n.md": "tools/old/mod.py/other.py/\n"}
-    )
-    _, rows = run(root, {})
-    assert [r["fix"] for r in rows] == [""]
-
-
-def test_name_suggestion_needs_a_move_not_a_deletion(tmp_path: Path) -> None:
-    root = make_repo(
-        tmp_path,
-        {"tools/gone.py": "g\n", "tools/moved.py": "m\n", "tools/x.py": "x\n"},
-    )
-    git(root, "rm", "-q", "tools/gone.py")
-    (root / "tools/new").mkdir()
-    git(root, "mv", "tools/moved.py", "tools/new/moved.py")
-    git(root, *COMMIT, "commit", "-qm", "delete one, move one")
-    write_commit(
-        root,
-        {
-            "tools/other/gone.py": "unrelated\n",
-            "docs/n.md": "a tools/gone.py b tools/moved.py c tools/never.py/x\n",
-        },
-    )
-    _, rows = run(root, HCFG)
-    fixes = {r["token"]: r["fix"] for r in rows}
-    assert fixes["tools/gone.py"] == ""
-    assert fixes["tools/moved.py"] == "tools/new/moved.py"
+    assert report["summary"] == {"stale": len(rows), "historical": 1}
 
 
 def test_ignored_module_and_relative_paths_are_valid(tmp_path: Path) -> None:
@@ -362,10 +252,10 @@ def test_moved_local_roots(tmp_path: Path) -> None:
     }
     code, rows = run(root, cfg)
     assert code == 1
-    assert [(r["token"], r["fix"]) for r in rows] == [
-        ("sections/.source-sha256", "out/sections/dt2-1.16/.source-sha256"),
-        (".coldtrace/t.log", "out/coldtrace/t.log"),
-        ("snapshots/a/b.snap", "out/snapshots/a/b.snap"),
+    assert [r["token"] for r in rows] == [
+        "sections/.source-sha256",
+        ".coldtrace/t.log",
+        "snapshots/a/b.snap",
     ]
     report = json.loads((root.parent / "out.json").read_text())
     assert [r["token"] for r in report["historical"]] == [

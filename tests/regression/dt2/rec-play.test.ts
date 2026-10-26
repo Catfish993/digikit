@@ -4,7 +4,7 @@ import { golden } from '@digi/test-support';
 import { armFreeRegionGuard, expectNoGuardHits, withSession } from '../support.ts';
 
 // Replays tests/scenarios/dt2.json "dt2-rec-play" (exact_events: events land at their at_instr). The reference is
-// `coupled-run --dsp zero --trace` on the same scenario (out/c4/proof-B.json trace).
+// `coupled-run --dsp zero --trace` on the same scenario; the expected hashes live in tests/regression/goldens/dt2-1.17.json.
 const GOLDENS = path.join(import.meta.dirname, '..', 'goldens', 'dt2-1.17.json');
 const TOTAL = 792_000_000; // 6 s
 const MAX_STEP = 200_000_000;

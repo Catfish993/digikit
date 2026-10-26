@@ -13,8 +13,8 @@ import {
   restarted,
   splitMessages,
   storeSpace,
-} from '../src/modules/dkupload-core.ts';
-import { CAP, CAPACITY_KINDS, CMD, LOG_KIND } from '../src/modules/gen_proto.ts';
+} from '@digi/dk-session';
+import { CAP, CAPACITY_KINDS, CMD, LOG_KIND } from '@digi/dk-session/gen_proto';
 import {
   PROGRESS_EVENTS,
   buildView,

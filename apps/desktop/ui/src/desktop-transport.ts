@@ -1,50 +1,15 @@
-// The SysEx path of the desktop app: the controller's USB MIDI capture, through the webview's `emu_call` (docs/CONTROL.md,
-// `midi.usb.in` and `midi.usb.out`), as a transport of the TypeScript protocol client (`DkSession`). Nothing here talks to a MIDI device.
+// The desktop shell supplies Tauri's emulator RPC to the shared USB SysEx transport.
 import { invoke } from '@tauri-apps/api/core';
-import { splitMessages, type DkTransport } from '@web/modules/dkupload-core';
+import { EmuUsbTransport as RpcUsbTransport } from '@digi/dk-session';
 
-/** Messages are handed over in the high-speed model (384 bytes per 16,500 instructions, a microframe), as the kept upload scenarios do. */
-const USB_CHUNK = 384;
-const USB_PERIOD = 16_500;
-const POLL_MS = 10;
+export { EMU_RPC_CHUNK } from '@digi/dk-session';
 
-const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
-const bytesOf = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => parseInt(x, 16));
 const call = <T>(method: string, params: Record<string, unknown> = {}) =>
   invoke<T>('emu_call', { method, params, session: null });
 
-/** The emulator's USB takes any size of MidiRpc write: 16 KiB a request makes a +Drive file about twice as fast as 2 KiB (the firmware's work per request, and the guest idle between requests). */
-export const EMU_RPC_CHUNK = 16384;
-
-export class EmuUsbTransport implements DkTransport {
-  readonly rpcChunk = EMU_RPC_CHUNK;
-  private rx: Uint8Array = new Uint8Array();
-  private ready: Uint8Array[] = [];
-
-  async send(msg: Uint8Array): Promise<void> {
-    await call('midi.usb.in', { bytes: hex(msg), chunk: USB_CHUNK, period: USB_PERIOD });
-  }
-
-  /** The next complete message the firmware sent, or null after `timeoutMs` or when `signal` aborts. */
-  async recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null> {
-    const end = Date.now() + timeoutMs;
-    for (;;) {
-      const next = this.ready.shift();
-      if (next) return next;
-      if (signal?.aborted) return null;
-      const { hex: got } = await call<{ hex?: string }>('midi.usb.out');
-      if (got) {
-        const joined = new Uint8Array(this.rx.length + got.length / 2);
-        joined.set(this.rx);
-        joined.set(bytesOf(got), this.rx.length);
-        const { messages, rest } = splitMessages(joined);
-        this.rx = rest;
-        this.ready.push(...messages);
-        continue;
-      }
-      if (Date.now() >= end || signal?.aborted) return null;
-      await new Promise((r) => setTimeout(r, POLL_MS));
-    }
+export class EmuUsbTransport extends RpcUsbTransport {
+  constructor() {
+    super(call);
   }
 }
 

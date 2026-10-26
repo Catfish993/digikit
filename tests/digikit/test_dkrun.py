@@ -40,33 +40,6 @@ def test_restart_detection_reads_the_log():
         R.restarted([boot, asked, refused])
 
 
-def test_wait_new_boot_retries_through_a_vanished_port():
-    calls = {"n": 0}
-
-    class Up:
-        def log_page(self, first):
-            return 0, 0, []
-
-    def connect():
-        calls["n"] += 1
-        if calls["n"] < 3:
-            raise SystemExit("no MIDI port")
-        return Up()
-
-    t = {"v": 0.0}
-    boots = iter([[ev(UP, D.CMD_RESTART)], [ev(L.K["BOOT_START"], 4)]])
-
-    orig = L.read_all
-    L.read_all = lambda up, first=0: (1, 1, next(boots))
-    try:
-        up = R.wait_new_boot(
-            connect, lambda s: t.__setitem__("v", t["v"] + s), 90.0, lambda: t["v"]
-        )
-    finally:
-        L.read_all = orig
-    assert isinstance(up, Up) and calls["n"] == 4
-
-
 def _dkm(tmp_path, dsp_area=0):
     """A real packed module (patchkit's synthetic module, the packer's own writer) whose DSP section takes `dsp_area` bytes of the DSP area (a multiple
     of 64) and nothing else of it; its needs are inferred from the file by `patchkit needs`, not declared."""

@@ -1,38 +1,116 @@
 # @digi/regression
 
-Vitest suite that drives the emulator daemon (`emud`) through `@digi/test-support` and `@digi/control-client`.
+Vitest suites that drive the emulator daemon (`emud`) through `@digi/test-support` and `@digi/control-client`.
+All device suites share one config, `vitest.config.ts`, with five projects. Device projects run one file at a
+time (the stock project may run files in parallel, `REGRESSION_JOBS`, default 4).
 
-## What it checks
+## Layout
 
-- No guest fault, DSP halt or stall (`Session.expectNoFault`).
-- No stock-firmware write into the patchkit free regions: each test arms `guard.set` with the `cpu = "cf"`
-  `[[region]]` blocks of `devices/ports/<device>-<fw>.toml` (`cf.flash_cave`, `cf.expansion`, minus
-  `excludes`), with an empty `allow_pc`, and asserts `guard.report` has total 0.
-- Frame (SHA-256) and LED goldens in `goldens/dt2-1.17.json`: `dt2/rec-play` (scenario `dt2-rec-play` of
-  `tests/scenarios/dt2.json`, exact instruction counts, 6 s; reference is `coupled-run --dsp zero --trace` on the
-  same scenario), `dt2/pages` (SRC, FLTR, AMP, FX, MOD), `dt2/transport` (PLAY, STOP).
+| Directory | Project | Content |
+| --- | --- | --- |
+| `dt2/` | `stock` | Stock DT2 1.17 UI and transport goldens, zero DSP |
+| `scenarios/` | `fx-dn2`, `fx-dt2` | Stock FX oracles (see [scenarios/README.md](scenarios/README.md)) |
+| `runtime/` | `runtime` | Patched runtime workflows on DT2 1.17 and DN2 1.12 |
+| `modules/` | `modules` | Production module upload and load cells |
+| `host/` | none (root `regression-host`) | Mocked helper tests, no daemon or firmware |
 
-Each test file starts one daemon (`withSession` in `support.ts`) and restarts it before each test.
+Shared helpers: `support.ts`, `runtime/live.ts`, `runtime/remote.ts`, `runtime/runtime-plan.ts`,
+`runtime/runtime-menu.ts`, `runtime/transfer-cli.ts`, `modules/suite.ts`, `modules/acceptance.ts`.
+Goldens are in `goldens/dt2-1.17.json`.
 
-## Run
+## Commands
 
+| Command | Project | Notes |
+| --- | --- | --- |
+| `mise run test:stock [-- FILTER]` | `stock` | `DIGI_EMUD` names a current DT2 daemon |
+| `REGRESSION_JOBS=1 pnpm --filter @digi/regression test:update` | `stock` | Rewrites goldens |
+| `mise run test:runtime [-- FILTER]` | `runtime` | Builds plusdrive first (`build:plusdrive`) |
+| `mise run test:modules [-- FILTER]` | `modules` | |
+| `mise run test:fx` | `fx-dn2` | 61 quick; `DIGI_FX_SWEEP=1` for 191 |
+| `mise run test:fx:dt2` | `fx-dt2` | 135 quick; `DIGI_FX_SWEEP=1` for 146 |
+| `mise run test:host` | host projects | No device inputs |
+
+Filters are native Vitest file or test-name filters. The device tasks never build daemons, generated cores or
+module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/regression/junit.xml`.
+
+## Prerequisites
+
+- Pinned daemons: `DIGI_EMUD` (stock), `DIGI_EMUD_DT2` and `DIGI_EMUD_DN2` (runtime, modules, FX).
+- Ready inputs for the device, validated by `resolveInputs` (CF snapshot, DSP image and state). Runtime inputs
+  must match the stock SHA-256 and `intc_force:false` in the ready directory's `SOURCE.json`.
+- Module artifacts: `out/regression/modules/<device>/<leaf>.dkm` (override the root with
+  `DIGI_RUNTIME_MODULES`). Runtime cases need `input-probe`, `remote` and `svc-echo`; module cells need
+  `pluck`, `freqshift` and `remote`. The gate packs them itself. By hand:
+  `uv run python -m tools.patchkit.patchkit pack digikit/pluck --device dt2 -o out/regression/modules/dt2/pluck.dkm`.
+- DT2 card samples at `out/runs/patchkit/samples` (`tools.emulator.card_check.make_samples`).
+- Sample cases also need `apps/web/public/dksample.wasm` (`mise run wasm:dksample`).
+- plusdrive is built by `build:plusdrive` at a fixed path. There is no `DIGI_PLUSDRIVE` or
+  `DIGI_RUNTIME_CARD` variable.
+
+## Stock suite
+
+Each test checks no guest fault, DSP halt or stall (`Session.expectNoFault`), and that the stock firmware writes
+nothing into the patchkit free regions: `guard.set` is armed with the `cpu = "cf"` `[[region]]` blocks of
+`devices/ports/<device>-<fw>.toml` (`cf.flash_cave`, `cf.expansion`, minus `excludes`) with an empty
+`allow_pc`, and `guard.report` must total 0.
+
+Frame (SHA-256) and LED goldens: `dt2/rec-play` (scenario `dt2-rec-play` of `tests/scenarios/dt2.json`, exact
+instruction counts, 6 s), `dt2/pages` (SRC, FLTR, AMP, FX, MOD), `dt2/transport` (PLAY, STOP). The tests run
+with `--dsp zero`, so nothing checks sound or DSP faults (`docs/findings/07-emulator.md`, "Zero DSP replies for
+UI scenarios"). A golden changes only with a reason; review the diff.
+
+## Runtime workflows
+
+`runtime/*.test.ts`: `remote-input`, `service-commands`, `transfer-live`, `input-adapter`, `samples-live`
+(DT2) and `samples-store-live` (DN2). Each device case runs on its own fresh runtime daemon.
+
+Helpers in `runtime/live.ts`:
+
+- `runtimeTests(name, body, opts)`: one test per device, after `expectRuntimeBoot`.
+- `liveOptions(device, extra)`: daemon binary, firmware version and card for `withPatchedSession`.
+- `settleUi`, `settleLive`: wait for the UI or the free-running firmware.
+- `installModule`, `moduleArtifact`: install a prepared `.dkm` and locate it.
+- `tap`, `record`: panel key presses and a log line in the run artifacts.
+- `liveArtifacts`: the run artifact directory.
+
+Helpers in `support.ts`:
+
+- `withSession`: one stock daemon per file, restarted before each test.
+- `withPatchedSession`, `startPatchedSession`: coupled daemon with `firmware.load {runtime:true,
+  start:"auto"}` and the `emulator` patch set (the `device` patch set for the remote-control cases).
+- `expectRuntimeBoot`: checks patch identity, ready/free status and health.
+- `freeRegions`, `armFreeRegionGuard`, `expectNoGuardHits`: the free-region guard.
+
+Stock restart and instruction-step waits are rejected for runtime sessions. Cleanup cancels protocol requests
+and closes the owned daemon.
+
+`transfer-live` runs the `tools.device.dktransfer` CLI (`runtime/transfer-cli.ts`) for install, delete and
+protocol restart, then checks the store, the mirror hash, `card.folder` metadata and the next boot.
+
+`input-adapter` and `remote-input` check semantic KEY navigation, TURN delivery and decoder acceptance, not
+vendor parameter changes. Exact remote pacing is checked by the C unit in `modules/remote-pacing.c`:
+
+```sh
+mise run test:modules -- remote.test.ts -t 'pacing unit'
 ```
-DIGI_EMUD=/path/to/emud pnpm --filter @digi/regression test      # or: pnpm test:regression at the root
+
+## Module cells
+
+`modules/{pluck,freqshift,remote}.test.ts` upload each production module on DT2 1.17 and DN2 1.12 through
+`DkSession` and `EmuUsbTransport`, select it, reboot, and check persistence, SDK contract, DSP-loader
+completion, registration, guard counters, runtime log and guest faults. Each cell has a fresh daemon. These
+cells observe load and registration, not rendered audio.
+
+```sh
+mise run test:modules -- pluck.test.ts --testNamePattern dt2
 ```
 
-Env: `REGRESSION_JOBS` (parallel files, default 4), `REGRESSION_JUNIT=1` (writes `out/regression/junit.xml`).
+## Artifacts
 
-## Update goldens
-
-```
-REGRESSION_JOBS=1 DIGI_EMUD=... pnpm --filter @digi/regression test:update
-```
-
-Use one job: the files all write `goldens/dt2-1.17.json`. Review the diff before committing; a golden changes
-only with a reason.
-
-## Zero-DSP mode
-
-The tests run with `--dsp zero` (no SHARC): the UI, sequencer and ColdFire side run, the DSP replies are stubbed.
-There is no audio, so nothing here checks sound, DSP faults or audio-dependent UI. See
-`docs/findings/07-emulator.md`, "Zero DSP replies for UI scenarios".
+Live workflows write to `<os tmpdir>/digi-regression/<workflow>/<device>/run-*`. Within a Session the directory is
+reused until the test that requested it finishes. It is removed when that test passes and kept on failure (the
+run prints `artifacts kept: <dir>`).
+FX runs write reports and logs to `out/regression/{trackfx,sendfx,dt2-fx}/<timestamp>-<pid>/`. When every test of
+the file passed, the run directory is removed; on a failure the reports and logs stay (WAV files are deleted).
+`DIGI_FX_KEEP_RUNS=1` keeps the whole run directory including WAV files.
+Module cells write diagnostic JSON under `out/regression/module-load/<device>/<module>/`.

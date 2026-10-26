@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// Throughput of the stock MidiRpc file write of the Digitakt II (+Drive: OpenFileForWrite, WriteFileV1 in chunks, CloseFileWriter; apps/web/src/modules/rpcfiles.ts)
+// Throughput of the stock MidiRpc file write of the Digitakt II (+Drive: OpenFileForWrite, WriteFileV1 in chunks, CloseFileWriter; packages/dk-session/src/rpcfiles.ts)
 // against a running emulator, as upload_bench.mjs measures the digikit store. tools/devtools/upload_bench.py --device dt2 starts the daemon. By hand:
 //
 //     node tools/devtools/upload_bench_rpc.mjs SOCKET [--bytes N] [--chunk N[,N...]] [--runs N]
 //
 // One JSON line per run and chunk size: wall seconds, MB/s, guest instructions per byte, the real-time factor, the controller's CPU seconds.
 import { randomBytes } from 'node:crypto';
-import { DkSession } from '../../apps/web/src/modules/dkupload-core.ts';
-import { RpcFiles } from '../../apps/web/src/modules/rpcfiles.ts';
+import { DkSession } from '../../packages/dk-session/src/index.ts';
+import { RpcFiles } from '../../packages/dk-session/src/rpcfiles.ts';
 import { connect } from './emu_midi.mjs';
 
 const [socketPath, ...flags] = process.argv.slice(2);

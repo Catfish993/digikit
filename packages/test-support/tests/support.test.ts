@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
-import { BUTTONS, button, encoder, golden } from '../src/index.ts';
+import { test, vi } from 'vitest';
+import { BUTTONS, button, encoder, golden, validateRuntimeInputs, coupledEnv } from '../src/index.ts';
 
 test('key names follow the Python harness table', () => {
   assert.equal(button('trig_1'), 25);
@@ -33,5 +34,58 @@ test('golden writes only under UPDATE_GOLDENS=1', () => {
     if (prev === undefined) delete process.env.UPDATE_GOLDENS;
     else process.env.UPDATE_GOLDENS = prev;
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runtime provenance accepts matching stock bytes and rejects forced or stale ready inputs', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-provenance-'));
+  const syx = path.join(dir, 'stock.syx');
+  fs.writeFileSync(syx, 'stock fixture');
+  const inputs = { syx, readyDir: dir, cfSnapshot: '', dspImage: '', dspState: '' };
+  const source = { syx_sha256: createHash('sha256').update('stock fixture').digest('hex'), intc_force: false };
+  const write = (value: object) => fs.writeFileSync(path.join(dir, 'SOURCE.json'), JSON.stringify(value));
+  try {
+    write(source);
+    validateRuntimeInputs(inputs);
+    write({ ...source, intc_force: true });
+    assert.throws(() => validateRuntimeInputs(inputs), /provenance mismatch/);
+    write({ ...source, syx_sha256: 'stale' });
+    assert.throws(() => validateRuntimeInputs(inputs), /provenance mismatch/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('coupled launch defaults follow actual firmware bytes and preserve explicit overrides', () => {
+  const dt2 = Buffer.from('stock DT2 fixture');
+  const dn2 = Buffer.from('stock DN2 fixture');
+  const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+  const table = JSON.stringify({
+    [sha(dt2)]: { fast_regions: 'dt2-regions', blocktrans: 'dt2-roots' },
+    [sha(dn2)]: { fast_regions: 'dn2-regions', blocktrans: 'dn2-roots' },
+  });
+  const read = vi.spyOn(fs, 'readFileSync');
+  const firmware = (bytes: Buffer) => read.mockReturnValueOnce(bytes).mockReturnValueOnce(table);
+  try {
+    firmware(dt2);
+    assert.deepEqual(coupledEnv('same-path.syx', {}), {
+      SHARC_FAST_REGIONS: 'dt2-regions',
+      SHARC_BLOCKTRANS: 'dt2-roots',
+    });
+    firmware(dn2); // Replacing bytes at the same path must not reuse DT2's defaults.
+    assert.deepEqual(coupledEnv('same-path.syx', {}), {
+      SHARC_FAST_REGIONS: 'dn2-regions',
+      SHARC_BLOCKTRANS: 'dn2-roots',
+    });
+    firmware(dn2);
+    assert.deepEqual(coupledEnv('dn2.syx', { SHARC_FAST_REGIONS: '', SHARC_BLOCKTRANS: 'explicit' }), {
+      SHARC_FAST_REGIONS: '',
+      SHARC_BLOCKTRANS: 'explicit',
+    });
+    firmware(Buffer.from('unknown firmware'));
+    assert.deepEqual(coupledEnv('unknown.syx', {}), {});
+    assert.deepEqual(coupledEnv('not-read.syx', { DIGI_EMU_FAST: '0' }), {});
+  } finally {
+    read.mockRestore();
   }
 });

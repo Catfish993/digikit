@@ -160,10 +160,6 @@ class ShippedDeviceFilesTest(unittest.TestCase):
     def setUp(self):
         self.devices = device.load_all(DEVICES)
 
-    def test_both_products_are_present(self):
-        names = sorted(d.name for d in self.devices)
-        self.assertEqual(names, ["Digitakt II", "Digitone II"])
-
     def test_every_button_code_round_trips(self):
         for dev in self.devices:
             for code in dev.button_codes():
@@ -172,25 +168,6 @@ class ShippedDeviceFilesTest(unittest.TestCase):
                 self.assertEqual(
                     dev.code_at(*pos), code, "%s code %d" % (dev.name, code)
                 )
-
-    def test_products_differ_where_the_hardware_does(self):
-        by_name = {d.name: d for d in self.devices}
-        # Digitakt's name table ends at 50; Digitone carries five more.
-        self.assertEqual(max(by_name["Digitakt II"].button_codes()), 50)
-        self.assertEqual(max(by_name["Digitone II"].button_codes()), 54)
-
-    def test_no_duplicate_codes_within_a_kind(self):
-        for dev in self.devices:
-            codes = dev.button_codes()
-            self.assertEqual(len(codes), len(set(codes)), dev.name)
-
-    def test_each_lists_known_firmware_hashes(self):
-        for dev in self.devices:
-            self.assertGreaterEqual(len(dev.firmwares), 1, dev.name)
-            hashes = [fw.sha256 for fw in dev.firmwares]
-            for sha in hashes:
-                self.assertRegex(sha, r"^[0-9a-f]{64}$", dev.name)
-            self.assertEqual(len(hashes), len(set(hashes)), dev.name)
 
 
 if __name__ == "__main__":

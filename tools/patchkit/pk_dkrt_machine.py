@@ -169,7 +169,15 @@ class FolderSession(H.Session):
     def open(self, image: Path | None = None) -> None:
         self.syx, self.ready = H.firmware_inputs(self.cell)
         exe = H.daemon_binary(self.cell.device, self.syx)
-        run_dir = H.OUT / f"run-{self.run_name}"
+        if self.run_dir is None:
+            self.run_dir = H.temp_run_dir(self.run_name)
+            self._temp_run_dir = True
+        run_dir = self.run_dir
+        if (
+            self.cache_dir is None
+        ):  # the boot caches outlive the run dir; `load` locks them
+            self.cache_dir = H.SHARED_CACHE
+        H.link_shared(run_dir, self.cache_dir)
         self.emu = Emu.spawn_coupled(
             self.syx, self.ready, timeout=300, binary=exe, run_dir=run_dir, env=self.env
         )

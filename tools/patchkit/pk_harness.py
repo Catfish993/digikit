@@ -58,8 +58,10 @@ import math
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 from collections.abc import Callable, Iterator
@@ -387,6 +389,37 @@ def patched_image(cell: Cell, syx: Path, dest: Path | None = None) -> Path:
 # ----- shared boot cache ----------------------------------------------------------------------------------------
 
 
+def temp_run_dir(name: str) -> Path:
+    """A fresh run directory in the system temp dir; `finish_run_dir` removes it after a clean run."""
+    return Path(tempfile.mkdtemp(prefix=f"pk-run-{name}-"))
+
+
+def finish_run_dir(run_dir: Path, ok: bool) -> None:
+    """Remove a temporary run dir after a clean run; keep it (and say so) after a failure. Symlinked caches stay."""
+    if ok:
+        shutil.rmtree(run_dir, ignore_errors=True)
+    else:
+        print(f"run dir kept: {run_dir}", file=sys.stderr)
+
+
+@contextlib.contextmanager
+def run_dir_scope(
+    name: str, explicit: str | Path | None = None, cache_dir: Path = SHARED_CACHE
+) -> Iterator[Path]:
+    """The run dir of one daemon: EXPLICIT (kept), else a temp dir linked to CACHE_DIR, removed after a clean exit."""
+    if explicit:
+        yield Path(explicit)
+        return
+    run_dir = temp_run_dir(name)
+    link_shared(run_dir, cache_dir)
+    ok = False
+    try:
+        yield run_dir
+        ok = True
+    finally:
+        finish_run_dir(run_dir, ok)
+
+
 def link_shared(run_dir: Path, cache_dir: Path) -> None:
     """Make RUN_DIR/patched and RUN_DIR/cards the shared `cache_dir/patched` and `cache_dir/cards-store`. The daemon
     caches the coupled cold boot of a patched MAIN under `patched` (a pair of snapshots keyed by the MAIN, the DSP
@@ -648,13 +681,16 @@ class Session:
         run_name: str | None = None,
         env: dict[str, str] | None = None,
         cache_dir: Path | None = None,
+        run_dir: Path | None = None,
     ):
         self.cell, self.goldens, self.update = cell, goldens, update
+        self.run_dir = run_dir  # explicit: kept; None: a temp dir made by open, removed after a clean close
         self.env = dict(env or {})
         self.cache_dir = cache_dir  # shared by the processes of one proof run: patched-boot pairs and the card
         self.syx, self.ready = firmware_inputs(cell)
         self.log_path = log
         self.run_name = run_name or cell.slug
+        self._temp_run_dir = False
         self.emu: Emu | None = None
         self.events: list[dict[str, Any]] = []
         self.checks: list[Check] = []
@@ -680,7 +716,12 @@ class Session:
         cell = self.cell
         started = time.monotonic()
         exe = daemon_binary(cell.device, self.syx)
-        run_dir = OUT / f"run-{self.run_name}"
+        if self.run_dir is None:
+            self.run_dir = temp_run_dir(self.run_name)
+            self._temp_run_dir = True
+            if self.cache_dir is None:  # the boot caches must outlive the run dir
+                self.cache_dir = SHARED_CACHE
+        run_dir = self.run_dir
         if self.cache_dir is not None:
             link_shared(run_dir, self.cache_dir)
         self.emu = Emu.spawn_coupled(
@@ -737,18 +778,21 @@ class Session:
             self.reset()
         return report
 
-    def close(self) -> None:
+    def close(self, ok: bool = True) -> None:
         if self.emu is not None:
             try:
                 self.emu.__exit__(None, None, None)
             finally:
                 self.emu = None
+        if self._temp_run_dir and self.run_dir is not None:
+            finish_run_dir(self.run_dir, ok)
+            self._temp_run_dir = False
 
     def __enter__(self) -> Session:
         return self
 
-    def __exit__(self, *exc: object) -> None:
-        self.close()
+    def __exit__(self, exc_type: object, *exc: object) -> None:
+        self.close(ok=exc_type is None)
 
     # -- state and health
     def reset(self) -> None:

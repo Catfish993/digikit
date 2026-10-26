@@ -749,8 +749,7 @@ impl Actor {
     }
 
     /// The guest asked for a soft reset (RCM.RCR): boot the same patched firmware again from the reset entry, on the card as the
-    /// guest left it (its writes laid over the image), the DSP as a device boots it. Only a patched build with coupled audio can be
-    /// restarted here; for anything else an event says so and the guest carries on (it spins after the write).
+    /// guest left it (its writes laid over the image), with coupled DSP audio when available.
     fn soft_reset(&mut self) {
         // A firmware given on the command line is loaded as stock, without an analysis: make it here.
         let analysed = match self.loaded.as_mut() {
@@ -758,7 +757,11 @@ impl Actor {
             None => Err("no firmware loaded".into()),
         };
         if let Err(reason) = analysed {
+            self.reset_overlay = None;
+            self.reset_ram = None;
             self.emit("cpu.reset", json!({"restart": "unsupported", "reason": reason}));
+            self.finish_job(Err(RpcError::new(code::GUEST_FAULT, "boot loop: the restart failed")));
+            self.mode = Mode::Paused;
             return;
         }
         let loaded = self.loaded.as_ref().expect("checked above");
@@ -774,23 +777,54 @@ impl Actor {
             self.runtime.as_mut().map(|r| r.peek_ram(base, bytes))
         });
         let (tx, _rx) = mpsc::channel();
-        let mut report = json!({});
-        match self.load_patched_coupled(&bytes, &card, &new, &base_sha, &base_bytes, &mut report, "cold", &tx) {
-            Ok(CoupledLoad::Started) => self.emit("cpu.reset", json!({"restart": "cold boot started"})),
-            Ok(other) => {
+        // A reset during boot continues the original load request, as the coupled worker does.
+        let boot = self.job.take();
+        let reply = boot.as_ref().map_or(&tx, |job| &job.reply);
+        let mut report = boot.as_ref().map_or_else(|| json!({}), |job| job.partial.clone());
+        match self.load_patched(bytes, card, new, base_sha, base_bytes, &mut report, "cold", reply) {
+            Ok(true) => {
+                // CF boot runs as a controller job and resumes free running. A coupled
+                // worker preserves the caller's mode, including paused RPC boundaries.
+                if matches!(self.job.as_ref().map(|job| &job.kind), Some(JobKind::Boot { .. })) {
+                    self.mode = Mode::Free;
+                }
+                self.emit("cpu.reset", json!({"restart": "cold boot started"}));
+            }
+            Ok(false) => {
                 self.reset_overlay = None;
                 self.reset_ram = None;
-                let reason = match other {
-                    CoupledLoad::Unavailable(why) => why,
-                    _ => "the boot was installed without a worker".into(),
-                };
+                self.mode = Mode::Paused;
+                let reason = "the boot was installed without a worker";
                 self.emit("cpu.reset", json!({"restart": "unsupported", "reason": reason}));
+                let _ = reply.send(Err(RpcError::new(code::GUEST_FAULT, reason)));
             }
             Err(e) => {
                 self.reset_overlay = None;
                 self.reset_ram = None;
                 self.emit("cpu.reset", json!({"restart": "unsupported", "reason": e.message}));
+                self.mode = Mode::Paused;
+                let _ = reply.send(Err(e));
             }
+        }
+    }
+
+    /// Finish an old-runtime target, or continue a cold boot with the coupled path's reset bound.
+    fn handle_reset(&mut self) {
+        if !self.reset_pending { return; }
+        if matches!(self.job.as_ref().map(|j| &j.kind), Some(JobKind::Boot { .. })) {
+            self.boot_resets += 1;
+            self.reset_pending = false;
+            if self.boot_resets > 8 {
+                self.finish_job(Err(RpcError::new(code::GUEST_FAULT, "boot loop: the restart failed")));
+                self.mode = Mode::Paused;
+                self.emit("cpu.reset", json!({"restart": "unsupported", "reason": "boot loop", "count": self.boot_resets}));
+            } else {
+                self.emit("cpu.reset", json!({"during_boot": true, "count": self.boot_resets}));
+                self.soft_reset();
+            }
+        } else {
+            // Targets belong to the old runtime. Do not keep stepping it after RCM.RCR.
+            self.finish_job(Ok(json!({"runtime_replaced": true})));
         }
     }
 
@@ -1581,12 +1615,16 @@ impl Actor {
         if let Some(error) = snapshot.status.error.clone() {
             self.finish_job(Err(RpcError::new(code::GUEST_FAULT, error)));
             self.mode = Mode::Paused;
+            self.reset_pending = false;
             return;
         }
         if let Some(error) = self.card_error() {
             self.finish_job(Err(RpcError::io(format!("card image read: {error}"))));
             self.mode = Mode::Paused;
+            self.reset_pending = false;
+            return;
         }
+        self.handle_reset();
     }
 
     /// Whether the active job is finished before another chunk.
@@ -1606,6 +1644,7 @@ impl Actor {
             JobKind::Until(Until::Frames(n)) => (frames(runtime) >= *n).then(|| Ok(json!({}))),
             JobKind::Boot { cache, limit } => {
                 if runtime.status().ready {
+                    self.boot_resets = 0;
                     let saved = match cache {
                         Some(path) => save_cache(runtime, path),
                         None => Ok(None),
@@ -2974,6 +3013,9 @@ impl Actor {
         start: &str,
         reply: &RpcReply,
     ) -> Result<bool, RpcError> {
+        if self.reset_overlay.is_none() && self.reset_ram.is_none() {
+            self.boot_resets = 0;
+        }
         let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, m);
         let main_sha = new
             .main_sha256()
@@ -3001,9 +3043,31 @@ impl Actor {
                 report["coupled_note"] = why.into();
             }
         }
-        let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
+        // A soft reset's private card/RAM state must neither restore nor replace the
+        // initial-load cache for this MAIN. Keep it until installation succeeds.
+        let resetting = self.reset_overlay.is_some() || self.reset_ram.is_some();
+        let cache = (!resetting).then_some(cache);
+        let (mut card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
+        if let Some(sectors) = &self.reset_overlay {
+            apply_overlay_sectors(card_obj.get_or_insert_with(Card::default), sectors)
+                .map_err(&rejected)?;
+        }
         let mut runtime = Runtime::new_patched(&bytes, card_obj, &base_sha).map_err(&rejected)?;
-        let cache_hit = start != "cold" && cache.is_file();
+        if resetting {
+            // A used card may skip the boot-time filesystem check, as on the coupled reset path.
+            runtime.relax_fs_check();
+        }
+        if let Some(ram) = &self.reset_ram {
+            let registry = plusdrive_format::device_profile::Registry::load().map_err(|e| rejected(e.to_string()))?;
+            let (device, _) = registry.identify(&base_sha).map_err(|e| rejected(e.to_string()))?;
+            let (base, size) = device.keep_ram
+                .ok_or_else(|| rejected("soft reset RAM has no device keep range".into()))?;
+            if ram.len() != size as usize || ram.len() % 4 != 0 {
+                return Err(rejected("soft reset RAM does not match the device keep range".into()));
+            }
+            runtime.poke_ram(base, ram).map_err(&rejected)?;
+        }
+        let cache_hit = start != "cold" && cache.as_ref().is_some_and(|p| p.is_file());
         report["audio"] = false.into();
         report["dsp"] = json!({
             "applied": false,
@@ -3011,7 +3075,7 @@ impl Actor {
         });
         let mut boot_job = false;
         if cache_hit {
-            match std::fs::read(&cache)
+            match std::fs::read(cache.as_ref().expect("cache hit"))
                 .map_err(|e| e.to_string())
                 .and_then(|data| runtime.restore_state(&data))
             {
@@ -3037,7 +3101,7 @@ impl Actor {
         } else if start == "snapshot" {
             return Err(rejected(format!(
                 "no cached snapshot for this MAIN ({}); start snapshot never boots cold",
-                cache.display()
+                cache.as_ref().map_or_else(|| "soft reset".into(), |p| p.display().to_string())
             )));
         } else {
             boot_job = true;
@@ -3054,13 +3118,15 @@ impl Actor {
             current_analysis: Some(new),
         });
         self.install(runtime, error);
+        self.reset_overlay = None;
+        self.reset_ram = None;
         self.session = self.session.max(1);
         self.emit("session.changed", json!({"reason": "firmware.load"}));
         if boot_job {
             let partial = report.clone();
             self.start_job(
                 JobKind::Boot {
-                    cache: Some(cache),
+                    cache,
                     limit: BOOT_LIMIT,
                 },
                 reply,
@@ -3985,5 +4051,112 @@ mod tests {
         std::fs::write(&image, b"image two").unwrap();
         assert_ne!(base, key(&main, None), "another DSP image");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires DT2 1.17 and DN2 1.12 firmware"]
+    fn cf_reset_restores_card_and_kept_ram_before_boot_without_using_the_main_cache() {
+        // These controller transitions do not execute guest instructions.
+        let (_commands, rx) = mpsc::channel();
+        let mut controller = Actor::new(rx, Config::new(None));
+        let (reply, result) = mpsc::channel();
+        controller.start_job(JobKind::Steps { end: 100 }, &reply, None, json!({}), "step").unwrap();
+        controller.reset_pending = true;
+        controller.handle_reset();
+        assert_eq!(result.try_recv().unwrap().unwrap()["runtime_replaced"], true);
+        assert!(controller.job.is_none() && controller.reset_pending);
+        controller.start_job(JobKind::Boot { cache: None, limit: BOOT_LIMIT }, &reply,
+            None, json!({}), "firmware.load").unwrap();
+        controller.boot_resets = 8;
+        controller.mode = Mode::Free;
+        controller.handle_reset();
+        assert_eq!(controller.boot_resets, 9);
+        assert!(controller.mode == Mode::Paused && controller.job.is_none() && !controller.reset_pending);
+        assert_eq!(result.try_recv().unwrap().unwrap_err().code, code::GUEST_FAULT);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
+        for (env, file) in [
+            ("DT2_SYX", "Digitakt_II_OS1.17.syx"),
+            ("DN2_SYX", "Digitone_II_OS1.12.syx"),
+        ] {
+            let path = std::env::var_os(env).map(PathBuf::from)
+                .unwrap_or_else(|| root.join("firmware").join(file));
+            assert!(path.is_file(), "required firmware missing: {}", path.display());
+            let bytes = std::fs::read(path).unwrap();
+            let new = Analysis::of(&bytes).unwrap();
+            let base_sha = firmware::sha256_hex(&bytes);
+            let registry = plusdrive_format::device_profile::Registry::load().unwrap();
+            let (device, _) = registry.identify(&base_sha).unwrap();
+            let (base, size) = device.keep_ram.unwrap();
+            let ram: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+            let mut sector = emmc_card::CardOverlaySector {
+                sector: 17, written: [0; 64], data: [0; 512],
+            };
+            sector.written[0] = 3;
+            sector.data[0] = 0xa5; // Includes an explicitly written zero at byte 1.
+            let overlay = vec![sector];
+            let dir = std::env::temp_dir().join(format!("digi-cf-reset-{}-{env}", std::process::id()));
+            let mut config = Config::new(None);
+            config.run_dir = dir.clone();
+            let (_tx, rx) = mpsc::channel();
+            let mut actor = Actor::new(rx, config);
+            let cache = dir.join("patched").join(format!("{}.snap", new.main_sha256().unwrap()));
+            std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+            std::fs::write(&cache, b"initial cache must remain untouched").unwrap();
+            actor.reset_overlay = Some(overlay.clone());
+            actor.reset_ram = Some(ram.clone());
+            let (reply, result) = mpsc::channel();
+            let mut report = json!({});
+            actor.reset_ram = Some(vec![0; 3]);
+            assert!(actor.load_patched(bytes.clone(), None, new.clone(), base_sha.clone(),
+                Some(bytes.clone()), &mut report, "cold", &reply).is_err());
+            assert_eq!(actor.reset_overlay.as_ref(), Some(&overlay), "failed construction keeps captured card state");
+            assert_eq!(actor.reset_ram.as_deref(), Some(&[0; 3][..]), "failed construction keeps captured RAM");
+            actor.reset_ram = Some(ram.clone());
+            assert!(actor.load_patched(bytes.clone(), None, new.clone(), base_sha.clone(),
+                Some(bytes.clone()), &mut report, "auto", &reply).unwrap());
+            let runtime = actor.runtime.as_mut().unwrap();
+            assert_eq!(runtime.elapsed_instructions(), 0, "retained state precedes boot");
+            assert_eq!(runtime.peek_ram(base, size), ram);
+            assert_eq!(runtime.card_overlay(), overlay, "blank-card writes survive reset");
+            assert!(report.get("cache_note").is_none(), "reset must not read the cache");
+            assert!(matches!(actor.job.as_ref().unwrap().kind, JobKind::Boot { cache: None, .. }),
+                "reset must not write the cache when ready");
+            assert!(actor.reset_overlay.is_none() && actor.reset_ram.is_none());
+            assert_eq!(std::fs::read(&cache).unwrap(), b"initial cache must remain untouched");
+            actor.job = None;
+            actor.mode = Mode::Paused;
+            actor.soft_reset();
+            assert!(actor.mode == Mode::Free, "guest reset resumes free running after the boot job");
+            let runtime = actor.runtime.as_mut().unwrap();
+            assert_eq!(runtime.elapsed_instructions(), 0);
+            assert_eq!(runtime.peek_ram(base, size), ram);
+            assert_eq!(runtime.card_overlay(), overlay);
+            assert!(matches!(actor.job.as_ref().unwrap().kind, JobKind::Boot { cache: None, .. }));
+            actor.boot_resets = 7;
+            actor.reset_pending = true;
+            actor.handle_reset();
+            assert_eq!(actor.boot_resets, 8, "the eighth reset still starts a boot");
+            assert!(actor.job.is_some() && !actor.reset_pending);
+            assert_eq!(actor.runtime.as_ref().unwrap().elapsed_instructions(), 0);
+            actor.job.as_mut().unwrap().reply = reply.clone();
+            actor.loaded.as_mut().unwrap().card = Some(dir.join("missing-card.img"));
+            actor.soft_reset();
+            assert!(result.try_recv().unwrap().is_err(), "terminal reset failure replies to the original boot caller");
+            assert!(actor.reset_overlay.is_none() && actor.reset_ram.is_none(), "terminal reset state cannot leak into a new load");
+            actor.job = None;
+            actor.load_patched(bytes, None, new, base_sha, None, &mut json!({}), "cold", &reply).unwrap();
+            assert!(matches!(&actor.job.as_ref().unwrap().kind, JobKind::Boot { cache: Some(path), .. } if path == &cache),
+                "ordinary initial cold boots still save the MAIN cache");
+            assert_eq!(actor.boot_resets, 0, "independent loads start a fresh reset sequence");
+            let runtime = actor.runtime.as_mut().unwrap();
+            assert!(runtime.card_overlay().is_empty(), "fresh default card has none of the failed reset's writes");
+            assert_ne!(runtime.peek_ram(base, size), ram, "failed reset RAM is not reused");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
     }
 }

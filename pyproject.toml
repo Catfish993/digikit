@@ -26,14 +26,17 @@ dev = [
 package = false
 
 # Pinned here so ruff gives the same answer on every machine, whatever the
-# user-level ruff configuration says. tests/devtools/test_lint.py enforces these rules
-# and the formatter on the files listed there; add a file to that list when
-# you clean it.
+# user-level ruff configuration says. `ruff check` and `ruff format --check` without
+# paths cover exactly `include` (every tracked Python file of tests/ and tools/).
 [tool.ruff]
 line-length = 88
 target-version = "py312"
 # The repository root is the only import root (tools/ is a package).
 src = ["."]
+include = [
+    "tests/**/*.py",
+    "tools/**/*.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM"]
@@ -42,10 +45,89 @@ ignore = [
     "UP031",  # %-formatting is the house style
 ]
 
-# tests/devtools/test_types.py runs mypy on the files listed there. The SHARC core
-# also runs under PyPy, which supports Python 3.11, so check against 3.11.
+# `mypy` without paths checks `files`. Add a path once it passes cleanly; the list
+# should only grow. The SHARC core also runs under PyPy (mise run test:pypy), which
+# supports Python 3.11, so check against 3.11.
 [tool.mypy]
 python_version = "3.11"
+files = [
+    "tools/__init__.py",
+    "tools/patchkit/pk_dsplink.py",
+    "tools/patchkit/modroots.py",
+    "tools/patchkit/pk_conform.py",
+    "tools/patchkit/pk_modcheck.py",
+    "tools/patchkit/pk_digikit_memaudit.py",
+    "tools/patchkit/pk_capacity.py",
+    "tools/patchkit/pk_digikit_capacity.py",
+    "tools/patchkit/pk_digikit_fx.py",
+    "tools/patchkit/pk_digikit_fxsend.py",
+    "tools/patchkit/pk_digikit_fxroute.py",
+    "tools/patchkit/pk_digikit_fxroutes.py",
+    "tools/patchkit/pk_digikit_settings.py",
+    "tools/patchkit/pk_digikit_fxpage.py",
+    "tools/patchkit/pk_digikit_fxpersist.py",
+    "tools/patchkit/pk_digikit_fxshift.py",
+    "tools/patchkit/pk_idx65_poke.py",
+    "tools/patchkit/freqshift_ref.py",
+    "tools/device/dkfit.py",
+    "tools/device/dksettings.py",
+    "tools/device/dkneeds.py",
+    "tools/patchkit/pk_device.py",
+    "tools/patchkit/pk_modaudit.py",
+    "tools/patchkit/pk_package.py",
+    "tools/coldfire/fw.py",
+    "tools/coldfire/atlas.py",
+    "tests/firmware/test_fw.py",
+    "tools/emulator/audiocheck.py",
+    "tools/emulator/fxcheck.py",
+    "tools/coldfire/paramtable.py",
+    "tools/emulator/scenario_dsl.py",
+    "tools/emulator/dt2fx.py",
+    "tests/dsp/test_dt2fx.py",
+    "tests/dsp/test_trackfx.py",
+    "tests/dsp/test_sendfx.py",
+    "tools/emulator/dspdiff.py",
+    "tests/dsp/test_dspdiff.py",
+    "tests/dsp/test_audiocheck.py",
+    "tools/sharc_dev/aot_fxprof.py",
+    "tools/devtools/benchlock.py",
+    "tools/devtools/verify_budget.py",
+    "tools/devtools/verify_times.py",
+    "tools/control/digi_client.py",
+    "tools/sharc_dev/sharc_peer.py",
+    "tools/coldfire/cf.py",
+    "tools/coldfire/cf_names.py",
+    "tools/coldfire/cfdb.py",
+    "tools/coldfire/cfisa/gen.py",
+    "tools/coldfire/cfisa/oracle.py",
+    "tools/emulator/live_audio.py",
+    "tools/sharc_dev/sharc.py",
+    "tools/sharc_dev/sharc_core",
+    "tools/sharc_dev/sharc_dac.py",
+    "tools/sharc_dev/sharc_diff.py",
+    "tools/sharc_dev/sharc_disasm.py",
+    "tools/sharc_dev/sharc_dn2_aot.py",
+    "tools/sharc_dev/sharc_framemap.py",
+    "tools/sharc_dev/sharc_harness",
+    "tools/sharc_dev/sharc_inputs.py",
+    "tools/sharc_dev/sharc_proc.py",
+    "tools/sharc_dev/sharc_rsgen.py",
+    "tools/sharc_dev/sharc_run.py",
+    "tools/sharc_dev/sharc_subset_lint.py",
+    "tools/sharc_dev/sharc_survey.py",
+    "tools/sharc_dev/sharc_symbols.py",
+    "tools/sharc_dev/sharc_trace.py",
+    "tools/sharc_dev/sharc_transpile",
+    "tools/sharc_dev/sharc_transpile_infer.py",
+    "tools/sharc_dev/sharc_transpile_run.py",
+    "tools/sharc_dev/sharc_widthaudit.py",
+    "tools/sharc_dev/sharcldr.py",
+    "tools/emulator/snapread.py",
+    "tools/devtools/pathcheck.py",
+    "tests/devtools/test_pathcheck.py",
+    "tools/devtools/changed_tests.py",
+    "tools/devtools/agent_guard.py",
+]
 mypy_path = "."
 ignore_missing_imports = true
 check_untyped_defs = true

@@ -686,7 +686,7 @@ statements in the SHARC+ Core Programming Reference:
 
 It also matched the implementation against them, and decoded 0xb840d2,
 0xb84225 and 0xb84228 from the DN2 1.11 image as stated above. The
-track-FX sweep (`tests/scenarios/dn2-trackfx.json`, `tools/emulator/fxcheck.py`) then
+track-FX sweep (`REF:tests/scenarios/dn2-trackfx.json`, `tools/emulator/fxcheck.py`) then
 measured the delay with the fix: echoes 0.375 s apart, each about 6 dB
 quieter than the one before.
 
@@ -704,7 +704,7 @@ failure does not come from this change.
 
 ## DN2 1.11 send FX pages swept against expected behaviour (2026-10-08)
 
-Scenarios `tests/scenarios/dn2-sendfx.json` (`tools/emulator/gen_sendfx.py`), measures
+Scenarios `tests/regression/scenarios/dn2-sendfx.ts` (canonical TypeScript source), measures
 `tools/emulator/fxcheck.py` (`sf-*`), runs `out/runs/sendfx/run1..run3`. All **[D]**:
 one run, not yet compared with a device.
 

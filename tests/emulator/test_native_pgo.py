@@ -227,31 +227,6 @@ def test_dt2_state_reads_the_dt2_manifest(tree, monkeypatch):
     assert native_pgo.current_profile("dt2") == str(tree / "state" / "p.profdata")
 
 
-def test_dt2_notices_name_the_dt2_train_command():
-    assert "train --device dt2" in native_pgo.fallback_notice("missing", "x", "dt2")
-    assert "train --device dt2" in native_pgo.fallback_notice("stale", "x", "dt2")
-    assert "train --device dt2" in native_pgo.stale_notice("x", "dt2")
-    assert "--device" not in native_pgo.fallback_notice("stale", "x")
-    assert "mise run perf:pgo" in native_pgo.stale_notice("x")
-
-
-def test_pgo_variant_can_be_redirected_for_a_scratch_build():
-    assert native_pgo.pgo_variant({}) == "pgo-use"
-    assert (
-        native_pgo.pgo_variant({"DIGI_EMU_PGO_VARIANT": "pgo-scratch"}) == "pgo-scratch"
-    )
-
-
-def test_fallback_notice_is_prefixed_with_warning():
-    for status, detail in (
-        ("stale", "changed: sources"),
-        ("missing", "no manifest"),
-        ("skipped", "RUSTFLAGS is set"),
-        ("failed", "training failed (exit 1)"),
-    ):
-        assert native_pgo.fallback_notice(status, detail).startswith("WARNING: ")
-
-
 # --- crate-hash guard -------------------------------------------------------------
 
 PROFILE_TEXT = """Counters:

@@ -234,15 +234,16 @@ In the firmware's MIDI task, after the SysEx gather (finding 42 section 2, stage
 starts `F0 7D 64 6B` goes to the runtime; every other message takes the stock route unchanged. The exact hook is a ported
 anchor on all four ports (`dkrt.fw.*`). The runtime's upload buffer is a static 16-byte aligned object of 36,896 bytes (see "Behaviour the first draft left open").
 
-## Tests (kept; `tests/digikit/scenarios`)
+## Tests
 
+- CLI transfer acceptance: `tests/regression/runtime/transfer-live.ts` on DT2 1.17 and DN2 1.12, through the real `tools.device.dktransfer` CLI. Install/restart persists the upload and selection, the mirror matches the card's SHA-256 and metadata, delete plus `card.sync` removes it, and the next protocol restart skips the selected missing module with `MOD_LOAD E_NOT_FOUND` and reaches `UI_FIRST`. Run with `mise run test:runtime -- transfer-live` (prerequisites: `tests/regression/README.md`); the gate selects this acceptance on relevant changes. Remaining scenario tests are in `tests/digikit/scenarios`.
 - upload, list, restart, load: equal to a card built with the file in `digikit/` (rows, tables, PCM).
 - replace, delete, CLEAR, E_FULL, E_HASH (a wrong sha256 commits nothing), DATA retry and bad offset.
 - power cut during staging, between header B and A, and after A: the next boot reads a valid store (old or new, never mixed).
 - an upload during playback: PCM equal to the same run without it; the write-watch shows store sectors only.
 - stock MidiRpc unchanged: a Ping and a SoftwareVersion reply are byte-identical with and without the runtime.
 - `upload-folders` (store format 3): MKDIR and its errors, LIST by prefix and its paging (forty entries), a streamed upload of 6 MiB (far over the staging buffer), VERIFY in ranges, a delete that frees its space for the next file (first fit), a smaller file that takes a hole, CAPACITY's STORE entry, the +Drive round trip.
-- `samples-store` (live, DN2): a WAV converted by the host and sent into `samples/<folder>/<name>` in several chunks through the generic samples API (`apps/web/src/modules/samples.ts`), VERIFY against the host's sha256, a corrupted copy reported as failed, a delete that frees the space, a RESTART after which the store still lists and verifies the file, and the folder mirror holding the file.
+- DN2 sample-store acceptance (`tests/regression/runtime/dn2-samples-store-live.test.ts`, replacing `samples-store`): a WAV converted by the host and sent into `samples/<folder>/<name>` in several chunks through the generic samples API (`packages/dk-session/src/samples.ts`, exported as `@digi/dk-session/samples`), VERIFY against the host's sha256, a corrupted copy reported as failed, a delete that frees the space, a RESTART after which the store still lists and verifies the file, and the folder mirror holding the file. Run with `mise run test:runtime -- dn2-samples-store-live.test.ts`, using the prepared runtime inputs in `tests/regression/README.md`.
 - the +Drive round trip: after an upload in the emulator, the exporter writes the store's files back to
   `plus_drive/<device>/digikit/`, so the next card build holds them.
 

@@ -4,9 +4,9 @@
 // Nothing is started and nothing is built here.
 import { invoke } from '@tauri-apps/api/core';
 import { errorLine } from '@web/modules/backend';
-import { fmtVersion, type DkSession } from '@web/modules/dkupload-core';
-import { Sample, prepareUpload, sourceKind, type Prepared } from '@web/modules/dksample';
-import { openSamples, type SamplesBackend } from '@web/modules/samples';
+import { fmtVersion, type DkSession } from '@digi/dk-session';
+import { Sample, prepareUpload, sourceKind, type Prepared } from '@digi/dk-session/dksample';
+import { openSamples, type SamplesBackend } from '@digi/dk-session/samples';
 import { session as running } from './target';
 import { joinPath, type LocalEntry, type Prepare } from './samples-core';
 import {

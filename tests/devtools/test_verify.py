@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -11,14 +14,8 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.devtools import verify, verify_pre, verify_route  # noqa: E402
+from tools.devtools import changed_tests, verify, verify_route  # noqa: E402
 from tools.patchkit import modroots  # noqa: E402
-
-
-def test_rust_tests_command_has_no_package_flags() -> None:
-    cmd = verify.rust_tests_command()
-    assert "-p" not in cmd
-    assert cmd[-3:] == ["-m", "tools.devtools.rust_ws", "test"]
 
 
 def test_docs_select_no_steps() -> None:
@@ -46,8 +43,200 @@ def test_ui_only_change_skips_smoke() -> None:
     assert "web" in steps  # the UI steps themselves still run
 
 
-def test_ui_change_with_one_other_file_keeps_smoke() -> None:
-    assert "smoke" in verify.steps_for([*UI_FILES, "tools/device/dkscreen.py"])
+SMOKE_EXEMPT_FILES = [
+    "tools/devtools/agent_guard.py",
+    "tools/devtools/pathcheck.py",
+    ".claude/settings.json",
+]
+
+HOST_TEST_FILES = [
+    "packages/control-client/tests/client.test.ts",
+    "packages/test-support/tests/support.test.ts",
+    "packages/dk-session/tests/remote.test.ts",
+    "tests/regression/host/runtime.test.ts",
+    "tests/regression/host/remote-helpers.test.ts",
+    "apps/desktop/ui/tests/card.test.ts",
+]
+
+
+@pytest.mark.parametrize(
+    "files, wanted, smoke, reason",
+    [
+        (UI_FILES, {"web"}, False, "UI-only change"),
+        (SMOKE_EXEMPT_FILES, {"python-tests"}, False, "smoke-exempt maintenance"),
+        (HOST_TEST_FILES, {"host"}, False, "host-only test"),
+        (["packages/dk-session/tests/new.test.ts"], {"host"}, False, "host-only test"),
+        (["tests/regression/host/new.test.ts"], {"host"}, False, "host-only test"),
+        (["packages/dk-session/tests/fake.ts"], {"host"}, True, None),
+        (["tests/regression/runtime/x.test.ts"], {"runtime-fixture"}, True, None),
+        (["vitest.host.config.ts"], {"host"}, True, None),
+        (
+            [*HOST_TEST_FILES, "docs/x.md", "tools/devtools/pathcheck.py"],
+            {"host", "python-tests"},
+            False,
+            "smoke-exempt maintenance change (host-only test",
+        ),
+        (
+            [*HOST_TEST_FILES, "apps/web/src/components/PatchGallery.tsx"],
+            {"host", "web"},
+            False,
+            "UI-only and host-only test",
+        ),
+        ([*HOST_TEST_FILES, "unknown/file.txt"], {"host"}, True, None),
+        (
+            [*HOST_TEST_FILES, "modules/fx/master-gain/src/cf/gain.s"],
+            {"host"},
+            True,
+            None,
+        ),
+        ([*UI_FILES, "tools/device/dkscreen.py"], {"web"}, True, None),
+        *[
+            ([*HOST_TEST_FILES, path], {"host"}, True, None)
+            for path in (
+                "packages/control-client/src/client.ts",
+                "packages/test-support/src/session.ts",
+                "tests/regression/support.ts",
+                "packages/control-client/package.json",
+                "packages/test-support/tsconfig.json",
+                "modules/core/runtime/src/rs/src/upload.rs",
+            )
+        ],
+        (["tools/devtools/pathchecks.py"], set(), True, None),
+        (
+            ["tools/devtools/pathcheck.py", "apps/web/src/components/PatchGallery.tsx"],
+            {"python-tests", "web"},
+            False,
+            "UI-only and smoke-exempt maintenance change (path checker)",
+        ),
+        ([*SMOKE_EXEMPT_FILES, "unknown/file.txt"], {"python-tests"}, True, None),
+        (
+            ["tools/devtools/pathcheck.py", "modules/fx/master-gain/src/cf/gain.s"],
+            {"python-tests"},
+            True,
+            None,
+        ),
+    ],
+)
+def test_smoke_skip_table(
+    files: list[str], wanted: set[str], smoke: bool, reason: str | None
+) -> None:
+    steps = verify.steps_for(files)
+    assert wanted <= set(steps)
+    assert ("smoke" in steps) == smoke
+    if reason is None:
+        assert verify.smoke_reason(files) is None
+    else:
+        assert reason in (verify.smoke_reason(files) or "")
+
+
+def test_explain_states_why_host_tests_skip_smoke(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    files = ["packages/dk-session/tests/new.test.ts"]
+    verify.explain(verify.steps_for(files), files, [], per_file=True)
+    assert "smoke: skipped, host-only test change" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("name", ["session-share", "remote-page", "wait-core", "new"])
+def test_desktop_host_tests_select_only_host(name: str) -> None:
+    assert verify.steps_for([f"apps/desktop/ui/tests/{name}.test.ts"]) == ("host",)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "apps/desktop/ui/src/session-core.ts",
+        "apps/desktop/ui/src/remote-core.ts",
+        "apps/desktop/ui/src/wait-core.ts",
+        "apps/desktop/package.json",
+        "apps/desktop/ui/tsconfig.json",
+        "apps/desktop/src-tauri/src/main.rs",
+    ],
+)
+def test_desktop_host_sources_keep_app_checks(path: str) -> None:
+    steps = set(verify.steps_for([path]))
+    assert {"desktop", "host"} <= steps
+    assert "web" not in steps
+
+
+@pytest.mark.parametrize("name", ["card-core", "samples-core"])
+def test_desktop_sources_used_by_web_samples_keep_web_checks(name: str) -> None:
+    assert verify.steps_for([f"apps/desktop/ui/src/{name}.ts"]) == (
+        "desktop",
+        "host",
+        "web",
+    )
+
+
+def test_exact_maintenance_paths_skip_smoke_but_keep_python_coverage() -> None:
+    for path in SMOKE_EXEMPT_FILES:
+        assert verify.steps_for([path]) == ("python-tests",)
+        assert set(verify.PY_GATE) <= set(verify.python_tests([path], False))
+    assert verify.steps_for(SMOKE_EXEMPT_FILES) == ("python-tests",)
+    assert "tests/devtools/test_agent_guard.py" in verify.python_tests(
+        ["tools/devtools/agent_guard.py"], False
+    )
+    assert "tests/devtools/test_pathcheck.py" in verify.python_tests(
+        ["tools/devtools/pathcheck.py"], False
+    )
+
+
+@pytest.mark.parametrize("mid", ["digikit/freqshift", "digikit/remote"])
+def test_audited_upload_without_matrix_consumers_skips_smoke(mid: str) -> None:
+    files = [f"{mpath(mid)}/module.toml", *UI_FILES, "tools/devtools/pathcheck.py"]
+    assert verify.smoke_cells(files) == []
+    assert "smoke" not in verify.steps_for(files)
+    assert "module-load" in verify.steps_for(files)
+    assert "no dependent cells" in verify.smoke_reason(files)
+
+
+def test_pluck_leaf_selects_existing_dependent_cells_on_both_devices() -> None:
+    files = [f"{mpath('digikit/pluck')}/module.toml", "docs/TESTING.md"]
+    cells = verify.smoke_cells(files)
+    assert cells is not None
+    assert {cell.partition(":")[0] for cell in cells} == {"dt2-1.17", "dn2-1.12"}
+    assert all("test/patched-pluck" in cell for cell in cells)
+    assert "smoke" in verify.steps_for(files)
+    # An unaudited/shared or unknown dependency keeps the entire matrix.
+    for other in (
+        "modules/core/runtime/module.toml",
+        "tests/patchkit/smoke/matrix.toml",
+        "unknown.file",
+    ):
+        assert verify.smoke_cells([*files, other]) is None
+        assert "smoke" in verify.steps_for([*files, other])
+
+
+@pytest.mark.parametrize(
+    "selection", [None, ["dt2-1.17:core/dsp-voice,test/patched-pluck"]]
+)
+def test_smoke_forwards_native_cell_filters(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, selection: list[str] | None
+) -> None:
+    gate = verify.Gate(tmp_path, budget=2, smoke_selection=selection)
+    calls = []
+    monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append(cmd))
+    verify.run_step(gate, "smoke")
+    expected = [*verify.PY, "-m", "tools.patchkit.pk_harness", "run", "--jobs", "1"]
+    for cell in selection or []:
+        expected += ["--cell", cell]
+    assert calls == [expected]
+
+
+def test_smoke_explain_names_affected_cells_and_empty_selection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    files = [f"{mpath('digikit/pluck')}/module.toml"]
+    verify.explain(verify.steps_for(files), files, [], per_file=True)
+    out = capsys.readouterr().out
+    assert "selected dependent matrix cells" in out
+    assert "test/patched-pluck" in out
+    files = [f"{mpath('digikit/remote')}/module.toml"]
+    verify.explain(verify.steps_for(files), files, [], per_file=True)
+    assert (
+        "smoke: skipped, audited production leaves have no dependent cells"
+        in capsys.readouterr().out
+    )
 
 
 @pytest.mark.parametrize(
@@ -71,6 +260,24 @@ def test_docs_only_stays_empty() -> None:
     assert not verify.ui_only([])
 
 
+def test_representative_module_runtime_and_core_routes_stay_conservative() -> None:
+    assert verify.steps_for(["modules/fx/master-gain/src/cf/gain.s"]) == (
+        "python-tests",
+        "rust-tests",
+        "smoke",
+    )
+    assert verify.steps_for(["modules/core/runtime/src/rs/src/upload.rs"]) == (
+        "runtime-fixture",
+        "module-load",
+        "python-tests",
+        "rust-tests",
+        "smoke",
+    )
+    assert (
+        verify.steps_for(["tools/sharc_dev/sharc_core/state.py"]) == verify.EVERYTHING
+    )
+
+
 def test_explain_says_why_smoke_is_skipped(capsys: pytest.CaptureFixture[str]) -> None:
     def run(files: list[str]) -> str:
         steps = verify.steps_for(files)
@@ -78,8 +285,20 @@ def test_explain_says_why_smoke_is_skipped(capsys: pytest.CaptureFixture[str]) -
         return capsys.readouterr().out
 
     assert "smoke: skipped, UI-only change" in run(UI_FILES)
+    assert (
+        "smoke: skipped, UI-only and smoke-exempt maintenance change (path checker)"
+        in run(
+            ["apps/web/src/components/PatchGallery.tsx", "tools/devtools/pathcheck.py"]
+        )
+    )
     assert "smoke: skipped" not in run([*UI_FILES, "tools/device/dkscreen.py"])
+    assert "smoke: selected, conservative path: unknown/file.txt" in run(
+        ["tools/devtools/pathcheck.py", "unknown/file.txt"]
+    )
     assert "smoke: skipped" not in run(["docs/x.md"])
+    assert "smoke: skipped, host-only test change" in run(
+        ["packages/control-client/tests/client.test.ts"]
+    )
 
 
 def test_changed_pk_test_runs_itself_and_the_gate() -> None:
@@ -90,9 +309,16 @@ def test_changed_pk_test_runs_itself_and_the_gate() -> None:
 
 
 def test_claude_settings_run_the_agent_guard_test() -> None:
-    assert verify.steps_for([".claude/settings.json"]) == ("python-tests", "smoke")
+    assert verify.steps_for([".claude/settings.json"]) == ("python-tests",)
     plan = [p for p, _ in verify.python_test_plan([".claude/settings.json"], False)]
     assert "tests/devtools/test_agent_guard.py" in plan
+
+
+def test_pathcheck_keeps_its_unit_test() -> None:
+    plan = [
+        p for p, _ in verify.python_test_plan(["tools/devtools/pathcheck.py"], False)
+    ]
+    assert "tests/devtools/test_pathcheck.py" in plan
 
 
 def test_a_python_module_selects_its_importers_not_the_directory() -> None:
@@ -116,8 +342,6 @@ def test_digi_client_triggers_its_test() -> None:
 
 
 def test_moved_paths_route() -> None:
-    assert "web" in verify.steps_for(["apps/web/src/x.ts"])
-    assert "desktop" in verify.steps_for(["apps/desktop/src-tauri/src/main.rs"])
     assert "dt2-tone" in verify.steps_for(["packages/emulator/sharc/src/lib.rs"])
     assert "tier-quick" in verify.steps_for(
         ["packages/emulator/sharc-fast-cl/src/lib.rs"]
@@ -146,11 +370,6 @@ def test_unmatched_entry_is_an_error() -> None:
         verify.resolve_tests(("tests/test_no_such_*.py",))
     with pytest.raises(SystemExit):
         verify.resolve_tests(("tests/test_no_such_file.py",))
-
-
-def test_scenario_tests_are_not_added() -> None:
-    changed = ["tests/scenarios/test_dt2_fx.py"]
-    assert "tests/scenarios/test_dt2_fx.py" not in verify.python_tests(changed, False)
 
 
 def test_changed_support_module_runs_its_users() -> None:
@@ -197,28 +416,12 @@ def test_plan_chunks_single_scenario() -> None:
     assert chunks[0].names == ("a-000",)
 
 
-def test_tier_jobs_budget_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DIGI_TIER_JOBS", "7")
-    assert verify.tier_jobs_budget() == 7
-    monkeypatch.setenv("DIGI_TIER_JOBS", "0")
-    with pytest.raises(SystemExit):
-        verify.tier_jobs_budget()
-
-
 def test_python_tests_passed(tmp_path: Path) -> None:
     head = "file\tstatus\trc\tseconds\tpassed\tfailed\tskipped\terrors\n"
     (tmp_path / "summary.tsv").write_text(head + "a.py\tOK\t0\t1.0\t0\t0\t3\t0\n")
     assert verify.python_tests_passed(tmp_path)
     (tmp_path / "summary.tsv").write_text(head + "a.py\tOK\t0\t1.0\t2\t0\t3\t0\n")
     assert verify.python_tests_passed(tmp_path) is None
-
-
-def test_python_tests_command() -> None:
-    cmd = verify.python_tests_command(Path("x"), ["tests/a.py"])
-    assert "tools.devtools.test_outcomes" in cmd
-    assert "run" in cmd and "--check" in cmd
-    assert "--timeout" in cmd
-    assert cmd[-1] == "tests/a.py"
 
 
 def test_python_timeout_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -233,21 +436,18 @@ def test_python_timeout_env(monkeypatch: pytest.MonkeyPatch) -> None:
         verify.python_timeout()
 
 
-def test_load_last_result_picks_newest(tmp_path: Path) -> None:
+def test_load_last_result(tmp_path: Path) -> None:
     assert verify.load_last_result(tmp_path / "none", None) is None
-    for stamp in ("20260101-000000", "20260102-000000", "20260103-000000"):
-        (tmp_path / stamp).mkdir()
-    (tmp_path / "20260101-000000" / "result.json").write_text('{"n": 1}')
-    (tmp_path / "20260102-000000" / "result.json").write_text('{"n": 2}')
-    assert verify.load_last_result(tmp_path, None) == {"n": 2}
-    assert verify.load_last_result(tmp_path, tmp_path / "20260102-000000") == {"n": 1}
-
-
-def test_load_last_result_skips_other_root(tmp_path: Path) -> None:
     older = tmp_path / "20260101-000000"
     newer = tmp_path / "20260102-000000"
+    (tmp_path / "20260103-000000").mkdir()  # no result.json: skipped
     older.mkdir()
     newer.mkdir()
+    (older / "result.json").write_text('{"n": 1}')
+    (newer / "result.json").write_text('{"n": 2}')
+    assert verify.load_last_result(tmp_path, None) == {"n": 2}
+    assert verify.load_last_result(tmp_path, newer) == {"n": 1}
+    # a result of another worktree is skipped
     (older / "result.json").write_text(
         json.dumps({"root": str(verify.ROOT), "failed": ["pins"]})
     )
@@ -289,27 +489,6 @@ def test_pick_rechecks() -> None:
     assert first == again
     assert 0 < len(first) < len(names)
     assert set(first) <= set(names)
-
-
-def test_recheck_probability_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DIGI_RENDER_CACHE_CHECK", raising=False)
-    assert verify.coupled.recheck_probability() == 0.0
-    monkeypatch.setenv("DIGI_RENDER_CACHE_CHECK", "0.25")
-    assert verify.coupled.recheck_probability() == 0.25
-    for bad in ("2", "-0.1", "x", "nan"):
-        monkeypatch.setenv("DIGI_RENDER_CACHE_CHECK", bad)
-        with pytest.raises(SystemExit):
-            verify.coupled.recheck_probability()
-
-
-def test_cache_env() -> None:
-    env = verify.cache_env({"A": "1"})
-    assert env == {"A": "1", "DIGI_RENDER_CACHE_CHECK": "0.03"}
-    keep = verify.cache_env({"DIGI_RENDER_CACHE_CHECK": "0.5"})
-    assert keep["DIGI_RENDER_CACHE_CHECK"] == "0.5"
-    off = verify.cache_env({}, no_cache=True)
-    assert off["DIGI_RENDER_CACHE"] == "0"
-    assert "DIGI_RENDER_CACHE" not in env
 
 
 def test_explain_runs_nothing(
@@ -359,7 +538,7 @@ def test_mise_new_task_routes_like_its_tool() -> None:
         ["tools/device/dkrun.py"],
         {"tools/device/dkrun.py": "mise.toml task dk:run"},
     )
-    assert verify.steps_for(got[0]) == ("python-tests", "smoke")
+    assert verify.steps_for(got[0]) == ("runtime-fixture", "python-tests", "smoke")
     # only the description or the alias changed: the same tool
     again = task.replace('description = "x"', 'description = "y"')
     assert verify_route.mise_paths(old + task, old + again) == got
@@ -407,7 +586,10 @@ def test_mise_tasks_of_the_repo_resolve() -> None:
             continue
         if verify_route.paths_of_run(verify_route.run_lines(task)) is None:
             broad.add(name)
-    assert broad == {"dev:plusdrive"}  # cargo run: no file to route by
+    assert broad == {
+        "dev:plusdrive",
+        "lint:py",
+    }  # cargo run; ruff on the whole include set
 
 
 def test_expand_mise_replaces_a_task_change(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -437,16 +619,12 @@ def test_device_tools_select_their_tests_only() -> None:
     assert verify.steps_for(["tools/device/dkscreen.py"]) == ("python-tests", "smoke")
     assert selected("tools/device/dkscreen.py") == {
         "tests/digikit/test_dkscreen.py",
-        "tests/digikit/test_scenarios.py",
         "tests/digikit/test_upload_dn2.py",
         "tests/digikit/test_upload_dt2.py",
     }
     assert selected("tools/device/dkrun.py") == {
         "tests/digikit/test_dkrun.py",
         "tests/digikit/test_dktransfer.py",  # dktransfer imports dkrun
-        "tests/digikit/test_live_dn2.py",  # and the live scenarios run dktransfer
-        "tests/digikit/test_live_dt2.py",
-        "tests/digikit/test_scenarios.py",
         "tests/digikit/test_menu_dn2.py",
         "tests/digikit/test_menu_dt2.py",
     }
@@ -479,8 +657,12 @@ def test_device_tools_nothing_dropped() -> None:
 def test_digikit_test_files_and_scenarios() -> None:
     assert selected("tests/digikit/test_dkrun.py") == {"tests/digikit/test_dkrun.py"}
     assert selected("tests/patchkit/test_pk_cf.py") == {"tests/patchkit/test_pk_cf.py"}
+    for device in ("dn2", "dt2"):
+        deleted = f"tests/digikit/test_live_{device}.py"
+        assert verify_route.digikit_fine(deleted) is None
+        assert deleted not in verify.python_tests([deleted], False)
+        assert "python-tests" in verify.steps_for([deleted])
     assert selected("tests/digikit/scenarios/menu-dkrun-pluck.toml") == {
-        "tests/digikit/test_scenarios.py",
         "tests/digikit/test_menu_dn2.py",
         "tests/digikit/test_menu_dt2.py",
     }
@@ -651,6 +833,59 @@ def test_unknown_module_path_stays_broad() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/dk-session/src/dkupload-core.ts",
+        "packages/dk-session/src/gen_proto.ts",
+        "packages/dk-session/package.json",
+    ],
+)
+def test_dk_session_routes_to_host_with_conservative_smoke(
+    path: str,
+) -> None:
+    expected = (
+        ("host", "web", "runtime-fixture", "module-load", "smoke")
+        if "/src/" in path
+        else ("host", "web", "smoke")
+    )
+    assert verify.steps_for([path]) == expected
+
+
+def test_root_host_config_routes_to_host_with_conservative_smoke() -> None:
+    assert verify.steps_for(["vitest.host.config.ts"]) == ("host", "smoke")
+
+
+def test_web_check_only_runs_browser_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, list[str]] = {}
+    monkeypatch.setattr(
+        verify.Gate,
+        "run",
+        lambda self, name, cmd, **kwargs: calls.update({name: cmd}),
+    )
+    monkeypatch.setattr(verify.Gate, "share", lambda self: 3)
+    verify.web_check(object.__new__(verify.Gate))
+    assert set(calls) == {"patchkit-wasm", "web-tests", "web-types"}
+    assert calls["web-tests"][1] == "--test-concurrency=3"
+
+
+def test_host_and_app_changes_keep_both_checks() -> None:
+    assert verify.steps_for(
+        ["packages/control-client/src/client.ts", "apps/web/src/components/X.tsx"]
+    ) == ("host", "web", "stock", "runtime-fixture", "module-load", "smoke")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/control-client/package.json",
+        "packages/test-support/tsconfig.json",
+    ],
+)
+def test_host_paths_do_not_select_browser_checks(path: str) -> None:
+    assert verify.steps_for([path]) == ("host", "smoke")
+
+
 def test_web_only_for_what_it_reads() -> None:
     assert "web" in verify.steps_for(["apps/web/src/x.ts"])
     assert "web" in verify.steps_for(["packages/dkupload/src/lib.rs"])
@@ -670,12 +905,12 @@ def test_routing_changes_select_everything() -> None:
         got = verify.python_tests([path], False)
         assert set(verify.python_tests([], True)) <= set(got)
     # the lane helper is checked by the routing tests only
-    assert verify.steps_for(["tools/devtools/verify_pre.py"]) == (
+    assert verify.steps_for(["tools/devtools/changed_tests.py"]) == (
         "python-tests",
         "smoke",
     )
     assert "tests/devtools/test_verify.py" in verify.python_tests(
-        ["tools/devtools/verify_pre.py"], False
+        ["tools/devtools/changed_tests.py"], False
     )
 
 
@@ -690,7 +925,7 @@ def test_gate_files_always_run() -> None:
 
 def test_runtime4_merge_runs_no_pcm_step() -> None:
     """The range 457f515b..29086ff7 (one mise.toml task, device tools, runtime objects) ran all 13
-    steps; its files now select the web bundle, Rust and Python tests and nothing that renders."""
+    steps; its files now select web, Rust and Python tests, without PCM steps."""
     files = [
         "modules/core/digikit-menu/build/digikit-menu-rs.dko.json",
         "modules/core/runtime/build/runtime.dko.json",
@@ -702,7 +937,15 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
         "tools/patchkit/pk_digikit_scen.py",
         "tools/patchkit/pk_digikit_upload.py",
     ]
-    assert verify.steps_for(files) == ("web", "python-tests", "rust-tests", "smoke")
+    assert verify.steps_for(files) == (
+        "host",
+        "web",
+        "runtime-fixture",
+        "module-load",
+        "python-tests",
+        "rust-tests",
+        "smoke",
+    )
 
 
 def test_rust_scope(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -721,41 +964,10 @@ def test_rust_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(seen) == 1
 
 
-def test_rust_tests_command_limits_packages_when_rust_ws_can(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(verify.rust_ws, "__doc__", "no such option")
-    assert "--packages" not in verify.rust_tests_command(["patchkit"])
-    monkeypatch.setattr(verify.rust_ws, "__doc__", "test --packages A,B")
-    cmd = verify.rust_tests_command(["a", "b"])
-    assert cmd[-2:] == ["--packages", "a,b"]
-    assert "--packages" not in verify.rust_tests_command(None)
-
-
 def test_head_only_with_explain() -> None:
     with pytest.raises(SystemExit) as info:
         verify.main(["--head", "HEAD"])
     assert info.value.code == 2
-
-
-def test_verify_pre_plan(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(verify, "rust_scope", lambda files: [])
-    got = {n: c for n, c, _ in verify_pre.plan(["tools/device/dkrun.py"], Path("OUT"))}
-    assert got["rust-tests"] is None and got["pk-build-check"] is None
-    assert got["ruff-check"][-1] == "tools/device/dkrun.py"
-    assert got["pathcheck"]
-    got = {
-        n: c
-        for n, c, _ in verify_pre.plan(
-            ["modules/fx/master-gain/module.toml"], Path("OUT")
-        )
-    }
-    assert got["pk-build-check"] and got["ruff-check"] is None
-    got = {
-        n: c
-        for n, c, _ in verify_pre.plan(["tools/devtools/benchlock.py"], Path("OUT"))
-    }
-    assert got["mypy"][-1] == "tools/devtools/benchlock.py"
 
 
 def test_rust_tests_leaves_the_desktop_crate_to_the_desktop_step() -> None:
@@ -798,8 +1010,391 @@ def test_smoke_waits_for_build_daemons_and_runs_after_it() -> None:
     assert "smoke" in verify.DAEMON_NODES
 
 
+def test_python_daemon_tests_keep_their_daemon_prerequisite_without_smoke() -> None:
+    _, deps = verify.plan(("python-tests",), ["tests/digikit/test_dkrun.py"])
+    assert deps["python-tests"] == ("build-daemons",)
+
+
 def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
     assert verify.main(["--explain", "--only", "smoke"]) == 0
     out = capsys.readouterr().out
     assert "smoke" in out
     assert "pins" not in out
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        (
+            "packages/test-support/src/session.ts",
+            {"stock", "runtime-fixture", "module-load"},
+        ),
+        (
+            "packages/control-client/src/client.ts",
+            {"stock", "runtime-fixture", "module-load"},
+        ),
+        ("tests/regression/support.ts", {"stock", "runtime-fixture", "module-load"}),
+        ("tests/regression/runtime/remote-input.test.ts", {"runtime-fixture"}),
+        (
+            "tests/regression/vitest.config.ts",
+            {"stock", "runtime-fixture", "module-load"},
+        ),
+        ("tests/regression/dt2/transport.test.ts", {"stock"}),
+        ("tests/regression/host/daemon.test.ts", set()),
+        (
+            "modules/core/runtime/src/rs/src/upload.rs",
+            {"runtime-fixture", "module-load"},
+        ),
+        ("modules/machines/pluck/src/dsp/pluck.s", {"module-load"}),
+        ("modules/fx/master-gain/src/cf/gain.s", set()),
+        ("modules/no/such/module.toml", {"runtime-fixture", "module-load"}),
+        ("tools/device/dkupload.py", {"runtime-fixture"}),
+        ("tools/device/dkscreen.py", set()),
+        ("tools/patchkit/freqshift_ref.py", set()),
+        ("devices/digitakt-ii-leds.toml", set()),
+        ("devices/digitone-ii-leds.toml", set()),
+        ("tools/patchkit/pk_link.py", {"runtime-fixture", "module-load"}),
+        ("tools/devtools/stablebin.py", {"runtime-fixture", "module-load"}),
+        ("tools/emulator/card_overlay.py", {"runtime-fixture"}),
+        ("tools/emulator/fast_regions.json", {"runtime-fixture", "module-load"}),
+        (
+            "packages/emulator/control/src/runtime_patch.rs",
+            {"stock", "runtime-fixture", "module-load"},
+        ),
+        ("tools/devtools/verify.py", {"stock", "runtime-fixture", "module-load"}),
+    ],
+)
+def test_relevant_native_acceptance_retains_existing_owners(
+    path: str, expected: set[str]
+) -> None:
+    steps = set(verify.steps_for([path]))
+    assert steps & {"stock", "runtime-fixture", "module-load"} == expected
+    assert set(verify.base_route(path)[1]) <= steps
+
+
+@pytest.mark.parametrize(
+    "step, path, expected",
+    [
+        (
+            "module-load",
+            "modules/machines/pluck/src/dsp/pluck.s",
+            ["modules/pluck.test.ts"],
+        ),
+        (
+            "module-load",
+            "modules/fx/freqshift/module.toml",
+            ["modules/freqshift.test.ts"],
+        ),
+        ("module-load", "modules/tools/remote/module.toml", ["modules/remote.test.ts"]),
+        ("module-load", "modules/fx/master-gain/module.toml", []),
+        (
+            "module-load",
+            "tests/regression/modules/pluck.test.ts",
+            ["modules/pluck.test.ts"],
+        ),
+        (
+            "runtime-fixture",
+            "tests/regression/runtime/remote-input.test.ts",
+            ["runtime/remote-input.test.ts"],
+        ),
+        (
+            "runtime-fixture",
+            "modules/tools/remote/module.toml",
+            ["runtime/remote-input.test.ts"],
+        ),
+        ("runtime-fixture", "modules/fx/master-gain/module.toml", []),
+        ("stock", "tests/regression/dt2/transport.test.ts", ["dt2/transport.test.ts"]),
+    ],
+)
+def test_acceptance_filters_native_files(
+    step: str, path: str, expected: list[str]
+) -> None:
+    assert verify_route.acceptance_files(step, [path]) == expected
+
+
+def test_broad_change_is_not_narrowed_by_a_module_leaf() -> None:
+    paths = ["tools/devtools/verify.py", "modules/machines/pluck/module.toml"]
+    assert verify.acceptance_plan("module-load", paths) == []  # all native module files
+
+
+@pytest.mark.parametrize("name", ["samples", "dksample", "rpcfiles"])
+def test_sample_clients_select_sample_acceptance_without_module_uploads(
+    name: str,
+) -> None:
+    path = f"packages/dk-session/src/{name}.ts"
+    assert verify_route.acceptance_files("runtime-fixture", [path]) == [
+        "runtime/samples-live.test.ts",
+        "runtime/samples-store-live.test.ts",
+    ]
+    assert "module-load" not in verify.steps_for([path])
+    assert {"host", "web", "runtime-fixture"} <= set(verify.steps_for([path]))
+
+
+@pytest.mark.parametrize("step", ["runtime-fixture", "module-load"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "modules/core/runtime/module.toml",
+        "sdk/dk_machine.h",
+        "modules/no/such/module.toml",
+    ],
+)
+def test_shared_abi_and_unknown_modules_keep_cross_device_acceptance(
+    step: str, path: str
+) -> None:
+    files = verify_route.acceptance_files(step, [path])
+    if step == "module-load":
+        assert set(files) == {
+            "modules/pluck.test.ts",
+            "modules/freqshift.test.ts",
+            "modules/remote.test.ts",
+        }
+    else:
+        assert "runtime/remote-input.test.ts" in files
+        assert "runtime/input-adapter.test.ts" in files
+
+
+def test_changed_tests_reports_acceptance_gate_additions() -> None:
+    sel = changed_tests.select(["tests/regression/runtime/transfer-live.test.ts"])
+    assert any("runtime-fixture" in line for line in sel.gate_adds)
+
+
+@pytest.mark.parametrize(
+    "selected, packed",
+    [
+        ([], ["test/input-probe", "digikit/remote", "test/svc-echo"]),
+        (["runtime/remote-input.test.ts"], ["digikit/remote"]),
+        (["runtime/service-commands.test.ts"], ["test/svc-echo"]),
+        (["runtime/input-adapter.test.ts"], ["test/input-probe"]),
+        (["runtime/transfer-live.test.ts", "runtime/samples-live.test.ts"], []),
+    ],
+)
+def test_runtime_fixture_packs_only_modules_of_selected_files(
+    selected: list[str], packed: list[str]
+) -> None:
+    assert verify.runtime_pack_modules(selected) == packed
+
+
+@pytest.mark.parametrize("flags", [["--only", "runtime-fixture"], ["--full"]])
+def test_runtime_fixture_full_or_explicit_planning(
+    flags: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("DIGIKIT_TIER", "quick")
+    assert "runtime-fixture" in verify.STEPS
+    assert verify.main(["--explain", *flags]) == 0
+    out = capsys.readouterr().out
+    steps = next(line for line in out.splitlines() if line.startswith("steps: "))
+    assert "runtime-fixture" in steps
+    if "--only" in flags:
+        assert steps == "steps: runtime-fixture"
+        assert "build-daemons" not in out
+
+
+def test_runtime_fixture_explicit_plan_never_builds_but_waits_for_existing_build() -> (
+    None
+):
+    nodes, deps = verify.plan(("runtime-fixture",))
+    assert nodes == ["runtime-fixture"]
+    assert deps["runtime-fixture"] == ()
+    nodes, deps = verify.plan(("runtime-fixture", "smoke"))
+    assert "build-daemons" in nodes
+    assert deps["runtime-fixture"] == ("build-daemons",)
+
+
+def test_stale_module_objects_stop_before_pack_or_acceptance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    gate = verify.Gate(
+        tmp_path, budget=2, acceptance={"module-load": ["modules/pluck.test.ts"]}
+    )
+    calls = []
+
+    def fail(name, cmd, **kw):
+        calls.append(cmd)
+        gate.failed.append(name)
+
+    monkeypatch.setattr(gate, "run", fail)
+    with pytest.raises(RuntimeError, match="current module build objects"):
+        verify.run_step(gate, "module-load")
+    assert calls == [
+        [
+            *verify.PY,
+            "-m",
+            "tools.patchkit.pk_build",
+            "build",
+            str(modroots.module_dir("digikit/pluck")),
+            "--check",
+        ]
+    ]
+
+
+def test_runtime_fixture_host_paths_do_not_select_device_acceptance() -> None:
+    assert verify.steps_for(["tests/regression/host/runtime.test.ts"]) == ("host",)
+    assert "runtime-fixture" not in verify.steps_for(
+        ["tests/regression/host/remote-helpers.test.ts"]
+    )
+
+
+def test_runtime_fixture_rejects_insufficient_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(verify.Gate, "step_env", lambda self: {"DIGI_JOBS": "1"})
+    monkeypatch.setattr(verify.Gate, "share", lambda self: 1)
+    with pytest.raises(RuntimeError, match="at least two cores"):
+        verify.run_step(object.__new__(verify.Gate), "runtime-fixture")
+
+
+@pytest.mark.parametrize("from_build", [False, True])
+def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    from_build: bool,
+) -> None:
+    monkeypatch.setenv("PATH", "/host/tool/bin")
+    monkeypatch.setenv("DIGI_EMUD_DT2", "/supplied/dt2-emud")
+    monkeypatch.setenv("DIGI_EMUD_DN2", "/supplied/dn2-emud")
+    monkeypatch.setattr(verify.verify_budget, "machine_cargo_cap", lambda: 1)
+    monkeypatch.setattr(verify.benchlock, "hold", lambda *_args: nullcontext())
+    environments: list[dict[str, str]] = []
+
+    def capture(
+        cmd: list[str], *, env: dict[str, str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        if cmd[-3:] == ["-m", "tools.firmware.plusdrive_check", "--build-only"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        assert cmd == [
+            "pnpm",
+            "--filter",
+            "@digi/regression",
+            "test:runtime",
+            "runtime/samples-live.test.ts",
+        ]
+        environments.append(env)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(verify.subprocess, "run", capture)
+    gate = verify.Gate(
+        tmp_path,
+        budget=2,
+        acceptance={"runtime-fixture": ["runtime/samples-live.test.ts"]},
+    )
+    gate.local.node = "runtime-fixture"
+    if from_build:
+        gate.shared_env.update(
+            {"DIGI_EMUD_DT2": "/built/dt2-emud", "DIGI_EMUD_DN2": "/built/dn2-emud"}
+        )
+    verify.run_step(gate, "runtime-fixture")
+    assert len(environments) == 1
+    env = environments[0]
+    assert env["PATH"] == "/host/tool/bin"
+    prefix = "built" if from_build else "supplied"
+    assert env["DIGI_EMUD_DT2"] == f"/{prefix}/dt2-emud"
+    assert env["DIGI_EMUD_DN2"] == f"/{prefix}/dn2-emud"
+    assert not gate.failed
+
+
+@pytest.mark.parametrize("steps", [("host",), ("web",)])
+def test_failed_native_host_workflow_persists_for_rerun_and_blocks_web(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, steps: tuple[str, ...]
+) -> None:
+    calls: list[list[str]] = []
+
+    def fail_host(
+        cmd: list[str], *, env: dict[str, str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        assert env["HOST_TEST_ENV"] == "inherited"
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="bad format")
+
+    monkeypatch.setenv("HOST_TEST_ENV", "inherited")
+    monkeypatch.setattr(verify.verify_budget, "machine_cargo_cap", lambda: 1)
+    monkeypatch.setattr(verify.benchlock, "hold", lambda *_args: nullcontext())
+    monkeypatch.setattr(verify.subprocess, "run", fail_host)
+    gate = verify.Gate(tmp_path, budget=2)
+    gate.py_tests = []
+    verify.run_steps(gate, steps)
+    assert calls == [["pnpm", "verify:host"]]
+    assert (tmp_path / "host.log").read_text() == "bad format"
+    assert gate.failed.count("host") == 1
+    failed = [step for step in gate.failed if step in verify.STEPS]
+    assert verify.rerun_plan({"failed": failed, "py_tests": []}) == (
+        tuple(step for step in verify.STEPS if step in {"host", *steps}),
+        [],
+    )
+    assert ("web" in gate.failed) == ("web" in steps)
+
+
+DN2_FX_STEPS = {"host", "check", "check-no-aot", "tier-quick", "smoke"}
+DT2_FX_STEPS = {"host", "dt2-check", "dt2-tier-quick", "python-tests", "smoke"}
+
+
+@pytest.mark.parametrize(
+    "path, wanted",
+    [
+        ("tests/regression/scenarios/dn2-trackfx.ts", DN2_FX_STEPS),
+        ("tests/regression/scenarios/dn2-trackfx.test.ts", DN2_FX_STEPS),
+        ("tests/regression/scenarios/dn2-sendfx.ts", DN2_FX_STEPS),
+        ("tests/regression/scenarios/dn2-sendfx.test.ts", DN2_FX_STEPS),
+        ("tests/regression/scenarios/dt2-trackfx.ts", DT2_FX_STEPS),
+        ("tests/regression/scenarios/dt2-sendfx.ts", DT2_FX_STEPS),
+        ("tests/regression/scenarios/dt2-fx.test.ts", DT2_FX_STEPS),
+        ("tests/regression/scenarios/fx-support.ts", DN2_FX_STEPS | DT2_FX_STEPS),
+        ("tests/regression/vitest.config.ts", DN2_FX_STEPS | DT2_FX_STEPS),
+    ],
+)
+def test_stock_audio_sources_keep_device_oracles_and_tier_checks(
+    path: str, wanted: set[str]
+) -> None:
+    assert wanted <= set(verify.steps_for([path]))
+    if path != "tests/regression/vitest.config.ts":  # the one config feeds all projects
+        assert "runtime-fixture" not in verify.steps_for([path])
+
+
+@pytest.mark.parametrize(
+    "full,all_no_aot", [(False, False), (True, False), (False, True), (True, True)]
+)
+def test_fx_gate_tiers_override_ambient_selection(monkeypatch, full, all_no_aot):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("DIGIKIT_TIER", "full" if full else "quick")
+    monkeypatch.setenv("DIGI_FX_SWEEP", "1")
+    monkeypatch.setenv("DIGI_FX_NO_AOT_SUBSET", "1")
+    calls = []
+    gate = SimpleNamespace(
+        all_no_aot=all_no_aot,
+        step_env=lambda: {"DIGI_JOBS": "2"},
+        run=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    verify.run_step(gate, "check")
+    assert calls[-1][0] == (
+        "check-fx",
+        ["pnpm", "--filter", "@digi/regression", "test:fx"],
+    )
+    assert len(calls) == 1
+    env = calls[-1][1]["env"]
+    assert env["DIGI_FX_SWEEP"] == str(int(full))
+    assert env["DIGI_FX_NO_AOT_SUBSET"] == "0"
+    assert env["PATH"] == os.environ["PATH"]
+    calls.clear()
+    verify.run_step(gate, "dt2-check")
+    assert calls[-1][0] == (
+        "dt2-check",
+        ["pnpm", "--filter", "@digi/regression", "test:fx:dt2"],
+    )
+    env = calls[-1][1]["env"]
+    assert env["DIGI_FX_SWEEP"] == str(int(full))
+    assert env["DIGI_FX_NO_AOT_SUBSET"] == "0"
+    assert env["PATH"] == os.environ["PATH"]
+    calls.clear()
+    verify.run_step(gate, "check-no-aot")
+    assert len(calls) == 1
+    env = calls[-1][1]["env"]
+    assert env["DIGI_FX_SWEEP"] == str(int(full and all_no_aot))
+    assert env["DIGI_FX_NO_AOT_SUBSET"] == str(int(not all_no_aot))
+    assert all(
+        env[key] == value
+        for key, value in verify.no_aot_env().items()
+        if key not in {"DIGI_FX_SWEEP", "DIGI_FX_NO_AOT_SUBSET"}
+    )

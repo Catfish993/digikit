@@ -14,8 +14,8 @@ of the device's generated core, shared with the coupled-run build). A PGO daemon
 file (tools/devtools/stablebin.py) and `DIGI_EMUD_<DEV>=<copy>` is written to --env-out (JSON), so the test
 processes run that copy and ask cargo for nothing; `pk_harness.daemon_binary` takes that variable before
 anything else, so a device with a pinned PGO daemon never uses the plain one and it is not built (it used to
-be, first, for every device). The plain daemon is not pinned the same way: the harness builds it for the stock
-image it is given, and an image with another generated core has another binary.
+be, first, for every device). The plain daemon is published through the same environment keys without copying: it belongs to
+the selected stock image's generated core and downstream steps wait for this build node.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from tools.patchkit import pk_emud_pgo, pk_harness  # noqa: E402
 
 
 def build_daemons(devices: list[str]) -> dict[str, str]:
-    """Build the daemons of DEVICES; the environment that pins the PGO ones."""
+    """Build the daemons of DEVICES; publish each built path for downstream consumers."""
     env: dict[str, str] = {}
     for device in devices:
         cell = pk_harness.Cell(device, pk_emud_pgo.FIRMWARE[device])
@@ -43,6 +43,7 @@ def build_daemons(devices: list[str]) -> dict[str, str]:
             continue
         if pk_emud_pgo.native_pgo.current_profile(device) is None:
             plain = pk_harness.daemon_binary(device, syx, pgo=False)
+            env[f"DIGI_EMUD_{device.upper()}"] = str(plain)
             print(f"{device} plain: {plain}", flush=True)
             print(f"{device} pgo: no profile; the harness uses the plain daemon")
             continue

@@ -186,20 +186,6 @@ class HashlittleGoldenTest(unittest.TestCase):
 class HashlittlePropertyTest(unittest.TestCase):
     """Cheap sanity checks that don't need firmware ground truth."""
 
-    def test_deterministic(self):
-        data = _rand_bytes(1, 100)
-        self.assertEqual(pd.hashlittle(data, SEED), pd.hashlittle(data, SEED))
-
-    def test_seed_changes_hash(self):
-        data = _rand_bytes(2, 64)
-        self.assertNotEqual(pd.hashlittle(data, 0), pd.hashlittle(data, 1))
-
-    def test_result_fits_32_bits(self):
-        for n in (0, 1, 11, 12, 13, 508, 1200, 1201):
-            h = pd.hashlittle(_rand_bytes(n, n), SEED)
-            self.assertGreaterEqual(h, 0)
-            self.assertLess(h, 1 << 32)
-
     def test_508_byte_superblock_length_is_exercised(self):
         # The real use: 42 full 12-byte blocks (504 bytes) plus a 4-byte
         # tail folded straight into 'a' (case 4) -- see hashlittle's

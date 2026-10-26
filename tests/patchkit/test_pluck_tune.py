@@ -1,4 +1,4 @@
-"""digikit/pluck tuning, notes 48 and up (the test_pluck.py rig; split out so verify runs the notes in parallel processes)."""
+"""digikit/pluck tuning, notes 24 to 100 (the test_pluck.py rig)."""
 
 import numpy as np
 import pytest
@@ -22,7 +22,7 @@ def f0_from_crossings(y: np.ndarray, f_guess: float, fs: float = 48000.0) -> flo
     return fs / slope
 
 
-@pytest.mark.parametrize("note", [48, 60, 72, 84, 96, 100])
+@pytest.mark.parametrize("note", [24, 36, 48, 60, 72, 84, 96, 100])
 def test_the_string_is_in_tune(note):
     """The fundamental of the rendered string, from the phase slope of the first partial, within the model's
     analytic error (< 0.2 cents up to note 100) plus the measurement's."""

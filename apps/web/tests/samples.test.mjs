@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { DkError, DkSession } from '../src/modules/dkupload-core.ts';
-import { VERIFY_PIECE, openSamples } from '../src/modules/samples.ts';
+import { DkError, DkSession } from '@digi/dk-session';
+import { VERIFY_PIECE, openSamples } from '@digi/dk-session/samples';
 import { FakeDrive, hashOf } from './fakedrive.mjs';
 
 const sha = (b) => createHash('sha256').update(b).digest('hex');

@@ -1,5 +1,5 @@
 // The pure logic of the Card panel (no DOM, no Tauri): the folder status of `card.folder` and its texts.
-// Written without TS-only runtime syntax so node can import it (apps/web/tests/card.test.mjs).
+// Host tests: apps/desktop/ui/tests/card.test.ts.
 
 export interface CardFile {
   /** Relative to `digikit/` of the folder. */

@@ -159,11 +159,13 @@ def card_after(c: Any, base: Path, overlay: Path) -> Path:
     from tools.patchkit import pk_digikit_scen as S
 
     dst = S.CACHE / "cards" / f"{c.image}-after-{h}.img"
-    if not dst.exists():
+    written = not dst.exists()
+    if written:
         dst.parent.mkdir(parents=True, exist_ok=True)
         tmp = c.work / f"after-{h}.img"
         card_overlay.apply(base, overlay, tmp)
         shutil.move(tmp, dst)
+    S.card_used(dst, written)
     return dst
 
 

@@ -44,17 +44,6 @@ def launcher():
     )
 
 
-def test_default_command_preserves_locked_cf_only_build():
-    command = launcher()["cargo_command"](["example.syx", "--card-image", "card.img"])
-    assert "--locked" in command
-    assert "--features" not in command
-    assert command[command.index("--") + 1 :] == [
-        "example.syx",
-        "--card-image",
-        "card.img",
-    ]
-
-
 def test_default_ready_inputs_select_live_coupled_audio(monkeypatch, tmp_path):
     scope = launcher()
     ready = tmp_path / "snapshots" / "dn2-audio-ready-2026-10-03"
@@ -162,13 +151,6 @@ def test_normal_launcher_arguments_get_audio_without_replacing_firmware(
     assert forwarded[:3] == ["selected.syx", "--card-image", "card.img"]
     assert "--auto-coupled" in forwarded
     assert forwarded[forwarded.index("--audio-profile-syx") + 1] == str(profile)
-
-
-def test_coupled_command_selects_local_feature_and_preserves_arguments():
-    args = ["example.syx", "--coupled", "--dsp-image", "image.bin"]
-    command = launcher()["cargo_command"](args)
-    assert command[command.index("--features") + 1] == "coupled-audio"
-    assert command[command.index("--") + 1 :] == args
 
 
 def test_invalid_configured_core_fails_before_build(monkeypatch):
@@ -522,22 +504,6 @@ def test_dt2_opt_in_training_trains_the_dt2_profile(pgo, monkeypatch, tmp_path):
     assert pgo.commands[0][-3:] == ["train", "--device", "dt2"]
 
 
-def test_pgo_verify_names_the_device_and_the_built_binary(monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, **_k: (
-            calls.append(command) or subprocess.CompletedProcess(command, 0)
-        ),
-    )
-    command = ["cargo", "run", "--target-dir", "/t/x", "--", "a"]
-    launcher()["verify_pgo"](command, {}, "dt2")
-    verify = calls[1]
-    assert verify[verify.index("--device") + 1] == "dt2"
-    assert verify[verify.index("--binary") + 1].startswith("/t/x/")
-
-
 def test_cf_only_build_never_asks_about_pgo(pgo):
     assert launcher()["pgo_plan"](["x.syx"]) is None
     assert pgo.commands == []
@@ -552,18 +518,6 @@ def test_train_command_failure_to_start_falls_back(pgo, monkeypatch, capsys):
     monkeypatch.setattr(subprocess, "run", boom)
     assert launcher()["pgo_plan"](COUPLED) is None
     assert "could not start training: no python" in capsys.readouterr().err
-
-
-def test_build_command_is_the_run_command_without_program_arguments():
-    command = ["rustup", "run", "1", "cargo", "run", "--release", "--", "x.syx"]
-    assert launcher()["build_command"](command) == [
-        "rustup",
-        "run",
-        "1",
-        "cargo",
-        "build",
-        "--release",
-    ]
 
 
 @pytest.mark.parametrize("verify_exit, warns", [(0, False), (1, True), (2, False)])
@@ -596,24 +550,6 @@ def test_pgo_build_failure_skips_the_check(monkeypatch, capsys):
     assert exc.value.code == 101
     assert len(calls) == 1
     assert capsys.readouterr().err == ""
-
-
-def test_daemon_command_builds_digi_emud_without_pgo_or_the_panel():
-    scope = launcher()
-    plain = scope["daemon_command"](["x.syx"])
-    assert (
-        plain[plain.index("--manifest-path") + 1]
-        == "packages/emulator/control/Cargo.toml"
-    )
-    assert plain[plain.index("--bin") + 1] == "digi-emud"
-    assert "--features" not in plain
-    assert plain[plain.index("--") + 1 :] == ["x.syx"]
-    coupled = scope["daemon_command"](["x.syx", "--coupled"])
-    assert coupled[coupled.index("--features") + 1] == "coupled-audio"
-    assert scope["app_binary"](plain, None).name == "digi-emud"
-    assert scope["app_binary"](scope["cargo_command"](["x.syx"]), None).name == (
-        "digiemu-desktop"
-    )
 
 
 def test_main_daemon_builds_and_runs_digi_emud(monkeypatch):

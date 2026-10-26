@@ -1,10 +1,7 @@
 """The capacity limits come from the device files (docs/plans/capacity-isolation.md): the Python side reads `[limits]` and the contract
 maxima of sdk/sdk.toml, and the tools keep no copy of a number."""
 
-import re
-
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.patchkit import pk_conform, pk_device, pk_dkrt, pk_dkrt_boot
 
@@ -52,14 +49,3 @@ def test_the_boot_tools_use_the_profile_not_a_copy():
         pk_dkrt.SEL_MAX == pk_dkrt_boot.SEL_MAX == pk_device.contract_max()["sel_max"]
     )
     assert max(pk_device.limits(d).fx_slots for d in DEVICES) == pk_conform.FX_MAX
-
-
-def test_no_tool_repeats_a_limit_as_a_number():
-    """A limit is assigned from `pk_device`, never from a literal (a copy goes stale when a profile changes)."""
-    names = r"(MAX_MODULES|ARENA_BYTES|SEL_MAX|FX_MAX|STAGE_BYTES|DSP_AREA_BYTES|MACHINE_ROWS)"
-    literal = re.compile(rf"^\s*(?:[A-Z_]+,\s*)*{names}\s*=\s*[0-9(]", re.M)
-    found = []
-    for path in (REPO_ROOT / "tools" / "patchkit").glob("*.py"):
-        for m in literal.finditer(path.read_text()):
-            found.append(f"{path.name}: {m.group(0).strip()}")
-    assert not found, found

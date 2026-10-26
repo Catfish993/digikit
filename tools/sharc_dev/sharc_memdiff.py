@@ -52,7 +52,7 @@ import sys
 
 
 def _maybe_reexec_under_pypy() -> None:
-    """Re-exec this CLI under PyPy 3.11 (tests/devtools/test_pypy.py's own `uv run
+    """Re-exec this CLI under PyPy 3.11 (`mise run test:pypy`'s own `uv run
     --no-project --python pypy3.11 ... python -m pytest ...` invocation,
     with a direct script path in place of `-m pytest ARGS`), unless
     --cpython was given, this is already running under PyPy, or `uv`/PyPy

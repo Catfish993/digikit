@@ -43,6 +43,8 @@ WANT: dict[str, float] = {
     "build-dt2": 0.45,
     "build-daemons": 0.45,
     "desktop": 0.15,
+    "host": 0.15,
+    "stock": 0.25,
     "web": 0.15,
     "rust-tests": 0.30,
     "python-tests": 0.45,
@@ -370,7 +372,7 @@ def is_file_job(node: str) -> bool:
 
 def want_cores(node: str, total: int) -> int:
     """The cores NODE asks for in a budget of TOTAL (an emulator pool asks for at least one process)."""
-    if is_file_job(node):
+    if is_file_job(node) or node in ("runtime-fixture", "module-load"):
         return min(EMULATOR_CORES, total)
     cores = max(1, round(WANT.get(node, DEFAULT_WANT) * total))
     if node in EMULATOR_POOLS:
@@ -399,6 +401,8 @@ class Budget:
             raise ValueError(f"{node} is running already")
         want = want_cores(node, self.total)
         share = min(want, self.free)
+        if node in ("runtime-fixture", "module-load") and share < want:
+            return None  # one coupled daemon cannot run on half its reservation
         if is_file_job(node):
             if share < want:
                 return None
@@ -528,6 +532,10 @@ SHOWN: dict[str, tuple[str, ...]] = {
     "python-tests": ("py_files", "per_file", "cargo"),
     "rust-tests": ("cargo", "libtest"),
     "desktop": ("cargo", "node"),
+    "host": ("node",),
+    "stock": ("node",),
+    "runtime-fixture": ("emulators",),
+    "module-load": ("emulators",),
     "web": ("cargo", "node"),
     **{n: ("cargo",) for n in BUILDS},
     **{n: ("emulators",) for n in EMULATOR_POOLS},
