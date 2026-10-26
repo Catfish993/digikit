@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
+// tools/devtools/verify.py reads this file to treat host tests as device-free.
+import projects from './vitest.host.projects.json';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -10,16 +12,10 @@ export default defineConfig({
     // Host tests also read desktop source/CSS via fs: related cannot discover
     // those edges. This native trigger conservatively reruns every host project.
     forceRerunTriggers: [...configDefaults.forceRerunTriggers, '**/apps/desktop/ui/src/**'],
-    projects: [
-      ['control-client', 'packages/control-client', 'tests/*.test.ts'],
-      ['test-support', 'packages/test-support', 'tests/*.test.ts'],
-      ['dk-session', 'packages/dk-session', 'tests/*.test.ts'],
-      ['desktop-host', 'apps/desktop', 'ui/tests/*.test.ts'],
-      ['regression-host', 'tests/regression', 'host/**/*.test.ts'],
-    ].map(([name, directory, include]) => ({
+    projects: projects.map(({ name, dir, include }) => ({
       test: {
         name,
-        root: fileURLToPath(new URL(directory, import.meta.url)),
+        root: fileURLToPath(new URL(dir, import.meta.url)),
         include: [include],
         testTimeout: 5000,
       },

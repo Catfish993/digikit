@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll } from 'vitest';
+import { afterAll, beforeAll, expect, test } from 'vitest';
 import { repoRoot } from '@digi/test-support';
 import type { Scenario } from './dn2-trackfx.ts';
 
@@ -20,6 +20,64 @@ export interface Row {
   tf: { fs_candidates: number[][]; [key: string]: unknown };
   sf: Record<string, number | null>;
   delay: { echo_onsets_s: number[] };
+}
+
+type Rendered = ReturnType<typeof fxRender>;
+
+/** Register an oracle: `sweep` oracles run only with DIGI_FX_SWEEP=1; with `subsets`, DIGI_FX_NO_AOT_SUBSET=1 keeps only `subset` ones. */
+export function fxOracles(needs: Map<string, string[]>, { subsets }: { subsets: boolean }) {
+  const full = process.env.DIGI_FX_SWEEP === '1';
+  const noAotSubset = process.env.DIGI_FX_NO_AOT_SUBSET === '1';
+  return function oracle(
+    identity: string,
+    names: string[],
+    body: () => void,
+    { sweep = false, subset = false }: { sweep?: boolean; subset?: boolean } = {},
+  ) {
+    needs.set(identity, names);
+    test.skipIf((sweep && !full) || (subsets && noAotSubset && !subset))(identity, body);
+  };
+}
+
+/** The decoded 16-bit value of the parameter whose key starts with `prefix`. */
+export function raw(rendered: Rendered, name: string, prefix: string): number {
+  const value = Object.entries(rendered.row(name).decoded).find(([key]) => key.startsWith(`${prefix} `))?.[1];
+  expect(value, `${name} ${prefix}`).toBeDefined();
+  return value! & 0xffff;
+}
+
+/** Gates, finite, no DC, peak limit and (with `growth`) no level growth. */
+export function expectHealthy(
+  rendered: Rendered,
+  name: string,
+  { peak = 1, growth = true }: { peak?: number; growth?: boolean } = {},
+) {
+  const basic = rendered.row(name).analysis.basic;
+  expect(rendered.gates(name)?.ok).toBe(true);
+  expect(basic.nonfinite).toBe(0);
+  expect(Math.max(...basic.dc.map(Math.abs))).toBeLessThan(1e-3);
+  expect(basic.peak).toBeLessThanOrEqual(peak);
+  if (growth) expect(basic.growth).toBe(false);
+}
+
+/** The UI values (high byte) of the parameters that differ from the `reference` scenario. */
+export function changedUi(rendered: Rendered, name: string, reference: string) {
+  const base = rendered.row(reference).decoded;
+  return Object.fromEntries(
+    Object.entries(rendered.row(name).decoded)
+      .filter(([key, value]) => base[key] !== value)
+      .map(([key, value]) => [key.split(' ')[0], (value & 0xffff) >> 8]),
+  );
+}
+
+export function expectMono(rendered: Rendered, name: string) {
+  expect(rendered.row(name).pcm.mono_equal).toBe(true);
+}
+
+export function expectZeroIsDry(rendered: Rendered, name: string) {
+  const pcm = rendered.row(name).pcm;
+  expect(pcm.shape).toEqual(pcm.reference_shape);
+  expect(pcm.reference_equal).toBe(true);
 }
 
 /** Batch selected stock FX scenarios through the existing Python renderer/analysis CLI. */

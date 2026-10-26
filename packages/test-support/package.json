@@ -8,8 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "pnpm -w test:host --project test-support"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@digi/control-client": "workspace:*"

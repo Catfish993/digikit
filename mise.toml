@@ -58,11 +58,11 @@ run = "pnpm build"
 description = "Build the browser core (WASM) and the static web panel (astro build, with the firmware guard)"
 
 [tasks."web:check"]
-run = "pnpm check"
+run = "pnpm --filter @digi/web check"
 description = "Type-check the web panel (astro check)"
 
 [tasks."web:test"]
-run = "pnpm test"
+run = "pnpm --filter @digi/web test"
 description = "Run the web Node suites (node --test)"
 
 [tasks."web:wasm"]
@@ -111,26 +111,16 @@ description = "Find the DSP tier (fast region, cluster root, AOT) that changes a
 # --- verify ---
 
 [tasks."test:changed"]
-alias = "verify:pre"
 run = "uv run python -m tools.devtools.changed_tests"
-description = "Fast host preflight: changed Python Ruff/mypy, pathcheck, audited tooling units, native related host Vitest, changed JS/TS lint/format and host types; explicitly defers native, module, device and other Python work to verify. --base/--head/--files/--deep/--explain"
+description = "Fast preflight: changed-Python lint/types, pathcheck, audited tooling units, related host tests and types; no builds or devices. --base/--head/--files/--deep/--explain"
 
 [tasks.verify]
 run = "uv run python -m tools.devtools.verify"
-description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes use owner checks, with optional verify:pre"
+description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes use owner checks"
 
 [tasks."verify:host"]
-run = [
-  "pnpm exec oxlint",
-  "pnpm fmt:check",
-  "pnpm test:host",
-  "pnpm --filter @digi/control-client typecheck",
-  "pnpm --filter @digi/dk-session typecheck",
-  "pnpm --filter @digi/test-support typecheck",
-  "pnpm --filter @digi/regression typecheck",
-  "pnpm --filter @digi/desktop typecheck:host",
-]
-description = "Host lint/format, five Vitest projects and package type checks in sequence; stops at the first failure; no Python, native/WASM build, device or smoke checks"
+run = "pnpm verify:host"
+description = "Host lint, format, Vitest and type checks (no device)"
 
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"
@@ -143,7 +133,7 @@ run = "pnpm test:host"
 description = "Run the host-only Vitest projects with the native test runner; no native/WASM build or device checks"
 
 [tasks."test:stock"]
-run = "pnpm --filter @digi/regression test"
+run = "pnpm --filter @digi/regression test:stock"
 description = "Stock DT2 1.17 zero-DSP UI/sequencer goldens; accepts Vitest filters; requires existing DIGI_EMUD binary, stock firmware and complete ready inputs; starts owned daemons, no implicit build, no audio coverage"
 
 [tasks."test:fx"]
@@ -174,7 +164,7 @@ run = [
   "uv run python -m tools.devtools.test_outcomes run --check --out out/runs/tests/latest tests",
   "uv run python -m tools.devtools.rust_ws test",
   "pnpm test:host",
-  "pnpm test",
+  "pnpm --filter @digi/web test",
   "uv run python -m tools.emulator.coupled scenario --all",
 ]
 description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and explicit runtime acceptance"

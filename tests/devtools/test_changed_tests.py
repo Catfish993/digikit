@@ -171,6 +171,16 @@ def test_fast_plan_defers_module_and_native_work() -> None:
     )
 
 
+def test_fast_python_tests_are_the_devtools_suite() -> None:
+    suite = next(
+        tests for name, _, tests in changed_tests.verify.PY_SUITES if name == "devtools"
+    )
+    assert {
+        t for t in suite if t.startswith("tests/devtools/")
+    } == changed_tests.FAST_PYTHON_TESTS
+    assert "tests/devtools/test_verify.py" in changed_tests.FAST_PYTHON_TESTS
+
+
 def test_fast_plan_runs_only_selected_audited_units(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -199,6 +209,11 @@ def test_host_selection_uses_native_related_for_sources_tests_and_assets() -> No
         related = commands["host-tests-related"]
         assert related[related.index("vitest") + 1] == "related"
         assert "--run" in related and path in related
+        if path.endswith(".ts"):
+            assert commands["types"] == ["pnpm", "-r", "run", "typecheck"]
+        else:
+            assert "types" not in commands
+        assert not any(name.startswith("types-") for name in commands)
     for path in (
         "pnpm-lock.yaml",
         "vitest.host.config.ts",

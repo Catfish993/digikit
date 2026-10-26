@@ -12,8 +12,7 @@
     "./samples": "./src/samples.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "pnpm -w test:host --project dk-session"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "22.15.0",

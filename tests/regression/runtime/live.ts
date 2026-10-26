@@ -3,19 +3,79 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { repoRoot, type Device, type Session } from '@digi/test-support';
-import { expect } from 'vitest';
+import { describe, expect, test } from 'vitest';
+import { withPatchedSession, type PatchedSession } from '../support.ts';
 
-export function liveOptions(device: Device) {
+export const DEVICES = ['dt2', 'dn2'] as const;
+export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
+
+export function liveOptions(device: Device, extra: { patchSet?: string; mirror?: boolean } = {}) {
   const binary = process.env[device === 'dt2' ? 'DIGI_EMUD_DT2' : 'DIGI_EMUD_DN2'];
   if (!binary) throw new Error(`DIGI_EMUD_${device.toUpperCase()} must name a preflighted daemon`);
   const card = device === 'dt2' ? process.env.DIGI_RUNTIME_CARD : undefined;
   if (device === 'dt2' && !card) throw new Error('DIGI_RUNTIME_CARD must name the generated DT2 sample directory');
-  return { device, firmware: device === 'dt2' ? '1.17' : '1.12', binary, card, mirror: true };
+  return { device, firmware: FIRMWARE[device], binary, card, ...extra };
+}
+
+/** One test per device, each on its own fresh runtime daemon that has passed `expectRuntimeBoot`. */
+export function runtimeTests(
+  name: string,
+  body: (runtime: PatchedSession) => Promise<void>,
+  opts: { patchSet?: string; mirror?: boolean; timeout?: number; devices?: readonly Device[] } = {},
+): void {
+  for (const device of opts.devices ?? DEVICES) {
+    describe(`${device.toUpperCase()} ${FIRMWARE[device]}`, () => {
+      const handle = withPatchedSession(liveOptions(device, opts));
+      test(name, () => body(handle.runtime), opts.timeout);
+    });
+  }
 }
 
 export async function settleLive(session: Session, ms = 12_000): Promise<void> {
   await delay(ms);
   expect((await session.status()).mode, 'the daemon runs freely').toBe('free');
+}
+
+/** The DN2 firmware needs a longer pre-install settle than the DT2. */
+export function settleUi(session: Session): Promise<void> {
+  return settleLive(session, session.options.device === 'dn2' ? 45_000 : 12_000);
+}
+
+/** Press, hold, release (also when the press fails), then let the UI settle. */
+export async function tap(send: (down: boolean) => Promise<unknown>, holdMs: number, settleMs = 1200): Promise<void> {
+  try {
+    await send(true);
+    await delay(holdMs);
+  } finally {
+    await send(false);
+  }
+  await delay(settleMs);
+}
+
+export function record(dir: string, name: string, value: unknown): void {
+  fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify(value, null, 2));
+}
+
+/** Prepared separately with patchkit pack; acceptance never builds a toolchain, module or daemon. */
+export function moduleArtifact(device: Device, id: string): string {
+  const directory = process.env.DIGI_RUNTIME_MODULES ?? path.join(repoRoot(), 'out/regression/modules');
+  const artifact = path.join(directory, device, `${id.split('/').at(-1)}.dkm`);
+  if (!fs.existsSync(artifact)) throw new Error(`prepare ${id} for ${device} with patchkit pack: missing ${artifact}`);
+  return artifact;
+}
+
+/** Native USB upload of a prepared module, one selected restart, then wait for its registration. */
+export async function installModule(dk: DkSession, id: string, artifact: string): Promise<void> {
+  const bytes = fs.readFileSync(artifact);
+  const storePath = `modules/${id.split('/').at(-1)}.dkm`;
+  await dk.put(storePath, bytes);
+  expect(await dk.verifyFile(storePath, bytes), 'fresh card read matches prepared module bytes').toBe(true);
+  await dk.select([storePath]);
+  await dk.restart();
+  await dk.waitForBoot();
+  await expect
+    .poll(async () => (await dk.modules()).map((entry) => entry.name), { timeout: 30_000, interval: 500 })
+    .toContain(id);
 }
 
 /** New protocol and USB receive state; deliberately retain the daemon/card/boot history. */

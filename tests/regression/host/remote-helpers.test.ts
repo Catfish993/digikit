@@ -4,7 +4,14 @@ import type { DkSession } from '@digi/dk-session';
 import type { Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
 
-const fake = vi.hoisted(() => ({ exec: vi.fn(), read: vi.fn(), mkdir: vi.fn(), write: vi.fn() }));
+const fake = vi.hoisted(() => ({
+  exec: vi.fn(),
+  read: vi.fn(),
+  exists: vi.fn(() => true),
+  mkdir: vi.fn(),
+  mkdtemp: vi.fn(),
+  write: vi.fn(),
+}));
 vi.mock('node:timers/promises', () => ({
   setTimeout: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 }));
@@ -15,7 +22,9 @@ vi.mock('node:fs', async (original) => ({
   default: {
     ...(await original<{ default: typeof import('node:fs') }>()).default,
     readFileSync: fake.read,
+    existsSync: fake.exists,
     mkdirSync: fake.mkdir,
+    mkdtempSync: fake.mkdtemp,
     writeFileSync: fake.write,
   },
 }));
@@ -49,10 +58,32 @@ const session = {
   },
 } as unknown as Session;
 
+/** A fake protocol session that records the order of the native install calls. */
+function fakeDk() {
+  const calls: string[] = [];
+  const record = (name: string, result?: unknown) =>
+    vi.fn(async (..._args: unknown[]) => {
+      calls.push(name);
+      return result;
+    });
+  const dk = {
+    put: record('put'),
+    verifyFile: record('verifyFile', true),
+    select: record('select'),
+    restart: record('restart'),
+    waitForBoot: record('waitForBoot'),
+    modules: record('modules', [{ name: 'digikit/remote' }]),
+    remoteRelease: vi.fn().mockResolvedValue(undefined),
+  };
+  return { calls, dk, runtime: { session, dk } as unknown as PatchedSession };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   fake.read.mockReturnValue(JSON.stringify(plan));
-  fake.exec.mockResolvedValue({ stdout: '{"event":"result","loaded":["digikit/remote"]}\n' });
+  fake.exists.mockReturnValue(true);
+  fake.mkdtemp.mockReturnValue('/artifacts/remote-input/dt2/run-1');
+  fake.exec.mockResolvedValue({ stdout: '' });
 });
 
 test('plan identity requires the device, version, base hash and expanded module membership', () => {
@@ -76,8 +107,9 @@ test('symbol lookup accepts aliases of one address, including mangled Rust names
   expect(() => planSymbol({ ...plan, symbols: {} }, 'DK_ABOUT')).toThrow('0 addresses');
 });
 
-test('setup reuses Python patch/install commands, its own daemon and bounded tool deadlines', async () => {
-  expect(await prepareRemote({ session } as PatchedSession)).toEqual(plan);
+test('setup reuses the Python patch command, its own daemon and a bounded tool deadline, then installs natively', async () => {
+  const { calls, runtime } = fakeDk();
+  expect(await prepareRemote(runtime)).toEqual(plan);
   expect(fake.exec.mock.calls[0]?.[1]).toEqual([
     'run',
     'python',
@@ -93,21 +125,20 @@ test('setup reuses Python patch/install commands, its own daemon and bounded too
     '--plan',
     '/run/own-daemon/runtime-dt2.plan.json',
   ]);
-  expect(fake.exec.mock.calls[1]?.[1]).toContain('/run/own-daemon');
-  expect(fake.exec.mock.calls[1]?.[1].slice(-4)).toEqual(['--json', 'install', 'digikit/remote', '--restart']);
-  expect(fake.exec.mock.calls.map((call) => call[2].timeout)).toEqual([30_000, 90_000]);
+  expect(fake.exec.mock.calls.map((call) => call[2].timeout)).toEqual([30_000]);
   expect(fs.readFileSync).toHaveBeenCalledWith('/run/own-daemon/runtime-dt2.plan.json', 'utf8');
+  expect(calls).toEqual(['put', 'verifyFile', 'select', 'restart', 'waitForBoot', 'modules']);
 });
 
-for (const stage of ['patch', 'install', 'load-result', 'plan'] as const) {
+for (const stage of ['patch', 'install', 'plan'] as const) {
   test(`setup ${stage} failure cannot continue to navigation`, async () => {
+    const { dk, runtime } = fakeDk();
     if (stage === 'patch') fake.exec.mockRejectedValueOnce(new Error('patch failed'));
-    if (stage === 'install')
-      fake.exec.mockResolvedValueOnce({ stdout: '' }).mockRejectedValueOnce(new Error('install failed'));
-    if (stage === 'load-result') fake.exec.mockResolvedValue({ stdout: '{"event":"result","loaded":[]}\n' });
+    if (stage === 'install') dk.put.mockRejectedValueOnce(new Error('install failed'));
     if (stage === 'plan') fake.read.mockReturnValue(JSON.stringify({ ...plan, modules: ['wrong'] }));
-    await expect(prepareRemote({ session } as PatchedSession)).rejects.toThrow();
-    expect(fake.exec).toHaveBeenCalledTimes(stage === 'patch' || stage === 'plan' ? 1 : 2);
+    await expect(prepareRemote(runtime)).rejects.toThrow();
+    expect(fake.exec).toHaveBeenCalledTimes(1);
+    expect(dk.put).toHaveBeenCalledTimes(stage === 'install' ? 1 : 0);
   });
 }
 
@@ -180,12 +211,12 @@ test('successful tap retains the 300 ms hold and requested UI settle', async () 
 });
 
 test('installer failure still releases remote inputs without reaching scenario actions', async () => {
-  fake.exec.mockResolvedValueOnce({ stdout: '' }).mockRejectedValueOnce(new Error('install failed'));
-  const dk = { remoteRelease: vi.fn().mockResolvedValue(undefined) } as unknown as DkSession;
+  const { dk, runtime } = fakeDk();
+  dk.put.mockRejectedValueOnce(new Error('install failed'));
   const action = vi.fn();
   await expect(
-    withRemoteRelease(dk, async () => {
-      await prepareRemote({ session } as PatchedSession);
+    withRemoteRelease(dk as unknown as DkSession, async () => {
+      await prepareRemote(runtime);
       action();
     }),
   ).rejects.toThrow('install failed');
@@ -235,29 +266,19 @@ test('plan and actual loaded image require present matching SHA-256 digests', ()
   }
 });
 
-test('negative setup installs on its own device-set daemon without patching or reading a symbol plan', async () => {
+test('negative setup installs natively on its own device-set daemon without patching or reading a symbol plan', async () => {
+  const { calls, dk, runtime } = fakeDk();
   const negative = {
-    ...session,
-    options: { ...session.options, runtime: { patchSet: 'device' } },
-  } as Session;
+    ...runtime,
+    session: { ...session, options: { ...session.options, runtime: { patchSet: 'device' } } },
+  } as PatchedSession;
   await installRemote(negative);
-  expect(fake.exec).toHaveBeenCalledTimes(1);
-  expect(fake.exec.mock.calls[0]?.[1]).toEqual([
-    'run',
-    'python',
-    '-m',
-    'tools.device.dktransfer',
-    '--emu',
-    '--run-dir',
-    '/run/own-daemon',
-    '--json',
-    'install',
-    'digikit/remote',
-    '--restart',
-  ]);
-  expect(fake.exec.mock.calls[0]?.[2].timeout).toBe(90_000);
-  expect(fake.read).not.toHaveBeenCalled();
-  expect(fake.write.mock.calls[0]?.[0]).toMatch(/remote-control\/dt2\/install\.log$/);
+  expect(fake.exec).not.toHaveBeenCalled();
+  expect(fake.read).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/dt2\/remote\.dkm$/));
+  expect(calls).toEqual(['put', 'verifyFile', 'select', 'restart', 'waitForBoot', 'modules']);
+  expect(dk.put.mock.calls[0]?.[0]).toBe('modules/remote.dkm');
+  expect(dk.verifyFile.mock.calls[0]?.[0]).toBe('modules/remote.dkm');
+  expect(dk.select).toHaveBeenCalledExactlyOnceWith(['modules/remote.dkm']);
 });
 
 test('menu navigation uses named SETTINGS and DIGIKIT checkpoints before ABOUT', async () => {

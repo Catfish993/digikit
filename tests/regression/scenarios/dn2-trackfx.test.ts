@@ -1,38 +1,20 @@
 /** Stock DN2 1.12 coupled audio oracles; Python retains NumPy analysis and render caching. */
-import { expect, test } from 'vitest';
+import { expect } from 'vitest';
 import { scenarios } from './dn2-trackfx.ts';
-import { fxRender } from './fx-support.ts';
+import { changedUi, expectHealthy, expectMono, expectZeroIsDry, fxOracles, fxRender, raw } from './fx-support.ts';
 
-const full = process.env.DIGI_FX_SWEEP === '1';
-const noAotSubset = process.env.DIGI_FX_NO_AOT_SUBSET === '1';
 const quick = ['tf-dry-hold', ...['br', 'over', 'srr'].flatMap((fx) => [0, 44, 127].map((ui) => `tf-${fx}-${ui}`))];
 const noAotHealth = ['tf-dry-hold', 'tf-br-127', 'tf-over-127', 'tf-srr-127'];
 const needs = new Map<string, string[]>();
 const rendered = fxRender(needs, { family: 'trackfx', scenarios });
-
-function oracle(identity: string, names: string[], sweep: boolean, body: () => void, subset = false) {
-  needs.set(identity, names);
-  test.skipIf((sweep && !full) || (noAotSubset && !subset))(identity, body);
-}
+const oracle = fxOracles(needs, { subsets: true });
 const row = rendered.row;
-const raw = (name: string, prefix: string) =>
-  Object.entries(row(name).decoded).find(([key]) => key.startsWith(`${prefix} `))?.[1];
 for (const scenario of scenarios) {
   const name = scenario.name;
-  oracle(
-    `test_healthy ${name}`,
-    [name],
-    !quick.includes(name),
-    () => {
-      const basic = row(name).analysis.basic;
-      expect(rendered.gates(name)?.ok).toBe(true);
-      expect(basic.nonfinite).toBe(0);
-      expect(Math.max(...basic.dc.map(Math.abs))).toBeLessThan(1e-3);
-      expect(basic.peak).toBeLessThanOrEqual(1);
-      expect(basic.growth).toBe(false);
-    },
-    noAotHealth.includes(name),
-  );
+  oracle(`test_healthy ${name}`, [name], () => expectHealthy(rendered, name), {
+    sweep: !quick.includes(name),
+    subset: noAotHealth.includes(name),
+  });
 }
 for (const [fx, index] of [
   ['br', 95],
@@ -44,30 +26,19 @@ for (const [fx, index] of [
     oracle(
       `test_readback ${name}`,
       [name],
-      false,
-      () => {
-        const reference = row(row(name).pcm.reference).decoded;
-        const changed = Object.fromEntries(
-          Object.entries(row(name).decoded)
-            .filter(([key, value]) => reference[key] !== value)
-            .map(([key, value]) => [key.split(' ')[0], (value & 0xffff) >> 8]),
-        );
-        expect(changed).toEqual(ui ? { [`snd[${index}]`]: ui } : {});
-      },
-      ui === 127,
+      () => expect(changedUi(rendered, name, row(name).pcm.reference)).toEqual(ui ? { [`snd[${index}]`]: ui } : {}),
+      { subset: ui === 127 },
     );
   }
 }
 for (const fx of ['br', 'over', 'srr', 'del', 'rev', 'chr']) {
   const name = `tf-${fx}-0`;
-  oracle(`test_zero_is_dry ${name}`, [name], ['del', 'rev', 'chr'].includes(fx), () => {
-    const pcm = row(name).pcm;
-    expect(pcm.shape).toEqual(pcm.reference_shape);
-    expect(pcm.reference_equal).toBe(true);
+  oracle(`test_zero_is_dry ${name}`, [name], () => expectZeroIsDry(rendered, name), {
+    sweep: ['del', 'rev', 'chr'].includes(fx),
   });
 }
 for (const name of ['tf-dry-hold', ...['br', 'over', 'srr'].flatMap((fx) => [44, 127].map((ui) => `tf-${fx}-${ui}`))]) {
-  oracle(`test_mono_stays_mono ${name}`, [name], false, () => expect(row(name).pcm.mono_equal).toBe(true));
+  oracle(`test_mono_stays_mono ${name}`, [name], () => expectMono(rendered, name));
 }
 for (const [fx, index, behavior] of [
   ['br', 95, 'bit_reduction_error_rises'],
@@ -82,12 +53,11 @@ for (const [fx, index, behavior] of [
       oracle(
         `test_${behavior} ${metric} ${sweep ? 'sweep' : 'fast'}`,
         names,
-        sweep,
         () => {
           const ordered = names
             .map((name) => ({
               name,
-              raw: (raw(name, `snd[${index}]`) ?? 0) & 0xffff,
+              raw: raw(rendered, name, `snd[${index}]`),
               metric: metric === 'rate' ? row(name).tf.fs_candidates[0]![0]! : row(name).bits[metric]!,
             }))
             .sort((a, b) => a.raw - b.raw);
@@ -103,7 +73,7 @@ for (const [fx, index, behavior] of [
             JSON.stringify(ordered),
           ).toBe(true);
         },
-        fx === 'srr',
+        { sweep, subset: fx === 'srr' },
       );
     }
 }

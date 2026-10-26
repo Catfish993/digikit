@@ -3,18 +3,44 @@ import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { button, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { installRemote, withRemoteRelease } from './remote.ts';
+import { runtimeTests, settleUi, tap as holdTap } from './live.ts';
+import { captureRemoteOled, installRemote, prepareRemote, remoteTap, withRemoteRelease } from './remote.ts';
+import { openDigikitMenu, openRuntimeAbout, expectRuntimeAbout } from './runtime-menu.ts';
+
+/** KEY navigation opens semantic ABOUT content; TURN reports accepted signed deltas. */
+async function expectRemoteKeys(runtime: PatchedSession): Promise<void> {
+  const { session, dk } = runtime;
+  // Preserve live_boot's device-specific pre-install settling, then the remote scenario's own settle.
+  await settleUi(session);
+  await withRemoteRelease(dk, async () => {
+    const plan = await prepareRemote(runtime);
+    await delay(10_000);
+    expect((await dk.remoteState()).enabled).toBe(true);
+    let shots = 0;
+    const shot = (name: string) => captureRemoteOled(session, `${String(++shots).padStart(2, '0')}-${name}`);
+    const tap = async (name: string, settleMs = 1200) => {
+      await remoteTap(dk, name, settleMs);
+      await shot(name.toLowerCase());
+    };
+    await shot('start');
+    await openDigikitMenu(tap);
+    await openRuntimeAbout(tap);
+    await expectRuntimeAbout(session, dk, plan);
+    for (let i = 0; i < 4; i++) await tap('NO', 2000);
+    try {
+      expect(await dk.remoteTurnOnce(1, 20)).toBe(20);
+      expect(await dk.remoteTurnOnce(1, -20)).toBe(-20);
+    } finally {
+      await shot('turn-signed');
+    }
+  });
+  await session.expectNoFault('remote keys');
+}
 
 /** Physical panel input remains available while the remote protocol is disabled. */
 async function panelTap(session: Session, name: string, settleMs = 1200): Promise<void> {
   const code = button(name);
-  try {
-    await session.client.inputButton(code, true);
-    await delay(400);
-  } finally {
-    await session.client.inputButton(code, false);
-  }
-  await delay(settleMs);
+  await holdTap((down) => session.client.inputButton(code, down), 400, settleMs);
 }
 
 async function toggleRemote(session: Session): Promise<void> {
@@ -28,9 +54,10 @@ async function toggleRemote(session: Session): Promise<void> {
 }
 
 /** One-for-one port of the full-tier Python remote-control negative scenario. */
-export async function expectRemoteControl({ session, dk }: PatchedSession): Promise<void> {
-  await delay(session.options.device === 'dn2' ? 45_000 : 12_000);
-  await installRemote(session);
+async function expectRemoteControl(runtime: PatchedSession): Promise<void> {
+  const { session, dk } = runtime;
+  await settleUi(session);
+  await installRemote(runtime);
   await delay(10_000);
   const cmd = (command: number, body: number[] = []) => dk.request(command, Uint8Array.from(body));
   const state = async () => {
@@ -78,3 +105,8 @@ export async function expectRemoteControl({ session, dk }: PatchedSession): Prom
   expect((await cmd(SERVICE_CMD.REMOTE_KEY, [2, 1])).status).toBe(-65);
   await session.expectNoFault('remote control');
 }
+
+runtimeTests('remote keys open ABOUT and TURN accepts signed deltas', expectRemoteKeys);
+runtimeTests('remote switch guards commands and panel toggle enables paced input', expectRemoteControl, {
+  patchSet: 'device',
+});

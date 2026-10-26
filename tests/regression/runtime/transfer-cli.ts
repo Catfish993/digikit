@@ -49,7 +49,7 @@ export async function transferCommand(
 }
 
 /** Python owns module preparation and install; use the already-running daemon. */
-export async function installModule(
+export async function cliInstall(
   session: Session,
   moduleId: string,
   artifactDirectory: string,

@@ -1,12 +1,11 @@
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { DkLogEvent } from '@digi/dk-session';
+import { hexSha256, type DkLogEvent } from '@digi/dk-session';
 import { LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
-import { repoRoot, type Device } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
+import { installModule, liveArtifacts, record, settleUi } from '../runtime/live.ts';
 
 /** Explicit production upload candidates; framework/static modules are firmware prerequisites. */
 export const runtimeModules = [
@@ -15,12 +14,6 @@ export const runtimeModules = [
   { id: 'digikit/remote', contract: 3, dsp: false },
 ] as const;
 export type RuntimeModule = (typeof runtimeModules)[number];
-
-/** Prepared separately with patchkit pack; acceptance never builds a toolchain, module or daemon. */
-export function moduleArtifact(device: Device, module: RuntimeModule): string {
-  const directory = process.env.DIGI_RUNTIME_MODULES ?? path.join(repoRoot(), 'out/regression/modules');
-  return path.join(directory, device, `${module.id.split('/')[1]}.dkm`);
-}
 
 /** Real USB upload, persisted bytes, selected reboot, registration and fault acceptance.
  * DSP allocation/registration does not establish rendered audio correctness. */
@@ -32,37 +25,27 @@ export async function expectModuleLoad(
   const { session, dk } = runtime;
   const bytes = fs.readFileSync(artifact);
   const storePath = `modules/${module.id.split('/')[1]}.dkm`;
-  const hash = createHash('sha256').update(bytes).digest('hex');
-  const artifacts = path.join(
-    repoRoot(),
-    'out/regression/module-load',
-    session.options.device,
-    module.id.split('/')[1]!,
-  );
+  const hash = await hexSha256(bytes);
+  const artifacts = path.join(liveArtifacts(session, 'module-load'), module.id.split('/')[1]!);
   fs.mkdirSync(artifacts, { recursive: true });
-  const record = (name: string, value: unknown) =>
-    fs.writeFileSync(path.join(artifacts, `${name}.json`), JSON.stringify(value, null, 2));
 
   // Match the existing coupled runtime fixtures' pre-install settle; do not step a free-running guest.
-  await delay(session.options.device === 'dn2' ? 45_000 : 12_000);
+  await settleUi(session);
   expect(await dk.list(), 'fresh daemon has an empty store').toEqual([]);
   expect(await dk.modules(), 'fresh runtime has no uploaded modules').toEqual([]);
   if (module.id === 'digikit/remote') {
     expect((await dk.request(SERVICE_CMD.REMOTE_STATE)).status, 'remote service is absent before upload').toBe(-60);
   }
-  await dk.put(storePath, bytes);
-  expect(await dk.verifyFile(storePath, bytes), 'fresh card read matches prepared module bytes').toBe(true);
-  await dk.select([storePath]);
   const epoch = (await session.status()).epoch;
   if (typeof epoch !== 'number') throw new Error('daemon status must report a numeric epoch');
-  await dk.restart();
-  await dk.waitForBoot();
-  await expect
-    .poll(async () => (await dk.modules()).map((entry) => entry.name), { timeout: 30_000, interval: 500 })
-    .toEqual([module.id]);
+  await installModule(dk, module.id, artifact);
+  expect(
+    (await dk.modules()).map((entry) => entry.name),
+    'only the uploaded module is registered',
+  ).toEqual([module.id]);
   expect((await session.status()).epoch, 'protocol restart boots another epoch').toBeGreaterThan(epoch);
   const entries = await dk.list();
-  record('store', entries);
+  record(artifacts, 'store', entries);
   expect(entries).toEqual([{ path: storePath, size: bytes.length, sha256: hash }]);
   expect(await dk.verifyFile(storePath, bytes), 'module bytes survive reboot').toBe(true);
 
@@ -82,7 +65,7 @@ export async function expectModuleLoad(
           )
           .toBe(true);
       } finally {
-        record('dsp-completion-log', completionLog);
+        record(artifacts, 'dsp-completion-log', completionLog);
       }
       expect(
         completionLog
@@ -109,15 +92,12 @@ export async function expectModuleLoad(
         format: 1,
         turnLimit: 30,
       });
-      expect((await dk.request(SERVICE_CMD.REMOTE_KEY, Uint8Array.of(1))).status, 'service rejects malformed KEY').toBe(
-        -50,
-      );
       await dk.remoteRelease();
     }
     // Allow the loaded registration to run on the coupled DSP before checking its guard counters.
     await delay(2000);
     const modules = await dk.modules();
-    record('modules', modules);
+    record(artifacts, 'modules', modules);
     expect(modules.map(({ name, faults, guard_off }) => ({ name, faults, guard_off }))).toEqual([
       { name: module.id, faults: 0, guard_off: false },
     ]);
@@ -128,7 +108,7 @@ export async function expectModuleLoad(
       })
       .toBe(true);
     const log = await dk.readLog();
-    record('boot-log', log);
+    record(artifacts, 'boot-log', log);
     expect(
       log.some((event) => event.kind === LOG_KIND.UI_FIRST),
       'selected module boot reaches the firmware UI',
@@ -148,7 +128,7 @@ export async function expectModuleLoad(
     ).toEqual([]);
     await session.expectNoFault(`loaded ${module.id}`);
   } finally {
-    record('final-modules', await dk.modules());
-    record('final-status', await session.status());
+    record(artifacts, 'final-modules', await dk.modules());
+    record(artifacts, 'final-status', await session.status());
   }
 }

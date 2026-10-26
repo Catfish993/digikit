@@ -1,37 +1,32 @@
 import { execFile } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { setTimeout as delay } from 'node:timers/promises';
 import type { DkSession } from '@digi/dk-session';
 import { button, repoRoot, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
+import { installModule, liveArtifacts, moduleArtifact, tap } from './live.ts';
 import { prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
-import { installModule } from './transfer-cli.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
 /** Prepare an exact loaded-image ABOUT plan, then install only the remote module. */
-export async function prepareRemote({ session }: PatchedSession): Promise<RuntimePlan> {
-  const plan = await prepareRuntimePlan(session, remoteArtifacts(session), ['DK_ABOUT', 'DK_ABOUT_N']);
-  await installRemote(session);
+export async function prepareRemote(runtime: PatchedSession): Promise<RuntimePlan> {
+  const plan = await prepareRuntimePlan(runtime.session, liveArtifacts(runtime.session, 'remote-input'), [
+    'DK_ABOUT',
+    'DK_ABOUT_N',
+  ]);
+  await installRemote(runtime);
   return plan;
 }
 
 /** Install only: negative device-set cases need no offline ABOUT symbol plan. */
-export async function installRemote(session: Session): Promise<void> {
-  await installModule(session, 'digikit/remote', remoteArtifacts(session));
+export async function installRemote({ session, dk }: PatchedSession): Promise<void> {
+  await installModule(dk, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'));
 }
 
 export async function remoteTap(dk: DkSession, name: string, settleMs = 1200): Promise<void> {
   const code = button(name);
-  try {
-    await dk.remoteKey(code, true);
-    await delay(300);
-  } finally {
-    await dk.remoteKey(code, false);
-  }
-  await delay(settleMs);
+  await tap((down) => dk.remoteKey(code, down), 300, settleMs);
 }
 
 /** Always release held remote inputs, including on navigation/assertion failure. */
@@ -61,16 +56,9 @@ export async function withRemoteRelease(dk: DkSession, action: () => Promise<voi
   if (actionFailed) throw actionError;
 }
 
-function remoteArtifacts(session: Session): string {
-  const scenario = session.options.runtime?.patchSet === 'device' ? 'remote-control' : 'remote-keys';
-  const dir = path.join(root, 'out/regression', scenario, session.options.device);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
 /** Existing OLED renderer; persistent diagnostics survive Session's temporary-directory cleanup. */
 export async function captureRemoteOled(session: Session, name: string): Promise<void> {
-  const dir = remoteArtifacts(session);
+  const dir = liveArtifacts(session, 'remote-input');
   await exec(
     'uv',
     [

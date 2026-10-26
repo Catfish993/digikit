@@ -1,19 +1,26 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { button, repoRoot, type Device } from '@digi/test-support';
-import { expect } from 'vitest';
+import { button, type Device } from '@digi/test-support';
+import { describe, expect, test } from 'vitest';
 import { startPatchedSession } from '../support.ts';
 import { prepareRuntimePlan } from './runtime-plan.ts';
 import { openDigikitMenu, openRuntimeAbout, expectRuntimeAbout, meaningfulAboutRows } from './runtime-menu.ts';
-import { liveArtifacts, liveOptions, liveProtocol, settleLive } from './live.ts';
+import {
+  DEVICES,
+  FIRMWARE,
+  liveArtifacts,
+  liveOptions,
+  liveProtocol,
+  moduleArtifact,
+  record,
+  settleUi,
+  tap as holdTap,
+} from './live.ts';
 
 /** Two fresh daemons with identical probe installation and exactly one protocol restart. */
-export async function expectInputAdapter(device: Device): Promise<void> {
+async function expectInputAdapter(device: Device): Promise<void> {
   // Probe DKM preparation is separate; the exact-image symbol plan uses the existing patch CLI below.
-  const directory = process.env.DIGI_RUNTIME_MODULES ?? path.join(repoRoot(), 'out/regression/modules');
-  const artifact = path.join(directory, device, 'input-probe.dkm');
-  const bytes = fs.readFileSync(artifact);
+  const bytes = fs.readFileSync(moduleArtifact(device, 'test/input-probe'));
   const results: { frames: Record<string, string>; rows: string[] }[] = [];
   for (const source of ['panel', 'probe'] as const) {
     const runtime = await startPatchedSession({ ...liveOptions(device), autoNo: false });
@@ -26,7 +33,7 @@ export async function expectInputAdapter(device: Device): Promise<void> {
     let rows: string[] = [];
     let refusals: number[] = [];
     try {
-      await settleLive(session, device === 'dn2' ? 45_000 : 12_000);
+      await settleUi(session);
       const plan = await prepareRuntimePlan(session, artifacts, ['DK_ABOUT', 'DK_ABOUT_N']);
       await protocol.put('modules/input-probe.dkm', bytes);
       expect(
@@ -48,21 +55,18 @@ export async function expectInputAdapter(device: Device): Promise<void> {
       await delay(10_000);
       const tap = async (name: string, settleMs = 1200) => {
         const code = button(name);
-        const send = async (down: boolean) => {
-          if (source === 'panel') await session.client.inputButton(code, down);
-          else {
-            const status = (await protocol.request(0x38, Uint8Array.of(code, down ? 1 : 0))).status;
-            answers.push(status);
-            expect(status, `probe ${name} ${down ? 'down' : 'up'}`).toBe(0);
-          }
-        };
-        try {
-          await send(true);
-          await delay(300);
-        } finally {
-          await send(false);
-        }
-        await delay(settleMs);
+        await holdTap(
+          async (down) => {
+            if (source === 'panel') await session.client.inputButton(code, down);
+            else {
+              const status = (await protocol.request(0x38, Uint8Array.of(code, down ? 1 : 0))).status;
+              answers.push(status);
+              expect(status, `probe ${name} ${down ? 'down' : 'up'}`).toBe(0);
+            }
+          },
+          300,
+          settleMs,
+        );
       };
       // Delivery/decoder acceptance, not a claim that a vendor parameter changes in this UI state.
       for (const delta of [4, -4]) {
@@ -91,7 +95,7 @@ export async function expectInputAdapter(device: Device): Promise<void> {
         const frame = await session.client.framebufferGet({ hash: true, data: true });
         expect(frame.sha256).toMatch(/^[a-f0-9]{64}$/);
         frames[name] = frame.sha256!;
-        fs.writeFileSync(path.join(artifacts, `${source}-${name}.json`), JSON.stringify(frame, null, 2));
+        record(artifacts, `${source}-${name}`, frame);
       });
       await openRuntimeAbout(tap);
       rows = await expectRuntimeAbout(session, protocol, plan);
@@ -108,14 +112,21 @@ export async function expectInputAdapter(device: Device): Promise<void> {
       results.push({ frames, rows: meaningfulAboutRows(rows) });
     } finally {
       try {
-        fs.writeFileSync(
-          path.join(artifacts, `${source}.json`),
-          JSON.stringify({ frames, rows, answers, refusals, statuses }, null, 2),
-        );
+        record(artifacts, source, { frames, rows, answers, refusals, statuses });
       } finally {
         protocol.cancelPending();
         await runtime.close();
       }
     }
   }
+}
+
+for (const device of DEVICES) {
+  describe(`${device.toUpperCase()} ${FIRMWARE[device]}`, () => {
+    test(
+      'input adapter matches panel menu navigation and accepts signed TURN after identical boots',
+      () => expectInputAdapter(device),
+      1_000_000,
+    );
+  });
 }

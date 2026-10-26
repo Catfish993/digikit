@@ -1,23 +1,14 @@
 /** DT2 1.17 coupled FX oracles. Test identities and thresholds match the Python suite. */
-import { expect, test } from 'vitest';
+import { expect } from 'vitest';
 import { scenarios as track } from './dt2-trackfx.ts';
 import { scenarios as send } from './dt2-sendfx.ts';
-import { fxRender } from './fx-support.ts';
+import { changedUi, expectHealthy, expectMono, fxOracles, fxRender, raw } from './fx-support.ts';
 
-const full = process.env.DIGI_FX_SWEEP === '1';
 const scenarios = [...track, ...send];
 const needs = new Map<string, string[]>();
 const rendered = fxRender(needs, { family: 'dt2-fx', scenarios, device: 'dt2' });
 const row = rendered.row;
-function oracle(identity: string, names: string[], body: () => void, sweep = false) {
-  needs.set(identity, names);
-  test.skipIf(sweep && !full)(identity, body);
-}
-function raw(name: string, prefix: string): number {
-  const value = Object.entries(row(name).decoded).find(([key]) => key.startsWith(`${prefix} `))?.[1];
-  expect(value, `${name} ${prefix}`).toBeDefined();
-  return value! & 0xffff;
-}
+const oracle = fxOracles(needs, { subsets: false });
 function bits(name: string, metric: string): number {
   return row(name).bits[metric]!;
 }
@@ -29,7 +20,7 @@ function sf(name: string, metric: string): number {
 }
 function ordered(names: string[], key: string, metric: (name: string) => number) {
   const got = names
-    .map((name) => ({ name, value: raw(name, key), metric: metric(name) }))
+    .map((name) => ({ name, value: raw(rendered, name, key), metric: metric(name) }))
     .sort((a, b) => a.value - b.value);
   expect(new Set(got.map((r) => r.value)).size, JSON.stringify(got)).toBe(got.length);
   expect(
@@ -286,27 +277,19 @@ for (const { name } of scenarios)
     `test_healthy ${name}`,
     [name],
     () => {
-      const basic = row(name).analysis.basic;
-      expect(rendered.gates(name)?.ok).toBe(true);
-      expect(basic.nonfinite).toBe(0);
-      expect(Math.max(...basic.dc.map(Math.abs))).toBeLessThan(1e-3);
-      expect(basic.peak).toBeLessThanOrEqual(1);
+      expectHealthy(rendered, name, { growth: name !== 'sf-del-time-u50' && name !== 'sf-del-fb-u50' });
       if (name === 'sf-del-time-u50')
-        expect(basic.peak).toBeLessThanOrEqual(1.5 * row(row(name).pcm.reference).analysis.basic.peak);
-      else if (name !== 'sf-del-fb-u50') expect(basic.growth).toBe(false);
+        expect(row(name).analysis.basic.peak).toBeLessThanOrEqual(
+          1.5 * row(row(name).pcm.reference).analysis.basic.peak,
+        );
     },
-    ![...trackQuick, ...sendQuick].includes(name),
+    { sweep: ![...trackQuick, ...sendQuick].includes(name) },
   );
 for (const [name, expected] of Object.entries(intent))
   oracle(`test_readback ${name}`, [name], () => {
     const fx = name.split('-')[1];
-    const reference = row(name.startsWith('sf-') && fx !== 'mst' ? `sf-${fx}-ref` : row(name).pcm.reference).decoded;
-    const changed = Object.fromEntries(
-      Object.entries(row(name).decoded)
-        .filter(([key, value]) => reference[key] !== value)
-        .map(([key, value]) => [key.split(' ')[0], (value & 0xffff) >> 8]),
-    );
-    expect(changed).toEqual(expected);
+    const reference = name.startsWith('sf-') && fx !== 'mst' ? `sf-${fx}-ref` : row(name).pcm.reference;
+    expect(changedUi(rendered, name, reference)).toEqual(expected);
   });
 for (const name of ['tf-br-0', 'sf-del-mix-d50', 'sf-rev-mix-d50', 'sf-chr-mix-d50'])
   oracle(`test_zero_is_dry ${name}`, [name], () => {
@@ -315,8 +298,7 @@ for (const name of ['tf-br-0', 'sf-del-mix-d50', 'sf-rev-mix-d50', 'sf-chr-mix-d
     if (name === 'tf-br-0') expect(pcm.reference_max_abs_diff).toBe(0);
     else expect(pcm.reference_max_abs_diff).toBeLessThan(1e-4);
   });
-for (const name of mono)
-  oracle(`test_mono_stays_mono ${name}`, [name], () => expect(row(name).pcm.mono_equal).toBe(true));
+for (const name of mono) oracle(`test_mono_stays_mono ${name}`, [name], () => expectMono(rendered, name));
 const br = ['tf-br-0', 'tf-br-22', 'tf-br-54', 'tf-br-127'];
 const over = ['tf-over-22', 'tf-over-54', 'tf-over-127'];
 const srr = ['tf-srr-22', 'tf-srr-54', 'tf-srr-127'];

@@ -1,6 +1,6 @@
 """Fast host preflight for changed files; full validation belongs to `mise run verify`.
 
-`verify:pre` is a mise alias for this command. Static checks and an exact audited
+Static checks and an exact audited
 Python unit-test boundary cannot build firmware, modules, Rust or emulators.
 The existing selection/import graph below remains the full gate's coverage source.
 """
@@ -305,19 +305,14 @@ def select(files: list[str], deep: bool = False) -> Selection:
     return sel
 
 
-# Audited host-only units: routing/data and mocked commands; hook/lock subprocesses
-# run only Python, true or shell exit; outcome fixtures run bounded temporary pytest.
-# Do not infer safety from a directory or from a newly selected test's name.
+# Audited host-only units: the tests/devtools/ files of the PY_SUITES "devtools" suite (routing/data,
+# mocked commands, bounded subprocesses). Do not infer safety from a directory or a test's name.
 FAST_PYTHON_TESTS = frozenset(
-    f"tests/devtools/{name}.py"
-    for name in (
-        "test_verify",
-        "test_verify_budget",
-        "test_changed_tests",
-        "test_agent_guard",
-        "test_test_outcomes",
-        "test_benchlock",
-    )
+    test
+    for name, _, tests in verify.PY_SUITES
+    if name == "devtools"
+    for test in tests
+    if test.startswith("tests/devtools/")
 )
 JS_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
 
@@ -393,16 +388,7 @@ def host_plan(files: list[str]) -> list[tuple[str, list[str] | None, str]]:
             ("prettier", ["pnpm", "exec", "prettier", "--check", *formatted], "")
         )
     if js or config:
-        for package, task in (
-            ("control-client", "typecheck"),
-            ("dk-session", "typecheck"),
-            ("test-support", "typecheck"),
-            ("regression", "typecheck"),
-            ("desktop", "typecheck:host"),
-        ):
-            out.append(
-                (f"types-{package}", ["pnpm", "--filter", f"@digi/{package}", task], "")
-            )
+        out.append(("types", ["pnpm", "-r", "run", "typecheck"], ""))
     return out
 
 

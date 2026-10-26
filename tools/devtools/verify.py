@@ -11,7 +11,7 @@
     uv run python -m tools.devtools.verify --full --all-no-aot   # AOT = no-AOT equality on every FX scenario, not the fixed subset
     uv run python -m tools.devtools.verify --explain        # show the routing and the plan, run nothing
     uv run python -m tools.devtools.verify --base A --head B --explain   # the same for the commits A..B
-(Use owner checks while iterating; `mise run test:changed` is the fast host preflight; `verify:pre` is its alias.)
+(Use owner checks while iterating; `mise run test:changed` is the fast host preflight.)
 
 CPU budget (tools/devtools/verify_budget.py, docs/TESTING.md "CPU budget"): the whole gate has a budget of
 cores (--jobs N, DIGI_VERIFY_BUDGET, else the physical cores - 2); a step starts when its share is free and
@@ -36,7 +36,7 @@ Normal routing includes relevant stock, runtime and module acceptance; full tier
 python-tests runs the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
-every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
+every changed tests/**/test_*.py, and the
 test files that import a changed tests/support module. With
 --full it runs PY_GATE plus every suite, not all of tests/ (`mise run test` runs all of tests/).
 rust-tests runs cargo nextest run --workspace --release, or only the crates rust_ws.affected_packages names
@@ -305,21 +305,25 @@ UI_ONLY: tuple[str, ...] = (
     "docs/*",
     "*.md",
 )
-# Exact non-runtime paths whose existing owner host/Python coverage is sufficient. Keep this a
-# table, not a prefix rule: neighbouring tests, helpers and configuration stay conservative.
+# Exact maintenance paths whose existing owner host/Python coverage is sufficient. Keep this a
+# table, not a prefix rule: neighbouring helpers and configuration stay conservative.
 SMOKE_EXEMPT: dict[str, str] = {
     "tools/devtools/agent_guard.py": "agent guard",
     "tools/devtools/pathcheck.py": "path checker",
     ".claude/settings.json": "agent settings",
-    "packages/control-client/tests/client.test.ts": "host client test",
-    "packages/test-support/tests/support.test.ts": "host support test",
-    "packages/dk-session/tests/remote.test.ts": "host remote protocol test",
-    "packages/dk-session/tests/session-cancel.test.ts": "host cancellation protocol test",
-    "packages/dk-session/tests/emu-usb-transport.test.ts": "host transport test",
-    "tests/regression/host/runtime.test.ts": "host runtime test",
-    "tests/regression/host/remote-keys.test.ts": "host remote-keys test",
-    "tests/regression/host/daemon.test.ts": "host daemon test",
 }
+# Host Vitest test files (vitest.host.projects.json). The host config runs them without a device, so
+# a change that only touches them cannot change the smoke matrix. Helpers, config and new files that
+# match no glob stay conservative.
+HOST_PROJECTS = ROOT / "vitest.host.projects.json"
+
+
+def host_test_globs() -> tuple[str, ...]:
+    """The test globs of the host Vitest projects (`*` crosses `/`, like UI_ONLY, so `**/` is dropped)."""
+    projects = json.loads(HOST_PROJECTS.read_text())
+    return tuple(f"{p['dir']}/{p['include']}".replace("**/", "") for p in projects)
+
+
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
@@ -336,12 +340,14 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         (
             *DT2_FX_FILES,
             "tests/regression/scenarios/dt2-fx.test.ts",
-            "tests/regression/vitest.dt2-fx.config.ts",
         ),
         ("host", "dt2-check", "dt2-tier-quick", "python-tests"),
     ),
     (
-        ("tests/regression/scenarios/fx-support.ts",),
+        (
+            "tests/regression/scenarios/fx-support.ts",
+            "tests/regression/vitest.config.ts",
+        ),
         (
             "host",
             "check",
@@ -353,7 +359,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
     ),
     (
-        ("tests/regression/scenarios/", "tests/regression/vitest.fx.config.ts"),
+        ("tests/regression/scenarios/",),
         ("host", "check", "check-no-aot", "tier-quick"),
     ),
     (
@@ -362,6 +368,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "packages/test-support/",
             "tests/regression/",
             "vitest.host.config.ts",
+            "vitest.host.projects.json",
             "packages/dk-session/tests/",
             "apps/desktop/ui/tests/",
         ),
@@ -567,20 +574,15 @@ def acceptance_plan(step: str, files: list[str]) -> list[str]:
 
 
 def is_python_source(path: str) -> bool:
-    """A .py file of tools/ or tests/ outside tests/scenarios/ (python-tests routes it by the import graph)."""
-    return (
-        path.endswith(".py")
-        and path.startswith(("tools/", "tests/"))
-        and not path.startswith("tests/scenarios/")
-    )
+    """A .py file of tools/ or tests/ (python-tests routes it by the import graph)."""
+    return path.endswith(".py") and path.startswith(("tools/", "tests/"))
 
 
 def is_changed_test(path: str) -> bool:
-    """A changed test file that python-tests runs itself (scenario tests have steps)."""
+    """A changed test file that python-tests runs itself."""
     name = path.rsplit("/", 1)[-1]
     return (
         path.startswith("tests/")
-        and not path.startswith("tests/scenarios/")
         and name.startswith("test_")
         and name.endswith(".py")
         and (ROOT / path).is_file()
@@ -655,11 +657,16 @@ def ui_only(files: list[str]) -> bool:
     return bool(files) and all(ui_only_path(path) for path in files)
 
 
+def host_test_path(path: str) -> bool:
+    """Whether one path is a host Vitest test file (vitest.host.projects.json)."""
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in host_test_globs())
+
+
 def smoke_cells(files: list[str]) -> list[str] | None:
     """Filter only the three audited production leaves plus existing exemptions; None means full."""
     leaves: set[str] = set()
     for path in files:
-        if ui_only_path(path) or path in SMOKE_EXEMPT:
+        if ui_only_path(path) or path in SMOKE_EXEMPT or host_test_path(path):
             continue
         mid = modroots.module_id(path)
         if mid not in verify_route.RUNTIME_UPLOADS:
@@ -674,18 +681,25 @@ def smoke_reason(files: list[str]) -> str | None:
         return "UI-only change"
     maintenance: list[str] = []
     ui = False
+    host = False
     for path in files:
         if ui_only_path(path):
             ui = True
         elif reason := SMOKE_EXEMPT.get(path):
             maintenance.append(reason)
+        elif host_test_path(path):
+            host = True
         else:
             if smoke_cells(files) == []:
                 return "audited production leaves have no dependent cells in the smoke matrix"
             return None
     if maintenance:
+        if host:
+            maintenance.append("host-only test")
         kind = "UI-only and smoke-exempt" if ui else "smoke-exempt"
         return f"{kind} maintenance change ({', '.join(sorted(maintenance))})"
+    if host:
+        return "UI-only and host-only test change" if ui else "host-only test change"
     return None
 
 
@@ -1074,7 +1088,7 @@ def desktop_check(gate: Gate) -> None:
 
 
 def host_check(gate: Gate) -> None:
-    gate.run("host", ["mise", "run", "verify:host"])
+    gate.run("host", ["pnpm", "verify:host"])
 
 
 def web_check(gate: Gate) -> None:
@@ -1385,7 +1399,9 @@ def explain(
         conservative = [
             path
             for path in files
-            if path not in SMOKE_EXEMPT and not ui_only_path(path)
+            if path not in SMOKE_EXEMPT
+            and not ui_only_path(path)
+            and not host_test_path(path)
         ]
         if conservative:
             print(f"smoke: selected, conservative path: {', '.join(conservative)}")
@@ -1399,8 +1415,7 @@ def explain(
                 + ", ".join(selected or ["all"])
             )
             if step == "module-load" or (
-                step == "runtime-fixture"
-                and (not selected or any("input-adapter" in f for f in selected))
+                step == "runtime-fixture" and runtime_pack_modules(selected)
             ):
                 print(
                     f"{step}: prerequisite pk_build --check, then fresh patchkit pack into its run directory; "
@@ -1530,6 +1545,15 @@ def prepare_acceptance_modules(gate: Gate, step: str, modules: list[str]) -> Pat
     return directory
 
 
+def runtime_pack_modules(selected: list[str]) -> list[str]:
+    """Runtime fixture modules to pack for the SELECTED test files (empty: all files)."""
+    return [
+        mid
+        for mid, files in verify_route.RUNTIME_MODULES.items()
+        if not selected or set(files) & set(selected)
+    ]
+
+
 def run_step(gate: Gate, step: str) -> None:
     jobs = gate.step_env()[
         "DIGI_JOBS"
@@ -1583,14 +1607,12 @@ def run_step(gate: Gate, step: str) -> None:
             env["DIGI_RUNTIME_MODULES"] = str(
                 prepare_acceptance_modules(gate, step, modules)
             )
-        elif step == "runtime-fixture" and (
-            not selected or any("input-adapter" in f for f in selected)
-        ):
+        elif step == "runtime-fixture" and (modules := runtime_pack_modules(selected)):
             env["DIGI_RUNTIME_MODULES"] = str(
-                prepare_acceptance_modules(gate, step, ["test/input-probe"])
+                prepare_acceptance_modules(gate, step, modules)
             )
         script = {
-            "stock": "test",
+            "stock": "test:stock",
             "runtime-fixture": "test:runtime",
             "module-load": "test:modules",
         }[step]

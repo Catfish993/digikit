@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, beforeEach } from 'vitest';
+import { afterAll, beforeAll, beforeEach, expect } from 'vitest';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { repoRoot, Session, type Device, type SessionOptions } from '@digi/test-support';
 
@@ -64,13 +64,33 @@ export async function startPatchedSession(
   }
 }
 
-/** No restart hook: every acceptance file owns a single fresh, free-running runtime. */
+/** Boot identity and health only: runtime patch sets do not install remote-control modules. */
+export async function expectRuntimeBoot({ session, dk }: PatchedSession): Promise<void> {
+  const identity = session.loadResult.runtime;
+  expect(identity?.patched).toBe(true);
+  if (!identity?.patched) throw new Error('stock input did not produce a runtime patch identity');
+  expect(identity.set).toBe(session.options.runtime?.patchSet ?? 'emulator');
+  expect(identity.base_sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(identity.modules.length).toBeGreaterThan(0);
+  expect(identity.cache_file).toBeTruthy();
+  expect(session.loadResult.start_used).toBeTruthy();
+  await expect.poll(async () => (await session.status()).cf.ready, { timeout: 20_000 }).toBe(true);
+  const status = await session.status();
+  expect(status.mode).toBe('free');
+  expect(status.cf.ready).toBe(true);
+  expect(status.firmware?.runtime).toEqual(identity);
+  expect(dk.rpcChunk).toBe(16384);
+  await session.expectNoFault('runtime boot');
+}
+
+/** No restart hook: every acceptance file owns a single fresh, free-running runtime, checked at boot. */
 export function withPatchedSession(opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string }): {
   readonly runtime: PatchedSession;
 } {
   let runtime: PatchedSession | undefined;
   beforeAll(async () => {
     runtime = await startPatchedSession(opts);
+    await expectRuntimeBoot(runtime);
   });
   afterAll(async () => {
     await runtime?.close();

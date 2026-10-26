@@ -50,31 +50,98 @@ def test_ui_only_change_skips_smoke() -> None:
     assert "web" in steps  # the UI steps themselves still run
 
 
-def test_ui_change_with_one_other_file_keeps_smoke() -> None:
-    assert "smoke" in verify.steps_for([*UI_FILES, "tools/device/dkscreen.py"])
-
-
 SMOKE_EXEMPT_FILES = [
     "tools/devtools/agent_guard.py",
     "tools/devtools/pathcheck.py",
     ".claude/settings.json",
 ]
 
-HOST_SMOKE_EXEMPT_FILES = [
+HOST_TEST_FILES = [
     "packages/control-client/tests/client.test.ts",
     "packages/test-support/tests/support.test.ts",
     "packages/dk-session/tests/remote.test.ts",
-    "packages/dk-session/tests/session-cancel.test.ts",
-    "packages/dk-session/tests/emu-usb-transport.test.ts",
     "tests/regression/host/runtime.test.ts",
-    "tests/regression/host/remote-keys.test.ts",
-    "tests/regression/host/daemon.test.ts",
+    "tests/regression/host/remote-helpers.test.ts",
+    "apps/desktop/ui/tests/card.test.ts",
 ]
 
 
-@pytest.mark.parametrize("path", HOST_SMOKE_EXEMPT_FILES)
-def test_exact_host_test_paths_skip_smoke_but_keep_host_coverage(path: str) -> None:
-    assert verify.steps_for([path]) == ("host",)
+@pytest.mark.parametrize(
+    "files, wanted, smoke, reason",
+    [
+        (UI_FILES, {"web"}, False, "UI-only change"),
+        (SMOKE_EXEMPT_FILES, {"python-tests"}, False, "smoke-exempt maintenance"),
+        (HOST_TEST_FILES, {"host"}, False, "host-only test"),
+        (["packages/dk-session/tests/new.test.ts"], {"host"}, False, "host-only test"),
+        (["tests/regression/host/new.test.ts"], {"host"}, False, "host-only test"),
+        (["packages/dk-session/tests/fake.ts"], {"host"}, True, None),
+        (["tests/regression/runtime/x.test.ts"], {"runtime-fixture"}, True, None),
+        (["vitest.host.config.ts"], {"host"}, True, None),
+        (
+            [*HOST_TEST_FILES, "docs/x.md", "tools/devtools/pathcheck.py"],
+            {"host", "python-tests"},
+            False,
+            "smoke-exempt maintenance change (host-only test",
+        ),
+        (
+            [*HOST_TEST_FILES, "apps/web/src/components/PatchGallery.tsx"],
+            {"host", "web"},
+            False,
+            "UI-only and host-only test",
+        ),
+        ([*HOST_TEST_FILES, "unknown/file.txt"], {"host"}, True, None),
+        (
+            [*HOST_TEST_FILES, "modules/fx/master-gain/src/cf/gain.s"],
+            {"host"},
+            True,
+            None,
+        ),
+        ([*UI_FILES, "tools/device/dkscreen.py"], {"web"}, True, None),
+        *[
+            ([*HOST_TEST_FILES, path], {"host"}, True, None)
+            for path in (
+                "packages/control-client/src/client.ts",
+                "packages/test-support/src/session.ts",
+                "tests/regression/support.ts",
+                "packages/control-client/package.json",
+                "packages/test-support/tsconfig.json",
+                "modules/core/runtime/src/rs/src/upload.rs",
+            )
+        ],
+        (["tools/devtools/pathchecks.py"], set(), True, None),
+        (
+            ["tools/devtools/pathcheck.py", "apps/web/src/components/PatchGallery.tsx"],
+            {"python-tests", "web"},
+            False,
+            "UI-only and smoke-exempt maintenance change (path checker)",
+        ),
+        ([*SMOKE_EXEMPT_FILES, "unknown/file.txt"], {"python-tests"}, True, None),
+        (
+            ["tools/devtools/pathcheck.py", "modules/fx/master-gain/src/cf/gain.s"],
+            {"python-tests"},
+            True,
+            None,
+        ),
+    ],
+)
+def test_smoke_skip_table(
+    files: list[str], wanted: set[str], smoke: bool, reason: str | None
+) -> None:
+    steps = verify.steps_for(files)
+    assert wanted <= set(steps)
+    assert ("smoke" in steps) == smoke
+    if reason is None:
+        assert verify.smoke_reason(files) is None
+    else:
+        assert reason in (verify.smoke_reason(files) or "")
+
+
+def test_explain_states_why_host_tests_skip_smoke(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    files = ["packages/dk-session/tests/new.test.ts"]
+    verify.explain(verify.steps_for(files), files, [], per_file=True)
+    assert "smoke: skipped, host-only test change" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("name", ["session-share", "remote-page", "wait-core", "new"])
@@ -106,38 +173,6 @@ def test_desktop_sources_used_by_web_samples_keep_web_checks(name: str) -> None:
         "host",
         "web",
     )
-
-
-def test_host_test_exemptions_mix_with_ui_docs_and_maintenance() -> None:
-    assert verify.steps_for(HOST_SMOKE_EXEMPT_FILES) == ("host",)
-    assert verify.steps_for(
-        [*HOST_SMOKE_EXEMPT_FILES, "docs/x.md", "tools/devtools/pathcheck.py"]
-    ) == ("host", "python-tests")
-    assert verify.steps_for(
-        [*HOST_SMOKE_EXEMPT_FILES, "apps/web/src/components/PatchGallery.tsx"]
-    ) == ("host", "web")
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        "packages/control-client/src/client.ts",
-        "packages/test-support/src/session.ts",
-        "tests/regression/support.ts",
-        "packages/control-client/package.json",
-        "packages/test-support/tsconfig.json",
-        "vitest.host.config.ts",
-        "packages/control-client/tests/new.test.ts",
-        "packages/dk-session/tests/new.test.ts",
-        "tests/regression/host/new.test.ts",
-        "unknown/file.txt",
-        "modules/fx/master-gain/src/cf/gain.s",
-        "modules/core/runtime/src/rs/src/upload.rs",
-        "tests/regression/runtime/dt2.test.ts",
-    ],
-)
-def test_host_test_exemptions_keep_other_paths_conservative(path: str) -> None:
-    assert "smoke" in verify.steps_for([*HOST_SMOKE_EXEMPT_FILES, path])
 
 
 def test_exact_maintenance_paths_skip_smoke_but_keep_python_coverage() -> None:
@@ -211,17 +246,6 @@ def test_smoke_explain_names_affected_cells_and_empty_selection(
     )
 
 
-def test_smoke_exempt_paths_are_exact_and_mixed_changes_stay_conservative() -> None:
-    assert "smoke" in verify.steps_for(["tools/devtools/pathchecks.py"])
-    assert "smoke" not in verify.steps_for(
-        ["tools/devtools/pathcheck.py", "apps/web/src/components/PatchGallery.tsx"]
-    )
-    assert "smoke" in verify.steps_for([*SMOKE_EXEMPT_FILES, "unknown/file.txt"])
-    assert "smoke" in verify.steps_for(
-        ["tools/devtools/pathcheck.py", "modules/fx/master-gain/src/cf/gain.s"]
-    )
-
-
 @pytest.mark.parametrize(
     "path",
     [
@@ -279,7 +303,7 @@ def test_explain_says_why_smoke_is_skipped(capsys: pytest.CaptureFixture[str]) -
         ["tools/devtools/pathcheck.py", "unknown/file.txt"]
     )
     assert "smoke: skipped" not in run(["docs/x.md"])
-    assert "smoke: skipped, smoke-exempt maintenance change (host client test)" in run(
+    assert "smoke: skipped, host-only test change" in run(
         ["packages/control-client/tests/client.test.ts"]
     )
 
@@ -884,19 +908,6 @@ def test_root_host_config_routes_to_host_with_conservative_smoke() -> None:
     assert verify.steps_for(["vitest.host.config.ts"]) == ("host", "smoke")
 
 
-def test_host_check_delegates_to_native_workflow(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[str, list[str]]] = []
-    monkeypatch.setattr(
-        verify.Gate,
-        "run",
-        lambda self, name, cmd, **kwargs: calls.append((name, cmd)),
-    )
-    verify.host_check(object.__new__(verify.Gate))
-    assert calls == [("host", ["mise", "run", "verify:host"])]
-
-
 def test_web_check_only_runs_browser_checks(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: dict[str, list[str]] = {}
     monkeypatch.setattr(
@@ -1086,9 +1097,11 @@ def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
             {"stock", "runtime-fixture", "module-load"},
         ),
         ("tests/regression/support.ts", {"stock", "runtime-fixture", "module-load"}),
-        ("tests/regression/runtime/dt2.test.ts", {"runtime-fixture"}),
-        ("tests/regression/runtime/acceptance.ts", {"runtime-fixture", "module-load"}),
-        ("tests/regression/vitest.runtime.config.ts", {"runtime-fixture"}),
+        ("tests/regression/runtime/remote-input.test.ts", {"runtime-fixture"}),
+        (
+            "tests/regression/vitest.config.ts",
+            {"stock", "runtime-fixture", "module-load"},
+        ),
         ("tests/regression/dt2/transport.test.ts", {"stock"}),
         ("tests/regression/host/daemon.test.ts", set()),
         (
@@ -1144,9 +1157,15 @@ def test_relevant_native_acceptance_retains_existing_owners(
         ),
         (
             "runtime-fixture",
-            "tests/regression/runtime/dt2.test.ts",
-            ["runtime/dt2.test.ts"],
+            "tests/regression/runtime/remote-input.test.ts",
+            ["runtime/remote-input.test.ts"],
         ),
+        (
+            "runtime-fixture",
+            "modules/tools/remote/module.toml",
+            ["runtime/remote-input.test.ts"],
+        ),
+        ("runtime-fixture", "modules/fx/master-gain/module.toml", []),
         ("stock", "tests/regression/dt2/transport.test.ts", ["dt2/transport.test.ts"]),
     ],
 )
@@ -1167,8 +1186,8 @@ def test_sample_clients_select_sample_acceptance_without_module_uploads(
 ) -> None:
     path = f"packages/dk-session/src/{name}.ts"
     assert verify_route.acceptance_files("runtime-fixture", [path]) == [
-        "runtime/dn2-samples-store-live.test.ts",
-        "runtime/dt2-samples-live.test.ts",
+        "runtime/samples-live.test.ts",
+        "runtime/samples-store-live.test.ts",
     ]
     assert "module-load" not in verify.steps_for([path])
     assert {"host", "web", "runtime-fixture"} <= set(verify.steps_for([path]))
@@ -1194,13 +1213,47 @@ def test_shared_abi_and_unknown_modules_keep_cross_device_acceptance(
             "modules/remote.test.ts",
         }
     else:
-        assert "runtime/dt2.test.ts" in files
-        assert "runtime/dn2.test.ts" in files
+        assert "runtime/remote-input.test.ts" in files
+        assert "runtime/input-adapter.test.ts" in files
 
 
 def test_changed_tests_reports_acceptance_gate_additions() -> None:
-    sel = changed_tests.select(["tests/regression/runtime/dt2.test.ts"])
+    sel = changed_tests.select(["tests/regression/runtime/transfer-live.test.ts"])
     assert any("runtime-fixture" in line for line in sel.gate_adds)
+
+
+@pytest.mark.parametrize(
+    "selected, packed",
+    [
+        ([], ["test/input-probe", "digikit/remote", "test/svc-echo"]),
+        (["runtime/remote-input.test.ts"], ["digikit/remote"]),
+        (["runtime/service-commands.test.ts"], ["test/svc-echo"]),
+        (["runtime/input-adapter.test.ts"], ["test/input-probe"]),
+        (["runtime/transfer-live.test.ts", "runtime/samples-live.test.ts"], []),
+    ],
+)
+def test_runtime_fixture_packs_only_modules_of_selected_files(
+    selected: list[str], packed: list[str]
+) -> None:
+    assert verify.runtime_pack_modules(selected) == packed
+
+
+def test_runtime_fixture_packs_selected_modules_for_one_env_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    gate = verify.Gate(
+        tmp_path,
+        budget=2,
+        acceptance={"runtime-fixture": ["runtime/remote-input.test.ts"]},
+    )
+    calls = []
+    monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append((cmd, kw)))
+    verify.run_step(gate, "runtime-fixture")
+    assert calls[0][0][-2] == str(modroots.module_dir("digikit/remote"))
+    assert calls[-1][1]["env"]["DIGI_RUNTIME_MODULES"] == str(
+        tmp_path / "runtime-fixture/modules"
+    )
+    assert calls[-1][0][-1] == "runtime/remote-input.test.ts"
 
 
 @pytest.mark.parametrize("flags", [["--only", "runtime-fixture"], ["--full"]])
@@ -1241,7 +1294,7 @@ def test_runtime_fixture_command_is_sequential(monkeypatch: pytest.MonkeyPatch) 
         lambda self, name, cmd, **kwargs: calls.append((name, cmd, kwargs)),
     )
     gate = object.__new__(verify.Gate)
-    gate.acceptance = {"runtime-fixture": ["runtime/dt2.test.ts"]}
+    gate.acceptance = {"runtime-fixture": ["runtime/samples-live.test.ts"]}
     verify.run_step(gate, "runtime-fixture")
     assert calls == [
         (
@@ -1251,7 +1304,7 @@ def test_runtime_fixture_command_is_sequential(monkeypatch: pytest.MonkeyPatch) 
                 "--filter",
                 "@digi/regression",
                 "test:runtime",
-                "runtime/dt2.test.ts",
+                "runtime/samples-live.test.ts",
             ],
             {"env": {"DIGI_JOBS": "1"}},
         )
@@ -1334,7 +1387,7 @@ def test_input_adapter_prepares_fixture_in_runtime_owned_directory(
     gate = verify.Gate(
         tmp_path,
         budget=2,
-        acceptance={"runtime-fixture": ["runtime/dt2-input-adapter.test.ts"]},
+        acceptance={"runtime-fixture": ["runtime/input-adapter.test.ts"]},
     )
     calls = []
     monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append((cmd, kw)))
@@ -1350,7 +1403,7 @@ def test_input_adapter_prepares_fixture_in_runtime_owned_directory(
     assert calls[-1][1]["env"]["DIGI_RUNTIME_MODULES"] == str(
         tmp_path / "runtime-fixture/modules"
     )
-    assert calls[-1][0][-1] == "runtime/dt2-input-adapter.test.ts"
+    assert calls[-1][0][-1] == "runtime/input-adapter.test.ts"
 
 
 def test_stock_uses_dt2_binary_and_one_core_per_worker(
@@ -1369,7 +1422,7 @@ def test_stock_uses_dt2_binary_and_one_core_per_worker(
         "pnpm",
         "--filter",
         "@digi/regression",
-        "test",
+        "test:stock",
         "dt2/transport.test.ts",
     ]
     assert calls[0][1]["env"]["DIGI_EMUD"] == "/built/dt2"
@@ -1378,6 +1431,9 @@ def test_stock_uses_dt2_binary_and_one_core_per_worker(
 
 def test_runtime_fixture_host_paths_do_not_select_device_acceptance() -> None:
     assert verify.steps_for(["tests/regression/host/runtime.test.ts"]) == ("host",)
+    assert "runtime-fixture" not in verify.steps_for(
+        ["tests/regression/host/remote-helpers.test.ts"]
+    )
 
 
 def test_runtime_fixture_rejects_insufficient_budget(
@@ -1411,14 +1467,16 @@ def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
             "--filter",
             "@digi/regression",
             "test:runtime",
-            "runtime/dt2.test.ts",
+            "runtime/samples-live.test.ts",
         ]
         environments.append(env)
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(verify.subprocess, "run", capture)
     gate = verify.Gate(
-        tmp_path, budget=2, acceptance={"runtime-fixture": ["runtime/dt2.test.ts"]}
+        tmp_path,
+        budget=2,
+        acceptance={"runtime-fixture": ["runtime/samples-live.test.ts"]},
     )
     gate.local.node = "runtime-fixture"
     if from_build:
@@ -1456,7 +1514,7 @@ def test_failed_native_host_workflow_persists_for_rerun_and_blocks_web(
     gate = verify.Gate(tmp_path, budget=2)
     gate.py_tests = []
     verify.run_steps(gate, steps)
-    assert calls == [["mise", "run", "verify:host"]]
+    assert calls == [["pnpm", "verify:host"]]
     assert (tmp_path / "host.log").read_text() == "bad format"
     assert gate.failed.count("host") == 1
     failed = [step for step in gate.failed if step in verify.STEPS]
@@ -1477,39 +1535,30 @@ def test_root_format_scripts_share_scope() -> None:
     assert check[2] == "."
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "tests/regression/scenarios/dn2-trackfx.ts",
-        "tests/regression/scenarios/dn2-trackfx.test.ts",
-        "tests/regression/scenarios/dn2-sendfx.ts",
-        "tests/regression/scenarios/dn2-sendfx.test.ts",
-        "tests/regression/scenarios/fx-support.ts",
-        "tests/regression/vitest.fx.config.ts",
-    ],
-)
-def test_stock_audio_sources_keep_device_oracles_and_tier_checks(path: str) -> None:
-    assert {"host", "check", "check-no-aot", "tier-quick", "smoke"} <= set(
-        verify.steps_for([path])
-    )
-    assert "runtime-fixture" not in verify.steps_for([path])
+DN2_FX_STEPS = {"host", "check", "check-no-aot", "tier-quick", "smoke"}
+DT2_FX_STEPS = {"host", "dt2-check", "dt2-tier-quick", "python-tests", "smoke"}
 
 
 @pytest.mark.parametrize(
-    "path",
+    "path, wanted",
     [
-        "tests/regression/scenarios/dt2-trackfx.ts",
-        "tests/regression/scenarios/dt2-sendfx.ts",
-        "tests/regression/scenarios/dt2-fx.test.ts",
-        "tests/regression/vitest.dt2-fx.config.ts",
-        "tests/regression/scenarios/fx-support.ts",
+        ("tests/regression/scenarios/dn2-trackfx.ts", DN2_FX_STEPS),
+        ("tests/regression/scenarios/dn2-trackfx.test.ts", DN2_FX_STEPS),
+        ("tests/regression/scenarios/dn2-sendfx.ts", DN2_FX_STEPS),
+        ("tests/regression/scenarios/dn2-sendfx.test.ts", DN2_FX_STEPS),
+        ("tests/regression/scenarios/dt2-trackfx.ts", DT2_FX_STEPS),
+        ("tests/regression/scenarios/dt2-sendfx.ts", DT2_FX_STEPS),
+        ("tests/regression/scenarios/dt2-fx.test.ts", DT2_FX_STEPS),
+        ("tests/regression/scenarios/fx-support.ts", DN2_FX_STEPS | DT2_FX_STEPS),
+        ("tests/regression/vitest.config.ts", DN2_FX_STEPS | DT2_FX_STEPS),
     ],
 )
-def test_dt2_stock_audio_sources_keep_device_oracles_and_tier_checks(path: str) -> None:
-    assert {"host", "dt2-check", "dt2-tier-quick", "python-tests", "smoke"} <= set(
-        verify.steps_for([path])
-    )
-    assert "runtime-fixture" not in verify.steps_for([path])
+def test_stock_audio_sources_keep_device_oracles_and_tier_checks(
+    path: str, wanted: set[str]
+) -> None:
+    assert wanted <= set(verify.steps_for([path]))
+    if path != "tests/regression/vitest.config.ts":  # the one config feeds all projects
+        assert "runtime-fixture" not in verify.steps_for([path])
 
 
 @pytest.mark.parametrize(

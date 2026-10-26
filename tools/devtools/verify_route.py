@@ -149,6 +149,22 @@ ACCEPTANCE_DIRS = {
     "runtime-fixture": "runtime",
     "module-load": "modules",
 }
+# Runtime test files by the fixture module they exercise; the gate packs a native artifact for each
+# module (DIGI_RUNTIME_MODULES). Paths are relative to tests/regression.
+RUNTIME_MODULES: dict[str, tuple[str, ...]] = {
+    "test/input-probe": ("runtime/input-adapter.test.ts",),
+    "digikit/remote": ("runtime/remote-input.test.ts",),
+    "test/svc-echo": ("runtime/service-commands.test.ts",),
+}
+# Host sources only these runtime test files read.
+RUNTIME_SOURCES: dict[str, tuple[str, ...]] = {
+    path: ("runtime/samples-live.test.ts", "runtime/samples-store-live.test.ts")
+    for path in (
+        "packages/dk-session/src/dksample.ts",
+        "packages/dk-session/src/rpcfiles.ts",
+        "packages/dk-session/src/samples.ts",
+    )
+}
 ACCEPTANCE_SHARED = (
     "packages/test-support/src/",
     "packages/control-client/src/",
@@ -236,10 +252,7 @@ def acceptance_files(step: str, paths: list[str]) -> list[str]:
     cross-device coverage. Known static leaves retain their existing owners without unrelated uploads.
     """
     directory = ACCEPTANCE_DIRS[step]
-    suffix = {"stock": "", "runtime-fixture": ".runtime", "module-load": ".modules"}[
-        step
-    ]
-    config = f"tests/regression/vitest{suffix}.config.ts"
+    config = "tests/regression/vitest.config.ts"
     all_files = sorted(
         p.relative_to(ROOT / "tests/regression").as_posix()
         for p in (ROOT / "tests/regression" / directory).rglob("*.test.ts")
@@ -251,18 +264,9 @@ def acceptance_files(step: str, paths: list[str]) -> list[str]:
             "devices/digitone-ii-leds.toml",
         }:
             continue
-        if path in {
-            "packages/dk-session/src/dksample.ts",
-            "packages/dk-session/src/rpcfiles.ts",
-            "packages/dk-session/src/samples.ts",
-        }:
+        if path in RUNTIME_SOURCES:
             if step == "runtime-fixture":
-                selected.update(
-                    (
-                        "runtime/dt2-samples-live.test.ts",
-                        "runtime/dn2-samples-store-live.test.ts",
-                    )
-                )
+                selected.update(RUNTIME_SOURCES[path])
             continue
         own = f"tests/regression/{directory}/"
         if path.startswith(own):
@@ -284,10 +288,6 @@ def acceptance_files(step: str, paths: list[str]) -> list[str]:
                 and path.startswith("tools/")
                 and path in acceptance_python(step)
             )
-            or (
-                step == "module-load"
-                and path == "tests/regression/runtime/acceptance.ts"
-            )
         ):
             selected.update(all_files)
         elif step != "stock" and path.startswith(
@@ -306,15 +306,10 @@ def acceptance_files(step: str, paths: list[str]) -> list[str]:
                         for m, f in RUNTIME_UPLOADS.items()
                         if m in hit
                     )
-                elif "digikit/remote" in hit:
-                    selected.update(all_files)
-                elif "test/input-probe" in hit:
-                    selected.update(
-                        (
-                            "runtime/dt2-input-adapter.test.ts",
-                            "runtime/dn2-input-adapter.test.ts",
-                        )
-                    )
+                else:
+                    for module, files in RUNTIME_MODULES.items():
+                        if module in hit:
+                            selected.update(files)
         elif step == "stock" and path.startswith("tests/regression/goldens/"):
             selected.update(all_files)
     return sorted(selected)

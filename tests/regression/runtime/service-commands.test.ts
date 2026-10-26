@@ -1,22 +1,14 @@
-import path from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { hasCap } from '@digi/dk-session';
 import { RANGES } from '@digi/dk-session/gen_proto';
-import { repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { installModule } from './transfer-cli.ts';
+import { installModule, moduleArtifact, runtimeTests, settleLive } from './live.ts';
 
 /** Port of live-svc: runtime command registration, dispatch and refusal semantics. */
-export async function expectServiceCommands({ session, dk }: PatchedSession): Promise<void> {
+async function expectServiceCommands({ session, dk }: PatchedSession): Promise<void> {
   // live-svc uses live_boot's default on both devices, not the remote scenario's DN2 settle.
-  await delay(12_000);
-  await installModule(
-    session,
-    'test/svc-echo',
-    path.join(repoRoot(), 'out/regression/service-command', session.options.device),
-    300_000,
-  );
+  await settleLive(session);
+  await installModule(dk, 'test/svc-echo', moduleArtifact(session.options.device, 'test/svc-echo'));
   expect(hasCap(await dk.info(), 'SERVICE_CMDS'), 'INFO advertises service commands').toBe(true);
   expect(RANGES.remote_state, 'reserved remote state command range').toEqual([0x3e, 0x3f]);
 
@@ -44,3 +36,7 @@ export async function expectServiceCommands({ session, dk }: PatchedSession): Pr
   expect((await dk.request(0x3d)).status, 'unregistered command is E_PROTO').toBe(-60);
   await session.expectNoFault('service commands');
 }
+
+runtimeTests('service commands echo bodies and preserve registration and dispatch refusals', expectServiceCommands, {
+  timeout: 360_000,
+});

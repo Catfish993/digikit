@@ -12,7 +12,7 @@ vi.mock('node:fs', async (original) => ({
     writeFileSync: fake.write,
   },
 }));
-import { installModule, transferCommand } from '../runtime/transfer-cli.ts';
+import { cliInstall, transferCommand } from '../runtime/transfer-cli.ts';
 
 const session = { runDir: '/run/own-daemon' } as Session;
 
@@ -25,7 +25,7 @@ test('service install uses its own module, artifact directory and 300-second dea
     stdout: 'install progress\n{"event":"result","loaded":["test/svc-echo"]}\n',
     stderr: '',
   });
-  await installModule(session, 'test/svc-echo', '/artifacts/service-command/dt2', 300_000);
+  await cliInstall(session, 'test/svc-echo', '/artifacts/service-command/dt2', 300_000);
   expect(fake.exec.mock.calls[0]?.[1].slice(-4)).toEqual(['--json', 'install', 'test/svc-echo', '--restart']);
   expect(fake.exec.mock.calls[0]?.[2].timeout).toBe(300_000);
   expect(fake.write.mock.calls[0]?.[0]).toBe('/artifacts/service-command/dt2/install.log');
@@ -35,7 +35,7 @@ test.each(['', '{"event":"progress"}\n', '{"event":"result","loaded":["digikit/r
   'service install rejects missing or unrelated loaded results: %j',
   async (stdout) => {
     fake.exec.mockResolvedValueOnce({ stdout, stderr: '' });
-    await expect(installModule(session, 'test/svc-echo', '/artifacts/service-command/dt2')).rejects.toThrow(
+    await expect(cliInstall(session, 'test/svc-echo', '/artifacts/service-command/dt2')).rejects.toThrow(
       'install --restart did not load test/svc-echo',
     );
     expect(fake.write).toHaveBeenCalledWith('/artifacts/service-command/dt2/install.log', `${stdout}\n`);

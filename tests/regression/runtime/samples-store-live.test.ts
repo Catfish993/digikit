@@ -2,12 +2,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import type { PatchedSession } from '../support.ts';
-import { liveArtifacts, liveCheck as check, liveProtocol, sampleWav, settleLive } from './live.ts';
+import { liveArtifacts, liveCheck as check, liveProtocol, runtimeTests, sampleWav, settleLive } from './live.ts';
 import { repoRoot } from '@digi/test-support';
 import { hexSha256 } from '@digi/dk-session';
 import { openSamples } from '@digi/dk-session/samples';
 
-export async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
+async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
   await settleLive(session);
   const out = liveArtifacts(session, 'samples-store-live');
   const wav = sampleWav(2);
@@ -150,3 +150,9 @@ export async function expectSamplesStore({ session }: PatchedSession): Promise<v
     protocol.cancelPending();
   }
 }
+
+runtimeTests('samples-store-live conversion, upload and persistent card bytes', expectSamplesStore, {
+  devices: ['dn2'],
+  mirror: true,
+  timeout: 1_000_000,
+});

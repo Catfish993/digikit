@@ -9,13 +9,11 @@
   "scripts": {
     "dev": "pnpm --filter @digi/web dev",
     "build": "pnpm --filter @digi/web build",
-    "check": "pnpm --filter @digi/web check",
     "lint": "oxlint",
     "fmt": "prettier --write . '!out/**' '!**/target/**' '!**/gen/**' '!**/dist/**' '!**/.astro/**' '!apps/web/.local/**'",
     "fmt:check": "prettier --check . '!out/**' '!**/target/**' '!**/gen/**' '!**/dist/**' '!**/.astro/**' '!apps/web/.local/**'",
-    "test": "pnpm --filter @digi/web test:audio",
-    "test:regression": "pnpm --filter @digi/regression test",
-    "test:host": "vitest run --config vitest.host.config.ts"
+    "test:host": "vitest run --config vitest.host.config.ts",
+    "verify:host": "oxlint && pnpm fmt:check && pnpm test:host && pnpm -r run typecheck"
   },
   "devDependencies": {
     "eslint-plugin-solid": "0.18.1",
