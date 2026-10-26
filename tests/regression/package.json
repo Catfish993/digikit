@@ -5,7 +5,7 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
-    "typecheck": "pnpm --filter @digi/dk-session build:types && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:update": "UPDATE_GOLDENS=1 vitest run",
     "test:runtime": "vitest run --config vitest.runtime.config.ts",

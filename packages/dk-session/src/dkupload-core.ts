@@ -149,7 +149,8 @@ export class Dk {
     try {
       return f(...ptrs);
     } finally {
-      blocks.forEach((b, i) => this.x.dk_free(ptrs[i], b.length));
+      // Each block has its corresponding pointer from the map above.
+      blocks.forEach((b, i) => this.x.dk_free(ptrs[i]!, b.length));
     }
   }
 
@@ -292,7 +293,7 @@ export class DkClient {
           r = this.dk.decode(raw);
         } catch (e) {
           // A device error carries the seq in the JSON only; match it through a second decode of the header.
-          if (raw[6] === seq && (raw[5] & 0x3f) === cmd) throw e;
+          if (raw[6] === seq && (raw[5]! & 0x3f) === cmd) throw e;
           continue;
         }
         if (r && r.seq === seq && r.cmd === cmd) return r;
@@ -362,7 +363,7 @@ export class DkClient {
     onProgress: (index: number, p: DkProgress) => boolean | void = () => true,
   ): Promise<void> {
     await this.clear();
-    for (let i = 0; i < files.length; i++) await this.put(files[i].path, files[i].data, (p) => onProgress(i, p));
+    for (let i = 0; i < files.length; i++) await this.put(files[i]!.path, files[i]!.data, (p) => onProgress(i, p));
   }
 }
 
@@ -392,9 +393,9 @@ export function encode8in7(data: Uint8Array): Uint8Array {
   for (let i = 0; i < data.length; i += 7) {
     const n = Math.min(7, data.length - i);
     let top = 0;
-    for (let k = 0; k < n; k++) top |= (data[i + k] >> 7) << (6 - k);
+    for (let k = 0; k < n; k++) top |= (data[i + k]! >> 7) << (6 - k);
     out[at++] = top;
-    for (let k = 0; k < n; k++) out[at++] = data[i + k] & 0x7f;
+    for (let k = 0; k < n; k++) out[at++] = data[i + k]! & 0x7f;
   }
   return out;
 }
@@ -402,9 +403,9 @@ export function encode8in7(data: Uint8Array): Uint8Array {
 export function decode8in7(packed: Uint8Array): Uint8Array {
   const out: number[] = [];
   for (let i = 0; i < packed.length; i += 8) {
-    const top = packed[i];
+    const top = packed[i]!;
     const n = Math.min(7, packed.length - i - 1);
-    for (let k = 0; k < n; k++) out.push(packed[i + 1 + k] | (((top >> (6 - k)) & 1) << 7));
+    for (let k = 0; k < n; k++) out.push(packed[i + 1 + k]! | (((top >> (6 - k)) & 1) << 7));
   }
   return Uint8Array.from(out);
 }
@@ -438,11 +439,16 @@ export interface RawReply {
 
 /** One of our replies, or null for any other message. */
 export function parseReply(msg: Uint8Array): RawReply | null {
-  if (msg.length < 9 || msg[msg.length - 1] !== 0xf7 || !(msg[5] & 0x40)) return null;
+  if (msg.length < 9 || msg[msg.length - 1] !== 0xf7 || !(msg[5]! & 0x40)) return null;
   if (PREFIX.some((b, i) => msg[i] !== b)) return null;
   const body = decode8in7(msg.subarray(7, msg.length - 1));
   if (body.length === 0) return null;
-  return { cmd: msg[5] & 0x3f, seq: msg[6], status: body[0] >= 128 ? body[0] - 256 : body[0], body: body.subarray(1) };
+  return {
+    cmd: msg[5]! & 0x3f,
+    seq: msg[6]!,
+    status: body[0]! >= 128 ? body[0]! - 256 : body[0]!,
+    body: body.subarray(1),
+  };
 }
 
 /** The complete `F0 .. F7` messages at the front of `stream` (bytes before an F0 are dropped); the rest stays in `rest`. */
@@ -592,7 +598,7 @@ export function parseRpcReply(msg: Uint8Array): [number, Uint8Array] | null {
   if (msg.length < 13 || msg[msg.length - 1] !== 0xf7 || RPC_HEADER.some((b, i) => msg[i] !== b)) return null;
   const body = decode8in7(msg.subarray(6, msg.length - 1));
   if (body.length < 5) return null;
-  return [body[4] & 0x7f, body.subarray(5)];
+  return [body[4]! & 0x7f, body.subarray(5)];
 }
 
 /** The 1024 shadow-buffer bytes of a Screenshot reply payload (`byte (7 - y / 8) + 8 x`, bit `y mod 8`), or null for another shape. */
@@ -602,9 +608,9 @@ export function decodeScreen(payload: Uint8Array): Uint8Array | null {
   return payload.subarray(SCREEN_HEADER.length);
 }
 
-/** The pixel at (x, y), 0 to 127 and 0 to 63, of a screen buffer. */
+/** The pixel at (x, y), 0 to 127 and 0 to 63, of a complete `SCREEN_BYTES` screen buffer. */
 export const screenPixel = (buf: Uint8Array, x: number, y: number): boolean =>
-  ((buf[7 - (y >> 3) + 8 * x] >> (y & 7)) & 1) === 1;
+  ((buf[7 - (y >> 3) + 8 * x]! >> (y & 7)) & 1) === 1;
 
 /** The state of digikit/remote (REMOTE_STATE): the DIGIKIT > REMOTE switch, the state format and how many detents one TURN takes. */
 export interface RemoteState {
@@ -613,7 +619,10 @@ export interface RemoteState {
   turnLimit: number;
 }
 
-/** The whole protocol over a transport (`send` one message, `recv` the next): pure TypeScript, requests one at a time. */
+/**
+ * The whole protocol over a transport (`send` one message, `recv` the next): pure TypeScript, requests one at a time.
+ * Required reply fields assume the command's wire format; indexed assertions retain that existing decoder contract.
+ */
 export class DkSession {
   private t: DkTransport;
   private seq = 0;
@@ -691,7 +700,7 @@ export class DkSession {
     const [port, at] = cstr(b, 4);
     const free = u32(b, at);
     const maxChunk = u32(b, at + 4);
-    const flags = b[at + 8];
+    const flags = b[at + 8]!;
     // appended by later runtimes: the log range (8 bytes), then the packed runtime version and the capability bits
     let caps: number | null = null;
     if (b.length >= at + 9 + 8 + 8) {
@@ -722,7 +731,7 @@ export class DkSession {
     for (;;) {
       const b = await this.ok(GCMD.LIST, 'ls', concat(be32(out.length), tail));
       const total = u32(b, 0);
-      const n = b[4];
+      const n = b[4]!;
       let at = 5;
       for (let i = 0; i < n; i++) {
         const [path, next] = cstr(b, at);
@@ -754,14 +763,14 @@ export class DkSession {
     let start = 0;
     for (;;) {
       const b = await this.ok(GCMD.MODULES, 'modules', Uint8Array.of(start));
-      const total = b[16];
-      const n = b[17];
+      const total = b[16]!;
+      const n = b[17]!;
       let at = 18;
       for (let i = 0; i < n; i++) {
-        const nt = b[at + 65];
-        const name = new TextDecoder().decode(b.subarray(at + 1, at + 33)).split('\0')[0];
+        const nt = b[at + 65]!;
+        const name = new TextDecoder().decode(b.subarray(at + 1, at + 33)).split('\0')[0]!;
         out.push({
-          index: b[at],
+          index: b[at]!,
           name,
           version: u32(b, at + 33),
           contracts: [0, 1, 2, 3].map((k) => [b[at + 37 + 2 * k], b[at + 38 + 2 * k]] as [number, number]),
@@ -772,9 +781,9 @@ export class DkSession {
           rows: u32(b, at + 61),
           types: Array.from(b.subarray(at + 66, at + 66 + nt)),
           faults: u32(b, at + 66 + nt),
-          guard_off: (b[at + 70 + nt] & 1) !== 0,
+          guard_off: (b[at + 70 + nt]! & 1) !== 0,
         });
-        start = b[at] + 1;
+        start = b[at]! + 1;
         at += 71 + nt;
       }
       if (out.length >= total || n === 0) return out;
@@ -786,9 +795,9 @@ export class DkSession {
     const b = await this.ok(GCMD.CAPACITY, 'capacity');
     const names = new Map(Object.entries(CAPACITY_KINDS).map(([n, k]) => [k as number, n]));
     const out: Record<string, CapacityEntry> = {};
-    for (let i = 0; i < b[1]; i++) {
+    for (let i = 0; i < b[1]!; i++) {
       const at = 2 + 13 * i;
-      out[names.get(b[at]) ?? `kind${b[at]}`] = {
+      out[names.get(b[at]!) ?? `kind${b[at]}`] = {
         limit: u32(b, at + 1),
         used: u32(b, at + 5),
         largest: u32(b, at + 9),
@@ -850,7 +859,7 @@ export class DkSession {
   /** LOG: events from `from` on (the log of this boot), `[oldest, newest, events]`. */
   async logPage(from: number, quick = false): Promise<[number, number, DkLogEvent[]]> {
     const b = await this.ok(GCMD.LOG, 'log', be32(from), quick);
-    const n = b[8];
+    const n = b[8]!;
     const events: DkLogEvent[] = [];
     for (let i = 0; i < n; i++) {
       const at = 9 + 32 * i;
@@ -871,8 +880,8 @@ export class DkSession {
     for (;;) {
       const [, newest, events] = await this.logPage(from, quick);
       out.push(...events);
-      if (events.length === 0 || events[events.length - 1].seq >= newest) return out;
-      from = events[events.length - 1].seq + 1;
+      if (events.length === 0 || events[events.length - 1]!.seq >= newest) return out;
+      from = events[events.length - 1]!.seq + 1;
     }
   }
 
@@ -880,7 +889,7 @@ export class DkSession {
   /** REMOTE_STATE: answered while the switch is off; E_PROTO when digikit/remote is not loaded. */
   async remoteState(): Promise<RemoteState> {
     const b = await this.ok(SERVICE_CMD.REMOTE_STATE, 'remote state');
-    return { enabled: b[0] === 1, format: b[1], turnLimit: b[2] };
+    return { enabled: b[0] === 1, format: b[1]!, turnLimit: b[2]! };
   }
   /** REMOTE_KEY: press (`down`) or release the key with the device file's panel code. E_DISABLED while the switch is off. */
   async remoteKey(code: number, down: boolean): Promise<void> {
@@ -890,7 +899,7 @@ export class DkSession {
   async remoteTurnOnce(encoder: number, delta: number): Promise<number> {
     const part = Math.max(-127, Math.min(127, delta));
     const b = await this.ok(SERVICE_CMD.REMOTE_TURN, 'remote turn', Uint8Array.of(encoder, part & 255));
-    return b[0] > 127 ? b[0] - 256 : b[0];
+    return b[0]! > 127 ? b[0]! - 256 : b[0]!;
   }
   /** REMOTE_TURN for a whole delta: sends the rest again after `paceMs` until it is taken. */
   async remoteTurn(encoder: number, delta: number, paceMs = 150): Promise<void> {
@@ -1011,7 +1020,7 @@ export function restarted(events: DkLogEvent[]): boolean {
     if (e.kind === LOG_KIND.UPLOAD && e.args[0] === GCMD.RESTART) {
       if ((e.flags & 1) !== 0 && e.args[1] !== 0)
         throw new DkError({
-          error: `the runtime refused the restart (status ${e.args[1] | 0}; a card transfer is in flight, try again)`,
+          error: `the runtime refused the restart (status ${e.args[1]! | 0}; a card transfer is in flight, try again)`,
           kind: 'refused',
         });
       asked = true;

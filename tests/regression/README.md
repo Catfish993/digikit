@@ -56,8 +56,7 @@ and depends on `host`, including with `--only web`. Normal host-path routing ski
 exemptions, and unknown paths still select conservative smoke, including mixed changes. Desktop
 UI tests select only `host` and retain the existing UI-only smoke exemption; production desktop
 helpers retain application checks.
-Consumer typecheck/check scripts explicitly generate `@digi/dk-session` declarations first; its runtime
-export still resolves to the existing TypeScript source. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
+Consumer typecheck/check scripts and runtime imports resolve `@digi/dk-session` TypeScript source directly. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
 
 The `runtime-fixture` gate step runs the remote-keys and remote-control acceptance cases sequentially,
 with one fresh coupled daemon per file/device. It requests `firmware.load {runtime:true, start:"auto"}` and the existing
@@ -81,6 +80,17 @@ DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_EMUD_DN2=/path/to/dn2-emud \
   DIGI_RUNTIME_CARD="$PWD/out/runs/patchkit/samples" \
   mise run verify -- --only runtime-fixture
 ```
+
+For a focused native Vitest run, use the same reviewed binaries, ready inputs and generated card samples:
+
+```sh
+DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_EMUD_DN2=/path/to/dn2-emud \
+  DIGI_RUNTIME_CARD="$PWD/out/runs/patchkit/samples" \
+  mise run test:runtime -- service-commands
+```
+
+`test:runtime` passes filters directly to the runtime Vitest configuration, runs one coupled daemon at a time,
+and never builds native binaries. Omitting the filter runs all runtime acceptance files.
 
 The step shares the gate CPU budget (one coupled daemon, two cores; use a budget of at least two).
 Selecting it alone adds no build prerequisite. When another selected step already requires

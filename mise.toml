@@ -157,6 +157,10 @@ description = "Exactness gate, every step; the AOT = no-AOT sweep runs the fixed
 run = "pnpm test:host"
 description = "Run the host-only Vitest projects with the native test runner; no native/WASM build or device checks"
 
+[tasks."test:runtime"]
+run = "pnpm --filter @digi/regression test:runtime"
+description = "Explicit coupled runtime acceptance, serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries and DIGI_RUNTIME_CARD samples; no implicit native build; accepts Vitest filters (for example -- service-commands)"
+
 [tasks."test:quick"]
 run = [
   "uv run python -m pytest -q tests/emulator/test_native_emu_launcher.py tests/emulator/test_native_pgo.py tests/emulator/test_native_target.py tests/emulator/test_coupled_tool.py",

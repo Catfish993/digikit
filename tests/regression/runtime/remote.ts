@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { DkSession } from '@digi/dk-session';
 import { button, repoRoot, resolveInputs, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
+import { installModule } from './module-install.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
@@ -89,34 +90,7 @@ export async function prepareRemote({ session }: PatchedSession): Promise<Remote
 
 /** Install only: negative device-set cases need no offline ABOUT symbol plan. */
 export async function installRemote(session: Session): Promise<void> {
-  const artifacts = remoteArtifacts(session);
-  const install = await exec(
-    'uv',
-    [
-      'run',
-      'python',
-      '-m',
-      'tools.device.dktransfer',
-      '--emu',
-      '--run-dir',
-      session.runDir,
-      '--json',
-      'install',
-      'digikit/remote',
-      '--restart',
-    ],
-    { cwd: root, timeout: 90_000, maxBuffer: 4 * 1024 * 1024 },
-  );
-  const { stdout } = install;
-  fs.writeFileSync(path.join(artifacts, 'install.log'), `${stdout}\n${install.stderr}`);
-  const events = stdout
-    .split('\n')
-    .filter((line) => line.startsWith('{'))
-    .map((line) => JSON.parse(line));
-  const result = events.find((event) => event.event === 'result');
-  if (!result?.loaded?.includes('digikit/remote')) {
-    throw new Error(`install --restart did not load digikit/remote: ${stdout}`);
-  }
+  await installModule(session, 'digikit/remote', remoteArtifacts(session));
 }
 
 export async function remoteTap(dk: DkSession, name: string, settleMs = 1200): Promise<void> {

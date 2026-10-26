@@ -9,7 +9,7 @@
     "dev": "astro dev",
     "prebuild": "PYTHONPATH=../.. python3 -m tools.emulator.native_wasm && node scripts/gen-modules.mjs",
     "build": "astro build",
-    "check": "pnpm --filter @digi/dk-session build:types && astro check",
+    "check": "astro check",
     "test": "node --test \"tests/*.test.mjs\"",
     "test:audio": "node --test \"tests/*.test.mjs\""
   },
