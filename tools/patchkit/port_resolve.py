@@ -51,6 +51,11 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py
                  anchor. The hash masks address operands, so one rule serves relinked builds; a hash with fewer
                  functions than the ordinal needs is an error. Needs the image's cfdb (out/cfdb/<image>-emac).
 
+  cf_vtable_slot class = <RTTI class name>, slot = <vtable slot>, offset_to_top = <0 for the primary vtable, default 0;
+                 negative for a secondary one>, offset = <bytes from the function entry; default 0>, len = <bytes>: a
+                 code anchor on the function in that slot, for virtual functions whose hash is not unique. Exactly
+                 one cfdb vtables row must match the class, offset_to_top and slot. Needs the image's cfdb.
+
   cf_params_t1   the parameter descriptor table (60-byte rows), found by the 36-byte signature of its reader (finding 02,
                  exactly one match): a data anchor over all rows (the row count is the length / 60).
   cf_params_sites  the sites of the code that depend on that table, for core/params: the 2-aligned words that point
@@ -341,6 +346,34 @@ class CfFacts:
         ).fetchone()
         return (int(row[0]), h[0] if h else None)
 
+    def vtable_slot(self, cls: str, slot: int, offset_to_top: int = 0) -> list[int]:
+        """Targets of the cfdb vtables rows for CLS, OFFSET_TO_TOP and SLOT."""
+        from tools.coldfire import cf
+
+        image = f"{self.name}-emac"
+        db = cf.load(image).db
+        return [
+            int(r[0])
+            for r in db.execute(
+                "SELECT target FROM vtables WHERE image=? AND class=? AND offset_to_top=? AND slot=?",
+                (image, cls, offset_to_top, slot),
+            )
+        ]
+
+    def own_vtable_slots(self, entry: int) -> list[tuple[str, int, int]]:
+        """(class, offset_to_top, slot) of the vtables rows that point at ENTRY and whose owner is the class itself."""
+        from tools.coldfire import cf
+
+        image = f"{self.name}-emac"
+        db = cf.load(image).db
+        return [
+            (r[0], int(r[1]), int(r[2]))
+            for r in db.execute(
+                "SELECT class, offset_to_top, slot FROM vtables WHERE image=? AND target=? AND owner=class",
+                (image, entry),
+            )
+        ]
+
     def cave(self) -> dict:
         return next(
             c
@@ -495,6 +528,24 @@ def cf_func_addr(cf: CfFacts, rule: dict) -> int:
     return hits[ordinal] + int(rule["offset"])
 
 
+def pick_vtable_target(targets: list[int], what: str, where: str) -> int:
+    """The one target among the vtables rows TARGETS for WHAT; none or several is an error."""
+    if len(targets) != 1:
+        raise ResolveError(f"{what} matches {len(targets)} vtables rows in {where}")
+    return targets[0]
+
+
+def cf_vtable_addr(cf: CfFacts, rule: dict) -> int:
+    """Address `offset` bytes into the function in slot `slot` of the vtable of `class` (at `offset_to_top`)."""
+    ott = int(rule.get("offset_to_top", 0))
+    target = pick_vtable_target(
+        cf.vtable_slot(rule["class"], int(rule["slot"]), ott),
+        f"{rule['name']}: class {rule['class']} slot {rule['slot']} offset_to_top {ott}",
+        cf.name,
+    )
+    return target + int(rule.get("offset", 0))
+
+
 def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     kind = rule["kind"]
     if kind == "cf_params_t1":
@@ -529,8 +580,8 @@ def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
             "src": src,
             "sha256": sha(cf.bytes_at(target, n)),
         }
-    if kind == "cf_func":
-        addr = cf_func_addr(cf, rule)
+    if kind in ("cf_func", "cf_vtable_slot"):
+        addr = cf_func_addr(cf, rule) if kind == "cf_func" else cf_vtable_addr(cf, rule)
         n = int(rule["len"])
         return {
             "kind": "code",
@@ -826,15 +877,34 @@ def load_image(name: str, root: Path = ROOT) -> tuple[CfFacts, Dsp]:
 
 def cf_rule_at(cf: CfFacts, addr: int, length: int) -> dict:
     """A `cf_func` rule for the LENGTH bytes at ADDR: the cfdb function that contains ADDR, found by its h_strict
-    hash (with `ordinal` when other functions share the hash) and ADDR's offset from the entry."""
+    hash (with `ordinal` when other functions share the hash) and ADDR's offset from the entry. When more than
+    MAX_SAME_HASH functions share the hash, a `cf_vtable_slot` rule on a class whose own virtual function it is."""
     found = cf.func_at(addr)
     if found is None:
         raise ResolveError(f"no function contains {addr:#x} in {cf.name}")
     entry, h = found
     if h is None:
         raise ResolveError(f"the function at {entry:#x} in {cf.name} has no hash")
-    rule: dict = {"kind": "cf_func", "hash": h}
     hits = cf.funcs_by_hash(h)
+    from tools.firmware.catalog import MAX_SAME_HASH
+
+    if len(hits) > MAX_SAME_HASH:
+        own = sorted(
+            cf.own_vtable_slots(entry), key=lambda s: (s[1] != 0, abs(s[1]), s[0])
+        )
+        if not own:
+            raise ResolveError(
+                f"the function at {entry:#x} in {cf.name}: hash shared by {len(hits)} functions"
+                " and not a class's own virtual function"
+            )
+        cls, ott, slot = own[0]
+        rule = {"kind": "cf_vtable_slot", "class": cls, "slot": slot}
+        if ott:
+            rule["offset_to_top"] = ott
+        rule["offset"] = addr - entry
+        rule["len"] = length
+        return rule
+    rule = {"kind": "cf_func", "hash": h}
     if len(hits) > 1:
         rule["ordinal"] = hits.index(entry)
     rule["offset"] = addr - entry

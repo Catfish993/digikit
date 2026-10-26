@@ -59,7 +59,7 @@ def suggest_rule(
     if n <= MAX_SAME_HASH and entry in same_hash_entries_sorted:
         return (func_kind, list(same_hash_entries_sorted).index(entry))
     if n > MAX_SAME_HASH and is_vfunc:
-        return ("vtable_slot", None)  # label only; not resolvable yet
+        return ("cf_vtable_slot", None)
     return ("none", None)
 
 

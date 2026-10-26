@@ -58,7 +58,7 @@ Review page: `uv run python -m tools.firmware.catalog_page dt2-1.17 [--labels FI
 | h_strict, hash_count, stable | hash, functions with the same hash, same hash as the matched function in the old version (NULL: unknown) |
 | pair_addr, pair_method, pair_same_hash | the matched function on the other device |
 | anchors | existing anchors in the function (these score lower) |
-| rule_kind, rule_ordinal, rule_both | suggested rule (cf_func, vtable_slot, none) and whether it is the same on both devices |
+| rule_kind, rule_ordinal, rule_both | suggested rule (cf_func, cf_vtable_slot, none) and whether it is the same on both devices |
 | anchor_grade, score | 1 when a hash rule fits both devices and versions; ranking |
 | caller_classes | up to 3 classes whose vfuncs call it, as `Class:count` |
 | callees_known | up to 3 callees that are anchored or named, most called first |

@@ -28,6 +28,10 @@ uv run python -m tools.firmware.catalog emit-rule dt2-1.17 0x40113dc8 --other dn
 uv run python -m tools.firmware.catalog declare dt2-1.17 0x40113dc8 cf.text.fn.draw_fmt --other dn2-1.12 --doc "..." [--write]
 ```
 
+A virtual function whose hash is shared by more than four functions gets a `cf_vtable_slot` rule instead
+(`{ kind = "cf_vtable_slot", class = "ConfirmWindow", slot = 4, offset = 0, len = 8 }`; `offset_to_top` defaults to 0):
+it names the RTTI class and the vtable slot, and a class with another name on the other device gets its own rule.
+
 `declare` prints a `mark = "O"` entry (a shared rule, or one rule per device) and with `--write` adds it to the
 subsystem file in name order. Review the entry and raise the mark after a check against image bytes.
 

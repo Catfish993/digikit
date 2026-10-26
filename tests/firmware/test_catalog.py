@@ -17,7 +17,7 @@ class SuggestRuleTest(unittest.TestCase):
     def test_many_same_hash(self) -> None:
         group = [0x100, 0x200, 0x300, 0x400, 0x500]
         self.assertEqual(
-            catalog.suggest_rule(0x200, group, True), ("vtable_slot", None)
+            catalog.suggest_rule(0x200, group, True), ("cf_vtable_slot", None)
         )
         self.assertEqual(catalog.suggest_rule(0x200, group, False), ("none", None))
 

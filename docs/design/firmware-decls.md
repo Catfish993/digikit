@@ -53,7 +53,7 @@ file per device.
 
 | Kind | Names | Today's rule kinds | Port anchor kind |
 |---|---|---|---|
-| `fn` | `cf.view.fn.push` | `cf_func`, `sharc_func` | `code` |
+| `fn` | `cf.view.fn.push` | `cf_func`, `cf_vtable_slot`, `sharc_func` | `code` |
 | `data` | `cf.menu.data.icon_ref` | `cf_ptr`, `sharc_table`, `sharc_mem_addr` | `data` |
 | `value` | `dsp.voice.value.frame_base` | `sharc_literal` | `value` |
 | `sites` | `cf.params.sites.ref` | `cf_params_refs`, `cf_params_bounds` | `sites` |
