@@ -30,13 +30,15 @@ owner; split mixed suites incrementally when selection and independent setup jus
 | --- | --- |
 | Desktop UI or app | `desktop` builds/types the UI and tests the app crate; `host` covers the host projects. Desktop UI test files select only `host`. Ordinary desktop paths no longer select web/WASM. Temporary exceptions: `apps/desktop/ui/src/card-core.ts` and `apps/desktop/ui/src/samples-core.ts` retain `web` because `apps/web/tests/samples-page.test.mjs` imports them. Actual app workflows require separate E2E acceptance. |
 | Emulator | Routed builds, Rust tests and relevant device/scenario oracles check emulator behavior; CF-only UI evidence does not establish coupled DSP/audio behavior. Inspect `verify -- --explain` for the selected prerequisites. |
-| Leaf module | Affected Python/Rust tests, named scenarios and conformance; web only for gallery inputs, with broad smoke retained. Isolated native module tests remain a proposed boundary, not a replacement for firmware integration. |
-| Patched runtime intended for flashing | Python/Rust and broad smoke remain normally routed; framework modules also select dependent patchkit/digikit coverage. Migrated TypeScript runtime acceptance is full/explicit-only (`runtime-fixture` or `test:runtime`), so ordinary verification does not cover those acceptance assertions. Physical installation/operation requires separate target acceptance. |
+| Leaf module | Affected Python/Rust tests, named scenarios and conformance; web only for gallery inputs; affected production uploads select `module-load`. Smoke filters only the three audited production leaves described below. Isolated native module tests remain a proposed boundary, not a replacement for firmware integration. |
+| Patched runtime intended for flashing | Python/Rust, dependent patchkit/digikit checks and conservative smoke remain routed. Relevant runtime/shared dependencies select `runtime-fixture` and `module-load`; direct acceptance edits use native filename filters. Explicit owner tasks remain available for focused acceptance. Physical installation/operation requires separate target acceptance. |
 
-`test:changed` selects Python/Rust/module checks only; run `test:host` or `verify:host` separately for
-host work. Host includes fake-server component integration as well as unit tests; the execution target does not make every host test a unit test. Selected Python tests can still build or start devices. Further splitting of mixed Python
-suites into host-only and device checks is pending. Smoke remains broad except the documented UI-only and exact exemptions; no new
-exemptions follow from these levels. Future hardware scenarios should reuse suitable semantic actions
+`test:changed` is the fast host preflight; `verify:pre` is an alias for the same command.
+It runs static checks, selected audited tooling units, native related host Vitest tests and host types.
+Other selected Python tests, Rust, module conformance/builds and device checks are explicitly deferred
+to the routed gate. Host includes fake-server component integration as well as unit tests.
+Smoke remains conservative outside the documented UI/exact
+exemptions and audited production-leaf filtering; no new exemptions follow from these levels. Future hardware scenarios should reuse suitable semantic actions
 and assertions, with target-specific condition waits rather than precise emulator instruction timing.
 
 Before migrating a suite, inventory old/new test identities, assertions, fixtures, device versions/modes,
@@ -48,7 +50,7 @@ Session reuse needs a demonstrated independent reset of firmware, DSP, card, pen
 state, plus failure/cancellation cleanup. Fresh sessions remain the runtime fixture's current isolation;
 pooling/reset safety and further migrations are separate work. Stock FX renders independently restore ready snapshots per scenario; that does not establish a fresh patched-runtime reset contract.
 
-The live samples, sample-store and input-adapter cases now use managed runtime Vitest fixtures; their Python live wrappers/scenarios are removed. Stock DT2 assertions have the routed `stock` owner; `module-load` selects affected production uploads. Independent reset/session reuse, an all-module patched-firmware load proof and actual application E2E coverage remain distinct gaps. The previous broad gate failed runtime acceptance; the revised semantic/input boundaries below are awaiting six focused runtime cases.
+The live samples, sample-store and input-adapter cases now use managed runtime Vitest fixtures; their Python live wrappers/scenarios are removed. Stock DT2 assertions have the routed `stock` owner; `module-load` selects affected production uploads. Independent reset/session reuse, an all-module patched-firmware load proof and actual application E2E coverage remain distinct gaps. All six focused input/remote runtime cases passed after the semantic/input and pacing fixes. The previous broad gate failed runtime acceptance and misreported Python success; it has not been rerun after those fixes. Focused passes do not establish a new broad-gate pass.
 
 ## Layout
 
@@ -77,7 +79,7 @@ Other tests:
 - `apps/web/tests` holds the web app's node tests (`pnpm test`).
 - Host Vitest owners are `packages/control-client/tests`, `packages/dk-session/tests`,
   `packages/test-support/tests`, `apps/desktop/ui/tests` and `tests/regression/host` (`pnpm test:host`).
-- `tests/regression/runtime` holds explicit coupled firmware acceptance; `tests/regression` also owns
+- `tests/regression/runtime` holds relevant-change and explicit coupled firmware acceptance; `tests/regression` also owns
   stock CF-only device scenarios. See [fixture details](../tests/regression/README.md).
 - Rust tests live in their crates (`cargo nextest run`, run through `tools/devtools/rust_ws.py`).
 
@@ -99,7 +101,7 @@ six `module-load` cells (597 seconds) and smoke (576 seconds). The reported Pyth
 two deleted live-test paths exited pytest with code 4 and empty valid JUnit. Follow-up fixes prevent
 direct routing of deleted test files and make every nonzero exit fail aggregation, adding a file-level
 error when JUnit reports no failed/error cases. The existing 16 outcome tests and a targeted verify
-reporting check pass; the broad gate has not been rerun with these fixes.
+reporting check pass; no corrected broad gate has completed. The later cancelled rerun is recorded below.
 
 The runtime stage had five failures. DT2 samples hit a repeat-run artifact collision, now fixed with
 persistent unique `out/regression/<workflow>/<device>/run-*` directories cached per Session/workflow.
@@ -109,7 +111,7 @@ DT2 input two distinct screens instead of three, DN2 remote pacing second reply 
 DN2 remote keys no OLED change after TURN. The revised contracts below replace unsupported arbitrary
 screen-change and adjacent-host-call timing claims with independent semantic navigation, delivery
 and deterministic pacing checks. All six focused runtime cases (three per device) now pass under those revised meaningful contracts;
-this is not a rerun of the old invalid assertions or a new broad gate. The separate chorus-width and zero-DSP restart limits remain.
+this is not a rerun of the old invalid assertions or a new broad gate. The separate chorus-width failure and zero-DSP UI limits remain.
 
 The real reversal-cap bug is fixed: pending +30 followed by -100 previously accepted -60, now -30.
 The authored remote object was rebuilt and its both-device lifecycle plus C unit passed in 128.03
@@ -148,14 +150,14 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run test:slow` | The same runner with `--pytest-arg=--slow` and a one-hour per-file timeout, then `tools/devtools/rust_ws.py gates` | Slow runs and the ignored Rust gates that need private fixtures |
 | `mise run lint` | `lint:py` (ruff check and format check on the `CLEAN` list), `lint:web` (oxlint on the JS/TS workspaces), `fmt:check` (Prettier check; `mise run fmt` formats in place), `lint:rust` (cargo fmt check) | Before a commit |
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
-| `mise run test:changed` | The tests the changed files select (`tools/devtools/changed_tests.py`): the tests that import a changed module under tools/ or tests/ (directly or through a tests helper or conftest; `--deep` also through other tools modules), the tests and quick-tier scenarios that name a changed module (for a framework module only the module itself), the fine routes of verify, the changed test files, and the Rust tests of the affected crates. Never a test directory and no PY_GATE. There is no top-level build step, but selected tests may build or launch a device/emulator; inspect the selection first. `--explain` prints each file with its reason and what the gate adds; `--base BRANCH` for a lane. | For affected Python/Rust/module tests while iterating |
+| `mise run test:changed` | Fast host preflight (`tools/devtools/changed_tests.py`): Ruff on changed Python files, mypy on changed `TYPED` entries, pathcheck, selected audited tooling units, native Vitest related host tests, changed JS/TS lint/format and five host type checks. Configuration or ambiguous host dependency changes run all host tests. Desktop UI sources and assets use the native host configuration’s `forceRerunTriggers` fallback: tests read some source/CSS through `fs`, so those changes conservatively rerun all host projects. No Rust, module build/conformance or device runs. `--base`, `--head`, `--files`, `--deep` and `--explain` are supported; explain runs no checks and lists deferred files/crates and gate coverage. | Fast iteration; does not complete validation |
 | `mise run test:host` | Native host Vitest projects; runner filters and worker options pass through. No native/WASM build or device inputs. | Host test iteration |
-| `mise run test:stock` | Stock DT2 1.17 zero-DSP UI/sequencer goldens; native Vitest filters pass through. Starts owned daemons from an existing `DIGI_EMUD`; requires stock firmware and complete ready inputs (including validated DSP files), with no implicit build. | Required owner check for stock test changes: verify does not run these assertions; no audio coverage |
+| `mise run test:stock` | Stock DT2 1.17 zero-DSP UI/sequencer goldens; native Vitest filters pass through. Starts owned daemons from an existing `DIGI_EMUD`; requires stock firmware and complete ready inputs (including validated DSP files), with no implicit build. | Stock owner iteration; the gate also selects affected stock assertions; no audio coverage |
 | `mise run web:test` | Existing web Node suites (`pnpm test`); no top-level build. WASM/firmware-dependent cases skip when inputs are absent; CLI comparisons can invoke Python/Rust tools. Ready-cache tests use ready inputs when present, otherwise synthetic data. | Web owner iteration; inspect artifact-dependent coverage |
 | `mise run test:runtime -- transfer-live` | Explicit serial coupled runtime acceptance with preflighted per-device binaries and generated card samples; native Vitest filters pass through, with no implicit native build. | Focused device acceptance; see [runtime prerequisites](../tests/regression/README.md) |
 | `mise run test:modules -- pluck.test.ts --testNamePattern dt2` | Explicit serial coupled module upload/load/registration acceptance: PLUCK, freqshift and remote on DT2 1.17/DN2 1.12; prepared artifacts and existing binaries only. | Focused lifecycle acceptance; [preparation and limits](../tests/regression/README.md#runtime-module-load-acceptance) |
 | `mise run verify:host` | Native mise sequence: global JS/TS lint and format, five host Vitest projects and five package type checks. Stops at the first failure. No Python, native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
-| `mise run verify:pre` | Optional preflight (`tools/devtools/verify_pre.py`): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No explicit pin or scenario step; selected tests may build or launch a device/emulator. It prints that it is not the merge gate. | Optional combined preflight; do not routinely run after `test:changed` |
+| `mise run verify:pre` | Alias for `test:changed`, with the same flags and implementation. | Use either name once |
 | `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, subject to the UI/exact exemptions and audited production-leaf filtering below); a lane checks the routing with `--explain` |
 | `mise run verify:full` | Full acceptance including explicit `runtime-fixture`, all 191 DN2 FX assertions and `tier-sweep` in place of `tier-quick`. DT2 uses `dt2-tier-quick` unless `-- --dt2` selects its full sweep. Default no-AOT coverage stays at the fixed subset / 17 assertions; `-- --all-no-aot` runs all 134 DN2 scenarios and all 191 oracle assertions. | Only after changes to the generated core |
 | `mise run scenario NAME` | Replay a named headless scenario (optional WAV output) | Inspect scenario behavior; distinct from oracle assertions |
@@ -351,10 +353,43 @@ These preparation commands can invoke module toolchains or rebuild the patchkit 
 objects. Direct `test:runtime` still needs prepared input-probe artifacts. Each runtime startup has a 120-second deadline with awaited daemon
 cleanup (at most ten more seconds); the Vitest hook limit is 150 seconds. The runtime suite also covers
 remote input/control, service-command dispatch and CLI transfer persistence/deletion, as described above.
-Fresh sessions remain required; snapshot/reset reuse is unproven. A bounded DT2 zero-DSP probe passed
-initial patched boot, but restart after remote upload/verification/selection timed out at 90 seconds
-with a stalled soft reset. Initial patched loading has a ColdFire fallback; restart currently needs
-coupled inputs. Restart-dependent acceptance stays coupled pending a separate native capability change.
+Fresh sessions remain required; independent reset/session reuse and pooling are unproven. Native
+CF-only patched soft restart now restores the captured card overlay and device retained RAM before
+boot, bypasses MAIN snapshot-cache reads/writes for reset, and bounds boot reset loops. The explicitly
+ignored Rust regression requires both DT2 1.17 and DN2 1.12 firmware; it checks retained state before
+any guest instruction, cache isolation, reset bounds and terminal-failure cleanup:
+
+```sh
+CARGO_TARGET_DIR="$PWD/out/native/target/nogen" CARGO_BUILD_JOBS=4 RUST_TEST_THREADS=2 \
+  mise exec -- cargo test -p digi-control --lib controller::reset_tests -- --ignored --nocapture
+```
+
+That regression passed again on the final mode-fix source in 23.50 seconds. The bounded native DT2 pilot passed upload/VERIFY/select/restart, a fresh
+BOOT_START, exact persisted bytes, selected remote module, STATE dispatch and ready/free health
+checkpoints by about 17 seconds, but the overall pilot failed shared ABOUT navigation:
+`DK_ABOUT_N` remained zero. Diagnostics: `out/runs/cf-reset-proof/pilot-20261026-v4/dt2`.
+A separately scoped DN2 restart-only pilot passed the same lifecycle/dispatch/health checks in
+17.11 seconds, without a UI claim; diagnostics: `out/runs/cf-reset-proof/pilot-20261026-v5/dn2`.
+Both reported `dsp: none`, used fresh managed sessions and awaited cleanup. These observations do
+not establish DSP/audio behavior or independent reset reuse. `pace_free` defaults to false and the
+daemon exposes no pacing toggle; the shared remote tap's 300 ms wall-clock hold against accelerated
+guest time is a plausible explanation for the ABOUT failure, not a proven cause.
+UI/DSP acceptance suites remain coupled. No new live regression or gate wiring was added in this
+slice.
+
+The later routed branch gate `out/runs/verify/20261026-073254` was cancelled after confirming a
+coupled paused-mode regression; it did not complete or pass. Native builds, host/web/desktop and
+Rust checks passed, while five scenario files failed with an onset shift of 192. The new soft-reset
+path had unconditionally selected Free mode, allowing paused coupled callers to advance between
+controlled RPCs. The fix selects Free only for the CF Boot job and preserves the previous mode for
+a coupled boot worker. Both device daemons were rebuilt and pinned through the existing build owner
+in `out/runs/cf-reset-mode-fix/daemons.env.json`. The unchanged-assertion rerun passed all five files
+(six cases, including both menu tests), with runner exit 0: `test_fx_dt2` 111.9 seconds,
+`test_menu_dt2` 145.7 seconds, `test_fxpage_dt2` 151.9 seconds, DN2 routes 198.6 seconds and DT2
+routes 275.6 seconds. Evidence: `out/runs/cf-reset-mode-fix/scenarios/summary.tsv` and
+`/tmp/digi-reset-mode-tests.log`. No PCM pin or tolerance was changed. These focused passes do not
+complete the cancelled broad gate.
+
 Production module lifecycle cells
 have the `module-load` gate step and a direct `mise run test:modules` entrypoint. The gate uses the
 existing manifest dependency graph to filter production leaves to their module file on both devices;
@@ -394,16 +429,14 @@ may span a refill, so the second reply may be 0 or 30; deterministic pacing belo
 `pk_build build-all --check`, plus port freshness). Host/UI-only routes may omit `python-tests`;
 inspect `mise run verify -- --explain` rather than assuming these checks always run.
 
-Use owner commands while iterating and finish with the owner’s required checks. `verify:pre`
-remains an optional combined preflight, not an alias for `test:changed`: it checks changed
-Python files with Ruff, changed `TYPED` files with mypy, all repository paths, and conditional
-module staleness, then repeats selected tests and affected Rust tests. The gate’s lint/type
-lists define its coverage (`CLEAN` currently covers `tests/` and `tools/`). Skip repeats only
-when the chosen commands or planned gate cover the required checks; otherwise run the missing
-check directly or use the optional preflight. For changed path references without planned gate
-pathcheck coverage, use `uv run python -m tools.devtools.pathcheck --paths PATH ...` before handoff.
-Do not routinely run `test:changed` followed by `verify:pre`; report checks run and deferred
-coverage to the coordinator, whose routed gate remains authoritative.
+Use owner commands while iterating and finish with the owner’s required checks. `test:changed`
+is the fast host preflight and `verify:pre` is its alias. The exact Python allowlist in
+`tools/devtools/changed_tests.py` covers six audited tooling unit files; selected tests outside
+that list remain deferred even with `--deep`. The gate's lint/type lists define its full coverage
+(`CLEAN` currently covers `tests/` and `tools/`), and module staleness remains a gate check.
+For changed path references without planned gate pathcheck coverage, use
+`uv run python -m tools.devtools.pathcheck --paths PATH ...` before handoff.
+Report fast checks and deferred coverage to the coordinator, whose routed gate remains authoritative.
 
 Not run by any pytest file: the scenario kinds `rungc` and `pages`, and the module smoke
 cells (`uv run python -m tools.patchkit.pk_harness run`; the `smoke` step of `verify` runs them). A new `tools/device` module must be listed in `DEVICE_KINDS`

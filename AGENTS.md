@@ -1,197 +1,85 @@
 # digikit: agent instructions
 
-Reverse engineering and emulation of the Elektron Digitakt II (OS 1.17) and Digitone II (OS 1.12): a ColdFire
-MCF5441x main CPU and a SHARC+ DSP, run natively (desktop app) and in the browser (wasm). The device on the desk is
-a Digitakt II on 1.17: analyse, patch and quote addresses for 1.17 (and 1.12 for the Digitone II). 1.16/1.11 are older
-references with more hand names; an address taken from them must be resolved on 1.17/1.12 (patchkit anchors resolve by hash per
-version, `devices/ports/<device>-<os>.toml`) before it is used or reported. Setup: README.md. Results: docs/findings/ (one file per topic, indexed from
-docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDOVER-*.md.
+Reverse engineering and emulation of the Elektron Digitakt II and Digitone II, with a ColdFire MCF5441x CPU and SHARC+ DSP, for desktop and browser (Wasm).
 
-## Rules
+Use **DT2 OS 1.17** and **DN2 OS 1.12** for analysis, patches, tests and reported addresses. Older 1.16/1.11 images are references only: resolve their addresses on the current image before use. Patchkit anchors resolve by hash through `devices/ports/`.
 
-- Results go in docs/findings/, not in handovers. Marks: **[V]** verified here, **[D]** measured or read once,
-  **[O]** open, **[C]** corrects an earlier claim. A second agent checks a finding against the image bytes before
-  it is marked [V]. An empty Ghidra caller list is not evidence of dead code.
-- Firmware and anything derived from it (`firmware/*.syx`, `out/` with its sections and snapshots, `apps/web/.local`, card
-  images) and users' sample audio: never commit it.
-- Never name, copy or quote the vendor DSP toolchain or its files. Cite only public manuals
-  (docs/sharc/SOURCES.md).
-- Commit verified work at breaking points. There is no remote yet; `main` takes changes through a PR.
-- Performance: give the ceiling first, then one paired A/B (tools/devtools/coupled_ab.py) per claim.
-- Before work estimated at more than about a day, state its payoff and confidence; recommend stopping when they
-  are weak.
-- Run the emulator only when a static answer is not enough, and bound runs (`--limit`, `--seconds`). Em runs the
-  emulator in the same tree: `out/sections/<image>/.source-sha256` is the SHA-256 of the .syx those sections came from (coupled
-  DN2/DT2 runs use per-device ready inputs, not `out/sections/`).
+Start with [README.md](README.md) for setup and the newest `docs/handovers/HANDOVER-*.md` for current work. Detailed guides: [layout](docs/LAYOUT.md), [testing](docs/TESTING.md), [regression acceptance](tests/regression/README.md), [instrumentation](docs/INSTRUMENTATION.md), and [findings index](docs/FINDINGS.md).
 
-## Working with agents
+## Directory map
 
-- Roles: a reader explores code and returns quotes; an editor applies fully specified edits (then check
-  `git diff`); a runner builds, tests and measures. The coordinating agent keeps decisions and orchestration.
-- Parallel work runs in persistent lane worktrees: `tools/devtools/lane.sh NAME [BASE]` creates or resets
-  `../lanes/NAME` on branch `lane/NAME` and runs `tools/devtools/worktree-setup.sh`, which links `out/`,
-  `.venv`, each `firmware/*.syx` and `apps/web/.local` from the main tree and installs
-  `node_modules` with `pnpm install --offline`. Lanes are reused so their Rust build directories stay warm (a
-  fresh worktree costs about 25 minutes of cold builds). Use a lane only for parallel native edits or long
-  measurements; reading and small edits happen in the main tree.
-- A lane may edit and test in its worktree against an oracle (pins, fuzz, PCM equality) and commits on its branch;
-  the coordinator reviews the diff and merges. Sections that two lanes append to the end of a findings file
-  conflict: resolve them with `git merge-file --union`.
-- Lanes log progress, one line per step, to `out/runs/lanes/NAME.log` (`date  step  result  elapsed`), and check
-  in after about an hour.
-- Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
-  with a bound (`sleep N; tail -n 5 FILE`) or use a monitor.
-  Poll with an exit condition (the loop in "Verify"), not with a fixed sleep.
-- Lane agents use checks appropriate to the owner while iterating: native `mise run test:host` for host
-  Vitest tests, `mise run verify:host` for host lint/format, tests and types, or `mise run test:changed`
-  for affected Python/Rust/module tests (`--explain` prints selection and gate additions).
-  `test:changed` has no top-level build step, but selected tests may build or launch a device/emulator;
-  inspect the selection before running it. `mise run verify:pre` is an optional preflight, not a mandatory
-  follow-up: it adds changed-Python lint/types, pathcheck and conditional module staleness checks and
-  repeats the selected tests. Do not routinely run both. Finish with the checks required by the owner
-  and hand off their results and any deferred coverage to the coordinator. The
-  proof tools (`pk_proof_*`, `digikit_menu_proof`, `pk_dkrt_boot proof`, `pk_registry proof`) take `--quick` (budget about
-  60 s per tool) while iterating; verify has no tier flag. The coordinator runs `mise run verify` once per merge; it includes the
-  smoke matrix (step `smoke`; subject to UI/exact exemptions and the audited production-leaf filter below), so no proof tool is re-run by hand. Check what a
-  change selects with `mise run verify -- --explain` (`--base A --head B` for a range) instead of running the gate. Full-tier
-  proofs run only before a merge to `main`. Do not re-run old full proofs to measure a baseline that is already recorded.
-- Stop only processes you started (by PID or run directory). Never `pkill`/`killall` emulator processes: other lanes
-  and Em run them on the same machine.
-- Each lane runs its own dev server (own port; `tools/devtools/browser_bench.mjs --url`). Do not change Python dependencies
-  in a lane (the virtualenv is shared).
+```text
+apps/
+  desktop/          Native workbench app and UI
+  web/              Browser app and module gallery
+packages/
+  emulator/         ColdFire/SHARC engines and control daemon
+  patchkit/         Firmware patching and module packaging
+  control-client/   TypeScript daemon socket client
+  dk-session/       TypeScript SysEx session layer
+  test-support/     Shared test fixtures and helpers
+  dkupload/         Rust upload protocol
+  dksample/         WAV, native sample format and hashing
+  dkneeds/          Module resource requirements
+modules/
+  core/             Shared module runtime and framework
+  machines/         Instrument modules
+  fx/               Effect modules
+  tools/            Device utility modules
+sdk/                Module contracts and headers
+devices/ports/      Firmware-version anchors and device ports
+tests/              Python and native tests by owner
+  regression/       TypeScript device acceptance tests
+tools/              Analysis, build and development tools
+docs/               Guides, findings, plans and handovers
+firmware/           Ignored firmware inputs
+out/                Ignored generated artifacts and run outputs
+```
 
-## Verify
+## Core rules
 
-Use the owner command while iterating; `mise run test:changed -- --explain` shows Python/Rust/module selection, and `mise run verify -- --explain` shows the merge gate:
+- Preserve user work and follow session instructions for branches and commits. Commit verified work at useful breaking points; changes to `main` go through a PR.
+- Never commit firmware or derived material: `firmware/*.syx`, `out/`, `apps/web/.local`, card images, or users' sample audio.
+- Never name, copy or quote the vendor DSP toolchain or its files. Cite public manuals listed in [SHARC sources](docs/sharc/SOURCES.md).
+- Put results in `docs/findings/`, one topic per file, indexed from `docs/FINDINGS.md`; handovers describe ongoing work. Marks: **[V]** verified here, **[D]** measured or read once, **[O]** open, **[C]** corrects an earlier claim. Before marking [V], a second agent must check against image bytes. An empty caller list does not prove dead code.
+- Before work likely to take more than a day, state payoff and confidence; recommend stopping when they are weak.
+- Use static evidence first. Bound emulator runs with `--limit` or `--seconds`. Stop only your own PIDs or run directories; never use `pkill` or `killall` on emulators.
+- For performance claims, give the ceiling first, then one paired A/B using `tools/devtools/coupled_ab.py`.
 
-| Change | Lane, while iterating | The gate adds (`mise run verify -- --base main`) | A merge to `main` adds |
-| --- | --- | --- | --- |
-| Docs (`*.md`) | pathcheck when adding or changing path references | nothing | nothing |
-| JS/TS host tests and helpers | `test:host` for tests; `verify:host` for host lint/format, tests and types | routed owner checks; inspect `verify -- --explain` | nothing |
-| Web Node tests | `web:test`; artifact-dependent cases may skip, CLI comparisons may invoke Python/Rust tools | routed web/host checks and unchanged smoke rules | nothing |
-| Stock DT2 UI/sequencer goldens | `test:stock` (zero DSP; existing daemon, firmware and complete ready inputs; native Vitest filters) | stock + host and conservative smoke; direct case edits use native filename filters, shared session/control/emulator changes retain all stock files | nothing |
-| Desktop UI/app | `test:host` / `verify:host` for host behavior; inspect routed app checks | UI tests: host only; production desktop: desktop + host (two samples helpers also retain web); native app code retains conservative smoke | nothing |
-| DN2 stock FX sources/oracles | `test:fx` (61 quick); `DIGI_FX_SWEEP=1 mise run test:fx` (191 full); no implicit build | host, check, check-no-aot, tier-quick and conservative smoke | nothing |
-| DT2 FX sources/oracles | `test:fx:dt2` (135 quick); `DIGI_FX_SWEEP=1 mise run test:fx:dt2` (146 full); no implicit build | dt2-check, dt2-tier-quick and Python coverage | nothing |
-| Python under tools/ or tests/ | `test:changed`: the tests that import the module (`--deep`: also through other tools) | PY_GATE (lint, types, pathcheck, staleness), the tests that reach the module in the import graph, the PY_SUITES that list files | nothing |
-| tools/patchkit, packages/patchkit, devices/ports | `test:changed` (affected tests and patchkit Rust tests); optional `verify:pre` also checks `pk_build build-all --check` | the patchkit suite, build-daemons | nothing |
-| Leaf module (modules/machines, fx, test, ...) | `test:changed`: named tests/scenarios and applicable conformance; `module:check ID` is an explicit alternative for one module, not a required second run | rust-tests; web when the gallery reads the file; affected production uploads in module-load via manifest dependents; known static leaves keep existing owners | nothing |
-| Framework module (`FRAMEWORK` in tools/devtools/verify_route.py) | `test:changed`: the tests and scenarios that name the module itself | tests/patchkit and tests/digikit; runtime patch-set/ABI dependencies retain both-device runtime-fixture and module-load coverage | nothing |
-| SHARC core or transpiler (the `CORE_FINGERPRINT` files) | regenerate the cores, then `test:changed` | every normal step (excludes full tier sweeps) | `mise run verify:full` |
-| SHARC engine, fast tier, other emulator crates | `test:changed` (the crates' Rust tests) | build, pins, check and tier steps | nothing |
-| tools/devtools/verify.py, tools/devtools/verify_route.py | `test:changed` | every normal step (excludes full tier sweeps) | nothing |
-| PCM pins (`tests/scenarios/*.json`) | only with Em's approval | | |
+## Checks
 
-- Never run a test directory (`pytest tests/patchkit`), `--tier full`, `verify:full` or smoke `--update` across all
-  cells while iterating. Long runs go in the background and wait for the completion notification. To poll a log, use a loop
-  that stops when the run ends and never waits more than 60 s in total:
-  `for i in $(seq 12); do grep -q DONE FILE && break; sleep 5; done; tail -n 5 FILE`. No `sleep` over 60 s in one
-  command (the hook adds the sleeps up), no `tail -f`. A repo PreToolUse hook (tools/devtools/agent_guard.py, .claude/settings.json) blocks directory pytest,
-  `--tier full`, `verify:full`, `sleep` over 60 s and `tail -f`; only the coordinator prefixes `DIGI_GUARD=off`, deliberately.
-- Test layout, commands and the current baseline: docs/TESTING.md.
-- `mise run verify:pre` is an optional preflight, not the merge gate; its selected tests may build or launch an emulator. `mise run verify` is the merge gate and runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
-  changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running; `--rerun-failed` re-runs only the steps that failed in the last run). `mise run verify:full` includes explicit runtime acceptance and replaces the DN2 quick tier with tier-sweep;
-  the full DT2 tier sweep additionally needs `-- --dt2`. Use it only after generated-core changes. Otherwise `mise run verify` (routed by the changed files) is the gate, also for a merge to `main`.
-- `verify:pre` remains available for combined checks; it is not an alias for `test:changed`.
-  When selected, the gate’s `python-tests` step runs `PY_GATE`: lint over `CLEAN`, types over
-  `TYPED`, repository pathcheck, and module/port staleness checks (`pk_build build-all --check`
-  through `tests/patchkit/test_pk_current.py`). Host/UI-only routes may omit this step.
-  Skip repeats only when chosen commands or the planned gate cover the required checks; otherwise
-  run the missing check directly or use the optional preflight. For changed path references without
-  planned gate pathcheck coverage, run `uv run python -m tools.devtools.pathcheck --paths PATH ...`
-  before handoff. Inspect `verify -- --explain`; optional preflight does not remove a required check.
-- One CPU budget for the whole gate (tools/devtools/verify_budget.py): min(physical cores - 2, the cores the RAM carries: (RAM - 4 GB) at 1 GB per 2-core emulator process), at least 1, and cargo jobs at most (RAM - 4 GB) / 6 GB (`GB_PER_EMULATOR`, `GB_PER_CARGO_JOB`, `RESERVE_GB` in verify_budget.py); physical cores come from sysctl, Linux sysfs topology within the affinity and cgroup CPU quota, else logical / 2; the run and `--explain` print which limit applied (`--jobs N` or DIGI_VERIFY_BUDGET override it; `--explain` and the start of a run print the worker plan). A step starts when its share is free; the shares of the running steps never add up to more than the budget, and a share sets the step's inner pools (CARGO_BUILD_JOBS, RUST_TEST_THREADS, RAYON_NUM_THREADS, DIGI_JOBS, DIGI_TIER_JOBS, DIGI_PY_JOBS, DIGIKIT_JOBS, DIGIKIT_PART_JOBS=1, node test concurrency); a pool variable you set yourself replaces the share. One coupled emulator process counts as 2 cores. `verify`, `verify:pre` and `verify:full` run at nice 10 (`--foreground`: normal priority). The generated-core builds run once, in a chain (build, build-daemons, build-dt2), before the steps that use them. Do not start a second gate or a cargo build while one runs.
-- Steps: build, desktop (UI build/types and app crate tests), host (lint/format, host tests and types), web (node tests and astro check), stock (DT2 zero-DSP UI/sequencer goldens), runtime-fixture (serial coupled runtime acceptance), module-load (serial production upload lifecycle acceptance), pins (seven DN2 PCM pins), check (61
-  DN2 stock FX assertions; 191 with full verification), check-no-aot (17 assertions by default, including full verification;
-  `--all-no-aot`: 61 normally or 191 with full verification), tier-quick / tier-sweep (AOT = no-AOT PCM on a fixed subset of the FX scenarios, `NO_AOT_SUBSET` in tools/devtools/verify.py; `--all-no-aot` selects all 134 in tier-sweep and every seventh scenario in tier-quick) (one shared queue of small chunks, the step's share of the budget in emulator processes), python-tests (the PY_GATE files, the tests that reach a changed Python module in the import graph, the PY_SUITES the change
-  triggers and the changed test files; not all of tests/, which `mise run test` runs) — one process per file (the step's share; DIGI_PY_TIMEOUT), rust-tests (cargo nextest run
-  --workspace: each test its own process; JUnit at `<target-dir>/nextest/default/junit.xml`), card
-  (in-process DT2 card: trigs play the files), smoke (the patchkit smoke matrix, `pk_harness run`: 17 cells, one `digi-emud` daemon each, the step's emulator processes at once; runs unless every changed path is UI-only or one of the exact smoke-exempt paths (the exact maintenance and audited host-test paths in `SMOKE_EXEMPT` in tools/devtools/verify.py; host checks remain selected, while new tests, helpers and configuration remain conservative), after build-daemons; audited production-leaf filtering below), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
-- Smoke filtering is limited to changes entirely within the three audited production leaves (PLUCK, freqshift,
-  remote), optionally mixed with existing UI/docs/exact smoke exemptions. Manifest dependents intersect the
-  existing matrix: PLUCK keeps both patched-PLUCK device cells, freqshift/remote have no matching cells and
-  skip smoke while retaining module/runtime/conformance owners. All other/mixed/shared/unknown changes,
-  explicit `--only smoke`, full and rerun acceptance keep the full matrix. Selected cells run the existing
-  complete harness through repeatable `--cell`, with unchanged assertions and DSP checks. Explain shows why.
-- `stock`, `runtime-fixture` and `module-load` run on relevant changes and also support explicit `--only` or full acceptance.
-  Existing Python/Rust/FX/smoke owners remain; inspect `verify -- --explain` for native Vitest filenames and preparation.
-  Stock is zero DSP, one core per worker, with `REGRESSION_JOBS` bounded by its share; it reuses a selected
-  `build-daemons` DT2 path as `DIGI_EMUD`. Runtime/module nodes are serial coupled SHARC, reserving two cores each;
-  restart-dependent acceptance stays coupled because zero-DSP patched restart is unsupported.
-  Python tool changes select native acceptance only when reached from consumed preparation/client entry
-  points through the existing import graph (including explicit consumed function-local dependencies).
-  Unrelated tools keep Python/smoke owners; device LED faceplate TOMLs do not select native acceptance.
+Use the owner's command while iterating. Full command details, preparation and routing live in [testing](docs/TESTING.md).
 
-  Production leaves use the existing manifest dependency graph to select PLUCK, freqshift or remote on both
-  DT2 1.17/DN2 1.12; known static leaves keep existing owners. Runtime patch-set/ABI/shared dependencies and unknown
-  relevant module paths conservatively retain cross-device coverage. Direct acceptance test edits select their own
-  filename; shared helpers retain consumers, sample clients select sample cases, and host-only tests stay host-only.
-  Acceptance-only gate selections add no daemon build and require current binaries, complete ready inputs and DT2
-  card samples; they reuse daemon paths when another selected node already builds them. Before module-load, the gate
-  runs `pk_build --check` for selected uploads and fresh `patchkit pack` commands into its node-owned directory.
-  Selected input-adapter runtime cases prepare `test/input-probe` the same way in a separate directory. Stale objects
-  fail before acceptance. These bounded checks/packs may invoke module toolchains or rebuild the patchkit CLI.
-  Direct `mise run test:stock`, `test:runtime` and `test:modules` use native Vitest filename/test-name filters and
-  require prepared inputs/artifacts; they do not perform this gate preparation or implicitly build daemons.
-  Module-load checks lifecycle/registration/faults, not audio or all manifests; see tests/regression/README.md.
-  `module:check ID` checks one module with machine/effect conformance and its own tests (which may build or launch an emulator);
-  service/raw modules with no own tests can return success with nothing to run. It is not an all-module patched load proof.
-  The DN2 full FX suite has a known chorus-width sweep failure; see tests/regression/scenarios/README.md for evidence.
-- Tests and the gate run on the newest image of each device only (DT2 1.17, DN2 1.12); 1.16 and 1.11 remain analysis references.
-- Scenario renders are cached by content (out/cache/renders; tools/devtools/render_cache.py): a render reruns only when the binary, input files, scenario, peeks, device TOMLs or a SHARC_/DIGI_/DSP_ variable changed. `--no-cache` or DIGI_RENDER_CACHE=0 forces renders; `uv run python -m tools.emulator.coupled cache clear` empties it. Only emulator output is cached; oracles, hash compares and pins run fresh. Guard 1: tests/devtools/test_render_inputs.py fails when a render input (env read or file read) is not classified; regenerate counts with `uv run python -m tests.devtools.test_render_inputs --scan` after review. Guard 2: verify sets DIGI_RENDER_CACHE_CHECK=0.03, which re-renders about 3% of hits and fails on any difference. Use `verify --no-cache` for release gates.
-- While working, use the owner commands above; an iteration test run does not replace the coordinator’s routed gate.
-- Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
-  `tests/devtools/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11
-  (`tests/devtools/test_pypy.py`, slow).
-- Paths: tools/devtools/pathcheck.py fails on references to missing paths; cite a deleted file as `REF:path` (e.g. `unicorn-reference-final:emu/edma.py`).
-- `tests/sharc/integration/test_sharc_golden.py` hashes six SHARC core outputs: a refactor keeps them; an intended change updates
-  them with `--update` and says why. PCM pins in `tests/scenarios/*.json` change only with Em's approval.
+| Work | Iteration check |
+| --- | --- |
+| Docs | Check links manually; run pathcheck for changed path references. No tests. |
+| General changes | `mise run test:changed` (alias `verify:pre`): static checks, audited tooling units and related host tests/types; no builds or device runs. Use either name once. |
+| Host JS/TS and desktop UI | `mise run test:host`; `mise run verify:host` also checks lint, format and types. |
+| Web Node tests | `mise run web:test` |
+| Stock UI / runtime / module loads | `mise run test:stock`, `test:runtime`, or `test:modules`; native Vitest filters apply. Requires prepared artifacts and inputs; no implicit daemon build. See regression acceptance. |
+| DN2 / DT2 FX | `mise run test:fx` / `mise run test:fx:dt2`; no implicit build. |
+| One module | `mise run module:check ID`: conformance and own tests; may build or emulate. Modules without applicable tests can do nothing; this does not prove all-module loads. |
 
-## Build and run
+Before merging, inspect `mise run verify -- --base main --explain`, then run the routed gate once with `mise run verify -- --base main` (use the lane's base when appropriate). Iteration checks do not replace it. The coordinator owns the gate and integration. Do not repeat passed checks without a new change or unresolved concern.
 
-- Python tools: `tools/` is a package with one subpackage per owner (docs/LAYOUT.md); the repository root is the only import root. Run a tool as `uv run python -m tools.<owner>.<module>` from the repository root and import it as `from tools.<owner> import <module>`. Never change `sys.path`. A tool that starts another tool runs `[sys.executable, "-m", "tools.<owner>.<module>", ...]` with `env=tools.python_env()`.
-- mise tasks: `mise run workbench [-- firmware/FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:serve`, `emu:ctl`, `web` (browser dev page), `web:bench`, `scenario NAME`, `scenario:all` (replay/PCM pins), `test:stock` (zero-DSP DT2 goldens), `test:runtime` (serial coupled runtime acceptance), `test:modules` (serial coupled production module loads; direct tasks require prepared artifacts), `test:fx` (stock DN2 assertions; `DIGI_FX_SWEEP=1` for full), `test:fx:dt2` (native DT2 assertions; 135 quick, `DIGI_FX_SWEEP=1` for all 146), `perf`, `perf:pgo` (both devices, then rebuilds the launcher), `perf:pgo:dn2`, `perf:pgo:dt2`, `gen:core`; `module:*` (new, build, check, pack, dev), `patch:*` (firmware patching), `dk:*` (`--emu` or `--port NAME`). `mise tasks` lists them; `mise run TASK -- --help` prints a tool's options.
-- Paths, toolchain and fast-region tables: tools/emulator/digi_env.py, tools/emulator/fast_regions.json.
-- SHARC crates: packages/emulator/sharc-rt (runtime), packages/emulator/sharc-gen (the generated core from `SHARC_GEN_DIR`; relative
-  paths resolve from the repo root), packages/emulator/sharc (engine and fast tier), packages/emulator/sharc-fast-cl and
-  packages/emulator/sharc-fast-wasm (kernel backends). Editing the engine or fast tier rebuilds in about 20 s; editing
-  sharc-rt rebuilds the generated core (4 to 12 minutes).
-- A change to tools/sharc_dev/sharc_core, tools/sharc_dev/sharc_transpile/, tools/sharc_dev/sharc_transpile_infer.py or tools/sharc_dev/sharc_rsgen.py changes `CORE_FINGERPRINT` (it hashes those files' paths relative to tools/sharc_dev and their bytes):
-  regenerate every core (DN2 and DT2 from out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt, the shared core with
-  `mise run gen:core`), backing up each gen dir first.
-- `out/native/target/*/pgo-use` belongs to the launcher; experiments build elsewhere (`DIGI_EMU_PGO_VARIANT`).
-  PGO profiles are per device (`mise run perf:pgo:dn2`, `mise run perf:pgo:dt2`, or `mise run perf:pgo` for both; underlying
-  `uv run python -m tools.emulator.native_pgo train [--device dt2]`); retrain at milestones.
-- Builds and timed runs share the machine through tools/devtools/benchlock.py (shared for builds, exclusive for
-  benchmarks). tools/devtools/coupled_ab.py, native_pgo.py and sharc_regionbench.py take the lock themselves (wrapping them
-  deadlocks).
-- The shell is zsh: an unquoted `$VAR` is one word. There is no `timeout` binary.
-- Extract firmware: `uv run python -m tools.firmware.extract firmware/SYX -o DIR` (the default DIR is `out/sections/<image>`).
-- The Python Unicorn reference emulator was removed; the last commit with it is tagged `unicorn-reference-final`.
-- Manuals: read `out/refs/<pdf stem>/` (`toc.md`, `pages/pNNNN.txt`, `all.txt`), built with
-  `uv run --with pymupdf python -m tools.devtools.refstext`.
+Do not run test directories, full tier sweeps, or smoke `--update` across all cells while iterating. Use quick proof modes; the gate owns smoke coverage. Reserve `mise run verify:full` for generated-core changes before merging to `main`. Preserve SHARC golden hashes for refactors; explain intentional updates. PCM pins in `tests/scenarios/*.json` require Em's approval.
 
-## Instrumentation (details in docs/INSTRUMENTATION.md)
+The gate manages one CPU budget. Do not start another gate or Cargo build while it runs. Put long runs in the background; poll with an exit condition and at most 60 seconds per call. Never use `tail -f`. For changed references without gate pathcheck coverage, run `uv run python -m tools.devtools.pathcheck --paths PATH ...`; cite deleted paths as `REF:path`.
 
-- App real time: `DIGI_SPIKE_LOG=DIR mise run workbench`, then `uv run python -m tools.devtools.spikes DIR`; unattended runs:
-  `uv run python -m tools.devtools.app_soak`; app audio capture: `DIGI_EMU_SINK_WAV=FILE`.
-- Browser throughput: `mise run web:bench`. DSP performance: `mise run perf`, tools/devtools/perf.py, tools/devtools/coupled_ab.py.
+## Development and analysis
 
-## Static analysis
+Prefer existing tooling and shared helpers over custom runners or wrappers. Use fast unit tests for logic and integration tests for real boundaries. New host/device scenarios use TypeScript/Vitest; analysis, decompilation and devtools use Python. Avoid unrelated refactors.
 
-- SHARC: `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin` writes
-  `out/sharcdb/<image>.sqlite`; use it through tools/sharc_dev/sharc.py (`img = sharc.load("dt2-1.17")`, then `func`,
-  `callers`, `callees`, `reach`, `xref_table`, `trace`, `img.sql(...)`) before writing a script. New kinds of fact
-  go into tools/sharc_dev/sharcdb/. SHARC+ encodings: tools/sharc_dev/sharcspec/ (from the public ADI manuals).
-- SHARC+ instruction semantics live once, in tools/sharc_dev/sharc_core/; tools/sharc_dev/sharc_trace.py (symbolic) and
-  tools/sharc_dev/sharc_run.py (concrete) are drivers only.
-- ColdFire (MAIN OS): a `uv run python -m tools.coldfire.ghidradump` dump (out/ghidra/<image>-emac/), then
-  `uv run python -m tools.coldfire.cfdb build out/ghidra/dt2-1.17-emac` and tools/coldfire/cf.py (`cf.load("dt2-1.17-emac")`);
-  hand-curated names in tools/coldfire/cf_names.py are literal 1.16 addresses (match by function hash to use them on 1.17). tools/emulator/snapread.py reads `.snap` files without a machine.
-- Ghidra: one JVM per project. Live 1.16 analysis: `~/ghidra-projects/elektron-emac` (no live 1.17 project yet; use the 1.17 dump); `dt2-emac` holds 1.15C. Use
-  the language `68000:BE:32:ColdfireEMAC` (the stock ColdFire language stops at `movclr`). Read the dump first;
-  live queries with tools/coldfire/ghidraq.py (`--then` chains queries in one JVM). Ghidra's reference tables miss code
-  outside functions: confirm "no caller" with tools/coldfire/refscan.py. A pyghidra tool runs as a module like every tool; by
-  script path its directory, which holds the Java scripts in `ghidra/`, would shadow PyGhidra's `ghidra` package. After a Ghidra upgrade,
-  re-run tools/coldfire/ghidra/install-coldfire-emac.sh. For the generated SHARC+ language, measure before and after with
-  `uv run python -m tools.sharc_dev.sharcpcode measure` and `compare` (one language version per JVM).
+Run Python tools from the repository root as `uv run python -m tools.<owner>.<module>`. Import through `tools`; never modify `sys.path`. Child tools use `[sys.executable, "-m", ...]` with `env=tools.python_env()`. Find tasks with `mise tasks` and options with `mise run TASK -- --help`.
+
+Use existing database helpers before one-off queries: `tools/coldfire/cf.py` and `tools/sharc_dev/sharc.py`. Read dumps first. Ghidra uses one JVM per project and language `68000:BE:32:ColdfireEMAC`; check apparent missing callers with `tools/coldfire/refscan.py`.
+
+SHARC instruction semantics belong only in `tools/sharc_dev/sharc_core/`; trace/run tools are drivers. Changes there or in `tools/sharc_dev/sharc_transpile/`, `tools/sharc_dev/sharc_transpile_infer.py`, or `tools/sharc_dev/sharc_rsgen.py` change `CORE_FINGERPRINT` and require costly regeneration. Back up each generated directory, regenerate DN2 and DT2 using `out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt`, and regenerate the shared core with `mise run gen:core`.
+
+Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `native_pgo.py` and `sharc_regionbench.py` already take the lock; do not wrap them again. Launcher outputs in `out/native/target/*/pgo-use` are reserved; experiments use another `DIGI_EMU_PGO_VARIANT`.
+
+## Delegation
+
+Follow the user's delegation policy and configured roles. Keep one writer per worktree; read-only agents do not edit. Hand off evidence, validation and residual risks; the coordinator reviews diffs and integrates.
+
+Use warm lanes (`tools/devtools/lane.sh NAME [BASE]`) for parallel native edits or long measurements; small edits and reading stay in the main tree. Lanes share artifacts and the virtualenv: do not change Python dependencies there. Use a separate dev-server port per lane.

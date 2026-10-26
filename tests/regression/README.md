@@ -66,7 +66,7 @@ UI tests select only `host` and retain the existing UI-only smoke exemption; pro
 helpers retain application checks.
 Consumer typecheck/check scripts and runtime imports resolve `@digi/dk-session` TypeScript source directly. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
 
-The `runtime-fixture` gate step runs the remote, service-command and transfer acceptance cases sequentially,
+The `runtime-fixture` gate step runs selected remote, service-command, transfer, sample and input-adapter acceptance cases sequentially,
 with one fresh coupled daemon per file/device. It requests `firmware.load {runtime:true, start:"auto"}` and the existing
 `emulator` patch set/cache, then selects free mode. It checks reported patch identity, ready/free status
 and health, then installs digikit/remote and proves ABOUT navigation and signed TURN acceptance.
@@ -119,7 +119,7 @@ their Python and smoke owners. The two device `*-leds.toml` faceplate maps do no
 The separate `dt2-remote-control.test.ts` and `dn2-remote-control.test.ts` files explicitly request the
 `device` patch set, where REMOTE starts disabled. They install only digikit/remote, assert exact raw
 STATE/status/body replies, toggle REMOTE with physical emulator buttons, and check malformed commands,
-TURN clamping/immediate pacing/negative recovery and the final disabled KEY. Original 12/45-second boot,
+TURN delivery/clamping/negative recovery and the final disabled KEY. Exact pacing/refill is checked by the deterministic C unit; adjacent live host calls do not establish a fixed refill interval. Original 12/45-second boot,
 10-second post-install, 400 ms panel holds, UI settles and 3-second pacing waits remain. Enabled-state
 cleanup releases remote inputs before switching off; fixture teardown covers every path. Both devices passed
 acceptance before deletion of the replaced Python scenario, runner and dispatch; sample/input-adapter
@@ -129,7 +129,7 @@ The five mocked protocol/screenshot tests moved from the web suite to
 No mise task semantics changed. Reuse/reset and snapshots remain later work.
 
 
-The coordinator's serial four-case acceptance passed in 608 seconds using existing pinned daemon
+Historical migration acceptance, before the later semantic/input revisions below: the coordinator's serial four-case run passed in 608 seconds using existing pinned daemon
 binaries, without a native build: [acceptance log](../../out/runs/verify/20261026-001204/runtime-fixture.log).
 File/body times were DT2 negative 163.893/117.436 s, DT2 positive 149.687/97.149 s,
 DN2 negative 162.688/151.364 s and DN2 positive 130.387/121.804 s. The coordinator confirmed no owned
@@ -294,7 +294,7 @@ failure or claim a full gate rerun, performance A/B, chorus-width fix or zero-DS
 
 ## Stock coupled audio
 
-DN2 1.12 trackFX has its own `vitest.fx.config.ts`, separate from the stock CF-only UI and patched runtime configurations. `mise run test:fx` runs 34 quick assertions; `DIGI_FX_SWEEP=1 mise run test:fx` runs all 79 assertions across 47 canonical cases, without building. It needs preflighted stock coupled inputs and an existing binary; the caller supplies `DIGI_JOBS` from the shared CPU budget. Native test-name filters render only declared cases and their references. Python still owns cached rendering and NumPy analysis. See [the coverage map, lifecycle and commands](scenarios/README.md).
+DN2 1.12 trackFX/sendFX use `vitest.fx.config.ts`, separate from the stock CF-only UI and patched runtime configurations. `mise run test:fx` runs 61 quick assertions; `DIGI_FX_SWEEP=1 mise run test:fx` runs all 191 assertions across 134 canonical cases, without building. The full suite has a known chorus-width sweep failure; selection counts do not establish an all-pass baseline. It needs preflighted stock coupled inputs and an existing binary; the caller supplies `DIGI_JOBS` from the shared CPU budget. Native test-name filters render only declared cases and their references. Python still owns cached rendering and NumPy analysis. See [the coverage map, lifecycle and commands](scenarios/README.md).
 
 
 DT2 1.17 stock FX uses `vitest.dt2-fx.config.ts` and the native `mise run test:fx:dt2` command:

@@ -11,7 +11,7 @@
     uv run python -m tools.devtools.verify --full --all-no-aot   # AOT = no-AOT equality on every FX scenario, not the fixed subset
     uv run python -m tools.devtools.verify --explain        # show the routing and the plan, run nothing
     uv run python -m tools.devtools.verify --base A --head B --explain   # the same for the commits A..B
-(Use owner checks while iterating; `mise run verify:pre` is an optional combined preflight, tools/devtools/verify_pre.py.)
+(Use owner checks while iterating; `mise run test:changed` is the fast host preflight; `verify:pre` is its alias.)
 
 CPU budget (tools/devtools/verify_budget.py, docs/TESTING.md "CPU budget"): the whole gate has a budget of
 cores (--jobs N, DIGI_VERIFY_BUDGET, else the physical cores - 2); a step starts when its share is free and
@@ -173,7 +173,6 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         (
             "tools/devtools/verify.py",
             "tools/devtools/verify_route.py",
-            "tools/devtools/verify_pre.py",
             "tools/devtools/changed_tests.py",
             "tools/devtools/agent_guard.py",
             ".claude/settings.json",

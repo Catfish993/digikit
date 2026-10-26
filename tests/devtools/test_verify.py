@@ -15,7 +15,7 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.devtools import changed_tests, verify, verify_pre, verify_route  # noqa: E402
+from tools.devtools import changed_tests, verify, verify_route  # noqa: E402
 from tools.patchkit import modroots  # noqa: E402
 
 
@@ -946,12 +946,12 @@ def test_routing_changes_select_everything() -> None:
         got = verify.python_tests([path], False)
         assert set(verify.python_tests([], True)) <= set(got)
     # the lane helper is checked by the routing tests only
-    assert verify.steps_for(["tools/devtools/verify_pre.py"]) == (
+    assert verify.steps_for(["tools/devtools/changed_tests.py"]) == (
         "python-tests",
         "smoke",
     )
     assert "tests/devtools/test_verify.py" in verify.python_tests(
-        ["tools/devtools/verify_pre.py"], False
+        ["tools/devtools/changed_tests.py"], False
     )
 
 
@@ -1020,26 +1020,6 @@ def test_head_only_with_explain() -> None:
     with pytest.raises(SystemExit) as info:
         verify.main(["--head", "HEAD"])
     assert info.value.code == 2
-
-
-def test_verify_pre_plan(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(verify, "rust_scope", lambda files: [])
-    got = {n: c for n, c, _ in verify_pre.plan(["tools/device/dkrun.py"], Path("OUT"))}
-    assert got["rust-tests"] is None and got["pk-build-check"] is None
-    assert got["ruff-check"][-1] == "tools/device/dkrun.py"
-    assert got["pathcheck"]
-    got = {
-        n: c
-        for n, c, _ in verify_pre.plan(
-            ["modules/fx/master-gain/module.toml"], Path("OUT")
-        )
-    }
-    assert got["pk-build-check"] and got["ruff-check"] is None
-    got = {
-        n: c
-        for n, c, _ in verify_pre.plan(["tools/devtools/benchlock.py"], Path("OUT"))
-    }
-    assert got["mypy"][-1] == "tools/devtools/benchlock.py"
 
 
 def test_rust_tests_leaves_the_desktop_crate_to_the_desktop_step() -> None:

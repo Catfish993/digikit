@@ -107,7 +107,7 @@ def test_main_propagates_exit_codes_and_continues(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    names = ["python-tests", "rust-tests"]
+    names = ["python-tests", "ruff-check"]
     monkeypatch.setattr(changed_tests.verify, "changed_files", lambda _: [])
     monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: [])
     monkeypatch.setattr(
@@ -149,6 +149,99 @@ def test_explain_runs_nothing(
     assert changed_tests.main(["--explain"]) == 0
     run.assert_not_called()
     output = capsys.readouterr().out
-    assert "the gate adds:" in output
+    assert "Deferred to `mise run verify`" in output
     assert "RUN  python-tests: unused" in output
     assert "explained, nothing run" in output
+
+
+def test_fast_plan_defers_module_and_native_work() -> None:
+    files = [
+        "modules/core/dsp-voice/module.toml",
+        "packages/emulator/control/src/lib.rs",
+        "tools/device/dkrun.py",
+    ]
+    commands = {n: c for n, c, _ in changed_tests.plan(files, Path("OUT"))}
+    assert commands["ruff-check"][-1] == "tools/device/dkrun.py"
+    assert commands["pathcheck"]
+    assert "rust-tests" not in commands and "pk-build-check" not in commands
+    tests = commands["python-tests"] or []
+    assert not any(
+        p.startswith("tests/") and p not in changed_tests.FAST_PYTHON_TESTS
+        for p in tests
+    )
+
+
+def test_fast_plan_runs_only_selected_audited_units(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        changed_tests,
+        "select",
+        lambda *args: changed_tests.Selection(
+            tests={
+                "tests/devtools/test_verify.py": "changed",
+                "tests/patchkit/test_pluck.py": "imports",
+            }
+        ),
+    )
+    commands = {n: c for n, c, _ in changed_tests.plan([], Path("OUT"))}
+    assert "tests/devtools/test_verify.py" in commands["python-tests"]
+    assert "tests/patchkit/test_pluck.py" not in commands["python-tests"]
+
+
+def test_host_selection_uses_native_related_for_sources_tests_and_assets() -> None:
+    for path in (
+        "packages/control-client/src/index.ts",
+        "packages/control-client/tests/client.test.ts",
+        "apps/desktop/ui/src/native.css",
+    ):
+        commands = {n: c for n, c, _ in changed_tests.host_plan([path])}
+        related = commands["host-tests-related"]
+        assert related[related.index("vitest") + 1] == "related"
+        assert "--run" in related and path in related
+    for path in (
+        "pnpm-lock.yaml",
+        "vitest.host.config.ts",
+        "packages/dk-session/package.json",
+    ):
+        commands = {n: c for n, c, _ in changed_tests.host_plan([path])}
+        assert commands["host-tests"][1] == "test:host"
+
+
+def test_deferred_output_names_python_crates_and_changed_files(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(changed_tests.verify, "python_test_plan", lambda *args: [])
+    monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: ["digi-control"])
+    changed_tests.print_deferred(
+        ["modules/core/dsp-voice/module.toml"],
+        changed_tests.Selection(tests={"tests/patchkit/test_pluck.py": "imports"}),
+    )
+    output = capsys.readouterr().out
+    assert "Python: tests/patchkit/test_pluck.py" in output
+    assert "Rust crates: digi-control" in output
+    assert "Full gate coverage: modules/core/dsp-voice/module.toml" in output
+
+
+def test_unselected_audited_gate_units_are_still_deferred(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(changed_tests.verify, "python_test_plan", lambda *args: [])
+    monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: [])
+    changed_tests.print_deferred(
+        [],
+        changed_tests.Selection(
+            deep_only={"tests/devtools/test_verify_budget.py": "deep"}
+        ),
+    )
+    assert "Python: tests/devtools/test_verify_budget.py" in capsys.readouterr().out
+
+
+def test_docs_do_not_claim_unselected_python_gate_coverage(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    files = ["docs/TESTING.md"]
+    changed_tests.print_deferred(files, changed_tests.select(files))
+    output = capsys.readouterr().out
+    assert "Python:" not in output
+    assert "python-tests:" not in output

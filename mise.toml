@@ -110,13 +110,10 @@ description = "Find the DSP tier (fast region, cluster root, AOT) that changes a
 
 # --- verify ---
 
-[tasks."verify:pre"]
-run = "uv run python -m tools.devtools.verify_pre"
-description = "Optional combined preflight, NOT the merge gate (tools/devtools/verify_pre.py; -- --base BRANCH): ruff and mypy on the changed files, pathcheck, pk_build build-all --check, the changed test files, Rust tests of the affected crates; repeats test:changed selection; selected tests may build or launch a device/emulator"
-
 [tasks."test:changed"]
+alias = "verify:pre"
 run = "uv run python -m tools.devtools.changed_tests"
-description = "Affected Python/Rust/module tests for iteration (tools/devtools/changed_tests.py; -- --base BRANCH, --explain, --deep): the tests that import a changed module or name a changed module, quick tier, Rust tests of the affected crates; never a test directory, no PY_GATE, no top-level build step; selected tests may build or launch a device/emulator. Prints why each file runs and what the gate adds. Not the merge gate"
+description = "Fast host preflight: changed Python Ruff/mypy, pathcheck, audited tooling units, native related host Vitest, changed JS/TS lint/format and host types; explicitly defers native, module, device and other Python work to verify. --base/--head/--files/--deep/--explain"
 
 [tasks.verify]
 run = "uv run python -m tools.devtools.verify"

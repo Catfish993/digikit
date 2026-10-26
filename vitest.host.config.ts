@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -7,6 +7,9 @@ export default defineConfig({
   root,
   test: {
     maxWorkers: 1,
+    // Host tests also read desktop source/CSS via fs: related cannot discover
+    // those edges. This native trigger conservatively reruns every host project.
+    forceRerunTriggers: [...configDefaults.forceRerunTriggers, '**/apps/desktop/ui/src/**'],
     projects: [
       ['control-client', 'packages/control-client', 'tests/*.test.ts'],
       ['test-support', 'packages/test-support', 'tests/*.test.ts'],
