@@ -6,10 +6,27 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* cf.string.fn.ctor: no sig yet */
-/* cf.string.fn.dtor: no sig yet */
+typedef struct shared_ptr {
+    uint32_t ptr;
+    uint32_t ctl;
+} shared_ptr;
+_Static_assert(sizeof(shared_ptr) == 0x8, "shared_ptr size");
+_Static_assert(offsetof(shared_ptr, ptr) == 0x0, "shared_ptr.ptr offset");
+_Static_assert(offsetof(shared_ptr, ctl) == 0x4, "shared_ptr.ctl offset");
+
+typedef struct std_function {
+    uint8_t _pad0[8];
+    uint32_t manager;
+    uint32_t invoker;
+} std_function;
+_Static_assert(sizeof(std_function) == 0x10, "std_function size");
+_Static_assert(offsetof(std_function, manager) == 0x8, "std_function.manager offset");
+_Static_assert(offsetof(std_function, invoker) == 0xc, "std_function.invoker offset");
+
+void dk_fw_string_ctor(uint32_t *s, const char *cstr, const uint8_t *alloc) __asm__("cf.string.fn.ctor");
+void dk_fw_string_dtor(uint32_t *s) __asm__("cf.string.fn.dtor");
 /* cf.string.fn.make_sp: no sig yet */
-/* cf.string.fn.sp_move: no sig yet */
-/* cf.string.fn.sp_release: no sig yet */
+void dk_fw_string_sp_move(shared_ptr *dst, shared_ptr *src) __asm__("cf.string.fn.sp_move");
+void dk_fw_string_sp_release(uint32_t *ctl) __asm__("cf.string.fn.sp_release");
 
 #endif

@@ -14,6 +14,7 @@ users = ["core/runtime"]
 name = "cf.mem.fn.new"
 aliases = ["cf.menu.fn.new", "dkrt.fw.alloc"]
 cpu = "cf"
+sig = "u8 *(u32 size)"
 rule = { kind = "cf_func", hash = "0dcb1d56c454607ae1698e4eeff299e7", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu", "core/runtime"]

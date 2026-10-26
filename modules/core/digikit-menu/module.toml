@@ -20,27 +20,13 @@ conflicts = []
 # rebuild calls dk_add_item, which adds a DIGIKIT item after SYSTEM. The views, the item builder, the view stack push,
 # the string constructor and the block read are anchors; the Rust crate (src/rs) holds the logic and calls the runtime's
 # exported functions (dkrt_selection_get, dkrt_selection_set, dkrt_restart, dkrt_boot_info, dkrt_status, dkrt_module) by symbol: the module requires core/runtime.
+# The Rust object has no externs table: it calls the firmware through the generated crate `dkfw` (modules/core/fw, from devices/fw/),
+# whose undefined symbols are the anchor names. The assembly shim object still maps its own symbols below.
 
 [[object]]
 path = "build/digikit-menu-rs.dko.json"
 sources = ["src/rs/Cargo.toml"]
 place = "cf.expansion"
-
-[object.externs]
-fw_new = "cf.menu.fn.new"
-fw_item_builder = "cf.menu.fn.item_builder"
-fw_view_ctor = "cf.menu.fn.view_ctor"
-fw_push = "cf.menu.fn.push"
-fw_str_ctor = "cf.menu.fn.str_ctor"
-fw_str_dtor = "cf.menu.fn.str_dtor"
-fw_blk_read = "cf.menu.fn.blk_read"
-fw_invalidate = "cf.menu.fn.invalidate"
-fw_icon_ref = "cf.menu.icon_ref"
-fw_sp_move = "cf.menu.fn.sp_move"
-fw_brain = "cf.menu.fn.brain"
-fw_mgr_of = "cf.menu.fn.mgr_of"
-fw_view_add = "cf.menu.fn.view_add"
-fw_sp_release = "cf.menu.fn.sp_release"
 
 [[object]]
 path = "build/digikit-menu-cf.dko.json"

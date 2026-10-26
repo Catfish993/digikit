@@ -37,7 +37,8 @@ subsystem file in name order. Review the entry and raise the mark after a check 
 
 An `fn` may have `sig = "u32 (void *p, const char *fmt, ...)"`: a return type and typed, named arguments, `...` last.
 Types are `u8 u16 u32 i8 i16 i32 bool void`, `char` behind a pointer, a struct short name, `const` and `*`. A pointer
-return is refused for now. A `[[struct]]` has `name`, `size`, `mark`, `users` and `fields = [{ name, off, type }]`;
+return is allowed (the firmware sets d0). A `site` with `bind = "static"` is also written as a static (for a module that
+takes only its address); no other `bind` value exists. A `[[struct]]` has `name`, `size`, `mark`, `users` and `fields = [{ name, off, type }]`;
 `type` is a scalar, `ptr` or a struct short name. `patchkit gen` writes the `cf` bindings to `modules/core/fw/`:
 `rs/src/lib.rs` (crate `dkfw`), `include/dk_fw_<subsystem>.h` and `inc/dk_fw_<subsystem>.inc` (GAS).
 

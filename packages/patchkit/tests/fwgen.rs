@@ -71,16 +71,32 @@ fn overlapping_field_is_an_error() {
 }
 
 #[test]
-fn pointer_return_waits_for_the_flag() {
-    let t = fn_entry("cf.mem.fn.new", "void *(u32 n)");
-    let r = render(&[("t.toml", t.as_str())]);
-    if POINTER_RETURNS_ALLOWED {
-        assert!(r.is_ok());
-    } else {
-        let e = r.err().expect("error");
-        assert!(e.0.contains("pointer return types wait"), "{}", e.0);
-        assert!(e.0.contains("cf.mem.fn.new"), "{}", e.0);
-    }
+fn pointer_return_renders_in_rust_and_c() {
+    assert!(POINTER_RETURNS_ALLOWED);
+    let t = format!(
+        "{}{}",
+        fn_entry("cf.mem.fn.new", "void *(u32 n)"),
+        fn_entry("cf.mem.fn.bytes", "const u8 *(u32 n)")
+    );
+    let rs = out(&t, "rs/src/lib.rs");
+    assert!(rs.contains("pub fn new(n: u32) -> *mut core::ffi::c_void;"));
+    assert!(rs.contains("pub fn bytes(n: u32) -> *const u8;"));
+    let c = out(&t, "include/dk_fw_mem.h");
+    assert!(c.contains("void * dk_fw_mem_new(uint32_t n) __asm__(\"cf.mem.fn.new\");"));
+    assert!(c.contains("const uint8_t * dk_fw_mem_bytes(uint32_t n) __asm__(\"cf.mem.fn.bytes\");"));
+}
+
+#[test]
+fn site_bind_static_makes_a_static() {
+    let site = |extra: &str| {
+        format!("[[site]]\nname = \"cf.menu.site.icon_ref\"\n{RULE}{extra}")
+    };
+    let rs = out(&site("bind = \"static\"\n"), "rs/src/lib.rs");
+    assert!(rs.contains("#[link_name = \"cf.menu.site.icon_ref\"]"));
+    assert!(rs.contains("pub static ICON_REF: u8;"));
+    let plain = render(&[("t.toml", site("").as_str())]).expect("renders");
+    assert!(!plain[0].1.contains("ICON_REF"));
+    assert!(render(&[("t.toml", site("bind = \"extern\"\n").as_str())]).is_err());
 }
 
 #[test]

@@ -5,11 +5,22 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "dk_fw_string.h"
 
-/* cf.view.fn.brain: no sig yet */
-/* cf.view.fn.invalidate: no sig yet */
-/* cf.view.fn.mgr_of: no sig yet */
-/* cf.view.fn.push: no sig yet */
-/* cf.view.fn.push_ctx: no sig yet */
+typedef struct View {
+    uint32_t vptr;
+    uint8_t _pad0[40];
+    uint32_t mgr;
+    uint8_t _pad1[28];
+} View;
+_Static_assert(sizeof(View) == 0x4c, "View size");
+_Static_assert(offsetof(View, vptr) == 0x0, "View.vptr offset");
+_Static_assert(offsetof(View, mgr) == 0x2c, "View.mgr offset");
+
+uint8_t * dk_fw_view_brain(void) __asm__("cf.view.fn.brain");
+void dk_fw_view_invalidate(uint8_t *view) __asm__("cf.view.fn.invalidate");
+uint8_t * dk_fw_view_mgr_of(uint8_t *brain) __asm__("cf.view.fn.mgr_of");
+uint32_t dk_fw_view_push(uint8_t *mgr, const shared_ptr *sp, uint32_t exclusive) __asm__("cf.view.fn.push");
+void dk_fw_view_push_ctx(uint8_t *menu, const shared_ptr *sp) __asm__("cf.view.fn.push_ctx");
 
 #endif

@@ -54,13 +54,57 @@ pub mod machine {
 pub mod mem {
     // cf.mem.fn.free: no sig yet
 
-    // cf.mem.fn.new: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.mem.fn.new"]
+        pub fn new(size: u32) -> *mut u8;
+    }
 }
 
 pub mod menu {
-    // cf.menu.fn.item_builder: no sig yet
+    #[repr(C)]
+    pub struct MenuItem {
+        pub _pad0: [u8; 44],
+        pub draw: crate::string::std_function,
+        pub _pad1: [u8; 24],
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<MenuItem>() == 0x54);
+        assert!(core::mem::offset_of!(MenuItem, draw) == 0x2c);
+    };
 
-    // cf.menu.fn.vertical_menu_view_ctor: no sig yet
+    #[repr(C)]
+    pub struct VerticalMenuView {
+        pub _pad0: [u8; 24],
+        pub cursor: u32,
+        pub _pad1: [u8; 28],
+        pub view: crate::view::View,
+        pub _pad2: [u8; 32],
+        pub icon: u32,
+        pub _pad3: [u8; 260],
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<VerticalMenuView>() == 0x1ac);
+        assert!(core::mem::offset_of!(VerticalMenuView, cursor) == 0x18);
+        assert!(core::mem::offset_of!(VerticalMenuView, view) == 0x38);
+        assert!(core::mem::offset_of!(VerticalMenuView, icon) == 0xa4);
+    };
+
+    unsafe extern "C" {
+        #[link_name = "cf.menu.fn.item_builder"]
+        pub fn item_builder(item: *mut u8, label: *const u8, action: *const crate::string::std_function, icon: *const u8, fn4: *const crate::string::std_function);
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.menu.fn.vertical_menu_view_ctor"]
+        pub fn vertical_menu_view_ctor(this: *mut u8, name: *const u8, reserve: u32, title: *const u32, icon: *const u8);
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.menu.site.icon_ref"]
+        pub static ICON_REF: u8;
+    }
 }
 
 pub mod midi {
@@ -132,15 +176,52 @@ pub mod storage {
 }
 
 pub mod string {
-    // cf.string.fn.ctor: no sig yet
+    #[repr(C)]
+    pub struct shared_ptr {
+        pub ptr: u32,
+        pub ctl: u32,
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<shared_ptr>() == 0x8);
+        assert!(core::mem::offset_of!(shared_ptr, ptr) == 0x0);
+        assert!(core::mem::offset_of!(shared_ptr, ctl) == 0x4);
+    };
 
-    // cf.string.fn.dtor: no sig yet
+    #[repr(C)]
+    pub struct std_function {
+        pub _pad0: [u8; 8],
+        pub manager: u32,
+        pub invoker: u32,
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<std_function>() == 0x10);
+        assert!(core::mem::offset_of!(std_function, manager) == 0x8);
+        assert!(core::mem::offset_of!(std_function, invoker) == 0xc);
+    };
+
+    unsafe extern "C" {
+        #[link_name = "cf.string.fn.ctor"]
+        pub fn ctor(s: *mut u32, cstr: *const u8, alloc: *const u8);
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.string.fn.dtor"]
+        pub fn dtor(s: *mut u32);
+    }
 
     // cf.string.fn.make_sp: no sig yet
 
-    // cf.string.fn.sp_move: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.string.fn.sp_move"]
+        pub fn sp_move(dst: *mut crate::string::shared_ptr, src: *mut crate::string::shared_ptr);
+    }
 
-    // cf.string.fn.sp_release: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.string.fn.sp_release"]
+        pub fn sp_release(ctl: *mut u32);
+    }
 }
 
 pub mod test {
@@ -148,15 +229,44 @@ pub mod test {
 }
 
 pub mod view {
-    // cf.view.fn.brain: no sig yet
+    #[repr(C)]
+    pub struct View {
+        pub vptr: u32,
+        pub _pad0: [u8; 40],
+        pub mgr: u32,
+        pub _pad1: [u8; 28],
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<View>() == 0x4c);
+        assert!(core::mem::offset_of!(View, vptr) == 0x0);
+        assert!(core::mem::offset_of!(View, mgr) == 0x2c);
+    };
 
-    // cf.view.fn.invalidate: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.view.fn.brain"]
+        pub fn brain() -> *mut u8;
+    }
 
-    // cf.view.fn.mgr_of: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.view.fn.invalidate"]
+        pub fn invalidate(view: *mut u8);
+    }
 
-    // cf.view.fn.push: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.view.fn.mgr_of"]
+        pub fn mgr_of(brain: *mut u8) -> *mut u8;
+    }
 
-    // cf.view.fn.push_ctx: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.view.fn.push"]
+        pub fn push(mgr: *mut u8, sp: *const crate::string::shared_ptr, exclusive: u32) -> u32;
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.view.fn.push_ctx"]
+        pub fn push_ctx(menu: *mut u8, sp: *const crate::string::shared_ptr);
+    }
 }
 
 pub mod window {

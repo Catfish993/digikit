@@ -11,6 +11,7 @@ crate-type = ["staticlib"]
 dkrt-sdk = { path = "../../../runtime/sdk" }
 dkrt-fit = { path = "../../../runtime/fit" }
 dkneeds = { path = "../../../../../packages/dkneeds" }
+dkfw = { path = "../../../fw/rs" }
 
 # This crate sits inside the repository's cargo workspace but is built on its own (tools/patchkit/pk_rust.py).
 [workspace]

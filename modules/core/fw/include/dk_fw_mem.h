@@ -7,6 +7,6 @@
 #include <stddef.h>
 
 /* cf.mem.fn.free: no sig yet */
-/* cf.mem.fn.new: no sig yet */
+uint8_t * dk_fw_mem_new(uint32_t size) __asm__("cf.mem.fn.new");
 
 #endif

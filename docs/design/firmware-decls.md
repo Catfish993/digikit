@@ -152,8 +152,12 @@ mark = "D"
 - one calling convention per CPU: ColdFire is gcc m68k cdecl (arguments on the stack, result in d0, d0-d1/a0-a1
   clobbered); SHARC entries without `sig` are not callable from C and only have a register contract in their hook.
 
-Whether firmware functions that return a pointer set a0 as well as d0 is open; the generator will refuse a
-pointer-returning `sig` until one test settles it (plan step 5).
+A `sig` may return a pointer: our m68k-elf gcc and the Rust backend read it from d0, and the firmware's operator new
+(0x4011e954), `cf.view.fn.brain` (0x40198c24) and `cf.view.fn.mgr_of` (0x40030a42) on DT2 1.17, and operator new on DN2
+1.12, set d0 **[D]** (static check, 2026-10-27).
+
+A `site` with `bind = "static"` also becomes a static (like a `data` entry), for a module that takes only its address.
+No other `bind` value exists, and `bind` is allowed on a `site` only.
 
 A `[[struct]]` field has `name`, `off` and a `type`: a scalar, `ptr` (a 32-bit pointer on the device) or the short name
 of another struct (its size). The generator sorts fields by `off`, fills gaps with padding and refuses overlaps and

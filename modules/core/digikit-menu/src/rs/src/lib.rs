@@ -2,17 +2,20 @@
 //!
 //! Built with rustc_codegen_gcc for the ColdFire (finding 26). The firmware's own menu classes are used as they
 //! are (finding 23, S2): a `MenuItem` built by the firmware's builder, `VerticalMenuView` objects, `std::function`
-//! objects with our own manager and invoker, and the view stack push. Every firmware function is an undefined
-//! symbol that module.toml maps to an anchor; nothing here knows an address.
+//! objects with our own manager and invoker, and the view stack push. Every firmware function is declared by the
+//! generated crate `dkfw` (devices/fw/): its symbol is the anchor name, and nothing here knows an address.
 //!
 //! Boundary rules (finding 23, S1b): integers and pointers only; the firmware calls us with the gcc m68k cdecl
 //! convention (arguments on the stack, result in d0), which Rust's `extern "C"` matches.
 #![no_std]
 #![allow(static_mut_refs, dangerous_implicit_autorefs)]
 
-use core::mem::transmute;
+use core::mem::{offset_of, size_of, transmute};
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null, null_mut};
+use dkfw::menu::{MenuItem, VerticalMenuView};
+use dkfw::string::{shared_ptr, std_function};
+use dkfw::{mem, menu, string, view};
 use dkneeds::{needs_of, Bytes};
 use dkrt_fit::{self as fit, Needs, Short};
 use dkrt_sdk::proto::{
@@ -25,38 +28,27 @@ fn panic(_: &PanicInfo) -> ! {
     loop {}
 }
 
-// ---- firmware functions (anchors) ----------------------------------------------------------------------------
+// ---- firmware functions (dkfw) and the assembly shims ---------------------------------------------------------
 
+// The firmware functions are `dkfw::{mem, menu, string, view}` (the declarations and their notes are in devices/fw/). The popup's
+// pointer plumbing is as `FUN_400a4832` ("LOAD ERROR") does it: move the pointer into a `shared_ptr<View>`, the Brain singleton,
+// its view manager (Brain + 0x40), add the view (exclusive flag 0), release a count holder.
 extern "C" {
-    /// `operator new(size)`.
-    fn fw_new(size: u32) -> *mut u8;
-    /// `(item, label cstr, &action, icon, &fn4)`: constructs a MenuItem (0x54 bytes) in `item`; copies the functions.
-    fn fw_item_builder(item: *mut u8, label: *const u8, action: *const StdFn, icon: *const u8, fn4: *const StdFn);
-    /// `VerticalMenuView(this, name cstr, reserve, const std::string *title, icon)`; the object is 0x1ac bytes.
-    fn fw_view_ctor(this: *mut u8, name: *const u8, reserve: u32, title: *const u32, icon: *const u8);
-    /// `View::push`: `(menu, &shared_ptr<View>)`; `menu` is the object that opens the view.
-    fn fw_push(menu: *mut u8, sp: *const SharedPtr);
-    /// COW `std::string(cstr, allocator)` into `s` (one pointer) and its destructor.
-    fn fw_str_ctor(s: *mut u32, cstr: *const u8, alloc: *const u8);
-    fn fw_str_dtor(s: *mut u32);
-    /// `View::invalidate(View *)`: asks for a redraw of the view (the screen is redrawn only when a view says so).
-    fn fw_invalidate(view: *mut u8);
-    /// The `pea (icon).l` instruction of the SYSTEM item (6 bytes of code); its operand is the address of a stock icon
-    /// object built at run time.
-    static fw_icon_ref: [u16; 3];
     /// Assembly shim (shim.s): `shared_ptr<View>` from a raw `View*` with the opener as parent (A0 = out).
     fn dk_make_sp(out: *mut SharedPtr, parent: *mut u8, view: *mut u8);
     /// Assembly shim (shim.s): `make_shared<PopupWindow>(const char *const &)` into `out` (A0 = out); `text` points at the
     /// pointer to the NUL-terminated message.
     fn dk_popup_make(out: *mut SharedPtr, text: *const *const u8);
-    /// The popup's pointer plumbing as `FUN_400a4832` ("LOAD ERROR") does it: move `src` into a `shared_ptr<View>` `dst`,
-    /// the Brain singleton, its view manager (Brain + 0x40), add the view (exclusive flag 0), release a count holder.
-    fn fw_sp_move(dst: *mut SharedPtr, src: *mut SharedPtr);
-    fn fw_brain() -> *mut u8;
-    fn fw_mgr_of(brain: *mut u8) -> *mut u8;
-    fn fw_view_add(mgr: *mut u8, sp: *const SharedPtr, exclusive: u32) -> u32;
-    fn fw_sp_release(ctl: *mut *mut u8);
 }
+
+/// The View sub-object of a `VerticalMenuView`, its cursor row (a Menu field) and the View's manager pointer, which
+/// `View::invalidate` tests (0 when the view is not on the stack).
+const VIEW_AT: usize = offset_of!(VerticalMenuView, view);
+const CURSOR_AT: usize = offset_of!(VerticalMenuView, cursor);
+const VIEW_MGR_AT: usize = VIEW_AT + offset_of!(dkfw::view::View, mgr);
+/// The `draw` function of a `MenuItem` (a `std::function`): storage, then the manager.
+const DRAW_STORAGE_AT: usize = offset_of!(MenuItem, draw);
+const DRAW_MANAGER_AT: usize = DRAW_STORAGE_AT + offset_of!(std_function, manager);
 
 // ---- the runtime (core/runtime) --------------------------------------------------------------------------------
 
@@ -115,12 +107,8 @@ pub struct StdFn {
 }
 const EMPTY_FN: StdFn = StdFn { d0: 0, d1: 0, mgr: 0, inv: 0 };
 
-/// `std::shared_ptr<View>`: pointer and control block.
-#[repr(C)]
-pub struct SharedPtr {
-    ptr: *mut u8,
-    ctl: *mut u8,
-}
+/// `std::shared_ptr<View>`: pointer and control block (the layout of `dkfw::string::shared_ptr`).
+pub type SharedPtr = shared_ptr;
 
 static TYPEINFO_DUMMY: u32 = 0;
 
@@ -173,7 +161,7 @@ static NAME_FXR: &[u8] = b"DigikitFxRoutesMenu\0";
 
 /// The address of the stock icon the SYSTEM item uses, read from the operand of the instruction that pushes it.
 unsafe fn icon() -> *const u8 {
-    let r = addr_of!(fw_icon_ref) as *const u16;
+    let r = addr_of!(menu::ICON_REF) as *const u16;
     (((*r.add(1) as u32) << 16) | *r.add(2) as u32) as *const u8
 }
 
@@ -200,7 +188,7 @@ unsafe fn end_rebuild(menu: *mut u8, sel: u32) {
     restore(menu, sel, 2);
     // an action that changes the rows does not move the selection, and the view manager redraws only a view that was
     // invalidated: without this the screen shows the old rows until the next key
-    fw_invalidate(menu.add(0x38));
+    view::invalidate(menu.add(VIEW_AT));
 }
 
 /// One MenuItem with a text label and an action; returned to the caller, which hands it to `add_item`. `glyph`: keep the stock
@@ -208,17 +196,17 @@ unsafe fn end_rebuild(menu: *mut u8, sel: u32) {
 /// icon function is destroyed and emptied after the build, as the firmware's own glyph-less items have it (the MenuItem
 /// constructor copies the icon function only when its manager, +0x34, is not 0; the row's paint skips an empty one).
 unsafe fn make_item(label: *const u8, act: u32, ctx: u32, glyph: bool) -> *mut u8 {
-    let item = fw_new(0x54);
+    let item = mem::new(size_of::<MenuItem>() as u32);
     let mut action = make_fn(act, ctx);
     let mut fn4 = EMPTY_FN;
-    fw_item_builder(item, label, &action, icon(), &fn4);
+    menu::item_builder(item, label, &action as *const StdFn as *const std_function, icon(), &fn4 as *const StdFn as *const std_function);
     // the builder copied both; destroy the temporaries as the firmware does (fn4 first)
     fn_manager(addr_of_mut!(fn4) as *mut u32, addr_of!(fn4) as *const u32, 3);
     fn_manager(addr_of_mut!(action) as *mut u32, addr_of!(action) as *const u32, 3);
     if !glyph {
         // MenuItem: icon std::function at +0x2c (storage), +0x34 (manager), +0x38 (invoker); op 3 frees the copied bitmap
-        let storage = item.add(0x2c) as *mut u32;
-        let manager = item.add(0x34) as *mut usize;
+        let storage = item.add(DRAW_STORAGE_AT) as *mut u32;
+        let manager = item.add(DRAW_MANAGER_AT) as *mut usize;
         if *manager != 0 {
             let destroy: unsafe extern "C" fn(*mut u32, *const u32, u32) -> u32 = transmute(*manager);
             destroy(storage, storage, 3);
@@ -237,17 +225,17 @@ unsafe fn ensure_view(v: *mut View, name: &'static [u8], title: &'static [u8], p
     if !(*v).obj.is_null() {
         return;
     }
-    let obj = fw_new(0x1ac);
+    let obj = mem::new(size_of::<VerticalMenuView>() as u32);
     let mut s: u32 = 0;
     let alloc: u8 = 0;
-    fw_str_ctor(&mut s, title.as_ptr(), &alloc);
-    // no icon: the view draws one at the bottom left only when the pointer (+0xa4) is not null (`TotalRecallMenuView` passes null)
-    fw_view_ctor(obj, name.as_ptr(), 8, &s, null());
-    fw_str_dtor(&mut s);
+    string::ctor(&mut s, title.as_ptr(), &alloc);
+    // no icon: the view draws one at the bottom left only when the pointer (`VerticalMenuView::icon`) is not null (`TotalRecallMenuView` passes null)
+    menu::vertical_menu_view_ctor(obj, name.as_ptr(), 8, &s, null());
+    string::dtor(&mut s);
     (*v).obj = obj;
-    // the View sub-object sits at +0x38
-    (*v).sp = fw_new(8) as *mut SharedPtr;
-    dk_make_sp((*v).sp, parent, obj.add(0x38));
+    // the View sub-object sits at `VIEW_AT`
+    (*v).sp = mem::new(size_of::<SharedPtr>() as u32) as *mut SharedPtr;
+    dk_make_sp((*v).sp, parent, obj.add(VIEW_AT));
 }
 
 // ---- text pages: no highlighted row ------------------------------------------------------------------------------------
@@ -266,7 +254,7 @@ static mut TEXT_VT: [usize; VIEW_VT_SLOTS + 2] = [0; VIEW_VT_SLOTS + 2];
 static mut TEXT_PAINT: usize = 0;
 
 unsafe extern "C" fn text_paint(view: *mut u8, canvas: *mut u8) {
-    let cursor = view.sub(0x38).add(0x18) as *mut u32;
+    let cursor = view.sub(VIEW_AT).add(CURSOR_AT) as *mut u32;
     let saved = *cursor;
     *cursor = 0x7fff_ffff;
     let paint: unsafe extern "C" fn(*mut u8, *mut u8) = transmute(TEXT_PAINT);
@@ -277,7 +265,7 @@ unsafe extern "C" fn text_paint(view: *mut u8, canvas: *mut u8) {
 /// Give the page `obj` (a `VerticalMenuView` built by `ensure_view`) the text paint. It leaves the page as it is when the stock slot is
 /// not the expected thunk (`moveq #-0x38,d0` is 0x70c8): rows with the cursor bar, as before.
 unsafe fn text_page(obj: *mut u8) {
-    let vptr = obj.add(0x38) as *mut usize;
+    let vptr = obj.add(VIEW_AT) as *mut usize;
     let new = addr_of_mut!(TEXT_VT[2]) as usize;
     if *vptr == new {
         return;
@@ -299,7 +287,7 @@ unsafe fn text_page(obj: *mut u8) {
 }
 
 unsafe fn push(from: *mut u8, v: *mut View) {
-    fw_push(from, (*v).sp);
+    view::push_ctx(from, (*v).sp);
 }
 
 // ---- small text helpers ------------------------------------------------------------------------------------------
@@ -676,7 +664,7 @@ unsafe fn load_selection() {
 /// again inside the runtime (finding 43, "the menu's reader and a commit"); the file words read after belong to the same table or fail the load check.
 unsafe fn scan_store() {
     if HDR.is_null() {
-        HDR = fw_new(512);
+        HDR = mem::new(512);
     }
     scan_once();
 }
@@ -828,14 +816,14 @@ unsafe fn popup(t: &Text) {
     DK_POPUP.n = t.n;
     DK_POPUPS += 1;
     let text: *const u8 = DK_POPUP.b.as_ptr();
-    let mut a = SharedPtr { ptr: null_mut(), ctl: null_mut() };
+    let mut a = SharedPtr { ptr: 0, ctl: 0 };
     dk_popup_make(&mut a, &text);
-    let mut b = SharedPtr { ptr: null_mut(), ctl: null_mut() };
-    fw_sp_move(&mut b, &mut a);
-    let mgr = fw_mgr_of(fw_brain());
-    fw_view_add(mgr, &b, 0);
-    fw_sp_release(&mut b.ctl);
-    fw_sp_release(&mut a.ctl);
+    let mut b = SharedPtr { ptr: 0, ctl: 0 };
+    string::sp_move(&mut b, &mut a);
+    let mgr = view::mgr_of(view::brain());
+    view::push(mgr, &b, 0);
+    string::sp_release(&mut b.ctl);
+    string::sp_release(&mut a.ctl);
 }
 
 // ---- boot state -----------------------------------------------------------------------------------------------------
@@ -1552,7 +1540,7 @@ pub unsafe extern "C" fn dk_poll() {
         dkrt_poll_set(0);
         return;
     }
-    let open = *(v.add(0x38 + 0x2c) as *const u32) != 0;
+    let open = *(v.add(VIEW_MGR_AT) as *const u32) != 0;
     if open {
         H_SEEN = 1;
     } else if H_SEEN != 0 {

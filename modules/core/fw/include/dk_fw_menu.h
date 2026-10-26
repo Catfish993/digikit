@@ -5,8 +5,33 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "dk_fw_string.h"
+#include "dk_fw_view.h"
 
-/* cf.menu.fn.item_builder: no sig yet */
-/* cf.menu.fn.vertical_menu_view_ctor: no sig yet */
+typedef struct MenuItem {
+    uint8_t _pad0[44];
+    std_function draw;
+    uint8_t _pad1[24];
+} MenuItem;
+_Static_assert(sizeof(MenuItem) == 0x54, "MenuItem size");
+_Static_assert(offsetof(MenuItem, draw) == 0x2c, "MenuItem.draw offset");
+
+typedef struct VerticalMenuView {
+    uint8_t _pad0[24];
+    uint32_t cursor;
+    uint8_t _pad1[28];
+    View view;
+    uint8_t _pad2[32];
+    uint32_t icon;
+    uint8_t _pad3[260];
+} VerticalMenuView;
+_Static_assert(sizeof(VerticalMenuView) == 0x1ac, "VerticalMenuView size");
+_Static_assert(offsetof(VerticalMenuView, cursor) == 0x18, "VerticalMenuView.cursor offset");
+_Static_assert(offsetof(VerticalMenuView, view) == 0x38, "VerticalMenuView.view offset");
+_Static_assert(offsetof(VerticalMenuView, icon) == 0xa4, "VerticalMenuView.icon offset");
+
+void dk_fw_menu_item_builder(uint8_t *item, const char *label, const std_function *action, const uint8_t *icon, const std_function *fn4) __asm__("cf.menu.fn.item_builder");
+void dk_fw_menu_vertical_menu_view_ctor(uint8_t *this, const char *name, uint32_t reserve, const uint32_t *title, const uint8_t *icon) __asm__("cf.menu.fn.vertical_menu_view_ctor");
+extern const uint8_t dk_fw_menu_icon_ref __asm__("cf.menu.site.icon_ref");
 
 #endif

@@ -1,24 +1,55 @@
 # menu: Menu, MenuItem, menu views, the SETTINGS menu
 # Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
 
+# MenuItem, 0x54 bytes (finding 71 section 4, "MenuItem"). The draw function is a `std::function`; stock items put a bitmap blit there, and
+# core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph.
+[[struct]]
+name = "cf.menu.struct.MenuItem"
+size = 0x54
+fields = [
+  { name = "draw", off = 0x2c, type = "std_function" },
+]
+mark = "D"
+users = ["core/digikit-menu"]
+
+# VerticalMenuView, 0x1ac bytes (finding 71 section 4, "VerticalMenuView"): the Menu base is at +0, the View sub-object at +0x38. `cursor` is
+# the Menu's cursor row in the window (Menu +0x18, read by core/digikit-menu); `icon` is the icon pointer the ctor stores (+0xa4; the view
+# draws one at the bottom left only when it is not null).
+[[struct]]
+name = "cf.menu.struct.VerticalMenuView"
+size = 0x1ac
+fields = [
+  { name = "cursor", off = 0x18, type = "u32" },
+  { name = "view", off = 0x38, type = "View" },
+  { name = "icon", off = 0xa4, type = "ptr" },
+]
+mark = "D"
+users = ["core/digikit-menu"]
+
+# `(item, label cstr, &action, icon, &fn4)`: constructs a MenuItem in `item`; copies both functions.
 [[fn]]
 name = "cf.menu.fn.item_builder"
 cpu = "cf"
+sig = "void (u8 *item, const char *label, const std_function *action, const u8 *icon, const std_function *fn4)"
 rule = { kind = "cf_func", hash = "e115e0c084b379e732551b9618d56beb", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
 
+# `VerticalMenuView(this, name cstr, reserve, const std::string *title, icon)`; `title` points at the one-pointer COW string.
 [[fn]]
 name = "cf.menu.fn.vertical_menu_view_ctor"
 aliases = ["cf.menu.fn.view_ctor"]
 cpu = "cf"
+sig = "void (u8 *this, const char *name, u32 reserve, const u32 *title, const u8 *icon)"
 rule = { kind = "cf_func", hash = "78a29b8d6b996f37e90aa83cbf1eb73d", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
 
+# The `pea (icon).l` instruction of the SYSTEM item (6 bytes of code); its operand is the address of a stock icon object built at run time.
 [[site]]
 name = "cf.menu.site.icon_ref"
 aliases = ["cf.menu.icon_ref"]
+bind = "static"
 cpu = "cf"
 rule = { kind = "cf_func", hash = "8db782f6fd735f89d3b7c856316c0b90", offset = 0x382, len = 6 }
 mark = "D"
