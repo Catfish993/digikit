@@ -1,4 +1,4 @@
-"""The quick checks a lane runs before it hands its branch to the coordinator. Not the merge gate.
+"""Optional combined preflight for a lane. Not the merge gate; not a mandatory follow-up to test:changed.
 
     mise run verify:pre [-- --base BRANCH]
 
@@ -6,8 +6,8 @@ Runs, for the files changed since the merge base with BASE (default: the uncommi
 ruff (check and format) on the changed Python files of tests/ and tools/, mypy on the changed files of
 the TYPED list (tests/devtools/test_types.py), the path check, `pk_build build-all --check` when
 modules, patchkit tools or ports changed, the tests `mise run test:changed` selects
-(tools/devtools/changed_tests.py), and the Rust tests of the affected crates (verify.rust_scope). It runs no
-emulator, no PCM pin and no scenario. `mise run verify` is the merge gate. It runs at nice 10
+(tools/devtools/changed_tests.py), and the Rust tests of the affected crates (verify.rust_scope). It has no
+explicit PCM pin or scenario step; selected tests may build or launch a device/emulator. `mise run verify` is the merge gate. It runs at nice 10
 (--foreground: normal priority) and sets cargo's and libtest's pools from the verify CPU budget
 (tools/devtools/verify_budget.py), as `verify` does for its steps.
 """
@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         verdict = f"FAILED: {', '.join(failed)}"
     print(f"verify:pre: {verdict} for {len(files)} changed files since {args.base}.")
     print(
-        "verify:pre is NOT the merge gate: it runs no emulator, pin or scenario. "
+        "verify:pre is an optional preflight, NOT the merge gate; selected tests may build or launch an emulator. "
         "The coordinator runs `mise run verify` once per merge."
     )
     return 1 if failed else 0

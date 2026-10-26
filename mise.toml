@@ -124,15 +124,15 @@ description = "Find the DSP tier (fast region, cluster root, AOT) that changes a
 
 [tasks."verify:pre"]
 run = "uv run python -m tools.devtools.verify_pre"
-description = "Quick lane checks, NOT the merge gate (tools/devtools/verify_pre.py; -- --base BRANCH): ruff and mypy on the changed files, pathcheck, pk_build build-all --check, the changed test files, Rust tests of the affected crates; selected tests may require emulator"
+description = "Optional combined preflight, NOT the merge gate (tools/devtools/verify_pre.py; -- --base BRANCH): ruff and mypy on the changed files, pathcheck, pk_build build-all --check, the changed test files, Rust tests of the affected crates; repeats test:changed selection; selected tests may build or launch a device/emulator"
 
 [tasks."test:changed"]
 run = "uv run python -m tools.devtools.changed_tests"
-description = "The tests the changed files select, for a lane while it iterates (tools/devtools/changed_tests.py; -- --base BRANCH, --explain, --deep): the tests that import a changed module or name a changed module, quick tier, Rust tests of the affected crates; never a test directory, no PY_GATE, no build step. Prints why each file runs and what the gate adds. Not the merge gate"
+description = "Affected Python/Rust/module tests for iteration (tools/devtools/changed_tests.py; -- --base BRANCH, --explain, --deep): the tests that import a changed module or name a changed module, quick tier, Rust tests of the affected crates; never a test directory, no PY_GATE, no top-level build step; selected tests may build or launch a device/emulator. Prints why each file runs and what the gate adds. Not the merge gate"
 
 [tasks.verify]
 run = "uv run python -m tools.devtools.verify"
-description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes run verify:pre"
+description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes use owner checks, with optional verify:pre"
 
 [tasks."verify:host"]
 run = [

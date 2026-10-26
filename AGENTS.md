@@ -42,9 +42,14 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
   with a bound (`sleep N; tail -n 5 FILE`) or use a monitor.
   Poll with an exit condition (the loop in "Verify"), not with a fixed sleep.
-- Lane agents iterate with `mise run test:changed` (the tests the changed files select, quick tier, no build step;
-  `--explain` prints why each file runs and what the gate adds) and finish with `mise run verify:pre` (1 to 2 min: lint,
-  types, pathcheck, `pk_build --check`, the same tests, Rust tests of the affected crates; it is not the merge gate). Run `verify:pre` once, before handing the branch back; it already runs the tests `test:changed` selects. The
+- Lane agents use checks appropriate to the owner while iterating: native `mise run test:host` for host
+  Vitest tests, `mise run verify:host` for host lint/format, tests and types, or `mise run test:changed`
+  for affected Python/Rust/module tests (`--explain` prints selection and gate additions).
+  `test:changed` has no top-level build step, but selected tests may build or launch a device/emulator;
+  inspect the selection before running it. `mise run verify:pre` is an optional preflight, not a mandatory
+  follow-up: it adds changed-Python lint/types, pathcheck and conditional module staleness checks and
+  repeats the selected tests. Do not routinely run both. Finish with the checks required by the owner
+  and hand off their results and any deferred coverage to the coordinator. The
   proof tools (`pk_proof_*`, `digikit_menu_proof`, `pk_dkrt_boot proof`, `pk_registry proof`) take `--quick` (budget about
   60 s per tool) while iterating; verify has no tier flag. The coordinator runs `mise run verify` once per merge; it includes the
   smoke matrix (step `smoke`; skipped when every changed path is UI-only or an exact listed maintenance path), so no proof tool is re-run by hand. Check what a
@@ -61,10 +66,11 @@ What to run for a change (`mise run test:changed -- --explain` shows the selecti
 
 | Change | Lane, while iterating | The gate adds (`mise run verify -- --base main`) | A merge to `main` adds |
 | --- | --- | --- | --- |
-| Docs (`*.md`) | nothing | nothing | nothing |
+| Docs (`*.md`) | pathcheck when adding or changing path references | nothing | nothing |
+| JS/TS host tests and helpers | `test:host` for tests; `verify:host` for host lint/format, tests and types | routed owner checks; inspect `verify -- --explain` | nothing |
 | Python under tools/ or tests/ | `test:changed`: the tests that import the module (`--deep`: also through other tools) | PY_GATE (lint, types, pathcheck, staleness), the tests that reach the module in the import graph, the PY_SUITES that list files | nothing |
-| tools/patchkit, packages/patchkit, devices/ports | `test:changed`, then `verify:pre` (`pk_build build-all --check`, patchkit Rust tests) | the patchkit suite, build-daemons | nothing |
-| Leaf module (modules/machines, fx, test, ...) | `test:changed`: the tests and scenarios that name it, conformance for a machine; `verify:pre` | rust-tests; web when the gallery reads the file | nothing |
+| tools/patchkit, packages/patchkit, devices/ports | `test:changed` (affected tests and patchkit Rust tests); optional `verify:pre` also checks `pk_build build-all --check` | the patchkit suite, build-daemons | nothing |
+| Leaf module (modules/machines, fx, test, ...) | `test:changed`: the tests and scenarios that name it, conformance for a machine | rust-tests; web when the gallery reads the file | nothing |
 | Framework module (`FRAMEWORK` in tools/devtools/verify_route.py) | `test:changed`: the tests and scenarios that name the module itself | tests/patchkit and tests/digikit | nothing |
 | SHARC core or transpiler (the `CORE_FINGERPRINT` files) | regenerate the cores, then `test:changed` | every step | `mise run verify:full` |
 | SHARC engine, fast tier, other emulator crates | `test:changed` (the crates' Rust tests) | build, pins, check and tier steps | nothing |
@@ -78,10 +84,18 @@ What to run for a change (`mise run test:changed -- --explain` shows the selecti
   command (the hook adds the sleeps up), no `tail -f`. A repo PreToolUse hook (tools/devtools/agent_guard.py, .claude/settings.json) blocks directory pytest,
   `--tier full`, `verify:full`, `sleep` over 60 s and `tail -f`; only the coordinator prefixes `DIGI_GUARD=off`, deliberately.
 - Test layout, commands and the current baseline: docs/TESTING.md.
-- `mise run verify:pre` is the lane check (no emulator; not the merge gate). `mise run verify` is the merge gate and runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
+- `mise run verify:pre` is an optional preflight, not the merge gate; its selected tests may build or launch an emulator. `mise run verify` is the merge gate and runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
   changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running; `--rerun-failed` re-runs only the steps that failed in the last run). `mise run verify:full` runs every
   step (about 7 minutes with a warm render cache, about 20 minutes when DSP/native code changed): only after changes to the
   generated core. Otherwise `mise run verify` (routed by the changed files) is the gate, also for a merge to `main`.
+- `verify:pre` remains available for combined checks; it is not an alias for `test:changed`.
+  When selected, the gate’s `python-tests` step runs `PY_GATE`: lint over `CLEAN`, types over
+  `TYPED`, repository pathcheck, and module/port staleness checks (`pk_build build-all --check`
+  through `tests/patchkit/test_pk_current.py`). Host/UI-only routes may omit this step.
+  Skip repeats only when chosen commands or the planned gate cover the required checks; otherwise
+  run the missing check directly or use the optional preflight. For changed path references without
+  planned gate pathcheck coverage, run `uv run python -m tools.devtools.pathcheck --paths PATH ...`
+  before handoff. Inspect `verify -- --explain`; optional preflight does not remove a required check.
 - One CPU budget for the whole gate (tools/devtools/verify_budget.py): min(physical cores - 2, the cores the RAM carries: (RAM - 4 GB) at 1 GB per 2-core emulator process), at least 1, and cargo jobs at most (RAM - 4 GB) / 6 GB (`GB_PER_EMULATOR`, `GB_PER_CARGO_JOB`, `RESERVE_GB` in verify_budget.py); physical cores come from sysctl, Linux sysfs topology within the affinity and cgroup CPU quota, else logical / 2; the run and `--explain` print which limit applied (`--jobs N` or DIGI_VERIFY_BUDGET override it; `--explain` and the start of a run print the worker plan). A step starts when its share is free; the shares of the running steps never add up to more than the budget, and a share sets the step's inner pools (CARGO_BUILD_JOBS, RUST_TEST_THREADS, RAYON_NUM_THREADS, DIGI_JOBS, DIGI_TIER_JOBS, DIGI_PY_JOBS, DIGIKIT_JOBS, DIGIKIT_PART_JOBS=1, node test concurrency); a pool variable you set yourself replaces the share. One coupled emulator process counts as 2 cores. `verify`, `verify:pre` and `verify:full` run at nice 10 (`--foreground`: normal priority). The generated-core builds run once, in a chain (build, build-dt2, build-daemons), before the steps that use them. Do not start a second gate or a cargo build while one runs.
 - Steps: build, desktop (app crate check), web (node tests and astro check), pins (seven DN2 PCM pins), check (61
   DN2 scenario oracles), check-no-aot, tier-quick / tier-sweep (AOT = no-AOT PCM on a fixed subset of the FX scenarios, `NO_AOT_SUBSET` in tools/devtools/verify.py; `--all-no-aot` runs every one: all 134 in tier-sweep, all 61 oracle tests in check-no-aot) (one shared queue of small chunks, the step's share of the budget in emulator processes), python-tests (the PY_GATE files, the tests that reach a changed Python module in the import graph, the PY_SUITES the change
@@ -90,7 +104,7 @@ What to run for a change (`mise run test:changed -- --explain` shows the selecti
   (in-process DT2 card: trigs play the files), smoke (the patchkit smoke matrix, `pk_harness run`: 17 cells, one `digi-emud` daemon each, the step's emulator processes at once; runs unless every changed path is UI-only or one of the exact smoke-exempt paths (the exact maintenance and audited host-test paths in `SMOKE_EXEMPT` in tools/devtools/verify.py; host checks remain selected, while new tests, helpers and configuration remain conservative), after build-daemons), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
 - Tests and the gate run on the newest image of each device only (DT2 1.17, DN2 1.12); 1.16 and 1.11 remain analysis references.
 - Scenario renders are cached by content (out/cache/renders; tools/devtools/render_cache.py): a render reruns only when the binary, input files, scenario, peeks, device TOMLs or a SHARC_/DIGI_/DSP_ variable changed. `--no-cache` or DIGI_RENDER_CACHE=0 forces renders; `uv run python -m tools.emulator.coupled cache clear` empties it. Only emulator output is cached; oracles, hash compares and pins run fresh. Guard 1: tests/devtools/test_render_inputs.py fails when a render input (env read or file read) is not classified; regenerate counts with `uv run python -m tests.devtools.test_render_inputs --scan` after review. Guard 2: verify sets DIGI_RENDER_CACHE_CHECK=0.03, which re-renders about 3% of hits and fails on any difference. Use `verify --no-cache` for release gates.
-- While working, run `mise run test:changed`.
+- While working, use the owner commands above; an iteration test run does not replace the coordinator’s routed gate.
 - Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
   `tests/devtools/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11
   (`tests/devtools/test_pypy.py`, slow).

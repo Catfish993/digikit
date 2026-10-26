@@ -41,7 +41,7 @@ Other tests:
 - Mark long firmware runs `@pytest.mark.slow`. They are skipped unless `--slow` is given.
 - A test that needs firmware or generated artifacts skips with a reason when they are absent.
 - A new Python file joins the `CLEAN` list in `tests/devtools/test_lint.py`.
-- `tests/devtools/test_pathcheck_repo.py` (in the verify gate) runs `uv run python -m tools.devtools.pathcheck`: every path-like token in tracked text files must name a tracked file or directory, a generated or git-ignored path, or an allowed token. A deleted file is cited as `REF:path`, checked with `git cat-file` (`unicorn-reference-final:emu/edma.py`, `<commit>^:path`). Files under `history_docs` (findings, plans, design, archive, refs, contracts) may name paths that were once tracked. Add an exception to `allow` in `tools/devtools/pathcheck.json` with a required reason; an allow that matches nothing fails the run. `--fix` and `--fix-deleted REF` rewrite stale tokens (dry run unless `--apply`).
+- `tests/devtools/test_pathcheck_repo.py` (in the `python-tests` gate step) runs `uv run python -m tools.devtools.pathcheck`: every path-like token in tracked text files must name a tracked file or directory, a generated or git-ignored path, or an allowed token. A deleted file is cited as `REF:path`, checked with `git cat-file` (`unicorn-reference-final:emu/edma.py`, `<commit>^:path`). Files under `history_docs` (findings, plans, design, archive, refs, contracts) may name paths that were once tracked. Add an exception to `allow` in `tools/devtools/pathcheck.json` with a required reason; an allow that matches nothing fails the run. `--fix` and `--fix-deleted REF` rewrite stale tokens (dry run unless `--apply`).
 
 ## Inputs tests need
 
@@ -72,9 +72,10 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run test:slow` | The same runner with `--pytest-arg=--slow` and a one-hour per-file timeout, then `tools/devtools/rust_ws.py gates` | Slow runs and the ignored Rust gates that need private fixtures |
 | `mise run lint` | `lint:py` (ruff check and format check on the `CLEAN` list), `lint:web` (oxlint on the JS/TS workspaces), `fmt:check` (Prettier check; `mise run fmt` formats in place), `lint:rust` (cargo fmt check) | Before a commit |
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
-| `mise run test:changed` | The tests the changed files select (`tools/devtools/changed_tests.py`): the tests that import a changed module under tools/ or tests/ (directly or through a tests helper or conftest; `--deep` also through other tools modules), the tests and quick-tier scenarios that name a changed module (for a framework module only the module itself), the fine routes of verify, the changed test files, and the Rust tests of the affected crates. Never a test directory, no PY_GATE, no build step. `--explain` prints each file with its reason and what the gate adds; `--base BRANCH` for a lane. | In a lane, while iterating |
+| `mise run test:changed` | The tests the changed files select (`tools/devtools/changed_tests.py`): the tests that import a changed module under tools/ or tests/ (directly or through a tests helper or conftest; `--deep` also through other tools modules), the tests and quick-tier scenarios that name a changed module (for a framework module only the module itself), the fine routes of verify, the changed test files, and the Rust tests of the affected crates. Never a test directory and no PY_GATE. There is no top-level build step, but selected tests may build or launch a device/emulator; inspect the selection first. `--explain` prints each file with its reason and what the gate adds; `--base BRANCH` for a lane. | For affected Python/Rust/module tests while iterating |
+| `mise run test:host` | Native host Vitest projects; runner filters and worker options pass through. No native/WASM build or device inputs. | Host test iteration |
 | `mise run verify:host` | Native mise sequence: global JS/TS lint and format, five host Vitest projects and five package type checks. Stops at the first failure. No Python, native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
-| `mise run verify:pre` | Quick lane checks (`tools/devtools/verify_pre.py`, 1 to 2 min): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No explicit pin or scenario step; selected tests may require an emulator. It prints that it is not the merge gate. | In a lane, while iterating and before handing the branch over |
+| `mise run verify:pre` | Optional preflight (`tools/devtools/verify_pre.py`): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No explicit pin or scenario step; selected tests may build or launch a device/emulator. It prints that it is not the merge gate. | Optional combined preflight; do not routinely run after `test:changed` |
 | `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, unless every changed path is UI-only or exactly a listed smoke-exempt path); a lane checks the routing with `--explain` |
 | `mise run verify:full` | Every step (about 7 min with a warm render cache, about 20 min when DSP/native code changed). The AOT = no-AOT sweep runs the fixed subset; `-- --all-no-aot` runs all 134 scenarios and all 61 oracle tests. | Only after changes to the generated core |
 | `mise run scenario:all` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
@@ -231,7 +232,23 @@ than triggering an automatic build. Each runtime startup has a 120-second deadli
 cleanup (at most ten more seconds); the Vitest hook limit is 150 seconds. Module installation/remote
 behavior, snapshot/reuse and Python scenario migration are outside this boot fixture's assertions.
 
-`PY_GATE` runs in every case: lint, types, pathcheck and `tests/patchkit/test_pk_current.py` (`pk_build build-all --check` and the port files). Not run by any pytest file: the scenario kinds `rungc` and `pages`, and the module smoke
+`PY_GATE` runs whenever the routed gate selects `python-tests`: lint over `CLEAN`, types over
+`TYPED`, repository pathcheck and `tests/patchkit/test_pk_current.py` (module staleness via
+`pk_build build-all --check`, plus port freshness). Host/UI-only routes may omit `python-tests`;
+inspect `mise run verify -- --explain` rather than assuming these checks always run.
+
+Use owner commands while iterating and finish with the owner’s required checks. `verify:pre`
+remains an optional combined preflight, not an alias for `test:changed`: it checks changed
+Python files with Ruff, changed `TYPED` files with mypy, all repository paths, and conditional
+module staleness, then repeats selected tests and affected Rust tests. The gate’s lint/type
+lists define its coverage (`CLEAN` currently covers `tests/` and `tools/`). Skip repeats only
+when the chosen commands or planned gate cover the required checks; otherwise run the missing
+check directly or use the optional preflight. For changed path references without planned gate
+pathcheck coverage, use `uv run python -m tools.devtools.pathcheck --paths PATH ...` before handoff.
+Do not routinely run `test:changed` followed by `verify:pre`; report checks run and deferred
+coverage to the coordinator, whose routed gate remains authoritative.
+
+Not run by any pytest file: the scenario kinds `rungc` and `pages`, and the module smoke
 cells (`uv run python -m tools.patchkit.pk_harness run`; the `smoke` step of `verify` runs them). A new `tools/device` module must be listed in `DEVICE_KINDS`
 (a test fails until it is).
 
