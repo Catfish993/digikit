@@ -59,6 +59,8 @@ parallel.
 - [x] Groups: community detection (networkx) on the UI call subgraph, about 30-50 groups, each with its classes,
       strings and members. Export the subgraph as JSON as well.
 - [x] Agents pre-label the top groups and their rows (role guess from decompilation, [O]).
+- [ ] Score: down-weight destructors (`vfunc_0`), 12-byte thunks and libc helpers; show labelled rows from groups
+      under 10 functions on the review page.
 - [x] Review page: group -> rows -> call neighbourhood per row, with keep / skip / later, a name and a note. Reviewed
       rows seed step 3. The page is the review view of the reference docs in step 5 (same generator).
 
@@ -193,8 +195,19 @@ Proof: screenshots of both tabs before Em tries them.
 - [ ] A `core/ui` adapter per device implements it with that device's anchors (e.g. DT2 `SourcePageView` against DN2
       `MultiSourcePageView`). A new device adds an adapter and anchors; modules and the header do not change.
 - [ ] Portability count on Syntakt 1.42 for the UI declarations.
+- [x] Static inventory of the UI framework, drawing primitives, menus and lists, windows and dialogs:
+      `docs/findings/71-ui-components-1-17.md`.
 
-Sized after step 1.
+Inventory 2026-10-27 [D]/[O]: almost every component needed has a firmware class whose code is byte-identical on DT2
+and DN2: view stack (ViewController push, close, invalidate), drawing (text, text width, rectangle, fill, blit, scroll
+bar, toast), Menu and MenuItem (lists are Menus; value items are a draw plus an adjust function), NameView text entry,
+ConfirmWindow, MultiChoiceWindow, MessageWindow, PopupWindow, ProgressWindow. Main risk: module views and dialogs need
+a trampoline View class (copied vtables calling module callbacks) and a valid `shared_ptr<View>` control block; prove
+that first with one confirm dialog in the emulator. Not traced yet: page switching, the View encoder slot, key names
+for codes 10/12 against 0xb/0xc.
+
+Order of work: (1) drawing and toast calls, no new objects; (2) menus through the existing `cf.menu.fn.*` path;
+(3) confirm and choice dialogs (the shared_ptr proof); (4) text entry; (5) module-owned views.
 
 ### Syntakt track (lower priority: S3 after step 9)
 
@@ -225,5 +238,5 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27: plan written. Steps 1 and 1b done; S1/S2 and finding 70 done. Em is reviewing the catalogue on the review
-page. Next: step 2 (clean-up), then the step 3 declaration design from the kept rows.
+2026-10-27: plan written. Steps 1 and 1b done; S1/S2 and findings 70 and 71 done. Review page generator in the repo
+(`tools/firmware/catalog_page.py`); Em reviews later. Next: step 2 (clean-up), then the step 3 declaration design from the kept rows.
