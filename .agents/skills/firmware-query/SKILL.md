@@ -49,6 +49,8 @@ It adds the table `catalog` to `out/atlas/<image>.sqlite` and writes `out/atlas/
 
 Review by group first, then rows. The build also writes `out/atlas/<image>-catalog-groups.tsv` (table `catalog_groups`) and `out/atlas/<image>-catalog-graph.json` (nodes and call edges between catalog rows). A group is a Louvain community of the call graph between catalog rows; group -1 is a row alone.
 
+Review page: `uv run python -m tools.firmware.catalog_page dt2-1.17 [--labels FILE ...]` writes `out/atlas/dt2-1.17-review.html`. Labels are JSONL files, by default every `*.jsonl` in `out/atlas/labels/<image>/`. Keep/later/skip decisions are stored by the published page; read them back with the artifact database tools.
+
 | column | meaning |
 | --- | --- |
 | tags | why it is a candidate: ui_own_vfunc, ui_vfunc, ui_helper, ui_string, near:PREFIX (next to an existing anchor), role:ROLE, term:TERM |

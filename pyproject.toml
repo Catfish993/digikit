@@ -79,6 +79,8 @@ files = [
     "tools/coldfire/atlas.py",
     "tests/coldfire/test_atlas_catalog.py",
     "tools/firmware/catalog.py",
+    "tools/firmware/catalog_page.py",
+    "tests/firmware/test_catalog_page.py",
     "tools/sharc_dev/sharc_catalog.py",
     "tests/firmware/test_catalog.py",
     "tests/firmware/test_sharc_catalog.py",
