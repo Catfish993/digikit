@@ -159,11 +159,11 @@ description = "DT2 stock FX: 135 quick / 146 full (DIGI_FX_SWEEP=1); native Vite
 
 [tasks."test:runtime"]
 run = "pnpm --filter @digi/regression test:runtime"
-description = "Explicit coupled runtime acceptance, serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries and DIGI_RUNTIME_CARD samples; no implicit native build; accepts Vitest filters (for example -- service-commands)"
+description = "Coupled runtime acceptance (also relevant-change gate owner), serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries and DIGI_RUNTIME_CARD samples; no implicit native build; accepts Vitest filters (for example -- service-commands)"
 
 [tasks."test:modules"]
 run = "pnpm --filter @digi/regression test:modules"
-description = "Explicit serial coupled module-load acceptance: three production uploads on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
+description = "Serial coupled module-load acceptance (also relevant-change gate owner): three production uploads on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
 
 [tasks."test:quick"]
 run = [

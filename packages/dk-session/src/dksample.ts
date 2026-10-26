@@ -1,7 +1,7 @@
 // The WAV to native sample converter and the +Drive content hash (packages/dksample, `dksample.wasm`): the code the card builder uses, so a sample sent over
 // MidiRpc is byte for byte the file the +Drive build writes. `prepareUpload` decides what a file needs before it goes to the device.
 // Written without TS-only runtime syntax so node can import it for the tests.
-import { DkError } from '@digi/dk-session';
+import { DkError } from './dkupload-core.ts';
 
 export interface SampleInfo {
   srcRate: number;
@@ -83,7 +83,7 @@ const NATIVE_TRAILER = 16;
 
 /** The native sample test on the first 0x40 bytes of a file of `size` bytes. */
 function nativeHead(h: Uint8Array, size: number): boolean {
-  if (h.length < 0x40 || h[0] !== 0 || h[1] > 1 || h[0x14] !== 0x7f) return false;
+  if (h.length < 0x40 || h[0] !== 0 || h[1]! > 1 || h[0x14] !== 0x7f) return false;
   const v = new DataView(h.buffer, h.byteOffset, h.length);
   const body = v.getUint32(4);
   return v.getUint32(8) === 48000 && (size === 0x40 + body || size === 0x40 + body + NATIVE_TRAILER);

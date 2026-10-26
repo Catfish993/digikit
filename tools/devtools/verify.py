@@ -32,7 +32,7 @@ tier steps run NO_AOT_SUBSET (a fixed subset of the FX scenarios, documented the
 for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups into small chunks of scenarios and run
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
 check-no-aot runs 17 native FX assertions even with --full (--all-no-aot: 61 normally, 191 with --full).
-Normal routing excludes runtime-fixture and full tier sweeps; runtime-fixture is explicit/full-only.
+Normal routing includes relevant stock, runtime and module acceptance; full tier sweeps stay explicit.
 python-tests runs the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
@@ -81,6 +81,7 @@ from tools.emulator import (  # noqa: E402
     coupled,  # noqa: E402
     digi_env,  # noqa: E402
 )
+from tools.patchkit import modroots  # noqa: E402
 
 PY = ["uv", "run", "python"]
 FX_FILES = (
@@ -216,7 +217,9 @@ STEPS = (
     "desktop",
     "host",
     "web",
+    "stock",
     "runtime-fixture",
+    "module-load",
     "pins",
     "check",
     "check-no-aot",
@@ -283,9 +286,7 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
     "tests/regression/scenarios/dt2-sendfx.ts": ("sf-mst-ratio",),
 }
 # Normal broad verification excludes full-tier or explicitly requested steps.
-EVERYTHING = tuple(
-    s for s in STEPS if s not in ("runtime-fixture", "tier-sweep", "dt2-tier-sweep")
-)
+EVERYTHING = tuple(s for s in STEPS if s not in ("tier-sweep", "dt2-tier-sweep"))
 FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
 # A change to the routing itself selects every normal step and the whole python plan: a routing bug
 # would otherwise drop coverage without anyone seeing it.
@@ -535,7 +536,7 @@ def expand_mise(
     return sorted(set(rest) | set(paths)), origin
 
 
-def route(path: str) -> tuple[str, tuple[str, ...]]:
+def base_route(path: str) -> tuple[str, tuple[str, ...]]:
     """How one changed path is routed: (matched prefix or "docs"/"fallback", steps)."""
     if path.endswith(".md"):
         return "docs", ()  # documentation selects no steps
@@ -547,6 +548,23 @@ def route(path: str) -> tuple[str, tuple[str, ...]]:
             if path.startswith(prefix):
                 return prefix, steps
     return "fallback", FALLBACK
+
+
+def route(path: str) -> tuple[str, tuple[str, ...]]:
+    """Keep the existing owner route and add relevant native acceptance."""
+    label, original = base_route(path)
+    wanted = set(original)
+    for step in verify_route.ACCEPTANCE_DIRS:
+        if verify_route.acceptance_files(step, [path]):
+            wanted.add(step)
+    return label, tuple(s for s in STEPS if s in wanted)
+
+
+def acceptance_plan(step: str, files: list[str]) -> list[str]:
+    """A broad owner must not be narrowed by a second leaf change; empty means all files."""
+    if any(step in base_route(path)[1] for path in files):
+        return []
+    return verify_route.acceptance_files(step, files)
 
 
 def is_python_source(path: str) -> bool:
@@ -638,6 +656,19 @@ def ui_only(files: list[str]) -> bool:
     return bool(files) and all(ui_only_path(path) for path in files)
 
 
+def smoke_cells(files: list[str]) -> list[str] | None:
+    """Filter only the three audited production leaves plus existing exemptions; None means full."""
+    leaves: set[str] = set()
+    for path in files:
+        if ui_only_path(path) or path in SMOKE_EXEMPT:
+            continue
+        mid = modroots.module_id(path)
+        if mid not in verify_route.RUNTIME_UPLOADS:
+            return None
+        leaves.add(mid)
+    return verify_route.module_smoke_cells(leaves) if leaves else None
+
+
 def smoke_reason(files: list[str]) -> str | None:
     """Why this complete changed-file set may skip the smoke matrix, if any."""
     if ui_only(files):
@@ -650,6 +681,8 @@ def smoke_reason(files: list[str]) -> str | None:
         elif reason := SMOKE_EXEMPT.get(path):
             maintenance.append(reason)
         else:
+            if smoke_cells(files) == []:
+                return "audited production leaves have no dependent cells in the smoke matrix"
             return None
     if maintenance:
         kind = "UI-only and smoke-exempt" if ui else "smoke-exempt"
@@ -746,11 +779,15 @@ class Gate:
         rust_packages: list[str] | None = None,
         all_no_aot: bool = False,
         budget: int = 1,
+        acceptance: dict[str, list[str]] | None = None,
+        smoke_selection: list[str] | None = None,
     ) -> None:
         self.out = out
         self.rust_packages = rust_packages
         self.all_no_aot = all_no_aot
         self.budget = budget
+        self.acceptance = acceptance or {}
+        self.smoke_selection = smoke_selection
         # variables set by an earlier node for the later ones (the pinned PGO daemons of build-daemons)
         self.shared_env: dict[str, str] = {}
         self.py_tests = py_tests if py_tests is not None else list(PY_GATE)
@@ -1060,7 +1097,14 @@ DN2_BINARY = ("pins", "check", "check-no-aot", "tier-quick", "tier-sweep")
 DT2_BINARY = ("dt2-tone", "dt2-check", "dt2-tier-quick", "dt2-tier-sweep")
 # Test files that drive a `digi-emud` daemon: python-tests builds the daemons once (build-daemons) when
 # its plan has one of them (a file not listed here still works: it builds the daemon itself).
-DAEMON_NODES = ("python-tests", "card", "smoke", "runtime-fixture")
+DAEMON_NODES = (
+    "python-tests",
+    "card",
+    "smoke",
+    "stock",
+    "runtime-fixture",
+    "module-load",
+)
 DAEMON_TESTS = (
     "tests/digikit/",
     "tests/patchkit/smoke/",
@@ -1333,6 +1377,11 @@ def explain(
     print(f"steps: {', '.join(steps) or 'nothing to run'}")
     if per_file and steps and "smoke" not in steps and (reason := smoke_reason(files)):
         print(f"smoke: skipped, {reason}")
+    elif per_file and "smoke" in steps and (cells := smoke_cells(files)) is not None:
+        print(
+            "smoke: selected dependent matrix cells for audited production leaves: "
+            + "; ".join(cells)
+        )
     elif per_file and "smoke" in steps:
         conservative = [
             path
@@ -1341,6 +1390,23 @@ def explain(
         ]
         if conservative:
             print(f"smoke: selected, conservative path: {', '.join(conservative)}")
+    if not per_file and "smoke" in steps:
+        print("smoke: full matrix for explicit/full/rerun acceptance")
+    for step in verify_route.ACCEPTANCE_DIRS:
+        if step in steps:
+            selected = acceptance_plan(step, files)
+            print(
+                f"{step}: native Vitest files (relevant changes, or all for broad/explicit acceptance): "
+                + ", ".join(selected or ["all"])
+            )
+            if step == "module-load" or (
+                step == "runtime-fixture"
+                and (not selected or any("input-adapter" in f for f in selected))
+            ):
+                print(
+                    f"{step}: prerequisite pk_build --check, then fresh patchkit pack into its run directory; "
+                    "may build module toolchains/patchkit CLI, never emulator daemons"
+                )
     if "rust-tests" in steps:
         scope = ", ".join(rust_packages) if rust_packages else "whole workspace"
         print(f"rust-tests packages: {scope}")
@@ -1417,6 +1483,54 @@ def finish_python(gate: Gate) -> None:
     gate.report("python-tests", problem, time.monotonic() - began, text)
 
 
+def prepare_acceptance_modules(gate: Gate, step: str, modules: list[str]) -> Path:
+    """Check existing objects and pack fresh DKMs; each acceptance node owns its directory/logs."""
+    directory = gate.out / step / "modules"
+    checks = []
+    for mid in modules:
+        name = f"{step}-check-{mid.rsplit('/', 1)[-1]}"
+        checks.append(name)
+        gate.run(
+            name,
+            [
+                *PY,
+                "-m",
+                "tools.patchkit.pk_build",
+                "build",
+                str(modroots.module_dir(mid)),
+                "--check",
+            ],
+        )
+    if any(name in gate.failed for name in checks):
+        raise RuntimeError(
+            f"{step} requires current module build objects; see check logs"
+        )
+    packs = []
+    for device in ("dt2", "dn2"):
+        (directory / device).mkdir(parents=True, exist_ok=True)
+        for mid in modules:
+            leaf = mid.rsplit("/", 1)[-1]
+            name = f"{step}-pack-{device}-{leaf}"
+            packs.append(name)
+            gate.run(
+                name,
+                [
+                    *PY,
+                    "-m",
+                    "tools.patchkit.patchkit",
+                    "pack",
+                    mid,
+                    "--device",
+                    device,
+                    "-o",
+                    str(directory / device / f"{leaf}.dkm"),
+                ],
+            )
+    if any(name in gate.failed for name in packs):
+        raise RuntimeError(f"{step} preparation failed; see pack logs")
+    return directory
+
+
 def run_step(gate: Gate, step: str) -> None:
     jobs = gate.step_env()[
         "DIGI_JOBS"
@@ -1451,16 +1565,38 @@ def run_step(gate: Gate, step: str) -> None:
         host_check(gate)
     elif step == "web":
         web_check(gate)
-    elif step == "runtime-fixture":
-        if gate.share() < verify_budget.EMULATOR_CORES:
-            raise RuntimeError(
-                "runtime-fixture requires a shared budget of at least two cores"
+    elif step in verify_route.ACCEPTANCE_DIRS:
+        if step != "stock" and gate.share() < verify_budget.EMULATOR_CORES:
+            raise RuntimeError(f"{step} requires a shared budget of at least two cores")
+        selected = getattr(gate, "acceptance", {}).get(step, [])
+        env = gate.step_env()
+        if step == "stock":
+            # Stock uses one stepped ColdFire thread per worker and the DT2 binary only.
+            if binary := env.get("DIGI_EMUD_DT2"):
+                env["DIGI_EMUD"] = binary
+            env["REGRESSION_JOBS"] = str(gate.share())
+        elif step == "module-load":
+            modules = [
+                m
+                for m, f in verify_route.RUNTIME_UPLOADS.items()
+                if not selected or f.removeprefix("tests/regression/") in selected
+            ]
+            env["DIGI_RUNTIME_MODULES"] = str(
+                prepare_acceptance_modules(gate, step, modules)
             )
-        # No implicit build: explicit runs require preflighted per-device binaries. If another
-        # selected step builds daemons, plan() orders us after it and shared_env supplies them.
+        elif step == "runtime-fixture" and (
+            not selected or any("input-adapter" in f for f in selected)
+        ):
+            env["DIGI_RUNTIME_MODULES"] = str(
+                prepare_acceptance_modules(gate, step, ["test/input-probe"])
+            )
+        script = {
+            "stock": "test",
+            "runtime-fixture": "test:runtime",
+            "module-load": "test:modules",
+        }[step]
         gate.run(
-            "runtime-fixture",
-            ["pnpm", "--filter", "@digi/regression", "test:runtime"],
+            step, ["pnpm", "--filter", "@digi/regression", script, *selected], env=env
         )
     elif step == "pins":
         cmd = [
@@ -1512,9 +1648,15 @@ def run_step(gate: Gate, step: str) -> None:
         gate.run("card-fs-dn2", [*PY, "-m", "tools.firmware.plusdrive_check", "--dn2"])
     elif step == "smoke":
         # patchkit smoke matrix: one cell = one digi-emud daemon, so the share's emulator processes are the cells at once
-        gate.run(
-            "smoke", [*PY, "-m", "tools.patchkit.pk_harness", "run", "--jobs", jobs]
-        )
+        cmd = [*PY, "-m", "tools.patchkit.pk_harness", "run", "--jobs", jobs]
+        cells = getattr(gate, "smoke_selection", None)
+        if cells == []:
+            raise RuntimeError(
+                "empty smoke selection must skip the smoke node, not run the full matrix"
+            )
+        for cell in cells or []:
+            cmd.extend(("--cell", cell))
+        gate.run("smoke", cmd)
     elif step == "dt2-tone":
         gate.run("dt2-tone", [*PY, "-m", "tools.emulator.dt2_sample_check"])
     elif step == "dt2-check":
@@ -1823,6 +1965,14 @@ def main(argv: list[str] | None = None) -> int:
         rust_packages,
         all_no_aot=args.all_no_aot,
         budget=budget,
+        acceptance={
+            step: acceptance_plan(step, files) for step in verify_route.ACCEPTANCE_DIRS
+        }
+        if why not in ("--only", "--full", "--rerun-failed")
+        else {},
+        smoke_selection=smoke_cells(files)
+        if why not in ("--only", "--full", "--rerun-failed")
+        else None,
     )
     nodes, deps = plan(steps, gate.py_tests)
     print(

@@ -3,8 +3,8 @@
 //   "digikit"    the `samples/` folder of the digikit store, the runtime's SysEx commands (`DkSession`; the Digitone II)
 // Both take the file `prepareUpload` (dksample.ts) makes, the same native sample file, so a sampling engine reads one format. The result of a verify has one
 // shape on both: what the device keeps against what the host sent. Written without TS-only runtime syntax so node can import it.
-import { DkError, hasCap, hexSha256, storeSpace } from '@digi/dk-session';
-import type { DkEntry, DkInfoFull, DkSession } from '@digi/dk-session';
+import { DkError, hasCap, hexSha256, storeSpace } from './dkupload-core.ts';
+import type { DkEntry, DkInfoFull, DkSession } from './dkupload-core.ts';
 import type { Prepared } from './dksample.ts';
 import { RpcFiles, verifyWritten } from './rpcfiles.ts';
 import type { RpcPort } from './rpcfiles.ts';

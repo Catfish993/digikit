@@ -6,7 +6,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./gen_proto": "./src/gen_proto.ts"
+    "./gen_proto": "./src/gen_proto.ts",
+    "./dksample": "./src/dksample.ts",
+    "./rpcfiles": "./src/rpcfiles.ts",
+    "./samples": "./src/samples.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

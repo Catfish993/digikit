@@ -1,7 +1,7 @@
 // The fake world of the UI preview: a device (modules and a samples tree), a samples folder on the computer, and how fast and how well the
 // device answers. The state can be set from the address (`?dev=empty&folder=files&speed=1.5`, see PARAMS) and while the page runs
 // (`window.__sim.set({ dev: 'noreply' })`), so a screenshot script (tools/devtools/ui_shots.mjs) reaches each state without clicking.
-import type { SampleEntry } from '@web/modules/samples';
+import type { SampleEntry } from '@digi/dk-session/samples';
 import type { Caps, Needs } from '@web/modules/dkfit';
 import { fitWarnings } from '@web/modules/dktransfer';
 import { noteActivity } from '../src/activity';

@@ -566,17 +566,19 @@ def test_file_jobs_leave_the_cores_a_waiting_step_needs() -> None:
     )
 
 
-def test_runtime_fixture_reserves_one_coupled_daemon() -> None:
-    assert verify_budget.want_cores("runtime-fixture", 16) == 2
-    assert verify_budget.want_cores("runtime-fixture", 1) == 1
+@pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
+def test_coupled_acceptance_reserves_one_daemon(node: str) -> None:
+    assert verify_budget.want_cores(node, 16) == 2
+    assert verify_budget.want_cores(node, 1) == 1
 
 
-def test_runtime_fixture_waits_for_its_entire_reservation() -> None:
+@pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
+def test_coupled_acceptance_waits_for_its_entire_reservation(node: str) -> None:
     budget = verify_budget.Budget(total=4)
     budget.running["web"] = 3
-    assert budget.admit("runtime-fixture") is None
+    assert budget.admit(node) is None
     budget.release("web")
-    assert budget.admit("runtime-fixture") == 2
+    assert budget.admit(node) == 2
 
 
 @pytest.mark.parametrize("steps", [("web",), ("host", "web"), verify.STEPS])

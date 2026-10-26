@@ -11,7 +11,7 @@ import {
   type LedsResult,
   type StatusResult,
 } from '@digi/control-client';
-import { resolveInputs, validateRuntimeInputs, type Device } from './inputs.ts';
+import { coupledEnv, resolveInputs, validateRuntimeInputs, type Device } from './inputs.ts';
 import { button, encoder } from './keys.ts';
 
 /** ColdFire instructions per emulated millisecond (the oracle clock). */
@@ -33,6 +33,8 @@ export interface SessionOptions {
   /** Stall threshold in emulated ms for the watchdog (default 1000, as the Python harness). */
   stallMs?: number;
   binary?: string;
+  /** Press NO automatically when ready; defaults to true. */
+  autoNo?: boolean;
   /** Runtime boot uses firmware.load's existing patch/cache path, then runs freely. Stock defaults stay stepped. */
   runtime?: { patchSet?: string };
 }
@@ -43,6 +45,7 @@ export class Session {
   #events: EmuEvent[] = [];
   #ownedDir: string | null;
   #load: FirmwareLoadResult | undefined;
+  #card: string | undefined;
   #closing: Promise<void> | undefined;
 
   private constructor(options: SessionOptions, daemon: Daemon, ownedDir: string | null) {
@@ -58,6 +61,11 @@ export class Session {
   /** Directory of this daemon, including its CLI discovery file. */
   get runDir(): string {
     return this.options.runDir ?? this.#ownedDir!;
+  }
+
+  /** Base card image loaded for this session; guest writes remain in its overlay. */
+  get cardPath(): string | undefined {
+    return this.#card;
   }
 
   get loadResult(): FirmwareLoadResult {
@@ -104,6 +112,7 @@ export class Session {
       const daemon = await spawnDaemon({
         binary: options.binary,
         args,
+        env: options.dsp === 'sharc' ? coupledEnv(inp.syx) : undefined,
         runDir,
         timeoutMs: options.runtime ? 120_000 : 300_000,
         signal: controller?.signal,
@@ -119,13 +128,14 @@ export class Session {
       await checked(c.eventsSubscribe());
       let card: string | undefined;
       if (options.card) card = (await checked(c.cardLoad(options.card))).card;
+      session.#card = card;
       session.#load = await checked(
         c.firmwareLoad({
           syx: inp.syx,
           start: options.runtime ? 'auto' : 'snapshot',
           ...(options.runtime ? { runtime: true, patch_set: options.runtime.patchSet } : {}),
           force: true,
-          auto_no: true,
+          auto_no: options.autoNo ?? true,
           ...(card ? { card } : {}),
         }),
       );

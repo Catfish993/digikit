@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DkSession, decode8in7 } from '@digi/dk-session';
-import { RPC_CHUNK, RPC_FILE, RpcFiles, pathBytes, putVerified, verifyWritten } from '../src/modules/rpcfiles.ts';
+import { RPC_CHUNK, RPC_FILE, RpcFiles, pathBytes, putVerified, verifyWritten } from '@digi/dk-session/rpcfiles';
 import { FakeDrive, hashOf } from './fakedrive.mjs';
 
 const setup = (opts) => {

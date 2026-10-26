@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileGroups, nameInGroup } from '../../desktop/ui/src/card-core.ts';
-import { sourceKind } from '../src/modules/dksample.ts';
+import { sourceKind } from '@digi/dk-session/dksample';
 import {
   applyUpload,
   crumbs,

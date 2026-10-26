@@ -119,16 +119,6 @@
       "reason": "routing prefix"
     },
     {
-      "token": "tests/scenarios/dt2-",
-      "file": "tools/devtools/verify.py",
-      "reason": "routing prefix"
-    },
-    {
-      "token": "tests/scenarios/test_dt2",
-      "file": "tools/devtools/verify.py",
-      "reason": "routing prefix"
-    },
-    {
       "token": "tools/coldfire/cf_names_x.py",
       "file": "tools/coldfire/cfmatch.py",
       "reason": "placeholder"

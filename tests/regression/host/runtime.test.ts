@@ -9,7 +9,7 @@ const fake = vi.hoisted(() => {
     watchdogConfig: vi.fn(),
     call: vi.fn(),
   };
-  return { client, close: vi.fn(), spawn: vi.fn() };
+  return { client, close: vi.fn(), spawn: vi.fn(), coupledEnv: vi.fn() };
 });
 vi.mock('@digi/control-client', async (original) => ({
   ...(await original<object>()),
@@ -17,6 +17,7 @@ vi.mock('@digi/control-client', async (original) => ({
 }));
 vi.mock('../../../packages/test-support/src/inputs.ts', () => ({
   validateRuntimeInputs: vi.fn(),
+  coupledEnv: fake.coupledEnv,
   resolveInputs: () => ({ syx: '/stock.syx', cfSnapshot: '/ready.snap', dspImage: '/dsp.bin', dspState: '/dsp.snap' }),
 }));
 import { Session } from '@digi/test-support';
@@ -33,6 +34,7 @@ const identity = {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  fake.coupledEnv.mockReturnValue({ SHARC_FAST_REGIONS: 'fixture-regions' });
   fake.spawn.mockResolvedValue({ client: fake.client, close: fake.close });
   fake.client.cardLoad.mockResolvedValue({ card: '/card.img' });
   fake.client.firmwareLoad.mockResolvedValue({ runtime: identity, start_used: 'snapshot' });
@@ -49,6 +51,8 @@ test('stock defaults retain snapshot load and stepped lifecycle', async () => {
       auto_no: true,
     });
     expect(fake.client.call).not.toHaveBeenCalled();
+    expect(fake.coupledEnv).not.toHaveBeenCalled();
+    expect(fake.spawn.mock.calls[0]?.[0].env).toBeUndefined();
     expect(fake.spawn.mock.calls[0]?.[0].args).toEqual(['--dsp', 'zero', '--cf-snapshot', '/ready.snap']);
   } finally {
     await session.close();
@@ -74,10 +78,13 @@ test('zero-DSP runtime startup selects the firmware before applying the runtime 
 });
 
 test('a mirrored runtime owns its mirror inside the temporary run directory', async () => {
-  const runtime = await startPatchedSession({ device: 'dn2', firmware: '1.12', mirror: true });
+  const runtime = await startPatchedSession({ device: 'dn2', firmware: '1.12', mirror: true, autoNo: false });
   const runDir = runtime.session.runDir;
   try {
     expect(fs.existsSync(runDir)).toBe(true);
+    expect(fake.coupledEnv).toHaveBeenCalledWith('/stock.syx');
+    expect(fake.spawn.mock.calls[0]?.[0].env).toEqual({ SHARC_FAST_REGIONS: 'fixture-regions' });
+    expect(fake.client.firmwareLoad).toHaveBeenCalledWith(expect.objectContaining({ auto_no: false }));
     expect(fake.spawn.mock.calls[0]?.[0].args.slice(-2)).toEqual(['--mirror-dir', `${runDir}/mirror`]);
     fs.mkdirSync(`${runDir}/mirror/digikit/modules`, { recursive: true });
     fs.writeFileSync(`${runDir}/mirror/digikit/modules/pluck.dkm`, 'owned test data');

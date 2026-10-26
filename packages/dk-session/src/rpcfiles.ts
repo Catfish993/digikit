@@ -1,7 +1,7 @@
 // The stock MidiRpc file commands of the Digitakt II (docs/MIDI-SYSEX-RPC.md section 12): the +Drive, the filesystem the device's own sample browser
 // lists. A generic client over `DkSession.rpc`: it knows the commands, not the device (which device uses it for samples is the profile's `[storage]`).
 // Every FsSample reply starts with a status byte, 1 for OK. Integers are big-endian. Written without TS-only runtime syntax so node can import it.
-import { DkError, be32, concat, u32 } from '@digi/dk-session';
+import { DkError, be32, concat, u32 } from './dkupload-core.ts';
 
 export const RPC_FILE = {
   STORAGE_SPACE: 0x05,
@@ -87,7 +87,7 @@ export class RpcFiles {
   private async call(type: number, what: string, payload: Uint8Array = new Uint8Array()): Promise<Uint8Array> {
     const r = await this.port.rpc(type, payload, this.timeoutMs);
     if (r.length === 0) throw new DkError({ error: `${what}: empty reply`, kind: 'protocol' });
-    if (r[0] !== RPC_OK) throw fail(what, r[0]);
+    if (r[0] !== RPC_OK) throw fail(what, r[0]!);
     return r.subarray(1);
   }
 
@@ -100,13 +100,13 @@ export class RpcFiles {
     while (at + 10 <= r.length) {
       const end = r.indexOf(0, at + 10);
       if (end < 0) throw new DkError({ error: 'readDir: an entry without NUL', kind: 'protocol' });
-      const kind = String.fromCharCode(r[at + 9]);
+      const kind = String.fromCharCode(r[at + 9]!);
       if (kind !== 'D' && kind !== 'F')
         throw new DkError({ error: `readDir: unknown entry type ${kind}`, kind: 'protocol' });
       out.push({
         hash: u32(r, at),
         size: u32(r, at + 4),
-        flag: r[at + 8],
+        flag: r[at + 8]!,
         kind,
         name: textIn.decode(r.subarray(at + 10, end)),
       });
@@ -120,7 +120,7 @@ export class RpcFiles {
     const r = await this.port.rpc(RPC_FILE.STORAGE_SPACE, Uint8Array.of(drive), this.timeoutMs);
     if (r.length < 17) throw new DkError({ error: `space: a ${r.length}-byte reply`, kind: 'protocol' });
     const at = r.length - 16;
-    if (r[at - 1] !== RPC_OK) throw fail('space', r[at - 1]);
+    if (r[at - 1] !== RPC_OK) throw fail('space', r[at - 1]!);
     return { free: u64(r, at), total: u64(r, at + 8) };
   }
 

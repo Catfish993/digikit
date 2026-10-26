@@ -153,6 +153,64 @@ def test_exact_maintenance_paths_skip_smoke_but_keep_python_coverage() -> None:
     )
 
 
+@pytest.mark.parametrize("mid", ["digikit/freqshift", "digikit/remote"])
+def test_audited_upload_without_matrix_consumers_skips_smoke(mid: str) -> None:
+    files = [f"{mpath(mid)}/module.toml", *UI_FILES, "tools/devtools/pathcheck.py"]
+    assert verify.smoke_cells(files) == []
+    assert "smoke" not in verify.steps_for(files)
+    assert "module-load" in verify.steps_for(files)
+    assert "no dependent cells" in verify.smoke_reason(files)
+
+
+def test_pluck_leaf_selects_existing_dependent_cells_on_both_devices() -> None:
+    files = [f"{mpath('digikit/pluck')}/module.toml", "docs/TESTING.md"]
+    cells = verify.smoke_cells(files)
+    assert cells is not None
+    assert {cell.partition(":")[0] for cell in cells} == {"dt2-1.17", "dn2-1.12"}
+    assert all("test/patched-pluck" in cell for cell in cells)
+    assert "smoke" in verify.steps_for(files)
+    # An unaudited/shared or unknown dependency keeps the entire matrix.
+    for other in (
+        "modules/core/runtime/module.toml",
+        "tests/patchkit/smoke/matrix.toml",
+        "unknown.file",
+    ):
+        assert verify.smoke_cells([*files, other]) is None
+        assert "smoke" in verify.steps_for([*files, other])
+
+
+@pytest.mark.parametrize(
+    "selection", [None, ["dt2-1.17:core/dsp-voice,test/patched-pluck"]]
+)
+def test_smoke_forwards_native_cell_filters(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, selection: list[str] | None
+) -> None:
+    gate = verify.Gate(tmp_path, budget=2, smoke_selection=selection)
+    calls = []
+    monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append(cmd))
+    verify.run_step(gate, "smoke")
+    expected = [*verify.PY, "-m", "tools.patchkit.pk_harness", "run", "--jobs", "1"]
+    for cell in selection or []:
+        expected += ["--cell", cell]
+    assert calls == [expected]
+
+
+def test_smoke_explain_names_affected_cells_and_empty_selection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    files = [f"{mpath('digikit/pluck')}/module.toml"]
+    verify.explain(verify.steps_for(files), files, [], per_file=True)
+    out = capsys.readouterr().out
+    assert "selected dependent matrix cells" in out
+    assert "test/patched-pluck" in out
+    files = [f"{mpath('digikit/remote')}/module.toml"]
+    verify.explain(verify.steps_for(files), files, [], per_file=True)
+    assert (
+        "smoke: skipped, audited production leaves have no dependent cells"
+        in capsys.readouterr().out
+    )
+
+
 def test_smoke_exempt_paths_are_exact_and_mixed_changes_stay_conservative() -> None:
     assert "smoke" in verify.steps_for(["tools/devtools/pathchecks.py"])
     assert "smoke" not in verify.steps_for(
@@ -192,6 +250,8 @@ def test_representative_module_runtime_and_core_routes_stay_conservative() -> No
         "smoke",
     )
     assert verify.steps_for(["modules/core/runtime/src/rs/src/upload.rs"]) == (
+        "runtime-fixture",
+        "module-load",
         "python-tests",
         "rust-tests",
         "smoke",
@@ -506,7 +566,7 @@ def test_mise_new_task_routes_like_its_tool() -> None:
         ["tools/device/dkrun.py"],
         {"tools/device/dkrun.py": "mise.toml task dk:run"},
     )
-    assert verify.steps_for(got[0]) == ("python-tests", "smoke")
+    assert verify.steps_for(got[0]) == ("runtime-fixture", "python-tests", "smoke")
     # only the description or the alias changed: the same tool
     again = task.replace('description = "x"', 'description = "y"')
     assert verify_route.mise_paths(old + task, old + again) == got
@@ -591,8 +651,6 @@ def test_device_tools_select_their_tests_only() -> None:
     assert selected("tools/device/dkrun.py") == {
         "tests/digikit/test_dkrun.py",
         "tests/digikit/test_dktransfer.py",  # dktransfer imports dkrun
-        "tests/digikit/test_live_dn2.py",  # and the live scenarios run dktransfer
-        "tests/digikit/test_live_dt2.py",
         "tests/digikit/test_scenarios.py",
         "tests/digikit/test_menu_dn2.py",
         "tests/digikit/test_menu_dt2.py",
@@ -809,7 +867,12 @@ def test_unknown_module_path_stays_broad() -> None:
 def test_dk_session_routes_to_host_with_conservative_smoke(
     path: str,
 ) -> None:
-    assert verify.steps_for([path]) == ("host", "web", "smoke")
+    expected = (
+        ("host", "web", "runtime-fixture", "module-load", "smoke")
+        if "/src/" in path
+        else ("host", "web", "smoke")
+    )
+    assert verify.steps_for([path]) == expected
 
 
 def test_root_host_config_routes_to_host_with_conservative_smoke() -> None:
@@ -845,7 +908,7 @@ def test_web_check_only_runs_browser_checks(monkeypatch: pytest.MonkeyPatch) -> 
 def test_host_and_app_changes_keep_both_checks() -> None:
     assert verify.steps_for(
         ["packages/control-client/src/client.ts", "apps/web/src/components/X.tsx"]
-    ) == ("host", "web", "smoke")
+    ) == ("host", "web", "stock", "runtime-fixture", "module-load", "smoke")
 
 
 @pytest.mark.parametrize(
@@ -913,6 +976,8 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
     assert verify.steps_for(files) == (
         "host",
         "web",
+        "runtime-fixture",
+        "module-load",
         "python-tests",
         "rust-tests",
         "smoke",
@@ -1025,108 +1090,132 @@ def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 @pytest.mark.parametrize(
-    "path",
+    "path, expected",
     [
-        "packages/test-support/src/session.ts",
-        "packages/test-support/src/inputs.ts",
-        "packages/control-client/src/daemon.ts",
-        "packages/control-client/src/client.ts",
-        "tests/regression/support.ts",
-        "tests/regression/vitest.runtime.config.ts",
-        "tests/regression/runtime/acceptance.ts",
-        "tests/regression/runtime/remote.ts",
-        "tests/regression/runtime/dt2.test.ts",
-        "tests/regression/runtime/dn2.test.ts",
-        "tests/regression/runtime/remote-control.ts",
-        "tests/regression/runtime/dt2-remote-control.test.ts",
-        "tests/regression/runtime/dn2-remote-control.test.ts",
+        (
+            "packages/test-support/src/session.ts",
+            {"stock", "runtime-fixture", "module-load"},
+        ),
+        (
+            "packages/control-client/src/client.ts",
+            {"stock", "runtime-fixture", "module-load"},
+        ),
+        ("tests/regression/support.ts", {"stock", "runtime-fixture", "module-load"}),
+        ("tests/regression/runtime/dt2.test.ts", {"runtime-fixture"}),
+        ("tests/regression/runtime/acceptance.ts", {"runtime-fixture", "module-load"}),
+        ("tests/regression/vitest.runtime.config.ts", {"runtime-fixture"}),
+        ("tests/regression/dt2/transport.test.ts", {"stock"}),
+        ("tests/regression/host/daemon.test.ts", set()),
+        (
+            "modules/core/runtime/src/rs/src/upload.rs",
+            {"runtime-fixture", "module-load"},
+        ),
+        ("modules/machines/pluck/src/dsp/pluck.s", {"module-load"}),
+        ("modules/fx/master-gain/src/cf/gain.s", set()),
+        ("modules/no/such/module.toml", {"runtime-fixture", "module-load"}),
+        ("tools/device/dkupload.py", {"runtime-fixture"}),
+        ("tools/device/dkscreen.py", set()),
+        ("tools/patchkit/freqshift_ref.py", set()),
+        ("devices/digitakt-ii-leds.toml", set()),
+        ("devices/digitone-ii-leds.toml", set()),
+        ("tools/patchkit/pk_link.py", {"runtime-fixture", "module-load"}),
+        ("tools/devtools/stablebin.py", {"runtime-fixture", "module-load"}),
+        ("tools/emulator/card_overlay.py", {"runtime-fixture"}),
+        ("tools/emulator/fast_regions.json", {"runtime-fixture", "module-load"}),
+        (
+            "packages/emulator/control/src/runtime_patch.rs",
+            {"stock", "runtime-fixture", "module-load"},
+        ),
+        ("tools/devtools/verify.py", {"stock", "runtime-fixture", "module-load"}),
     ],
 )
-def test_runtime_fixture_sources_select_host_checks(path: str) -> None:
-    assert verify.steps_for([path]) == ("host", "smoke")
-
-
-@pytest.mark.parametrize("mid", ["digikit/remote", *sorted(verify_route.FRAMEWORK)])
-def test_runtime_fixture_module_sources_keep_host_checks(mid: str) -> None:
-    path = (modroots.module_dir(mid) / "module.toml").relative_to(ROOT).as_posix()
-    steps = verify.steps_for([path])
-    assert "runtime-fixture" not in steps
-    assert "python-tests" in steps
-
-
-@pytest.mark.parametrize(
-    "stem",
-    [
-        *[stem for stem, kinds in verify_route.DEVICE_KINDS.items() if "live" in kinds],
-        "dkrun",
-        "dkupload",
-    ],
-)
-def test_runtime_fixture_live_tools_keep_host_checks(stem: str) -> None:
-    assert verify.steps_for([f"tools/device/{stem}.py"]) == ("python-tests", "smoke")
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        "tools/patchkit/patchkit.py",
-        "packages/patchkit/src/apply.rs",
-        "devices/ports/dt2-1.17.toml",
-        "packages/emulator/control/src/runtime_patch.rs",
-    ],
-)
-def test_runtime_fixture_patch_and_loaded_image_sources_keep_host_checks(
-    path: str,
+def test_relevant_native_acceptance_retains_existing_owners(
+    path: str, expected: set[str]
 ) -> None:
-    steps = verify.steps_for([path])
-    assert "runtime-fixture" not in steps
-    assert "python-tests" in steps
-
-
-def test_runtime_fixture_does_not_follow_an_unrelated_leaf() -> None:
-    assert "runtime-fixture" not in verify.steps_for(
-        ["modules/fx/master-gain/src/cf/gain.s"]
-    )
+    steps = set(verify.steps_for([path]))
+    assert steps & {"stock", "runtime-fixture", "module-load"} == expected
+    assert set(verify.base_route(path)[1]) <= steps
 
 
 @pytest.mark.parametrize(
+    "step, path, expected",
+    [
+        (
+            "module-load",
+            "modules/machines/pluck/src/dsp/pluck.s",
+            ["modules/pluck.test.ts"],
+        ),
+        (
+            "module-load",
+            "modules/fx/freqshift/module.toml",
+            ["modules/freqshift.test.ts"],
+        ),
+        ("module-load", "modules/tools/remote/module.toml", ["modules/remote.test.ts"]),
+        ("module-load", "modules/fx/master-gain/module.toml", []),
+        (
+            "module-load",
+            "tests/regression/modules/pluck.test.ts",
+            ["modules/pluck.test.ts"],
+        ),
+        (
+            "runtime-fixture",
+            "tests/regression/runtime/dt2.test.ts",
+            ["runtime/dt2.test.ts"],
+        ),
+        ("stock", "tests/regression/dt2/transport.test.ts", ["dt2/transport.test.ts"]),
+    ],
+)
+def test_acceptance_filters_native_files(
+    step: str, path: str, expected: list[str]
+) -> None:
+    assert verify_route.acceptance_files(step, [path]) == expected
+
+
+def test_broad_change_is_not_narrowed_by_a_module_leaf() -> None:
+    paths = ["tools/devtools/verify.py", "modules/machines/pluck/module.toml"]
+    assert verify.acceptance_plan("module-load", paths) == []  # all native module files
+
+
+@pytest.mark.parametrize("name", ["samples", "dksample", "rpcfiles"])
+def test_sample_clients_select_sample_acceptance_without_module_uploads(
+    name: str,
+) -> None:
+    path = f"packages/dk-session/src/{name}.ts"
+    assert verify_route.acceptance_files("runtime-fixture", [path]) == [
+        "runtime/dn2-samples-store-live.test.ts",
+        "runtime/dt2-samples-live.test.ts",
+    ]
+    assert "module-load" not in verify.steps_for([path])
+    assert {"host", "web", "runtime-fixture"} <= set(verify.steps_for([path]))
+
+
+@pytest.mark.parametrize("step", ["runtime-fixture", "module-load"])
+@pytest.mark.parametrize(
     "path",
     [
-        "tools/devtools/verify.py",
-        "tools/devtools/verify_route.py",
-        "tools/sharc_dev/sharc_core/state.py",
-        "packages/emulator/sharc-gen/src/lib.rs",
-        "mise.toml",
+        "modules/core/runtime/module.toml",
+        "sdk/dk_machine.h",
         "modules/no/such/module.toml",
-        "tools/device/unknown.py",
-        "unknown.file",
     ],
 )
-def test_normal_broad_and_fallback_routes_exclude_runtime_fixture(
-    path: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_shared_abi_and_unknown_modules_keep_cross_device_acceptance(
+    step: str, path: str
 ) -> None:
-    assert "runtime-fixture" not in verify.EVERYTHING
-    assert "runtime-fixture" not in verify.route(path)[1]
-    assert "runtime-fixture" not in verify.steps_for([path])
-    monkeypatch.setattr(verify, "changed_files", lambda *_: [path])
-    # Keep mise.toml as the conservative broad route, without reading git history.
-    monkeypatch.setattr(verify, "expand_mise", lambda files, *_: (files, {}))
-    assert verify.main(["--explain"]) == 0
-    assert "runtime-fixture" not in capsys.readouterr().out
+    files = verify_route.acceptance_files(step, [path])
+    if step == "module-load":
+        assert set(files) == {
+            "modules/pluck.test.ts",
+            "modules/freqshift.test.ts",
+            "modules/remote.test.ts",
+        }
+    else:
+        assert "runtime/dt2.test.ts" in files
+        assert "runtime/dn2.test.ts" in files
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "tools/devtools/verify.py",
-        "tools/sharc_dev/sharc_core/state.py",
-        "tests/regression/runtime/dt2.test.ts",
-        "tools/device/dkupload.py",
-    ],
-)
-def test_changed_tests_gate_adds_exclude_runtime_fixture(path: str) -> None:
-    sel = changed_tests.select([path])
-    assert not any("runtime-fixture" in line for line in sel.gate_adds)
+def test_changed_tests_reports_acceptance_gate_additions() -> None:
+    sel = changed_tests.select(["tests/regression/runtime/dt2.test.ts"])
+    assert any("runtime-fixture" in line for line in sel.gate_adds)
 
 
 @pytest.mark.parametrize("flags", [["--only", "runtime-fixture"], ["--full"]])
@@ -1166,14 +1255,140 @@ def test_runtime_fixture_command_is_sequential(monkeypatch: pytest.MonkeyPatch) 
         "run",
         lambda self, name, cmd, **kwargs: calls.append((name, cmd, kwargs)),
     )
-    verify.run_step(object.__new__(verify.Gate), "runtime-fixture")
+    gate = object.__new__(verify.Gate)
+    gate.acceptance = {"runtime-fixture": ["runtime/dt2.test.ts"]}
+    verify.run_step(gate, "runtime-fixture")
     assert calls == [
         (
             "runtime-fixture",
-            ["pnpm", "--filter", "@digi/regression", "test:runtime"],
-            {},
+            [
+                "pnpm",
+                "--filter",
+                "@digi/regression",
+                "test:runtime",
+                "runtime/dt2.test.ts",
+            ],
+            {"env": {"DIGI_JOBS": "1"}},
         )
     ]
+
+
+def test_module_acceptance_checks_and_repacks_only_selected_upload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls = []
+    gate = verify.Gate(
+        tmp_path, budget=2, acceptance={"module-load": ["modules/pluck.test.ts"]}
+    )
+    monkeypatch.setattr(
+        gate, "run", lambda name, cmd, **kw: calls.append((name, cmd, kw))
+    )
+    verify.run_step(gate, "module-load")
+    assert calls[0][1] == [
+        *verify.PY,
+        "-m",
+        "tools.patchkit.pk_build",
+        "build",
+        str(modroots.module_dir("digikit/pluck")),
+        "--check",
+    ]
+    for i, device in enumerate(("dt2", "dn2"), 1):
+        assert calls[i][1] == [
+            *verify.PY,
+            "-m",
+            "tools.patchkit.patchkit",
+            "pack",
+            "digikit/pluck",
+            "--device",
+            device,
+            "-o",
+            str(tmp_path / "module-load/modules" / device / "pluck.dkm"),
+        ]
+    assert calls[-1][1] == [
+        "pnpm",
+        "--filter",
+        "@digi/regression",
+        "test:modules",
+        "modules/pluck.test.ts",
+    ]
+    assert calls[-1][2]["env"]["DIGI_RUNTIME_MODULES"] == str(
+        tmp_path / "module-load/modules"
+    )
+
+
+def test_stale_module_objects_stop_before_pack_or_acceptance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    gate = verify.Gate(
+        tmp_path, budget=2, acceptance={"module-load": ["modules/pluck.test.ts"]}
+    )
+    calls = []
+
+    def fail(name, cmd, **kw):
+        calls.append(cmd)
+        gate.failed.append(name)
+
+    monkeypatch.setattr(gate, "run", fail)
+    with pytest.raises(RuntimeError, match="current module build objects"):
+        verify.run_step(gate, "module-load")
+    assert calls == [
+        [
+            *verify.PY,
+            "-m",
+            "tools.patchkit.pk_build",
+            "build",
+            str(modroots.module_dir("digikit/pluck")),
+            "--check",
+        ]
+    ]
+
+
+def test_input_adapter_prepares_fixture_in_runtime_owned_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    gate = verify.Gate(
+        tmp_path,
+        budget=2,
+        acceptance={"runtime-fixture": ["runtime/dt2-input-adapter.test.ts"]},
+    )
+    calls = []
+    monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append((cmd, kw)))
+    verify.run_step(gate, "runtime-fixture")
+    assert calls[0][0] == [
+        *verify.PY,
+        "-m",
+        "tools.patchkit.pk_build",
+        "build",
+        str(modroots.module_dir("test/input-probe")),
+        "--check",
+    ]
+    assert calls[-1][1]["env"]["DIGI_RUNTIME_MODULES"] == str(
+        tmp_path / "runtime-fixture/modules"
+    )
+    assert calls[-1][0][-1] == "runtime/dt2-input-adapter.test.ts"
+
+
+def test_stock_uses_dt2_binary_and_one_core_per_worker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    gate = verify.Gate(
+        tmp_path, budget=3, acceptance={"stock": ["dt2/transport.test.ts"]}
+    )
+    gate.local.node = "stock"
+    gate.shared_env["DIGI_EMUD_DT2"] = "/built/dt2"
+    monkeypatch.setenv("DIGI_EMUD", "/unrelated/default")
+    calls = []
+    monkeypatch.setattr(gate, "run", lambda name, cmd, **kw: calls.append((cmd, kw)))
+    verify.run_step(gate, "stock")
+    assert calls[0][0] == [
+        "pnpm",
+        "--filter",
+        "@digi/regression",
+        "test",
+        "dt2/transport.test.ts",
+    ]
+    assert calls[0][1]["env"]["DIGI_EMUD"] == "/built/dt2"
+    assert calls[0][1]["env"]["REGRESSION_JOBS"] == "3"
 
 
 def test_runtime_fixture_host_paths_do_not_select_device_acceptance() -> None:
@@ -1206,12 +1421,20 @@ def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
     def capture(
         cmd: list[str], *, env: dict[str, str], **_kwargs: object
     ) -> subprocess.CompletedProcess[str]:
-        assert cmd == ["pnpm", "--filter", "@digi/regression", "test:runtime"]
+        assert cmd == [
+            "pnpm",
+            "--filter",
+            "@digi/regression",
+            "test:runtime",
+            "runtime/dt2.test.ts",
+        ]
         environments.append(env)
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(verify.subprocess, "run", capture)
-    gate = verify.Gate(tmp_path, budget=2)
+    gate = verify.Gate(
+        tmp_path, budget=2, acceptance={"runtime-fixture": ["runtime/dt2.test.ts"]}
+    )
     gate.local.node = "runtime-fixture"
     if from_build:
         gate.shared_env.update(

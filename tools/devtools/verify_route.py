@@ -64,15 +64,13 @@ DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "dkrun": ("menu",),
     "dkfit": (
         "menu",
-        "live",
         "debug",
     ),  # the fit rule: dktransfer and dkrun use it, the `fits` part of the debug scenarios
     "dkneeds": (
         "menu",
-        "live",
         "debug",
     ),  # the needs of a .dkm, from `patchkit needs`: dktransfer, dkrun, the `inferred-needs` and `fits` parts of the debug scenarios
-    "dktransfer": ("menu", "live"),
+    "dktransfer": ("menu",),
     "dkpackall": (),  # a dev task: the files the workbench reads
     "dkscreen": ("upload",),
     "dklog": ("debug", "crash", "card"),
@@ -138,6 +136,190 @@ def dependents(ids: set[str]) -> set[str]:
                 found.add(mid)
                 grew = True
     return found
+
+
+# These production uploads have coupled lifecycle acceptance, in addition to their static owners.
+RUNTIME_UPLOADS = {
+    "digikit/pluck": "tests/regression/modules/pluck.test.ts",
+    "digikit/freqshift": "tests/regression/modules/freqshift.test.ts",
+    "digikit/remote": "tests/regression/modules/remote.test.ts",
+}
+ACCEPTANCE_DIRS = {
+    "stock": "dt2",
+    "runtime-fixture": "runtime",
+    "module-load": "modules",
+}
+ACCEPTANCE_SHARED = (
+    "packages/test-support/src/",
+    "packages/control-client/src/",
+    "packages/emulator/",
+    "devices/",
+    "tests/regression/support.ts",
+)
+RUNTIME_SHARED = (
+    "sdk/",
+    "packages/dk-session/src/",
+    "packages/patchkit/",
+)
+
+
+@cache
+def acceptance_python(step: str) -> set[str]:
+    """Dependencies of consumed preparation/client entry points, using the existing import graph."""
+    from tools.devtools import changed_tests
+
+    # The graph omits function-local imports. These consumed call paths need stablebin from
+    # patchkit.binary and sharc_disasm from pk_sharc.verify, plus runtime_text's dklog_kinds.
+    roots = {
+        "tools",
+        "tools.patchkit.pk_build",
+        "tools.patchkit.patchkit",
+        "tools.devtools.stablebin",
+        "tools.sharc_dev.sharc_disasm",
+    }
+    if step == "runtime-fixture":
+        roots.update(
+            {
+                "tools.device.dktransfer",
+                "tools.patchkit.pk_harness",
+                "tools.device.dklog_kinds",
+                "tools.control.digi_client",
+                "tools.emulator.card_overlay",
+            }
+        )
+    graph = changed_tests.graph()
+    found, todo = set(roots), list(roots)
+    while todo:
+        for dependency in graph.find_modules_directly_imported_by(todo.pop()):
+            if dependency not in found:
+                found.add(dependency)
+                todo.append(dependency)
+    return {changed_tests.path_of(module) for module in found}
+
+
+@cache
+def runtime_framework() -> set[str]:
+    """Modules included by the actual runtime patch sets, including manifest dependencies."""
+    required: set[str] = set(FRAMEWORK)
+    for filename in ("digitakt-ii.toml", "digitone-ii.toml"):
+        data = tomllib.loads((ROOT / "devices" / filename).read_text())
+        for roots in data["patch_sets"].values():
+            required.update(roots)
+    todo = list(required)
+    while todo:
+        for mid in manifests().get(todo.pop(), ()):
+            if mid not in required:
+                required.add(mid)
+                todo.append(mid)
+    return required
+
+
+def module_smoke_cells(ids: set[str]) -> list[str] | None:
+    """Existing matrix cells consuming these leaves; None preserves unsupported cell settings."""
+    affected = dependents(ids)
+    matrix = tomllib.loads((ROOT / "tests/patchkit/smoke/matrix.toml").read_text())
+    selected = []
+    for cell in matrix["cell"]:
+        modules = cell.get("modules", [])
+        if any(mid not in manifests() for mid in modules):
+            return None  # an unknown matrix module's dependencies cannot be proven unrelated
+        if affected.intersection(modules):
+            # --cell preserves the normal full-cell execution, but cannot encode custom settings.
+            if set(cell) - {"device", "firmware", "modules"}:
+                return None
+            selected.append(f"{cell['device']}-{cell['firmware']}:" + ",".join(modules))
+    return selected
+
+
+def acceptance_files(step: str, paths: list[str]) -> list[str]:
+    """Native Vitest filenames affected by PATHS, relative to tests/regression.
+
+    Framework/upload dependencies are partly implicit in patched firmware, so shared code keeps
+    cross-device coverage. Known static leaves retain their existing owners without unrelated uploads.
+    """
+    directory = ACCEPTANCE_DIRS[step]
+    suffix = {"stock": "", "runtime-fixture": ".runtime", "module-load": ".modules"}[
+        step
+    ]
+    config = f"tests/regression/vitest{suffix}.config.ts"
+    all_files = sorted(
+        p.relative_to(ROOT / "tests/regression").as_posix()
+        for p in (ROOT / "tests/regression" / directory).rglob("*.test.ts")
+    )
+    selected: set[str] = set()
+    for path in paths:
+        if path.endswith(".md") or path in {
+            "devices/digitakt-ii-leds.toml",
+            "devices/digitone-ii-leds.toml",
+        }:
+            continue
+        if path in {
+            "packages/dk-session/src/dksample.ts",
+            "packages/dk-session/src/rpcfiles.ts",
+            "packages/dk-session/src/samples.ts",
+        }:
+            if step == "runtime-fixture":
+                selected.update(
+                    (
+                        "runtime/dt2-samples-live.test.ts",
+                        "runtime/dn2-samples-store-live.test.ts",
+                    )
+                )
+            continue
+        own = f"tests/regression/{directory}/"
+        if path.startswith(own):
+            rel = path.removeprefix("tests/regression/")
+            if path.endswith(".test.ts") and rel in all_files:
+                selected.add(rel)
+            else:
+                # Helpers may serve several devices and cases; deleted cases keep their owner suite.
+                selected.update(all_files)
+        elif (
+            path == config
+            or path
+            in ("tests/regression/package.json", "tests/regression/tsconfig.json")
+            or path.startswith(ACCEPTANCE_SHARED)
+            or (step != "stock" and path.startswith(RUNTIME_SHARED))
+            or (step != "stock" and path == "tools/emulator/fast_regions.json")
+            or (
+                step != "stock"
+                and path.startswith("tools/")
+                and path in acceptance_python(step)
+            )
+            or (
+                step == "module-load"
+                and path == "tests/regression/runtime/acceptance.ts"
+            )
+        ):
+            selected.update(all_files)
+        elif step != "stock" and path.startswith(
+            tuple(r + "/" for r in modroots.REPO_ROOTS)
+        ):
+            mid = modroots.module_id(path)
+            if mid is None:
+                selected.update(all_files)
+            else:
+                hit = dependents({mid})
+                if hit & runtime_framework():
+                    selected.update(all_files)
+                elif step == "module-load":
+                    selected.update(
+                        f.removeprefix("tests/regression/")
+                        for m, f in RUNTIME_UPLOADS.items()
+                        if m in hit
+                    )
+                elif "digikit/remote" in hit:
+                    selected.update(all_files)
+                elif "test/input-probe" in hit:
+                    selected.update(
+                        (
+                            "runtime/dt2-input-adapter.test.ts",
+                            "runtime/dn2-input-adapter.test.ts",
+                        )
+                    )
+        elif step == "stock" and path.startswith("tests/regression/goldens/"):
+            selected.update(all_files)
+    return sorted(selected)
 
 
 @cache

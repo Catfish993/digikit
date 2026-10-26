@@ -14,11 +14,13 @@ const bytesOf = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => pars
 export const EMU_RPC_CHUNK = 16384;
 
 export class EmuUsbTransport implements DkTransport {
-  constructor(privateCall: EmuRpcCall) {
+  constructor(privateCall: EmuRpcCall, options: { pollMs?: number } = {}) {
     this.call = privateCall;
+    this.pollMs = options.pollMs ?? POLL_MS;
   }
 
   private readonly call: EmuRpcCall;
+  private readonly pollMs: number;
   readonly rpcChunk = EMU_RPC_CHUNK;
   private rx: Uint8Array = new Uint8Array();
   private ready: Uint8Array[] = [];
@@ -45,7 +47,7 @@ export class EmuUsbTransport implements DkTransport {
         continue;
       }
       if (Date.now() >= end || signal?.aborted) return null;
-      await new Promise((r) => setTimeout(r, POLL_MS));
+      await new Promise((r) => setTimeout(r, this.pollMs));
     }
   }
 }

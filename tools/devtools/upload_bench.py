@@ -2,7 +2,7 @@
 
     uv run python -m tools.devtools.upload_bench [--device dn2|dt2] [--bytes N] [--chunk N] [--runs N] [--settle S] [--args ...]
 
-Holds the benchmark lock exclusively while the bench runs (`--no-lock`: shared). Starts one coupled `digi-emud` daemon with the runtime patched in (as `pk_digikit_scen.live_boot` does), runs `tools/devtools/upload_bench.mjs` against it
+Holds the benchmark lock exclusively while the bench runs (`--no-lock`: shared). Starts one coupled `digi-emud` daemon with the runtime patched in, runs `tools/devtools/upload_bench.mjs` against it
 (DN2: BEGIN/DATA/END and ranged VERIFY; DT2: the stock +Drive MidiRpc write of `upload_bench_rpc.mjs`) and stops the daemon. One JSON line per run.
 The real-time factor and the guest instruction counts come from `status`; the host is shared, so compare runs by guest instructions per byte and
 run before and after paired in the same minutes (see AGENTS.md: one paired A/B per claim).
