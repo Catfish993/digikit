@@ -118,16 +118,19 @@ shared module moved out.
 - [x] Design `devices/fw/<subsystem>.toml` with Em (`docs/design/firmware-decls.md`, agreed 2026-10-27): per entry name, devices, signature, rule, mark; structs with fields
       and per-device sections only where a device differs; hooks with their register contract.
 - [x] `port_resolve.py` reads `devices/fw/`; the 201 rules moved there mechanically (146 declarations, a2b60660).
-- [ ] Replace the `pk_*_rules*.py` generators with `catalog emit-rule ADDR` (drop the unused `cf.params.fmt` and
+- [x] Replace the `pk_*_rules*.py` generators with `catalog emit-rule ADDR` (drop the unused `cf.params.fmt` and
       `cf.params.slotbuild` sites); retire literal tables in
       `machineprofile.py` and `cf_names.py` as their consumers move to anchors.
-- [ ] Add a vtable-slot rule kind (about 63% of ColdFire candidates have no unique hash) and an ordinal for
+- [x] Add a vtable-slot rule kind (`cf_vtable_slot`) (about 63% of ColdFire candidates have no unique hash) and an ordinal for
       `sharc_func` (fixes most of the 182 shared DSP hashes on DT2).
-- [ ] Hooks declare their register contract: inputs, clobbered and preserved registers, and the DSP mode (modify
+- [ ] (step 5, with the generated trampolines) Hooks declare their register contract: inputs, clobbered and preserved registers, and the DSP mode (modify
       registers, SIMD). Today this is prose in findings 45 and 53.
 - [x] One naming rule with a fixed subsystem vocabulary (`devices/fw/subsystems.toml`): `<cpu>.<subsystem>.<kind>.<name>`, named after the firmware, not after our module.
       `dkrt.*`, `dl.*`, `health.*` and `input.*` get firmware names; old names stay as aliases until the move is done.
-- [ ] Portability count: how many declarations resolve on Syntakt 1.42 (today 27 of 172 ColdFire rules).
+- [x] Portability count on Syntakt 1.42 [D]: 22 of the 108 ColdFire rules that apply to DT2 resolve. By subsystem:
+      mem 5/6, rtos 5/8, midi 3/3, storage 2/4, string 2/5, project 1/4, input 1/3, menu 1/4, view 1/7, window 0/1,
+      link 0/5, page 0/12, param 0/5, machine 0/40. The runtime's basics mostly port; the UI and the sound-engine
+      sites need Syntakt rules (`catalog declare` from cfmatch pairs) in step 9 and S4.
 
 Proof: every `devices/ports/*.toml` is byte-identical before and after the move (aliases keep the old names).
 
@@ -246,4 +249,5 @@ ColdFire side is out of scope.
 ## Status at end of session
 
 2026-10-27: plan written. Steps 1 and 1b done; S1/S2 and findings 70 and 71 done. Review page generator in the repo
-(`tools/firmware/catalog_page.py`); Em reviews later. Step 2 done. Next: the step 3 declaration design, from finding 71 and the existing 201 rules.
+(`tools/firmware/catalog_page.py`); Em reviews later. Steps 2 and 3 done (hook register contracts move to step 5). Next: step 4, Rust build speed, before the first
+m68k Rust build in step 5.
