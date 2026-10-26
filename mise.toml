@@ -124,7 +124,7 @@ description = "Host lint, format, Vitest and type checks (no device)"
 
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"
-description = "Full gate including explicit runtime acceptance, 191 DN2 FX assertions and tier-sweep in place of tier-quick; no-AOT retains the fixed subset (`-- --all-no-aot`: all 134 scenarios and 191 assertions); DT2 full tier sweep requires -- --dt2; only after generated-core changes"
+description = "Full gate: every runtime acceptance file, 191 DN2 FX assertions and tier-sweep in place of tier-quick; no-AOT retains the fixed subset (`-- --all-no-aot`: all 134 scenarios and 191 assertions); DT2 full tier sweep requires -- --dt2; only after generated-core changes"
 
 # --- tests ---
 
@@ -172,7 +172,7 @@ run = [
   "pnpm --filter @digi/web test",
   "uv run python -m tools.emulator.coupled scenario --all",
 ]
-description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and explicit runtime acceptance"
+description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock, test:runtime, test:modules)"
 
 [tasks."test:slow"]
 run = [
