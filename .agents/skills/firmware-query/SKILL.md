@@ -33,6 +33,30 @@ Only then write a script, and put it under tools/ if it will be reused.
 An empty `callers` or `xref` is not evidence of dead code (Ghidra misses code outside functions and indirect
 calls through vtables); confirm with `tools/coldfire/refscan.py`. Atlas rows marked `medium` are heuristic.
 
+## Catalog: candidate functions for anchors
+
+Build (both devices, one run; needs `atlas build` for both images and the cfdb of the old versions for `stable`):
+
+    uv run python -m tools.coldfire.atlas catalog dt2-1.17 dn2-1.12
+
+It adds the table `catalog` to `out/atlas/<image>.sqlite` and writes `out/atlas/<image>-catalog.tsv` (best score first). Query:
+
+    fw.py catalog -i dt2-1.17 --grade --top 20          # best anchor candidates
+    fw.py catalog menu -i dt2-1.17 --tag near:cf.menu   # TERM matches name, class, hint or tags
+    fw.py catalog -i dn2-1.12 --tag role:model
+
+| column | meaning |
+| --- | --- |
+| tags | why it is a candidate: ui_own_vfunc, ui_vfunc, ui_helper, ui_string, near:PREFIX (next to an existing anchor), role:ROLE, term:TERM |
+| ui_callers, ui_strings, hint | UI vfuncs that call it; UI strings it uses; first such string |
+| h_strict, hash_count, stable | hash, functions with the same hash, same hash as the matched function in the old version (NULL: unknown) |
+| pair_addr, pair_method, pair_same_hash | the matched function on the other device |
+| anchors | existing anchors in the function (these score lower) |
+| rule_kind, rule_ordinal, rule_both | suggested rule (cf_func, vtable_slot, none) and whether it is the same on both devices |
+| anchor_grade, score | 1 when a hash rule fits both devices and versions; ranking |
+
+Marks stay [D]/[O] until a second check against image bytes. "No callers" needs `tools/coldfire/refscan.py`.
+
 ## Examples (output trimmed)
 
 Where is the machine list built?

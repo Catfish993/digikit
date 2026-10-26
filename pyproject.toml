@@ -77,6 +77,7 @@ files = [
     "tools/patchkit/pk_package.py",
     "tools/coldfire/fw.py",
     "tools/coldfire/atlas.py",
+    "tests/coldfire/test_atlas_catalog.py",
     "tests/firmware/test_fw.py",
     "tools/emulator/audiocheck.py",
     "tools/emulator/fxcheck.py",

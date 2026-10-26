@@ -3,6 +3,11 @@
 
     uv run python -m tools.coldfire.atlas build dt2-1.17 [dn2-1.12 ...]
     uv run python -m tools.coldfire.fw atlas machine -i dt2-1.17
+    uv run python -m tools.coldfire.atlas catalog dt2-1.17 dn2-1.12
+    uv run python -m tools.coldfire.fw catalog -i dt2-1.17 --grade
+
+`catalog` adds a table `catalog` (candidate anchor functions, scored) to the
+atlas of each image and writes out/atlas/<image>-catalog.tsv. Run `build` first.
 
 Answers "where are machines / FX / parameters / menus / pattern and step
 storage handled on this firmware" from data. Everything in the atlas is derived
@@ -41,6 +46,7 @@ import re
 import sqlite3
 import sys
 import time
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -888,13 +894,389 @@ def build(image: str, out_dir: str = fw.ATLAS_DIR) -> dict[str, int]:
     return counts
 
 
+# --- catalog: candidate functions for anchors -----------------------------------------
+
+# Old firmware per image, for the stability column (same h_strict as the matched old function).
+CATALOG_OLD = {"dt2-1.17": "dt2-1.16", "dn2-1.12": "dn2-1.11"}
+# Pair methods that count as a reliable match between the two devices.
+STRONG_PAIR = frozenset({"strict", "loose", "strings", "vtable"})
+# Score weights (see catalog_score).
+W_GRADE, W_PAIR, W_UI_CALLERS, W_NEAR, W_STRING, W_ROLE, W_ANCHORED = (
+    4.0,
+    2.0,
+    1 / 16,
+    1.5,
+    1.0,
+    0.5,
+    -3.0,
+)
+UI_CALLER_CAP = 64
+HELPER_MIN_CALLERS = 8
+MAX_SAME_HASH = (
+    4  # up to this many functions with one hash, the address order picks one
+)
+CATALOG_ROLES = ("model", "storage", "worker")
+
+CATALOG_COLUMNS = (
+    ("addr", "INTEGER"),
+    ("name", "TEXT"),
+    ("size", "INTEGER"),
+    ("class", "TEXT"),
+    ("tags", "TEXT"),
+    ("ui_callers", "INTEGER"),
+    ("ui_strings", "INTEGER"),
+    ("hint", "TEXT"),
+    ("h_strict", "TEXT"),
+    ("hash_count", "INTEGER"),
+    ("stable", "INTEGER"),
+    ("pair_addr", "INTEGER"),
+    ("pair_method", "TEXT"),
+    ("pair_same_hash", "INTEGER"),
+    ("anchors", "TEXT"),
+    ("rule_kind", "TEXT"),
+    ("rule_ordinal", "INTEGER"),
+    ("rule_both", "INTEGER"),
+    ("anchor_grade", "INTEGER"),
+    ("score", "REAL"),
+)
+
+
+def suggest_rule(
+    entry: int, h_strict: str, same_hash_entries_sorted: Sequence[int], is_vfunc: bool
+) -> tuple[str, int | None]:
+    """Rule kind and ordinal that would find `entry` again on another image."""
+    n = len(same_hash_entries_sorted)
+    if n <= 1:
+        return ("cf_func", None)
+    if n <= MAX_SAME_HASH and entry in same_hash_entries_sorted:
+        return ("cf_func", list(same_hash_entries_sorted).index(entry))
+    if n > MAX_SAME_HASH and is_vfunc:
+        return ("vtable_slot", None)  # label only; not resolvable yet
+    return ("none", None)
+
+
+def catalog_grade(
+    rule_kind: str, stable: int | None, pair_method: str | None, rule_both: int | None
+) -> int:
+    """1 when the function can be an anchor on both devices by hash."""
+    return int(
+        rule_kind == "cf_func"
+        and stable == 1
+        and pair_method in STRONG_PAIR
+        and rule_both == 1
+    )
+
+
+def catalog_score(
+    grade: int,
+    pair_method: str | None,
+    ui_callers: int,
+    ui_strings: int,
+    tags: Sequence[str],
+    anchors: Sequence[str],
+) -> float:
+    return (
+        W_GRADE * grade
+        + W_PAIR * (pair_method in STRONG_PAIR)
+        + W_UI_CALLERS * min(ui_callers, UI_CALLER_CAP)
+        + W_NEAR * any(t.startswith("near:") for t in tags)
+        + W_STRING * (ui_strings > 0)
+        + W_ROLE * any(t.startswith(("role:", "term:")) for t in tags)
+        + W_ANCHORED * bool(anchors)
+    )
+
+
+class CatImg:
+    """Facts of one image used by the catalog."""
+
+    def __init__(self) -> None:
+        self.fn: dict[int, tuple[str, int, int]] = {}
+        self.hs: dict[int, str] = {}
+        self.groups: dict[str, list[int]] = {}
+        self.vt: dict[int, set[tuple[str, str | None]]] = {}
+        self.tags: dict[int, list[str]] = {}
+        self.ui_callers: dict[int, int] = {}
+        self.strf: dict[int, set[int]] = {}
+        self.ui_text: dict[int, str] = {}
+        self.anch: dict[int, list[str]] = {}
+        self.stable: dict[int, int] = {}
+
+
+def _anchor_functions(
+    image: str, fn: dict[int, tuple[str, int, int]]
+) -> dict[int, list[str]]:
+    """Existing ColdFire anchors of devices/ports/<image>.toml by containing function."""
+    import bisect
+    import tomllib
+
+    path = os.path.join(ROOT, "devices", "ports", image + ".toml")
+    if not os.path.exists(path):
+        return {}
+    with open(path, "rb") as fh:
+        port = tomllib.load(fh)
+    starts = sorted(fn)
+    out: dict[int, list[str]] = {}
+    for a in port.get("anchor", []):
+        if a.get("cpu") != "cf":
+            continue
+        x = a.get("src", a["addr"]) if a.get("kind") == "data" else a["addr"]
+        i = bisect.bisect_right(starts, x) - 1
+        if i >= 0 and x < fn[starts[i]][2] + 1:
+            out.setdefault(starts[i], []).append(a["name"])
+    return out
+
+
+def collect_catalog(image: str) -> CatImg:
+    """Read cfdb and atlas of `image` and tag the candidate functions."""
+    import collections
+
+    old = CATALOG_OLD.get(image)
+    im = image + "-emac"
+    db = fw.open_ro(os.path.join(fw.CF_DIR, im + ".sqlite"))
+    at = fw.open_ro(os.path.join(fw.ATLAS_DIR, image + ".sqlite"))
+    d = CatImg()
+    d.fn = {
+        e: (n, sz, end)
+        for e, n, sz, end in db.execute(
+            "SELECT entry, name, size, end FROM functions WHERE image=?", (im,)
+        )
+    }
+    fn = d.fn
+    d.hs = {
+        e: h
+        for e, h in db.execute(
+            "SELECT entry, h_strict FROM func_hash WHERE image=?", (im,)
+        )
+        if e in fn
+    }
+    groups: dict[str, list[int]] = collections.defaultdict(list)
+    for e in sorted(d.hs):
+        groups[d.hs[e]].append(e)
+    d.groups = dict(groups)
+    # stability against the old version
+    old_path = os.path.join(fw.CF_DIR, "%s-emac.sqlite" % old) if old else ""
+    if old and os.path.exists(old_path):
+        olddb = fw.open_ro(old_path)
+        ohs = dict(
+            olddb.execute(
+                "SELECT entry, h_strict FROM func_hash WHERE image=?", (old + "-emac",)
+            ).fetchall()
+        )
+        for dst, src in db.execute(
+            "SELECT dst_entry, src_entry FROM matches WHERE image=? AND src_image=?",
+            (im, old + "-emac"),
+        ):
+            if dst in d.hs and src in ohs:
+                d.stable[dst] = int(ohs[src] == d.hs[dst])
+    classes = dict(at.execute("SELECT name, role FROM classes").fetchall())
+    ui_cls = {n for n, r in classes.items() if r in VIEW_ROLES}
+    for cls, tgt, owner in db.execute(
+        "SELECT class, target, owner FROM vtables WHERE image=?", (im,)
+    ):
+        if tgt and tgt in fn:
+            d.vt.setdefault(tgt, set()).add((cls, owner))
+    ui_vf = {t for t, s in d.vt.items() if any(c in ui_cls for c, _o in s)}
+    ui_own = {
+        t
+        for t, s in d.vt.items()
+        if any(c in ui_cls and (o == c or not o) for c, o in s)
+    }
+    role_own: dict[str, set[int]] = {r: set() for r in CATALOG_ROLES}
+    for t, s in d.vt.items():
+        for c, o in s:
+            if classes.get(c) in role_own and (o == c or not o):
+                role_own[classes[c]].add(t)
+    callees: dict[int, set[int]] = collections.defaultdict(set)
+    callers: dict[int, set[int]] = collections.defaultdict(set)
+    for f, t in db.execute(
+        "SELECT from_func, to_func FROM edges WHERE image=? AND to_func IS NOT NULL "
+        "AND kind IN ('call','jump') AND from_func!=to_func",
+        (im,),
+    ):
+        if f in fn and t in fn:
+            callees[f].add(t)
+            callers[t].add(f)
+    cnt: collections.Counter[int] = collections.Counter()
+    for f in ui_vf:
+        for t in callees[f]:
+            if t not in d.vt:
+                cnt[t] += 1
+    d.ui_callers = dict(cnt)
+    d.anch = _anchor_functions(image, fn)
+    near: dict[str, set[int]] = collections.defaultdict(set)
+    for f, names in d.anch.items():
+        for nm in names:
+            prefix = ".".join(nm.split(".")[:2])
+            near[prefix] |= {f} | callees[f] | callers[f]
+    d.ui_text = {
+        a: t
+        for a, t in reversed(at.execute("SELECT addr, text FROM ui_strings").fetchall())
+    }
+    for f, a in db.execute("SELECT func, to_addr FROM datarefs WHERE image=?", (im,)):
+        if a in d.ui_text and f in fn:
+            d.strf.setdefault(f, set()).add(a)
+    term_funcs: dict[str, set[int]] = collections.defaultdict(set)
+    for term, ref in at.execute("SELECT term, ref FROM glossary WHERE kind='function'"):
+        addr = fw.parse_addr(ref)
+        if addr is not None and addr in fn:
+            term_funcs[term.lower().replace(" ", "_")].add(addr)
+
+    def add(tag: str, funcs: Iterable[int]) -> None:
+        for f in funcs:
+            d.tags.setdefault(f, []).append(tag)
+
+    add("ui_own_vfunc", ui_own)
+    add("ui_vfunc", ui_vf)
+    add("ui_helper", [t for t, c in cnt.items() if c >= HELPER_MIN_CALLERS])
+    add("ui_string", d.strf)
+    for prefix in sorted(near):
+        add("near:" + prefix, near[prefix])
+    for role in CATALOG_ROLES:
+        add("role:" + role, role_own[role])
+    for term in sorted(term_funcs):
+        add("term:" + term, term_funcs[term])
+    return d
+
+
+def catalog_rows(
+    d: CatImg, other: CatImg, pair: dict[int, tuple[int, str]]
+) -> list[dict[str, Any]]:
+    """Catalog rows of `d`; `pair` maps an address to (address on `other`, method)."""
+    rows = []
+    for f in sorted(d.tags):
+        name, size, _end = d.fn[f]
+        tags = d.tags[f]
+        h = d.hs.get(f)
+        group = d.groups.get(h, []) if h else []
+        kind, ordinal = suggest_rule(f, h, group, f in d.vt) if h else ("none", None)
+        p = pair.get(f)
+        pair_addr, method = p if p else (None, None)
+        same_hash: int | None = None
+        both: int | None = None
+        if pair_addr is not None:
+            oh = other.hs.get(pair_addr)
+            same_hash = int(oh is not None and oh == h)
+            if kind == "cf_func" and h:
+                if oh is None:
+                    both = 0
+                else:
+                    okind, oord = suggest_rule(
+                        pair_addr, oh, other.groups.get(oh, []), pair_addr in other.vt
+                    )
+                    both = int(okind == kind and oord == ordinal and oh == h)
+        stable = d.stable.get(f)
+        grade = catalog_grade(kind, stable, method, both)
+        strs = d.strf.get(f, set())
+        anchors = d.anch.get(f, [])
+        callers = d.ui_callers.get(f, 0)
+        hint = d.ui_text[min(strs)][:32] if strs else ""
+        rows.append(
+            {
+                "addr": f,
+                "name": name,
+                "size": size,
+                "class": sorted({c for c, _o in d.vt.get(f, ())})[0]
+                if f in d.vt
+                else "",
+                "tags": ",".join(tags),
+                "ui_callers": callers,
+                "ui_strings": len(strs),
+                "hint": hint,
+                "h_strict": h,
+                "hash_count": len(group),
+                "stable": stable,
+                "pair_addr": pair_addr,
+                "pair_method": method,
+                "pair_same_hash": same_hash,
+                "anchors": ",".join(anchors),
+                "rule_kind": kind,
+                "rule_ordinal": ordinal,
+                "rule_both": both,
+                "anchor_grade": grade,
+                "score": catalog_score(
+                    grade, method, callers, len(strs), tags, anchors
+                ),
+            }
+        )
+    return rows
+
+
+def write_catalog(image: str, rows: list[dict[str, Any]], out_dir: str) -> None:
+    path = os.path.join(out_dir, image + ".sqlite")
+    con = sqlite3.connect(path)
+    con.execute("DROP TABLE IF EXISTS catalog")
+    con.execute(
+        "CREATE TABLE catalog (%s)" % ", ".join('"%s" %s' % c for c in CATALOG_COLUMNS)
+    )
+    insert(con, "catalog", rows)
+    con.execute("CREATE INDEX IF NOT EXISTS catalog_score ON catalog(score)")
+    con.commit()
+    con.close()
+    rows = sorted(rows, key=lambda r: (-r["score"], r["addr"]))
+    with open(os.path.join(out_dir, image + "-catalog.tsv"), "w") as fh:
+        fh.write("\t".join(c for c, _t in CATALOG_COLUMNS) + "\n")
+        for r in rows:
+            cells = []
+            for c, _t in CATALOG_COLUMNS:
+                v = r[c]
+                if v is None:
+                    cells.append("")
+                elif c in ("addr", "pair_addr"):
+                    cells.append("0x%08x" % v)
+                elif c == "score":
+                    cells.append("%.2f" % v)
+                else:
+                    cells.append(str(v))
+            fh.write("\t".join(cells) + "\n")
+
+
+def catalog(image: str, other_image: str, out_dir: str = fw.ATLAS_DIR) -> int:
+    from tools.coldfire import cfmatch
+
+    names = [fw.short_image(image), fw.short_image(other_image)]
+    for n in names:
+        if not os.path.exists(os.path.join(out_dir, n + ".sqlite")):
+            print("run atlas build %s first" % n)
+            return 2
+    mt = cfmatch.load_pair(names[0] + "-emac", names[1] + "-emac")
+    fwd = {s: (t, mt.method[s]) for s, t in mt.m.items()}
+    rev = {t: (s, mt.method[s]) for s, t in mt.m.items()}
+    a, b = collect_catalog(names[0]), collect_catalog(names[1])
+    for n, d, o, pair in ((names[0], a, b, fwd), (names[1], b, a, rev)):
+        rows = catalog_rows(d, o, pair)
+        write_catalog(n, rows, out_dir)
+        counts: dict[str, int] = {}
+        for r in rows:
+            for t in r["tags"].split(","):
+                key = t.split(":")[0]
+                counts[key] = counts.get(key, 0) + 1
+        print(
+            "%s: rows=%d anchor_grade=%d tags: %s"
+            % (
+                n,
+                len(rows),
+                sum(r["anchor_grade"] for r in rows),
+                " ".join("%s=%d" % kv for kv in sorted(counts.items())),
+            )
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build", help="build out/atlas/<image>.sqlite")
     b.add_argument("images", nargs="+")
     b.add_argument("--out-dir", default=fw.ATLAS_DIR)
+    c = sub.add_parser(
+        "catalog", help="candidate anchor functions of IMAGE, paired with OTHER"
+    )
+    c.add_argument("image")
+    c.add_argument("other")
+    c.add_argument("--out-dir", default=fw.ATLAS_DIR)
     args = ap.parse_args(argv)
+    if args.cmd == "catalog":
+        return catalog(args.image, args.other, args.out_dir)
     for image in args.images:
         c = build(image, args.out_dir)
         print("%s: %s" % (image, ", ".join("%s=%s" % kv for kv in c.items())))

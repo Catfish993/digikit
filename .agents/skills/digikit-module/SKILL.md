@@ -76,6 +76,12 @@ not a run-time effect. Start from a copy:
 
 Each task takes `-- --help`. After a change to `devices/*.toml` or `sdk/sdk.toml`: `mise run gen:modules` (`-- --check` lists stale files).
 
+## Finding a firmware function for a core/* adapter
+
+Only `core/*` adapters need firmware addresses. To find a candidate, use the firmware-query skill: `fw.py atlas TERM`, then
+`fw.py catalog TERM -i IMAGE --grade` (build: `uv run python -m tools.coldfire.atlas catalog dt2-1.17 dn2-1.12`). Check the
+candidate on both devices and confirm callers with `tools/coldfire/refscan.py`. Content modules (machines, effects) never use anchors.
+
 ## Rules
 
 - **No firmware bytes in the repository.** Modules hold our code and hashes only. Patched images, ready states and anything derived from

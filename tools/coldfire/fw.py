@@ -11,7 +11,7 @@ from the address (>= 0x400000 is ColdFire) or with --cpu. Set FW_IMAGE to skip
 "... N more" tail, so a single call never floods the context.
 
 Subcommands: fn decomp disasm callers callees xref str class path port sql
-search atlas batch. In a batch file each line is one command line (without
+search atlas catalog batch. In a batch file each line is one command line (without
 "fw.py"); lines starting with # are comments; every result block starts with
 "## <line>". The call graph is cached on disk (out/cache/fw/), keyed by the
 database hash, so a cold process only pays for opening SQLite.
@@ -1059,6 +1059,64 @@ def _atlas_one(image: str, term: str, per: int) -> list[str]:
     return out
 
 
+def cmd_catalog(
+    image: str, term: str, tag: str | None, top: int, grade: bool
+) -> list[str]:
+    """Rows of the atlas `catalog` table (candidate anchor functions), best score first."""
+    short = short_image(image)
+    path = os.path.join(ATLAS_DIR, short + ".sqlite")
+    if not os.path.exists(path):
+        raise FwError(
+            "no atlas for %s: run uv run python -m tools.coldfire.atlas build %s"
+            % (short, short)
+        )
+    con = open_ro(path)
+    if not _has(con, "catalog"):
+        raise FwError(
+            "no catalog for %s: run uv run python -m tools.coldfire.atlas catalog %s OTHER"
+            " (e.g. dt2-1.17 dn2-1.12)" % (short, short)
+        )
+    where = ["1"]
+    args: list[str] = []
+    if term:
+        where.append("(name LIKE ?1 OR class LIKE ?1 OR hint LIKE ?1 OR tags LIKE ?1)")
+        args.append("%" + term + "%")
+    if tag:
+        where.append("(',' || tags) LIKE ?%d" % (len(args) + 1))
+        args.append("%," + tag + "%")
+    if grade:
+        where.append("anchor_grade=1")
+    sql = "FROM catalog WHERE " + " AND ".join(where)
+    total = con.execute("SELECT count(*) " + sql, args).fetchone()[0]
+    rows = con.execute(
+        "SELECT addr, score, anchor_grade, name, class, tags, ui_callers, hint, pair_addr, "
+        "pair_method, rule_kind, rule_ordinal, anchors "
+        + sql
+        + " ORDER BY score DESC, addr LIMIT %d" % top,
+        args,
+    ).fetchall()
+    out = ["catalog %s: %d rows match, %d shown" % (short, total, len(rows))]
+    for a, sc, g, name, cls, tags, uic, hint, pa, pm, rk, ro, anch in rows:
+        rule = rk if ro is None else "%s#%d" % (rk, ro)
+        out.append(
+            "%08x %5.2f %s %s%s  %s  ui=%d rule=%s pair=%s%s%s"
+            % (
+                a,
+                sc,
+                "G" if g else "-",
+                name,
+                " (%s)" % cls if cls else "",
+                tags,
+                uic,
+                rule,
+                "%08x/%s" % (pa, pm) if pa is not None else "-",
+                " " + repr(hint) if hint else "",
+                " anchored=" + anch if anch else "",
+            )
+        )
+    return out
+
+
 # --- argument parsing and dispatch -----------------------------------------------
 
 
@@ -1119,6 +1177,15 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_parser("atlas", help="semantic atlas lookup (tools/coldfire/atlas.py)")
     )
     sp.add_argument("term", nargs="+")
+    sp = common(
+        sub.add_parser(
+            "catalog", help="candidate anchor functions (atlas.py catalog), best first"
+        )
+    )
+    sp.add_argument("term", nargs="*", help="substring of name, class, hint or tags")
+    sp.add_argument("--tag", help="tag prefix, e.g. near:cf.menu, role:model, term:fx")
+    sp.add_argument("--top", type=int, default=30)
+    sp.add_argument("--grade", action="store_true", help="only anchor_grade=1")
     sp = common(sub.add_parser("batch", help="run many queries from FILE or - (stdin)"))
     sp.add_argument("file")
     return p
@@ -1143,6 +1210,14 @@ def run(
         if not image:
             raise FwError("no image: pass -i dt2-1.17 or set FW_IMAGE")
         return capped(cmd_atlas(image, " ".join(args.term)), cap)
+    if c == "catalog":
+        image = image or os.environ.get("FW_IMAGE")
+        if not image:
+            raise FwError("no image: pass -i dt2-1.17 or set FW_IMAGE")
+        return capped(
+            cmd_catalog(image, " ".join(args.term), args.tag, args.top, args.grade),
+            cap,
+        )
     if c == "port":
         return capped(cmd_port(sess, args.name, args.src, args.dst), cap)
     if c == "str":
