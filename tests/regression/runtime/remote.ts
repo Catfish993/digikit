@@ -4,86 +4,16 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { DkSession } from '@digi/dk-session';
-import { button, repoRoot, resolveInputs, type Session } from '@digi/test-support';
+import { button, repoRoot, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
+import { prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 import { installModule } from './transfer-cli.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
-export interface RemotePlan {
-  base: { device: string; version: string; syx_sha256: string };
-  modules: string[];
-  symbols: Record<string, number>;
-  output: { syx_sha256: string } | null;
-}
-
-/** Same exact-one-address semantics as pk_harness.plan_symbol, including Rust statics. */
-export function planSymbol(plan: RemotePlan, name: string): number {
-  const addresses = new Set(
-    Object.entries(plan.symbols)
-      .filter(([key]) => key.endsWith(`:${name}`) || new RegExp(`\\d${name}$`).test(key))
-      .map(([, value]) => value),
-  );
-  if (addresses.size !== 1) throw new Error(`symbol ${name}: ${addresses.size} addresses in the plan`);
-  return [...addresses][0]!;
-}
-
-export function validateRemotePlan(plan: RemotePlan, session: Pick<Session, 'options' | 'loadResult'>): void {
-  const identity = session.loadResult.runtime;
-  // Cache hits report plain IDs in root order; misses report tags in dependency order.
-  const moduleIds = (modules: string[]) => modules.map((module) => module.split('@', 1)[0]).sort();
-  if (
-    !identity?.patched ||
-    identity.set !== 'emulator' ||
-    plan.base.device !== session.options.device ||
-    plan.base.version !== session.options.firmware ||
-    plan.base.syx_sha256 !== identity.base_sha256 ||
-    JSON.stringify(moduleIds(plan.modules)) !== JSON.stringify(moduleIds(identity.modules))
-  ) {
-    throw new Error('remote ABOUT plan does not match the loaded runtime identity and module membership');
-  }
-  // Exact loaded-image identity proves version, ordering and symbol layout despite report differences.
-  const loadedSha256 = session.loadResult.syx_sha256;
-  if (
-    typeof loadedSha256 !== 'string' ||
-    !/^[a-f0-9]{64}$/.test(loadedSha256) ||
-    plan.output?.syx_sha256 !== loadedSha256
-  ) {
-    throw new Error('remote ABOUT plan output hash does not match the loaded runtime image');
-  }
-}
-
-/** Existing Python tools own patch/module preparation; this helper never builds a daemon or core. */
-export async function prepareRemote({ session }: PatchedSession): Promise<RemotePlan> {
-  const { device, firmware } = session.options;
-  const syx = path.join(session.runDir, `remote-${device}.syx`);
-  const planFile = syx.replace(/\.syx$/, '.plan.json');
-  const patch = await exec(
-    'uv',
-    [
-      'run',
-      'python',
-      '-m',
-      'tools.patchkit.patchkit',
-      'patch',
-      '--firmware',
-      resolveInputs(device, firmware).syx,
-      '--set',
-      'emulator',
-      '-o',
-      syx,
-      '--plan',
-      planFile,
-    ],
-    { cwd: root, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
-  );
-  const artifacts = remoteArtifacts(session);
-  fs.writeFileSync(path.join(artifacts, 'patch.log'), `${patch.stdout}\n${patch.stderr}`);
-  const plan: RemotePlan = JSON.parse(fs.readFileSync(planFile, 'utf8'));
-  validateRemotePlan(plan, session);
-  // Fail before installation/navigation if either diagnostic symbol is absent or ambiguous.
-  planSymbol(plan, 'DK_ABOUT');
-  planSymbol(plan, 'DK_ABOUT_N');
+/** Prepare an exact loaded-image ABOUT plan, then install only the remote module. */
+export async function prepareRemote({ session }: PatchedSession): Promise<RuntimePlan> {
+  const plan = await prepareRuntimePlan(session, remoteArtifacts(session), ['DK_ABOUT', 'DK_ABOUT_N']);
   await installRemote(session);
   return plan;
 }
@@ -155,15 +85,4 @@ export async function captureRemoteOled(session: Session, name: string): Promise
     ],
     { cwd: root, timeout: 10_000 },
   );
-}
-
-export async function runtimeVersion(): Promise<string> {
-  const { stdout } = await exec(
-    'uv',
-    ['run', 'python', '-c', 'from tools.patchkit.pk_harness import runtime_text; print(runtime_text())'],
-    { cwd: root, timeout: 10_000 },
-  );
-  const version = stdout.trim();
-  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('invalid runtime_text output');
-  return version;
 }

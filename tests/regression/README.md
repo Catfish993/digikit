@@ -69,7 +69,7 @@ Consumer typecheck/check scripts and runtime imports resolve `@digi/dk-session` 
 The `runtime-fixture` gate step runs the remote, service-command and transfer acceptance cases sequentially,
 with one fresh coupled daemon per file/device. It requests `firmware.load {runtime:true, start:"auto"}` and the existing
 `emulator` patch set/cache, then selects free mode. It checks reported patch identity, ready/free status
-and health, then installs digikit/remote and checks ABOUT text and the encoder-driven OLED change.
+and health, then installs digikit/remote and proves ABOUT navigation and signed TURN acceptance.
 Host tests cover the `DkSession`/`EmuUsbTransport` wiring and pending-request cancellation. Stock restart and instruction-step waits
 are rejected for runtime sessions. Cleanup cancels protocol requests and closes the owned daemon; an
 unresponsive quit has a ten-second child termination deadline. Runtime startup expires after 120 seconds,
@@ -178,12 +178,20 @@ mise run test:runtime -- dn2-samples-store-live.test.ts
 
 Input-adapter cases require checked, freshly packed `test/input-probe` artifacts at
 `DIGI_RUNTIME_MODULES/<device>/input-probe.dkm` (default root `out/regression/modules`). The gate prepares
-these in its own directory; direct `test:runtime` needs them prepared separately. An earlier focused
-DN2 comparison preserved the original three-distinct-screen failure (two observed), with matching
-complete panel/probe hashes, five zero probe statuses and invalid replies of -1. That is a historical
-focused result, not a parity claim for the current broad gate. `expect.soft` retains later checks and
-the failure without a skip or threshold change. Focused reference report:
-`out/regression/legacy-input-reference-20261026/digikit0/input-adapter-dn2-1.12/report.json`.
+these in its own directory; direct `test:runtime` needs them prepared separately. The old focused DN2
+panel/probe hash parity and distinct-screen failure are historical, not current acceptance criteria.
+The revised workflow retains two fresh identical install/VERIFY/select/restart histories with
+`autoNo:false`. Named KEY navigation captures and compares SETTINGS ninth-row and DIGIKIT main-menu
+frames; ABOUT is independently polled against the live protocol runtime version, with reads bounded
+to 24 rows. Stable identity/boot rows are compared, excluding changing diagnostics.
+
+Before navigation, +4/-4 TURN checks panel UART delivery (queue drained and IRQ count advanced) or
+probe `input_turn` status zero. Invalid key/encoder -1, runtime fault checks, finally cleanup and
+persistent frames/rows/status remain. This proves delivery/decoder acceptance, not vendor parameter
+changes. Remote keys retain real ABOUT and screenshot diagnostics, then require accepted +20/-20
+TURN deltas instead of an arbitrary screen hash change. Shared `runtime-plan.ts` validates exact
+loaded-image hash, module membership and unique symbols; `runtime-menu.ts` owns navigation and ABOUT
+reads. The Python-only runtime-version formatter has been removed.
 
 ## Runtime module-load acceptance
 
@@ -198,6 +206,20 @@ The gate checks selected module objects with `pk_build build ID --check`, then p
 devices under its own run directory and supplies `DIGI_RUNTIME_MODULES`. Stale objects fail before any
 acceptance starts. The check can invoke module toolchains and packing may build the patchkit CLI;
 no daemon build is added by this step. A daemon build already selected elsewhere is reused.
+
+
+The same existing task can run only the deterministic C pacing unit:
+
+```sh
+mise run test:modules -- remote.test.ts -t 'pacing unit'
+```
+
+It compiles the actual remote handler with controlled callbacks/clock through host `cc` (C11 and
+32-bit unsigned int), with 10-second compile and 2-second execution limits and temporary cleanup.
+No firmware or daemon is used by this filter. It verifies ±30 limits including reversal, 95/96-block
+refill, signs, independent encoders, callback failure and uint32 wrap. The real reversal bug accepted
+-60 after pending +30; the clamp now accepts -30. A second adjacent live host request may return 0 or
+30 because it can cross a firmware refill; exact timing is asserted by the C unit.
 
 Supply the same reviewed `DIGI_EMUD_DT2`/`DIGI_EMUD_DN2`, provenance-checked stock ready inputs and
 `DIGI_RUNTIME_CARD` sample directory described above. Prepare current module objects separately
@@ -249,12 +271,26 @@ check pass; these fixes have not had another broad gate.
 
 DT2 samples' repeat-run artifact collision is fixed: migrated live workflows retain unique
 `out/regression/<workflow>/<device>/run-*` directories, reused by the same Session/workflow. Two identical
-live reruns passed in 57.66 and 56.84 seconds, preserving both artifact directories. Four runtime assertions remain
-unresolved: DN2 input first-frame panel/probe mismatch, DT2 input two distinct screens instead of three,
-DN2 remote pacing second reply 30 instead of 0, and DN2 remote keys no OLED change after TURN.
-Assertions are unchanged and semantic causes are not fully established. The earlier focused DN2 input
-parity result does not characterize this broad run. Known chorus-width and zero-DSP restart limitations
-remain separate.
+live reruns passed in 57.66 and 56.84 seconds, preserving both artifact directories. The other four
+prior failures were input frame/distinct-screen assertions, remote adjacent-call pacing and TURN OLED
+change. Those unsupported claims have been replaced with the semantic navigation, delivery/decoder
+and controlled C pacing checks above; the historical broad failure is not erased. The rebuilt remote
+module's both-device lifecycle plus unit passed in 128.03 seconds; `verify:host` passed 130 tests and
+all types/lint/format checks with 11 existing warnings. All six focused runtime cases now pass under
+the revised meaningful contracts:
+
+| Device | Input adapter | Remote control | Remote keys | Vitest elapsed |
+| --- | --- | --- | --- | --- |
+| DT2 1.17 | 193.819 s | 147.534 s | 111.233 s | 453.08 s |
+| DN2 1.12 | 209.314 s | 151.419 s | 116.123 s | 477.33 s |
+
+Each device ran its three cases sequentially; both devices ran concurrently within a four-core
+budget. Results: [DT2 JUnit](../../out/runs/input-contracts/dt2.xml) and
+[DN2 JUnit](../../out/runs/input-contracts/dn2.xml). The four formerly failing cases now pass by
+proving real KEY menu/ABOUT navigation, TURN delivery/decoder acceptance and deterministic C pacing,
+not by retaining unsupported vendor-parameter or arbitrary-screen-effect assertions. Invalid input,
+registration, identity, faults and cleanup remain covered. This does not erase the historical broad
+failure or claim a full gate rerun, performance A/B, chorus-width fix or zero-DSP restart support.
 
 ## Stock coupled audio
 

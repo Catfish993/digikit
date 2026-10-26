@@ -13,7 +13,18 @@ loaded like any other from the card store; it needs `core/input` in the image (b
 - **Codes** are the device file's `[panel]` codes (`devices/*.toml`); the host lays the keys out from them. The module knows no device.
 - **Guard.** KEY, TURN and RELEASE are in a guarded range: while DIGIKIT > REMOTE is off, the runtime answers `E_DISABLED` (-65). STATE is always answered, so a host can show the state.
   The switch starts on in the emulator and off on a device, and is never saved.
-- **Pacing.** The firmware flushes a turn at most 30 detents every 4 ticks. The module keeps an estimate of what is still pending per encoder and takes only what fits.
+- **Pacing.** The firmware flushes a turn at most 30 detents every 4 ticks. The module keeps an estimate of what is still pending per encoder and takes only what fits, capped at ±30 per request even when direction reverses.
 - **Held keys.** The module remembers the keys it holds. RELEASE lets go of all of them (a host sends it when its Remote page closes).
 
 Design: `docs/plans/remote-control.md`.
+
+The deterministic host C pacing check uses the actual command handler with a controlled block clock:
+
+```sh
+mise run test:modules -- remote.test.ts -t 'pacing unit'
+```
+
+It requires host `cc` with C11 and 32-bit unsigned int, performs only a tiny bounded compile/run,
+and needs no firmware or daemon. It covers direction reversal (pending +30 then -100 accepts -30),
+95/96-block refill, signs, independent encoders, callback errors and clock wrap. Live TURN checks
+prove command acceptance/delivery; they do not require an arbitrary vendor parameter or OLED change.

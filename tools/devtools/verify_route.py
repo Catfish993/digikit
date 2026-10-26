@@ -169,7 +169,7 @@ def acceptance_python(step: str) -> set[str]:
     from tools.devtools import changed_tests
 
     # The graph omits function-local imports. These consumed call paths need stablebin from
-    # patchkit.binary and sharc_disasm from pk_sharc.verify, plus runtime_text's dklog_kinds.
+    # patchkit.binary and sharc_disasm from pk_sharc.verify.
     roots = {
         "tools",
         "tools.patchkit.pk_build",
@@ -181,8 +181,6 @@ def acceptance_python(step: str) -> set[str]:
         roots.update(
             {
                 "tools.device.dktransfer",
-                "tools.patchkit.pk_harness",
-                "tools.device.dklog_kinds",
                 "tools.control.digi_client",
                 "tools.emulator.card_overlay",
             }

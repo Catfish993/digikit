@@ -23,18 +23,12 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   ...(await original<object>()),
   resolveInputs: () => ({ syx: '/stock.syx' }),
 }));
-import {
-  installRemote,
-  planSymbol,
-  prepareRemote,
-  remoteTap,
-  validateRemotePlan,
-  withRemoteRelease,
-  type RemotePlan,
-} from '../runtime/remote.ts';
+import { installRemote, prepareRemote, remoteTap, withRemoteRelease } from '../runtime/remote.ts';
+import { planSymbol, validateRuntimePlan, type RuntimePlan } from '../runtime/runtime-plan.ts';
+import { openDigikitMenu, openRuntimeAbout, readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
 
 const patchedSha256 = 'c'.repeat(64);
-const plan: RemotePlan = {
+const plan: RuntimePlan = {
   output: { syx_sha256: patchedSha256 },
   base: { device: 'dt2', version: '1.17', syx_sha256: 'a'.repeat(64) },
   modules: ['core/runtime@0.1.0', 'core/digikit-menu@0.1.0'],
@@ -62,15 +56,15 @@ beforeEach(() => {
 });
 
 test('plan identity requires the device, version, base hash and expanded module membership', () => {
-  expect(() => validateRemotePlan(plan, session)).not.toThrow();
+  expect(() => validateRuntimePlan(plan, session)).not.toThrow();
   for (const base of [
     { ...plan.base, device: 'dn2' },
     { ...plan.base, version: '1.16' },
     { ...plan.base, syx_sha256: 'b'.repeat(64) },
   ])
-    expect(() => validateRemotePlan({ ...plan, base }, session)).toThrow('does not match');
+    expect(() => validateRuntimePlan({ ...plan, base }, session)).toThrow('does not match');
   for (const modules of [['emulator'], [...plan.modules, 'extra']]) {
-    expect(() => validateRemotePlan({ ...plan, modules }, session)).toThrow('does not match');
+    expect(() => validateRuntimePlan({ ...plan, modules }, session)).toThrow('does not match');
   }
 });
 
@@ -95,14 +89,14 @@ test('setup reuses Python patch/install commands, its own daemon and bounded too
     '--set',
     'emulator',
     '-o',
-    '/run/own-daemon/remote-dt2.syx',
+    '/run/own-daemon/runtime-dt2.syx',
     '--plan',
-    '/run/own-daemon/remote-dt2.plan.json',
+    '/run/own-daemon/runtime-dt2.plan.json',
   ]);
   expect(fake.exec.mock.calls[1]?.[1]).toContain('/run/own-daemon');
   expect(fake.exec.mock.calls[1]?.[1].slice(-4)).toEqual(['--json', 'install', 'digikit/remote', '--restart']);
   expect(fake.exec.mock.calls.map((call) => call[2].timeout)).toEqual([30_000, 90_000]);
-  expect(fs.readFileSync).toHaveBeenCalledWith('/run/own-daemon/remote-dt2.plan.json', 'utf8');
+  expect(fs.readFileSync).toHaveBeenCalledWith('/run/own-daemon/runtime-dt2.plan.json', 'utf8');
 });
 
 for (const stage of ['patch', 'install', 'load-result', 'plan'] as const) {
@@ -212,7 +206,7 @@ test('tagged dependency order and reordered untagged cache-hit reports identify 
   if (!identity?.patched) throw new Error('test requires a patched identity');
   for (const modules of [plan.modules, ['core/digikit-menu', 'core/runtime']]) {
     expect(() =>
-      validateRemotePlan(plan, {
+      validateRuntimePlan(plan, {
         options: session.options,
         loadResult: { ...session.loadResult, runtime: { ...identity, modules } },
       }),
@@ -220,7 +214,7 @@ test('tagged dependency order and reordered untagged cache-hit reports identify 
   }
   expect(fake.read).not.toHaveBeenCalled();
   expect(() =>
-    validateRemotePlan(plan, {
+    validateRuntimePlan(plan, {
       options: session.options,
       loadResult: { ...session.loadResult, runtime: { ...identity, modules: ['core/digikit-menu', 'different'] } },
     }),
@@ -229,11 +223,11 @@ test('tagged dependency order and reordered untagged cache-hit reports identify 
 
 test('plan and actual loaded image require present matching SHA-256 digests', () => {
   for (const output of [null, { syx_sha256: '' }, { syx_sha256: 'b'.repeat(64) }]) {
-    expect(() => validateRemotePlan({ ...plan, output }, session)).toThrow('output hash');
+    expect(() => validateRuntimePlan({ ...plan, output }, session)).toThrow('output hash');
   }
   for (const syx_sha256 of [undefined, '', 'b'.repeat(64)]) {
     expect(() =>
-      validateRemotePlan(plan, {
+      validateRuntimePlan(plan, {
         options: session.options,
         loadResult: { ...session.loadResult, syx_sha256 },
       }),
@@ -264,4 +258,37 @@ test('negative setup installs on its own device-set daemon without patching or r
   expect(fake.exec.mock.calls[0]?.[2].timeout).toBe(90_000);
   expect(fake.read).not.toHaveBeenCalled();
   expect(fake.write.mock.calls[0]?.[0]).toMatch(/remote-control\/dt2\/install\.log$/);
+});
+
+test('menu navigation uses named SETTINGS and DIGIKIT checkpoints before ABOUT', async () => {
+  const tap = vi.fn().mockResolvedValue(undefined);
+  const checkpoint = vi.fn().mockResolvedValue(undefined);
+  await openDigikitMenu(tap, checkpoint);
+  await openRuntimeAbout(tap);
+  expect(tap.mock.calls).toEqual([
+    ['NO', 2000],
+    ['SETTINGS', 3000],
+    ...Array.from({ length: 8 }, () => ['DOWN']),
+    ['YES', 3000],
+    ['DOWN'],
+    ['DOWN'],
+    ['YES', 3000],
+  ]);
+  expect(checkpoint.mock.calls).toEqual([['settings-ninth-row'], ['digikit-main']]);
+});
+
+test('ABOUT reads are bounded and assert the live protocol runtime identity without a Python formatter', async () => {
+  const memPeek = vi.fn().mockResolvedValue(25);
+  const menuSession = { client: { memPeek } } as unknown as Session;
+  await expect(readAboutRows(menuSession, plan)).rejects.toThrow('invalid ABOUT row count');
+  expect(memPeek.mock.calls).toEqual([[8192]]);
+  const rows = ['DIGIKIT 0.1.0', 'RUNTIME 0.2.5'];
+  const bytes = Buffer.from(rows.map((row) => row.padEnd(24, '\0')).join(''), 'latin1');
+  memPeek.mockImplementation(async (address: number) =>
+    address === 8192 ? rows.length : bytes.readUInt32BE(address - 4096),
+  );
+  const info = vi.fn().mockResolvedValue({ runtime: 0x205 });
+  await expect(expectRuntimeAbout(menuSession, { info } as unknown as DkSession, plan)).resolves.toEqual(rows);
+  expect(info).toHaveBeenCalledWith();
+  expect(fake.exec).not.toHaveBeenCalled();
 });

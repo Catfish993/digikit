@@ -48,7 +48,7 @@ Session reuse needs a demonstrated independent reset of firmware, DSP, card, pen
 state, plus failure/cancellation cleanup. Fresh sessions remain the runtime fixture's current isolation;
 pooling/reset safety and further migrations are separate work. Stock FX renders independently restore ready snapshots per scenario; that does not establish a fresh patched-runtime reset contract.
 
-The live samples, sample-store and input-adapter cases now use managed runtime Vitest fixtures; their Python live wrappers/scenarios are removed. Stock DT2 assertions have the routed `stock` owner; `module-load` selects affected production uploads. Independent reset/session reuse, an all-module patched-firmware load proof and actual application E2E coverage remain distinct gaps. The migrated DN2 input case preserves a known failure, described below; the runtime gate is not green.
+The live samples, sample-store and input-adapter cases now use managed runtime Vitest fixtures; their Python live wrappers/scenarios are removed. Stock DT2 assertions have the routed `stock` owner; `module-load` selects affected production uploads. Independent reset/session reuse, an all-module patched-firmware load proof and actual application E2E coverage remain distinct gaps. The previous broad gate failed runtime acceptance; the revised semantic/input boundaries below are awaiting six focused runtime cases.
 
 ## Layout
 
@@ -103,11 +103,21 @@ reporting check pass; the broad gate has not been rerun with these fixes.
 
 The runtime stage had five failures. DT2 samples hit a repeat-run artifact collision, now fixed with
 persistent unique `out/regression/<workflow>/<device>/run-*` directories cached per Session/workflow.
-Two identical live reruns passed in 57.66 and 56.84 seconds, preserving both artifact directories. Four assertions
-remain unresolved: DN2 input first-frame panel/probe mismatch, DT2 input two distinct screens instead
-of three, DN2 remote pacing second reply 30 instead of 0, and DN2 remote keys no OLED change after
-TURN. No assertions were weakened; their semantic causes are not fully established. The separate
-known DN2 chorus-width and zero-DSP restart limitations remain.
+Two identical live reruns passed in 57.66 and 56.84 seconds, preserving both artifact directories.
+The four other failures belonged to the prior assertions: DN2 input first-frame panel/probe mismatch,
+DT2 input two distinct screens instead of three, DN2 remote pacing second reply 30 instead of 0, and
+DN2 remote keys no OLED change after TURN. The revised contracts below replace unsupported arbitrary
+screen-change and adjacent-host-call timing claims with independent semantic navigation, delivery
+and deterministic pacing checks. All six focused runtime cases (three per device) now pass under those revised meaningful contracts;
+this is not a rerun of the old invalid assertions or a new broad gate. The separate chorus-width and zero-DSP restart limits remain.
+
+The real reversal-cap bug is fixed: pending +30 followed by -100 previously accepted -60, now -30.
+The authored remote object was rebuilt and its both-device lifecycle plus C unit passed in 128.03
+seconds. `verify:host` passed 130 tests and all types/lint/format checks, with 11 existing warnings.
+The focused runtime runs took 453.08 seconds for DT2 and 477.33 seconds for DN2: three sequential
+cases per device, with devices running concurrently within four cores. Per-case results and JUnit
+are recorded in [regression validation](../tests/regression/README.md#runtime-module-load-acceptance).
+No performance A/B or new broad pass is claimed.
 
 ## Inputs tests need
 
@@ -252,7 +262,7 @@ entry points, with explicit consumed function-local dependencies. Unrelated anal
 their Python and smoke owners. The two device `*-leds.toml` faceplate maps do not select native acceptance.
 
 The `runtime-fixture` step checks patched runtime boot/load identity, ready/free status and health, then
-installs digikit/remote and checks ABOUT text and encoder-driven OLED changes on DT2 1.17 and DN2 1.12.
+installs digikit/remote and checks real ABOUT navigation and signed TURN acceptance on DT2 1.17 and DN2 1.12.
 It runs for relevant changes, with native Vitest filename filters, and also with `--full` or explicit
 `--only runtime-fixture`. The separate `*-remote-control.test.ts` cases use fresh `device` patch sets to
 check disabled commands, physical-panel toggling, malformed requests and TURN pacing with the original
@@ -354,12 +364,30 @@ own directory, while direct `test:modules` requires prepared artifacts. Both reu
 when selected elsewhere; neither adds an implicit daemon build. Native Vitest filters remain available; see [preparation and scope](../tests/regression/README.md#runtime-module-load-acceptance).
 
 
-Earlier focused DN2 input-adapter comparison preserved the unchanged three-distinct-panel-screens
-failure (two observed), with identical complete panel/probe SHA-256 arrays, five zero probe statuses
-and invalid key/encoder replies of -1. That historical focused result does not establish parity for
-the current broad run, whose input failures are recorded above. The panel assertion remains soft so
-later original checks run; it is neither skipped nor relaxed. Focused reference report:
-`out/regression/legacy-input-reference-20261026/digikit0/input-adapter-dn2-1.12/report.json`.
+The earlier focused DN2 input comparison matched the original panel/probe hashes but failed the
+old distinct-screen assertion; that historical result does not prove the revised contract. Input
+acceptance retains two fresh, identical probe install/VERIFY/select/restart histories (`autoNo:false`).
+Both input sources navigate named SETTINGS/DIGIKIT menu states whose frames are compared, then prove
+ABOUT content independently against `fmtVersion(dk.info().runtime)`. Shared `runtime-plan.ts` keeps
+exact loaded-image hash/module/symbol guards; `runtime-menu.ts` bounds ABOUT reads to 24 rows and
+polls semantic content. The Python runtime-version formatting subprocess is removed.
+
+TURN +4/-4 is exercised before that navigation: panel UART queues must drain and IRQ counters advance;
+probe `input_turn` requests must return zero. Stable ABOUT identity/boot rows, invalid key/encoder -1,
+fault checks, cleanup and persistent frame/row/status diagnostics remain. Remote keys likewise prove
+ABOUT and accepted +20/-20 deltas with screenshots. These establish KEY navigation and TURN delivery/
+decoder acceptance, not a vendor parameter effect or an arbitrary OLED change per action.
+
+Exact ±30 caps, direction reversal, 95/96-block refill, callback errors, independent encoders and
+uint32 clock wrap are proved through the actual authored C handler with a controlled host clock:
+
+```sh
+mise run test:modules -- remote.test.ts -t 'pacing unit'
+```
+
+This native Vitest filter requires host `cc` with C11/32-bit unsigned int, performs a tiny bounded
+compile in a temporary directory, and needs no firmware or daemon. Adjacent live JavaScript requests
+may span a refill, so the second reply may be 0 or 30; deterministic pacing belongs to this unit.
 
 `PY_GATE` runs whenever the routed gate selects `python-tests`: lint over `CLEAN`, types over
 `TYPED`, repository pathcheck and `tests/patchkit/test_pk_current.py` (module staleness via

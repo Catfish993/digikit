@@ -12,7 +12,7 @@ const handle = withPatchedSession({
   binary,
   card,
 });
-test('DT2 1.17 remote keys open ABOUT and encoder TURN changes the screen', async () => {
+test('DT2 1.17 remote keys open ABOUT and TURN accepts signed deltas', async () => {
   await expectRuntimeBoot(handle.runtime);
   await expectRemoteKeys(handle.runtime);
 }, 300_000);

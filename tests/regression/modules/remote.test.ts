@@ -1,4 +1,24 @@
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { test } from 'vitest';
 import { runtimeModules } from './acceptance.ts';
 import { moduleLoadTests } from './suite.ts';
 
 moduleLoadTests(runtimeModules[2]);
+
+test('remote pacing unit uses the C handler with a controlled block clock', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-pacing-'));
+  try {
+    const binary = path.join(directory, 'remote-pacing');
+    execFileSync(
+      'cc',
+      ['-std=c11', '-Wall', '-Wextra', '-Werror', path.join(import.meta.dirname, 'remote-pacing.c'), '-o', binary],
+      { timeout: 10_000 },
+    );
+    execFileSync(binary, { timeout: 2000 });
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
