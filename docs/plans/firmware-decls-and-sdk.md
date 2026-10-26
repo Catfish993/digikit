@@ -59,8 +59,7 @@ parallel.
 - [x] Groups: community detection (networkx) on the UI call subgraph, about 30-50 groups, each with its classes,
       strings and members. Export the subgraph as JSON as well.
 - [x] Agents pre-label the top groups and their rows (role guess from decompilation, [O]).
-- [ ] Score: down-weight destructors (`vfunc_0`), 12-byte thunks and libc helpers; show labelled rows from groups
-      under 10 functions on the review page.
+- [x] Score: down-weight destructors and thunks (step 2); the review page also shows labelled rows from small groups.
 - [x] Review page: group -> rows -> call neighbourhood per row, with keep / skip / later, a name and a note. Reviewed
       rows seed step 3. The page is the review view of the reference docs in step 5 (same generator).
 
@@ -106,20 +105,21 @@ shared module moved out.
 
 ### 2. Clean-up and deletions (no Rust)
 
-- [ ] C object cache key includes header dependencies (gcc `-MD`).
-- [ ] Generate `sdk/dk_machine.h` and `sdk/dk_fx.h` from `sdk.toml`; drop the copy test.
-- [ ] One per-firmware status field in `module.toml` (`[targets]` or `[module].ports`, not both).
-- [ ] Resolve `cf.params.fmt` / `cf.params.slotbuild` (in `pk_params_rules_dn2.py`, absent from the DN2 port file).
-- [ ] Fix the cfdb `ghidra_dump_dir` path; fix the `build/` statement in `MODULE-AUTHORING.md`.
-
-Proof: `patchkit gen --check`, port files byte-identical, pathcheck.
+- [x] Fix the `build/` statement in `docs/MODULE-AUTHORING.md`; document `[module].ports` (restricts patching, read
+      by patchkit) against `[targets]` (status per firmware, read by `module:audit`). Both stay: they are not duplicates.
+- [x] Catalogue score: destructors (vtable slots 0 and 1) and thunks of 12 bytes or less score 2 lower each.
+- Moved to where they pay off: the C cache key with header dependencies to step 6 (it rebuilds every committed C
+  object, and headers change often only once they are generated); generating `sdk/dk_machine.h` / `dk_fx.h` to step 5
+  (`patchkit gen` changes there anyway); `cf.params.fmt` / `cf.params.slotbuild` to step 3 (they exist only in a
+  generator that step 3 deletes). The cfdb dump path needs no fix: `fw.py decomp` resolves it.
 
 ### 3. Declarations (Python, host patchkit only)
 
 - [ ] Design `devices/fw/<subsystem>.toml` with Em: per entry name, devices, signature, rule, mark; structs with fields
       and per-device sections only where a device differs; hooks with their register contract.
 - [ ] `port_resolve.py` reads the new fw directory under devices; the 201 rules move there mechanically.
-- [ ] Replace the `pk_*_rules*.py` generators with `catalog emit-rule ADDR`; retire literal tables in
+- [ ] Replace the `pk_*_rules*.py` generators with `catalog emit-rule ADDR` (drop the unused `cf.params.fmt` and
+      `cf.params.slotbuild` sites); retire literal tables in
       `machineprofile.py` and `cf_names.py` as their consumers move to anchors.
 - [ ] Add a vtable-slot rule kind (about 63% of ColdFire candidates have no unique hash) and an ordinal for
       `sharc_func` (fixes most of the 182 shared DSP hashes on DT2).
@@ -140,6 +140,7 @@ Proof: cold and warm build of `core/digikit-menu` before and after; objects byte
 
 ### 5. Generated bindings
 
+- [ ] Generate `sdk/dk_machine.h` and `sdk/dk_fx.h` from `sdk.toml`; drop the test that compares the copies.
 - [ ] `patchkit gen` emits Rust (`#[link_name = "<anchor>"]`), C headers (`__asm__("<anchor>")`) and assembly `.equ`
       files from the new fw directory under devices, with size and offset asserts for structs.
 - [ ] Hook trampolines are generated from hook declarations. Hand assembly remains only where code enters at a patch
@@ -152,6 +153,7 @@ Proof: applied-patch bytes identical for the core modules.
 
 ### 6. Content-module SDK in C
 
+- [ ] C object cache key includes header dependencies (gcc `-MM`); rebuild the committed C objects once.
 - [ ] Generated C header for the runtime `Api` table and `dkrt_*` exports.
 - [ ] Generated per-module header from `module.toml` (parameter ids, knob order) for C, assembly and Rust.
 - [ ] `module:new` templates: ColdFire C, SHARC assembly machine, effect.
@@ -239,4 +241,4 @@ ColdFire side is out of scope.
 ## Status at end of session
 
 2026-10-27: plan written. Steps 1 and 1b done; S1/S2 and findings 70 and 71 done. Review page generator in the repo
-(`tools/firmware/catalog_page.py`); Em reviews later. Next: step 2 (clean-up), then the step 3 declaration design from the kept rows.
+(`tools/firmware/catalog_page.py`); Em reviews later. Step 2 done. Next: the step 3 declaration design, from finding 71 and the existing 201 rules.

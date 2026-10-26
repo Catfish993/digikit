@@ -75,6 +75,21 @@ def pick_rows(
     return out
 
 
+def select_groups(
+    groups: Sequence[Row], labelled_groups: Iterable[int], min_group: int
+) -> tuple[list[Row], set[int]]:
+    """Groups of at least min_group rows, plus smaller ones with a labelled row.
+
+    Returns the kept groups and the ids of the small ones (show labelled rows only).
+    """
+    labelled = set(labelled_groups)
+    keep = [
+        g for g in groups if int(g["size"]) >= min_group or int(g["id"]) in labelled
+    ]
+    small = {int(g["id"]) for g in keep if int(g["size"]) < min_group}
+    return keep, small
+
+
 def neighbours(edges: Iterable[Sequence[Any]]) -> dict[int, list[tuple[int, int]]]:
     """Address -> (weight, other address) for each call edge, both directions."""
     nbr: dict[int, list[tuple[int, int]]] = defaultdict(list)
@@ -119,13 +134,19 @@ def build_payload(
             return hex(a)
         return r["work_name"] or r["name"]
 
-    keep_groups = [g for g in groups if int(g["size"]) >= min_group]
+    labelled_groups = {int(by_addr[a]["group"]) for a in row_labels if a in by_addr}
+    keep_groups, small = select_groups(groups, labelled_groups, min_group)
     members: dict[int, list[Row]] = {int(g["id"]): [] for g in keep_groups}
     for r in rows:
         g = int(r["group"])
         if g in members:
             members[g].append(r)
     picked = pick_rows(members, row_labels, per_group)
+    picked = [
+        r
+        for r in picked
+        if int(r["group"]) not in small or int(r["addr"], 16) in row_labels
+    ]
     included = {int(r["addr"], 16) for r in picked}
 
     out_rows: list[dict[str, Any]] = []

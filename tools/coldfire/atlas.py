@@ -918,6 +918,12 @@ W_GRADE, W_PAIR, W_UI_CALLERS, W_NEAR, W_STRING, W_ROLE, W_ANCHORED = (
     0.5,
     -3.0,
 )
+# Itanium C++ ABI: vtable slots 0 and 1 are the destructors (finding 71)
+W_DTOR = -2.0
+# jump thunks and one-line accessors; stable hashes give them high scores otherwise
+W_THUNK = -2.0
+THUNK_MAX = 12
+DTOR_SUFFIXES = ("::vfunc_0", "::vfunc_1")
 UI_CALLER_CAP = 64
 HELPER_MIN_CALLERS = 8
 CATALOG_ROLES = ("model", "storage", "worker")
@@ -989,6 +995,8 @@ def catalog_score(
     ui_strings: int,
     tags: Sequence[str],
     anchors: Sequence[str],
+    name: str,
+    size: int,
 ) -> float:
     return (
         W_GRADE * grade
@@ -998,6 +1006,8 @@ def catalog_score(
         + W_STRING * (ui_strings > 0)
         + W_ROLE * any(t.startswith(("role:", "term:")) for t in tags)
         + W_ANCHORED * bool(anchors)
+        + W_DTOR * name.endswith(DTOR_SUFFIXES)
+        + W_THUNK * (size <= THUNK_MAX)
     )
 
 
@@ -1231,7 +1241,7 @@ def catalog_rows(
                 "rule_both": both,
                 "anchor_grade": grade,
                 "score": catalog_score(
-                    grade, method, callers, len(strs), tags, anchors
+                    grade, method, callers, len(strs), tags, anchors, name, size
                 ),
                 "caller_classes": ",".join(
                     "%s:%d" % kv for kv in count_list(dict(cc), TOP_CALLER_CLASSES)

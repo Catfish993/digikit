@@ -7,12 +7,27 @@ from tools.coldfire import atlas
 
 class ScoreTest(unittest.TestCase):
     def test_score_adds_terms(self) -> None:
-        s = atlas.catalog_score(1, "strict", 32, 2, ["near:cf.menu", "role:model"], [])
+        s = atlas.catalog_score(
+            1, "strict", 32, 2, ["near:cf.menu", "role:model"], [], "A::f", 100
+        )
         self.assertAlmostEqual(s, 4 + 2 + 2 + 1.5 + 1 + 0.5)
 
     def test_score_caps_ui_callers_and_penalises_anchored(self) -> None:
-        s = atlas.catalog_score(0, None, 1000, 0, [], ["cf.menu.x"])
+        s = atlas.catalog_score(0, None, 1000, 0, [], ["cf.menu.x"], "A::f", 100)
         self.assertAlmostEqual(s, 64 / 16 - 3)
+
+    def test_destructor_slots_are_penalised(self) -> None:
+        base = atlas.catalog_score(0, None, 0, 0, [], [], "A::vfunc_2", 100)
+        for slot in ("0", "1"):
+            s = atlas.catalog_score(0, None, 0, 0, [], [], "A::vfunc_" + slot, 100)
+            self.assertAlmostEqual(s - base, atlas.W_DTOR)
+        s = atlas.catalog_score(0, None, 0, 0, [], [], "A::ctor_dtor_1", 100)
+        self.assertAlmostEqual(s, base)
+
+    def test_small_functions_are_penalised(self) -> None:
+        big = atlas.catalog_score(0, None, 0, 0, [], [], "A::f", atlas.THUNK_MAX + 1)
+        small = atlas.catalog_score(0, None, 0, 0, [], [], "A::f", atlas.THUNK_MAX)
+        self.assertAlmostEqual(small - big, atlas.W_THUNK)
 
 
 class WorkNameTest(unittest.TestCase):

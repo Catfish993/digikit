@@ -29,5 +29,17 @@ class PickRowsTest(unittest.TestCase):
         self.assertEqual([r["addr"] for r in picked], ["0x20", "0x10"])
 
 
+class SelectGroupsTest(unittest.TestCase):
+    def test_small_groups_kept_only_when_labelled(self) -> None:
+        groups = [
+            {"id": "1", "size": "10"},
+            {"id": "2", "size": "3"},
+            {"id": "3", "size": "3"},
+        ]
+        keep, small = catalog_page.select_groups(groups, {3}, 10)
+        self.assertEqual([g["id"] for g in keep], ["1", "3"])
+        self.assertEqual(small, {3})
+
+
 if __name__ == "__main__":
     unittest.main()
