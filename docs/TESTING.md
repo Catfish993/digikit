@@ -93,14 +93,21 @@ Other tests:
 - A new Python file joins the `CLEAN` list in `tests/devtools/test_lint.py`.
 - `tests/devtools/test_pathcheck_repo.py` (in the `python-tests` gate step) runs `uv run python -m tools.devtools.pathcheck`: every path-like token in tracked text files must name a tracked file or directory, a generated or git-ignored path, or an allowed token. A deleted file is cited as `REF:path`, checked with `git cat-file` (`unicorn-reference-final:emu/edma.py`, `<commit>^:path`). Files under `history_docs` (findings, plans, design, archive, refs, contracts) may name paths that were once tracked. Add an exception to `allow` in `tools/devtools/pathcheck.json` with a required reason; an allow that matches nothing fails the run. `--fix` and `--fix-deleted REF` rewrite stale tokens (dry run unless `--apply`).
 
-The native DT2 FX lane passed all 146 assertions in 420.48 seconds (60 renders, zero cache hits),
-with exact expanded-input parity. Integrated filtered routing acceptance passed in 7.90 seconds
-with five scenarios (145 assertions skipped). All six production module lifecycle cells passed across focused
-runs; final host verification passed 127 tests and all types/lint/format checks. These results do not
-replace the broad branch gate. Module gate routing remains pending. The temporary zero-DSP pilot
-booted after a startup firmware-path fix, then failed remote flow with a release timeout that masked
-the unavailable original action error. Shared cleanup now preserves both failures in an `AggregateError`
-without changing its five-second bound. The pilot was removed and coupled fixtures remain. The known DN2 chorus-width failure is unchanged.
+Routing is implemented in `b50bdc2a`. Broad gate `20261026-045943` completed in 3263 seconds
+(54m23s), reporting `runtime-fixture` as failed. All other broad steps reported passing, including
+six `module-load` cells (597 seconds) and smoke (576 seconds). The reported Python PASS was incorrect:
+two deleted live-test paths exited pytest with code 4 and empty valid JUnit. Follow-up fixes prevent
+direct routing of deleted test files and make every nonzero exit fail aggregation, adding a file-level
+error when JUnit reports no failed/error cases. The existing 16 outcome tests and a targeted verify
+reporting check pass; the broad gate has not been rerun with these fixes.
+
+The runtime stage had five failures. DT2 samples hit a repeat-run artifact collision, now fixed with
+persistent unique `out/regression/<workflow>/<device>/run-*` directories cached per Session/workflow.
+Two identical live reruns passed in 57.66 and 56.84 seconds, preserving both artifact directories. Four assertions
+remain unresolved: DN2 input first-frame panel/probe mismatch, DT2 input two distinct screens instead
+of three, DN2 remote pacing second reply 30 instead of 0, and DN2 remote keys no OLED change after
+TURN. No assertions were weakened; their semantic causes are not fully established. The separate
+known DN2 chorus-width and zero-DSP restart limitations remain.
 
 ## Inputs tests need
 
@@ -347,12 +354,12 @@ own directory, while direct `test:modules` requires prepared artifacts. Both reu
 when selected elsewhere; neither adds an implicit daemon build. Native Vitest filters remain available; see [preparation and scope](../tests/regression/README.md#runtime-module-load-acceptance).
 
 
-Known runtime baseline: DN2 input-adapter acceptance still fails the unchanged requirement for three
-distinct panel screens (two observed). The original Python reference and the native case have identical
-complete panel/probe SHA-256 arrays, five zero probe statuses and invalid key/encoder replies of -1.
-The native panel assertion is soft so later original checks still run; it is neither skipped nor relaxed.
-Reference report: `out/regression/legacy-input-reference-20261026/digikit0/input-adapter-dn2-1.12/report.json`.
-This known failure means runtime acceptance and a gate selecting it are not green.
+Earlier focused DN2 input-adapter comparison preserved the unchanged three-distinct-panel-screens
+failure (two observed), with identical complete panel/probe SHA-256 arrays, five zero probe statuses
+and invalid key/encoder replies of -1. That historical focused result does not establish parity for
+the current broad run, whose input failures are recorded above. The panel assertion remains soft so
+later original checks run; it is neither skipped nor relaxed. Focused reference report:
+`out/regression/legacy-input-reference-20261026/digikit0/input-adapter-dn2-1.12/report.json`.
 
 `PY_GATE` runs whenever the routed gate selects `python-tests`: lint over `CLEAN`, types over
 `TYPED`, repository pathcheck and `tests/patchkit/test_pk_current.py` (module staleness via

@@ -162,6 +162,25 @@ class RunModeTest(unittest.TestCase):
             (root / "test_bad.py").write_text("def test_b():\n    assert False\n")
             rc = test_outcomes.main(["run", "--out", str(Path(tmp) / "o2"), *args])
             self.assertEqual(rc, 1)
+            outcomes = test_outcomes.read_outcomes(Path(tmp) / "o2/all.xml")
+            self.assertEqual(outcomes[("test_ok.py", "::test_a")][0], "passed")
+            self.assertEqual(outcomes[("test_bad.py", "::test_b")][0], "failed")
+            missing = Path(tmp) / "missing"
+            rc = test_outcomes.main([
+                "run", "--out", str(missing), "--root", str(root), "--check", "test_missing.py",
+            ])  # fmt: skip
+            self.assertEqual(rc, 1)
+            # Pytest exits 4 but still writes valid JUnit with no testcase failures.
+            self.assertEqual(
+                test_outcomes.xml_counts(missing / "xml/test_missing.xml"), (0, 0, 0, 0)
+            )
+            self.assertEqual(
+                (missing / "summary.tsv").read_text().splitlines()[1].split("\t")[2],
+                "4",
+            )
+            outcomes = test_outcomes.read_outcomes(missing / "all.xml")
+            self.assertEqual(outcomes[("test_missing.py", "::__file__")][0], "error")
+            self.assertIn("exit code 4", (missing / "all.xml").read_text())
 
 
 if __name__ == "__main__":

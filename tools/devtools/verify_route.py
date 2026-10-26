@@ -574,6 +574,7 @@ def digikit_fine(path: str) -> Fine | None:
             and path.count("/") == 2
             and name.startswith("test_")
             and name.endswith(".py")
+            and (ROOT / path).is_file()
         ):
             return Fine(f"{suite}/{name}", ("python-tests",), (path,))
     return None

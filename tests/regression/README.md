@@ -178,12 +178,12 @@ mise run test:runtime -- dn2-samples-store-live.test.ts
 
 Input-adapter cases require checked, freshly packed `test/input-probe` artifacts at
 `DIGI_RUNTIME_MODULES/<device>/input-probe.dkm` (default root `out/regression/modules`). The gate prepares
-these in its own directory; direct `test:runtime` needs them prepared separately. DN2 retains a known
-failure: the original requirement is three distinct panel screens, but both the Python reference and
-native case observe two. All panel/probe hashes match the reference, all five probe statuses are zero,
-and invalid key/encoder replies are -1. `expect.soft` preserves collection of later checks while keeping
-the failure; no skip or threshold change hides it. The runtime gate is not green. The reference report
-is `out/regression/legacy-input-reference-20261026/digikit0/input-adapter-dn2-1.12/report.json`.
+these in its own directory; direct `test:runtime` needs them prepared separately. An earlier focused
+DN2 comparison preserved the original three-distinct-screen failure (two observed), with matching
+complete panel/probe hashes, five zero probe statuses and invalid replies of -1. That is a historical
+focused result, not a parity claim for the current broad gate. `expect.soft` retains later checks and
+the failure without a skip or threshold change. Focused reference report:
+`out/regression/legacy-input-reference-20261026/digikit0/input-adapter-dn2-1.12/report.json`.
 
 ## Runtime module-load acceptance
 
@@ -223,10 +223,9 @@ DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_RUNTIME_CARD="$PWD/out/runs/patchkit/sample
 ```
 
 Omit filters, and supply both binaries, to run all six cells. The body timeout is 300 seconds per cell.
-All six artifacts packed successfully from existing objects, and all six cells passed across focused
-coordinator runs. DN2 DSP acceptance waits up to 30 seconds for the selected module's `MOD_DSP`
+Routing is implemented in `b50bdc2a`; broad gate `20261026-045943` passed all six
+`module-load` cells in 597 seconds. DN2 DSP acceptance waits up to 30 seconds for the selected module's `MOD_DSP`
 completion before requiring status zero and checking registration; timeout logs are retained.
-The final DN2 freqshift/PLUCK rerun passed in 83.807/80.256 seconds (164.59 seconds combined).
 No lifecycle speed comparison is claimed. Assertions cover native
 `DkSession`/`EmuUsbTransport` upload, fresh card-byte verification, selection and protocol reboot,
 persistence, reported SDK contracts/version, DSP-loader completion, PLUCK voice/type registration,
@@ -238,14 +237,24 @@ These cells establish load/registration/fault observations, not rendered audio c
 device acceptance. They do not claim coverage of all 23 module manifests. Framework/static modules
 are firmware prerequisites rather than upload candidates; their existing Python/Rust, patchkit smoke,
 boot-scenario and module conformance checks remain separate. DSP functional/conformance coverage also
-remains separate. A temporary zero-DSP pilot booted after the startup firmware-path fix, but its
-remote flow failed after 127.59 seconds with a remote-release timeout that masked the original
-action failure; its primary error is unavailable. Shared teardown now preserves simultaneous action
-and release failures in an `AggregateError`, with the five-second release bound unchanged.
-Navigation feasibility and
-safe session reset/reuse remain unproven; the pilot was removed and fixtures retain fresh coupled
-sessions. Final `verify:host` passed 127 tests, lint/format and all package types, with the same 11
-existing Solid warnings. Module gate routing and the broad branch gate remain separate pending work.
+remains separate. Fixtures retain fresh coupled sessions; zero-DSP patched restart and independent
+session reset/reuse remain unsupported or unproven.
+
+Broad gate `20261026-045943` completed in 3263 seconds (54m23s), reporting runtime failure while
+other steps passed, including smoke (576 seconds). Its Python PASS was misleading: two deleted live
+wrappers exited pytest with code 4 and empty valid JUnit. Follow-up fixes stop routing deleted direct
+test files and make every nonzero exit fail the aggregate, preserving testcase details and adding a
+file-level error for unexplained exits. The existing 16 outcome tests and targeted verify reporting
+check pass; these fixes have not had another broad gate.
+
+DT2 samples' repeat-run artifact collision is fixed: migrated live workflows retain unique
+`out/regression/<workflow>/<device>/run-*` directories, reused by the same Session/workflow. Two identical
+live reruns passed in 57.66 and 56.84 seconds, preserving both artifact directories. Four runtime assertions remain
+unresolved: DN2 input first-frame panel/probe mismatch, DT2 input two distinct screens instead of three,
+DN2 remote pacing second reply 30 instead of 0, and DN2 remote keys no OLED change after TURN.
+Assertions are unchanged and semantic causes are not fully established. The earlier focused DN2 input
+parity result does not characterize this broad run. Known chorus-width and zero-DSP restart limitations
+remain separate.
 
 ## Stock coupled audio
 

@@ -684,6 +684,11 @@ def test_device_tools_nothing_dropped() -> None:
 def test_digikit_test_files_and_scenarios() -> None:
     assert selected("tests/digikit/test_dkrun.py") == {"tests/digikit/test_dkrun.py"}
     assert selected("tests/patchkit/test_pk_cf.py") == {"tests/patchkit/test_pk_cf.py"}
+    for device in ("dn2", "dt2"):
+        deleted = f"tests/digikit/test_live_{device}.py"
+        assert verify_route.digikit_fine(deleted) is None
+        assert deleted not in verify.python_tests([deleted], False)
+        assert "python-tests" in verify.steps_for([deleted])
     assert selected("tests/digikit/scenarios/menu-dkrun-pluck.toml") == {
         "tests/digikit/test_scenarios.py",
         "tests/digikit/test_menu_dn2.py",

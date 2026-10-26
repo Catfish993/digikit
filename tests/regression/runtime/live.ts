@@ -26,9 +26,21 @@ export function liveProtocol(session: Session): DkSession {
   });
 }
 
+const artifactDirectories = new WeakMap<Session, Map<string, string>>();
+
 export function liveArtifacts(session: Session, workflow: string): string {
-  const dir = path.join(repoRoot(), 'out/regression', workflow, session.options.device);
-  fs.mkdirSync(dir, { recursive: true });
+  let workflows = artifactDirectories.get(session);
+  if (!workflows) {
+    workflows = new Map();
+    artifactDirectories.set(session, workflows);
+  }
+  const existing = workflows.get(workflow);
+  if (existing) return existing;
+  const root = path.join(repoRoot(), 'out/regression', workflow, session.options.device);
+  fs.mkdirSync(root, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(root, 'run-'));
+  workflows.set(workflow, dir);
+  console.info('runtime artifacts:', dir);
   return dir;
 }
 
