@@ -109,7 +109,7 @@ def prepare() -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
     pinned = os.environ.get("DIGI_DT2_CARD")
     if pinned:
         # a card image kept from an earlier builder: the oracle values of
-        # tests/scenarios/test_dt2_fx.py are tied to the ready state it boots to
+        # tests/regression/scenarios/dt2-fx.test.ts are tied to the ready state it boots to
         card = pathlib.Path(pinned).resolve()
     else:
         card = ne.plusdrive_card(samples, syx, digi_env.rust_env(dict(os.environ)))

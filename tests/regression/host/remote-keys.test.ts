@@ -139,6 +139,17 @@ test('navigation failure releases remote inputs; a hung release has a bounded de
       throw new Error('ABOUT missing');
     }),
   ).rejects.toThrow('ABOUT missing');
+  const actionError = new Error('ABOUT missing');
+  const releaseError = new Error('release failed');
+  vi.mocked(dk.remoteRelease).mockRejectedValueOnce(releaseError);
+  await expect(
+    withRemoteRelease(dk, async () => {
+      throw actionError;
+    }),
+  ).rejects.toMatchObject({
+    name: 'AggregateError',
+    errors: [actionError, releaseError],
+  });
   vi.useFakeTimers();
   try {
     vi.mocked(dk.remoteRelease).mockImplementation(() => new Promise(() => {}));

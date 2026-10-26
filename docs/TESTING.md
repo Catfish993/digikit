@@ -48,7 +48,7 @@ Session reuse needs a demonstrated independent reset of firmware, DSP, card, pen
 state, plus failure/cancellation cleanup. Fresh sessions remain the runtime fixture's current isolation;
 pooling/reset safety and further migrations are separate work. Stock FX renders independently restore ready snapshots per scenario; that does not establish a fresh patched-runtime reset contract.
 
-Remaining work: migrate DT2 Python FX oracles with assertion/fixture parity; migrate the remaining live samples, sample-store and input-adapter coverage with their owner helpers; prove independent reset before sharing runtime sessions. Stock DT2 tests under `tests/regression/dt2/` currently select only host checks and conservative smoke through the generic regression route; `verify` does not run their stock assertions. Run `mise run test:stock` for these changes until stock routing is added. An all-module patched-firmware load proof and actual application E2E coverage remain distinct gaps. These are roadmap items, not implemented coverage.
+Remaining work: migrate the remaining live samples, sample-store and input-adapter coverage with their owner helpers; prove independent reset before sharing runtime sessions. Stock DT2 tests under `tests/regression/dt2/` currently select only host checks and conservative smoke through the generic regression route; `verify` does not run their stock assertions. Run `mise run test:stock` for these changes until stock routing is added. The explicit `test:modules` matrix covers three production uploads on two devices; an all-module patched-firmware load proof and actual application E2E coverage remain distinct gaps. These are roadmap items, not implemented coverage.
 
 ## Layout
 
@@ -68,7 +68,7 @@ Remaining work: migrate DT2 Python FX oracles with assertion/fixture parity; mig
 | `tests/dsp` | DSP maps and diffs, FX scenario generators, audio checks | DSP tools |
 | `tests/devtools` | Lint (ruff `CLEAN` list), types (mypy `TYPED` list), PyPy, benchlock, verify routing, test_outcomes | `tools/devtools/verify.py`, `tools/devtools/benchlock.py`, `tools/devtools/test_outcomes.py` |
 | `tests/digikit` | The digikit runtime's boot-time scenarios: data files (`scenarios/*.toml`) and the runner `tools/patchkit/pk_digikit_scen.py`; routed by the verify suite `digikit-boot`. Slow (coupled cold boots). | `modules/core/runtime`, `core/dynreg`, `core/dsp-link`, `core/dyndsp`, `core/digikit-menu`, `tools/patchkit/pk_dkrt_boot.py` |
-| `tests/scenarios` | Python DT2 emulator scenario oracles; DN2 trackFX/sendFX source/assertions live in `tests/regression/scenarios` ([coverage map](../tests/regression/scenarios/README.md)). DT2 is slow and run by `dt2-check` / `mise run scenario:check:dt2`; DN2 runs through native Vitest `check` / `mise run test:fx`. | `tests/scenarios/`, `tools/emulator/coupled.py` |
+| `tests/scenarios` | Stock scenario inputs and PCM pins. DN2 and DT2 FX source/assertions live in `tests/regression/scenarios` ([coverage map](../tests/regression/scenarios/README.md)), with native Vitest `check` / `test:fx` and `dt2-check` / `test:fx:dt2` respectively. | `tests/scenarios/`, `tools/emulator/coupled.py` |
 | `tests/support` | Helpers shared by tests. No `test_` prefix, not collected. `tests/support/paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS`. | |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures | |
 
@@ -92,6 +92,15 @@ Other tests:
 - A test that needs firmware or generated artifacts skips with a reason when they are absent.
 - A new Python file joins the `CLEAN` list in `tests/devtools/test_lint.py`.
 - `tests/devtools/test_pathcheck_repo.py` (in the `python-tests` gate step) runs `uv run python -m tools.devtools.pathcheck`: every path-like token in tracked text files must name a tracked file or directory, a generated or git-ignored path, or an allowed token. A deleted file is cited as `REF:path`, checked with `git cat-file` (`unicorn-reference-final:emu/edma.py`, `<commit>^:path`). Files under `history_docs` (findings, plans, design, archive, refs, contracts) may name paths that were once tracked. Add an exception to `allow` in `tools/devtools/pathcheck.json` with a required reason; an allow that matches nothing fails the run. `--fix` and `--fix-deleted REF` rewrite stale tokens (dry run unless `--apply`).
+
+The native DT2 FX lane passed all 146 assertions in 420.48 seconds (60 renders, zero cache hits),
+with exact expanded-input parity. Integrated filtered routing acceptance passed in 7.90 seconds
+with five scenarios (145 assertions skipped). All six production module lifecycle cells passed across focused
+runs; final host verification passed 127 tests and all types/lint/format checks. These results do not
+replace the broad branch gate. Module gate routing remains pending. The temporary zero-DSP pilot
+booted after a startup firmware-path fix, then failed remote flow with a release timeout that masked
+the unavailable original action error. Shared cleanup now preserves both failures in an `AggregateError`
+without changing its five-second bound. The pilot was removed and coupled fixtures remain. The known DN2 chorus-width failure is unchanged.
 
 ## Inputs tests need
 
@@ -127,6 +136,7 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run test:stock` | Stock DT2 1.17 zero-DSP UI/sequencer goldens; native Vitest filters pass through. Starts owned daemons from an existing `DIGI_EMUD`; requires stock firmware and complete ready inputs (including validated DSP files), with no implicit build. | Required owner check for stock test changes: verify does not run these assertions; no audio coverage |
 | `mise run web:test` | Existing web Node suites (`pnpm test`); no top-level build. WASM/firmware-dependent cases skip when inputs are absent; CLI comparisons can invoke Python/Rust tools. Ready-cache tests use ready inputs when present, otherwise synthetic data. | Web owner iteration; inspect artifact-dependent coverage |
 | `mise run test:runtime -- transfer-live` | Explicit serial coupled runtime acceptance with preflighted per-device binaries and generated card samples; native Vitest filters pass through, with no implicit native build. | Focused device acceptance; see [runtime prerequisites](../tests/regression/README.md) |
+| `mise run test:modules -- pluck.test.ts --testNamePattern dt2` | Explicit serial coupled module upload/load/registration acceptance: PLUCK, freqshift and remote on DT2 1.17/DN2 1.12; prepared artifacts and existing binaries only. | Focused lifecycle acceptance; [preparation and limits](../tests/regression/README.md#runtime-module-load-acceptance) |
 | `mise run verify:host` | Native mise sequence: global JS/TS lint and format, five host Vitest projects and five package type checks. Stops at the first failure. No Python, native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
 | `mise run verify:pre` | Optional preflight (`tools/devtools/verify_pre.py`): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No explicit pin or scenario step; selected tests may build or launch a device/emulator. It prints that it is not the merge gate. | Optional combined preflight; do not routinely run after `test:changed` |
 | `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, unless every changed path is UI-only or exactly a listed smoke-exempt path); a lane checks the routing with `--explain` |
@@ -135,7 +145,7 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run scenario:all` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
 | `mise run test:fx` | Native Vitest stock DN2 1.12 trackFX/sendFX: 61 quick assertions; `DIGI_FX_SWEEP=1` selects all 191 across 134 scenarios. No implicit build; requires current generated core, ready inputs, MAIN OS image and existing coupled-run binary. `DIGI_JOBS` bounds rendering (default 1). [Coverage/lifecycle](../tests/regression/scenarios/README.md). | Focused stock audio acceptance |
 | `mise run dev:plusdrive-check` | The firmware's own view (mount, readdir, lookup, read) of an image built from a folder: nested folders, plain files, a multi-page directory, multi-extent files (about 1 min; `verify` runs it in the `card-fs` step when `packages/emulator/plusdrive/` changes) | After +Drive builder changes |
-| `mise run scenario:check:dt2` | DT2 FX oracles on the one-sample card (about 2 min) | After DT2 changes |
+| `mise run test:fx:dt2` | Native Vitest stock DT2 1.17 FX on the one-sample card: 135 quick assertions; `DIGI_FX_SWEEP=1` selects all 146 across 60 scenarios. Existing binary and ready inputs, no implicit build; native filename/test-name filters pass through. Use `DIGI_FX_SWEEP=1 mise run test:fx:dt2` for the former DT2 task's full behavior. | After DT2 changes; [coverage/lifecycle](../tests/regression/scenarios/README.md) |
 | `mise run module:check ID` | Per-module machine/effect conformance plus own tests; own tests may build or launch an emulator. Service/raw modules without tests can succeed with nothing to run. | Module iteration; not an all-module patched load proof |
 | `mise run patch:test` | Smoke tour and module tests over `tests/patchkit/smoke/matrix.toml` | Explicit smoke diagnosis; the routed gate owns required smoke coverage, so do not routinely duplicate it |
 | `mise run patch:proofs` | Every emulator proof on its quick tier, in sequence | Explicit proof diagnosis; the routed gate owns required proof coverage. Do not routinely run both broad commands or repeat gate coverage |
@@ -204,6 +214,8 @@ smoke is skipped and `--explain` prints `smoke: skipped, UI-only change`. It is 
 | a scenario file of `tests/digikit/scenarios` | `python-tests` | the test files that run its kind, and `test_scenarios.py` |
 | `tests/digikit/test_*.py`, `tests/patchkit/test_*.py` | `python-tests` | the file itself |
 | another `.py` file of `tools/` or `tests/` | by its prefix (RULES) | the tests that reach it in the import graph (`changed_tests.gate_tests`: imports through any chain, a helper imported by its pytest path, a module started by name with `-m` or a script path; imports inside a function of a tools module do not count), and the PY_SUITES that list files. A suite with a test directory (`tests/patchkit`, `tests/digikit`, `tests/modules`, `tests/control`) triggers only on other files (Rust, ports, module folders) and on a module the root conftest reaches |
+| `tests/regression/scenarios/dt2-*`, `tests/regression/vitest.dt2-fx.config.ts` | `host`, `dt2-check`, `dt2-tier-quick`, `python-tests`, conservative smoke | Existing Python owner coverage remains; `dt2-check` runs 135 quick assertions, or 146 when `DIGIKIT_TIER=full`, with ambient subset flags reset. |
+| `tests/regression/scenarios/fx-support.ts` | Both DN2 `check`/`check-no-aot`/`tier-quick` and DT2 `dt2-check`/`dt2-tier-quick`, plus host/Python and conservative smoke | Shared rendering support retains both device owners. |
 | `packages/dkupload/` | `rust-tests`, `web` | |
 | `apps/desktop/` | `desktop`, `host`; UI test files select only `host`. The two samples-suite source exceptions above also retain `web`. Smoke follows the unchanged rules above. | |
 | `tools/devtools/verify.py`, `verify_route.py` | every normal step (excludes `runtime-fixture` and full tier sweeps) | every suite |
@@ -295,8 +307,11 @@ coupled daemon at a time, waits for its full two-core reservation, and fails wit
 Selecting it alone adds no build; if another selected step requires `build-daemons`, acceptance waits
 for that node and uses its published PGO copies or plain binary paths. Missing prerequisites fail rather
 than triggering an automatic build. Each runtime startup has a 120-second deadline with awaited daemon
-cleanup (at most ten more seconds); the Vitest hook limit is 150 seconds. Module installation/remote
-behavior, snapshot/reuse and Python scenario migration are outside this boot fixture's assertions.
+cleanup (at most ten more seconds); the Vitest hook limit is 150 seconds. The runtime suite also covers
+remote input/control, service-command dispatch and CLI transfer persistence/deletion, as described above.
+Fresh sessions remain required; snapshot/reset reuse is unproven. Production module lifecycle cells
+have a separate explicit `mise run test:modules` entrypoint, with prepared artifacts and native Vitest
+filters; see [preparation and scope](../tests/regression/README.md#runtime-module-load-acceptance).
 
 `PY_GATE` runs whenever the routed gate selects `python-tests`: lint over `CLEAN`, types over
 `TYPED`, repository pathcheck and `tests/patchkit/test_pk_current.py` (module staleness via

@@ -89,12 +89,16 @@ def test_pcm_observations_keep_exact_numpy_semantics() -> None:
         "reference": "dry",
         "reference_shape": [2, 2],
         "reference_equal": True,
+        "reference_max_abs_diff": 0.0,
     }
     assert not fxcheck.pcm_observations(x, x[:1], "dry")["reference_equal"]
     changed = x.copy()
     changed[1, 1] = np.nextafter(changed[1, 1], 1.0)
     got = fxcheck.pcm_observations(changed, x, "dry")
     assert not got["mono_equal"] and not got["reference_equal"]
+    assert got["reference_max_abs_diff"] == float(np.abs(changed - x).max())
+    assert fxcheck.pcm_observations(x, x[:1], "dry")["reference_max_abs_diff"] is None
+    assert fxcheck.pcm_observations(x, None, "dry")["reference_max_abs_diff"] is None
     assert fxcheck.pcm_observations(x, None, "missing")["reference_equal"] is None
 
 
@@ -116,3 +120,17 @@ def test_json_measurements_normalizes_only_nonfinite_numbers() -> None:
         }
     }
     assert math.isnan(measurements["tf-chr-0"]["tf"]["mod_phase_hz"])
+
+
+def test_routing_observations_keep_stereo_difference() -> None:
+    import numpy as np
+
+    x = np.array([[0.25, -0.25], [0.5, -0.5]])
+    dry = np.zeros_like(x)
+    got = fxcheck.routing_compare(x, dry, 1, 0.0, 0.0)
+    assert got["max_abs_diff"] == 0.0  # mono average cancels the stereo difference
+    assert got["shape_equal"]
+    assert got["full_max_abs_diff"] == 0.5
+    got = fxcheck.routing_compare(x, dry[:1], 1, 0.0, 0.0)
+    assert not got["shape_equal"]
+    assert got["full_max_abs_diff"] is None

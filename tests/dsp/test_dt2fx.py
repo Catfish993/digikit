@@ -1,56 +1,13 @@
-"""DT2 FX scenario files: they are what tools/emulator/gen_dt2fx.py writes, every
-scenario is well formed, and fxcheck switches between the devices cleanly."""
+"""DT2 FX analysis configuration and direct/legacy report compatibility."""
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-from tools.emulator import fxcheck, gen_dt2fx  # noqa: E402
-
-FILES = {
-    "dt2-trackfx.json": gen_dt2fx.trackfx,
-    "dt2-sendfx.json": gen_dt2fx.sendfx,
-}
-
-
-@pytest.mark.parametrize("fn", FILES)
-def test_files_match_the_generator(fn: str) -> None:
-    got = json.loads((ROOT / "tests" / "scenarios" / fn).read_text())["scenarios"]
-    assert got == json.loads(json.dumps(FILES[fn]()))
-
-
-@pytest.mark.parametrize("fn", FILES)
-def test_scenarios_are_well_formed(fn: str) -> None:
-    scenarios = FILES[fn]()
-    names = [s["name"] for s in scenarios]
-    assert len(names) == len(set(names))
-    for s in scenarios:
-        at = [e["at_instr"] for e in s["events"]]
-        assert at == sorted(at), s["name"]
-        # the NO prelude closes the boot modal before any turn
-        assert s["events"][0] == {"at_instr": 0, "button": gen_dt2fx.NO, "down": True}
-        trig = [e for e in s["events"] if e.get("button") == 25]
-        assert len(trig) == 2 and trig[0]["down"] and not trig[1]["down"], s["name"]
-        # the run ends after the note is released
-        assert s["seconds"] * 132e6 > trig[1]["at_instr"], s["name"]
-
-
-def test_every_name_has_a_reference() -> None:
-    names = {s["name"] for fn in FILES.values() for s in fn()}
-    for n in names:
-        if n.startswith("sf-") and n.split("-")[1] in ("del", "rev", "chr"):
-            assert f"sf-{n.split('-')[1]}-ref" in names
-        elif n.startswith("tf-"):
-            hold = fxcheck.hold_seconds(
-                next(
-                    s["events"] for fn in FILES.values() for s in fn() if s["name"] == n
-                )
-            )
-            assert fxcheck.reference_for(n, hold) in names, n
+from tools.emulator import dt2fx_compare, fxcheck
 
 
 def test_configure_round_trip() -> None:
@@ -65,3 +22,29 @@ def test_configure_round_trip() -> None:
     assert now == dn2
     with pytest.raises(ValueError):
         fxcheck.configure("dx7")
+
+
+@pytest.mark.parametrize("layout", ["report.json", "dt2-trackfx-1/report.json"])
+def test_compare_reads_direct_and_legacy_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: str
+) -> None:
+    monkeypatch.setattr(fxcheck, "name_maps", lambda _: ({}, {}))
+    monkeypatch.setattr(fxcheck, "decode_arrays", lambda peeks, _: peeks)
+    report = tmp_path / layout
+    report.parent.mkdir(parents=True, exist_ok=True)
+    values = {"snd[64] Bit Reduction": 22 << 8}
+    report.write_text(
+        json.dumps(
+            {
+                "scenarios": [
+                    {
+                        "name": "tf-br-22",
+                        "peek": values,
+                        "pcm": {"sha256": "sample-hash"},
+                        "guest_instructions": 123,
+                    }
+                ]
+            }
+        )
+    )
+    assert dt2fx_compare.load(tmp_path) == {"tf-br-22": (values, "sample-hash", 123)}

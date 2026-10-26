@@ -5,7 +5,7 @@
     uv run python -m tools.devtools.clock_sweep analyze
 
 ``run`` executes the DN2 oracles (``mise run test:fx``), the DN2 pin scenarios
-(``coupled scenario --all``) and the DT2 oracles (``mise run scenario:check:dt2``) once per rate with
+(``coupled scenario --all``) and the DT2 oracles (``mise run test:fx:dt2``) once per rate with
 ``DIGI_CF_IPS`` set, harvests the coupled-run reports they leave under ``out/runs`` and ``out/regression`` (a report counts
 when its ``cf_ips`` equals the rate and it is newer than the start of the run) and writes one raw
 file per (rate, suite) to ``out/clock/raw/``. Oracle and pin assertions are not touched; their
@@ -48,32 +48,19 @@ RATES = (
     198_000_000,
     264_000_000,
 )
-PYTEST = ["uv", "run", "python", "-m", "pytest"]
 SUITE_TIMEOUT_S = 3 * 3600
 
 
 def suite_command(suite: str, junit: Path, jobs: str | None) -> list[str]:
-    extra = ["--keep-runs", "--junitxml", str(junit), "-p", "no:cacheprovider"]
-    if suite == "dn2":  # mise run test:fx
+    if suite in {"dn2", "dt2"}:
         return [
             "pnpm",
             "--filter",
             "@digi/regression",
-            "test:fx",
+            "test:fx:dt2" if suite == "dt2" else "test:fx",
             "--reporter=default",
             "--reporter=junit",
             f"--outputFile={junit}",
-        ]
-    if suite == "dt2":  # mise run scenario:check:dt2
-        return [
-            *PYTEST,
-            "tests/scenarios/test_dt2_fx.py",
-            "--device",
-            "dt2",
-            "--slow",
-            "--sweep",
-            "-q",
-            *extra,
         ]
     if suite == "pins":  # the verify pins step
         return [
@@ -99,7 +86,7 @@ def harvest(rate: int, since: float, suite: str) -> list[Path]:
             ROOT / "out" / "regression" / family for family in ("trackfx", "sendfx")
         ]
     elif suite == "dt2":
-        roots = [RUNS / "tests"]
+        roots = [ROOT / "out" / "regression" / "dt2-fx"]
     else:
         roots = [kind for kind in RUNS.iterdir() if kind.name != "tests"]
     for kind in roots:
@@ -183,8 +170,12 @@ def run_suite(rate: int, suite: str, jobs: str | None, force: bool) -> None:
     junit = RAW / f"{rate}-{suite}.xml"
     log = RAW / f"{rate}-{suite}.log"
     env = {**os.environ, "DIGI_CF_IPS": str(rate)}
-    if suite == "dn2":
-        env.update(DIGI_FX_SWEEP="0", DIGI_FX_NO_AOT_SUBSET="0", DIGI_FX_KEEP_RUNS="1")
+    if suite in {"dn2", "dt2"}:
+        env.update(
+            DIGI_FX_SWEEP="1" if suite == "dt2" else "0",
+            DIGI_FX_NO_AOT_SUBSET="0",
+            DIGI_FX_KEEP_RUNS="1",
+        )
         if jobs is not None:
             env["DIGI_JOBS"] = jobs
     started = time.time()

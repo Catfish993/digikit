@@ -87,7 +87,10 @@ FX_FILES = (
     "tests/regression/scenarios/dn2-trackfx.ts",
     "tests/regression/scenarios/dn2-sendfx.ts",
 )
-DT2_FX_FILES = ("tests/scenarios/dt2-trackfx.json", "tests/scenarios/dt2-sendfx.json")
+DT2_FX_FILES = (
+    "tests/regression/scenarios/dt2-trackfx.ts",
+    "tests/regression/scenarios/dt2-sendfx.ts",
+)
 # python-tests always runs PY_GATE: lint, types, paths and the staleness checks (built module objects and
 # port files match their sources). A suite of PY_SUITES, (name, trigger prefixes, test paths), runs when a
 # changed file starts with one of its prefixes (all suites with --full); a suite with a test directory
@@ -268,7 +271,7 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
         "sf-chr-speed-u127",
         "sf-mst-ratio",
     ),
-    "tests/scenarios/dt2-trackfx.json": (
+    "tests/regression/scenarios/dt2-trackfx.ts": (
         "tf-dry-hold",
         "tf-br-127",
         "tf-over-127",
@@ -277,7 +280,7 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
         "tf-rev-127",
         "tf-chr-127",
     ),
-    "tests/scenarios/dt2-sendfx.json": ("sf-mst-ratio",),
+    "tests/regression/scenarios/dt2-sendfx.ts": ("sf-mst-ratio",),
 }
 # Normal broad verification excludes full-tier or explicitly requested steps.
 EVERYTHING = tuple(
@@ -326,14 +329,28 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     # the agent hook settings (tools/devtools/agent_guard.py); .claude/skills/ holds links and .agents/skills/ markdown (the skills test)
     ((".claude/", ".agents/"), ("python-tests",)),
     (
-        (
-            "tests/scenarios/dt2-",
-            "tests/scenarios/test_dt2",
-            "tests/scenarios/conftest.py",
-            "tools/emulator/gen_dt2fx.py",
-            "tools/emulator/dt2fx.py",
-        ),
+        ("tools/emulator/dt2fx.py",),
         ("dt2-check", "dt2-tier-quick", "python-tests"),
+    ),
+    (
+        (
+            *DT2_FX_FILES,
+            "tests/regression/scenarios/dt2-fx.test.ts",
+            "tests/regression/vitest.dt2-fx.config.ts",
+        ),
+        ("host", "dt2-check", "dt2-tier-quick", "python-tests"),
+    ),
+    (
+        ("tests/regression/scenarios/fx-support.ts",),
+        (
+            "host",
+            "check",
+            "check-no-aot",
+            "tier-quick",
+            "dt2-check",
+            "dt2-tier-quick",
+            "python-tests",
+        ),
     ),
     (
         ("tests/regression/scenarios/", "tests/regression/vitest.fx.config.ts"),
@@ -1401,15 +1418,6 @@ def finish_python(gate: Gate) -> None:
 
 
 def run_step(gate: Gate, step: str) -> None:
-    scenario_tests = [
-        *PY,
-        "-m",
-        "pytest",
-        "tests/scenarios",
-        "--slow",
-        "-q",
-        "--no-build",
-    ]
     jobs = gate.step_env()[
         "DIGI_JOBS"
     ]  # coupled-run processes at once: the node's share
@@ -1510,7 +1518,17 @@ def run_step(gate: Gate, step: str) -> None:
     elif step == "dt2-tone":
         gate.run("dt2-tone", [*PY, "-m", "tools.emulator.dt2_sample_check"])
     elif step == "dt2-check":
-        gate.run("dt2-check", [*scenario_tests, "--device", "dt2"], check=pytest_ran)
+        gate.run(
+            "dt2-check",
+            ["pnpm", "--filter", "@digi/regression", "test:fx:dt2"],
+            env={
+                **os.environ,
+                "DIGI_FX_NO_AOT_SUBSET": "0",
+                "DIGI_FX_SWEEP": "1"
+                if os.environ.get("DIGIKIT_TIER") == "full"
+                else "0",
+            },
+        )
     elif step == "dt2-tier-quick":
         tier(gate, "dt2-tier-quick", TIER_QUICK_EVERY, "dt2")
     elif step == "dt2-tier-sweep":

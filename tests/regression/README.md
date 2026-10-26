@@ -146,6 +146,79 @@ The coordinator's serial transfer acceptance passed on 2026-10-26 with existing 
 per-device CLI logs and store/folder/boot JSON in `out/regression/transfer-live/`; these are artifact
 records, not a raw Vitest output log. No performance comparison is claimed.
 
+## Runtime module-load acceptance
+
+`mise run test:modules` uses `vitest.modules.config.ts` and the existing patched-session fixture,
+separately from `test:runtime`. Three production runtime uploads (`digikit/pluck`, `digikit/freqshift`
+and `digikit/remote`) on DT2 1.17 and DN2 1.12 define six lifecycle cells. Each cell owns a fresh
+coupled daemon, mirrored store and selection; cells run serially. This is an explicit command, with
+no new verification-gate node or automatic module selection.
+
+Supply the same reviewed `DIGI_EMUD_DT2`/`DIGI_EMUD_DN2`, provenance-checked stock ready inputs and
+`DIGI_RUNTIME_CARD` sample directory described above. Prepare current module objects separately
+with their existing build owner, then explicitly pack the artifacts before acceptance. For example:
+
+```sh
+uv run python -m tools.patchkit.patchkit pack digikit/pluck --device dt2 -o out/regression/modules/dt2/pluck.dkm
+uv run python -m tools.patchkit.patchkit pack digikit/freqshift --device dt2 -o out/regression/modules/dt2/freqshift.dkm
+uv run python -m tools.patchkit.patchkit pack digikit/remote --device dt2 -o out/regression/modules/dt2/remote.dkm
+```
+
+Repeat those pack commands with `--device dn2` and the output directory `out/regression/modules/dn2/`.
+`patchkit pack` is the existing preparation tool and may rebuild its own CLI when stale; the acceptance
+command never builds or packs modules, daemons or generated cores. Missing prerequisites fail.
+`DIGI_RUNTIME_MODULES` optionally replaces the artifact root `out/regression/modules`; preserve its
+per-device directories and `pluck.dkm`, `freqshift.dkm`, `remote.dkm` names.
+
+Native Vitest filename and test-name filters select a module/device without a custom runner:
+
+```sh
+DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_RUNTIME_CARD="$PWD/out/runs/patchkit/samples" \
+  mise run test:modules -- pluck.test.ts --testNamePattern dt2
+```
+
+Omit filters, and supply both binaries, to run all six cells. The body timeout is 300 seconds per cell.
+All six artifacts packed successfully from existing objects, and all six cells passed across focused
+coordinator runs. DN2 DSP acceptance waits up to 30 seconds for the selected module's `MOD_DSP`
+completion before requiring status zero and checking registration; timeout logs are retained.
+The final DN2 freqshift/PLUCK rerun passed in 83.807/80.256 seconds (164.59 seconds combined).
+No lifecycle speed comparison is claimed. Assertions cover native
+`DkSession`/`EmuUsbTransport` upload, fresh card-byte verification, selection and protocol reboot,
+persistence, reported SDK contracts/version, DSP-loader completion, PLUCK voice/type registration,
+module guard counters, runtime log and guest faults. Remote also checks absent-before-upload service
+refusal and real STATE, malformed KEY and RELEASE dispatch. Diagnostic JSON remains under
+`out/regression/module-load/<device>/<module>/`.
+
+These cells establish load/registration/fault observations, not rendered audio correctness or physical
+device acceptance. They do not claim coverage of all 23 module manifests. Framework/static modules
+are firmware prerequisites rather than upload candidates; their existing Python/Rust, patchkit smoke,
+boot-scenario and module conformance checks remain separate. DSP functional/conformance coverage also
+remains separate. A temporary zero-DSP pilot booted after the startup firmware-path fix, but its
+remote flow failed after 127.59 seconds with a remote-release timeout that masked the original
+action failure; its primary error is unavailable. Shared teardown now preserves simultaneous action
+and release failures in an `AggregateError`, with the five-second release bound unchanged.
+Navigation feasibility and
+safe session reset/reuse remain unproven; the pilot was removed and fixtures retain fresh coupled
+sessions. Final `verify:host` passed 127 tests, lint/format and all package types, with the same 11
+existing Solid warnings. Module gate routing and the broad branch gate remain separate pending work.
+
 ## Stock coupled audio
 
 DN2 1.12 trackFX has its own `vitest.fx.config.ts`, separate from the stock CF-only UI and patched runtime configurations. `mise run test:fx` runs 34 quick assertions; `DIGI_FX_SWEEP=1 mise run test:fx` runs all 79 assertions across 47 canonical cases, without building. It needs preflighted stock coupled inputs and an existing binary; the caller supplies `DIGI_JOBS` from the shared CPU budget. Native test-name filters render only declared cases and their references. Python still owns cached rendering and NumPy analysis. See [the coverage map, lifecycle and commands](scenarios/README.md).
+
+
+DT2 1.17 stock FX uses `vitest.dt2-fx.config.ts` and the native `mise run test:fx:dt2` command:
+135 quick assertions, or all 146 across 60 scenarios with `DIGI_FX_SWEEP=1`. It uses the existing
+one-sample-card ready inputs and preflighted coupled-run binary, without an implicit build. Filename
+and test-name filters pass directly to Vitest; see [coverage and lifecycle](scenarios/README.md).
+The canonical task runs quick by default; use
+`DIGI_FX_SWEEP=1 mise run test:fx:dt2` for the former DT2 task's full selection. Gate `dt2-check`
+preserves quick unless `DIGIKIT_TIER=full`, and resets ambient sweep/subset flags. DT2 sources/config
+retain their device oracle/tier coverage; shared `fx-support.ts` retains both DN2 and DT2 routes.
+Clock sweeps retain the previous workload selections (DN2 quick, DT2 full), using native JUnit output
+and DT2 reports under `out/regression/dt2-fx/`. The lane's full native DT2 run passed all 146
+assertions in 420.48 seconds with 60 renders and zero cache hits; all expanded inputs matched the
+retired source. The integrated filtered routing assertion passed in 7.90 seconds with a five-scenario closure
+(145 assertions skipped); artifacts remain under `out/regression/dt2-fx/1792987837855-11088/`.
+The broad branch gate remains separate.
+The known DN2 chorus-width failure is unchanged; no performance comparison is claimed.

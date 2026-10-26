@@ -72,7 +72,7 @@ export class Session {
     const runDir = options.runDir ?? ownedDir!;
     const args =
       options.dsp === 'zero'
-        ? ['--dsp', 'zero', '--cf-snapshot', inp.cfSnapshot]
+        ? [...(options.runtime ? [inp.syx] : []), '--dsp', 'zero', '--cf-snapshot', inp.cfSnapshot]
         : [
             inp.syx,
             '--auto-coupled',

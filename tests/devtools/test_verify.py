@@ -300,11 +300,6 @@ def test_unmatched_entry_is_an_error() -> None:
         verify.resolve_tests(("tests/test_no_such_file.py",))
 
 
-def test_scenario_tests_are_not_added() -> None:
-    changed = ["tests/scenarios/test_dt2_fx.py"]
-    assert "tests/scenarios/test_dt2_fx.py" not in verify.python_tests(changed, False)
-
-
 def test_changed_support_module_runs_its_users() -> None:
     tests = verify.python_tests(["tests/support/sharc_swi.py"], False)
     assert "tests/sharc/semantics/test_sharc_software_interrupts.py" in tests
@@ -1292,10 +1287,21 @@ def test_stock_audio_sources_keep_device_oracles_and_tier_checks(path: str) -> N
     assert "runtime-fixture" not in verify.steps_for([path])
 
 
-def test_python_scenario_fixture_keeps_dt2_owner_checks() -> None:
-    assert {"dt2-check", "dt2-tier-quick", "python-tests", "smoke"} <= set(
-        verify.steps_for(["tests/scenarios/conftest.py"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tests/regression/scenarios/dt2-trackfx.ts",
+        "tests/regression/scenarios/dt2-sendfx.ts",
+        "tests/regression/scenarios/dt2-fx.test.ts",
+        "tests/regression/vitest.dt2-fx.config.ts",
+        "tests/regression/scenarios/fx-support.ts",
+    ],
+)
+def test_dt2_stock_audio_sources_keep_device_oracles_and_tier_checks(path: str) -> None:
+    assert {"host", "dt2-check", "dt2-tier-quick", "python-tests", "smoke"} <= set(
+        verify.steps_for([path])
     )
+    assert "runtime-fixture" not in verify.steps_for([path])
 
 
 @pytest.mark.parametrize(
@@ -1319,6 +1325,16 @@ def test_fx_gate_tiers_override_ambient_selection(monkeypatch, full, all_no_aot)
         ["pnpm", "--filter", "@digi/regression", "test:fx"],
     )
     assert len(calls) == 1
+    env = calls[-1][1]["env"]
+    assert env["DIGI_FX_SWEEP"] == str(int(full))
+    assert env["DIGI_FX_NO_AOT_SUBSET"] == "0"
+    assert env["PATH"] == os.environ["PATH"]
+    calls.clear()
+    verify.run_step(gate, "dt2-check")
+    assert calls[-1][0] == (
+        "dt2-check",
+        ["pnpm", "--filter", "@digi/regression", "test:fx:dt2"],
+    )
     env = calls[-1][1]["env"]
     assert env["DIGI_FX_SWEEP"] == str(int(full))
     assert env["DIGI_FX_NO_AOT_SUBSET"] == "0"

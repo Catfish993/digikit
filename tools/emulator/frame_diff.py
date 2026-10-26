@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Which words of the ColdFire -> DSP TX frame does a scenario's parameter change?
 
-    uv run python -m tools.emulator.frame_diff dt2 REF NAME [NAME ...] [--file tests/scenarios/dt2-sendfx.json]
+    uv run python -m tools.emulator.frame_diff dt2 REF NAME [NAME ...] [--file tests/regression/scenarios/dt2-sendfx.ts]
     uv run python -m tools.emulator.frame_diff dn2 REF NAME ... --file tests/regression/scenarios/dn2-sendfx.ts
 
 Runs REF and the named scenarios (coupled-run, device ready inputs, DT2 on the one-sample card) with a

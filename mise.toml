@@ -100,10 +100,6 @@ depends = ["scenario:build"]
 run = "uv run python -m tools.emulator.coupled scenario --all --no-build"
 description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python -m tools.emulator.coupled scenario --all --device dt2"
 
-[tasks."scenario:check:dt2"]
-run = "uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slow --sweep -q"
-description = "Oracle tests for the DT2 FX scenarios on the one-sample card (about 2 min)"
-
 [tasks."scenario:replay"]
 run = "uv run python -m tools.emulator.coupled replay"
 description = "Replay inputs recorded by the desktop app (Export diagnostics file) headless"
@@ -157,9 +153,17 @@ description = "Stock DT2 1.17 zero-DSP UI/sequencer goldens; accepts Vitest filt
 run = "pnpm --filter @digi/regression test:fx"
 description = "DN2 stock FX oracles: 61 quick assertions; DIGI_FX_SWEEP=1 selects all 191 across 134 scenarios (existing binary and ready inputs; no build)"
 
+[tasks."test:fx:dt2"]
+run = "pnpm --filter @digi/regression test:fx:dt2"
+description = "DT2 stock FX: 135 quick / 146 full (DIGI_FX_SWEEP=1); native Vitest filters; existing binary/ready inputs, no emulator build; sample-card preparation may build its helper (DIGI_DT2_CARD selects a prepared image to avoid it)"
+
 [tasks."test:runtime"]
 run = "pnpm --filter @digi/regression test:runtime"
 description = "Explicit coupled runtime acceptance, serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries and DIGI_RUNTIME_CARD samples; no implicit native build; accepts Vitest filters (for example -- service-commands)"
+
+[tasks."test:modules"]
+run = "pnpm --filter @digi/regression test:modules"
+description = "Explicit serial coupled module-load acceptance: three production uploads on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
 
 [tasks."test:quick"]
 run = [

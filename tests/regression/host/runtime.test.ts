@@ -55,6 +55,24 @@ test('stock defaults retain snapshot load and stepped lifecycle', async () => {
   }
 });
 
+test('zero-DSP runtime startup selects the firmware before applying the runtime patch', async () => {
+  const session = await Session.start({ device: 'dt2', firmware: '1.17', dsp: 'zero', runtime: {} });
+  try {
+    expect(fake.spawn.mock.calls[0]?.[0].args).toEqual(['/stock.syx', '--dsp', 'zero', '--cf-snapshot', '/ready.snap']);
+    expect(fake.client.firmwareLoad).toHaveBeenCalledWith({
+      syx: '/stock.syx',
+      start: 'auto',
+      force: true,
+      auto_no: true,
+      runtime: true,
+      patch_set: undefined,
+    });
+    expect(fake.client.call).toHaveBeenCalledWith('run.mode', { mode: 'free' });
+  } finally {
+    await session.close();
+  }
+});
+
 test('a mirrored runtime owns its mirror inside the temporary run directory', async () => {
   const runtime = await startPatchedSession({ device: 'dn2', firmware: '1.12', mirror: true });
   const runDir = runtime.session.runDir;

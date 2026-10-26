@@ -273,7 +273,10 @@ def configure(device: str) -> None:
     global F0, SCENARIO_FILES, DEFAULT_IMAGE, SND_PEEK, FX_PEEK, BR_IDX, DSEND_IDX
     if device == "dt2":
         F0 = 1000.0
-        SCENARIO_FILES = ("dt2-trackfx.json", "dt2-sendfx.json")
+        SCENARIO_FILES = (
+            "../regression/scenarios/dt2-trackfx.ts",
+            "../regression/scenarios/dt2-sendfx.ts",
+        )
         DEFAULT_IMAGE = ROOT / "out" / "sections" / "dt2-1.17" / "section_3_MAIN_OS.bin"
         SND_PEEK = "snd=*0x8000470c+0x14:142"
         FX_PEEK = "fx=*0x80004708+0:142"
@@ -503,7 +506,13 @@ def routing_compare(
         "release": (t0 + hold, t0 + hold + 0.3),
         "end": (t0 + hold + 0.3, n / rate),
     }
-    out: dict[str, Any] = {"max_abs_diff": float(np.abs(d).max())}
+    out: dict[str, Any] = {
+        "max_abs_diff": float(np.abs(d).max()),
+        "shape_equal": x.shape == other.shape,
+        "full_max_abs_diff": float(np.abs(x - other).max())
+        if x.shape == other.shape
+        else None,
+    }
     for k, (a, b) in spans.items():
         i, j = int(a * rate), int(b * rate)
         if j - i < 50:
@@ -811,6 +820,9 @@ def pcm_observations(x: ac.F, reference: ac.F | None, name: str) -> dict[str, An
         "mono_equal": bool(np.array_equal(x[:, 0], x[:, 1])),
         "reference": name,
         "reference_shape": list(reference.shape) if reference is not None else None,
+        "reference_max_abs_diff": float(np.abs(x - reference).max())
+        if reference is not None and x.shape == reference.shape
+        else None,
         "reference_equal": bool(np.array_equal(x, reference))
         if reference is not None
         else None,

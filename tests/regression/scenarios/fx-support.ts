@@ -8,9 +8,16 @@ import type { Scenario } from './dn2-trackfx.ts';
 export interface Row {
   analysis: { basic: { nonfinite: number; dc: number[]; peak: number; growth: boolean } };
   decoded: Record<string, number>;
-  pcm: { shape: number[]; reference_shape: number[]; reference_equal: boolean; reference: string; mono_equal: boolean };
+  pcm: {
+    shape: number[];
+    reference_shape: number[];
+    reference_equal: boolean;
+    reference_max_abs_diff: number | null;
+    reference: string;
+    mono_equal: boolean;
+  };
   bits: Record<string, number | null>;
-  tf: { fs_candidates: number[][] };
+  tf: { fs_candidates: number[][]; [key: string]: unknown };
   sf: Record<string, number | null>;
   delay: { echo_onsets_s: number[] };
 }
@@ -18,7 +25,7 @@ export interface Row {
 /** Batch selected stock FX scenarios through the existing Python renderer/analysis CLI. */
 export function fxRender(
   needs: Map<string, string[]>,
-  { family, scenarios }: { family: string; scenarios: Scenario[] },
+  { family, scenarios, device = 'dn2' }: { family: string; scenarios: Scenario[]; device?: 'dn2' | 'dt2' },
 ) {
   const root = repoRoot();
   const run = path.join(root, 'out', 'regression', family, `${Date.now()}-${process.pid}`);
@@ -90,8 +97,14 @@ export function fxRender(
     }
     if (!names.size) return;
     fs.mkdirSync(run, { recursive: true });
-    console.log(`DN2 ${family} artifacts: ${run} (${names.size} scenarios)`);
-    const image = path.join(root, 'out', 'sections', 'dn2-1.12', 'section_3_MAIN_OS.bin');
+    console.log(`${device.toUpperCase()} ${family} artifacts: ${run} (${names.size} scenarios)`);
+    const image = path.join(
+      root,
+      'out',
+      'sections',
+      device === 'dt2' ? 'dt2-1.17' : 'dn2-1.12',
+      'section_3_MAIN_OS.bin',
+    );
     if (!fs.existsSync(image)) throw new Error(`Missing MAIN OS descriptor image: ${image}`);
     const scenarioFile = path.join(run, 'scenarios.json');
     fs.writeFileSync(scenarioFile, JSON.stringify({ scenarios }));
@@ -102,6 +115,9 @@ export function fxRender(
         '-m',
         'tools.emulator.coupled',
         'scenario',
+        '--device',
+        device,
+        ...(device === 'dt2' ? ['--dt2-card'] : []),
         ...names,
         '--scenarios',
         scenarioFile,
@@ -112,13 +128,13 @@ export function fxRender(
         '--out',
         path.join(run, 'report.json'),
         '--peek',
-        'snd=*0x800052a0+0x48:202',
+        device === 'dt2' ? 'snd=*0x8000470c+0x14:142' : 'snd=*0x800052a0+0x48:202',
         '--peek',
-        'fx=*0x800052a4+0:202',
+        device === 'dt2' ? 'fx=*0x80004708+0:142' : 'fx=*0x800052a4+0:202',
       ],
       'render',
     );
-    await command(['-m', 'tools.emulator.fxcheck', run, '--no-plots'], 'analysis');
+    await command(['-m', 'tools.emulator.fxcheck', run, '--device', device, '--no-plots'], 'analysis');
     rows = JSON.parse(fs.readFileSync(path.join(run, 'fxcheck.json'), 'utf8'));
     const report = JSON.parse(fs.readFileSync(path.join(run, 'report.json'), 'utf8')) as {
       scenarios: { name: string; gates: { ok: boolean } }[];

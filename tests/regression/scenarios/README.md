@@ -2,7 +2,7 @@
 
 `dn2-trackfx.ts` and `dn2-sendfx.ts` are the canonical sources for all 47 trackFX and 87 sendFX stock DN2 1.12 scenarios. Run it with Node >=24 to print the scenario JSON document. `tools/emulator/coupled.py` accepts that source through `--scenarios`, evaluates it afresh, and atomically materializes content-addressed JSON under `out/scenarios/` for the native runner. Duration enumeration writes nothing. The full expanded objects (names, descriptions, seconds, exact-event flag and ordered events) were compared against the retired JSON before deletion: all 47 trackFX and 87 sendFX cases matched. Fixed instruction slots include the original zero-detent padding, routing window and filter prelude.
 
-`dn2-trackfx.test.ts` and `dn2-sendfx.test.ts` own the former DN2 Python assertions; Python retains DT2 oracles, descriptor/decode/shared-timeline units, and all NumPy signal analysis in `tools/emulator/fxcheck.py` and `tools/emulator/audiocheck.py`.
+`dn2-trackfx.test.ts` and `dn2-sendfx.test.ts` own the former DN2 Python assertions; DT2 assertions now live in `dt2-fx.test.ts`; Python retains descriptor/decode/shared-timeline units, and all NumPy signal analysis in `tools/emulator/fxcheck.py` and `tools/emulator/audiocheck.py`.
 
 | Former Python test identity | Vitest identity (same prefix) | Quick | Additional sweep |
 | --- | --- | ---: | ---: |
@@ -57,3 +57,13 @@ The failing identity is `test_chorus_decorrelates_with_width sweep`: unsigned wi
 Filtered native acceptance passed one assertion with 111 skipped in 13.61 s (`out/regression/sendfx/1792984685019-50861/`). The existing clock parser reports 191 executed / 1 failure for combined JUnit and 1 executed / 0 failures for filtered JUnit, excluding skipped cases. With `DIGI_FX_KEEP_RUNS=1`, the filtered closure contains only `sf-del-ref` and `sf-dry-tap`; both WAVs remain, and the existing clock harvester finds the report using its actual 132000000 `cf_ips` and timestamp guard. The coordinator then rebuilt stock DN2 coupled-run with two Cargo jobs under the build lock (40.99 s). A fresh-binary rerender of the five-case chorus-width closure had zero cache hits and failed identically in 29.46 s (`out/regression/sendfx/1792984943484-54800/`); all five PCM hashes matched the earlier full run. The same bounded closure using `verify.no_aot_env()` had zero cache hits and failed identically in 102.33 s (`out/regression/sendfx/1792985036334-56163/`). All five AOT/no-AOT PCM hashes match exactly and all gates pass. These checks rule out a stale executable and an AOT-specific cause for this observed failure; the general emulator-versus-oracle assumption remains unresolved, and the historical DN2 1.11 run is not a matched baseline. Assertions remain unchanged. No real clock sweep, full branch gate, full no-AOT suite or hardware validation ran. Next: resolve the chorus oracle/DSP question before calling the migration fully accepted.
 
 The preceding trackFX slice passed coordinator acceptance for all 79 assertions across 47 scenarios using two render workers without builds. Its retained artifact directories are `out/regression/trackfx/1792982548335-13715/` and `out/regression/trackfx/1792982886830-19350/`; that acceptance predates the sendFX migration and shared-helper change.
+
+
+DT2 uses canonical `dt2-trackfx.ts` and `dt2-sendfx.ts` sources with `dt2-fx.test.ts`:
+`mise run test:fx:dt2` selects 135 quick assertions, and `DIGI_FX_SWEEP=1` selects all 146 across
+60 scenarios. Full lane acceptance passed in 420.48 seconds with 60 renders and zero cache hits;
+all expanded inputs matched the retired JSON exactly. The native fixture retains independent ready
+restores, reference closures, NumPy analysis and strict assertions. The known DN2 chorus-width
+failure above is unchanged. Integrated filtered routing acceptance passed in 7.90 seconds with five scenarios (145 assertions
+skipped). The broad branch gate remains separate;
+no speed improvement is claimed.

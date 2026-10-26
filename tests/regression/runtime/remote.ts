@@ -106,21 +106,29 @@ export async function remoteTap(dk: DkSession, name: string, settleMs = 1200): P
 
 /** Always release held remote inputs, including on navigation/assertion failure. */
 export async function withRemoteRelease(dk: DkSession, action: () => Promise<void>): Promise<void> {
+  let actionFailed = false;
+  let actionError: unknown;
   try {
     await action();
-  } finally {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        dk.remoteRelease(),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error('remote release timed out')), 5000);
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
+  } catch (error) {
+    actionFailed = true;
+    actionError = error;
   }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      dk.remoteRelease(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('remote release timed out')), 5000);
+      }),
+    ]);
+  } catch (error) {
+    if (actionFailed) throw new AggregateError([actionError, error], 'remote action and release failed');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (actionFailed) throw actionError;
 }
 
 function remoteArtifacts(session: Session): string {

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Compare two runs of the DT2 FX scenarios (tests/scenarios/test_dt2_fx.py --keep-runs).
+"""Compare two runs of the DT2 FX scenarios (DIGI_FX_KEEP_RUNS=1 pnpm --filter @digi/regression test:fx:dt2).
 
     uv run python -m tools.emulator.dt2fx_compare RUN_A RUN_B
 
-RUN_A and RUN_B are run directories under out/runs/tests/ (each holds dt2-trackfx-N
-and dt2-sendfx-N batches). Prints, per scenario, whether the decoded read-back
+RUN_A and RUN_B are run directories under out/regression/dt2-fx/; older
+out/runs/tests/ directories with per-family batches also work. Prints whether the read-back
 arrays (live Sound and Fx parameters) and the PCM hash agree, and a summary. Two
 firmware versions on one ready-state recipe agree on the read-back when the
 encoder-turn behaviour is the same, whatever the oracle intents say.
@@ -25,9 +25,10 @@ from tools.emulator import fxcheck  # noqa: E402
 def load(run: pathlib.Path) -> dict[str, tuple[dict[str, int], str, int]]:
     names = fxcheck.name_maps(fxcheck.DEFAULT_IMAGE)
     out: dict[str, tuple[dict[str, int], str, int]] = {}
-    for rep in sorted(run.glob("*/report.json")) + sorted(
-        run.glob("*/shard-*/report.json")
-    ):
+    reports = [run / "report.json"] if (run / "report.json").exists() else []
+    reports += sorted(run.glob("*/report.json"))
+    reports += sorted(run.glob("*/shard-*/report.json"))
+    for rep in reports:
         data: dict[str, Any] = json.loads(rep.read_text())
         for s in data.get("scenarios", []):
             vals = fxcheck.decode_arrays(s.get("peek") or {}, names)

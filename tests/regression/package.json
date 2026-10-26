@@ -8,9 +8,11 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:update": "UPDATE_GOLDENS=1 vitest run",
+    "test:modules": "vitest run --config vitest.modules.config.ts",
     "test:runtime": "vitest run --config vitest.runtime.config.ts",
     "test:host": "pnpm -w test:host --project regression-host",
-    "test:fx": "vitest run --config vitest.fx.config.ts"
+    "test:fx": "vitest run --config vitest.fx.config.ts",
+    "test:fx:dt2": "vitest run --config vitest.dt2-fx.config.ts"
   },
   "dependencies": {
     "@digi/control-client": "workspace:*",
