@@ -11,6 +11,7 @@ export default defineConfig({
       ['control-client', 'packages/control-client', 'tests/*.test.ts'],
       ['test-support', 'packages/test-support', 'tests/*.test.ts'],
       ['dk-session', 'packages/dk-session', 'tests/*.test.ts'],
+      ['desktop-host', 'apps/desktop', 'ui/tests/*.test.ts'],
       ['regression-host', 'tests/regression', 'host/**/*.test.ts'],
     ].map(([name, directory, include]) => ({
       test: {

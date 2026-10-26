@@ -73,7 +73,7 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run lint` | `lint:py` (ruff check and format check on the `CLEAN` list), `lint:web` (oxlint on the JS/TS workspaces), `fmt:check` (Prettier check; `mise run fmt` formats in place), `lint:rust` (cargo fmt check) | Before a commit |
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run test:changed` | The tests the changed files select (`tools/devtools/changed_tests.py`): the tests that import a changed module under tools/ or tests/ (directly or through a tests helper or conftest; `--deep` also through other tools modules), the tests and quick-tier scenarios that name a changed module (for a framework module only the module itself), the fine routes of verify, the changed test files, and the Rust tests of the affected crates. Never a test directory, no PY_GATE, no build step. `--explain` prints each file with its reason and what the gate adds; `--base BRANCH` for a lane. | In a lane, while iterating |
-| `mise run verify:host` | Global JS/TS lint and format, four host Vitest projects and package type checks, within the verify budget. No native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
+| `mise run verify:host` | Global JS/TS lint and format, five host Vitest projects and package type checks, within the verify budget. No native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
 | `mise run verify:pre` | Quick lane checks (`tools/devtools/verify_pre.py`, 1 to 2 min): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No explicit pin or scenario step; selected tests may require an emulator. It prints that it is not the merge gate. | In a lane, while iterating and before handing the branch over |
 | `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, unless every changed path is UI-only or exactly a listed smoke-exempt path); a lane checks the routing with `--explain` |
 | `mise run verify:full` | Every step (about 7 min with a warm render cache, about 20 min when DSP/native code changed). The AOT = no-AOT sweep runs the fixed subset; `-- --all-no-aot` runs all 134 scenarios and all 61 oracle tests. | Only after changes to the generated core |
@@ -100,7 +100,7 @@ The preview's fake device cannot show what a page does to a running emulator (a 
 pages over a RUNNING daemon: `uv run python -m tools.devtools.emu_live --device dn2 --run-dir DIR` starts one (runtime patched in, free-running; it prints `{pid, socket}`; stop it with `kill PID`), then
 `DIGI_LIVE_SOCKET=SOCKET pnpm --filter @digi/desktop exec vite --config ui/preview/live.vite.config.ts --port 5298` and `node tools/devtools/memory_live.mjs SOCKET [--check] [--out DIR]`
 measure the Memory panel there: time to the first bars, a Refresh, the read after a visit to the Transfer page, the control calls a second and the emulator's real-time factor open against idle (`--check`: under a second, ratio 0.9 or more).
-`apps/web/tests/session-share.test.mjs` (one session per target, requests in turn) and `read-gate.test.mjs` (one read at a time, retries, hidden panels) are the node tests of the same rules.
+`apps/desktop/ui/tests/session-share.test.ts` (one session per target, requests in turn) and `read-gate.test.mjs` (one read at a time, retries, hidden panels) cover the same rules under their desktop-host and web Node owners, respectively.
 
 ## Digikit boot scenarios (`tests/digikit`)
 
@@ -153,16 +153,22 @@ to `packages/dk-session/tests/remote.test.ts` and run in `host`. Normal verifica
 runtime cases and helpers retain cheap host checks in `host`, and module/tool routes retain their existing
 Python/Rust and smoke selections. See [regression fixture details](../tests/regression/README.md).
 Host-only: `pnpm test:host` runs the root `vitest.host.config.ts` projects `control-client`,
-`test-support`, `dk-session` and `regression-host`, with explicit host-only includes and one worker by
+`test-support`, `dk-session`, `regression-host` and `desktop-host`, with explicit host-only includes and one worker by
 default (override with `--maxWorkers N`). The `host` step runs this command once with its budget share;
 package-local test commands select their named project from the same config. These checks require no
 firmware, native builds or daemons. `pnpm --filter @digi/regression typecheck` explicitly generates
 shared-session declarations first. `host` also owns global oxlint/Prettier and the control-client,
-shared-session, test-support and regression type checks. `web` retains patchkit WASM, browser Node tests
+shared-session, test-support, regression and desktop-host test type checks. `web` retains patchkit WASM, browser Node tests
 and Astro checks, and depends on `host` even with explicit `--only web`, preserving prior coverage and
-serializing shared declaration generation. Control-client, test-support, regression, the root host config
-and shared-session tests select `host`; other shared-session paths select both `host` and `web` because
-both apps consume them. Existing app, global configuration and unknown-path routes stay conservative.
+serializing shared declaration generation. Control-client, test-support, regression, the root host config,
+shared-session tests and `apps/desktop/ui/tests/` select `host`; other shared-session paths select both `host` and `web` because
+both apps consume them. Desktop production helpers retain app checks; app manifests, global
+configuration and unknown paths retain their existing conservative routes. The desktop `test:host`
+script selects `desktop-host`; `typecheck:host` checks its tests and imported helpers with strict
+TypeScript settings, separately from the unchanged `check:ui` application check.
+The desktop helper migration retains eight tests and 29 assertions across session sharing, Remote
+page logic and waiting/failure messages. The root host suite now collects 58 tests in 11 files
+across five projects; all five host type checks pass.
 The host formatter invokes root `pnpm fmt:check`; `pnpm fmt` uses the same scope with `--write`.
 Both remain uncached and check the full tree, with native negative globs pruning already ignored
 `out/`, `target/`, `gen/`, `dist/`, `.astro/` and `apps/web/.local/` directories before traversal.
@@ -176,9 +182,10 @@ The subsequent host gate passed in 11 s (formatting 5 s, all 40 host tests in si
 checks passed; [run result](../out/runs/verify/20261026-000243/result.json)).
 Cancellation, queueing and timeout protocol tests belong to
 `packages/dk-session/tests/session-cancel.test.ts`; desktop waiting/failure presentation assertions
-remain in the existing web Node runner at `apps/web/tests/wait-core.test.mjs`.
+run under the `desktop-host` Vitest project at `apps/desktop/ui/tests/wait-core.test.ts`.
 An explicit `--only host` needs no native/WASM build or device inputs. Normal host-path verification
-skips `smoke` only for these eight audited files in the exact `SMOKE_EXEMPT` table:
+skips `smoke` for the desktop UI test directory through the existing UI-only exemption,
+and for these eight audited files in the exact `SMOKE_EXEMPT` table:
 
 - `packages/control-client/tests/client.test.ts`
 - `packages/test-support/tests/support.test.ts`

@@ -1,20 +1,24 @@
 // One session per target (apps/desktop/ui/src/session-core.ts): every page and panel that talks to the emulator or to a MIDI port gets the SAME
 // DkSession, so their requests take turns on the one reply stream instead of stealing each other's replies.
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { DkSession, frame } from '@digi/dk-session';
-import { createSessions, targetKey } from '../../desktop/ui/src/session-core.ts';
+import { test } from 'vitest';
+import { DkError, DkSession, frame } from '@digi/dk-session';
+import { createSessions, targetKey } from '../src/session-core.ts';
 
 /** A device behind one reply stream, like the emulator's USB capture: any session that polls takes the next reply. It answers a request after a
  * moment, and counts how many requests were on the wire at once (sent, not yet answered). */
 class Wire {
+  replies: Uint8Array[];
+  open: number;
+  maxOpen: number;
+  sent: number;
   constructor() {
     this.replies = [];
     this.open = 0;
     this.maxOpen = 0;
     this.sent = 0;
   }
-  async send(msg) {
+  async send(msg: Uint8Array) {
     this.sent++;
     this.open++;
     this.maxOpen = Math.max(this.maxOpen, this.open);
@@ -26,7 +30,7 @@ class Wire {
       this.replies.push(frame(cmd | 0x40, seq, Uint8Array.of(0, cmd)));
     }, 15);
   }
-  async recv(timeoutMs) {
+  async recv(timeoutMs: number) {
     const end = Date.now() + timeoutMs;
     for (;;) {
       const next = this.replies.shift();
@@ -82,8 +86,8 @@ test('requests from two pages on the shared session go one at a time and each ge
 test('cancel reaches only the session of that target, and a target without a session has nothing to cancel', async () => {
   const silent = {
     send() {},
-    recv: (ms, signal) =>
-      new Promise((res) => {
+    recv: (ms: number, signal?: AbortSignal) =>
+      new Promise<Uint8Array | null>((res) => {
         const t = setTimeout(() => res(null), ms);
         signal?.addEventListener('abort', () => (clearTimeout(t), res(null)), { once: true });
       }),
@@ -96,7 +100,7 @@ test('cancel reaches only the session of that target, and a target without a ses
   await new Promise((r) => setTimeout(r, 20));
   sessions.cancel('midi:x');
   sessions.cancel('midi:none');
-  await assert.rejects(other, (e) => e.kind === 'cancelled');
+  await assert.rejects(other, (e: DkError) => e.kind === 'cancelled');
   sessions.cancel('emulator');
-  await assert.rejects(waiting, (e) => e.kind === 'cancelled');
+  await assert.rejects(waiting, (e: DkError) => e.kind === 'cancelled');
 });

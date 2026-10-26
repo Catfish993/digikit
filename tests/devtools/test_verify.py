@@ -76,6 +76,25 @@ def test_exact_host_test_paths_skip_smoke_but_keep_host_coverage(path: str) -> N
     assert verify.steps_for([path]) == ("host",)
 
 
+@pytest.mark.parametrize("name", ["session-share", "remote-page", "wait-core", "new"])
+def test_desktop_host_tests_select_only_host(name: str) -> None:
+    assert verify.steps_for([f"apps/desktop/ui/tests/{name}.test.ts"]) == ("host",)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "apps/desktop/ui/src/session-core.ts",
+        "apps/desktop/ui/src/remote-core.ts",
+        "apps/desktop/ui/src/wait-core.ts",
+        "apps/desktop/package.json",
+        "apps/desktop/ui/tsconfig.json",
+    ],
+)
+def test_desktop_host_sources_keep_app_checks(path: str) -> None:
+    assert {"desktop", "web", "host"} <= set(verify.steps_for([path]))
+
+
 def test_host_test_exemptions_mix_with_ui_docs_and_maintenance() -> None:
     assert verify.steps_for(HOST_SMOKE_EXEMPT_FILES) == ("host",)
     assert verify.steps_for(
@@ -805,6 +824,12 @@ def test_host_check_runs_consolidated_host_and_owner_checks(
     assert (
         not {"dk-session-tests", "test-support-tests", "regression-host"} & calls.keys()
     )
+    assert calls["desktop-host-types"] == [
+        "pnpm",
+        "--filter",
+        "@digi/desktop",
+        "typecheck:host",
+    ]
     assert calls["regression-types"] == [
         "pnpm",
         "--filter",

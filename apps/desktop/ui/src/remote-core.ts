@@ -1,5 +1,5 @@
 // The Remote page's logic, without the page: what the state of digikit/remote says to the user, the device behind a session, and the
-// runtime object the faceplate presses keys on. Pure, so node tests can run it (apps/web/tests/remote-page.test.mjs).
+// runtime object the faceplate presses keys on. Pure, so host tests can run it (apps/desktop/ui/tests/remote-page.test.ts).
 import { DkError, type DkSession, type RemoteState } from '@digi/dk-session';
 
 /** The message under the faceplate for the state of digikit/remote (or for the error that asking for it gave). */

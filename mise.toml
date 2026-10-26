@@ -136,7 +136,7 @@ description = "Merge gate, routed by the changed files (tools/devtools/verify.py
 
 [tasks."verify:host"]
 run = "uv run python -m tools.devtools.verify --only host"
-description = "Host lint/format, four Vitest projects and package type checks within the verify budget; no native/WASM build, device or smoke checks"
+description = "Host lint/format, five Vitest projects and package type checks within the verify budget; no native/WASM build, device or smoke checks"
 
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"

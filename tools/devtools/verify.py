@@ -347,6 +347,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "tests/regression/",
             "vitest.host.config.ts",
             "packages/dk-session/tests/",
+            "apps/desktop/ui/tests/",
         ),
         ("host",),
     ),
@@ -1028,6 +1029,9 @@ def host_check(gate: Gate) -> None:
         "test-support-types", ["pnpm", "--filter", "@digi/test-support", "typecheck"]
     )
     gate.run("regression-types", ["pnpm", "--filter", "@digi/regression", "typecheck"])
+    gate.run(
+        "desktop-host-types", ["pnpm", "--filter", "@digi/desktop", "typecheck:host"]
+    )
 
 
 def web_check(gate: Gate) -> None:

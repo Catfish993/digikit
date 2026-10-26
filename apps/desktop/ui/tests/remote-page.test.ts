@@ -1,8 +1,8 @@
 // The pure logic of the desktop Remote page (apps/desktop/ui/src/remote-core.ts).
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { DkError } from '@digi/dk-session';
-import { deviceOfPort, remoteNotice, remoteRuntime } from '../../desktop/ui/src/remote-core.ts';
+import { test } from 'vitest';
+import { DkError, type DkSession } from '@digi/dk-session';
+import { deviceOfPort, remoteNotice, remoteRuntime } from '../src/remote-core.ts';
 
 test('the notice: nothing when REMOTE is on, how to switch it on, how to load the module', () => {
   assert.equal(remoteNotice({ enabled: true, format: 1, turnLimit: 30 }), '');
@@ -21,12 +21,12 @@ test('the device behind a session', () => {
 });
 
 test('the runtime of the faceplate sends one request per key and turn', async () => {
-  const calls = [];
+  const calls: (string | number | boolean)[][] = [];
   const session = {
-    remoteKey: async (code, down) => calls.push(['key', code, down]),
-    remoteTurn: async (enc, d) => calls.push(['turn', enc, d]),
+    remoteKey: async (code: number, down: boolean) => calls.push(['key', code, down]),
+    remoteTurn: async (enc: number, d: number) => calls.push(['turn', enc, d]),
   };
-  const rt = remoteRuntime(async () => session);
+  const rt = remoteRuntime(async () => session as unknown as DkSession);
   await rt.press(10);
   await rt.release(10);
   await rt.turn(3, -4);
