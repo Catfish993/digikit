@@ -90,6 +90,14 @@ def canonical(obj: dict) -> str:
     return json.dumps(obj, sort_keys=True, indent=1, ensure_ascii=True) + "\n"
 
 
+def comparable(obj: dict) -> dict:
+    # The binary hashes record who built the object; they are not part of its identity (local builds of the same pinned revision differ).
+    toolchain = {
+        k: v for k, v in obj.get("toolchain", {}).items() if not k.endswith("_sha256")
+    }
+    return {**obj, "toolchain": toolchain}
+
+
 INCLUDE = re.compile(r'^#include\s+"([^"]+)"[ \t]*$', re.M)
 
 
@@ -401,7 +409,13 @@ def build_module(
         text = canonical(obj)
         out = (out_root or moddir) / o["path"]
         if check:
-            if not out.exists() or out.read_text() != text:
+            try:
+                current = out.exists() and comparable(
+                    json.loads(out.read_text())
+                ) == comparable(obj)
+            except ValueError:
+                current = False
+            if not current:
                 raise BuildError(
                     f"{out} is stale: uv run python -m tools.patchkit.pk_build build {moddir}"
                 )
