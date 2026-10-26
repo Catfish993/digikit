@@ -72,6 +72,13 @@ Review page: `uv run python -m tools.firmware.catalog_page dt2-1.17 [--labels FI
 
 Needs `out/sharcdb/<image>.sqlite` (also of the old image, for `stable`). Writes `out/atlas/<image>-dsp.sqlite` (tables `catalog`, `catalog_groups`), `<image>-dsp-catalog.tsv`, `<image>-dsp-catalog-groups.tsv` and `<image>-dsp-catalog-graph.json`. Addresses are short words. Columns differ from ColdFire: `reloc_hash` replaces `h_strict`; no ui or class fields. DSP-only: `role` (voice, master/fx, util, frame, io, other), `label`, `callers`, `callees`, `loops`, `do`, `recip`, `lit_data`, `abs_dm`, `hints`, and `prof_insns` (NULL without `--profile`, which also adds the tag `hot`). `fw.py catalog` shows `role` and `hints`; TERM matches name, role, hints or tags.
 
+### From a candidate to a declaration
+
+    uv run python -m tools.firmware.catalog emit-rule dt2-1.17 0x40113dc8 --other dn2-1.12    # rule, where it resolves, same on both?
+    uv run python -m tools.firmware.catalog declare dt2-1.17 0x40113dc8 cf.text.fn.draw_fmt --other dn2-1.12 [--write]
+
+ADDR below 0x1000000 is a SHARC pc. `emit-rule` prints the `devices/fw` rule of the function that contains ADDR (hash, `ordinal` if the hash is not unique, offset, `--len`) and checks it on the image and, with `--other`, on the other device against the catalogue `pair_addr`. `declare` builds a `mark = "O"` entry from it (shared rule, or one rule per device) and with `--write` inserts it into `devices/fw/<subsystem>.toml`. Needs the atlas catalogue for the pair.
+
 Marks stay [D]/[O] until a second check against image bytes. "No callers" needs `tools/coldfire/refscan.py`.
 
 ## Examples (output trimmed)

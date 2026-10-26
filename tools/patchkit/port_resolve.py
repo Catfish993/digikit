@@ -4,6 +4,7 @@
     uv run python -m tools.patchkit.port_resolve resolve FIRMWARE.syx [--out devices/ports/NAME.toml]
     uv run python -m tools.patchkit.port_resolve resolve-all [--root DIR]      # the four supported firmwares
     uv run python -m tools.patchkit.port_resolve rule-sharc IMAGE PC [--len N] # print a devices/fw rule for a SHARC pc
+    (for a rule of either CPU and a declaration entry, see tools/firmware/catalog.py: emit-rule, declare)
 
 A port (devices/ports/<short>-<version>.toml) records, for one stock `.syx` (keyed by its sha256), the
 named anchors the modules and frameworks need (address, length, sha256 of the bytes there; never the bytes),
@@ -26,9 +27,11 @@ are not resolved. An unknown table is an error.
 
 Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py):
 
-  sharc_func     reloc_hash = <hash of the containing function>, offset = <parcels from its entry>, len = <bytes>.
-                 The function is found by its relocation-insensitive hash (it must be unique in the image);
-                 the anchor is the `len` bytes at entry + offset. SHARC `pm` is the entry + offset pc.
+  sharc_func     reloc_hash = <hash of the containing function>, offset = <parcels from its entry>, len = <bytes>,
+                 ordinal = <index among the functions with that hash, in entry address order>.
+                 The function is found by its relocation-insensitive hash (it must be unique in the image unless the
+                 rule gives an ordinal; the same holds for the three kinds below); the anchor is the `len` bytes at
+                 entry + offset. SHARC `pm` is the entry + offset pc.
   sharc_literal  as sharc_func, but the instruction at entry + offset loads a constant (a literal in the
                  sharcdb): the anchor's value is that constant (a data address); `src` is the instruction.
 
@@ -75,6 +78,7 @@ matches nothing or more than one place is an error, so a firmware that moved cod
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import re
 import sys
@@ -222,32 +226,72 @@ def sections_of(syx: Path) -> dict[int, bytes]:
     return out
 
 
-class Dsp:
+class SharcFuncs:
+    """The functions of one DSP image, from its sharcdb."""
+
+    def __init__(self, image: str):
+        from tools.sharc_dev import sharc
+
+        self.db = sharc.load(image)
+        self.image = image
+
+    def funcs_by_hash(self, reloc_hash: str) -> list[int]:
+        """Entries of the functions whose relocation-insensitive hash is RELOC_HASH, in address order."""
+        rows = self.db.sql(
+            "SELECT entry_sw FROM func_hash WHERE image=? AND reloc_hash=? ORDER BY entry_sw",
+            self.image,
+            reloc_hash,
+        )
+        return [int(r[0]) for r in rows]
+
+    def func_by_hash(self, reloc_hash: str, ordinal: int | None = None) -> int:
+        return select_by_ordinal(
+            self.funcs_by_hash(reloc_hash),
+            ordinal,
+            f"reloc_hash {reloc_hash[:12]}..",
+            self.image,
+        )
+
+    def func_at(self, pc: int) -> tuple[int, str] | None:
+        """(entry, reloc_hash) of the function that contains PC, or None."""
+        rows = self.db.sql(
+            "SELECT f.entry_sw, h.reloc_hash FROM functions f JOIN func_hash h"
+            " ON h.image=f.image AND h.entry_sw=f.entry_sw"
+            " WHERE f.image=? AND f.entry_sw<=? AND f.end_sw>?",
+            self.image,
+            pc,
+            pc,
+        )
+        return (int(rows[0][0]), rows[0][1]) if rows else None
+
+
+class Dsp(SharcFuncs):
     """The DSP boot stream plus its sharcdb."""
 
     def __init__(self, blob: bytes, image: str):
         from tools.patchkit import dsp_patch
-        from tools.sharc_dev import sharc
 
+        super().__init__(image)
         self.stream = dsp_patch.Stream(blob)
-        self.db = sharc.load(image)
-        self.image = image
         self._dsp_patch = dsp_patch
 
     def byte_addr(self, pc: int) -> int:
         return self._dsp_patch.pc_address(pc, self.stream.present)
 
-    def func_by_hash(self, reloc_hash: str) -> int:
-        rows = self.db.sql(
-            "SELECT entry_sw FROM func_hash WHERE image=? AND reloc_hash=?",
-            self.image,
-            reloc_hash,
+
+def select_by_ordinal(
+    entries: list[int], ordinal: int | None, what: str, where: str
+) -> int:
+    """The function to use among ENTRIES (address order): the ORDINAL-th, or the only one when ORDINAL is None."""
+    if ordinal is None:
+        if len(entries) != 1:
+            raise ResolveError(f"{what} matches {len(entries)} functions in {where}")
+        return entries[0]
+    if not 0 <= ordinal < len(entries):
+        raise ResolveError(
+            f"{what} matches {len(entries)} function(s) in {where} (ordinal {ordinal})"
         )
-        if len(rows) != 1:
-            raise ResolveError(
-                f"reloc_hash {reloc_hash[:12]}.. matches {len(rows)} functions in {self.image}"
-            )
-        return int(rows[0][0])
+    return entries[ordinal]
 
 
 class CfFacts:
@@ -278,6 +322,24 @@ class CfFacts:
                 (image, h),
             )
         ]
+
+    def func_at(self, addr: int) -> tuple[int, str | None] | None:
+        """(entry, h_strict) of the cfdb function that contains ADDR (h_strict None without a hash), or None."""
+        from tools.coldfire import cf
+
+        image = f"{self.name}-emac"
+        db = cf.load(image).db
+        row = db.execute(
+            "SELECT entry FROM functions WHERE image=? AND entry<=? AND end>?",
+            (image, addr, addr),
+        ).fetchone()
+        if row is None:
+            return None
+        h = db.execute(
+            "SELECT h_strict FROM func_hash WHERE image=? AND entry=?",
+            (image, row[0]),
+        ).fetchone()
+        return (int(row[0]), h[0] if h else None)
 
     def cave(self) -> dict:
         return next(
@@ -496,10 +558,14 @@ def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     raise ResolveError(f"{rule['name']}: unknown rule kind {kind!r}")
 
 
+def rule_ordinal(rule: dict) -> int | None:
+    return int(rule["ordinal"]) if "ordinal" in rule else None
+
+
 def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
     kind = rule["kind"]
     if kind in ("sharc_func", "sharc_literal"):
-        entry = dsp.func_by_hash(rule["reloc_hash"])
+        entry = dsp.func_by_hash(rule["reloc_hash"], rule_ordinal(rule))
         pc = entry + int(rule.get("offset", 0))
         addr = dsp.byte_addr(pc)
         if kind == "sharc_func":
@@ -533,7 +599,7 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
     if kind == "sharc_table":
         # a table the code reaches through a literal: the instruction at entry + offset loads its address; the anchor is
         # the table in the DSP stream (`len` bytes, at the software alias 0x28000000 + the literal)
-        entry = dsp.func_by_hash(rule["reloc_hash"])
+        entry = dsp.func_by_hash(rule["reloc_hash"], rule_ordinal(rule))
         pc = entry + int(rule.get("offset", 0))
         rows = dsp.db.sql(
             "SELECT value FROM literals WHERE image=? AND sw=?", dsp.image, pc
@@ -552,7 +618,7 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
             "sha256": sha(dsp.stream.read(addr, n)),
         }
     if kind == "sharc_mem_addr":
-        entry = dsp.func_by_hash(rule["reloc_hash"])
+        entry = dsp.func_by_hash(rule["reloc_hash"], rule_ordinal(rule))
         pc = entry + int(rule.get("offset", 0))
         rows = dsp.db.sql(
             "SELECT abs_address FROM mem_access WHERE image=? AND sw=? AND abs_address IS NOT NULL",
@@ -745,30 +811,85 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
     return f"{device}-{version}", render(port, limits, regions, unique)
 
 
-def cmd_rule_sharc(a: argparse.Namespace) -> int:
-    from tools.patchkit import dsp_patch
-    from tools.sharc_dev import sharc
+@functools.cache
+def load_image(name: str, root: Path = ROOT) -> tuple[CfFacts, Dsp]:
+    """The ColdFire facts and the DSP of the stock firmware called NAME (`<device>-<version>`, e.g. "dt2-1.17"),
+    found through the `[[firmware]]` entries of devices/*.toml."""
+    for prof in load_profiles(root).values():
+        if f"{prof['device']}-{prof['version']}" == name:
+            f = prof["filename"]
+            syx = Path(f) if Path(f).exists() else config.stock(f)
+            secs = sections_of(syx)
+            return CfFacts(name, secs[3]), Dsp(secs[7], prof["dsp"])
+    raise ResolveError(f"{name}: not a firmware listed in devices/*.toml")
 
-    img = sharc.load(a.image)
-    fn = img.func(a.pc)
-    if fn is None:
-        raise SystemExit(f"no function contains pc {a.pc:#x} in {a.image}")
-    entry = int(fn["entry_sw"], 16)
-    end = int(fn["end_sw"], 16)
-    h = img.sql(
-        "SELECT reloc_hash FROM func_hash WHERE image=? AND entry_sw=?", a.image, entry
-    )[0][0]
-    n = img.sql(
-        "SELECT count(*) FROM func_hash WHERE image=? AND reloc_hash=?", a.image, h
-    )[0][0]
-    print(
-        f"# {a.image}: function {entry:#x}..{end:#x}; {n} function(s) share this hash"
-    )
-    length = f", len = {a.len}" if a.len else ""
-    print(
-        f'rule = {{ kind = "sharc_func", reloc_hash = "{h}", offset = {a.pc - entry:#x}{length} }}'
-    )
-    del dsp_patch
+
+def cf_rule_at(cf: CfFacts, addr: int, length: int) -> dict:
+    """A `cf_func` rule for the LENGTH bytes at ADDR: the cfdb function that contains ADDR, found by its h_strict
+    hash (with `ordinal` when other functions share the hash) and ADDR's offset from the entry."""
+    found = cf.func_at(addr)
+    if found is None:
+        raise ResolveError(f"no function contains {addr:#x} in {cf.name}")
+    entry, h = found
+    if h is None:
+        raise ResolveError(f"the function at {entry:#x} in {cf.name} has no hash")
+    rule: dict = {"kind": "cf_func", "hash": h}
+    hits = cf.funcs_by_hash(h)
+    if len(hits) > 1:
+        rule["ordinal"] = hits.index(entry)
+    rule["offset"] = addr - entry
+    rule["len"] = length
+    return rule
+
+
+def sharc_rule_at(dsp: SharcFuncs, pc: int, length: int) -> dict:
+    """A `sharc_func` rule for the LENGTH bytes at the pc PC: the function that contains PC, found by its reloc_hash
+    (with `ordinal` when other functions share it) and PC's offset in parcels from the entry. LENGTH 0 omits `len`."""
+    found = dsp.func_at(pc)
+    if found is None:
+        raise ResolveError(f"no function contains pc {pc:#x} in {dsp.image}")
+    entry, h = found
+    rule: dict = {"kind": "sharc_func", "reloc_hash": h}
+    hits = dsp.funcs_by_hash(h)
+    if len(hits) > 1:
+        rule["ordinal"] = hits.index(entry)
+    rule["offset"] = pc - entry
+    if length:
+        rule["len"] = length
+    return rule
+
+
+def check_rule(image_name: str, rule: dict, cpu: str, root: Path = ROOT) -> int:
+    """Resolve RULE on the stock image IMAGE_NAME and return the address it finds: the entry + offset for a ColdFire
+    rule, the pc for a SHARC `sharc_func` rule (any other SHARC kind: the resolved address). Raises ResolveError."""
+    cf, dsp = load_image(image_name, root)
+    named = {"name": "rule", **rule}
+    if cpu == "cf":
+        return resolve_cf_anchor(cf, named)["addr"]
+    a = resolve_anchor(dsp, named)
+    return a.get("pm", a["addr"])
+
+
+def format_rule(rule: dict) -> str:
+    """RULE as a TOML inline table: offset in hex, other integers in decimal."""
+    parts = []
+    for k, v in rule.items():
+        if isinstance(v, str):
+            parts.append(f'{k} = "{v}"')
+        elif k == "offset":
+            parts.append(f"{k} = {v:#x}")
+        else:
+            parts.append(f"{k} = {v}")
+    return "{ " + ", ".join(parts) + " }"
+
+
+def cmd_rule_sharc(a: argparse.Namespace) -> int:
+    dsp = SharcFuncs(a.image)
+    rule = sharc_rule_at(dsp, a.pc, a.len or 0)
+    n = len(dsp.funcs_by_hash(rule["reloc_hash"]))
+    entry = a.pc - rule["offset"]
+    print(f"# {a.image}: function at {entry:#x}; {n} function(s) share this hash")
+    print(f"rule = {format_rule(rule)}")
     return 0
 
 

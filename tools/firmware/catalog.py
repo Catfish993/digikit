@@ -4,15 +4,24 @@ The ColdFire collector (tools/coldfire/atlas.py) and the SHARC collector
 (tools/sharc_dev/sharc_catalog.py) build rows of candidate anchor functions.
 This module holds what they share: rule suggestion, grade, call-graph groups
 and the sqlite, TSV and JSON writers. Rows are dicts keyed by column name.
+
+It is also the way from a firmware function to a checked declaration in devices/fw/:
+
+    uv run python -m tools.firmware.catalog emit-rule IMAGE ADDR [--len N] [--other IMAGE]
+    uv run python -m tools.firmware.catalog declare IMAGE ADDR NAME [--table T] [--other IMAGE] [--doc TEXT] [--write]
 """
 
 from __future__ import annotations
 
+import argparse
 import collections
 import json
 import re
 import sqlite3
+import sys
+import tomllib
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 # Rule kinds that find a function by its hash.
@@ -263,3 +272,262 @@ def write_catalog_groups(
         json.dump(graph, fh, indent=1)
         fh.write("\n")
     return len(groups)
+
+
+# --- from a firmware function to a declaration (devices/fw/) -------------------------------------
+
+SHARC_LIMIT = (
+    0x1000000  # a SHARC pc is below this; ColdFire code is at 0x40000000 and up
+)
+DEFAULT_LEN = {"cf": 4, "sharc": 6}
+NAME_CPU = {
+    "cf": "cf",
+    "sharc": "dsp",
+}  # the cpu of an entry -> the first part of its name
+
+
+def cpu_of(addr: int, override: str | None = None) -> str:
+    return override or ("sharc" if addr < SHARC_LIMIT else "cf")
+
+
+def device_of(image: str) -> str:
+    return image.split("-")[0]
+
+
+def rule_at(image: str, addr: int, length: int, cpu: str, root: Path) -> dict:
+    """The rule for the LENGTH bytes at ADDR on the stock image IMAGE."""
+    from tools.patchkit import port_resolve
+
+    cf, dsp = port_resolve.load_image(image, root)
+    if cpu == "cf":
+        return port_resolve.cf_rule_at(cf, addr, length)
+    return port_resolve.sharc_rule_at(dsp, addr, length)
+
+
+def catalog_pair(image: str, cpu: str, entry: int, root: Path) -> int | None:
+    """The function on the other device that the atlas catalogue pairs with the function at ENTRY, or None."""
+    name = f"{image}-dsp.sqlite" if cpu == "sharc" else f"{image}.sqlite"
+    db = root / "out" / "atlas" / name
+    if not db.exists():
+        return None
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        row = con.execute(
+            "SELECT pair_addr FROM catalog WHERE addr=?", (entry,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        con.close()
+    return row[0] if row and row[0] is not None else None
+
+
+def analyse(
+    image: str, addr: int, length: int, cpu: str, other: str | None, root: Path
+) -> dict:
+    """The rule for ADDR on IMAGE (checked to resolve to ADDR) and, with OTHER, where it resolves there
+    (`other`, or `other_error`), the catalogue pair of ADDR (`pair`: the pair of the function entry plus the same
+    offset) and `same`: the rule finds the pair."""
+    from tools.patchkit import port_resolve
+
+    rule = rule_at(image, addr, length, cpu, root)
+    got = port_resolve.check_rule(image, rule, cpu, root)
+    if got != addr:
+        raise port_resolve.ResolveError(
+            f"the rule resolves to {got:#x} on {image}, not {addr:#x}"
+        )
+    out: dict = {"rule": rule, "other": None, "other_error": None, "pair": None}
+    if other:
+        pair = catalog_pair(image, cpu, addr - rule["offset"], root)
+        out["pair"] = None if pair is None else pair + rule["offset"]
+        try:
+            out["other"] = port_resolve.check_rule(other, rule, cpu, root)
+        except port_resolve.ResolveError as e:
+            out["other_error"] = str(e)
+    out["same"] = out["pair"] is not None and out["other"] == out["pair"]
+    return out
+
+
+def render_entry(
+    name: str,
+    table: str,
+    cpu: str,
+    rules_by_device: dict[str, dict],
+    doc: str | None,
+    mark: str,
+) -> str:
+    """The text of one declaration. One rule shared by every device is written as `rule`; different rules as
+    `rule.<dev>` lines; an entry for one device only gets a `devices` line."""
+    from tools.patchkit import port_resolve
+
+    lines = [f"# {line}" for line in (doc or "").splitlines()]
+    lines += [f"[[{table}]]", f'name = "{name}"', f'cpu = "{cpu}"']
+    devices = list(rules_by_device)
+    if len(devices) == 1:
+        lines.append(f'devices = ["{devices[0]}"]')
+    rules = list(rules_by_device.values())
+    if all(r == rules[0] for r in rules):
+        lines.append(f"rule = {port_resolve.format_rule(rules[0])}")
+    else:
+        for dev in sorted(devices):
+            lines.append(
+                f"rule.{dev} = {port_resolve.format_rule(rules_by_device[dev])}"
+            )
+    lines.append(f'mark = "{mark}"')
+    return "\n".join(lines) + "\n"
+
+
+def entry_path(root: Path, name: str) -> Path:
+    cpu, subsystem = name.split(".")[:2]
+    fw = root / "devices" / "fw"
+    return (fw / "dsp" if cpu == "dsp" else fw) / f"{subsystem}.toml"
+
+
+def split_blocks(text: str) -> list[tuple[int, str]]:
+    """(start offset, text) of each blank-line separated block of TEXT."""
+    blocks: list[tuple[int, str]] = []
+    cur: list[str] = []
+    start = pos = 0
+    for line in text.splitlines(keepends=True):
+        if line.strip():
+            if not cur:
+                start = pos
+            cur.append(line)
+        elif cur:
+            blocks.append((start, "".join(cur)))
+            cur = []
+        pos += len(line)
+    if cur:
+        blocks.append((start, "".join(cur)))
+    return blocks
+
+
+def insert_entry(text: str, name: str, entry: str) -> str:
+    """TEXT with ENTRY added before the first declaration whose name sorts after NAME (at the end if none);
+    every existing byte is kept."""
+    for start, block in split_blocks(text):
+        m = re.search(r'^name = "([^"]+)"', block, re.M)
+        if m and m.group(1) > name:
+            return text[:start] + entry + "\n" + text[start:]
+    return text.rstrip("\n") + "\n\n" + entry
+
+
+def new_file_text(root: Path, name: str, entry: str) -> str:
+    cpu, subsystem = name.split(".")[:2]
+    meaning = tomllib.loads((root / "devices" / "fw" / "subsystems.toml").read_text())[
+        cpu
+    ][subsystem]
+    return (
+        f"# {subsystem}: {meaning}\n"
+        "# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 "
+        "(docs/design/firmware-decls.md).\n\n" + entry
+    )
+
+
+def cmd_emit_rule(a: argparse.Namespace) -> int:
+    from tools.patchkit import port_resolve
+
+    cpu = cpu_of(a.addr, a.cpu)
+    length = a.len if a.len is not None else DEFAULT_LEN[cpu]
+    r = analyse(a.image, a.addr, length, cpu, a.other, a.root)
+    print(f"rule = {port_resolve.format_rule(r['rule'])}")
+    print(f"# {a.image}: {a.addr:#x} (the rule resolves here)")
+    if a.other:
+        if r["other_error"]:
+            print(f"# {a.other}: does not resolve: {r['other_error']}")
+        else:
+            print(f"# {a.other}: {r['other']:#x}")
+        if r["pair"] is not None:
+            print(f"# {a.other}: catalogue pair {r['pair']:#x}")
+        else:
+            print(f"# {a.other}: no catalogue pair")
+        if r["same"]:
+            print("# same rule works on both")
+    return 0
+
+
+def cmd_declare(a: argparse.Namespace) -> int:
+    from tools.patchkit import port_resolve
+
+    root = a.root
+    cpu = cpu_of(a.addr, a.cpu)
+    if a.name.split(".")[0] != NAME_CPU[cpu]:
+        raise port_resolve.ResolveError(
+            f"{a.name}: a {cpu} entry has a name that starts with {NAME_CPU[cpu]}"
+        )
+    length = a.len if a.len is not None else DEFAULT_LEN[cpu]
+    r = analyse(a.image, a.addr, length, cpu, a.other, root)
+    rule = r["rule"]
+    table = a.table or ("fn" if rule["offset"] == 0 else "site")
+    port_resolve.check_name(a.name, table, port_resolve.load_subsystems(root))
+    for e in port_resolve.fw_rules(root):
+        if a.name in (e["name"], *e["aliases"]):
+            raise port_resolve.ResolveError(
+                f"{a.name}: already declared as {e['name']} ({e['_source']})"
+            )
+    rules = {device_of(a.image): rule}
+    if a.other:
+        odev = device_of(a.other)
+        if r["same"]:
+            rules[odev] = rule
+        elif r["pair"] is None:
+            print(
+                f"no catalogue pair for {a.addr:#x}: declared for {device_of(a.image)} only",
+                file=sys.stderr,
+            )
+        else:
+            orule = rule_at(a.other, r["pair"], length, cpu, root)
+            got = port_resolve.check_rule(a.other, orule, cpu, root)
+            if got != r["pair"]:
+                raise port_resolve.ResolveError(
+                    f"the rule resolves to {got:#x} on {a.other}, not {r['pair']:#x}"
+                )
+            rules[odev] = orule
+    entry = render_entry(a.name, table, cpu, rules, a.doc, "O")
+    if not a.write:
+        print(entry, end="")
+        return 0
+    path = entry_path(root, a.name)
+    text = (
+        insert_entry(path.read_text(), a.name, entry)
+        if path.exists()
+        else new_file_text(root, a.name, entry)
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    print(f"{path}: added {a.name}")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    from tools.patchkit import port_resolve
+
+    def addr(s: str) -> int:
+        return int(s, 0)
+
+    ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    for cmd, fn in (("emit-rule", cmd_emit_rule), ("declare", cmd_declare)):
+        p = sub.add_parser(cmd)
+        p.set_defaults(fn=fn)
+        p.add_argument("image", help="stock image, e.g. dt2-1.17")
+        p.add_argument("addr", type=addr, help="ColdFire address or SHARC pc")
+        if cmd == "declare":
+            p.add_argument("name", help="<cpu>.<subsystem>.<kind>.<name>")
+            p.add_argument("--table", choices=("fn", "site", "data", "value"))
+            p.add_argument("--doc")
+            p.add_argument("--write", action="store_true")
+        p.add_argument("--len", type=int, help="bytes; default 4 ColdFire, 6 SHARC")
+        p.add_argument("--other", help="the image of the other device")
+        p.add_argument("--cpu", choices=("cf", "sharc"))
+        p.add_argument("--root", type=Path, default=port_resolve.ROOT)
+    a = ap.parse_args(argv)
+    try:
+        return a.fn(a)
+    except port_resolve.ResolveError as e:
+        print(f"catalog: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
