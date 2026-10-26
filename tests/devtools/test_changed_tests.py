@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import Mock
 
 import pytest
 from support.paths import REPO_ROOT
@@ -98,62 +100,55 @@ def test_deep_is_a_superset() -> None:
     assert set(shallow.tests) <= set(deep.tests)
 
 
-HEADER = "file\tstatus\trc\tseconds\tpassed\tfailed\tskipped\terrors\n"
-
-
-def _write_summary(out: Path, rows: list[str]) -> None:
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "summary.tsv").write_text(HEADER + "".join(r + "\n" for r in rows))
-
-
-def test_failure_report_failed_file(tmp_path: Path) -> None:
-    _write_summary(
-        tmp_path,
-        [
-            "tests/NAME/test_ok.py\tOK\t0\t1.0\t3\t0\t0\t0",
-            "tests/NAME/test_bad.py\tFAILED\t1\t2.0\t1\t1\t0\t0",
-        ],
+@pytest.mark.parametrize("returncodes", [(0, 0), (1, 0), (0, 1), (1, 1)])
+def test_main_propagates_exit_codes_and_continues(
+    returncodes: tuple[int, int],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    names = ["python-tests", "rust-tests"]
+    monkeypatch.setattr(changed_tests.verify, "changed_files", lambda _: [])
+    monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: [])
+    monkeypatch.setattr(
+        changed_tests, "plan", lambda *args: [(n, [n], "") for n in names]
     )
-    (tmp_path / "xml").mkdir()
-    (tmp_path / "logs").mkdir()
-    (tmp_path / "xml" / "tests__NAME__test_bad.xml").write_text(
-        '<testsuite><testcase name="test_x"><failure message="AssertionError: x != y">'
-        'trace</failure></testcase><testcase name="test_y"/></testsuite>'
+    monkeypatch.setattr(changed_tests.digi_env, "run_dir", lambda _: str(tmp_path))
+    monkeypatch.setattr(changed_tests.verify_budget, "resolve_budget", lambda: 1)
+    monkeypatch.setattr(changed_tests.verify_budget, "bounded_env", lambda *args: {})
+    run = Mock(
+        side_effect=[
+            CompletedProcess([n], rc) for n, rc in zip(names, returncodes, strict=True)
+        ]
     )
-    (tmp_path / "logs" / "tests__NAME__test_bad.log").write_text("log\n")
-    head, detail = changed_tests.failure_report(tmp_path)
-    assert head.startswith("FAIL python-tests: 1 of 2 files failed")
-    assert any("tests/NAME/test_bad.py" in d and "1 failed" in d for d in detail)
-    assert any("AssertionError: x != y" in d for d in detail)
-    assert not any("test_y" in d for d in detail)
+    monkeypatch.setattr(changed_tests.subprocess, "run", run)
+
+    assert changed_tests.main(["--foreground"]) == int(any(returncodes))
+    assert [call.args[0] for call in run.call_args_list] == [[n] for n in names]
+    for call in run.call_args_list:
+        assert not {"capture_output", "stdout", "stderr", "text"} & call.kwargs.keys()
+    output = capsys.readouterr().out
+    assert f"python-tests logs: {tmp_path}" in output
+    for name, rc in zip(names, returncodes, strict=True):
+        assert f"{'FAIL' if rc else 'PASS'} {name} (" in output
+    if any(returncodes):
+        failed = ", ".join(n for n, rc in zip(names, returncodes, strict=True) if rc)
+        assert f"test:changed: FAILED: {failed}." in output
 
 
-def test_failure_report_all_ok(tmp_path: Path) -> None:
-    _write_summary(
-        tmp_path,
-        [
-            "tests/NAME/test_one.py\tOK\t0\t1.0\t3\t0\t0\t0",
-            "tests/NAME/test_two.py\tOK\t0\t1.0\t1\t0\t1\t0",
-        ],
+def test_explain_runs_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(changed_tests.verify, "changed_files", lambda _: [])
+    monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: [])
+    monkeypatch.setattr(
+        changed_tests, "plan", lambda *args: [("python-tests", ["unused"], "")]
     )
-    head, detail = changed_tests.failure_report(tmp_path)
-    assert head.startswith("PASS python-tests: 2 files, 4 passed")
-    assert detail == []
-
-
-def test_failure_report_no_xml_shows_log_tail(tmp_path: Path) -> None:
-    _write_summary(tmp_path, ["tests/NAME/test_gone.py\tNO-XML\t2\t1.0\t0\t0\t0\t0"])
-    (tmp_path / "logs").mkdir()
-    lines = [f"line {i}" for i in range(20)]
-    (tmp_path / "logs" / "tests__NAME__test_gone.log").write_text(
-        "\n".join(lines) + "\n"
-    )
-    head, detail = changed_tests.failure_report(tmp_path)
-    assert head.startswith("FAIL python-tests: 1 of 1 files failed")
-    assert detail[1:] == [f"    line {i}" for i in range(5, 20)]
-
-
-def test_explain_runs_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+    run = Mock(side_effect=AssertionError("explain must not run commands"))
+    monkeypatch.setattr(changed_tests.subprocess, "run", run)
     assert changed_tests.main(["--explain"]) == 0
-    assert "the gate adds:" in capsys.readouterr().out
-    assert Path(changed_tests.__file__).is_file()
+    run.assert_not_called()
+    output = capsys.readouterr().out
+    assert "the gate adds:" in output
+    assert "RUN  python-tests: unused" in output
+    assert "explained, nothing run" in output
