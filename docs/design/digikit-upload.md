@@ -234,8 +234,9 @@ In the firmware's MIDI task, after the SysEx gather (finding 42 section 2, stage
 starts `F0 7D 64 6B` goes to the runtime; every other message takes the stock route unchanged. The exact hook is a ported
 anchor on all four ports (`dkrt.fw.*`). The runtime's upload buffer is a static 16-byte aligned object of 36,896 bytes (see "Behaviour the first draft left open").
 
-## Tests (kept; `tests/digikit/scenarios`)
+## Tests
 
+- CLI transfer acceptance: `tests/regression/runtime/transfer-live.ts` on DT2 1.17 and DN2 1.12, through the real `tools.device.dktransfer` CLI. Install/restart persists the upload and selection, the mirror matches the card's SHA-256 and metadata, delete plus `card.sync` removes it, and the next protocol restart skips the selected missing module with `MOD_LOAD E_NOT_FOUND` and reaches `UI_FIRST`. Run with `mise run test:runtime -- transfer-live` (prerequisites: `tests/regression/README.md`); this acceptance is explicit/full-only. Remaining scenario tests are in `tests/digikit/scenarios`.
 - upload, list, restart, load: equal to a card built with the file in `digikit/` (rows, tables, PCM).
 - replace, delete, CLEAR, E_FULL, E_HASH (a wrong sha256 commits nothing), DATA retry and bad offset.
 - power cut during staging, between header B and A, and after A: the next boot reads a valid store (old or new, never mixed).

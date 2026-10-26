@@ -12,7 +12,7 @@ vi.mock('node:fs', async (original) => ({
     writeFileSync: fake.write,
   },
 }));
-import { installModule } from '../runtime/module-install.ts';
+import { installModule, transferCommand } from '../runtime/transfer-cli.ts';
 
 const session = { runDir: '/run/own-daemon' } as Session;
 
@@ -41,3 +41,18 @@ test.each(['', '{"event":"progress"}\n', '{"event":"result","loaded":["digikit/r
     expect(fake.write).toHaveBeenCalledWith('/artifacts/service-command/dt2/install.log', `${stdout}\n`);
   },
 );
+
+test('a failed CLI command retains stdout and stderr in its artifact', async () => {
+  const error = Object.assign(new Error('exit 1'), { stdout: 'partial progress', stderr: 'device refused' });
+  fake.exec.mockRejectedValueOnce(error);
+  await expect(transferCommand(session, ['delete', 'modules/pluck.dkm'], '/artifacts/delete.log')).rejects.toThrow(
+    'dktransfer delete modules/pluck.dkm failed: exit 1; see /artifacts/delete.log',
+  );
+  expect(fake.write).toHaveBeenCalledWith('/artifacts/delete.log', 'partial progress\ndevice refused\nexit 1');
+});
+
+test('malformed CLI JSON leaves the raw command log intact', async () => {
+  fake.exec.mockResolvedValueOnce({ stdout: '{invalid JSON}\n', stderr: 'diagnostic' });
+  await expect(transferCommand(session, ['restart'], '/artifacts/restart.log')).rejects.toThrow(SyntaxError);
+  expect(fake.write).toHaveBeenCalledExactlyOnceWith('/artifacts/restart.log', '{invalid JSON}\n\ndiagnostic');
+});

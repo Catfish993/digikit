@@ -1740,100 +1740,15 @@ def run_live_input(c: Ctx) -> None:
 
 
 def run_live(c: Ctx) -> None:
-    """The desktop app's setup: a coupled daemon free-running on a stock image with the runtime patched in and NO card file, driven
-    by the `dktransfer` command line in real time (nothing steps it). An upload and a RESTART must survive the soft reset: the
-    guest's card writes are laid over a default blank card when the firmware was loaded without one."""
-    from tools.device import dklog as L
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
-
-    if c.table().get("part") == "samples":
+    """Dispatch the remaining sample and input-adapter live scenarios."""
+    part = c.table().get("part")
+    if part == "samples":
         return run_live_samples(c)
-    if c.table().get("part") == "samples-store":
+    if part == "samples-store":
         return run_live_samples_store(c)
-    if c.table().get("part") == "input":
+    if part == "input":
         return run_live_input(c)
-    (module,) = c.table()["modules"]
-    dev, _ = c.image.split("-")
-    emu, mirror = live_boot(c)
-    try:
-        epoch0 = emu.status()["epoch"]
-        tool = live_tool(emu)
-
-        rc, ev, secs = tool("install", module, "--restart")
-        res = next((e for e in ev if e["event"] == "result"), {})
-        c.check(
-            "dktransfer install: the restart kept the upload and the selection, MODULES lists the module",
-            rc == 0 and module in res.get("loaded", []),
-            f"rc {rc} {ev[-1:] if ev else ''}",
-        )
-        c.report["install_s"] = round(secs, 1)
-        c.check("the emulator booted again (epoch)", emu.status()["epoch"] > epoch0)
-        up = DK.Uploader(TR.LiveTransport(emu))
-        c.check(
-            "the file is on the card after the soft reset",
-            [p for p, _, _ in up.ls()] == [f"modules/{module.split('/')[-1]}.dkm"],
-            str(up.ls()),
-        )
-        # the module store follows into the folder about 2 s after the guest's last card write, with the same sha256
-        path = f"modules/{module.split('/')[-1]}.dkm"
-        want = dict((p, h) for p, _, h in up.ls())[path]
-        mirrored = mirror / "digikit" / path
-
-        def sha_of(f: Path) -> str | None:
-            return hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
-
-        end = time.monotonic() + 30
-        while time.monotonic() < end and sha_of(mirrored) != want:
-            time.sleep(0.5)
-        c.check(
-            "the folder holds the module with the card's sha256 (the emulator mirrors the store after its quiet period)",
-            sha_of(mirrored) == want,
-            str(mirrored),
-        )
-        fold = emu.call("card.folder")
-        c.check(
-            "card.folder lists it with size and sha256",
-            fold["folder"] == str(mirror)
-            and fold["continuous"]
-            and [(f["path"], f["sha256"]) for f in fold["files"]] == [(path, want)],
-            str(fold),
-        )
-        # delete the selected file: DELETE does not touch the selection, so the next boot finds a selected path whose file is gone and
-        # skips it with an error line (MOD_LOAD result -1) instead of failing the boot
-        # (the boot after `install --restart` is the second boot with a selection that has not run the stable period, 30 s of DSP blocks:
-        # one more such boot would be a safe boot, so the scenario restarts once more only)
-        rc3, ev3, _ = tool("delete", path)
-        c.check(
-            "dktransfer delete: the file is gone from the card",
-            rc3 == 0 and any(e["event"] == "delete" for e in ev3) and up.ls() == [],
-            f"rc {rc3} {ev3[-1:] if ev3 else ''}",
-        )
-        # ... and the folder follows the card: the file is removed (card.sync does not wait for the quiet period)
-        synced = emu.call("card.sync")
-        c.check(
-            "card.sync removes the deleted file from the folder",
-            not mirrored.exists() and synced["files"] == [],
-            str(synced),
-        )
-        rc4, ev4, _ = tool("restart")
-        up = DK.Uploader(TR.LiveTransport(emu))
-        _, _, evs = L.read_all(up)
-        c.check(
-            "the boot after the delete skips the selected path (MOD_LOAD E_NOT_FOUND) and reaches the UI",
-            rc4 == 0
-            and any(e[2] == L.K["MOD_LOAD"] and e[4][1] == 0xFFFFFFFF for e in evs)
-            and any(e[2] == L.K["UI_FIRST"] for e in evs)
-            and [m["name"] for m in up.modules()["modules"]] == [],
-            f"rc {rc4} {ev4[-2:]} "
-            + " | ".join(
-                L.text_of(L.event_dict(e)).strip()
-                for e in evs
-                if e[2] != L.K["DSP_DIAG"]
-            ),
-        )
-    finally:
-        emu.__exit__(None, None, None)
+    raise ValueError(f"unsupported live scenario part: {part!r}")
 
 
 KINDS = {

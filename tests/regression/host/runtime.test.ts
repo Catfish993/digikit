@@ -55,6 +55,20 @@ test('stock defaults retain snapshot load and stepped lifecycle', async () => {
   }
 });
 
+test('a mirrored runtime owns its mirror inside the temporary run directory', async () => {
+  const runtime = await startPatchedSession({ device: 'dn2', firmware: '1.12', mirror: true });
+  const runDir = runtime.session.runDir;
+  try {
+    expect(fs.existsSync(runDir)).toBe(true);
+    expect(fake.spawn.mock.calls[0]?.[0].args.slice(-2)).toEqual(['--mirror-dir', `${runDir}/mirror`]);
+    fs.mkdirSync(`${runDir}/mirror/digikit/modules`, { recursive: true });
+    fs.writeFileSync(`${runDir}/mirror/digikit/modules/pluck.dkm`, 'owned test data');
+  } finally {
+    await runtime.close();
+  }
+  expect(fs.existsSync(runDir), 'close removes the owned mirror along with its run directory').toBe(false);
+});
+
 test('patched fixture loads the card, requests runtime auto boot and free mode, and wires USB RPC', async () => {
   const runtime = await startPatchedSession({
     device: 'dt2',

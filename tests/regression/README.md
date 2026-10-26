@@ -58,7 +58,7 @@ UI tests select only `host` and retain the existing UI-only smoke exemption; pro
 helpers retain application checks.
 Consumer typecheck/check scripts and runtime imports resolve `@digi/dk-session` TypeScript source directly. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
 
-The `runtime-fixture` gate step runs the remote-keys and remote-control acceptance cases sequentially,
+The `runtime-fixture` gate step runs the remote, service-command and transfer acceptance cases sequentially,
 with one fresh coupled daemon per file/device. It requests `firmware.load {runtime:true, start:"auto"}` and the existing
 `emulator` patch set/cache, then selects free mode. It checks reported patch identity, ready/free status
 and health, then installs digikit/remote and checks ABOUT text and the encoder-driven OLED change.
@@ -95,7 +95,8 @@ and never builds native binaries. Omitting the filter runs all runtime acceptanc
 The step shares the gate CPU budget (one coupled daemon, two cores; use a budget of at least two).
 Selecting it alone adds no build prerequisite. When another selected step already requires
 `build-daemons`, it waits for that build and uses its published per-device binary paths. The step runs
-with `--full` or explicit `--only runtime-fixture`, preserving the migrated scenario’s original full tier.
+with `--full` or explicit `--only runtime-fixture`, preserving the remote scenarios’ original full tier.
+Transfer acceptance moved from quick to this explicit/full-only policy by approval.
 Normal verification selects host checks for runtime cases and helpers, with existing Python/Rust and
 conservative smoke routes for modules and tools; even broad changes exclude this device acceptance step.
 The separate `dt2-remote-control.test.ts` and `dn2-remote-control.test.ts` files explicitly request the
@@ -117,3 +118,27 @@ File/body times were DT2 negative 163.893/117.436 s, DT2 positive 149.687/97.149
 DN2 negative 162.688/151.364 s and DN2 positive 130.387/121.804 s. The coordinator confirmed no owned
 daemons remained. The host suite passed 46 tests in seven files; focused routing/discovery/selected
 Python checks passed 471 tests, and relevant types, lint/format and pathcheck passed. No speedup is claimed.
+
+
+CLI transfer acceptance lives in `runtime/transfer-live.ts` with one fresh daemon per device case.
+Run `mise run test:runtime -- transfer-live` with the binaries and DT2 card described above. The shared
+`runtime/transfer-cli.ts` invokes `tools.device.dktransfer` for install, delete and protocol restart;
+it saves raw CLI output on success and failure. Assertions cover the install result, epoch increase,
+store persistence, mirror SHA-256 and `card.folder` metadata, delete/empty listing, `card.sync` removal,
+and the next boot's `MOD_LOAD E_NOT_FOUND`, `UI_FIRST` and empty MODULES. Artifacts are saved under
+`out/regression/transfer-live/<device>/`; the mirror itself lives under the owned Session run directory
+and is removed at teardown. The 12-second free-running settle, 30-second mirror bound and exactly one
+post-delete protocol restart preserve the original boot history. Each CLI command has a 300-second
+bound and each transfer test body a 1000-second bound; shared startup/teardown bounds still apply.
+
+Transfer acceptance moved from Python's quick tier to explicit/full-only runtime acceptance by approval.
+Both device cases passed before the old transfer runner body and TOML were deleted. Python's full-tier
+sample and input-adapter live coverage and their shared helpers remain; quick-tier live wrappers use
+pytest's native empty-parameter skips. Fixtures, including `digikit/pluck`, remain in place.
+
+
+The coordinator's serial transfer acceptance passed on 2026-10-26 with existing preflighted binaries:
+`mise run test:runtime -- transfer-live` completed in 123.28 seconds. DT2 file/body times were
+79.078/48.250 seconds; DN2 file/body times were 43.876/37.180 seconds. Persistent evidence is the
+per-device CLI logs and store/folder/boot JSON in `out/regression/transfer-live/`; these are artifact
+records, not a raw Vitest output log. No performance comparison is claimed.

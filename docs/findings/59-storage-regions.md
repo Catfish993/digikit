@@ -60,7 +60,7 @@ Scenario `samples-live` (DT2 1.17, free-running daemon, `tools/devtools/samples_
 
 ## Proof of the new area and of the size check, run in the emulator (step 7)
 
-- **[D]** Module install, restart, load and delete in the per-device area run in `transfer-live` on both devices (quick tier): the file is listed in `modules/`, MODULES shows the module after the restart, the
+- **[D]** Module install, restart, load and delete in the per-device area ran in the original Python `transfer-live` on both devices (then quick tier; current coverage: `tests/regression/runtime/transfer-live.ts`, explicit/full-only runtime acceptance): the file is listed in `modules/`, MODULES shows the module after the restart, the
   mirror folder holds it with the card's sha256, a delete removes it everywhere and the next boot skips the missing path. Full tier: `upload-ops`, `upload-folders`, the power-cut scenarios.
 - **[D]** A card smaller than the area (`card-small`, both devices, the emulator's `small` identity with 0x3B0000 sectors): the runtime's check reads the area's last sector, the firmware's block read refuses it (`start < capacity`,
   above), the state is "too small" (5), the log gets one error event, uploads answer E_NOSTORE, CAPACITY STORE is 0 KiB, writes inside the area answer E_CARD_RO, nothing is written there, the boot reaches the UI.

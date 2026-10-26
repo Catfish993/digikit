@@ -61,8 +61,8 @@ build; the mirror removes it.
 ## Tests
 
 `plusdrive_format::mirror` (a store image written, mirrored, replaced, deleted, emptied; a blank start removes nothing; a torn store is an error to retry; the
-folder listing), `cardmirror` (the quiet period and its restart), `apps/desktop/ui/tests/card.test.ts` (the panel's texts), the live scenario `transfer-live` on DT2 and
-DN2 (a free-running daemon with `--mirror-dir`: install through `dktransfer`, the file appears in the folder with the card's sha256, `card.folder` lists it,
+folder listing), `cardmirror` (the quiet period and its restart), `apps/desktop/ui/tests/card.test.ts` (the panel's texts), `tests/regression/runtime/transfer-live.ts` on DT2 and
+DN2 (explicit/full-only runtime acceptance) (a free-running daemon with `--mirror-dir`: install through `dktransfer`, the file appears in the folder with the card's sha256, `card.folder` lists it,
 delete and `card.sync` remove it).
 
 ## Open

@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { DkSession } from '@digi/dk-session';
 import { button, repoRoot, resolveInputs, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
-import { installModule } from './module-install.ts';
+import { installModule } from './transfer-cli.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();

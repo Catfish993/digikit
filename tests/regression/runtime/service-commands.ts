@@ -5,7 +5,7 @@ import { RANGES } from '@digi/dk-session/gen_proto';
 import { repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { installModule } from './module-install.ts';
+import { installModule } from './transfer-cli.ts';
 
 /** Port of live-svc: runtime command registration, dispatch and refusal semantics. */
 export async function expectServiceCommands({ session, dk }: PatchedSession): Promise<void> {

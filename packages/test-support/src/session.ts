@@ -28,6 +28,8 @@ export interface SessionOptions {
   card?: string;
   /** Run directory; default a fresh temporary directory. */
   runDir?: string;
+  /** Mirror the module store under this session's run directory. */
+  mirror?: boolean;
   /** Stall threshold in emulated ms for the watchdog (default 1000, as the Python harness). */
   stallMs?: number;
   binary?: string;
@@ -84,6 +86,7 @@ export class Session {
             inp.cfSnapshot,
             '--no-audio',
           ];
+    if (options.mirror) args.push('--mirror-dir', path.join(runDir, 'mirror'));
     const controller = options.runtime ? new AbortController() : undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = controller

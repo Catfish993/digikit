@@ -74,7 +74,7 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run test:changed` | The tests the changed files select (`tools/devtools/changed_tests.py`): the tests that import a changed module under tools/ or tests/ (directly or through a tests helper or conftest; `--deep` also through other tools modules), the tests and quick-tier scenarios that name a changed module (for a framework module only the module itself), the fine routes of verify, the changed test files, and the Rust tests of the affected crates. Never a test directory and no PY_GATE. There is no top-level build step, but selected tests may build or launch a device/emulator; inspect the selection first. `--explain` prints each file with its reason and what the gate adds; `--base BRANCH` for a lane. | For affected Python/Rust/module tests while iterating |
 | `mise run test:host` | Native host Vitest projects; runner filters and worker options pass through. No native/WASM build or device inputs. | Host test iteration |
-| `mise run test:runtime -- service-commands` | Explicit serial coupled runtime acceptance with preflighted per-device binaries and generated card samples; native Vitest filters pass through, with no implicit native build. | Focused device acceptance; see [runtime prerequisites](../tests/regression/README.md) |
+| `mise run test:runtime -- transfer-live` | Explicit serial coupled runtime acceptance with preflighted per-device binaries and generated card samples; native Vitest filters pass through, with no implicit native build. | Focused device acceptance; see [runtime prerequisites](../tests/regression/README.md) |
 | `mise run verify:host` | Native mise sequence: global JS/TS lint and format, five host Vitest projects and five package type checks. Stops at the first failure. No Python, native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
 | `mise run verify:pre` | Optional preflight (`tools/devtools/verify_pre.py`): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No explicit pin or scenario step; selected tests may build or launch a device/emulator. It prints that it is not the merge gate. | Optional combined preflight; do not routinely run after `test:changed` |
 | `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, unless every changed path is UI-only or exactly a listed smoke-exempt path); a lane checks the routing with `--explain` |
@@ -164,6 +164,17 @@ scenario and its runner/dispatch were removed afterward. Shared live helpers and
 to `packages/dk-session/tests/remote.test.ts` and run in `host`. Normal verification, including broad routing/core/unknown changes, excludes this step;
 runtime cases and helpers retain cheap host checks in `host`, and module/tool routes retain their existing
 Python/Rust and smoke selections. See [regression fixture details](../tests/regression/README.md).
+The `*-transfer-live.test.ts` cases own CLI install/restart persistence, card-store listing, mirror SHA-256
+and metadata, CLI delete, `card.sync`, and the missing selected module's `MOD_LOAD E_NOT_FOUND`/`UI_FIRST` boot.
+They invoke `tools.device.dktransfer` through `tests/regression/runtime/transfer-cli.ts`, using the default
+`emulator` patch set, a generated DT2 sample card and no DN2 card. Each fresh session owns its mirror under
+its temporary run directory. The original 12-second free-running settle, 30-second mirror wait and single
+post-delete protocol restart remain. Artifacts go to `out/regression/transfer-live/<device>/`.
+Moving transfer acceptance from Python's quick tier to explicit/full-only `runtime-fixture` was approved;
+normal verification retains host checks rather than running these device cases. The replaced Python
+transfer body/TOML were removed after both devices passed; shared live helpers and the full-tier sample
+and input-adapter cases remain. Quick-tier live wrappers retain pytest's native empty-parameter skips.
+
 Host-only: `mise run test:host` (or `pnpm test:host`) runs the root `vitest.host.config.ts` projects `control-client`,
 `test-support`, `dk-session`, `regression-host` and `desktop-host`, with explicit host-only includes and one worker by
 default (override with `mise run test:host -- --maxWorkers N`). The `host` step delegates to the native mise
