@@ -27,7 +27,7 @@ from tools.emulator import coupled, digi_env, fxcheck  # noqa: E402
 # Scenario file by name prefix and device. The standard peeks (the Sound array
 # of track 1 and the Fx array of the kit) come from fxcheck, per device.
 FILES = {
-    "dn2": {"tf": "dn2-trackfx.json", "sf": "dn2-sendfx.json", "fx": "dn2-fx.json"},
+    "dn2": {"tf": "../regression/scenarios/dn2-trackfx.ts", "sf": "dn2-sendfx.json", "fx": "dn2-fx.json"},
     "dt2": {"tf": "dt2-trackfx.json", "sf": "dt2-sendfx.json"},
 }
 

@@ -74,10 +74,12 @@ translator or performance change cannot silently break an effect. All of it is
 marked `slow`, so plain `pytest tests` skips it.
 
 ```
-mise run scenario:check       # fast subset (61 tests, about 3 min)
-mise run scenario:sweep       # plus the full sweeps (every tf-* and sf-* scenario)
+mise run scenario:check       # Python sendFX + Vitest trackFX quick subsets
+mise run scenario:sweep       # full Python sendFX + all 79 Vitest trackFX assertions
 uv run python -m pytest tests/scenarios --slow -k delay      # only what you select is rendered
 ```
+
+DN2 trackFX has moved to readable TypeScript source and native Vitest assertions in `tests/regression/scenarios`; [the coverage map](../regression/scenarios/README.md) records all 47 cases and 79 assertion identities. `mise run test:fx` runs only this family without building; `DIGI_FX_SWEEP=1` adds the full sweep. Python below retains sendFX, DT2 and shared rendering/analysis.
 
 Batches are rendered in parallel: `--jobs N` (default `DIGI_JOBS`, else
 `min(cpus - 2, 6)`; `--jobs 1` is one process) coupled-run processes, each about

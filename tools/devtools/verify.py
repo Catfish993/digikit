@@ -82,7 +82,10 @@ from tools.emulator import (  # noqa: E402
 )
 
 PY = ["uv", "run", "python"]
-FX_FILES = ("tests/scenarios/dn2-trackfx.json", "tests/scenarios/dn2-sendfx.json")
+FX_FILES = (
+    "tests/regression/scenarios/dn2-trackfx.ts",
+    "tests/scenarios/dn2-sendfx.json",
+)
 DT2_FX_FILES = ("tests/scenarios/dt2-trackfx.json", "tests/scenarios/dt2-sendfx.json")
 # python-tests always runs PY_GATE: lint, types, paths and the staleness checks (built module objects and
 # port files match their sources). A suite of PY_SUITES, (name, trigger prefixes, test paths), runs when a
@@ -243,7 +246,7 @@ TIER_QUICK_EVERY = 7
 # The DT2 files have fewer scenarios (their numbers differ) and run in the interpreter alone (about 80 s per
 # audio second), so the DT2 pick is the shortest one per path.
 NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
-    "tests/scenarios/dn2-trackfx.json": (
+    "tests/regression/scenarios/dn2-trackfx.ts": (
         "tf-dry-hold",
         "tf-br-127",
         "tf-over-71",
@@ -281,8 +284,8 @@ NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
 # default feedback level. The tier steps compare the PCM itself on NO_AOT_SUBSET.
 CHECK_NO_AOT_K = (
     "(test_healthy or test_readback) and "
-    "(tf-dry-hold or tf-br-127 or tf-over-127 or tf-srr-127 or sf-del-time-u20 or sf-rev-decay-u20 or sf-chr-speed-u20)"
-    " or test_delay_default_feedback_minus_6_db or test_srr_rate_falls or test_chorus_rate_rises_with_speed"
+    "(sf-del-time-u20 or sf-rev-decay-u20 or sf-chr-speed-u20)"
+    " or test_delay_default_feedback_minus_6_db or test_chorus_rate_rises_with_speed"
     " or test_reverb_rt60_rises_with_decay"
 )
 # Normal broad verification excludes full-tier or explicitly requested steps.
@@ -341,6 +344,10 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ("dt2-check", "dt2-tier-quick", "python-tests"),
     ),
     (
+        ("tests/regression/scenarios/", "tests/regression/vitest.fx.config.ts"),
+        ("host", "check", "check-no-aot", "tier-quick"),
+    ),
+    (
         (
             "packages/control-client/",
             "packages/test-support/",
@@ -362,7 +369,12 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ("web",),
     ),
     (("apps/web/",), ("web",)),
-    (("apps/desktop/",), ("desktop", "web")),
+    # The mixed web samples suite still imports these desktop sources.
+    (
+        ("apps/desktop/ui/src/card-core.ts", "apps/desktop/ui/src/samples-core.ts"),
+        ("desktop", "web"),
+    ),
+    (("apps/desktop/",), ("desktop", "host")),
     (
         (
             "tools/sharc_dev/sharc_core/",
@@ -1464,6 +1476,17 @@ def run_step(gate: Gate, step: str) -> None:
         gate.run("pins", cmd)
     elif step == "check":
         gate.run("check", scenario_tests, check=pytest_ran)
+        gate.run(
+            "check-trackfx",
+            ["pnpm", "--filter", "@digi/regression", "test:fx"],
+            env={
+                **os.environ,
+                "DIGI_FX_NO_AOT_SUBSET": "0",
+                "DIGI_FX_SWEEP": "1"
+                if os.environ.get("DIGIKIT_TIER") == "full"
+                else "0",
+            },
+        )
     elif step == "check-no-aot":
         subset = [] if gate.all_no_aot else ["-k", CHECK_NO_AOT_K]
         gate.run(
@@ -1471,6 +1494,17 @@ def run_step(gate: Gate, step: str) -> None:
             [*scenario_tests, *subset],
             env=no_aot_env(),
             check=pytest_ran,
+        )
+        gate.run(
+            "check-no-aot-trackfx",
+            ["pnpm", "--filter", "@digi/regression", "test:fx"],
+            env={
+                **no_aot_env(),
+                "DIGI_FX_NO_AOT_SUBSET": "0" if gate.all_no_aot else "1",
+                "DIGI_FX_SWEEP": "1"
+                if gate.all_no_aot and os.environ.get("DIGIKIT_TIER") == "full"
+                else "0",
+            },
         )
     elif step == "tier-quick":
         tier(gate, "tier-quick", TIER_QUICK_EVERY)

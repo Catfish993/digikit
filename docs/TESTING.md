@@ -4,6 +4,50 @@ Python tests are in `tests/`, grouped by the code they test. Web tests and Rust
 tests live with their code.
 Planned changes (four test levels, native module tests, TypeScript): [docs/plans/test-architecture.md](plans/test-architecture.md).
 
+## Test boundaries
+
+Classify a test by the behavior it proves, separately from how it executes:
+
+| Level | Boundary and evidence |
+| --- | --- |
+| Unit | A function or module's behavior with controlled inputs, such as packing, routing or UI state |
+| Component integration | Real collaborating components, such as protocol/storage code, an assembler/linker or an isolated DSP routine/ABI |
+| Device/system | Loaded firmware behavior across UI, storage, upload, module lifecycle or playback, on an emulator or suitable physical device |
+| Application E2E | A user workflow through the actual desktop/browser application and its required backend |
+
+Firmware inputs, build prerequisites, CF-only/coupled mode, device/version, exclusive resources and cost
+are execution requirements, not levels. Quick/full describes workload; regression/differential describes
+purpose or comparison. A mocked UI test, preview or daemon scenario alone does not establish actual app E2E
+coverage. A successful boot or absence of a fault proves only the observations asserted in that run.
+
+Current ownership is in the layout below: Python by owner under `tests/`, Rust in its crate, host TypeScript
+in package tests and `apps/desktop/ui/tests/`, and cross-component runtime acceptance in
+`tests/regression/runtime/`. These directories still contain mixed levels; this contract does not claim
+that every proposed unit, isolated-module or app E2E boundary is implemented. Keep new tests near their
+owner; split mixed suites incrementally when selection and independent setup justify it.
+
+| Change/risk | Current checks and boundary limits |
+| --- | --- |
+| Desktop UI or app | `desktop` builds/types the UI and tests the app crate; `host` covers the host projects. Desktop UI test files select only `host`. Ordinary desktop paths no longer select web/WASM. Temporary exceptions: `apps/desktop/ui/src/card-core.ts` and `apps/desktop/ui/src/samples-core.ts` retain `web` because `apps/web/tests/samples-page.test.mjs` imports them. Actual app workflows require separate E2E acceptance. |
+| Emulator | Routed builds, Rust tests and relevant device/scenario oracles check emulator behavior; CF-only UI evidence does not establish coupled DSP/audio behavior. Inspect `verify -- --explain` for the selected prerequisites. |
+| Leaf module | Affected Python/Rust tests, named scenarios and conformance; web only for gallery inputs, with broad smoke retained. Isolated native module tests remain a proposed boundary, not a replacement for firmware integration. |
+| Patched runtime intended for flashing | Python/Rust and broad smoke remain normally routed; framework modules also select dependent patchkit/digikit coverage. Migrated TypeScript runtime acceptance is full/explicit-only (`runtime-fixture` or `test:runtime`), so ordinary verification does not cover those acceptance assertions. Physical installation/operation requires separate target acceptance. |
+
+`test:changed` selects Python/Rust/module checks only; run `test:host` or `verify:host` separately for
+host work. Selected Python tests can still build or start devices. Further splitting of mixed Python
+suites into host-only and device checks is pending. Smoke remains broad except the documented UI-only and exact exemptions; no new
+exemptions follow from these levels. Future hardware scenarios should reuse suitable semantic actions
+and assertions, with target-specific condition waits rather than precise emulator instruction timing.
+
+Before migrating a suite, inventory old/new test identities, assertions, fixtures, device versions/modes,
+selection tier, prerequisites, setup/action/assertion/cleanup and failure artifacts. Acceptance includes
+updated discovery/imports/routes/docs, equivalent retained observations, explicit selection changes and
+removal of superseded tests and helpers only after their replacements pass. Record measured build, startup,
+settle, body and cleanup costs where available; no lifecycle speed claim follows from a file move.
+Session reuse needs a demonstrated independent reset of firmware, DSP, card, pending requests and host
+state, plus failure/cancellation cleanup. Fresh sessions remain the runtime fixture's current isolation;
+pooling/reset safety and further migrations are separate work.
+
 ## Layout
 
 | Directory | What it tests | Main code under test |
@@ -22,13 +66,17 @@ Planned changes (four test levels, native module tests, TypeScript): [docs/plans
 | `tests/dsp` | DSP maps and diffs, FX scenario generators, audio checks | DSP tools |
 | `tests/devtools` | Lint (ruff `CLEAN` list), types (mypy `TYPED` list), PyPy, benchlock, verify routing, test_outcomes | `tools/devtools/verify.py`, `tools/devtools/benchlock.py`, `tools/devtools/test_outcomes.py` |
 | `tests/digikit` | The digikit runtime's boot-time scenarios: data files (`scenarios/*.toml`) and the runner `tools/patchkit/pk_digikit_scen.py`; routed by the verify suite `digikit-boot`. Slow (coupled cold boots). | `modules/core/runtime`, `core/dynreg`, `core/dsp-link`, `core/dyndsp`, `core/digikit-menu`, `tools/patchkit/pk_dkrt_boot.py` |
-| `tests/scenarios` | Emulator scenario oracles. Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenario:*`. | `tests/scenarios/`, `tools/emulator/coupled.py` |
+| `tests/scenarios` | Python sendFX and DT2 emulator scenario oracles; DN2 trackFX source/assertions live in `tests/regression/scenarios` ([coverage map](../tests/regression/scenarios/README.md)). Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenario:*`. | `tests/scenarios/`, `tools/emulator/coupled.py` |
 | `tests/support` | Helpers shared by tests. No `test_` prefix, not collected. `tests/support/paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS`. | |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures | |
 
 Other tests:
 
 - `apps/web/tests` holds the web app's node tests (`pnpm test`).
+- Host Vitest owners are `packages/control-client/tests`, `packages/dk-session/tests`,
+  `packages/test-support/tests`, `apps/desktop/ui/tests` and `tests/regression/host` (`pnpm test:host`).
+- `tests/regression/runtime` holds explicit coupled firmware acceptance; `tests/regression` also owns
+  stock CF-only device scenarios. See [fixture details](../tests/regression/README.md).
 - Rust tests live in their crates (`cargo nextest run`, run through `tools/devtools/rust_ws.py`).
 
 ## Writing a test
@@ -68,7 +116,7 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | Command | What runs | When |
 | --- | --- | --- |
 | `mise run test:quick` | Launcher, PGO, target and coupled-tool tests in `tests/emulator`, then `tools/emulator/coupled.py test-quick` | Fast check of the tooling, audio sink and coupled runtime |
-| `mise run test` | `uv run python -m tools.devtools.test_outcomes run --check --out out/runs/tests/latest tests` (each test file in its own process, 4 in parallel by default, exits 1 when a file fails), then `tools/devtools/rust_ws.py test`, `pnpm test`, every DN2 scenario pin | Everything except the slow gates |
+| `mise run test` | `uv run python -m tools.devtools.test_outcomes run --check --out out/runs/tests/latest tests` (each test file in its own process, 4 in parallel by default, exits 1 when a file fails), then `tools/devtools/rust_ws.py test`, `pnpm test:host`, `pnpm test`, every DN2 scenario pin | Broad tests; excludes slow gates and explicit runtime acceptance |
 | `mise run test:slow` | The same runner with `--pytest-arg=--slow` and a one-hour per-file timeout, then `tools/devtools/rust_ws.py gates` | Slow runs and the ignored Rust gates that need private fixtures |
 | `mise run lint` | `lint:py` (ruff check and format check on the `CLEAN` list), `lint:web` (oxlint on the JS/TS workspaces), `fmt:check` (Prettier check; `mise run fmt` formats in place), `lint:rust` (cargo fmt check) | Before a commit |
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
@@ -80,10 +128,11 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, unless every changed path is UI-only or exactly a listed smoke-exempt path); a lane checks the routing with `--explain` |
 | `mise run verify:full` | Every step (about 7 min with a warm render cache, about 20 min when DSP/native code changed). The AOT = no-AOT sweep runs the fixed subset; `-- --all-no-aot` runs all 134 scenarios and all 61 oracle tests. | Only after changes to the generated core |
 | `mise run scenario:all` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
-| `mise run scenario:check` | `pytest tests/scenarios --slow`: DN2 FX oracles, fast subset (about 3 min) | After DSP or scenario changes |
+| `mise run test:fx` | Native Vitest stock DN2 1.12 trackFX:34 quick assertions; `DIGI_FX_SWEEP=1` selects all 79. No implicit build; requires current generated core, ready inputs, MAIN OS image and existing coupled-run binary. `DIGI_JOBS` bounds rendering (default 1). [Coverage/lifecycle](../tests/regression/scenarios/README.md). | Focused stock audio acceptance |
+| `mise run scenario:check` | Python sendFX oracles followed by native Vitest DN2 trackFX quick assertions (34); Python retains its existing build behavior | After DSP or scenario changes |
 | `mise run dev:plusdrive-check` | The firmware's own view (mount, readdir, lookup, read) of an image built from a folder: nested folders, plain files, a multi-page directory, multi-extent files (about 1 min; `verify` runs it in the `card-fs` step when `packages/emulator/plusdrive/` changes) | After +Drive builder changes |
 | `mise run scenario:check:dt2` | DT2 FX oracles on the one-sample card (about 2 min) | After DT2 changes |
-| `mise run scenario:sweep` | Oracles with the full sweeps (about 20 min) | Before a merge |
+| `mise run scenario:sweep` | Python sendFX full sweeps followed by all 79 Vitest trackFX assertions (47 scenarios) | Before a merge |
 | `mise run patch:test` | Smoke tour and module tests over `tests/patchkit/smoke/matrix.toml` | After patchkit or module changes |
 | `mise run patch:proofs` | Every emulator proof on its quick tier, in sequence | After patchkit or module changes |
 | `uv run python -m tools.devtools.test_outcomes run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
@@ -150,6 +199,7 @@ smoke is skipped and `--explain` prints `smoke: skipped, UI-only change`. It is 
 | `tests/digikit/test_*.py`, `tests/patchkit/test_*.py` | `python-tests` | the file itself |
 | another `.py` file of `tools/` or `tests/` | by its prefix (RULES) | the tests that reach it in the import graph (`changed_tests.gate_tests`: imports through any chain, a helper imported by its pytest path, a module started by name with `-m` or a script path; imports inside a function of a tools module do not count), and the PY_SUITES that list files. A suite with a test directory (`tests/patchkit`, `tests/digikit`, `tests/modules`, `tests/control`) triggers only on other files (Rust, ports, module folders) and on a module the root conftest reaches |
 | `packages/dkupload/` | `rust-tests`, `web` | |
+| `apps/desktop/` | `desktop`, `host`; UI test files select only `host`. The two samples-suite source exceptions above also retain `web`. Smoke follows the unchanged rules above. | |
 | `tools/devtools/verify.py`, `verify_route.py` | every normal step | every suite |
 | generated-core inputs, emulator crates, `sharc_dev` | as before (broad) | as before |
 

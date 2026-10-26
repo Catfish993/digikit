@@ -113,3 +113,58 @@ def test_feature_variant_keeps_default_dir(monkeypatch):
     assert default != feature
     assert feature.parent.parent.name == "feat-cf-mix+coupled-audio"
     assert default.name == feature.name == "coupled-run"
+
+
+def test_typescript_scenario_resolution_is_fresh_and_materialization_is_content_addressed(
+    tmp_path, monkeypatch
+):
+    import json
+    from types import SimpleNamespace
+
+    source = tmp_path / "cases.ts"
+    source.write_text("// Node source is mocked")
+    document = {"scenarios": [{"name": "one", "seconds": 2, "events": []}]}
+    calls = []
+
+    def node(argv, **kwargs):
+        calls.append(argv)
+        assert kwargs["check"] and kwargs["timeout"] == 30
+        return SimpleNamespace(stdout=json.dumps(document))
+
+    monkeypatch.setattr(coupled.subprocess, "run", node)
+    monkeypatch.setattr(coupled, "ROOT", tmp_path)
+    assert coupled.scenario_seconds(source) == {"one": 2.0}
+    assert not (tmp_path / "out").exists()  # enumeration/explain is read-only
+    first = coupled.scenario_path(source)
+    assert json.loads(first.read_text()) == document
+    assert coupled.scenario_path(first) == first
+    document["scenarios"][0]["seconds"] = 3
+    second = coupled.scenario_path(source)
+    assert first != second
+    assert coupled.scenario_seconds(source) == {"one": 3.0}
+    assert len(calls) == 4
+
+
+def test_check_generated_refuses_stale_core_before_any_binary_or_render(monkeypatch):
+    import pytest
+
+    args = coupled.parser().parse_args(
+        ["scenario", "one", "--no-build", "--check-generated"]
+    )
+    args.extra = []
+    monkeypatch.setattr(
+        coupled, "generated", lambda device: Path("gen") if device == "dn2" else None
+    )
+
+    def stale(path):
+        assert path == Path("gen")
+        raise SystemExit("stale core")
+
+    monkeypatch.setattr(coupled.digi_env, "check_generated", stale)
+    monkeypatch.setattr(
+        coupled,
+        "ensure_binary",
+        lambda *args: pytest.fail("binary preparation before stale-core rejection"),
+    )
+    with pytest.raises(SystemExit, match="stale core"):
+        coupled.cmd_scenario(args)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -89,10 +90,22 @@ def test_desktop_host_tests_select_only_host(name: str) -> None:
         "apps/desktop/ui/src/wait-core.ts",
         "apps/desktop/package.json",
         "apps/desktop/ui/tsconfig.json",
+        "apps/desktop/src-tauri/src/main.rs",
     ],
 )
 def test_desktop_host_sources_keep_app_checks(path: str) -> None:
-    assert {"desktop", "web", "host"} <= set(verify.steps_for([path]))
+    steps = set(verify.steps_for([path]))
+    assert {"desktop", "host"} <= steps
+    assert "web" not in steps
+
+
+@pytest.mark.parametrize("name", ["card-core", "samples-core"])
+def test_desktop_sources_used_by_web_samples_keep_web_checks(name: str) -> None:
+    assert verify.steps_for([f"apps/desktop/ui/src/{name}.ts"]) == (
+        "desktop",
+        "host",
+        "web",
+    )
 
 
 def test_host_test_exemptions_mix_with_ui_docs_and_maintenance() -> None:
@@ -1259,3 +1272,55 @@ def test_root_format_scripts_share_scope() -> None:
     assert check[:2] == ["prettier", "--check"]
     assert write[2:] == check[2:]
     assert check[2] == "."
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tests/regression/scenarios/dn2-trackfx.ts",
+        "tests/regression/scenarios/dn2-trackfx.test.ts",
+        "tests/regression/scenarios/fx-support.ts",
+        "tests/regression/vitest.fx.config.ts",
+    ],
+)
+def test_stock_audio_sources_keep_device_oracles_and_tier_checks(path: str) -> None:
+    assert {"host", "check", "check-no-aot", "tier-quick", "smoke"} <= set(
+        verify.steps_for([path])
+    )
+    assert "runtime-fixture" not in verify.steps_for([path])
+
+
+@pytest.mark.parametrize(
+    "full,all_no_aot", [(False, False), (True, False), (False, True), (True, True)]
+)
+def test_trackfx_gate_tiers_override_ambient_selection(monkeypatch, full, all_no_aot):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("DIGIKIT_TIER", "full" if full else "quick")
+    monkeypatch.setenv("DIGI_FX_SWEEP", "1")
+    monkeypatch.setenv("DIGI_FX_NO_AOT_SUBSET", "1")
+    calls = []
+    gate = SimpleNamespace(
+        all_no_aot=all_no_aot,
+        step_env=lambda: {"DIGI_JOBS": "2"},
+        run=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    verify.run_step(gate, "check")
+    assert calls[-1][0] == (
+        "check-trackfx",
+        ["pnpm", "--filter", "@digi/regression", "test:fx"],
+    )
+    env = calls[-1][1]["env"]
+    assert env["DIGI_FX_SWEEP"] == str(int(full))
+    assert env["DIGI_FX_NO_AOT_SUBSET"] == "0"
+    assert env["PATH"] == os.environ["PATH"]
+    calls.clear()
+    verify.run_step(gate, "check-no-aot")
+    env = calls[-1][1]["env"]
+    assert env["DIGI_FX_SWEEP"] == str(int(full and all_no_aot))
+    assert env["DIGI_FX_NO_AOT_SUBSET"] == str(int(not all_no_aot))
+    assert all(
+        env[key] == value
+        for key, value in verify.no_aot_env().items()
+        if key not in {"DIGI_FX_SWEEP", "DIGI_FX_NO_AOT_SUBSET"}
+    )

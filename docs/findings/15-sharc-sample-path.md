@@ -686,7 +686,7 @@ statements in the SHARC+ Core Programming Reference:
 
 It also matched the implementation against them, and decoded 0xb840d2,
 0xb84225 and 0xb84228 from the DN2 1.11 image as stated above. The
-track-FX sweep (`tests/scenarios/dn2-trackfx.json`, `tools/emulator/fxcheck.py`) then
+track-FX sweep (`REF:tests/scenarios/dn2-trackfx.json`, `tools/emulator/fxcheck.py`) then
 measured the delay with the fix: echoes 0.375 s apart, each about 6 dB
 quieter than the one before.
 

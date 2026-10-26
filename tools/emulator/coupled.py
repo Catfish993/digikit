@@ -35,6 +35,7 @@ import random
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -298,7 +299,7 @@ def run_and_report(binary: pathlib.Path, selection: list[str], args) -> int:
     device = getattr(args, "device", "dn2")
     scenario_file = getattr(args, "scenarios", None)
     if scenario_file:
-        extra = ["--scenarios", str(pathlib.Path(scenario_file).resolve()), *extra]
+        extra = ["--scenarios", str(scenario_path(scenario_file)), *extra]
     elif device != "dn2":
         extra = [
             "--scenarios",
@@ -322,10 +323,50 @@ def run_and_report(binary: pathlib.Path, selection: list[str], args) -> int:
     return done.returncode
 
 
+def scenario_document(scenarios_file: pathlib.Path | str) -> dict:
+    """Read JSON or execute an erasable TypeScript scenario source with Node >=24.
+
+    Always evaluate source afresh; callers may retain this document for their batch.
+    Enumeration does not write generated files (including in verify --explain).
+    """
+    path = pathlib.Path(scenarios_file).resolve()
+    if path.suffix == ".ts":
+        done = subprocess.run(
+            ["node", str(path)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+        return json.loads(done.stdout)
+    return json.loads(path.read_text())
+
+
+def scenario_path(scenarios_file: pathlib.Path | str) -> pathlib.Path:
+    """Materialize TS as content-addressed JSON only when a native runner needs it."""
+    source = pathlib.Path(scenarios_file).resolve()
+    if source.suffix != ".ts":
+        return source
+    payload = json.dumps(scenario_document(source), separators=(",", ":")).encode()
+    digest = hashlib.sha256(payload).hexdigest()
+    path = ROOT / "out" / "scenarios" / f"{digest}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as handle:
+            temporary = pathlib.Path(handle.name)
+            try:
+                handle.write(payload)
+                handle.close()
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
+    return path
+
+
 def scenario_seconds(scenarios_file: pathlib.Path | str) -> dict[str, float]:
     """Audio seconds of each scenario in a scenario file (its cost to render)."""
-    with pathlib.Path(scenarios_file).open() as handle:
-        doc = json.load(handle)
+    doc = scenario_document(scenarios_file)
     return {
         sc["name"]: float(sc.get("seconds") or 0.0) for sc in doc.get("scenarios", [])
     }
@@ -445,7 +486,7 @@ def run_batch(
         binary = ensure_binary(no_build, device)
     run_dir = pathlib.Path(run_dir)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
-    scn = str(pathlib.Path(scenarios_file).resolve())
+    scn = str(scenario_path(scenarios_file))
     if cache is None:
         cache = render_cache.RenderCache()
     use_cache = cache.enabled and not parsed
@@ -631,6 +672,8 @@ def want_dump(args) -> None:
 
 def cmd_scenario(args) -> int:
     want_dump(args)
+    if getattr(args, "check_generated", False):
+        digi_env.check_generated(generated(getattr(args, "device", "dn2")))
     binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"))
     if not args.names and not args.all:
         raise SystemExit("coupled: give scenario names or --all")
@@ -830,6 +873,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("names", nargs="*", metavar="NAME")
     p.add_argument("--all", action="store_true", help="run every scenario of the file")
     p.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
+    p.add_argument(
+        "--check-generated",
+        action="store_true",
+        help="fail before rendering if the generated core is stale or missing",
+    )
     p.add_argument("--seconds", type=float)
     p.add_argument(
         "--jobs",

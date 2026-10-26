@@ -35,7 +35,7 @@ SCENARIOS = [
     "tests/scenarios/dn2.json:trig1-taps",
     "tests/scenarios/dn2.json:kb-chord16",
     *(
-        f"tests/scenarios/dn2-trackfx.json:tf-{fx}-127"
+        f"tests/regression/scenarios/dn2-trackfx.ts:tf-{fx}-127"
         for fx in ("br", "srr", "over", "del", "rev", "chr")
     ),
     "tests/scenarios/dn2-sendfx.json:sf-del-fb-d127",

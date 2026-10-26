@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:update": "UPDATE_GOLDENS=1 vitest run",
     "test:runtime": "vitest run --config vitest.runtime.config.ts",
-    "test:host": "pnpm -w test:host --project regression-host"
+    "test:host": "pnpm -w test:host --project regression-host",
+    "test:fx": "vitest run --config vitest.fx.config.ts"
   },
   "dependencies": {
     "@digi/control-client": "workspace:*",

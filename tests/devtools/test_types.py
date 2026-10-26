@@ -45,7 +45,6 @@ TYPED = [
     "tools/emulator/fxcheck.py",
     "tools/coldfire/paramtable.py",
     "tools/emulator/scenario_dsl.py",
-    "tools/emulator/gen_trackfx.py",
     "tools/emulator/gen_sendfx.py",
     "tools/emulator/gen_dt2fx.py",
     "tools/emulator/dt2fx.py",

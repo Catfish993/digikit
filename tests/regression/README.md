@@ -142,3 +142,7 @@ The coordinator's serial transfer acceptance passed on 2026-10-26 with existing 
 79.078/48.250 seconds; DN2 file/body times were 43.876/37.180 seconds. Persistent evidence is the
 per-device CLI logs and store/folder/boot JSON in `out/regression/transfer-live/`; these are artifact
 records, not a raw Vitest output log. No performance comparison is claimed.
+
+## Stock coupled audio
+
+DN2 1.12 trackFX has its own `vitest.fx.config.ts`, separate from the stock CF-only UI and patched runtime configurations. `mise run test:fx` runs 34 quick assertions; `DIGI_FX_SWEEP=1 mise run test:fx` runs all 79 assertions across 47 canonical cases, without building. It needs preflighted stock coupled inputs and an existing binary; the caller supplies `DIGI_JOBS` from the shared CPU budget. Native test-name filters render only declared cases and their references. Python still owns cached rendering and NumPy analysis. See [the coverage map, lifecycle and commands](scenarios/README.md).

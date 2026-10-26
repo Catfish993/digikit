@@ -10,7 +10,7 @@ given run directories. Parameter values come from the report's ``peek``
 (s16 big-endian, UI value = high byte). Writes fxcheck.json and, unless
 --no-plots, plots-<scenario>/ (audiocheck plots) into each run directory.
 
-Track FX sweeps (tests/scenarios/dn2-trackfx.json, ``tf-*``): the reference is
+Track FX sweeps (tests/regression/scenarios/dn2-trackfx.ts, ``tf-*``): the reference is
 tf-dry-hold or tf-dry-tap by hold time, every run decodes the whole peeked
 Sound and Fx arrays by parameter name (descriptor table of --image, default the
 DN2 1.12 MAIN OS) and lists the ones that differ from the reference, and the
@@ -188,7 +188,11 @@ def diff_vs_dry(
 
 # --- scenario files, run loading ---------------------------------------------
 
-SCENARIO_FILES: tuple[str, ...] = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
+SCENARIO_FILES: tuple[str, ...] = (
+    "dn2-fx.json",
+    "../regression/scenarios/dn2-trackfx.ts",
+    "dn2-sendfx.json",
+)
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
 
@@ -199,7 +203,9 @@ def scenario_events() -> dict[str, list[dict]]:
     for fn in SCENARIO_FILES:
         f = ROOT / "tests" / "scenarios" / fn
         if f.exists():
-            for s in json.loads(f.read_text())["scenarios"]:
+            from tools.emulator.coupled import scenario_document
+
+            for s in scenario_document(f)["scenarios"]:
                 out[s["name"]] = s["events"]
     return out
 
@@ -274,7 +280,11 @@ def configure(device: str) -> None:
         BR_IDX, DSEND_IDX = 64, 55
     elif device == "dn2":
         F0 = 261.6
-        SCENARIO_FILES = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
+        SCENARIO_FILES = (
+            "dn2-fx.json",
+            "../regression/scenarios/dn2-trackfx.ts",
+            "dn2-sendfx.json",
+        )
         DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.12" / "section_3_MAIN_OS.bin"
         SND_PEEK = "snd=*0x800052a0+0x48:202"
         FX_PEEK = "fx=*0x800052a4+0:202"
@@ -332,7 +342,7 @@ def snd_ui(vals: dict[str, int], idx: int) -> int | None:
     return None
 
 
-# --- per-control measures (tests/scenarios/dn2-trackfx.json) ------------------------
+# --- per-control measures (tests/regression/scenarios/dn2-trackfx.ts) ------------------------
 
 HOLD_FAMILIES = ("br", "over", "srr")
 SEND_FAMILIES = ("del", "rev", "chr")
@@ -794,6 +804,30 @@ def series(res: dict[str, dict[str, Any]]) -> list[str]:
     return lines
 
 
+def pcm_observations(x: ac.F, reference: ac.F | None, name: str) -> dict[str, Any]:
+    """Exact NumPy comparisons for external oracle consumers; no signal approximation."""
+    return {
+        "shape": list(x.shape),
+        "mono_equal": bool(np.array_equal(x[:, 0], x[:, 1])),
+        "reference": name,
+        "reference_shape": list(reference.shape) if reference is not None else None,
+        "reference_equal": bool(np.array_equal(x, reference))
+        if reference is not None
+        else None,
+    }
+
+
+def json_measurements(value: Any) -> Any:
+    """Undefined/nonfinite measurements are null at the JSON interchange boundary."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: json_measurements(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_measurements(item) for item in value]
+    return value
+
+
 def check(
     runs: list[pathlib.Path],
     ref_name: str | None,
@@ -834,6 +868,8 @@ def check(
             "peek_ui": pui,
             "analysis": ac.analyse(x, rate),
             "onset_s": t0,
+            "decoded": dec,
+            "pcm": pcm_observations(x, ref[3] if ref else None, refs[name]),
         }
         if dec and ref and not is_ref:
             row["readback_diff"] = readback_diff(dec, decoded[refs[name]])
@@ -896,7 +932,10 @@ def check(
                 v["tf"].pop("_res", None)
             if "sf" in v:
                 v["sf"].pop("_res", None)
-        (d / "fxcheck.json").write_text(json.dumps(mine, indent=2, default=str) + "\n")
+        (d / "fxcheck.json").write_text(
+            json.dumps(json_measurements(mine), indent=2, default=str, allow_nan=False)
+            + "\n"
+        )
     return res
 
 

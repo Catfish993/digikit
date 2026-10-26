@@ -23,22 +23,10 @@ SCENARIOS = REPO_ROOT / "tests" / "scenarios"
 
 # --- scenario sets ------------------------------------------------------------
 
-TF_FAST = (
-    "tf-dry-hold",
-    "tf-br-0", "tf-br-44", "tf-br-127",
-    "tf-over-0", "tf-over-44", "tf-over-127",
-    "tf-srr-0", "tf-srr-44", "tf-srr-127",
-)  # fmt: skip
 SF_FAST = (
     "sf-del-ref", "sf-del-time-u20", "sf-del-fb-d127", "sf-del-width-d127",
     "sf-rev-ref", "sf-rev-decay-d127", "sf-rev-decay-u20",
     "sf-chr-ref", "sf-chr-speed-d127", "sf-chr-speed-u20", "sf-chr-width-d127",
-)  # fmt: skip
-TF_SWEEP = (
-    "tf-br-28", "tf-br-71", "tf-br-93",
-    "tf-over-28", "tf-over-71", "tf-over-93",
-    "tf-srr-28", "tf-srr-71", "tf-srr-93",
-    "tf-dry-tap", "tf-del-0", "tf-rev-0", "tf-chr-0",
 )  # fmt: skip
 SF_SWEEP = (
     "sf-del-time-u44", "sf-del-time-u127", "sf-del-width-d44", "sf-del-width-u44",
@@ -111,9 +99,9 @@ def assert_ordered(
 
 def every_scenario() -> tuple[str, ...]:
     """Names in the sweep files that no other list names (the full sweep)."""
-    known = set(TF_FAST + SF_FAST + TF_SWEEP + SF_SWEEP)
+    known = set(SF_FAST + SF_SWEEP)
     names = []
-    for fn in ("dn2-trackfx.json", "dn2-sendfx.json"):
+    for fn in ("dn2-sendfx.json",):
         for sc in json.loads((SCENARIOS / fn).read_text())["scenarios"]:
             if sc["name"] not in known:
                 names.append(sc["name"])
@@ -122,7 +110,7 @@ def every_scenario() -> tuple[str, ...]:
 
 @pytest.mark.parametrize(
     "name",
-    params(TF_FAST + SF_FAST, TF_SWEEP + SF_SWEEP + every_scenario()),
+    params(SF_FAST, SF_SWEEP + every_scenario()),
 )
 def test_healthy(render: Any, name: str) -> None:
     """Finite samples, no DC, gates ok; no runaway growth except where the
@@ -144,10 +132,6 @@ def test_healthy(render: Any, name: str) -> None:
 
 # scenario -> (read-back prefix, intended UI value); None: nothing may change.
 INTENT: dict[str, tuple[str, int] | None] = {
-    "tf-br-0": None, "tf-over-0": None, "tf-srr-0": None,
-    "tf-br-44": ("snd[95]", 44), "tf-br-127": ("snd[95]", 127),
-    "tf-over-44": ("snd[98]", 44), "tf-over-127": ("snd[98]", 127),
-    "tf-srr-44": ("snd[96]", 44), "tf-srr-127": ("snd[96]", 127),
     "sf-del-time-u20": ("fx[32]", 32), "sf-del-fb-d127": ("fx[35]", 0),
     "sf-del-width-d127": ("fx[34]", 0), "sf-rev-decay-d127": ("fx[42]", 0),
     "sf-rev-decay-u20": ("fx[42]", 40), "sf-chr-speed-d127": ("fx[26]", 0),
@@ -176,9 +160,8 @@ def test_readback(render: Any, name: str) -> None:
 @pytest.mark.parametrize(
     "name",
     params(
-        ("tf-br-0", "tf-over-0", "tf-srr-0"),
-        ("tf-del-0", "tf-rev-0", "tf-chr-0", "sf-del-mix-d127", "sf-rev-mix-d127")
-        + ("sf-chr-mix-d127",),
+        (),
+        ("sf-del-mix-d127", "sf-rev-mix-d127") + ("sf-chr-mix-d127",),
     ),
 )
 def test_zero_is_dry(render: Any, name: str) -> None:
@@ -191,10 +174,7 @@ def test_zero_is_dry(render: Any, name: str) -> None:
 
 # --- L == R --------------------------------------------------------------------------
 
-MONO = (
-    "tf-dry-hold", "tf-br-44", "tf-br-127", "tf-over-44", "tf-over-127",
-    "tf-srr-44", "tf-srr-127", "sf-del-ref",
-)  # fmt: skip
+MONO = ("sf-del-ref",)
 
 
 @pytest.mark.parametrize("name", params(MONO))
@@ -203,49 +183,6 @@ def test_mono_stays_mono(render: Any, name: str) -> None:
     with X off and WID centred): left equals right sample for sample."""
     x = render(name).x
     assert np.array_equal(x[:, 0], x[:, 1])
-
-
-# --- bit reduction, overdrive, sample-rate reduction ---------------------------------
-
-BR = ("tf-br-0", "tf-br-44", "tf-br-127")
-BR_ALL = ("tf-br-0", "tf-br-28", "tf-br-44", "tf-br-71", "tf-br-93", "tf-br-127")
-OVER = ("tf-over-0", "tf-over-44", "tf-over-127")
-OVER_ALL = (
-    "tf-over-0",
-    "tf-over-28",
-    "tf-over-44",
-    "tf-over-71",
-    "tf-over-93",
-    "tf-over-127",
-)
-SRR = ("tf-srr-44", "tf-srr-127")
-SRR_ALL = ("tf-srr-28", "tf-srr-44", "tf-srr-71", "tf-srr-93", "tf-srr-127")
-
-
-@pytest.mark.parametrize("names", series(BR, BR_ALL))
-@pytest.mark.parametrize("metric", ["thd_db", "diff_db"])
-def test_bit_reduction_error_rises(render: Any, names: Any, metric: str) -> None:
-    """More bit reduction: more distortion, more error against the dry note."""
-    assert_ordered(render, names, "snd[95]", lambda r: r.row["bits"][metric])
-
-
-@pytest.mark.parametrize("names", series(OVER, OVER_ALL))
-@pytest.mark.parametrize("metric", ["thd_db", "diff_db"])
-def test_overdrive_distortion_rises(render: Any, names: Any, metric: str) -> None:
-    assert_ordered(render, names, "snd[98]", lambda r: r.row["bits"][metric])
-
-
-@pytest.mark.parametrize("names", series(SRR, SRR_ALL))
-def test_srr_rate_falls(render: Any, names: Any) -> None:
-    """The effective sample rate (lowest alias image of the 261.6 Hz tone)
-    falls as the setting rises."""
-    assert_ordered(
-        render,
-        names,
-        "snd[96]",
-        lambda r: r.row["tf"]["fs_candidates"][0][0],
-        increasing=False,
-    )
 
 
 # --- delay ---------------------------------------------------------------------------

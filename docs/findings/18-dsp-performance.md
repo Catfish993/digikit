@@ -167,7 +167,7 @@ Measured 2026-10-08 on branch `work/scenario-oracles` (DN2 1.11, shared generate
 firmware blocks). Not re-checked by a second agent. Tools: `tools/devtools/perf.py --scenarios FILE
 --scenario NAME... --seconds 0` (0 = each scenario's own length) and `tools/devtools/perf_agg.py DIR...`
 (union and FX increase over the dry hold). Scenarios: `tests/scenarios/dn2.json`,
-`dn2-trackfx.json`, `dn2-sendfx.json`.
+`REF:tests/scenarios/dn2-trackfx.json`, `dn2-sendfx.json`.
 
 Config: **`static-insns+follow`** is the translator-only, no-AOT configuration (finding 18's
 "fast-only"; fast regions armed at every instruction, generated lowering and helpers on, AOT
@@ -603,7 +603,7 @@ brings the AOT run to its pre-step cost (1.41), so it is small.
   forms already refuse) now checks `lb_stale` too. MODE2, USTAT and MMASK are plain registers in the kernel.
   Register bank selection: a MODE1 write that changes the bank bits is refused with the bank model. STKY is
   not lowered. ASTAT is tracked per instruction (`fm_static`); `cacc_known` is an entry property by design.
-- Tier equivalence after the fix, DN2 1.11, PCM sha256 of every scenario of `dn2-trackfx.json` (47) and
+- Tier equivalence after the fix, DN2 1.11, PCM sha256 of every scenario of `REF:tests/scenarios/dn2-trackfx.json` (47) and
   `dn2-sendfx.json` (87), default (AOT + fast tier) against no-AOT `static-insns+follow`: 134 of 134 equal,
   `sf-del-time-u20` `67e0ea5c3f9a7166` in the interpreter, the default and the no-AOT config.
 - Tests: `fast_reads_mode1_as_the_region_wrote_it` (TRUNCATE on/off, ALUSAT on/off, CBUFEN on/off in the
@@ -947,7 +947,7 @@ has no FX profile (only a trig of one sample), so FX code stays interpreted when
 
 DT2 FX scenarios, plan (not built). (1) Find the DT2 FX page button and encoder map (finding 03) and measure the UI
 value per encoder event by read-back of the live kit Fx array (`*0x80004708`) and Sound array, as DN2 did (`UPS` in
-`gen_trackfx.py`). Parameter codes are known (finding 02: sends 0x44/0x45/0x43, delay time 0x71, feedback 0x74, reverb
+`REF:tools/emulator/gen_trackfx.py`). Parameter codes are known (finding 02: sends 0x44/0x45/0x43, delay time 0x71, feedback 0x74, reverb
 decay 0x7c, BR/SRR/routing/overdrive 0xff..0x102). (2) Check the DT2 values of `FX_PAGE` and `TRIG1` in
 `scenario_dsl.py` (TRIG1 = 25 and the NO prelude already work in `dt2.json`). (3) Generate `tests/scenarios/dt2-trackfx.json`
 (BR, SRR, overdrive, delay, reverb, chorus sweeps on a card sample, so the DSP is loaded) and `dt2-sendfx.json` (send

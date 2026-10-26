@@ -101,7 +101,7 @@ run = "uv run python -m tools.emulator.coupled scenario --all --no-build"
 description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python -m tools.emulator.coupled scenario --all --device dt2"
 
 [tasks."scenario:check"]
-run = "uv run python -m pytest tests/scenarios --slow -q"
+run = ["uv run python -m pytest tests/scenarios --slow -q", "DIGI_FX_SWEEP=0 DIGI_FX_NO_AOT_SUBSET=0 pnpm --filter @digi/regression test:fx"]
 description = "Oracle tests: render the DN2 FX scenarios headless and assert measured relationships (fast subset, about 3 min)"
 
 [tasks."scenario:check:dt2"]
@@ -109,7 +109,7 @@ run = "uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slo
 description = "Oracle tests for the DT2 FX scenarios on the one-sample card (about 2 min)"
 
 [tasks."scenario:sweep"]
-run = "uv run python -m pytest tests/scenarios --slow --sweep -q"
+run = ["uv run python -m pytest tests/scenarios --slow --sweep -q", "DIGI_FX_SWEEP=1 DIGI_FX_NO_AOT_SUBSET=0 pnpm --filter @digi/regression test:fx"]
 description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"
 
 [tasks."scenario:replay"]
@@ -157,6 +157,10 @@ description = "Exactness gate, every step; the AOT = no-AOT sweep runs the fixed
 run = "pnpm test:host"
 description = "Run the host-only Vitest projects with the native test runner; no native/WASM build or device checks"
 
+[tasks."test:fx"]
+run = "pnpm --filter @digi/regression test:fx"
+description = "DN2 stock audio oracles (existing binary and ready inputs; no build; DIGI_FX_SWEEP=1 adds all47)"
+
 [tasks."test:runtime"]
 run = "pnpm --filter @digi/regression test:runtime"
 description = "Explicit coupled runtime acceptance, serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries and DIGI_RUNTIME_CARD samples; no implicit native build; accepts Vitest filters (for example -- service-commands)"
@@ -172,10 +176,11 @@ description = "Fast checks for the tooling, the audio sink and the coupled runti
 run = [
   "uv run python -m tools.devtools.test_outcomes run --check --out out/runs/tests/latest tests",
   "uv run python -m tools.devtools.rust_ws test",
+  "pnpm test:host",
   "pnpm test",
   "uv run python -m tools.emulator.coupled scenario --all",
 ]
-description = "Everything except the slow gates: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, so a state leak between files cannot fail unrelated tests, see docs/TESTING.md), cargo test --workspace, web tests, every DN2 scenario pin"
+description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and explicit runtime acceptance"
 
 [tasks."test:slow"]
 run = [

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import random
 from pathlib import Path
@@ -207,7 +206,9 @@ def test_no_build_node_without_a_step_that_needs_it() -> None:
 
 @pytest.mark.parametrize("path", sorted(verify.NO_AOT_SUBSET))
 def test_no_aot_subset_names_exist(path: str) -> None:
-    doc = json.loads((REPO_ROOT / path).read_text())
+    from tools.emulator.coupled import scenario_document
+
+    doc = scenario_document(REPO_ROOT / path)
     names = {s["name"] for s in doc["scenarios"]}
     assert set(verify.NO_AOT_SUBSET[path]) <= names
     assert len(verify.NO_AOT_SUBSET[path]) == len(set(verify.NO_AOT_SUBSET[path]))
@@ -216,7 +217,7 @@ def test_no_aot_subset_names_exist(path: str) -> None:
 
 
 def test_no_aot_subset_covers_the_fx_paths() -> None:
-    dn2 = set(verify.NO_AOT_SUBSET["tests/scenarios/dn2-trackfx.json"]) | set(
+    dn2 = set(verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-trackfx.ts"]) | set(
         verify.NO_AOT_SUBSET["tests/scenarios/dn2-sendfx.json"]
     )
     for family in ("dry", "br", "over", "srr", "del", "rev", "chr", "mst"):
