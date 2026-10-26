@@ -127,7 +127,7 @@ Routing is in `tools/devtools/verify.py` (path prefixes, `PY_SUITES`) and `tools
 
 The `smoke` step (the patchkit smoke matrix) runs whenever the gate runs anything, except when every changed file is UI-only or exactly smoke-exempt. When every changed file matches
 `UI_ONLY` in `tools/devtools/verify.py` (`apps/desktop/ui/`, `apps/web/src/components/`, `apps/web/src/styles/`, `apps/web/tests/*.mjs`, `docs/`, `*.md`),
-smoke is skipped and `--explain` prints `smoke: skipped, UI-only change`. It is also skipped when every changed file is one of `SMOKE_EXEMPT`: `tools/devtools/agent_guard.py`, `tools/devtools/pathcheck.py`, or `.claude/settings.json`, plus the seven audited host tests listed below; UI-only and smoke-exempt paths may be mixed, and explain prints the exemption reason. One other path keeps smoke (web pages and layouts, the rest of `apps/web/src`, `apps/desktop/src-tauri`, other `tools/`, `modules/`, `packages/`, `devices/`, `tests/` and every other path); explain names that conservative triggering path.
+smoke is skipped and `--explain` prints `smoke: skipped, UI-only change`. It is also skipped when every changed file is one of `SMOKE_EXEMPT`: `tools/devtools/agent_guard.py`, `tools/devtools/pathcheck.py`, or `.claude/settings.json`, plus the eight audited host tests listed below; UI-only and smoke-exempt paths may be mixed, and explain prints the exemption reason. One other path keeps smoke (web pages and layouts, the rest of `apps/web/src`, `apps/desktop/src-tauri`, other `tools/`, `modules/`, `packages/`, `devices/`, `tests/` and every other path); explain names that conservative triggering path.
 
 | Changed | Steps | Python test files |
 | --- | --- | --- |
@@ -174,13 +174,17 @@ as its baseline; the baseline passed but its elapsed time was not retained. The 
 is a historical observation, not a paired speedup measurement.
 The subsequent host gate passed in 11 s (formatting 5 s, all 40 host tests in six files and all type
 checks passed; [run result](../out/runs/verify/20261026-000243/result.json)).
+Cancellation, queueing and timeout protocol tests belong to
+`packages/dk-session/tests/session-cancel.test.ts`; desktop waiting/failure presentation assertions
+remain in the existing web Node runner at `apps/web/tests/wait-core.test.mjs`.
 An explicit `--only host` needs no native/WASM build or device inputs. Normal host-path verification
-skips `smoke` only for these seven audited files in the exact `SMOKE_EXEMPT` table:
+skips `smoke` only for these eight audited files in the exact `SMOKE_EXEMPT` table:
 
 - `packages/control-client/tests/client.test.ts`
 - `packages/test-support/tests/support.test.ts`
 - `packages/dk-session/tests/emu-usb-transport.test.ts`
 - `packages/dk-session/tests/remote.test.ts`
+- `packages/dk-session/tests/session-cancel.test.ts`
 - `tests/regression/host/runtime.test.ts`
 - `tests/regression/host/remote-keys.test.ts`
 - `tests/regression/host/daemon.test.ts`

@@ -1,9 +1,7 @@
-// Cancel and "no reply" of a DkSession over a transport that never answers (the pending request of a MIDI port with no device behind it),
-// and the lines the desktop pages show for them (apps/desktop/ui/src/wait-core.ts).
+// Cancellation, queueing and retries over fake transports that never answer.
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { DkError, DkSession } from '@digi/dk-session';
-import { WAIT_QUIET_MS, failureLine, waitingLine } from '../../desktop/ui/src/wait-core.ts';
+import { test } from 'vitest';
+import { DkError, DkSession } from '../src/index.ts';
 
 /** A transport like the native MIDI wait: `recv` ends at its timeout or when the signal aborts, and never delivers a message. */
 class SilentTransport {
@@ -12,7 +10,7 @@ class SilentTransport {
   async send() {
     this.sent++;
   }
-  recv(timeoutMs, signal) {
+  recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => resolve(null), timeoutMs);
       signal?.addEventListener(
@@ -30,13 +28,23 @@ class SilentTransport {
 
 /** A transport that ignores the signal (an older one): the session must still end the wait itself. */
 class DeafTransport extends SilentTransport {
-  recv(timeoutMs) {
-    return new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs));
+  private finish?: () => void;
+  recv(timeoutMs: number): Promise<Uint8Array | null> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), timeoutMs);
+      this.finish = () => {
+        clearTimeout(timer);
+        resolve(null);
+      };
+    });
+  }
+  dispose() {
+    this.finish?.();
   }
 }
 
-const kindOf = (e) => e instanceof DkError && e.kind;
-const within = async (p, ms) => {
+const kindOf = (e: unknown) => e instanceof DkError && e.kind;
+const within = async <T>(p: Promise<T>, ms: number): Promise<T> => {
   const t = setTimeout(() => assert.fail(`still pending after ${ms} ms`), ms);
   try {
     return await p;
@@ -60,14 +68,20 @@ test('cancelPending ends a request that waits for a silent device at once', asyn
 });
 
 test('a transport that ignores the signal does not hold the cancel back', async () => {
-  const s = new DkSession(new DeafTransport(), { timeoutMs: 30_000 });
-  const pending = s.list();
-  await new Promise((r) => setTimeout(r, 20));
-  s.cancelPending();
-  await within(
-    assert.rejects(pending, (e) => kindOf(e) === 'cancelled'),
-    1000,
-  );
+  const t = new DeafTransport();
+  const s = new DkSession(t, { timeoutMs: 30_000 });
+  try {
+    const pending = s.list();
+    await new Promise((r) => setTimeout(r, 20));
+    s.cancelPending();
+    await within(
+      assert.rejects(pending, (e) => kindOf(e) === 'cancelled'),
+      1000,
+    );
+  } finally {
+    // Settle the signal-ignoring fake only after testing session cancellation.
+    t.dispose();
+  }
 });
 
 test('requests queued behind the pending one are cancelled too, and later ones are not', async () => {
@@ -97,15 +111,4 @@ test('a device that does not answer ends as a timeout after the retries, not as 
     2000,
   );
   assert.equal(t.sent, 3);
-});
-
-test('the lines for waiting, no reply and cancel', () => {
-  assert.equal(waitingLine('MIDI: IAC Driver Bus 1'), 'Waiting for MIDI: IAC Driver Bus 1…');
-  assert.ok(WAIT_QUIET_MS > 0);
-  const timeout = new DkError({ error: 'no reply from the device', kind: 'timeout' });
-  assert.match(failureLine(timeout, 'MIDI: IAC Driver Bus 1'), /^No reply from MIDI: IAC Driver Bus 1\./);
-  assert.doesNotMatch(failureLine(timeout, 'x'), /Refresh/, 'there is no Refresh button to press');
-  assert.equal(failureLine(new DkError({ error: 'cancelled', kind: 'cancelled' }), 'x'), 'Cancelled.');
-  assert.equal(failureLine(new Error('no MIDI port is open'), 'x'), 'no MIDI port is open');
-  assert.equal(failureLine('{"error":"disk full","kind":"device"}', 'x'), 'disk full');
 });
