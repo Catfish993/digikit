@@ -1425,6 +1425,12 @@ def explain(
                     f"{step}: prerequisite pk_build --check, then fresh patchkit pack into its run directory; "
                     "may build module toolchains/patchkit CLI, never emulator daemons"
                 )
+            if step == "runtime-fixture" and (
+                not selected or "runtime/samples-live.test.ts" in selected
+            ):
+                print(
+                    f"{step}: prerequisite plusdrive CLI build (tools.firmware.plusdrive_check --build-only)"
+                )
     if "rust-tests" in steps:
         scope = ", ".join(rust_packages) if rust_packages else "whole workspace"
         print(f"rust-tests packages: {scope}")
@@ -1619,6 +1625,13 @@ def run_step(gate: Gate, step: str) -> None:
         elif step == "runtime-fixture" and (modules := runtime_pack_modules(selected)):
             env["DIGI_RUNTIME_MODULES"] = str(
                 prepare_acceptance_modules(gate, step, modules)
+            )
+        if step == "runtime-fixture" and (
+            not selected or "runtime/samples-live.test.ts" in selected
+        ):
+            gate.run(
+                "runtime-fixture:plusdrive",
+                [*PY, "-m", "tools.firmware.plusdrive_check", "--build-only"],
             )
         script = {
             "stock": "test:stock",

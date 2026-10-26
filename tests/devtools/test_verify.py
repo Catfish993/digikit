@@ -586,7 +586,10 @@ def test_mise_tasks_of_the_repo_resolve() -> None:
             continue
         if verify_route.paths_of_run(verify_route.run_lines(task)) is None:
             broad.add(name)
-    assert broad == {"dev:plusdrive"}  # cargo run: no file to route by
+    assert broad == {
+        "dev:plusdrive",
+        "lint:py",
+    }  # cargo run; ruff on the whole include set
 
 
 def test_expand_mise_replaces_a_task_change(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1252,7 +1255,6 @@ def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
     monkeypatch.setenv("PATH", "/host/tool/bin")
     monkeypatch.setenv("DIGI_EMUD_DT2", "/supplied/dt2-emud")
     monkeypatch.setenv("DIGI_EMUD_DN2", "/supplied/dn2-emud")
-    monkeypatch.setenv("DIGI_RUNTIME_CARD", "/supplied/samples")
     monkeypatch.setattr(verify.verify_budget, "machine_cargo_cap", lambda: 1)
     monkeypatch.setattr(verify.benchlock, "hold", lambda *_args: nullcontext())
     environments: list[dict[str, str]] = []
@@ -1260,6 +1262,8 @@ def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
     def capture(
         cmd: list[str], *, env: dict[str, str], **_kwargs: object
     ) -> subprocess.CompletedProcess[str]:
+        if cmd[-3:] == ["-m", "tools.firmware.plusdrive_check", "--build-only"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         assert cmd == [
             "pnpm",
             "--filter",
@@ -1285,7 +1289,6 @@ def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
     assert len(environments) == 1
     env = environments[0]
     assert env["PATH"] == "/host/tool/bin"
-    assert env["DIGI_RUNTIME_CARD"] == "/supplied/samples"
     prefix = "built" if from_build else "supplied"
     assert env["DIGI_EMUD_DT2"] == f"/{prefix}/dt2-emud"
     assert env["DIGI_EMUD_DN2"] == f"/{prefix}/dn2-emud"

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { repoRoot, type Session } from '@digi/test-support';
@@ -13,8 +13,8 @@ const exec = promisify(execFile);
 
 /** Independent +Drive reader/builder oracle over the guest's card writes. No implicit builds. */
 async function expectSampleCard(session: Session, out: string, hash: number): Promise<void> {
-  const plusdrive = process.env.DIGI_PLUSDRIVE;
-  if (!plusdrive) throw new Error('DIGI_PLUSDRIVE must name an existing plusdrive binary');
+  const plusdrive = join(repoRoot(), 'out/native/target/nogen/release/plusdrive');
+  if (!existsSync(plusdrive)) throw new Error('plusdrive CLI missing: run mise run build:plusdrive');
   const base = session.cardPath;
   if (!base) throw new Error('sample card oracle requires the loaded base card image');
   const overlay = join(out, 'samples.ov.bin');

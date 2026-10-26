@@ -144,9 +144,14 @@ description = "DN2 stock FX oracles: 61 quick assertions; DIGI_FX_SWEEP=1 select
 run = "pnpm --filter @digi/regression test:fx:dt2"
 description = "DT2 stock FX: 135 quick / 146 full (DIGI_FX_SWEEP=1); native Vitest filters; existing binary/ready inputs, no emulator build; sample-card preparation may build its helper (DIGI_DT2_CARD selects a prepared image to avoid it)"
 
+[tasks."build:plusdrive"]
+run = "uv run python -m tools.firmware.plusdrive_check --build-only"
+description = "Build the plusdrive CLI into out/native/target/nogen (card image oracle for runtime tests)"
+
 [tasks."test:runtime"]
+depends = ["build:plusdrive"]
 run = "pnpm --filter @digi/regression test:runtime"
-description = "Coupled runtime acceptance (also relevant-change gate owner), serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries and DIGI_RUNTIME_CARD samples; no implicit native build; accepts Vitest filters (for example -- service-commands)"
+description = "Coupled runtime acceptance (also relevant-change gate owner), serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries; plusdrive is built automatically and the DT2 card samples come from out/runs/patchkit/samples; no implicit emulator build; accepts Vitest filters (for example -- service-commands)"
 
 [tasks."test:modules"]
 run = "pnpm --filter @digi/regression test:modules"

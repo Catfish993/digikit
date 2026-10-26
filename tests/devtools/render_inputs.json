@@ -7,6 +7,10 @@
     "packages/emulator/sharc/src/diag.rs": {
       "count": 1,
       "reason": "forwards the caller-provided output-dir variable name (DIGI_DIAG_DIR-style, diagnostics only)"
+    },
+    "packages/emulator/sharc/src/fast/mod.rs": {
+      "count": 2,
+      "reason": "region_env() picks SHARC_FAST_REGIONS(_2) / SHARC_BLOCKTRANS(_2); SHARC_ keys are in the cache key and @FILE content is hashed"
     }
   },
   "file_reads": {
@@ -27,6 +31,7 @@
     "packages/emulator/periph/src/trace.rs": 1,
     "packages/emulator/plusdrive/src/export.rs": 27,
     "packages/emulator/plusdrive/src/folder.rs": 11,
+    "packages/emulator/plusdrive/src/mirror.rs": 7,
     "packages/emulator/plusdrive/src/project.rs": 2,
     "packages/emulator/sharc/src/cycmix.rs": 1,
     "packages/emulator/sharc/src/fast/mod.rs": 3,
@@ -35,7 +40,8 @@
     "packages/patchkit/src/modgen.rs": 2,
     "packages/patchkit/src/module.rs": 3,
     "packages/patchkit/src/port.rs": 2,
-    "packages/patchkit/src/sdkgen.rs": 4,
+    "packages/patchkit/src/sdkgen.rs": 6,
+    "packages/patchkit/src/storedump.rs": 3,
     "packages/patchkit/src/typed.rs": 2
   }
 }

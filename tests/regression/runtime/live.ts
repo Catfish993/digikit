@@ -12,8 +12,12 @@ export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
 export function liveOptions(device: Device, extra: { patchSet?: string; mirror?: boolean } = {}) {
   const binary = process.env[device === 'dt2' ? 'DIGI_EMUD_DT2' : 'DIGI_EMUD_DN2'];
   if (!binary) throw new Error(`DIGI_EMUD_${device.toUpperCase()} must name a preflighted daemon`);
-  const card = device === 'dt2' ? process.env.DIGI_RUNTIME_CARD : undefined;
-  if (device === 'dt2' && !card) throw new Error('DIGI_RUNTIME_CARD must name the generated DT2 sample directory');
+  const card = device === 'dt2' ? path.join(repoRoot(), 'out/runs/patchkit/samples') : undefined;
+  if (card && !fs.existsSync(card)) {
+    throw new Error(
+      `DT2 sample card missing: generate ${card} (tools.emulator.card_check.make_samples, run by pk_harness)`,
+    );
+  }
   return { device, firmware: FIRMWARE[device], binary, card, ...extra };
 }
 

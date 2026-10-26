@@ -344,7 +344,6 @@ def refs(text: str) -> set[str]:
 RUNNER_KINDS: dict[str, tuple[str, ...]] = {
     "pk_digikit_debug.py": ("card", "debug", "crash"),
     "pk_digikit_upload.py": ("upload",),
-    "pk_digikit_rungc.py": ("rungc",),
     "pk_digikit_pages.py": ("pages",),
     "pk_digikit_fx.py": ("fx",),
     "pk_digikit_fxsend.py": ("fxsend",),
@@ -396,9 +395,7 @@ def runner_kinds(hit: set[str]) -> set[str]:
     kinds: set[str] = set()
     for path in sorted((ROOT / "tools/patchkit").glob("pk_digikit_*.py")):
         if pk_refs(path.stem) & hit:
-            kinds |= set(
-                RUNNER_KINDS.get(path.name, tuple(kind_files()) + ("pages", "rungc"))
-            )
+            kinds |= set(RUNNER_KINDS.get(path.name, tuple(kind_files()) + ("pages",)))
     return kinds
 
 

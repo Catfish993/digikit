@@ -124,6 +124,19 @@ def cargo(args: list[str], env: dict[str, str]) -> None:
         raise SystemExit(done.returncode)
 
 
+def build_plusdrive() -> pathlib.Path:
+    """Build the plusdrive CLI and return its binary."""
+    target = native_target.target_dir("")
+    cargo(
+        [
+            "build", "--release", "--locked", "--offline", "--target-dir", target,
+            "-p", "plusdrive-format", "--bin", "plusdrive",
+        ],
+        digi_env.rust_env(),
+    )  # fmt: skip
+    return pathlib.Path(target) / "release" / "plusdrive"
+
+
 def store_listing(
     plusdrive: pathlib.Path, image: pathlib.Path, device: str
 ) -> dict[str, tuple[int, int, str]]:
@@ -154,7 +167,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="check the module store on a Digitone II boot instead (--syx: its .syx)",
     )
+    ap.add_argument(
+        "--build-only",
+        action="store_true",
+        help="build the plusdrive CLI, print its path and exit",
+    )
     args = ap.parse_args(argv)
+    if args.build_only:
+        print(build_plusdrive())
+        return 0
     device = "dn2" if args.dn2 else "dt2"
     area = pk_device.store_of(
         device
@@ -168,17 +189,16 @@ def main(argv: list[str] | None = None) -> int:
     syx = args.syx or digi_env.firmware_for(device)
     if digi_env.device_for_syx(syx) != device:
         raise SystemExit(f"{syx} is not a known {device.upper()} firmware")
-    env = digi_env.rust_env()
-    target = native_target.target_dir("")
+    plusdrive = build_plusdrive()
+    release = plusdrive.parent
     cargo(
         [
-            "build", "--release", "--locked", "--offline", "--target-dir", target,
-            "-p", "plusdrive-format", "--bin", "plusdrive",
+            "build", "--release", "--locked", "--offline", "--target-dir",
+            native_target.target_dir(""),
             "-p", "elektron-native-boot", "--example", "plusdrive_check",
         ],
-        env,
+        digi_env.rust_env(),
     )  # fmt: skip
-    release = pathlib.Path(target) / "release"
     work = args.keep or pathlib.Path(tempfile.mkdtemp(prefix="plusdrive-check-"))
     work.mkdir(parents=True, exist_ok=True)
     try:
