@@ -1,6 +1,6 @@
 # Firmware declarations, module SDK and Syntakt
 
-Branch: `sdk/firmware-decls`. Started 2026-10-27. Targets: DT2 OS 1.17, DN2 OS 1.12, Syntakt OS 1.42.
+Started 2026-10-27. Targets: DT2 OS 1.17, DN2 OS 1.12, Syntakt OS 1.42.
 
 ## Goal
 
@@ -99,7 +99,7 @@ Proof: `patchkit gen --check`, port files byte-identical, pathcheck.
 
 - [ ] Design `devices/fw/<subsystem>.toml` with Em: per entry name, devices, signature, rule, mark; structs with fields
       and per-device sections only where a device differs; hooks with their register contract.
-- [ ] `port_resolve.py` reads `devices/fw/`; the 201 rules move there mechanically.
+- [ ] `port_resolve.py` reads the new fw directory under devices; the 201 rules move there mechanically.
 - [ ] Replace the `pk_*_rules*.py` generators with `catalog emit-rule ADDR`; retire literal tables in
       `machineprofile.py` and `cf_names.py` as their consumers move to anchors.
 - [ ] Add a vtable-slot rule kind (about 63% of ColdFire candidates have no unique hash) and an ordinal for
@@ -122,7 +122,7 @@ Proof: cold and warm build of `core/digikit-menu` before and after; objects byte
 ### 5. Generated bindings
 
 - [ ] `patchkit gen` emits Rust (`#[link_name = "<anchor>"]`), C headers (`__asm__("<anchor>")`) and assembly `.equ`
-      files from `devices/fw/`, with size and offset asserts for structs.
+      files from the new fw directory under devices, with size and offset asserts for structs.
 - [ ] Hook trampolines are generated from hook declarations. Hand assembly remains only where code enters at a patch
       site with the displaced code's registers.
 - [ ] `[object.externs]` is removed.
@@ -186,7 +186,7 @@ engine rules (machines, parameters, FX pages, DSP link). After step 3, `catalog 
 strict and vtable pairs: about 0.5-1 day.
 
 - [x] S1. Static onboarding: identify the images (MAIN at 0x40000400; section 7, raw ColdFire code, possibly the second
-      CPU), build cfdb and a separate Ghidra project, dry-run all rules on 1.42, and propose `devices/syntakt.toml`.
+      CPU), build cfdb and a separate Ghidra project, dry-run all rules on 1.42, and propose a Syntakt device file (devices, not yet written).
 - [x] S2. Static trace of how MAIN talks to the second CPU and starts the FPGA (interface only), what the boot waits
       for, and how the container seal key is derived. **Decision point.**
 - [x] Write the S1/S2 results to `docs/findings/70-syntakt-1-42.md`.

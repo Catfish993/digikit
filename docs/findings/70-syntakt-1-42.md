@@ -145,7 +145,7 @@ Controls with the same harness: DT2 1.17 111/111, DN2 1.12 101/101.
   not include. The run used
   `uv run --offline --with pyghidra==3.1.0 --with jpype1==1.5.2`.
 - Section 7 is not imported yet. `ghidra.sh` base 0x40000400 fits it.
-- There is no `devices/syntakt.toml` yet. `port_resolve`,
+- There is no a Syntakt device file in devices/ (not yet written) yet. `port_resolve`,
   `tools/coldfire/regions.py` `IMAGES` and `cf.load` need a registered name.
 
 ## Open questions
