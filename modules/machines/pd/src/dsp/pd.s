@@ -331,16 +331,25 @@ _pd_slewed:
     // ---- mix the pair and take the level ----
     F3 = F5 + F2;
     NOP;
-    F3 = F3 * F4;                        // x 0.5: the pair spans +-1
-    R0 = DM(8, I3);                       // fold gain
+    F3 = F3 * F4;                        // x 0.5: the pair spans +-1 (F4 stays 0.5)
+    R0 = DM(8, I3);                       // fold drive (1 .. 4)
     F0 = PASS R0;
     NOP;
-    F3 = F3 * F0;
+    F2 = F3 * F0;                         // drive x
     NOP;
-    F2 = MIN(F3, F11);
+    F1 = MIN(F2, F11);                   // clamp high at +1
     R0 = 0xbf800000;                      // -1
     NOP;
-    F3 = MAX(F2, F0);
+    F0 = PASS R0;
+    NOP;
+    F1 = MAX(F1, F0);                    // c = clamp(drive x, +-1)
+    F0 = F2 - F1;                        // overshoot
+    NOP;
+    F0 = F0 + F0;                        // twice
+    NOP;
+    F2 = F2 - F0;                        // reflect instead of clipping
+    NOP;
+    F3 = F2;                             // the folded signal
     NOP;
     F3 = F3 * F9;                        // level
 
