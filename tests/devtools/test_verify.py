@@ -808,55 +808,17 @@ def test_root_host_config_routes_to_host_with_conservative_smoke() -> None:
     assert verify.steps_for(["vitest.host.config.ts"]) == ("host", "smoke")
 
 
-def test_host_check_runs_consolidated_host_and_owner_checks(
+def test_host_check_delegates_to_native_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: dict[str, list[str]] = {}
+    calls: list[tuple[str, list[str]]] = []
     monkeypatch.setattr(
         verify.Gate,
         "run",
-        lambda self, name, cmd, **kwargs: calls.update({name: cmd}),
+        lambda self, name, cmd, **kwargs: calls.append((name, cmd)),
     )
-    monkeypatch.setattr(verify.Gate, "share", lambda self: 3)
     verify.host_check(object.__new__(verify.Gate))
-    assert calls["host-format"] == ["pnpm", "fmt:check"]
-    assert calls["host-tests"] == ["pnpm", "test:host", "--maxWorkers", "3"]
-    assert (
-        not {"dk-session-tests", "test-support-tests", "regression-host"} & calls.keys()
-    )
-    assert calls["desktop-host-types"] == [
-        "pnpm",
-        "--filter",
-        "@digi/desktop",
-        "typecheck:host",
-    ]
-    assert calls["regression-types"] == [
-        "pnpm",
-        "--filter",
-        "@digi/regression",
-        "typecheck",
-    ]
-    assert calls["test-support-types"] == [
-        "pnpm",
-        "--filter",
-        "@digi/test-support",
-        "typecheck",
-    ]
-    assert calls["dk-session-types"] == [
-        "pnpm",
-        "--filter",
-        "@digi/dk-session",
-        "typecheck",
-    ]
-    assert calls["control-client-types"] == [
-        "pnpm",
-        "--filter",
-        "@digi/control-client",
-        "typecheck",
-    ]
-    assert {"host-lint", "host-format"} <= calls.keys()
-    assert not any("wasm" in str(cmd) or "@digi/web" in cmd for cmd in calls.values())
-    assert not any(name.startswith("web-") for name in calls)
+    assert calls == [("host", ["mise", "run", "verify:host"])]
 
 
 def test_web_check_only_runs_browser_checks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1258,32 +1220,28 @@ def test_runtime_fixture_dispatch_preserves_environment_and_built_paths(
     assert not gate.failed
 
 
-def test_mise_host_task_selects_only_host() -> None:
-    import tomllib
-
-    tasks = tomllib.loads((ROOT / "mise.toml").read_text())["tasks"]
-    assert tasks["verify:host"]["run"] == (
-        "uv run python -m tools.devtools.verify --only host"
-    )
-    assert "depends" not in tasks["verify:host"]
-
-
 @pytest.mark.parametrize("steps", [("host",), ("web",)])
-def test_failed_host_subcheck_persists_for_rerun_and_blocks_web(
+def test_failed_native_host_workflow_persists_for_rerun_and_blocks_web(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, steps: tuple[str, ...]
 ) -> None:
-    calls: list[str] = []
+    calls: list[list[str]] = []
 
-    def fail_host(gate: verify.Gate, node: str) -> None:
-        calls.append(node)
-        assert node == "host"
-        gate.report("host-format", "exit 1", 0, "bad format")
+    def fail_host(
+        cmd: list[str], *, env: dict[str, str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        assert env["HOST_TEST_ENV"] == "inherited"
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="bad format")
 
-    monkeypatch.setattr(verify, "run_step", fail_host)
+    monkeypatch.setenv("HOST_TEST_ENV", "inherited")
+    monkeypatch.setattr(verify.verify_budget, "machine_cargo_cap", lambda: 1)
+    monkeypatch.setattr(verify.benchlock, "hold", lambda *_args: nullcontext())
+    monkeypatch.setattr(verify.subprocess, "run", fail_host)
     gate = verify.Gate(tmp_path, budget=2)
     gate.py_tests = []
     verify.run_steps(gate, steps)
-    assert calls == ["host"]
+    assert calls == [["mise", "run", "verify:host"]]
+    assert (tmp_path / "host.log").read_text() == "bad format"
     assert gate.failed.count("host") == 1
     failed = [step for step in gate.failed if step in verify.STEPS]
     assert verify.rerun_plan({"failed": failed, "py_tests": []}) == (

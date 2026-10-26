@@ -135,8 +135,17 @@ run = "uv run python -m tools.devtools.verify"
 description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes run verify:pre"
 
 [tasks."verify:host"]
-run = "uv run python -m tools.devtools.verify --only host"
-description = "Host lint/format, five Vitest projects and package type checks within the verify budget; no native/WASM build, device or smoke checks"
+run = [
+  "pnpm exec oxlint",
+  "pnpm fmt:check",
+  "pnpm test:host",
+  "pnpm --filter @digi/control-client typecheck",
+  "pnpm --filter @digi/dk-session typecheck",
+  "pnpm --filter @digi/test-support typecheck",
+  "pnpm --filter @digi/regression typecheck",
+  "pnpm --filter @digi/desktop typecheck:host",
+]
+description = "Host lint/format, five Vitest projects and package type checks in sequence; stops at the first failure; no Python, native/WASM build, device or smoke checks"
 
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"

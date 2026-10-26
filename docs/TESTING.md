@@ -73,7 +73,7 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run lint` | `lint:py` (ruff check and format check on the `CLEAN` list), `lint:web` (oxlint on the JS/TS workspaces), `fmt:check` (Prettier check; `mise run fmt` formats in place), `lint:rust` (cargo fmt check) | Before a commit |
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run test:changed` | The tests the changed files select (`tools/devtools/changed_tests.py`): the tests that import a changed module under tools/ or tests/ (directly or through a tests helper or conftest; `--deep` also through other tools modules), the tests and quick-tier scenarios that name a changed module (for a framework module only the module itself), the fine routes of verify, the changed test files, and the Rust tests of the affected crates. Never a test directory, no PY_GATE, no build step. `--explain` prints each file with its reason and what the gate adds; `--base BRANCH` for a lane. | In a lane, while iterating |
-| `mise run verify:host` | Global JS/TS lint and format, five host Vitest projects and package type checks, within the verify budget. No native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
+| `mise run verify:host` | Native mise sequence: global JS/TS lint and format, five host Vitest projects and five package type checks. Stops at the first failure. No Python, native/WASM build, device inputs or smoke. | Host checks without the browser/device gate |
 | `mise run verify:pre` | Quick lane checks (`tools/devtools/verify_pre.py`, 1 to 2 min): ruff on the changed Python files, mypy on the changed `TYPED` files, pathcheck, `pk_build build-all --check` when modules, patchkit tools or ports changed, the tests `test:changed` selects, the Rust tests of the affected crates (`rust_ws.affected_packages`). No explicit pin or scenario step; selected tests may require an emulator. It prints that it is not the merge gate. | In a lane, while iterating and before handing the branch over |
 | `mise run verify` | The merge gate: the steps the changed files need (`tools/devtools/verify.py`, routing below). `--explain [--head REV]` shows the routing and the plan without running (`--base A --head B` explains a range from the current tree). `--rerun-failed` re-runs only the steps that failed last time. `--jobs N` sets the CPU budget, `--foreground` normal priority, `--all-no-aot` widens the coverage (see "CPU budget" and "AOT versus interpreter equality"). | The coordinator runs it once per merge to `main` (`-- --base main` for a lane branch; it includes the smoke matrix, step `smoke`, unless every changed path is UI-only or exactly a listed smoke-exempt path); a lane checks the routing with `--explain` |
 | `mise run verify:full` | Every step (about 7 min with a warm render cache, about 20 min when DSP/native code changed). The AOT = no-AOT sweep runs the fixed subset; `-- --all-no-aot` runs all 134 scenarios and all 61 oracle tests. | Only after changes to the generated core |
@@ -86,6 +86,16 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run patch:proofs` | Every emulator proof on its quick tier, in sequence | After patchkit or module changes |
 | `uv run python -m tools.devtools.test_outcomes run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
 | `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` | Compares outcomes and skip reasons test by test, following git renames | After moving or refactoring tests |
+
+`verify:host` owns the host command sequence in `mise.toml`. Vitest uses its configured
+one-worker default (`vitest.host.config.ts`); `mise run test:host -- --maxWorkers N`
+(or `pnpm test:host --maxWorkers N`) uses the native runner option. The broader verify gate delegates its
+`host` step to the same mise task, retaining the outer CPU allocation and environment
+and recording the combined output in `host.log`. A failed command stops the host
+sequence, fails the aggregate step and blocks checks that depend on it; rerunning
+failed steps reruns the complete host sequence. For Python gate options such as
+`--explain` or `--jobs`, use `mise run verify -- --only host ...`; Vitest filtering
+and worker options belong on `mise run test:host -- ...` (or `pnpm test:host`).
 
 ## Desktop UI preview (look at a page before calling it done)
 
@@ -154,7 +164,8 @@ runtime cases and helpers retain cheap host checks in `host`, and module/tool ro
 Python/Rust and smoke selections. See [regression fixture details](../tests/regression/README.md).
 Host-only: `mise run test:host` (or `pnpm test:host`) runs the root `vitest.host.config.ts` projects `control-client`,
 `test-support`, `dk-session`, `regression-host` and `desktop-host`, with explicit host-only includes and one worker by
-default (override with `--maxWorkers N`). The `host` step runs this command once with its budget share;
+default (override with `mise run test:host -- --maxWorkers N`). The `host` step delegates to the native mise
+sequence with that one-worker default while retaining its outer CPU allocation;
 package-local test commands select their named project from the same config. These checks require no
 firmware, native builds or daemons. `pnpm --filter @digi/regression typecheck` explicitly generates
 shared-session declarations first. `host` also owns global oxlint/Prettier and the control-client,

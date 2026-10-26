@@ -1017,21 +1017,7 @@ def desktop_check(gate: Gate) -> None:
 
 
 def host_check(gate: Gate) -> None:
-    gate.run("host-lint", ["pnpm", "exec", "oxlint"])
-    gate.run("host-format", ["pnpm", "fmt:check"])
-    gate.run("host-tests", ["pnpm", "test:host", "--maxWorkers", str(gate.share())])
-    gate.run(
-        "control-client-types",
-        ["pnpm", "--filter", "@digi/control-client", "typecheck"],
-    )
-    gate.run("dk-session-types", ["pnpm", "--filter", "@digi/dk-session", "typecheck"])
-    gate.run(
-        "test-support-types", ["pnpm", "--filter", "@digi/test-support", "typecheck"]
-    )
-    gate.run("regression-types", ["pnpm", "--filter", "@digi/regression", "typecheck"])
-    gate.run(
-        "desktop-host-types", ["pnpm", "--filter", "@digi/desktop", "typecheck:host"]
-    )
+    gate.run("host", ["mise", "run", "verify:host"])
 
 
 def web_check(gate: Gate) -> None:

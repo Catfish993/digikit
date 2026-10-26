@@ -44,9 +44,11 @@ There is no audio, so nothing here checks sound, DSP faults or audio-dependent U
 `pnpm --filter @digi/regression test:host` selects only `regression-host`, covering mocked startup,
 cleanup and USB wiring without firmware, native builds or daemons. Package-local `test` scripts for
 the other three packages and desktop `test:host` likewise select their own project. The root config uses explicit host-only
-includes and defaults to one worker; `--maxWorkers N` overrides it. Optional JUnit output uses Vitest's
+includes and defaults to one worker; `mise run test:host -- --maxWorkers N` (or
+`pnpm test:host --maxWorkers N`) overrides it. Optional JUnit output uses Vitest's
 native CLI, for example `pnpm test:host --reporter=default --reporter=junit --outputFile=out/host-junit.xml`.
-The `host` step runs all five host projects once with its worker budget, alongside global lint/format
+The `host` step delegates to the native mise sequence with that one-worker default while retaining
+its outer CPU allocation. The sequence runs all five host projects once, global lint/format
 and control-client, shared-session, test-support, regression and desktop-host test type checks. Explicit `--only host`
 requires no native/WASM build or device inputs. `web` retains browser tests, Astro and patchkit WASM,
 and depends on `host`, including with `--only web`. Normal host-path routing skips smoke only for the eight audited test files and desktop UI test directory described in
