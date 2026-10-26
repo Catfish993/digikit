@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 from contextlib import nullcontext
 from pathlib import Path
@@ -796,6 +797,7 @@ def test_host_check_runs_consolidated_host_and_owner_checks(
     )
     monkeypatch.setattr(verify.Gate, "share", lambda self: 3)
     verify.host_check(object.__new__(verify.Gate))
+    assert calls["host-format"] == ["pnpm", "fmt:check"]
     assert calls["host-tests"] == ["pnpm", "test:host", "--maxWorkers", "3"]
     assert (
         not {"dk-session-tests", "test-support-tests", "regression-host"} & calls.keys()
@@ -1258,3 +1260,13 @@ def test_failed_host_subcheck_persists_for_rerun_and_blocks_web(
         [],
     )
     assert ("web" in gate.failed) == ("web" in steps)
+
+
+def test_root_format_scripts_share_scope() -> None:
+    scripts = json.loads((ROOT / "package.json").read_text())["scripts"]
+    write = shlex.split(scripts["fmt"])
+    check = shlex.split(scripts["fmt:check"])
+    assert write[:2] == ["prettier", "--write"]
+    assert check[:2] == ["prettier", "--check"]
+    assert write[2:] == check[2:]
+    assert check[2] == "."

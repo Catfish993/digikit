@@ -1015,7 +1015,7 @@ def desktop_check(gate: Gate) -> None:
 
 def host_check(gate: Gate) -> None:
     gate.run("host-lint", ["pnpm", "exec", "oxlint"])
-    gate.run("host-format", ["pnpm", "exec", "prettier", "--check", "."])
+    gate.run("host-format", ["pnpm", "fmt:check"])
     gate.run("host-tests", ["pnpm", "test:host", "--maxWorkers", str(gate.share())])
     gate.run(
         "control-client-types",

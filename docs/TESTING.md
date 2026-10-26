@@ -159,6 +159,17 @@ and Astro checks, and depends on `host` even with explicit `--only web`, preserv
 serializing shared declaration generation. Control-client, test-support, regression, the root host config
 and shared-session tests select `host`; other shared-session paths select both `host` and `web` because
 both apps consume them. Existing app, global configuration and unknown-path routes stay conservative.
+The host formatter invokes root `pnpm fmt:check`; `pnpm fmt` uses the same scope with `--write`.
+Both remain uncached and check the full tree, with native negative globs pruning already ignored
+`out/`, `target/`, `gen/`, `dist/`, `.astro/` and `apps/web/.local/` directories before traversal.
+`.prettierignore` remains the per-file policy; including files in these generated directories requires
+updating both it and the root scripts consistently.
+A native content-cache experiment was rejected (uncached 25.14 s, cold 26.48 s, warm 24.21 s).
+The pruning candidate passed in 5.078 s with exactly the same 1,024 post-ignore processing candidates
+as its baseline; the baseline passed but its elapsed time was not retained. The earlier 25.14 s sample
+is a historical observation, not a paired speedup measurement.
+The subsequent host gate passed in 11 s (formatting 5 s, all 40 host tests in six files and all type
+checks passed; [run result](../out/runs/verify/20261026-000243/result.json)).
 An explicit `--only host` needs no native/WASM build or device inputs. Normal host-path verification
 skips `smoke` only for these six audited files in the exact `SMOKE_EXEMPT` table:
 
