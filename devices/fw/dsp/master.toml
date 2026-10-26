@@ -1,27 +1,30 @@
-# SHARC anchors: master buffer and q31 converter.
-# Moved from module manifests; names unchanged (step 3, docs/design/firmware-decls.md).
+# master: the master stage
+# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
 
-# The master float buffer: the literal `I3 = 0x25f180` (Digitakt II) or `0x268438` (Digitone II) of the Q31 converter.
-[[value]]
-name = "dsp.master.float_buf"
+[[fn]]
+name = "dsp.master.fn.q31_converter"
+aliases = ["dsp.master.q31_converter"]
 cpu = "sharc"
-rule = { kind = "sharc_literal", reloc_hash = "83fba5710c2b395cbd54e3cd583b1e205915fa6d1905d7285c3535203e52d05b", offset = 0xf }
+rule = { kind = "sharc_func", reloc_hash = "83fba5710c2b395cbd54e3cd583b1e205915fa6d1905d7285c3535203e52d05b", offset = 0x0, len = 6 }
 mark = "D"
-users = ["core/fx", "digikit/master-drive", "digikit/master-gain"]
+users = ["digikit/master-drive", "digikit/master-gain"]
 
 # Anchors. The hook anchors are the ones of digikit/master-gain (same rules, same device-independent hashes).
 # The block handler's one call of the Q31 converter, the converter's entry, and the master float buffer (the
 # constant the converter loads into I3). The same relocation-insensitive function hashes match on DT2 and DN2.
 [[site]]
-name = "dsp.master.q31_call"
+name = "dsp.master.site.q31_call"
+aliases = ["dsp.master.q31_call"]
 cpu = "sharc"
 rule = { kind = "sharc_func", reloc_hash = "65c7ebdfe23c9a760bc6077a912e16c0474c182ee9849925cb0c10af0689f984", offset = 0x15c, len = 6 }
 mark = "D"
 users = ["digikit/master-drive", "digikit/master-gain"]
 
-[[fn]]
-name = "dsp.master.q31_converter"
+# The master float buffer: the literal `I3 = 0x25f180` (Digitakt II) or `0x268438` (Digitone II) of the Q31 converter.
+[[value]]
+name = "dsp.master.value.float_buf"
+aliases = ["dsp.master.float_buf"]
 cpu = "sharc"
-rule = { kind = "sharc_func", reloc_hash = "83fba5710c2b395cbd54e3cd583b1e205915fa6d1905d7285c3535203e52d05b", offset = 0x0, len = 6 }
+rule = { kind = "sharc_literal", reloc_hash = "83fba5710c2b395cbd54e3cd583b1e205915fa6d1905d7285c3535203e52d05b", offset = 0xf }
 mark = "D"
-users = ["digikit/master-drive", "digikit/master-gain"]
+users = ["core/fx", "digikit/master-drive", "digikit/master-gain"]

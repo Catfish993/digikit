@@ -1,0 +1,42 @@
+# string: std::string, std::function and shared_ptr helpers
+# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+
+[[fn]]
+name = "cf.string.fn.ctor"
+aliases = ["cf.menu.fn.str_ctor"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0b0f2cd7a2d5144343e1fd5ad21658be", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.string.fn.dtor"
+aliases = ["cf.menu.fn.str_dtor"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "f1d2e07e127babad6c183b5ca51041d1", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.string.fn.make_sp"
+aliases = ["cf.menu.fn.make_sp"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "e427a70e2c95815987c648e84eba4737", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.string.fn.sp_move"
+aliases = ["cf.menu.fn.sp_move"]
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x40, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.string.fn.sp_release"
+aliases = ["cf.menu.fn.sp_release"]
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x58, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]

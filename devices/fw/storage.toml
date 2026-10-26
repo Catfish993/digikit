@@ -1,0 +1,46 @@
+# storage: block device reads and writes, the boot record
+# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+
+# The firmware's eMMC block read: int f(u32 sector, u32 bytes, void *buf), 0 = ok (finding 23 S6).
+[[fn]]
+name = "cf.storage.fn.block_read"
+aliases = ["cf.menu.fn.blk_read", "dkrt.fw.block_read"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "dcf1d4873d4a4fb5ac903e8ada9c1a12", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu", "core/runtime"]
+
+# The firmware's eMMC block write: int f(u32 sector, u32 bytes, const void *buf), 0 = ok; it takes the ESDHC mutex itself
+# (DT2 1.16 FUN_4012e0c0, DN2 1.11 FUN_4012c780). The runtime writes only the two sectors of the selection record with it.
+[[fn]]
+name = "cf.storage.fn.block_write"
+aliases = ["dkrt.fw.block_write"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0dd5a176b94c6e30225068661b58a898", offset = 0x0, len = 2 }
+mark = "D"
+users = ["core/runtime"]
+
+# The firmware's normal writer of the boot record (finding 36 section 2; DT2 1.16 FUN_400f044a, 1.17 0x400f05ae; DN2 1.11 FUN_400f1e26,
+# 1.12 FUN_400f1f8a): writes the arena to the next of the two record slots, invalidates the other, one shot per boot. The arena size
+# and addresses differ per device, so the hash does.
+[[fn]]
+name = "cf.storage.fn.boot_record_write"
+aliases = ["dkrt.fw.boot_record_write"]
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "ce2fecf00cf4757d0252acc24f11436c", offset = 0x0, len = 2 }
+rule.dn2 = { kind = "cf_func", hash = "f2ab3c0214b6212848a6300a70dd6129", offset = 0x0, len = 2 }
+mark = "D"
+users = ["core/runtime"]
+
+# The firmware's own DSP block counter (finding 37, "Safe mode after the first UI pass"): the tail of the block interrupt handler (vector 191,
+# the function core/dsp-link and core/health find by these hashes) adds the block to its clocks with `addq.l #1,<counter>` and nothing else
+# touches the word, so it counts blocks (1500 per second) from boot. The anchor is the 4-byte address literal of that instruction
+# (`52b9 <lit>`): offset 0x1654 in the Digitakt II function, 0x1d4e in the Digitone II one, the same in both versions of each.
+[[site]]
+name = "cf.storage.site.block_counter_lit"
+aliases = ["dkrt.fw.block_counter_lit"]
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x1654, len = 4 }
+rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x1d4e, len = 4 }
+mark = "D"
+users = ["core/runtime"]

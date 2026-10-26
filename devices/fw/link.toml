@@ -1,5 +1,25 @@
-# Anchors of the module loader.
-# Moved from module manifests; names unchanged (step 3, docs/design/firmware-decls.md).
+# link: the ColdFire side of the DSP link: block interrupt, frame call, records
+# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+
+# The block interrupt handler (vector 191), found by the hashes of core/dsp-link. `health.rec_lit` is the literal of its first `pea`
+# (the address of the record copy: the DSP's last reply, 0xabc bytes; its first word is the DSP's cycle count).
+[[fn]]
+name = "cf.link.fn.block_isr"
+aliases = ["health.hook.block"]
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x0, len = 8 }
+rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x0, len = 8 }
+mark = "D"
+users = ["core/health"]
+
+[[fn]]
+name = "cf.link.fn.frame"
+aliases = ["dl.cf.frame_fn"]
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "c7fa95828acc6073c8bac3dcd78b465f", offset = 0x0, len = 2 }
+rule.dn2 = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset = 0x0, len = 2 }
+mark = "D"
+users = ["core/dsp-link"]
 
 # ColdFire anchors. The block-frame sender is an interrupt handler (finding 04: vector 191; DT2 vector_191_handler, DN2 the
 # handler at 0x40025e36 in 1.11 and 1.12). It calls the stock driver with `jsr abs.l` at 104 bytes into the handler, in all
@@ -7,44 +27,30 @@
 # Digitakt II:
 # Digitone II:
 [[site]]
-name = "dl.cf.frame_call"
+name = "cf.link.site.frame_call"
+aliases = ["dl.cf.frame_call"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x68, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x68, len = 6 }
 mark = "D"
 users = ["core/dsp-link"]
 
-[[fn]]
-name = "dl.cf.frame_fn"
-cpu = "cf"
-rule.dt2 = { kind = "cf_func", hash = "c7fa95828acc6073c8bac3dcd78b465f", offset = 0x0, len = 2 }
-rule.dn2 = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset = 0x0, len = 2 }
-mark = "D"
-users = ["core/dsp-link"]
-
 # The literal of the handler's first `pea`: the address of the record copy (the DSP's last reply). dl_diag reads the diagnostic
 # words there; the same site as core/health's health.rec_lit.
 [[site]]
-name = "dl.cf.rec_lit"
+name = "cf.link.site.rec_lit"
+aliases = ["dl.cf.rec_lit", "health.rec_lit"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x56, len = 4 }
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x56, len = 4 }
 mark = "D"
-users = ["core/dsp-link"]
+users = ["core/dsp-link", "core/health"]
 
 [[site]]
-name = "dl.cf.tx_lit"
+name = "cf.link.site.tx_lit"
+aliases = ["dl.cf.tx_lit"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "c7fa95828acc6073c8bac3dcd78b465f", offset = 0x6c, len = 4 }
 rule.dn2 = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset = 0x92, len = 4 }
-mark = "D"
-users = ["core/dsp-link"]
-
-# The second last instruction of the block handler's common tail, `DM(<ring toggle>) = R1`: every command path of the
-# handler ends there, after the handler has built the record. The same relocation-insensitive hash on both devices.
-[[site]]
-name = "dl.dsp.block_tail"
-cpu = "sharc"
-rule = { kind = "sharc_func", reloc_hash = "64b66b0db31c9fe533e67c75374b1041e22aae334bc3cd8743a491ab2448ecde", offset = 0xf4, len = 6 }
 mark = "D"
 users = ["core/dsp-link"]

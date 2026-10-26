@@ -13,7 +13,9 @@ Anchors are declared in devices/fw/<subsystem>.toml (docs/design/firmware-decls.
 entry is one declaration; its `rule` is shared, or `rule.dt2` / `rule.dn2` give one rule per device:
 
     [[fn]]
-    name = "dsp.master.q31_call"     # the anchor's name
+    name = "dsp.master.fn.q31_converter"   # <cpu>.<subsystem>.<kind>.<name>; the kind is the table, the
+                                           # subsystems are listed in devices/fw/subsystems.toml
+    aliases = ["dsp.master.q31_converter"] # old names: each resolves to the same anchor
     cpu = "sharc"
     devices = ["dt2"]                # the devices that have it; the entry is skipped on the others
     rule = { kind = "sharc_func", reloc_hash = "...", offset = 0x0, len = 6 }   # kind: see below
@@ -127,13 +129,52 @@ def ported_firmware(root: Path = ROOT) -> list[str]:
 
 RULE_TABLES = ("fn", "site", "data", "value", "sites")
 UNRESOLVED_TABLES = ("hook", "struct")
+SUBSYSTEMS = "subsystems.toml"
+NAME_SEGMENT = re.compile(r"[a-z0-9_]+")
+
+
+def load_subsystems(root: Path) -> dict[str, set[str]]:
+    """cpu -> the allowed subsystem words, from devices/fw/subsystems.toml."""
+    d = tomllib.loads((root / "devices" / "fw" / SUBSYSTEMS).read_text())
+    return {cpu: set(words) for cpu, words in d.items()}
+
+
+def check_name(name: str, table: str, vocab: dict[str, set[str]]) -> None:
+    """A declaration name is `<cpu>.<subsystem>.<kind>.<name>`: the cpu and subsystem are in VOCAB, the kind is the
+    entry's TABLE, and the rest is dot-separated segments of [a-z0-9_] (so `clone.0.alt` is allowed)."""
+    parts = name.split(".")
+    if len(parts) < 4:
+        raise ResolveError(
+            f"{name}: a name has the form <cpu>.<subsystem>.<kind>.<name>"
+        )
+    cpu, subsystem, kind, *rest = parts
+    if cpu not in vocab:
+        raise ResolveError(f"{name}: cpu {cpu!r} is not one of {sorted(vocab)}")
+    if subsystem not in vocab[cpu]:
+        raise ResolveError(
+            f"{name}: {subsystem!r} is not a {cpu} subsystem in devices/fw/{SUBSYSTEMS}"
+        )
+    if kind != table:
+        raise ResolveError(
+            f"{name}: the kind {kind!r} differs from its table [[{table}]]"
+        )
+    for segment in rest:
+        if not NAME_SEGMENT.fullmatch(segment):
+            raise ResolveError(
+                f"{name}: segment {segment!r} must be lower case letters, digits and _"
+            )
 
 
 def fw_rules(root: Path) -> list[dict]:
-    """The rules of devices/fw/**/*.toml, one dict per device filter, with `_source` = "fw/<file without .toml>"."""
+    """The rules of devices/fw/**/*.toml, one dict per device filter, with `_source` = "fw/<file without .toml>".
+    Each has the declaration's `aliases` (old names; empty by default)."""
     fw = root / "devices" / "fw"
+    vocab = load_subsystems(root)
+    owner: dict[str, str] = {}  # a name or alias -> the declaration that holds it
     rules = []
     for f in sorted(fw.rglob("*.toml")):
+        if f == fw / SUBSYSTEMS:
+            continue
         source = "fw/" + f.relative_to(fw).with_suffix("").as_posix()
         for table, entries in tomllib.loads(f.read_text()).items():
             if table in UNRESOLVED_TABLES:
@@ -141,13 +182,22 @@ def fw_rules(root: Path) -> list[dict]:
             if table not in RULE_TABLES:
                 raise ResolveError(f"{f}: unknown table [[{table}]]")
             for e in entries:
+                check_name(e["name"], table, vocab)
+                aliases = list(e.get("aliases", []))
+                if e["name"] in aliases:
+                    raise ResolveError(f"{e['name']}: lists itself as an alias")
+                for n in (e["name"], *aliases):
+                    if owner.setdefault(n, e["name"]) != e["name"]:
+                        raise ResolveError(
+                            f"{n}: held by both {owner[n]} and {e['name']}"
+                        )
                 rule = e["rule"]
                 if "kind" in rule:
                     shared = [(e.get("devices"), rule)]
                 else:
                     shared = [([dev], r) for dev, r in rule.items()]
                 for devices, r in shared:
-                    out = {"name": e["name"]}
+                    out = {"name": e["name"], "aliases": aliases}
                     if "cpu" in e:
                         out["cpu"] = e["cpu"]
                     out.update({k: v for k, v in r.items() if k != "mark"})
@@ -612,27 +662,29 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
             if rule.get("cpu") == "cf"
             else resolve_anchor(dsp, rule)
         )
-        anchors.append(
-            {
-                "name": rule["name"],
-                "cpu": rule.get("cpu", "sharc"),
+        anchor = {
+            "name": rule["name"],
+            "cpu": rule.get("cpu", "sharc"),
+            "mark": rule.get("mark", "D"),
+            "rule": f"{rule['_source']}:{rule['kind']}",
+            **a,
+        }
+        # every alias is the same anchor under another name
+        anchors += [anchor, *({**anchor, "name": n} for n in rule["aliases"])]
+    known = {a["name"]: a for a in anchors}
+    for rule in pending:
+        for i, a in enumerate(resolve_cf_multi(cf, rule, known)):
+            anchor = {
+                "name": f"{rule['name']}.{i}",
+                "cpu": "cf",
                 "mark": rule.get("mark", "D"),
                 "rule": f"{rule['_source']}:{rule['kind']}",
                 **a,
             }
-        )
-    known = {a["name"]: a for a in anchors}
-    for rule in pending:
-        for i, a in enumerate(resolve_cf_multi(cf, rule, known)):
-            anchors.append(
-                {
-                    "name": f"{rule['name']}.{i}",
-                    "cpu": "cf",
-                    "mark": rule.get("mark", "D"),
-                    "rule": f"{rule['_source']}:{rule['kind']}",
-                    **a,
-                }
-            )
+            anchors += [
+                anchor,
+                *({**anchor, "name": f"{n}.{i}"} for n in rule["aliases"]),
+            ]
     # one anchor name may be declared more than once; the resolved anchors must agree
     seen: dict[str, dict] = {}
     unique = []

@@ -61,6 +61,7 @@ file per device.
 | `hook` | `cf.menu.hook.settings_tail` | (today `[[op]]` in the manifest) | none; describes a `site` |
 | `struct` | `cf.menu.struct.MenuItem` | none | none; generated types only |
 
+An `fn` may use a `cf_ptr` rule: a pointer literal to a function (the port anchor kind is then `data`).
 `site` is a place inside a function that a hook or patch targets. `fn` is a callable entry point. The split matters for
 generation: an `fn` becomes a callable binding, a `site` never does.
 
@@ -177,7 +178,8 @@ under every alias, so existing modules keep linking until step 5 moves them.
   1. Move only (old names kept as the names): for every port file, the set of (name, cpu, kind, addr, pm, len, sha256,
      mark) is identical before and after. Only the `rule` provenance text changes.
   2. Rename: every old tuple is still present unchanged (as an alias), and each new name has exactly the values of
-     its alias.
+     its alias. The rename merged three pairs that were the same firmware object (operator new, the block read and
+     the link record literal) into one declaration each, with the larger `len`.
 - `cf.params.fmt` and `cf.params.slotbuild` (generator only, never used) are dropped. The `pk_*_rules*.py` generators
   are deleted; new rules come from `catalog emit-rule ADDR` on the current image.
 

@@ -65,12 +65,18 @@ def test_framework_rules_are_declared_once_per_site():
     machine_rules = [
         r
         for r in port_resolve.fw_rules(REPO_ROOT)
-        if r["name"].startswith(("cf.machines.", "dsp.machines."))
+        if r["name"].startswith(("cf.machine.", "dsp.machine."))
     ]
     keys = [(r["name"], tuple(r.get("devices", []))) for r in machine_rules]
     assert len(keys) == len(set(keys))
-    # every anchor a hook, write, section or extern of the manifest names has a rule for each device it is active on
-    rules = {(n, dev) for n, d in keys for dev in d}
+    # every anchor a hook, write, section or extern of the manifest names has a rule for each device it is active on;
+    # the manifest still uses the old names, which are aliases
+    rules = {
+        (n, dev)
+        for r in machine_rules
+        for n in (r["name"], *r["aliases"])
+        for dev in r.get("devices", [])
+    }
     named = set()
     for op in m["op"]:
         named.add((op.get("anchor"), tuple(op.get("devices", ["dt2", "dn2"]))))

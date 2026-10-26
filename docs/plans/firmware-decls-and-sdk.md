@@ -115,9 +115,9 @@ shared module moved out.
 
 ### 3. Declarations (Python, host patchkit only)
 
-- [ ] Design `devices/fw/<subsystem>.toml` with Em: per entry name, devices, signature, rule, mark; structs with fields
+- [x] Design `devices/fw/<subsystem>.toml` with Em (`docs/design/firmware-decls.md`, agreed 2026-10-27): per entry name, devices, signature, rule, mark; structs with fields
       and per-device sections only where a device differs; hooks with their register contract.
-- [ ] `port_resolve.py` reads the new fw directory under devices; the 201 rules move there mechanically.
+- [x] `port_resolve.py` reads `devices/fw/`; the 201 rules moved there mechanically (146 declarations, a2b60660).
 - [ ] Replace the `pk_*_rules*.py` generators with `catalog emit-rule ADDR` (drop the unused `cf.params.fmt` and
       `cf.params.slotbuild` sites); retire literal tables in
       `machineprofile.py` and `cf_names.py` as their consumers move to anchors.
@@ -125,11 +125,16 @@ shared module moved out.
       `sharc_func` (fixes most of the 182 shared DSP hashes on DT2).
 - [ ] Hooks declare their register contract: inputs, clobbered and preserved registers, and the DSP mode (modify
       registers, SIMD). Today this is prose in findings 45 and 53.
-- [ ] One naming rule with a fixed subsystem vocabulary: `<cpu>.<subsystem>.<kind>.<name>`, named after the firmware, not after our module.
+- [x] One naming rule with a fixed subsystem vocabulary (`devices/fw/subsystems.toml`): `<cpu>.<subsystem>.<kind>.<name>`, named after the firmware, not after our module.
       `dkrt.*`, `dl.*`, `health.*` and `input.*` get firmware names; old names stay as aliases until the move is done.
 - [ ] Portability count: how many declarations resolve on Syntakt 1.42 (today 27 of 172 ColdFire rules).
 
 Proof: every `devices/ports/*.toml` is byte-identical before and after the move (aliases keep the old names).
+
+Result 2026-10-27 [D]: the move kept every port anchor (only the rule provenance text changed). The rename gave 143
+declarations (three merges: operator new, block read, the link record literal); every old anchor is still in the port
+files unchanged except the hash window of two merged call targets (2 -> 4 bytes, same address), and all 924 alias
+pairs carry the same values as their new names. The rule generators are deleted.
 
 ### 4. Rust build speed (before the next m68k Rust build)
 

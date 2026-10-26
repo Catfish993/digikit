@@ -1,0 +1,59 @@
+# view: Brain, ViewController, View, redraw, the UI loop
+# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+
+[[fn]]
+name = "cf.view.fn.brain"
+aliases = ["cf.menu.fn.brain"]
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x46, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.view.fn.invalidate"
+aliases = ["cf.menu.fn.invalidate"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "06c561b63ac3ef5d6fd66758337bb31f", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.view.fn.mgr_of"
+aliases = ["cf.menu.fn.mgr_of"]
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x4e, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.view.fn.push"
+aliases = ["cf.menu.fn.view_add"]
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x60, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[fn]]
+name = "cf.view.fn.push_ctx"
+aliases = ["cf.menu.fn.push"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "5e689a4fa65d49640663c7bce736d9ea", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+[[site]]
+name = "cf.view.site.ui_loop"
+aliases = ["dkrt.hook.ui_loop"]
+cpu = "cf"
+rule = { kind = "cf_words", as = "code", words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8], offset = 0x6, len = 6 }
+mark = "D"
+users = ["core/runtime"]
+
+# The literal queue address of the UI loop's `pea <queue>` (the boot hook peeks the queue for a held safe-mode key).
+[[site]]
+name = "cf.view.site.ui_queue_lit"
+aliases = ["dkrt.ui.queue_lit"]
+cpu = "cf"
+rule = { kind = "cf_words", as = "code", words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8], offset = 0x2, len = 4 }
+mark = "D"
+users = ["core/runtime"]

@@ -1,20 +1,12 @@
-# SHARC anchors: frame and voice render.
-# Moved from module manifests; names unchanged (step 3, docs/design/firmware-decls.md).
-
-# The DSP's copy of the ColdFire frame: the literal `I5 = 0x2558dc` of the per-block copy.
-[[value]]
-name = "dsp.voice.frame_base"
-cpu = "sharc"
-rule.dt2 = { kind = "sharc_literal", reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780", offset = 0x14d }
-rule.dn2 = { kind = "sharc_literal", reloc_hash = "4cc8a46bca990a7bd883d1784307a9cd72aa828a1ae846977e337fbc5c54c010", offset = 0x165 }
-mark = "D"
-users = ["core/dsp-voice"]
+# voice: voice rendering
+# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
 
 # ---- Digitone II (FUN_b8251b: the helper the engine calls once per voice buffer after the FM synthesis, first
 # instruction `I7 = MODIFY(I7, -18)`, 48 bits, displaced; the DSP's frame copy is the literal `I4 = 0x25c48c` of the
 # per-block copy in FUN_1c2712).
 [[fn]]
-name = "dsp.voice.render_entry"
+name = "dsp.voice.fn.render_entry"
+aliases = ["dsp.voice.render_entry"]
 cpu = "sharc"
 rule.dt2 = { kind = "sharc_func", reloc_hash = "830c02524f18d34629acb569a92d052d66f23c9ab260ac27ef8e4a9869c22fd2", offset = 0x0, len = 6 }
 rule.dn2 = { kind = "sharc_func", reloc_hash = "7cb2e56b587600a04d8d3876f254fa6fc326af68e6d6e8c7741517e316640dec", offset = 0x0, len = 6 }
@@ -22,16 +14,28 @@ mark = "D"
 users = ["core/dsp-voice"]
 
 [[site]]
-name = "dsp.voice.render_next"
+name = "dsp.voice.site.render_next"
+aliases = ["dsp.voice.render_next"]
 cpu = "sharc"
 rule.dt2 = { kind = "sharc_func", reloc_hash = "830c02524f18d34629acb569a92d052d66f23c9ab260ac27ef8e4a9869c22fd2", offset = 0x3, len = 6 }
 rule.dn2 = { kind = "sharc_func", reloc_hash = "7cb2e56b587600a04d8d3876f254fa6fc326af68e6d6e8c7741517e316640dec", offset = 0x3, len = 6 }
 mark = "D"
 users = ["core/dsp-voice"]
 
+# The DSP's copy of the ColdFire frame: the literal `I5 = 0x2558dc` of the per-block copy.
+[[value]]
+name = "dsp.voice.value.frame_base"
+aliases = ["dsp.voice.frame_base"]
+cpu = "sharc"
+rule.dt2 = { kind = "sharc_literal", reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780", offset = 0x14d }
+rule.dn2 = { kind = "sharc_literal", reloc_hash = "4cc8a46bca990a7bd883d1784307a9cd72aa828a1ae846977e337fbc5c54c010", offset = 0x165 }
+mark = "D"
+users = ["core/dsp-voice"]
+
 # The DSP's per-track machine type cache: the literal `I4 = 0x255970` in the per-track unpack.
 [[value]]
-name = "dsp.voice.type_cache"
+name = "dsp.voice.value.type_cache"
+aliases = ["dsp.voice.type_cache"]
 cpu = "sharc"
 devices = ["dt2"]
 rule = { kind = "sharc_literal", reloc_hash = "d2c02a587786f9ee328897985095c271ff1c5b65f289224e435968ea4b5d3f00", offset = 0x1e5 }

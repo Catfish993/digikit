@@ -1,0 +1,53 @@
+# mem: heap, operator new and free
+# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+
+[[fn]]
+name = "cf.mem.fn.free"
+aliases = ["dkrt.fw.free"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "b591a5e50d0db4780b36812232691efa", offset = 0x0, len = 2 }
+mark = "D"
+users = ["core/runtime"]
+
+# operator new and its free (the 32 MiB buddy allocator, finding 01): void *f(u32), void f(void *)
+[[fn]]
+name = "cf.mem.fn.new"
+aliases = ["cf.menu.fn.new", "dkrt.fw.alloc"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0dcb1d56c454607ae1698e4eeff299e7", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu", "core/runtime"]
+
+[[site]]
+name = "cf.mem.site.heap_desc_lit"
+aliases = ["health.heap.desc_lit"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0dcb1d56c454607ae1698e4eeff299e7", offset = 0x1e, len = 4 }
+mark = "D"
+users = ["core/health"]
+
+[[site]]
+name = "cf.mem.site.heap_lock_lit"
+aliases = ["health.heap.lock_lit"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0dcb1d56c454607ae1698e4eeff299e7", offset = 0x14, len = 4 }
+mark = "D"
+users = ["core/health"]
+
+# `operator new` (the 32 MiB buddy allocator, finding 01), the same code on all four images: its first lines take the heap mutex
+# (`pea mutex; lea lock,a2; jsr (a2)`), test the descriptor (`tst.l desc`) and later release the mutex (`lea unlock,a5`).
+[[site]]
+name = "cf.mem.site.heap_mutex_lit"
+aliases = ["health.heap.mutex_lit"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0dcb1d56c454607ae1698e4eeff299e7", offset = 0xe, len = 4 }
+mark = "D"
+users = ["core/health"]
+
+[[site]]
+name = "cf.mem.site.heap_unlock_lit"
+aliases = ["health.heap.unlock_lit"]
+cpu = "cf"
+rule = { kind = "cf_func", hash = "0dcb1d56c454607ae1698e4eeff299e7", offset = 0x92, len = 4 }
+mark = "D"
+users = ["core/health"]

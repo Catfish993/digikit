@@ -27,22 +27,24 @@ def test_rules_are_declared_for_the_three_anchors():
     params_rules = [
         r
         for r in pr.fw_rules(REPO_ROOT)
-        if r["name"].startswith("cf.params.") and r["_source"] == "fw/params"
+        if r["name"].startswith("cf.param.")
+        and r["_source"] == "fw/param"
+        and r["name"] != "cf.param.data.master_sidechain_filter"
     ]
     for device in ("dt2", "dn2"):
         rules = {r["name"]: r for r in params_rules if device in r["devices"]}
         assert set(rules) == {
-            "cf.params.t1",
-            "cf.params.ref",
-            "cf.params.bound",
-            "cf.params.t2",
+            "cf.param.data.t1",
+            "cf.param.sites.ref",
+            "cf.param.sites.bound",
+            "cf.param.fn.t2",
         }
-        assert rules["cf.params.t1"]["kind"] == "cf_params_t1"
-        assert rules["cf.params.ref"]["kind"] == "cf_params_refs"
-        assert rules["cf.params.bound"]["kind"] == "cf_params_bounds"
+        assert rules["cf.param.data.t1"]["kind"] == "cf_params_t1"
+        assert rules["cf.param.sites.ref"]["kind"] == "cf_params_refs"
+        assert rules["cf.param.sites.bound"]["kind"] == "cf_params_bounds"
         assert (
-            len(rules["cf.params.t2"]["hash"]) == 32
-            and rules["cf.params.t2"]["len"] == 10
+            len(rules["cf.param.fn.t2"]["hash"]) == 32
+            and rules["cf.param.fn.t2"]["len"] == 10
         )
     # The table scans are DT2/DN2-specific: every rule must name its devices, so a new device never matches by accident.
     assert all(
