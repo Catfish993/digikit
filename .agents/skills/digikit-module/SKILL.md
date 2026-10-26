@@ -102,8 +102,7 @@ Each task takes `-- --help`. After a change to `devices/*.toml` or `sdk/sdk.toml
 - **Versions.** `version` is major.minor.patch; the contract versions are in `sdk/sdk.toml`. A contract major mismatch is refused
   (`E_CONTRACT`): rebuild the module.
 - **Tests.** Use owner checks for the code you changed (`mise run test:changed -- --explain` shows affected Python/Rust/module
-  tests). Selected tests may build or launch a device/emulator. `mise run verify:pre` is an optional combined preflight that
-  repeats selected tests, not a mandatory follow-up. Keep the module build, conformance and proof checks required above;
+  tests). Selected tests may build or launch a device/emulator. Keep the module build, conformance and proof checks required above;
   report any deferred coverage to the coordinator for the routed `mise run verify` gate. Do not run the emulator when a static
   answer is enough, and bound every run.
 - Facts go in `docs/findings/` with marks ([V] verified by a second agent, [D] measured once, [O] open), not in handovers.

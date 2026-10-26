@@ -1,314 +1,112 @@
 # @digi/regression
 
-Vitest suite that drives the emulator daemon (`emud`) through `@digi/test-support` and `@digi/control-client`.
+Vitest suites that drive the emulator daemon (`emud`) through `@digi/test-support` and `@digi/control-client`.
+All device suites share one config, `vitest.config.ts`, with five projects. Device projects run one file at a
+time (the stock project may run files in parallel, `REGRESSION_JOBS`, default 4).
 
-## What it checks
+## Layout
 
-- No guest fault, DSP halt or stall (`Session.expectNoFault`).
-- No stock-firmware write into the patchkit free regions: each test arms `guard.set` with the `cpu = "cf"`
-  `[[region]]` blocks of `devices/ports/<device>-<fw>.toml` (`cf.flash_cave`, `cf.expansion`, minus
-  `excludes`), with an empty `allow_pc`, and asserts `guard.report` has total 0.
-- Frame (SHA-256) and LED goldens in `goldens/dt2-1.17.json`: `dt2/rec-play` (scenario `dt2-rec-play` of
-  `tests/scenarios/dt2.json`, exact instruction counts, 6 s; reference is `coupled-run --dsp zero --trace` on the
-  same scenario), `dt2/pages` (SRC, FLTR, AMP, FX, MOD), `dt2/transport` (PLAY, STOP).
+| Directory | Project | Content |
+| --- | --- | --- |
+| `dt2/` | `stock` | Stock DT2 1.17 UI and transport goldens, zero DSP |
+| `scenarios/` | `fx-dn2`, `fx-dt2` | Stock FX oracles (see [scenarios/README.md](scenarios/README.md)) |
+| `runtime/` | `runtime` | Patched runtime workflows on DT2 1.17 and DN2 1.12 |
+| `modules/` | `modules` | Production module upload and load cells |
+| `host/` | none (root `regression-host`) | Mocked helper tests, no daemon or firmware |
 
-Each test file starts one daemon (`withSession` in `support.ts`) and restarts it before each test.
+Shared helpers: `support.ts`, `runtime/live.ts`, `runtime/remote.ts`, `runtime/runtime-plan.ts`,
+`runtime/runtime-menu.ts`, `runtime/transfer-cli.ts`, `modules/suite.ts`, `modules/acceptance.ts`.
+Goldens are in `goldens/dt2-1.17.json`.
 
-## Run
+## Commands
 
-```
-DIGI_EMUD=/path/to/emud mise run test:stock
-DIGI_EMUD=/path/to/emud mise run test:stock -- dt2/pages  # native Vitest filter
-```
+| Command | Project | Notes |
+| --- | --- | --- |
+| `mise run test:stock [-- FILTER]` | `stock` | `DIGI_EMUD` names a current DT2 daemon |
+| `REGRESSION_JOBS=1 pnpm --filter @digi/regression test:update` | `stock` | Rewrites goldens |
+| `mise run test:runtime [-- FILTER]` | `runtime` | Builds plusdrive first (`build:plusdrive`) |
+| `mise run test:modules [-- FILTER]` | `modules` | |
+| `mise run test:fx` | `fx-dn2` | 61 quick; `DIGI_FX_SWEEP=1` for 191 |
+| `mise run test:fx:dt2` | `fx-dt2` | 135 quick; `DIGI_FX_SWEEP=1` for 146 |
+| `mise run test:host` | host projects | No device inputs |
 
-The stock task uses the existing package test command (`pnpm test:regression` at the root remains available). It never builds: supply a current `DIGI_EMUD` binary, stock DT2 1.17 firmware and the complete ready-input set validated by `resolveInputs` (CF snapshot, DSP image and DSP state, even though the run uses zero DSP). Missing inputs fail. Host, stock FX and patched-runtime acceptance have separate `test:host`, `test:fx` and `test:runtime` tasks.
+Filters are native Vitest file or test-name filters. The device tasks never build daemons, generated cores or
+module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/regression/junit.xml`.
 
-The routed gate's `stock` step selects affected native filenames for stock cases/configuration/goldens,
-and all stock files for shared session/control/emulator changes. It reuses a selected `build-daemons`
-DT2 binary as `DIGI_EMUD` and bounds zero-DSP workers to one core each; `--only stock` requires an
-existing binary and adds no daemon build. Existing host and smoke coverage remains.
+## Prerequisites
 
-Env: `REGRESSION_JOBS` (parallel files, default 4), `REGRESSION_JUNIT=1` (writes `out/regression/junit.xml`).
+- Pinned daemons: `DIGI_EMUD` (stock), `DIGI_EMUD_DT2` and `DIGI_EMUD_DN2` (runtime, modules, FX).
+- Ready inputs for the device, validated by `resolveInputs` (CF snapshot, DSP image and state). Runtime inputs
+  must match the stock SHA-256 and `intc_force:false` in the ready directory's `SOURCE.json`.
+- Module artifacts: `out/regression/modules/<device>/<leaf>.dkm` (override the root with
+  `DIGI_RUNTIME_MODULES`). Runtime cases need `input-probe`, `remote` and `svc-echo`; module cells need
+  `pluck`, `freqshift` and `remote`. The gate packs them itself. By hand:
+  `uv run python -m tools.patchkit.patchkit pack digikit/pluck --device dt2 -o out/regression/modules/dt2/pluck.dkm`.
+- DT2 card samples at `out/runs/patchkit/samples` (`tools.emulator.card_check.make_samples`).
+- Sample cases also need `apps/web/public/dksample.wasm` (`mise run wasm:dksample`).
+- plusdrive is built by `build:plusdrive` at a fixed path. There is no `DIGI_PLUSDRIVE` or
+  `DIGI_RUNTIME_CARD` variable.
 
-## Update goldens
+## Stock suite
 
-```
-REGRESSION_JOBS=1 DIGI_EMUD=... pnpm --filter @digi/regression test:update
-```
+Each test checks no guest fault, DSP halt or stall (`Session.expectNoFault`), and that the stock firmware writes
+nothing into the patchkit free regions: `guard.set` is armed with the `cpu = "cf"` `[[region]]` blocks of
+`devices/ports/<device>-<fw>.toml` (`cf.flash_cave`, `cf.expansion`, minus `excludes`) with an empty
+`allow_pc`, and `guard.report` must total 0.
 
-Use one job: the files all write `goldens/dt2-1.17.json`. Review the diff before committing; a golden changes
-only with a reason.
+Frame (SHA-256) and LED goldens: `dt2/rec-play` (scenario `dt2-rec-play` of `tests/scenarios/dt2.json`, exact
+instruction counts, 6 s), `dt2/pages` (SRC, FLTR, AMP, FX, MOD), `dt2/transport` (PLAY, STOP). The tests run
+with `--dsp zero`, so nothing checks sound or DSP faults (`docs/findings/07-emulator.md`, "Zero DSP replies for
+UI scenarios"). A golden changes only with a reason; review the diff.
 
-## Zero-DSP mode
+## Runtime workflows
 
-The tests run with `--dsp zero` (no SHARC): the UI, sequencer and ColdFire side run, the DSP replies are stubbed.
-There is no audio, so nothing here checks sound, DSP faults or audio-dependent UI. See
-`docs/findings/07-emulator.md`, "Zero DSP replies for UI scenarios".
+`runtime/*.test.ts`: `remote-input`, `service-commands`, `transfer-live`, `input-adapter`, `samples-live`
+(DT2) and `samples-store-live` (DN2). Each device case runs on its own fresh runtime daemon.
 
-## Patched runtime fixture
+Helpers in `runtime/live.ts`:
 
-`pnpm test:host` at the repository root runs five named projects from `vitest.host.config.ts`:
-`control-client`, `test-support`, `dk-session`, `regression-host` and `desktop-host`. The package-local
-`pnpm --filter @digi/regression test:host` selects only `regression-host`, covering mocked startup,
-cleanup and USB wiring without firmware, native builds or daemons. Package-local `test` scripts for
-the other three packages and desktop `test:host` likewise select their own project. The root config uses explicit host-only
-includes and defaults to one worker; `mise run test:host -- --maxWorkers N` (or
-`pnpm test:host --maxWorkers N`) overrides it. Optional JUnit output uses Vitest's
-native CLI, for example `pnpm test:host --reporter=default --reporter=junit --outputFile=out/host-junit.xml`.
-The `host` step delegates to the native mise sequence with that one-worker default while retaining
-its outer CPU allocation. The sequence runs all five host projects once, global lint/format
-and control-client, shared-session, test-support, regression and desktop-host test type checks. Explicit `--only host`
-requires no native/WASM build or device inputs. `web` retains browser tests, Astro and patchkit WASM,
-and depends on `host`, including with `--only web`. Normal host-path routing skips smoke only for the eight audited test files and desktop UI test directory described in
-[TESTING.md](../../docs/TESTING.md), while retaining `host`. Non-UI helpers, sources, manifests, configuration, new neighboring tests outside the exact
-exemptions, and unknown paths still select conservative smoke, including mixed changes. Desktop
-UI tests select only `host` and retain the existing UI-only smoke exemption; production desktop
-helpers retain application checks.
-Consumer typecheck/check scripts and runtime imports resolve `@digi/dk-session` TypeScript source directly. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
+- `runtimeTests(name, body, opts)`: one test per device, after `expectRuntimeBoot`.
+- `liveOptions(device, extra)`: daemon binary, firmware version and card for `withPatchedSession`.
+- `settleUi`, `settleLive`: wait for the UI or the free-running firmware.
+- `installModule`, `moduleArtifact`: install a prepared `.dkm` and locate it.
+- `tap`, `record`: panel key presses and a log line in the run artifacts.
+- `liveArtifacts`: the run artifact directory.
 
-The `runtime-fixture` gate step runs selected remote, service-command, transfer, sample and input-adapter acceptance cases sequentially,
-with one fresh coupled daemon per file/device. It requests `firmware.load {runtime:true, start:"auto"}` and the existing
-`emulator` patch set/cache, then selects free mode. It checks reported patch identity, ready/free status
-and health, then installs digikit/remote and proves ABOUT navigation and signed TURN acceptance.
-Host tests cover the `DkSession`/`EmuUsbTransport` wiring and pending-request cancellation. Stock restart and instruction-step waits
-are rejected for runtime sessions. Cleanup cancels protocol requests and closes the owned daemon; an
-unresponsive quit has a ten-second child termination deadline. Runtime startup expires after 120 seconds,
-actively aborting socket/handshake setup and awaiting owned-daemon cleanup before the 150-second hook
-limit; concurrent close calls share the same cleanup promise.
+Helpers in `support.ts`:
 
-Before execution, review binary freshness against the native sources/generated inputs (or explicitly
-record a compatible baseline), and supply each device's existing daemon binary. Missing binaries or
-ready inputs fail; this fixture never builds them. Runtime input validation checks the stock SHA-256
-and `intc_force:false` in the ready directory's `SOURCE.json`; its legacy image label is not provenance.
-Use the existing ready inputs selected by `resolveInputs` and the generated DT2 samples used by
-`tools.emulator.card_check.make_samples` (normally `out/runs/patchkit/samples`).
+- `withSession`: one stock daemon per file, restarted before each test.
+- `withPatchedSession`, `startPatchedSession`: coupled daemon with `firmware.load {runtime:true,
+  start:"auto"}` and the `emulator` patch set (the `device` patch set for the remote-control cases).
+- `expectRuntimeBoot`: checks patch identity, ready/free status and health.
+- `freeRegions`, `armFreeRegionGuard`, `expectNoGuardHits`: the free-region guard.
 
-```sh
-DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_EMUD_DN2=/path/to/dn2-emud \
-  DIGI_RUNTIME_CARD="$PWD/out/runs/patchkit/samples" \
-  mise run verify -- --only runtime-fixture
-```
+Stock restart and instruction-step waits are rejected for runtime sessions. Cleanup cancels protocol requests
+and closes the owned daemon.
 
-For a focused native Vitest run, use the same reviewed binaries, ready inputs and generated card samples:
+`transfer-live` runs the `tools.device.dktransfer` CLI (`runtime/transfer-cli.ts`) for install, delete and
+protocol restart, then checks the store, the mirror hash, `card.folder` metadata and the next boot.
 
-```sh
-DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_EMUD_DN2=/path/to/dn2-emud \
-  DIGI_RUNTIME_CARD="$PWD/out/runs/patchkit/samples" \
-  mise run test:runtime -- service-commands
-```
-
-`test:runtime` passes filters directly to the runtime Vitest configuration, runs one coupled daemon at a time,
-and never builds native binaries. Omitting the filter runs all runtime acceptance files.
-
-The step shares the gate CPU budget (one coupled daemon, two cores; use a budget of at least two).
-Selecting it alone adds no build prerequisite. When another selected step already requires
-`build-daemons`, it waits for that build and uses its published per-device binary paths. The step runs
-for relevant runtime cases, shared protocol/session/patch code, runtime framework dependencies and
-unknown module paths, as well as `--full` or explicit `--only runtime-fixture`. Direct test edits select
-their native filename; shared helpers retain their consumers conservatively on both devices. Sample
-client changes select the sample cases. Host-only test edits remain host-only. Existing Python/Rust,
-FX and smoke owners are retained. Native filenames are printed by `verify --explain`.
-When input-adapter cases are selected, the gate checks `test/input-probe` objects with `pk_build --check`
-and packs fresh per-device DKMs under its own run directory before launching Vitest. These bounded
-preparation commands may build module toolchains or the patchkit CLI, and fail on stale objects.
-The direct `test:runtime` task still requires prepared artifacts; it adds no preparation.
-Python acceptance dependencies follow the existing import graph from the consumed preparation/client
-entry points, with explicit consumed function-local dependencies. Unrelated analysis/device tools keep
-their Python and smoke owners. The two device `*-leds.toml` faceplate maps do not select native acceptance.
-
-The separate `dt2-remote-control.test.ts` and `dn2-remote-control.test.ts` files explicitly request the
-`device` patch set, where REMOTE starts disabled. They install only digikit/remote, assert exact raw
-STATE/status/body replies, toggle REMOTE with physical emulator buttons, and check malformed commands,
-TURN delivery/clamping/negative recovery and the final disabled KEY. Exact pacing/refill is checked by the deterministic C unit; adjacent live host calls do not establish a fixed refill interval. Original 12/45-second boot,
-10-second post-install, 400 ms panel holds, UI settles and 3-second pacing waits remain. Enabled-state
-cleanup releases remote inputs before switching off; fixture teardown covers every path. Both devices passed
-acceptance before deletion of the replaced Python scenario, runner and dispatch; sample/input-adapter
-coverage now uses the managed runtime fixture.
-The five mocked protocol/screenshot tests moved from the web suite to
-`packages/dk-session/tests/remote.test.ts` under the root host project; mixed browser tests stay with web.
-No mise task semantics changed. Reuse/reset and snapshots remain later work.
-
-
-Historical migration acceptance, before the later semantic/input revisions below: the coordinator's serial four-case run passed in 608 seconds using existing pinned daemon
-binaries, without a native build: [acceptance log](../../out/runs/verify/20261026-001204/runtime-fixture.log).
-File/body times were DT2 negative 163.893/117.436 s, DT2 positive 149.687/97.149 s,
-DN2 negative 162.688/151.364 s and DN2 positive 130.387/121.804 s. The coordinator confirmed no owned
-daemons remained. The host suite passed 46 tests in seven files; focused routing/discovery/selected
-Python checks passed 471 tests, and relevant types, lint/format and pathcheck passed. No speedup is claimed.
-
-
-CLI transfer acceptance lives in `runtime/transfer-live.ts` with one fresh daemon per device case.
-Run `mise run test:runtime -- transfer-live` with the binaries and DT2 card described above. The shared
-`runtime/transfer-cli.ts` invokes `tools.device.dktransfer` for install, delete and protocol restart;
-it saves raw CLI output on success and failure. Assertions cover the install result, epoch increase,
-store persistence, mirror SHA-256 and `card.folder` metadata, delete/empty listing, `card.sync` removal,
-and the next boot's `MOD_LOAD E_NOT_FOUND`, `UI_FIRST` and empty MODULES. Artifacts are saved under
-`out/regression/transfer-live/<device>/`; the mirror itself lives under the owned Session run directory
-and is removed at teardown. The 12-second free-running settle, 30-second mirror bound and exactly one
-post-delete protocol restart preserve the original boot history. Each CLI command has a 300-second
-bound and each transfer test body a 1000-second bound; shared startup/teardown bounds still apply.
-
-Transfer acceptance is owned by the native runtime suite and is now selected on relevant changes.
-Both device cases passed before the old transfer runner body and TOML were deleted. Python's full-tier
-sample and input-adapter coverage now uses native runtime cases; the Python live wrappers, scenarios
-and dispatch have been removed. Fixtures, including `digikit/pluck`, remain in place.
-
-
-The coordinator's serial transfer acceptance passed on 2026-10-26 with existing preflighted binaries:
-`mise run test:runtime -- transfer-live` completed in 123.28 seconds. DT2 file/body times were
-79.078/48.250 seconds; DN2 file/body times were 43.876/37.180 seconds. Persistent evidence is the
-per-device CLI logs and store/folder/boot JSON in `out/regression/transfer-live/`; these are artifact
-records, not a raw Vitest output log. No performance comparison is claimed.
-
-## Sample acceptance prerequisites
-
-The managed DT2 and DN2 sample cases require the existing converter artifact
-`apps/web/public/dksample.wasm`; prepare it explicitly with `mise run wasm:dksample` when missing or
-stale. The tests do not build it. Supply the preflighted per-device daemon and complete current ready
-inputs described above. DT2 also needs `DIGI_RUNTIME_CARD` and `DIGI_PLUSDRIVE` naming an existing
-plusdrive binary for the independent card-image oracle. These are coupled runtime cases.
-
-With those prerequisites set, use the native Vitest filename filters:
-
-```sh
-mise run test:runtime -- dt2-samples-live.test.ts
-mise run test:runtime -- dn2-samples-store-live.test.ts
-```
-
-
-Input-adapter cases require checked, freshly packed `test/input-probe` artifacts at
-`DIGI_RUNTIME_MODULES/<device>/input-probe.dkm` (default root `out/regression/modules`). The gate prepares
-these in its own directory; direct `test:runtime` needs them prepared separately. The old focused DN2
-panel/probe hash parity and distinct-screen failure are historical, not current acceptance criteria.
-The revised workflow retains two fresh identical install/VERIFY/select/restart histories with
-`autoNo:false`. Named KEY navigation captures and compares SETTINGS ninth-row and DIGIKIT main-menu
-frames; ABOUT is independently polled against the live protocol runtime version, with reads bounded
-to 24 rows. Stable identity/boot rows are compared, excluding changing diagnostics.
-
-Before navigation, +4/-4 TURN checks panel UART delivery (queue drained and IRQ count advanced) or
-probe `input_turn` status zero. Invalid key/encoder -1, runtime fault checks, finally cleanup and
-persistent frames/rows/status remain. This proves delivery/decoder acceptance, not vendor parameter
-changes. Remote keys retain real ABOUT and screenshot diagnostics, then require accepted +20/-20
-TURN deltas instead of an arbitrary screen hash change. Shared `runtime-plan.ts` validates exact
-loaded-image hash, module membership and unique symbols; `runtime-menu.ts` owns navigation and ABOUT
-reads. The Python-only runtime-version formatter has been removed.
-
-## Runtime module-load acceptance
-
-`mise run test:modules` uses `vitest.modules.config.ts` and the existing patched-session fixture,
-separately from `test:runtime`. Three production runtime uploads (`digikit/pluck`, `digikit/freqshift`
-and `digikit/remote`) on DT2 1.17 and DN2 1.12 define six lifecycle cells. Each cell owns a fresh
-coupled daemon, mirrored store and selection; cells run serially. The `module-load` gate step selects
-native filenames from the existing manifest dependency graph: a production leaf runs its two device
-cells; known static leaves retain their existing owners. Runtime patch-set/ABI/shared dependencies and
-unknown module paths conservatively select all three uploads. `--only module-load` and `--full` run all.
-The gate checks selected module objects with `pk_build build ID --check`, then packs fresh DKMs for both
-devices under its own run directory and supplies `DIGI_RUNTIME_MODULES`. Stale objects fail before any
-acceptance starts. The check can invoke module toolchains and packing may build the patchkit CLI;
-no daemon build is added by this step. A daemon build already selected elsewhere is reused.
-
-
-The same existing task can run only the deterministic C pacing unit:
+`input-adapter` and `remote-input` check semantic KEY navigation, TURN delivery and decoder acceptance, not
+vendor parameter changes. Exact remote pacing is checked by the C unit in `modules/remote-pacing.c`:
 
 ```sh
 mise run test:modules -- remote.test.ts -t 'pacing unit'
 ```
 
-It compiles the actual remote handler with controlled callbacks/clock through host `cc` (C11 and
-32-bit unsigned int), with 10-second compile and 2-second execution limits and temporary cleanup.
-No firmware or daemon is used by this filter. It verifies ±30 limits including reversal, 95/96-block
-refill, signs, independent encoders, callback failure and uint32 wrap. The real reversal bug accepted
--60 after pending +30; the clamp now accepts -30. A second adjacent live host request may return 0 or
-30 because it can cross a firmware refill; exact timing is asserted by the C unit.
+## Module cells
 
-Supply the same reviewed `DIGI_EMUD_DT2`/`DIGI_EMUD_DN2`, provenance-checked stock ready inputs and
-`DIGI_RUNTIME_CARD` sample directory described above. Prepare current module objects separately
-with their existing build owner, then explicitly pack the artifacts before acceptance. For example:
+`modules/{pluck,freqshift,remote}.test.ts` upload each production module on DT2 1.17 and DN2 1.12 through
+`DkSession` and `EmuUsbTransport`, select it, reboot, and check persistence, SDK contract, DSP-loader
+completion, registration, guard counters, runtime log and guest faults. Each cell has a fresh daemon. These
+cells observe load and registration, not rendered audio.
 
 ```sh
-uv run python -m tools.patchkit.patchkit pack digikit/pluck --device dt2 -o out/regression/modules/dt2/pluck.dkm
-uv run python -m tools.patchkit.patchkit pack digikit/freqshift --device dt2 -o out/regression/modules/dt2/freqshift.dkm
-uv run python -m tools.patchkit.patchkit pack digikit/remote --device dt2 -o out/regression/modules/dt2/remote.dkm
+mise run test:modules -- pluck.test.ts --testNamePattern dt2
 ```
 
-Repeat those pack commands with `--device dn2` and the output directory `out/regression/modules/dn2/`.
-`patchkit pack` is the existing preparation tool and may rebuild its own CLI when stale; the acceptance
-command never builds or packs modules, daemons or generated cores. Missing prerequisites fail.
-`DIGI_RUNTIME_MODULES` optionally replaces the artifact root `out/regression/modules`; preserve its
-per-device directories and `pluck.dkm`, `freqshift.dkm`, `remote.dkm` names.
+## Artifacts
 
-Native Vitest filename and test-name filters select a module/device without a custom runner:
-
-```sh
-DIGI_EMUD_DT2=/path/to/dt2-emud DIGI_RUNTIME_CARD="$PWD/out/runs/patchkit/samples" \
-  mise run test:modules -- pluck.test.ts --testNamePattern dt2
-```
-
-Omit filters, and supply both binaries, to run all six cells. The body timeout is 300 seconds per cell.
-Routing is implemented in `b50bdc2a`; broad gate `20261026-045943` passed all six
-`module-load` cells in 597 seconds. DN2 DSP acceptance waits up to 30 seconds for the selected module's `MOD_DSP`
-completion before requiring status zero and checking registration; timeout logs are retained.
-No lifecycle speed comparison is claimed. Assertions cover native
-`DkSession`/`EmuUsbTransport` upload, fresh card-byte verification, selection and protocol reboot,
-persistence, reported SDK contracts/version, DSP-loader completion, PLUCK voice/type registration,
-module guard counters, runtime log and guest faults. Remote also checks absent-before-upload service
-refusal and real STATE, malformed KEY and RELEASE dispatch. Diagnostic JSON remains under
-`out/regression/module-load/<device>/<module>/`.
-
-These cells establish load/registration/fault observations, not rendered audio correctness or physical
-device acceptance. They do not claim coverage of all 23 module manifests. Framework/static modules
-are firmware prerequisites rather than upload candidates; their existing Python/Rust, patchkit smoke,
-boot-scenario and module conformance checks remain separate. DSP functional/conformance coverage also
-remains separate. Fixtures retain fresh coupled sessions; zero-DSP patched restart and independent
-session reset/reuse remain unsupported or unproven.
-
-Broad gate `20261026-045943` completed in 3263 seconds (54m23s), reporting runtime failure while
-other steps passed, including smoke (576 seconds). Its Python PASS was misleading: two deleted live
-wrappers exited pytest with code 4 and empty valid JUnit. Follow-up fixes stop routing deleted direct
-test files and make every nonzero exit fail the aggregate, preserving testcase details and adding a
-file-level error for unexplained exits. The existing 16 outcome tests and targeted verify reporting
-check pass; these fixes have not had another broad gate.
-
-DT2 samples' repeat-run artifact collision is fixed: migrated live workflows retain unique
-`out/regression/<workflow>/<device>/run-*` directories, reused by the same Session/workflow. Two identical
-live reruns passed in 57.66 and 56.84 seconds, preserving both artifact directories. The other four
-prior failures were input frame/distinct-screen assertions, remote adjacent-call pacing and TURN OLED
-change. Those unsupported claims have been replaced with the semantic navigation, delivery/decoder
-and controlled C pacing checks above; the historical broad failure is not erased. The rebuilt remote
-module's both-device lifecycle plus unit passed in 128.03 seconds; `verify:host` passed 130 tests and
-all types/lint/format checks with 11 existing warnings. All six focused runtime cases now pass under
-the revised meaningful contracts:
-
-| Device | Input adapter | Remote control | Remote keys | Vitest elapsed |
-| --- | --- | --- | --- | --- |
-| DT2 1.17 | 193.819 s | 147.534 s | 111.233 s | 453.08 s |
-| DN2 1.12 | 209.314 s | 151.419 s | 116.123 s | 477.33 s |
-
-Each device ran its three cases sequentially; both devices ran concurrently within a four-core
-budget. Results: [DT2 JUnit](../../out/runs/input-contracts/dt2.xml) and
-[DN2 JUnit](../../out/runs/input-contracts/dn2.xml). The four formerly failing cases now pass by
-proving real KEY menu/ABOUT navigation, TURN delivery/decoder acceptance and deterministic C pacing,
-not by retaining unsupported vendor-parameter or arbitrary-screen-effect assertions. Invalid input,
-registration, identity, faults and cleanup remain covered. This does not erase the historical broad
-failure or claim a full gate rerun, performance A/B, chorus-width fix or zero-DSP restart support.
-
-## Stock coupled audio
-
-DN2 1.12 trackFX/sendFX use `vitest.fx.config.ts`, separate from the stock CF-only UI and patched runtime configurations. `mise run test:fx` runs 61 quick assertions; `DIGI_FX_SWEEP=1 mise run test:fx` runs all 191 assertions across 134 canonical cases, without building. The full suite has a known chorus-width sweep failure; selection counts do not establish an all-pass baseline. It needs preflighted stock coupled inputs and an existing binary; the caller supplies `DIGI_JOBS` from the shared CPU budget. Native test-name filters render only declared cases and their references. Python still owns cached rendering and NumPy analysis. See [the coverage map, lifecycle and commands](scenarios/README.md).
-
-
-DT2 1.17 stock FX uses `vitest.dt2-fx.config.ts` and the native `mise run test:fx:dt2` command:
-135 quick assertions, or all 146 across 60 scenarios with `DIGI_FX_SWEEP=1`. It uses the existing
-one-sample-card ready inputs and preflighted coupled-run binary, without an implicit build. Filename
-and test-name filters pass directly to Vitest; see [coverage and lifecycle](scenarios/README.md).
-The canonical task runs quick by default; use
-`DIGI_FX_SWEEP=1 mise run test:fx:dt2` for the former DT2 task's full selection. Gate `dt2-check`
-preserves quick unless `DIGIKIT_TIER=full`, and resets ambient sweep/subset flags. DT2 sources/config
-retain their device oracle/tier coverage; shared `fx-support.ts` retains both DN2 and DT2 routes.
-Clock sweeps retain the previous workload selections (DN2 quick, DT2 full), using native JUnit output
-and DT2 reports under `out/regression/dt2-fx/`. The lane's full native DT2 run passed all 146
-assertions in 420.48 seconds with 60 renders and zero cache hits; all expanded inputs matched the
-retired source. The integrated filtered routing assertion passed in 7.90 seconds with a five-scenario closure
-(145 assertions skipped); artifacts remain under `out/regression/dt2-fx/1792987837855-11088/`.
-The broad branch gate remains separate.
-The known DN2 chorus-width failure is unchanged; no performance comparison is claimed.
+Live workflows write to `out/regression/<workflow>/<device>/run-*`. A rerun in the same Session reuses its
+directory; other runs get a new one. FX reports and logs go to `out/regression/{trackfx,sendfx,dt2-fx}/`.
+Module cells write diagnostic JSON under `out/regression/module-load/<device>/<module>/`.

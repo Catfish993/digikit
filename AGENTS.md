@@ -52,13 +52,15 @@ Use the owner's command while iterating. Full command details, preparation and r
 
 | Work | Iteration check |
 | --- | --- |
-| Docs | Check links manually; run pathcheck for changed path references. No tests. |
-| General changes | `mise run test:changed` (alias `verify:pre`): static checks, audited tooling units and related host tests/types; no builds or device runs. Use either name once. |
-| Host JS/TS and desktop UI | `mise run test:host`; `mise run verify:host` also checks lint, format and types. |
+| Docs | `uv run python -m tools.devtools.pathcheck --paths PATH ...` for changed path references. |
+| Any change | `mise run test:changed` (`--explain` shows the selection): changed files only, no builds or devices. |
+| JS/TS host and desktop UI | `mise run test:host`; `mise run verify:host` also runs lint, format and types. |
 | Web Node tests | `mise run web:test` |
-| Stock UI / runtime / module loads | `mise run test:stock`, `test:runtime`, or `test:modules`; native Vitest filters apply. Requires prepared artifacts and inputs; no implicit daemon build. See regression acceptance. |
-| DN2 / DT2 FX | `mise run test:fx` / `mise run test:fx:dt2`; no implicit build. |
-| One module | `mise run module:check ID`: conformance and own tests; may build or emulate. Modules without applicable tests can do nothing; this does not prove all-module loads. |
+| Python tools | Named pytest files under `tests/<owner>/` (never a directory) and `mise run lint:py`. Typed files are listed in pyproject `[tool.mypy] files`. |
+| Device suites | `mise run test:stock`, `test:runtime`, `test:modules`, `test:fx`, `test:fx:dt2`. Prerequisites (daemons, ready inputs, module artifacts) are in [testing](docs/TESTING.md); no implicit daemon builds. |
+| One module | `mise run module:check ID`: conformance and own tests; may build or emulate. This does not prove all-module loads. |
+
+Test levels: unit tests run without a device. Device tests live in `tests/regression` (Vitest) and new device scenarios are TypeScript. Python tests test Python tools; the remaining Python device scenarios (`tests/digikit`, the smoke matrix) are pending migration. Tests must test our behaviour: no tests of third-party behaviour, of constants against themselves, or of exact command argv. Gate checks are commands, not test files.
 
 Before merging, inspect `mise run verify -- --base main --explain`, then run the routed gate once with `mise run verify -- --base main` (use the lane's base when appropriate). Iteration checks do not replace it. The coordinator owns the gate and integration. Do not repeat passed checks without a new change or unresolved concern.
 

@@ -11,7 +11,7 @@ app's `--scenario` mode and the browser parity check). One file per device:
   --scenarios tests/regression/scenarios/dt2-trackfx.ts --all`, and a peek of
   the Sound and Fx arrays (finding 18, "DT2 FX scenarios"). `tools/emulator/dt2fx.py render|check|tiers`
   renders both files with the peeks, prints the `tools/emulator/fxcheck.py` tables and compares the
-  PCM hashes of two renders; the oracle tests are `mise run scenario:check:dt2`.
+  PCM hashes of two renders; the oracle tests are `mise run test:fx:dt2` (Vitest project `fx-dt2`).
 
 ## Format
 
@@ -69,7 +69,7 @@ only valid for the firmware and ready snapshot they were recorded with.
 
 ## Oracle tests
 
-DN2 trackFX/sendFX live in `tests/regression/scenarios` as compact TypeScript sources and native Vitest assertions. [The coverage map](../regression/scenarios/README.md) records all 134 scenarios and 191 assertion identities. Python retains DT2 oracles and shared rendering/NumPy analysis. Plain `pytest tests` excludes the slow DT2 tests.
+The DN2 and DT2 trackFX/sendFX oracles live in `tests/regression/scenarios` as TypeScript sources and Vitest assertions (projects `fx-dn2` and `fx-dt2` of `tests/regression/vitest.config.ts`). [The coverage map](../regression/scenarios/README.md) lists the scenarios and assertion identities. Python provides rendering, the render cache and NumPy analysis only.
 
 ```sh
 mise run test:fx              # 61 quick DN2 assertions, no build
@@ -78,27 +78,18 @@ mise run test:fx -- -t 'test_delay_spacing fast'  # selected cases + references 
 mise run test:fx:dt2          # 135 quick DT2 assertions, no implicit build
 ```
 
-DT2: `pnpm --filter @digi/regression test:fx:dt2` runs the 135 quick assertions;
-`DIGI_FX_SWEEP=1 pnpm --filter @digi/regression test:fx:dt2` runs all 146.
+`DIGI_FX_SWEEP=1 mise run test:fx:dt2` runs all 146 DT2 assertions.
 Native Vitest file/name filters select the rendered reference/companion closure.
-The 60 scenarios use DT2 1.17 ready inputs and the one-sample card. Each render
+The 60 DT2 scenarios use DT2 1.17 ready inputs and the one-sample card. Each render
 independently restores its ready snapshot. The existing native emulator binary is
 required. Card preparation invokes the small +Drive helper build/check, unless
 `DIGI_DT2_CARD` points to an existing compatible card image.
-Reports, measurements and logs remain under `out/regression/dt2-fx/`; WAVs are
-removed after the run unless `DIGI_FX_KEEP_RUNS=1`. Python keeps NumPy analysis and
-the shared content render cache. No lifecycle speed improvement is claimed by
-the migration. `verify.py --full --dt2` also compares DT2 FX PCM with and without
-AOT; this expensive differential run remains separate.
+Reports, measurements and logs are under `out/regression/dt2-fx/`; WAVs are
+removed after the run unless `DIGI_FX_KEEP_RUNS=1`. `verify.py --full --dt2` also
+compares DT2 FX PCM with and without AOT.
 
 Add cases and assertions to the corresponding DN2 or DT2 TypeScript sources in
 `tests/regression/scenarios/`. Declare needed scenario names beside each Vitest
 identity so selection renders only their reference/companion closure. Add numerical
-measurements in `tools/emulator/fxcheck.py`. The DT2 encoder calibration ladder is
-preserved: `node tests/regression/scenarios/dt2-trackfx.ts --ladder` prints its 46
-fixed-slot calibration scenarios without playing a note.
-
-DT2 migration validation: the full native suite passed all 146 assertions in 420.48 seconds,
-with all 60 scenarios rendered and zero cache hits. Expanded inputs matched the retired JSON
-exactly. This is acceptance evidence, not a performance comparison; the integrated filtered routing assertion also passed in 7.90 seconds (five-scenario closure,
-145 assertions skipped). The broad branch gate remains separate.
+measurements in `tools/emulator/fxcheck.py`. `node tests/regression/scenarios/dt2-trackfx.ts --ladder`
+prints the 46 fixed-slot DT2 encoder calibration scenarios without playing a note.

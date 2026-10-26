@@ -40,8 +40,8 @@ state and next steps, not results.
   `mise run verify -- --explain` shows the plan.
 - `mise run verify` is also the gate for merging to `main`. Run `mise run verify:full` only after changes to the
   generated SHARC core.
-- New Python files join the ruff `CLEAN` list in `tests/devtools/test_lint.py`, and the mypy
-  `TYPED` list in `tests/devtools/test_types.py` where practical.
+- New Python files are covered by ruff through `[tool.ruff] include` in `pyproject.toml`. Add typed files to
+  `[tool.mypy] files` in `pyproject.toml` where practical.
 - Python tools go in the owner's package under `tools/` (docs/LAYOUT.md); run them with `uv run python -m tools.<owner>.<module>` and never change `sys.path`.
 - PCM pins in `tests/scenarios/*.json` and the SHARC golden hashes change only with the
   maintainer's approval and a stated reason.

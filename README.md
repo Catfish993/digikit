@@ -107,7 +107,9 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 - [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
 - [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, tests, analysis tools, repository layout
-- [Testing](docs/TESTING.md) and [results of the research](docs/FINDINGS.md)
+- Run `mise run test:changed` before committing
+- [Testing](docs/TESTING.md): test levels and commands
+- [Results of the research](docs/FINDINGS.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Licence
