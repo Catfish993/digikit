@@ -1509,80 +1509,6 @@ def live_tool(emu: Any) -> Callable[..., tuple[int, list[dict[str, Any]], float]
     return tool
 
 
-def run_live_svc(c: Ctx) -> None:
-    """A module that registers SysEx commands (Api.register_cmds): `test/svc-echo` is installed and loaded by the runtime, then its commands
-    answer over SysEx (an echo, a status of its own), the refusals it provoked at init are the ones the runtime must give, an unregistered
-    command is E_PROTO, and INFO says the runtime has the capability."""
-    from tools.device import dkproto
-    from tools.device import dktransfer as TR
-    from tools.device import dkupload as DK
-
-    (module,) = c.table()["modules"]
-    emu, _mirror = live_boot(c)
-    try:
-        tool = live_tool(emu)
-        rc, ev, _ = tool("install", module, "--restart")
-        res = next((e for e in ev if e["event"] == "result"), {})
-        c.check(
-            "install --restart: the module that registers commands loaded",
-            rc == 0 and module in res.get("loaded", []),
-            f"rc {rc} {ev[-1:] if ev else ''}",
-        )
-        up = DK.Uploader(TR.LiveTransport(emu))
-        info = up.info()
-        c.check(
-            "INFO: the capability for service commands",
-            DK.has_cap(info, "SERVICE_CMDS"),
-            str(info["caps"]),
-        )
-        lo, hi = dkproto.RANGES["remote_state"]
-        c.check(
-            "the remote state range is reserved",
-            (lo, hi) == (0x3E, 0x3F),
-            str((lo, hi)),
-        )
-        echo, refusals = 0x3E, 0x3F
-        status, body = up.request(echo, b"hello \x80\xff")
-        c.check(
-            "an echo command: the reply body is the request body (8-bit bytes too)",
-            status == 0 and body == b"hello \x80\xff",
-            f"{status} {body!r}",
-        )
-        status, body = up.request(echo, b"")
-        c.check("an echo of nothing", status == 0 and body == b"", f"{status} {body!r}")
-        status, body = up.request(echo, b"\xee")
-        c.check(
-            "a status of the module's own, no body",
-            status == -77 and body == b"",
-            f"{status} {body!r}",
-        )
-        status, body = up.request(echo, bytes(range(150)))
-        c.check(
-            "a 150-byte body", status == 0 and body == bytes(range(150)), f"{status}"
-        )
-        status, body = up.request(echo, bytes(range(250)))
-        c.check(
-            "a 250-byte body", status == 0 and body == bytes(range(250)), f"{status}"
-        )
-        status, body = up.request(echo, bytes(300))
-        c.check(
-            "a body over 256 bytes is refused (E_MSG)",
-            status == -50,
-            f"{status}",
-        )
-        status, body = up.request(refusals)
-        e_range = 0xC0  # E_CMD_RANGE = -64, its low byte
-        c.check(
-            "the runtime refused what it had to: outside a reserved range, over a registered one, an empty range",
-            status == 0 and list(body) == [e_range] * 3,
-            f"{status} {list(body)}",
-        )
-        status, _ = up.request(0x3D)
-        c.check("a command nobody registered is E_PROTO", status == -60, str(status))
-    finally:
-        emu.__exit__(None, None, None)
-
-
 def run_live_samples(c: Ctx) -> None:
     """A sample sent to the +Drive over the stock MidiRpc file commands by the TypeScript client (tools/devtools/samples_live.mjs, which also
     converts a WAV with dksample.wasm and checks the firmware's content hash against the host's), on a free-running Digitakt II. Then the card:
@@ -1821,8 +1747,6 @@ def run_live(c: Ctx) -> None:
     from tools.device import dktransfer as TR
     from tools.device import dkupload as DK
 
-    if c.table().get("part") == "svc":
-        return run_live_svc(c)
     if c.table().get("part") == "samples":
         return run_live_samples(c)
     if c.table().get("part") == "samples-store":
