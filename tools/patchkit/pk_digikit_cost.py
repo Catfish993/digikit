@@ -175,7 +175,10 @@ def run(base: str, image: str, seconds: int, keep: Path | None) -> int:
         "B": {k: v for k, v in b.items() if k != "pcm"},
     }
     (work / "cost.json").write_text(json.dumps(out, indent=1))
-    print(f"  report: {work / 'cost.json'}")
+    if keep or not equal:  # a temp work dir is removed after a clean run
+        print(f"  report: {work / 'cost.json'}")
+    else:
+        shutil.rmtree(work, ignore_errors=True)
     return 0 if equal else 1
 
 

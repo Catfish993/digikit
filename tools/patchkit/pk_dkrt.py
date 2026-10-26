@@ -24,6 +24,7 @@ import copy
 import hashlib
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -542,6 +543,11 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     rep = proof(a.image, a.keep, a.control)
     print(json.dumps(rep, indent=1))
+    if not a.keep:  # a temp work dir: removed after a clean run, kept after a failure
+        if rep["ok"]:
+            shutil.rmtree(rep["work"], ignore_errors=True)
+        else:
+            print(f"work dir kept: {rep['work']}", file=sys.stderr)
     return 0 if rep["ok"] else 1
 
 

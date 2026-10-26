@@ -53,7 +53,13 @@ class Dev:
     def __init__(self, cell: h.Cell, tests: bool = True):
         self.cell, self.tests = cell, tests
         self.goldens = h.Goldens()
-        self.session = h.Session(cell, self.goldens, run_name=f"dev-{cell.device}")
+        # fixed run dir: the interactive daemon's socket is attached to by path (`--emu --run-dir`)
+        self.session = h.Session(
+            cell,
+            self.goldens,
+            run_name=f"dev-{cell.device}",
+            run_dir=h.OUT / f"run-dev-{cell.device}",
+        )
         self.opened = False
         self.out = ROOT / "out" / "patch" / f"dev-{cell.device}-{cell.firmware}.syx"
 

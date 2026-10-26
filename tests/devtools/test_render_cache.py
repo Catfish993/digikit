@@ -124,6 +124,25 @@ def test_cache_roundtrip(tmp_path):
     assert cache.stats() == {"entries": 0, "bytes": 0}
 
 
+def test_prune_and_load_touch(tmp_path):
+    cache = rc.RenderCache(tmp_path / "c", enabled=True)
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"x" * 100)
+    keys = [f"{i:02x}" + "0" * 62 for i in range(3)]
+    for key in keys:
+        cache.store(key, {}, {}, wav)
+    for age, key in enumerate(keys):  # keys[0] oldest
+        d = cache._dir(key)
+        os.utime(d, (1_000_000 + age, 1_000_000 + age))
+    assert cache.load(keys[0]) is not None  # a hit refreshes the mtime
+    assert cache._dir(keys[0]).stat().st_mtime > 1_000_002
+    per_entry = cache.stats()["bytes"] // 3
+    assert cache.prune(2 * per_entry) == 1
+    assert cache.load(keys[1]) is None  # now the oldest
+    assert cache.load(keys[0]) is not None
+    assert cache.load(keys[2]) is not None
+
+
 def test_cache_disabled(tmp_path, monkeypatch):
     wav = tmp_path / "a.wav"
     wav.write_bytes(b"x")

@@ -627,7 +627,8 @@ def run_debug(c: Any) -> None:
             L.crash_record(L.read_all(up)[2]) is None,
         )
         # the command line, as Em runs it: a second connection to the daemon (`--run-dir`)
-        run_dir = H.OUT / f"run-{rig.s.run_name}"
+        run_dir = rig.s.run_dir
+        assert run_dir is not None
         cli = c.work / "dklog-cli.log"
         out = io.StringIO()
         with contextlib.redirect_stdout(out):

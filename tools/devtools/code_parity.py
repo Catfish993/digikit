@@ -33,7 +33,7 @@ def parity_line(device: str, firmware: str, ms: float) -> str:
         s.open()
         s.reset()
         s.run_ms(ms)
-    err = (H.OUT / f"run-{name}" / "daemon.stderr").read_text(errors="replace")
+        err = (s.run_dir / "daemon.stderr").read_text(errors="replace")
     lines = [ln for ln in err.splitlines() if ln.startswith("code parity:")]
     return (
         "\n".join(lines)

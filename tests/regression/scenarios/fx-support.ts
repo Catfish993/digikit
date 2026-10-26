@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, test } from 'vitest';
 import { repoRoot } from '@digi/test-support';
 import type { Scenario } from './dn2-trackfx.ts';
 
@@ -126,6 +126,12 @@ export function fxRender(
       active = undefined;
     }
   }
+  let failed = false;
+  let ran = 0;
+  afterEach((context) => {
+    ran++;
+    if (context.task.result?.state !== 'pass' && context.task.result?.state !== 'skip') failed = true;
+  });
   afterAll(() => {
     if (active?.pid) {
       try {
@@ -134,8 +140,13 @@ export function fxRender(
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
       }
     }
+    if (process.env.DIGI_FX_KEEP_RUNS === '1') return;
+    if (ran && !failed) {
+      fs.rmSync(run, { recursive: true, force: true });
+      return;
+    }
     // Reports, decoded measurements and logs survive failures; PCM remains in the shared content cache.
-    if (process.env.DIGI_FX_KEEP_RUNS !== '1' && fs.existsSync(run))
+    if (fs.existsSync(run))
       for (const name of fs.readdirSync(run, { recursive: true })) {
         if (String(name).endsWith('.wav')) fs.unlinkSync(path.join(run, String(name)));
       }

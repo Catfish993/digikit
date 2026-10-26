@@ -107,6 +107,10 @@ mise run test:modules -- pluck.test.ts --testNamePattern dt2
 
 ## Artifacts
 
-Live workflows write to `out/regression/<workflow>/<device>/run-*`. A rerun in the same Session reuses its
-directory; other runs get a new one. FX reports and logs go to `out/regression/{trackfx,sendfx,dt2-fx}/`.
+Live workflows write to `<os tmpdir>/digi-regression/<workflow>/<device>/run-*`. Within a Session the directory is
+reused until the test that requested it finishes. It is removed when that test passes and kept on failure (the
+run prints `artifacts kept: <dir>`).
+FX runs write reports and logs to `out/regression/{trackfx,sendfx,dt2-fx}/<timestamp>-<pid>/`. When every test of
+the file passed, the run directory is removed; on a failure the reports and logs stay (WAV files are deleted).
+`DIGI_FX_KEEP_RUNS=1` keeps the whole run directory including WAV files.
 Module cells write diagnostic JSON under `out/regression/module-load/<device>/<module>/`.

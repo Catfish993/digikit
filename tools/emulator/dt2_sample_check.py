@@ -101,7 +101,7 @@ def analyse(left: list[float], rate: float = 48000.0) -> dict:
 
 def prepare() -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
     """The card, its ready state and the firmware: (syx, card, ready_dir, work)."""
-    work = ROOT / "out" / "dt2-sample-check"
+    work = digi_env.run_dir("dt2-sample-check")
     samples = work / "samples"
     write_sine(samples / "test-sine-1khz.wav")
     syx = digi_env.firmware_for("dt2")

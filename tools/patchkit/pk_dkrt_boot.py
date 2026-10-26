@@ -46,6 +46,7 @@ import contextlib
 import hashlib
 import json
 import os
+import shutil
 import struct
 import sys
 import tempfile
@@ -385,24 +386,24 @@ class BootRig(M.Rig):
         # (scenarios run side by side in threads and in processes)
         import fcntl
 
-        H.OUT.mkdir(parents=True, exist_ok=True)
-        self._lock = (H.OUT / f"run-{self.s.run_name}.lock").open("w")
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        self._lock = (STATE_DIR / f"{self.s.run_name}.lock").open("w")
         fcntl.flock(self._lock, fcntl.LOCK_EX)
         try:
             self.start()
         except BaseException:
-            self._release()
+            self._release(False)
             raise
         return self
 
-    def _release(self) -> None:
-        self.s.close()
+    def _release(self, ok: bool = True) -> None:
+        self.s.close(ok)
         lock, self._lock = self._lock, None
         if lock is not None:
             lock.close()  # closing the file drops the flock
 
-    def __exit__(self, *exc: object) -> None:
-        self._release()
+    def __exit__(self, exc_type: object, *exc: object) -> None:
+        self._release(exc_type is None)
 
     def start(self) -> None:  # the cold boot has run the hook; no mailbox traffic yet
         self.s.open(self.syx)
@@ -668,10 +669,13 @@ class CfFolderSession(M.FolderSession):
     def open(self, image: Path | None = None) -> None:
         exe = H.daemon_binary(self.cell.device, self.syx)
         self.exe = Path(exe)
+        if self.run_dir is None:
+            self.run_dir = H.temp_run_dir(self.run_name)
+            self._temp_run_dir = True
         self.emu = Emu.spawn(
             binary=exe,
             timeout=300,
-            run_dir=H.OUT / f"run-{self.run_name}",
+            run_dir=self.run_dir,
             env=self.env,
         )
         self.emu.subscribe()
@@ -1152,6 +1156,11 @@ def main(argv: list[str] | None = None) -> int:
             {k: v for k, v in rep.items() if k != "checks"}, indent=1, default=str
         )
     )
+    if not a.keep:  # a temp work dir: removed after a clean run
+        if rep["pass"]:
+            shutil.rmtree(work, ignore_errors=True)
+        else:
+            print(f"work dir kept: {work}", file=sys.stderr)
     return 0 if rep["pass"] else 1
 
 

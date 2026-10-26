@@ -27,11 +27,13 @@ Requires DIGI_EMUD (the digi-emud binary of `mise run emu:serve -- --build-only`
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import pathlib
 import struct
 import sys
 import time
+from collections.abc import Iterator
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.control.digi_client import Emu  # noqa: E402
@@ -139,20 +141,20 @@ class FxProof(K.Proof):
     tool = "fx"
     args: argparse.Namespace
 
-    def _session(self, image: Image, name: str):
+    @contextlib.contextmanager
+    def _session(self, image: Image, name: str) -> Iterator[Emu]:
         a = self.args
-        run_dir = (
-            pathlib.Path(a.run_dir)
-            if a.run_dir
-            else ROOT / "out" / "runs" / "patchkit" / f"run-fx-{a.device}-{name}"
-        )
-        return Emu.spawn_coupled(
-            image.stock,
-            image.ready,
-            timeout=300,
-            run_dir=run_dir,
-            binary=H.daemon_binary(a.device, image.stock),
-        )
+        with (
+            H.run_dir_scope(f"fx-{a.device}-{name}", a.run_dir) as run_dir,
+            Emu.spawn_coupled(
+                image.stock,
+                image.ready,
+                timeout=300,
+                run_dir=run_dir,
+                binary=H.daemon_binary(a.device, image.stock),
+            ) as emu,
+        ):
+            yield emu
 
     def _card(self, emu: Emu):
         if self.args.device == "dt2":
@@ -493,7 +495,7 @@ def main() -> int:
     ap.add_argument(
         "--run-dir",
         type=pathlib.Path,
-        help="daemon run dir (default out/runs/patchkit/run-fx-DEV-NAME)",
+        help="daemon run dir (default: a temp dir, removed after a clean run)",
     )
     K.add_args(ap, PARTS)
     a = ap.parse_args()

@@ -2,12 +2,13 @@
 // Screenshots of the desktop UI pages in the preview (`mise run ui:preview`), headless Chromium over CDP, no dependencies.
 // Each scene sets a state of the fake device through the address, optionally clicks, waits, and writes a PNG.
 //
-//   node tools/devtools/ui_shots.mjs --out DIR [--prefix before] [--url http://127.0.0.1:5199/] [--scale 1] [scene ...]
+//   node tools/devtools/ui_shots.mjs [--out DIR (default out/runs/ui-shots/STAMP)] [--prefix before] [--url http://127.0.0.1:5199/] [--scale 1] [scene ...]
 //   node tools/devtools/ui_shots.mjs --list
 // With no scene names every scene runs. A scene whose step fails still gets its picture (the failure is printed): a missing control is
 // itself what a before/after pair shows.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { closeTab, connect, evaluate as cdpEvaluate, launchChrome, sleep } from './cdp.mjs';
 
 const args = process.argv.slice(2);
@@ -18,7 +19,12 @@ const opt = (name, fallback) => {
 const valueFlags = new Set(['--out', '--prefix', '--url', '--scale', '--chrome', '--port']);
 const names = args.filter((a, i) => !a.startsWith('--') && !valueFlags.has(args[i - 1] ?? ''));
 const base = opt('url', 'http://127.0.0.1:5199/');
-const out = opt('out', 'ui-shots');
+const stamp = new Date()
+  .toISOString()
+  .replace(/\.\d+Z$/, '')
+  .replace(/[-:]/g, '')
+  .replace('T', '-');
+const out = opt('out', path.resolve(fileURLToPath(import.meta.url), '../../../out/runs/ui-shots', stamp));
 const prefix = opt('prefix', '');
 const scale = Number(opt('scale', 1));
 const port = Number(opt('port', 9611));

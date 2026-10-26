@@ -9,7 +9,7 @@
     uv run python -m tools.device.dkupload --emu rm modules/m.dkm
     uv run python -m tools.device.dkupload --emu clear
     uv run python -m tools.device.dkupload --emu settings [-o FILE] [--json]   # the settings record (read only); FILE goes to `patchkit store dump --record FILE`
-    uv run python -m tools.device.dkupload --emu --run-dir out/runs/patchkit/run-NAME put build/m.dkm   # a scenario's daemon, not the desktop app's
+    uv run python -m tools.device.dkupload --emu --run-dir out/runs/patchkit/run-dev-DEVICE put build/m.dkm   # the daemon of `mise run patch:dev` (pk_dev), not the desktop app's
     uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info    # a real device (not exercised in CI)
     uv run python -m tools.device.dkupload --emu remote state              # digikit/remote (docs/plans/remote-control.md): the REMOTE switch
     uv run python -m tools.device.dkupload --emu remote key 10             # press and release a key (the device file's panel code); --hold S keeps it down
@@ -764,7 +764,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--run-dir",
         type=Path,
-        help="with --emu: the run directory of a daemon (a scenario's, out/runs/patchkit/run-*), not the one in out/native/run/current.json",
+        help="with --emu: the run directory of a daemon (`mise run patch:dev` (pk_dev) keeps a fixed out/runs/patchkit/run-dev-<device>; other harness runs use temporary run dirs, printed when kept after a failure), not the one in out/native/run/current.json",
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info")

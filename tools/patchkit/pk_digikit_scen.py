@@ -81,6 +81,7 @@ daemon's own boot cache is keyed by the card path, so a repeated scenario restor
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -108,6 +109,28 @@ CACHE = ROOT / "out" / "cache" / "digikit"
 # every device with a module store and its newest image that has a port (`port = true` in the device file)
 QUICK_IMAGES = {d: pk_device.port_images(d)[-1] for d in pk_device.digikit_devices()}
 RT = B.RT
+CACHE_LIMIT = 20 * 2**30  # bytes on disk the card cache may hold
+
+
+def card_used(card: Path, written: bool) -> None:
+    """Mark a cached card as used now (its mtime orders the eviction); after a new card, delete the least recently used ones
+    while the cache holds more than CACHE_LIMIT bytes on disk (the cards are sparse). The new card stays."""
+    with contextlib.suppress(OSError):
+        os.utime(card)
+    if not written:
+        return
+    entries = []
+    for f in (CACHE / "cards").glob("*.img"):
+        with contextlib.suppress(OSError):  # a card another process deleted
+            st = f.stat()
+            entries.append((st.st_mtime, st.st_blocks * 512, f))
+    total = sum(e[1] for e in entries)
+    for _, size, f in sorted(entries):
+        if total <= CACHE_LIMIT:
+            break
+        if f != card:
+            f.unlink(missing_ok=True)
+            total -= size
 
 
 # emulated ms a rig runs after its boot before the scenario looks: the first UI-loop passes (a module's DSP part is waited for by
@@ -299,7 +322,8 @@ class Ctx:
             h.update(b"foreign:%d:" % s + data)
         key = h.hexdigest()[:20]
         dst = CACHE / "cards" / f"{self.image}-{key}.img"
-        if not dst.exists():
+        written = not dst.exists()
+        if written:
             dst.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.work / f"card-{key}.img"
             if base is not None:
@@ -316,6 +340,7 @@ class Ctx:
                         f.seek(s * 512)
                         f.write(data)
             shutil.move(tmp, dst)
+        card_used(dst, written)
         return dst
 
     def rig(
@@ -1455,10 +1480,32 @@ KINDS = {
 }
 
 
+def finish_work_dir(work: Path, ok: bool) -> None:
+    """Remove a temporary work dir after a pass; keep it (and say so) after a failure or an exception."""
+    if ok:
+        shutil.rmtree(work, ignore_errors=True)
+    else:
+        print(f"work dir kept: {work}", file=sys.stderr, flush=True)
+
+
 def run_scenario(
     scen: Scenario, image: str, keep: Path | None = None, tier: str | None = None
 ) -> dict[str, Any]:
-    work = keep or Path(tempfile.mkdtemp(prefix=f"digikit-{scen.name}-"))
+    if keep:
+        return _run_scenario(scen, image, keep, tier)
+    work = Path(tempfile.mkdtemp(prefix=f"digikit-{scen.name}-"))
+    ok = False
+    try:
+        rep = _run_scenario(scen, image, work, tier)
+        ok = bool(rep["pass"])
+        return rep
+    finally:
+        finish_work_dir(work, ok)
+
+
+def _run_scenario(
+    scen: Scenario, image: str, work: Path, tier: str | None
+) -> dict[str, Any]:
     work.mkdir(parents=True, exist_ok=True)
     c = Ctx(scen, image, work)
     c.tier = tier or os.environ.get("DIGIKIT_TIER", "quick")
@@ -1502,11 +1549,29 @@ def run_pairs(
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """The (scenario, image) pairs in child processes, JOBS at a time, the long ones first. Returns the report of each pair (its
     `report.json`; a pair whose process died without one gets a failed report that names its log). One log per pair in KEEP (or a
-    temporary directory)."""
+    temporary directory, removed when every pair passes)."""
+    if keep:
+        return _run_pairs(pairs, tier, jobs, keep, quiet)
+    base = Path(tempfile.mkdtemp(prefix="digikit-jobs-"))
+    ok = False
+    try:
+        reports = _run_pairs(pairs, tier, jobs, base, quiet)
+        ok = all(r["pass"] for r in reports.values())
+        return reports
+    finally:
+        finish_work_dir(base, ok)
+
+
+def _run_pairs(
+    pairs: list[tuple[Scenario, str]],
+    tier: str,
+    jobs: int,
+    base: Path,
+    quiet: bool,
+) -> dict[tuple[str, str], dict[str, Any]]:
     import subprocess
     from concurrent.futures import ThreadPoolExecutor
 
-    base = keep or Path(tempfile.mkdtemp(prefix="digikit-jobs-"))
     base.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     rank = {

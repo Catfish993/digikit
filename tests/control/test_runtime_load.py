@@ -1,7 +1,7 @@
 """`firmware.load {runtime: true}` against a real coupled daemon: the controller patches the stock image with the device's patch
 set, boots it, and the digikit runtime answers an INFO request over `midi.usb.*`. A patched input is loaded as it is.
 
-Slow (a coupled cold boot per device, cached under out/runs/patchkit/run-runtime-load-<device>). Skips without the stock
+Slow (a coupled cold boot per device, cached under out/runs/.cache). Skips without the stock
 firmware, its ready inputs (`tools/emulator/ready.py`, paths in tools/patchkit/pk_harness.py `FIRMWARE`) or a buildable
 digi-emud (DIGI_EMUD names one outright). The runs are bounded: INFO steps at most 2 billion instructions.
 """
@@ -28,8 +28,10 @@ def test_the_runtime_boots_and_answers_info(device, version):
         exe = pk_harness.daemon_binary(device, syx)
     except pk_harness.HarnessError as e:
         pytest.skip(str(e))
-    run_dir = pk_harness.OUT / f"run-runtime-load-{device}"
-    with Emu.spawn_coupled(syx, ready, timeout=300, binary=exe, run_dir=run_dir) as emu:
+    with (
+        pk_harness.run_dir_scope(f"runtime-load-{device}") as run_dir,
+        Emu.spawn_coupled(syx, ready, timeout=300, binary=exe, run_dir=run_dir) as emu,
+    ):
         params: dict[str, object] = {
             "syx": str(syx),
             "runtime": True,

@@ -94,15 +94,17 @@ class GainProof(K.Proof):
             "patched": patched.name,
             "gain_word": hex(gain_addr),
         }
-        run_dir = a.run_dir or ROOT / "out" / "runs" / "patchkit" / f"run-gain-{device}"
         t0 = time.monotonic()
-        with Emu.spawn_coupled(
-            stock,
-            ready,
-            timeout=300,
-            run_dir=run_dir,
-            binary=H.daemon_binary(device, stock),
-        ) as emu:
+        with (
+            H.run_dir_scope(f"gain-{device}", a.run_dir) as run_dir,
+            Emu.spawn_coupled(
+                stock,
+                ready,
+                timeout=300,
+                run_dir=run_dir,
+                binary=H.daemon_binary(device, stock),
+            ) as emu,
+        ):
             card = None
             if device == "dt2":
                 samples = work / "samples"
@@ -157,7 +159,7 @@ def main() -> int:
     ap.add_argument(
         "--run-dir",
         type=pathlib.Path,
-        help="daemon run dir (default out/runs/patchkit/run-gain-DEV: keeps the patched boot cache)",
+        help="daemon run dir, kept (default: a temp dir; the patched boot cache lives in out/runs/.cache)",
     )
     K.add_args(ap, PARTS)
     a = ap.parse_args()

@@ -1,9 +1,10 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { repoRoot, type Device, type Session } from '@digi/test-support';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, onTestFinished, test } from 'vitest';
 import { expectRuntimeBoot, withPatchedSession, type PatchedSession } from '../support.ts';
 
 export const DEVICES = ['dt2', 'dn2'] as const;
@@ -107,11 +108,21 @@ export function liveArtifacts(session: Session, workflow: string): string {
   }
   const existing = workflows.get(workflow);
   if (existing) return existing;
-  const root = path.join(repoRoot(), 'out/regression', workflow, session.options.device);
+  const root = path.join(os.tmpdir(), 'digi-regression', workflow, session.options.device);
   fs.mkdirSync(root, { recursive: true });
   const dir = fs.mkdtempSync(path.join(root, 'run-'));
   workflows.set(workflow, dir);
   console.info('runtime artifacts:', dir);
+  try {
+    // Removed when the requesting test passes; kept on failure, and when called outside a test.
+    onTestFinished(({ task }) => {
+      workflows.delete(workflow);
+      if (task.result?.state === 'pass') fs.rmSync(dir, { recursive: true, force: true });
+      else console.info('artifacts kept:', dir);
+    });
+  } catch {
+    // Outside a test: keep the directory.
+  }
   return dir;
 }
 

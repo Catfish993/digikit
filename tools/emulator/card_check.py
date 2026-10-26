@@ -4,7 +4,7 @@
     uv run python -m tools.emulator.card_check [--run-dir DIR] [--mode direct|select]
 
 Writes three 48 kHz mono 16-bit files (220 Hz sine, 880 Hz sine, white noise;
-out/card-check/samples), starts the windowless daemon `digi-emud` on the DT2
+out/runs/card-check/<stamp>/samples), starts the windowless daemon `digi-emud` on the DT2
 1.16 ready inputs, and sends it `card.load` (the controller builds the card in
 process, cold-boots the DT2 with it to ready or restores the cached ready state,
 and swaps its runtime). Then for track N = 1..3: the emulator's own PCM is captured
@@ -12,8 +12,8 @@ while panel TRIG N is held (a TRIG n press plays track n) and analysed: track 1 
 peak near 220 Hz, track 2 near 880 Hz, track 3 must be broadband (no dominant partial).
 `--mode select` presses TRK+TRIG N and then TRIG 1 instead (it still sounds track 1).
 
-The run directory (default out/card-check/run) keeps the card cache between
-runs, so the second run shows the cached boot. Exit status 0 only if all
+The run directory (default out/runs/card-check/<stamp>/run) keeps the card cache
+only for the run; pass the same --run-dir twice to see the cached boot. Exit status 0 only if all
 three tracks sound as expected. The audio is not played (--no-audio).
 """
 
@@ -130,7 +130,7 @@ def build_daemon(syx: pathlib.Path) -> pathlib.Path:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--run-dir", type=pathlib.Path, default=ROOT / "out/card-check/run")
+    p.add_argument("--run-dir", type=pathlib.Path, default=None)
     p.add_argument(
         "--hold",
         type=int,
@@ -153,7 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         help="guest instructions to wait after the card is up",
     )
     a = p.parse_args(argv)
-    work = ROOT / "out" / "card-check"
+    work = digi_env.run_dir("card-check")
+    run_dir = a.run_dir or work / "run"
     samples = work / "samples"
     make_samples(samples)
     syx = digi_env.firmware_for("dt2")
@@ -165,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     binary = build_daemon(syx)
     t0 = time.monotonic()
     ok_all = True
-    with Emu.spawn(*args, "--no-audio", binary=binary, run_dir=a.run_dir) as emu:
+    with Emu.spawn(*args, "--no-audio", binary=binary, run_dir=run_dir) as emu:
         print(f"daemon up in {time.monotonic() - t0:.1f} s")
         t1 = time.monotonic()
         loaded = emu.call("card.load", dir=str(samples))

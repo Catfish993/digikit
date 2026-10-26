@@ -7,7 +7,7 @@
 
 `render` runs both files on the one-sample card (tools/emulator/dt2_sample_check.py) with
 the Sound and Fx arrays of track 1 peeked at the end of every scenario (finding
-02), WAVs kept, into DIR/trackfx and DIR/sendfx (default out/dt2fx/<stamp>).
+02), WAVs kept, into DIR/trackfx and DIR/sendfx (default out/runs/dt2fx/<stamp>).
 The core is the one SHARC_GEN_DIR names (else the registered DT2 core).
 `--env SHARC_AOT=0` renders the no-AOT configuration. `check` prints the
 tools/emulator/fxcheck.py tables for rendered runs. `tiers` compares the PCM hashes of
@@ -24,7 +24,7 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import coupled, fxcheck  # noqa: E402
+from tools.emulator import coupled, digi_env, fxcheck  # noqa: E402
 
 FILES = ("trackfx", "sendfx")
 
@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     if a.cmd == "render":
         os.environ.update(kv.partition("=")[::2] for kv in a.env)
-        out = a.out or ROOT / "out" / "dt2fx" / time.strftime("%Y%m%d-%H%M%S")
+        out = a.out or digi_env.run_dir("dt2fx")
         start = time.monotonic()
         reports = render(out, a.jobs, a.names, not a.build)
         n = sum(len(r["scenarios"]) for r in reports.values())

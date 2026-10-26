@@ -3,7 +3,7 @@
 // dependencies, like tools/devtools/browser_bench.mjs). Saves PNGs and checks the downloaded bytes.
 //
 //   node tools/devtools/web_shots.mjs --url http://127.0.0.1:4331 --firmware firmware/Digitakt_II_OS1.17.syx --module digikit/master-gain
-//        [--out out/web-shots] [--expect PATCHED.syx] [--no-boot] [--chrome PATH] [--port 9450]
+//        [--out out/runs/web-shots/STAMP] [--expect PATCHED.syx] [--no-boot] [--chrome PATH] [--port 9450]
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -18,7 +18,12 @@ const opt = (n, d) => {
 const url = opt('url', 'http://127.0.0.1:4331').replace(/\/$/, '');
 const fw = path.resolve(opt('firmware'));
 const moduleId = opt('module', 'digikit/master-gain');
-const out = path.resolve(opt('out', 'out/web-shots'));
+const stamp = new Date()
+  .toISOString()
+  .replace(/\.\d+Z$/, '')
+  .replace(/[-:]/g, '')
+  .replace('T', '-');
+const out = path.resolve(opt('out', `out/runs/web-shots/${stamp}`));
 const port = Number(opt('port', 9450));
 const chrome = [
   opt('chrome'),
