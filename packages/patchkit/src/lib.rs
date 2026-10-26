@@ -13,6 +13,7 @@ pub mod aplib;
 pub mod devdata;
 pub mod devgen;
 pub mod firmware;
+pub mod fwgen;
 pub mod syx;
 
 pub use error::{Error, Result};

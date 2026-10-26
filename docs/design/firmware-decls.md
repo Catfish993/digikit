@@ -155,6 +155,13 @@ mark = "D"
 Whether firmware functions that return a pointer set a0 as well as d0 is open; the generator will refuse a
 pointer-returning `sig` until one test settles it (plan step 5).
 
+A `[[struct]]` field has `name`, `off` and a `type`: a scalar, `ptr` (a 32-bit pointer on the device) or the short name
+of another struct (its size). The generator sorts fields by `off`, fills gaps with padding and refuses overlaps and
+fields past `size`. `patchkit gen` writes the ColdFire bindings under `modules/core/fw/`: the Rust crate
+`dkfw` (`rs/src/lib.rs`), C headers (`include/dk_fw_<subsystem>.h`) and GAS includes (`inc/dk_fw_<subsystem>.inc`). The
+bindings are their own core piece, not part of `core/runtime`: the runtime, `core/health` and `core/dsp-link` call
+firmware functions too, and the planned `adapters/*` modules will depend on them in the same way.
+
 ## Names
 
 `<cpu>.<subsystem>.<kind>.<name>`:

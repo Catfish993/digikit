@@ -32,6 +32,7 @@ members = [
     # the digikit runtime's SDK (no_std): its tests run on the host
     "modules/core/runtime/sdk",
     "modules/core/runtime/fit",
+    "modules/core/fw/rs",
     "packages/patchkit",
     "apps/desktop/src-tauri",
 ]

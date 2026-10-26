@@ -295,6 +295,24 @@ fn run(a: Args) -> Result<()> {
                     println!("wrote    {}", path.display());
                 }
             }
+            for (rel, text) in patchkit::fwgen::generate(&a.root)? {
+                let path = a.root.join(&rel);
+                let have = std::fs::read_to_string(&path).ok();
+                if have.as_deref() == Some(text.as_str()) {
+                    continue;
+                }
+                if check {
+                    println!("stale    {}", path.display());
+                    stale += 1;
+                } else {
+                    if let Some(d) = path.parent() {
+                        std::fs::create_dir_all(d)
+                            .map_err(|e| Error(format!("{}: {e}", d.display())))?;
+                    }
+                    write(&path.to_string_lossy(), text.as_bytes())?;
+                    println!("wrote    {}", path.display());
+                }
+            }
             if stale > 0 {
                 return Err(Error(format!(
                     "{stale} generated file(s) are stale: run `patchkit gen`"
