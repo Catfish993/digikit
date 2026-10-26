@@ -62,6 +62,7 @@ SMOKE_EXEMPT_FILES = [
 HOST_SMOKE_EXEMPT_FILES = [
     "packages/control-client/tests/client.test.ts",
     "packages/test-support/tests/support.test.ts",
+    "packages/dk-session/tests/remote.test.ts",
     "packages/dk-session/tests/emu-usb-transport.test.ts",
     "tests/regression/host/runtime.test.ts",
     "tests/regression/host/remote-keys.test.ts",
@@ -1039,6 +1040,9 @@ def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
         "tests/regression/runtime/remote.ts",
         "tests/regression/runtime/dt2.test.ts",
         "tests/regression/runtime/dn2.test.ts",
+        "tests/regression/runtime/remote-control.ts",
+        "tests/regression/runtime/dt2-remote-control.test.ts",
+        "tests/regression/runtime/dn2-remote-control.test.ts",
     ],
 )
 def test_runtime_fixture_sources_select_host_checks(path: str) -> None:

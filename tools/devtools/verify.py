@@ -316,6 +316,7 @@ SMOKE_EXEMPT: dict[str, str] = {
     ".claude/settings.json": "agent settings",
     "packages/control-client/tests/client.test.ts": "host client test",
     "packages/test-support/tests/support.test.ts": "host support test",
+    "packages/dk-session/tests/remote.test.ts": "host remote protocol test",
     "packages/dk-session/tests/emu-usb-transport.test.ts": "host transport test",
     "tests/regression/host/runtime.test.ts": "host runtime test",
     "tests/regression/host/remote-keys.test.ts": "host remote-keys test",

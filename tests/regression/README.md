@@ -49,14 +49,14 @@ native CLI, for example `pnpm test:host --reporter=default --reporter=junit --ou
 The `host` step runs all four host projects once with its worker budget, alongside global lint/format
 and control-client, shared-session, test-support and regression type checks. Explicit `--only host`
 requires no native/WASM build or device inputs. `web` retains browser tests, Astro and patchkit WASM,
-and depends on `host`, including with `--only web`. Normal host-path routing skips smoke only for the six audited test files listed in
+and depends on `host`, including with `--only web`. Normal host-path routing skips smoke only for the seven audited test files listed in
 [TESTING.md](../../docs/TESTING.md), while retaining `host`. Helpers, sources, manifests, configuration,
 new neighboring tests and unknown paths still select conservative smoke, including mixed changes.
 Consumer typecheck/check scripts explicitly generate `@digi/dk-session` declarations first; its runtime
 export still resolves to the existing TypeScript source. The normal `test` command retains the stock DT2 suite; runtime acceptance has a separate configuration.
 
-The `runtime-fixture` gate step runs the two migrated remote-keys acceptance cases, sequentially, with one
-fresh coupled daemon per device. It requests `firmware.load {runtime:true, start:"auto"}` and the existing
+The `runtime-fixture` gate step runs the remote-keys and remote-control acceptance cases sequentially,
+with one fresh coupled daemon per file/device. It requests `firmware.load {runtime:true, start:"auto"}` and the existing
 `emulator` patch set/cache, then selects free mode. It checks reported patch identity, ready/free status
 and health, then installs digikit/remote and checks ABOUT text and the encoder-driven OLED change.
 Host tests cover the `DkSession`/`EmuUsbTransport` wiring and pending-request cancellation. Stock restart and instruction-step waits
@@ -84,4 +84,22 @@ Selecting it alone adds no build prerequisite. When another selected step alread
 with `--full` or explicit `--only runtime-fixture`, preserving the migrated scenario’s original full tier.
 Normal verification selects host checks for runtime cases and helpers, with existing Python/Rust and
 conservative smoke routes for modules and tools; even broad changes exclude this device acceptance step.
-Further scenario migration, reuse/reset and snapshots remain later work.
+The separate `dt2-remote-control.test.ts` and `dn2-remote-control.test.ts` files explicitly request the
+`device` patch set, where REMOTE starts disabled. They install only digikit/remote, assert exact raw
+STATE/status/body replies, toggle REMOTE with physical emulator buttons, and check malformed commands,
+TURN clamping/immediate pacing/negative recovery and the final disabled KEY. Original 12/45-second boot,
+10-second post-install, 400 ms panel holds, UI settles and 3-second pacing waits remain. Enabled-state
+cleanup releases remote inputs before switching off; fixture teardown covers every path. Both devices passed
+acceptance before deletion of the replaced Python scenario, runner and dispatch; shared live helpers and
+the distinct input-adapter scenario remain.
+The five mocked protocol/screenshot tests moved from the web suite to
+`packages/dk-session/tests/remote.test.ts` under the root host project; mixed browser tests stay with web.
+No mise task semantics changed. Reuse/reset and snapshots remain later work.
+
+
+The coordinator's serial four-case acceptance passed in 608 seconds using existing pinned daemon
+binaries, without a native build: [acceptance log](../../out/runs/verify/20261026-001204/runtime-fixture.log).
+File/body times were DT2 negative 163.893/117.436 s, DT2 positive 149.687/97.149 s,
+DN2 negative 162.688/151.364 s and DN2 positive 130.387/121.804 s. The coordinator confirmed no owned
+daemons remained. The host suite passed 46 tests in seven files; focused routing/discovery/selected
+Python checks passed 471 tests, and relevant types, lint/format and pathcheck passed. No speedup is claimed.

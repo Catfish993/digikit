@@ -24,6 +24,7 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   resolveInputs: () => ({ syx: '/stock.syx' }),
 }));
 import {
+  installRemote,
   planSymbol,
   prepareRemote,
   remoteTap,
@@ -227,4 +228,29 @@ test('plan and actual loaded image require present matching SHA-256 digests', ()
       }),
     ).toThrow('output hash');
   }
+});
+
+test('negative setup installs on its own device-set daemon without patching or reading a symbol plan', async () => {
+  const negative = {
+    ...session,
+    options: { ...session.options, runtime: { patchSet: 'device' } },
+  } as Session;
+  await installRemote(negative);
+  expect(fake.exec).toHaveBeenCalledTimes(1);
+  expect(fake.exec.mock.calls[0]?.[1]).toEqual([
+    'run',
+    'python',
+    '-m',
+    'tools.device.dktransfer',
+    '--emu',
+    '--run-dir',
+    '/run/own-daemon',
+    '--json',
+    'install',
+    'digikit/remote',
+    '--restart',
+  ]);
+  expect(fake.exec.mock.calls[0]?.[2].timeout).toBe(90_000);
+  expect(fake.read).not.toHaveBeenCalled();
+  expect(fake.write.mock.calls[0]?.[0]).toMatch(/remote-control\/dt2\/install\.log$/);
 });

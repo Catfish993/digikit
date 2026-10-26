@@ -1,12 +1,12 @@
 // digikit/remote and the screenshot in the pure TypeScript client (`DkSession`, dkupload-core.ts) against a fake device that frames its replies byte for byte.
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { DkError, DkSession, decode8in7, decodeScreen, encode8in7, frame, screenPixel } from '@digi/dk-session';
 import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 
-const concat = (...p) => Uint8Array.from(Buffer.concat(p.map((x) => Buffer.from(x))));
+const concat = (...p: Uint8Array[]) => Uint8Array.from(Buffer.concat(p.map((x) => Buffer.from(x))));
 const PREFIX = [0xf0, 0x7d, 0x64, 0x6b, 1];
-const reply = (cmd, seq, status, body = []) =>
+const reply = (cmd: number, seq: number, status: number, body: number[] = []) =>
   concat(
     Uint8Array.from(PREFIX),
     Uint8Array.of(cmd | 0x40, seq),
@@ -16,6 +16,12 @@ const reply = (cmd, seq, status, body = []) =>
 
 /** The device: digikit/remote with the switch `enabled`, a firmware that clamps a TURN to `limit`, and the stock screenshot. */
 class FakeRemote {
+  enabled: boolean;
+  limit: number;
+  seen: string[] = [];
+  queue: Uint8Array[] = [];
+  held = new Set<number>();
+  screen: Uint8Array;
   constructor({ enabled = true, limit = 30 } = {}) {
     this.enabled = enabled;
     this.limit = limit;
@@ -25,7 +31,7 @@ class FakeRemote {
     this.screen = new Uint8Array(1024);
     this.screen[7] = 1; // pixel (0, 0)
   }
-  send(msg) {
+  send(msg: Uint8Array) {
     if (msg[1] === 0x00) {
       // a stock MidiRpc request (F0 00 20 3C 10 00, seq16 00 00 type): the Screenshot is answered with type 0x84
       assert.equal(decode8in7(msg.subarray(6, msg.length - 1))[4], 0x04);
@@ -39,7 +45,7 @@ class FakeRemote {
     const seq = msg[6];
     const body = decode8in7(msg.subarray(7, msg.length - 1));
     const names = Object.fromEntries(Object.entries(SERVICE_CMD).map(([k, v]) => [v, k]));
-    this.seen.push(names[cmd]);
+    this.seen.push(names[cmd]!);
     if (cmd === SERVICE_CMD.REMOTE_STATE)
       return void this.queue.push(reply(cmd, seq, 0, [this.enabled ? 1 : 0, 1, this.limit]));
     if (!this.enabled) return void this.queue.push(reply(cmd, seq, -65));

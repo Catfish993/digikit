@@ -15,7 +15,7 @@ export async function expectRuntimeBoot({ session, dk }: PatchedSession): Promis
   const identity = session.loadResult.runtime;
   expect(identity?.patched).toBe(true);
   if (!identity?.patched) throw new Error('stock input did not produce a runtime patch identity');
-  expect(identity.set).toBe('emulator');
+  expect(identity.set).toBe(session.options.runtime?.patchSet ?? 'emulator');
   expect(identity.base_sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(identity.modules.length).toBeGreaterThan(0);
   expect(identity.cache_file).toBeTruthy();

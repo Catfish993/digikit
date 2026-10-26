@@ -83,6 +83,13 @@ export async function prepareRemote({ session }: PatchedSession): Promise<Remote
   // Fail before installation/navigation if either diagnostic symbol is absent or ambiguous.
   planSymbol(plan, 'DK_ABOUT');
   planSymbol(plan, 'DK_ABOUT_N');
+  await installRemote(session);
+  return plan;
+}
+
+/** Install only: negative device-set cases need no offline ABOUT symbol plan. */
+export async function installRemote(session: Session): Promise<void> {
+  const artifacts = remoteArtifacts(session);
   const install = await exec(
     'uv',
     [
@@ -110,7 +117,6 @@ export async function prepareRemote({ session }: PatchedSession): Promise<Remote
   if (!result?.loaded?.includes('digikit/remote')) {
     throw new Error(`install --restart did not load digikit/remote: ${stdout}`);
   }
-  return plan;
 }
 
 export async function remoteTap(dk: DkSession, name: string, settleMs = 1200): Promise<void> {
@@ -144,7 +150,8 @@ export async function withRemoteRelease(dk: DkSession, action: () => Promise<voi
 }
 
 function remoteArtifacts(session: Session): string {
-  const dir = path.join(root, 'out/regression/remote-keys', session.options.device);
+  const scenario = session.options.runtime?.patchSet === 'device' ? 'remote-control' : 'remote-keys';
+  const dir = path.join(root, 'out/regression', scenario, session.options.device);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
