@@ -63,6 +63,13 @@ Review by group first, then rows. The build also writes `out/atlas/<image>-catal
 | work_name | working name of a `FUN_` row: `Class::helper_XXXX`, `str:HINT` or `calls:NAME`; empty otherwise |
 | group | call-graph group id, -1 when alone |
 
+### DSP (SHARC) catalog
+
+    uv run python -m tools.sharc_dev.sharc_catalog dt2-1.17 dn2-1.12 [--profile IMAGE=PATH]
+    fw.py catalog -i dt2-1.17 --cpu sharc --grade --top 20
+
+Needs `out/sharcdb/<image>.sqlite` (also of the old image, for `stable`). Writes `out/atlas/<image>-dsp.sqlite` (tables `catalog`, `catalog_groups`), `<image>-dsp-catalog.tsv`, `<image>-dsp-catalog-groups.tsv` and `<image>-dsp-catalog-graph.json`. Addresses are short words. Columns differ from ColdFire: `reloc_hash` replaces `h_strict`; no ui or class fields. DSP-only: `role` (voice, master/fx, util, frame, io, other), `label`, `callers`, `callees`, `loops`, `do`, `recip`, `lit_data`, `abs_dm`, `hints`, and `prof_insns` (NULL without `--profile`, which also adds the tag `hot`). `fw.py catalog` shows `role` and `hints`; TERM matches name, role, hints or tags.
+
 Marks stay [D]/[O] until a second check against image bytes. "No callers" needs `tools/coldfire/refscan.py`.
 
 ## Examples (output trimmed)

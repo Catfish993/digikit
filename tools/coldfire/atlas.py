@@ -54,6 +54,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 
 from tools.coldfire import fw  # noqa: E402
+from tools.firmware import catalog as shared  # noqa: E402
+from tools.firmware.catalog import (  # noqa: E402
+    STRONG_PAIR,
+    catalog_grade,
+    count_list,
+    group_edges,
+    louvain_groups,
+    suggest_rule,
+)
 
 ATLAS_VERSION = 1
 DESCR_STRIDE = 0x2C
@@ -899,8 +908,6 @@ def build(image: str, out_dir: str = fw.ATLAS_DIR) -> dict[str, int]:
 
 # Old firmware per image, for the stability column (same h_strict as the matched old function).
 CATALOG_OLD = {"dt2-1.17": "dt2-1.16", "dn2-1.12": "dn2-1.11"}
-# Pair methods that count as a reliable match between the two devices.
-STRONG_PAIR = frozenset({"strict", "loose", "strings", "vtable"})
 # Score weights (see catalog_score).
 W_GRADE, W_PAIR, W_UI_CALLERS, W_NEAR, W_STRING, W_ROLE, W_ANCHORED = (
     4.0,
@@ -913,9 +920,6 @@ W_GRADE, W_PAIR, W_UI_CALLERS, W_NEAR, W_STRING, W_ROLE, W_ANCHORED = (
 )
 UI_CALLER_CAP = 64
 HELPER_MIN_CALLERS = 8
-MAX_SAME_HASH = (
-    4  # up to this many functions with one hash, the address order picks one
-)
 CATALOG_ROLES = ("model", "storage", "worker")
 
 CATALOG_COLUMNS = (
@@ -945,16 +949,6 @@ CATALOG_COLUMNS = (
     ("group", "INTEGER"),
 )
 
-GROUP_COLUMNS = (
-    ("id", "INTEGER"),
-    ("size", "INTEGER"),
-    ("anchored", "INTEGER"),
-    ("grade", "INTEGER"),
-    ("top_classes", "TEXT"),
-    ("top_strings", "TEXT"),
-    ("top_tags", "TEXT"),
-    ("best", "INTEGER"),
-)
 TOP_CALLER_CLASSES = 3
 TOP_CALLEES_KNOWN = 3
 HINT_NAME_CHARS = 16
@@ -986,128 +980,6 @@ def work_name(
     if callees_known:
         return "calls:" + callees_known[0]
     return ""
-
-
-def number_groups(communities: Iterable[Iterable[int]]) -> dict[int, int]:
-    """Address -> group id. Biggest community first, then lowest address; singletons get -1."""
-    sets = sorted((sorted(c) for c in communities), key=lambda c: (-len(c), c[0]))
-    out: dict[int, int] = {}
-    gid = 0
-    for members in sets:
-        if len(members) < 2:
-            ids = -1
-        else:
-            ids = gid
-            gid += 1
-        for a in members:
-            out[a] = ids
-    return out
-
-
-def _count_list(counts: dict[str, int], limit: int) -> list[tuple[str, int]]:
-    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
-
-
-def group_edges(
-    addrs: Iterable[int], callee_n: dict[int, collections.Counter[int]]
-) -> dict[tuple[int, int], int]:
-    """Undirected edges (low, high) -> call sites in either direction, between `addrs`."""
-    nodes = set(addrs)
-    out: dict[tuple[int, int], int] = {}
-    for f in nodes:
-        for t, n in callee_n.get(f, {}).items():
-            if t in nodes and t != f:
-                key = (f, t) if f < t else (t, f)
-                out[key] = out.get(key, 0) + n
-    return out
-
-
-# Louvain resolution: 2.0 gives about 50 groups of 10+ rows on DT2 1.17 (1.0 gives 23, with two of 600+ rows).
-GROUP_RESOLUTION = 2.0
-
-
-def louvain_groups(
-    addrs: Iterable[int], edges: dict[tuple[int, int], int]
-) -> dict[int, int]:
-    import networkx as nx
-
-    g = nx.Graph()
-    g.add_nodes_from(sorted(addrs))
-    g.add_weighted_edges_from((a, b, w) for (a, b), w in sorted(edges.items()))
-    comms = nx.community.louvain_communities(
-        g, weight="weight", resolution=GROUP_RESOLUTION, seed=0
-    )
-    return number_groups(comms)
-
-
-def _parse_counts(text: str) -> list[tuple[str, int]]:
-    # Class names can hold commas (template arguments), so match "name:count" up to the next "," or the end.
-    return [(k, int(n)) for k, n in re.findall(r"(.+?):(\d+)(?:,|$)", text)]
-
-
-def catalog_group_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One row per group (id >= 0) with a summary of its members."""
-    members: dict[int, list[dict[str, Any]]] = {}
-    for r in rows:
-        if r["group"] >= 0:
-            members.setdefault(r["group"], []).append(r)
-    out = []
-    for gid in sorted(members):
-        ms = members[gid]
-        classes: dict[str, int] = {}
-        hints: dict[str, int] = {}
-        tags: dict[str, int] = {}
-        for r in ms:
-            if r["class"]:
-                classes[r["class"]] = classes.get(r["class"], 0) + 1
-            for c, n in _parse_counts(r["caller_classes"]):
-                classes[c] = classes.get(c, 0) + n
-            if r["hint"]:
-                hints[r["hint"]] = hints.get(r["hint"], 0) + 1
-            for t in r["tags"].split(","):
-                if t:
-                    k = t.split(":")[0]
-                    tags[k] = tags.get(k, 0) + 1
-        best = min(ms, key=lambda r: (-r["score"], r["addr"]))
-        out.append(
-            {
-                "id": gid,
-                "size": len(ms),
-                "anchored": sum(1 for r in ms if r["anchors"]),
-                "grade": sum(1 for r in ms if r["anchor_grade"] == 1),
-                "top_classes": ",".join("%s:%d" % kv for kv in _count_list(classes, 5)),
-                "top_strings": " | ".join(k for k, _n in _count_list(hints, 3)),
-                "top_tags": ",".join("%s:%d" % kv for kv in _count_list(tags, 5)),
-                "best": best["addr"],
-            }
-        )
-    return out
-
-
-def suggest_rule(
-    entry: int, h_strict: str, same_hash_entries_sorted: Sequence[int], is_vfunc: bool
-) -> tuple[str, int | None]:
-    """Rule kind and ordinal that would find `entry` again on another image."""
-    n = len(same_hash_entries_sorted)
-    if n <= 1:
-        return ("cf_func", None)
-    if n <= MAX_SAME_HASH and entry in same_hash_entries_sorted:
-        return ("cf_func", list(same_hash_entries_sorted).index(entry))
-    if n > MAX_SAME_HASH and is_vfunc:
-        return ("vtable_slot", None)  # label only; not resolvable yet
-    return ("none", None)
-
-
-def catalog_grade(
-    rule_kind: str, stable: int | None, pair_method: str | None, rule_both: int | None
-) -> int:
-    """1 when the function can be an anchor on both devices by hash."""
-    return int(
-        rule_kind == "cf_func"
-        and stable == 1
-        and pair_method in STRONG_PAIR
-        and rule_both == 1
-    )
 
 
 def catalog_score(
@@ -1305,7 +1177,7 @@ def catalog_rows(
         tags = d.tags[f]
         h = d.hs.get(f)
         group = d.groups.get(h, []) if h else []
-        kind, ordinal = suggest_rule(f, h, group, f in d.vt) if h else ("none", None)
+        kind, ordinal = suggest_rule(f, group, f in d.vt) if h else ("none", None)
         p = pair.get(f)
         pair_addr, method = p if p else (None, None)
         same_hash: int | None = None
@@ -1318,7 +1190,7 @@ def catalog_rows(
                     both = 0
                 else:
                     okind, oord = suggest_rule(
-                        pair_addr, oh, other.groups.get(oh, []), pair_addr in other.vt
+                        pair_addr, other.groups.get(oh, []), pair_addr in other.vt
                     )
                     both = int(okind == kind and oord == ordinal and oh == h)
         stable = d.stable.get(f)
@@ -1362,7 +1234,7 @@ def catalog_rows(
                     grade, method, callers, len(strs), tags, anchors
                 ),
                 "caller_classes": ",".join(
-                    "%s:%d" % kv for kv in _count_list(dict(cc), TOP_CALLER_CLASSES)
+                    "%s:%d" % kv for kv in count_list(dict(cc), TOP_CALLER_CLASSES)
                 ),
                 "callees_known": ",".join(known),
                 "work_name": work_name(name, dict(cc), hint, known),
@@ -1379,32 +1251,12 @@ def catalog_rows(
 
 
 def write_catalog(image: str, rows: list[dict[str, Any]], out_dir: str) -> None:
-    path = os.path.join(out_dir, image + ".sqlite")
-    con = sqlite3.connect(path)
-    con.execute("DROP TABLE IF EXISTS catalog")
-    con.execute(
-        "CREATE TABLE catalog (%s)" % ", ".join('"%s" %s' % c for c in CATALOG_COLUMNS)
+    shared.write_catalog(
+        os.path.join(out_dir, image + ".sqlite"),
+        os.path.join(out_dir, image + "-catalog.tsv"),
+        rows,
+        CATALOG_COLUMNS,
     )
-    insert(con, "catalog", rows)
-    con.execute("CREATE INDEX IF NOT EXISTS catalog_score ON catalog(score)")
-    con.commit()
-    con.close()
-    rows = sorted(rows, key=lambda r: (-r["score"], r["addr"]))
-    with open(os.path.join(out_dir, image + "-catalog.tsv"), "w") as fh:
-        fh.write("\t".join(c for c, _t in CATALOG_COLUMNS) + "\n")
-        for r in rows:
-            cells = []
-            for c, _t in CATALOG_COLUMNS:
-                v = r[c]
-                if v is None:
-                    cells.append("")
-                elif c in ("addr", "pair_addr"):
-                    cells.append("0x%08x" % v)
-                elif c == "score":
-                    cells.append("%.2f" % v)
-                else:
-                    cells.append(str(v))
-            fh.write("\t".join(cells) + "\n")
 
 
 def write_catalog_groups(
@@ -1414,48 +1266,14 @@ def write_catalog_groups(
     out_dir: str,
 ) -> int:
     """Write table catalog_groups, the groups TSV and the graph JSON; return the group count."""
-    groups = catalog_group_rows(rows)
-    con = sqlite3.connect(os.path.join(out_dir, image + ".sqlite"))
-    con.execute("DROP TABLE IF EXISTS catalog_groups")
-    con.execute(
-        "CREATE TABLE catalog_groups (%s)"
-        % ", ".join('"%s" %s' % c for c in GROUP_COLUMNS)
+    return shared.write_catalog_groups(
+        image,
+        rows,
+        edges,
+        os.path.join(out_dir, image + ".sqlite"),
+        os.path.join(out_dir, image + "-catalog-groups.tsv"),
+        os.path.join(out_dir, image + "-catalog-graph.json"),
     )
-    insert(con, "catalog_groups", groups)
-    con.commit()
-    con.close()
-    with open(os.path.join(out_dir, image + "-catalog-groups.tsv"), "w") as fh:
-        fh.write("\t".join(c for c, _t in GROUP_COLUMNS) + "\n")
-        for g in groups:
-            fh.write(
-                "\t".join(
-                    "0x%08x" % g[c] if c == "best" else str(g[c])
-                    for c, _t in GROUP_COLUMNS
-                )
-                + "\n"
-            )
-    graph = {
-        "image": image,
-        "nodes": [
-            {
-                "addr": "0x%08x" % r["addr"],
-                "name": r["name"],
-                "work_name": r["work_name"],
-                "class": r["class"],
-                "group": r["group"],
-                "score": round(r["score"], 2),
-                "anchors": r["anchors"],
-            }
-            for r in sorted(rows, key=lambda r: r["addr"])
-        ],
-        "edges": [
-            ["0x%08x" % a, "0x%08x" % b, w] for (a, b), w in sorted(edges.items())
-        ],
-    }
-    with open(os.path.join(out_dir, image + "-catalog-graph.json"), "w") as fh:
-        json.dump(graph, fh, indent=1)
-        fh.write("\n")
-    return len(groups)
 
 
 def catalog(image: str, other_image: str, out_dir: str = fw.ATLAS_DIR) -> int:

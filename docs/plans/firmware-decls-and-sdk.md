@@ -54,11 +54,11 @@ parallel.
 - [x] `fw.py catalog` queries it (filters: tag, top N, unreviewed).
 - [x] The firmware-query skill documents it; the digikit-module skill points to it for "find the firmware function
       you need".
-- [ ] Graph context per row: the classes of the callers, and the named or anchored callees. A helper called from one
+- [x] Graph context per row: the classes of the callers, and the named or anchored callees. A helper called from one
       class only gets a working name such as `ListView::helper_3` ([O]).
-- [ ] Groups: community detection (networkx) on the UI call subgraph, about 30-50 groups, each with its classes,
+- [x] Groups: community detection (networkx) on the UI call subgraph, about 30-50 groups, each with its classes,
       strings and members. Export the subgraph as JSON as well.
-- [ ] Agents pre-label the top groups and their rows (role guess from decompilation, [O]).
+- [x] Agents pre-label the top groups and their rows (role guess from decompilation, [O]).
 - [ ] Review page: group -> rows -> call neighbourhood per row, with keep / skip / later, a name and a note. Reviewed
       rows seed step 3. The page is the review view of the reference docs in step 5 (same generator).
 
@@ -67,16 +67,22 @@ Proof: the tool runs in seconds on both images; one unit test of the rule sugges
 Result 2026-10-27 [D]: 5 s for both images. DT2 5381 rows (1486 anchor-grade), DN2 5198 (1468). The top rows are
 unnamed helpers with many UI callers, so review needs the pre-labels.
 
+Groups 2026-10-27 [D]: Louvain at resolution 2.0 gives 108 groups on DT2 (54 with 10+ rows). Big groups mix string and
+menu plumbing; many single-class groups are destructor families. Two labellers working separately both name the same
+drawing primitives: formatted text draw 0x40113dc8, rectangle fill 0x401131ae, bitmap blit 0x40114168, and the status
+message printf 0x4005b23a (DT2 1.17; all [O] until checked against image bytes). The RTOS mutex and task functions at
+the vector base have the same address on DN2. Score follow-up: down-weight destructors (`vfunc_0`) and libc helpers.
+
 ### 1b. SHARC catalogue (read-only, before step 3)
 
 - [x] Read-only probe of the DSP images (sharcdb, `tools/sharc_dev/sharc.py`), seeded by the `cpu = "sharc"` anchors
       and the frame, voice and master paths of finding 53.
-- [ ] Move the shared parts of the catalogue code (rule suggestion with ordinal, grade, score, sqlite/TSV writer) out
+- [x] Move the shared parts of the catalogue code (rule suggestion with ordinal, grade, score, sqlite/TSV writer) out
       of `atlas.py` into one module used by both CPUs. The ColdFire catalogue must stay byte-identical.
-- [ ] DSP collector: hash pairing between DT2 and DN2 plus call-shape pairing, stability against 1.15C / 1.10E,
+- [x] DSP collector: hash pairing between DT2 and DN2 plus call-shape pairing, stability against 1.15C / 1.10E,
       anchors from the rules, role from the call path. The DSP score rewards role path, profile heat and a unique hash,
       not UI callers.
-- [ ] `fw.py catalog` covers both CPUs; skill docs and one unit test.
+- [x] `fw.py catalog` covers both CPUs; skill docs and one unit test.
 
 Probe results 2026-10-27 [D]: DT2 1,147 functions, DN2 1,078. The DSP images are byte-identical across 1.16 -> 1.17
 and 1.11 -> 1.12 (finding 53), so stability is measured against 1.15C / 1.10E. 143 / 142 catalogue rows, 87 / 90 with a
@@ -84,6 +90,10 @@ byte-identical twin on the other device. The 15 / 14 SHARC anchors (plus 4 `dl.c
 functions, and most of those functions are device-specific, so each device keeps its own rules. Shared building blocks,
 byte-identical on both devices: block biquad, saturator, envelope generator, block copy/fill, one filter type, powf,
 divide and reciprocal square root with Newton steps. The `functions.label` heuristic is unreliable; use finding 53.
+
+Collector 2026-10-27 [D]: `uv run python -m tools.sharc_dev.sharc_catalog dt2-1.17 dn2-1.12` runs in 0.5 s; 117 / 114
+rows, 66 / 67 anchor-grade (profile heat only with `--profile`). The ColdFire catalogue stayed byte-identical after the
+shared module moved out.
 
 ### 2. Clean-up and deletions (no Rust)
 

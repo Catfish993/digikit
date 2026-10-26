@@ -1,41 +1,11 @@
-"""Rule suggestion, grade and score of tools/coldfire/atlas.py catalog, on synthetic inputs."""
+"""Score and working names of tools/coldfire/atlas.py catalog, on synthetic inputs."""
 
 import unittest
 
 from tools.coldfire import atlas
 
 
-class SuggestRuleTest(unittest.TestCase):
-    def test_unique_hash(self) -> None:
-        self.assertEqual(
-            atlas.suggest_rule(0x100, "h", [0x100], False), ("cf_func", None)
-        )
-
-    def test_few_same_hash_uses_address_order(self) -> None:
-        group = [0x100, 0x200, 0x300]
-        self.assertEqual(atlas.suggest_rule(0x300, "h", group, False), ("cf_func", 2))
-        self.assertEqual(atlas.suggest_rule(0x100, "h", group, True), ("cf_func", 0))
-
-    def test_many_same_hash(self) -> None:
-        group = [0x100, 0x200, 0x300, 0x400, 0x500]
-        self.assertEqual(
-            atlas.suggest_rule(0x200, "h", group, True), ("vtable_slot", None)
-        )
-        self.assertEqual(atlas.suggest_rule(0x200, "h", group, False), ("none", None))
-
-
-class GradeScoreTest(unittest.TestCase):
-    def test_grade_needs_every_condition(self) -> None:
-        self.assertEqual(atlas.catalog_grade("cf_func", 1, "strict", 1), 1)
-        self.assertEqual(atlas.catalog_grade("cf_func", 1, "vtable", 1), 1)
-        self.assertEqual(atlas.catalog_grade("none", 1, "strict", 1), 0)
-        self.assertEqual(atlas.catalog_grade("cf_func", 0, "strict", 1), 0)
-        self.assertEqual(atlas.catalog_grade("cf_func", None, "strict", 1), 0)
-        self.assertEqual(atlas.catalog_grade("cf_func", 1, "callee", 1), 0)
-        self.assertEqual(atlas.catalog_grade("cf_func", 1, None, 1), 0)
-        self.assertEqual(atlas.catalog_grade("cf_func", 1, "strict", 0), 0)
-        self.assertEqual(atlas.catalog_grade("cf_func", 1, "strict", None), 0)
-
+class ScoreTest(unittest.TestCase):
     def test_score_adds_terms(self) -> None:
         s = atlas.catalog_score(1, "strict", 32, 2, ["near:cf.menu", "role:model"], [])
         self.assertAlmostEqual(s, 4 + 2 + 2 + 1.5 + 1 + 0.5)
@@ -73,17 +43,6 @@ class WorkNameTest(unittest.TestCase):
             "calls:cf.menu.open",
         )
         self.assertEqual(atlas.work_name("FUN_00000010", {}, "", []), "")
-
-
-class NumberGroupsTest(unittest.TestCase):
-    def test_order_by_size_then_address_and_singletons(self) -> None:
-        got = atlas.number_groups(
-            [{0x50}, {0x30, 0x40}, {0x10, 0x20, 0x60}, {0x05, 0x06}]
-        )
-        self.assertEqual(
-            got,
-            {0x10: 0, 0x20: 0, 0x60: 0, 0x05: 1, 0x06: 1, 0x30: 2, 0x40: 2, 0x50: -1},
-        )
 
 
 if __name__ == "__main__":

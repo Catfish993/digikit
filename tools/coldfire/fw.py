@@ -1067,25 +1067,38 @@ def cmd_catalog(
     grade: bool,
     group: int | None = None,
     groups: bool = False,
+    cpu: str = "cf",
 ) -> list[str]:
-    """Rows of the atlas `catalog` table (candidate anchor functions), best score first."""
+    """Rows of the atlas `catalog` table (candidate anchor functions), best score first.
+
+    With cpu="sharc" the rows come from out/atlas/<image>-dsp.sqlite (tools/sharc_dev/sharc_catalog.py).
+    """
     short = short_image(image)
-    path = os.path.join(ATLAS_DIR, short + ".sqlite")
-    if not os.path.exists(path):
-        raise FwError(
-            "no atlas for %s: run uv run python -m tools.coldfire.atlas build %s"
-            % (short, short)
-        )
+    if cpu == "sharc":
+        path = os.path.join(ATLAS_DIR, short + "-dsp.sqlite")
+        build = "uv run python -m tools.sharc_dev.sharc_catalog %s OTHER" % short
+        if not os.path.exists(path):
+            raise FwError(
+                "no DSP catalog for %s: run %s (e.g. dt2-1.17 dn2-1.12)"
+                % (short, build)
+            )
+    else:
+        path = os.path.join(ATLAS_DIR, short + ".sqlite")
+        build = "uv run python -m tools.coldfire.atlas catalog %s OTHER" % short
+        if not os.path.exists(path):
+            raise FwError(
+                "no atlas for %s: run uv run python -m tools.coldfire.atlas build %s"
+                % (short, short)
+            )
     con = open_ro(path)
     if not _has(con, "catalog"):
         raise FwError(
-            "no catalog for %s: run uv run python -m tools.coldfire.atlas catalog %s OTHER"
-            " (e.g. dt2-1.17 dn2-1.12)" % (short, short)
+            "no catalog for %s: run %s (e.g. dt2-1.17 dn2-1.12)" % (short, build)
         )
     if (groups or group is not None) and not _has(con, "catalog_groups"):
         raise FwError(
-            "no catalog groups for %s: re-run uv run python -m tools.coldfire.atlas catalog %s OTHER"
-            " (e.g. dt2-1.17 dn2-1.12)" % (short, short)
+            "no catalog groups for %s: re-run %s (e.g. dt2-1.17 dn2-1.12)"
+            % (short, build)
         )
     if groups:
         grows = con.execute(
@@ -1114,9 +1127,17 @@ def cmd_catalog(
         where.append('"group"=?')
         args.append(group)
     if term:
+        cls_col, hint_col = ("role", "hints") if cpu == "sharc" else ("class", "hint")
         where.append(
-            "(name LIKE ?%d OR class LIKE ?%d OR hint LIKE ?%d OR tags LIKE ?%d)"
-            % ((len(args) + 1,) * 4)
+            "(name LIKE ?%d OR %s LIKE ?%d OR %s LIKE ?%d OR tags LIKE ?%d)"
+            % (
+                len(args) + 1,
+                cls_col,
+                len(args) + 1,
+                hint_col,
+                len(args) + 1,
+                len(args) + 1,
+            )
         )
         args.append("%" + term + "%")
     if tag:
@@ -1126,6 +1147,37 @@ def cmd_catalog(
         where.append("anchor_grade=1")
     sql = "FROM catalog WHERE " + " AND ".join(where)
     total = con.execute("SELECT count(*) " + sql, args).fetchone()[0]
+    if cpu == "sharc":
+        drows = con.execute(
+            "SELECT addr, score, anchor_grade, name, role, tags, callers, hints, pair_addr, "
+            'pair_method, rule_kind, rule_ordinal, anchors, "group" '
+            + sql
+            + " ORDER BY score DESC, addr LIMIT %d" % top,
+            args,
+        ).fetchall()
+        out = [
+            "catalog %s (sharc): %d rows match, %d shown" % (short, total, len(drows))
+        ]
+        for a, sc, g, name, role, tags, nc, hints, pa, pm, rk, ro, anch, grp in drows:
+            rule = rk if ro is None else "%s#%d" % (rk, ro)
+            out.append(
+                "%06x %5.2f %s %s (%s) grp=%d  %s  callers=%d rule=%s pair=%s%s%s"
+                % (
+                    a,
+                    sc,
+                    "G" if g else "-",
+                    name,
+                    role,
+                    grp,
+                    tags,
+                    nc,
+                    rule,
+                    "%06x/%s" % (pa, pm) if pa is not None else "-",
+                    " " + repr(hints) if hints else "",
+                    " anchored=" + anch if anch else "",
+                )
+            )
+        return out
     rows = con.execute(
         "SELECT addr, score, anchor_grade, name, class, tags, ui_callers, hint, pair_addr, "
         'pair_method, rule_kind, rule_ordinal, anchors, work_name, "group", caller_classes '
@@ -1268,6 +1320,7 @@ def run(
                 args.grade,
                 args.group,
                 args.groups,
+                args.cpu or "cf",
             ),
             cap,
         )
