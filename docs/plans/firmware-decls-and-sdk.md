@@ -146,6 +146,13 @@ pairs carry the same values as their new names. The rule generators are deleted.
 
 Proof: cold and warm build of `core/digikit-menu` before and after; objects byte-identical.
 
+Baseline 2026-10-27 [D] (16 cores, load 14-18, under benchlock): `core/digikit-menu` warm 0.6 s (nothing rebuilt), one
+source file touched 1.15 s, cold 9.7-10 s, of which about 70% is `-Zbuild-std` (`core` about 6 s); `core/runtime`
+warm 0.6 s. Objects stayed byte-identical. **[C]** The earlier "Rust builds are slow by layout" was overstated: a
+module build is not slow; the per-worktree target dirs only cost the first ~10 s build in each new lane plus disk
+(73 dirs, 3.3 GB). The cache key does not include the backend build mode or a sysroot, so those changes need
+`build_module(check=True)` on all five committed Rust objects as proof.
+
 ### 5. Generated bindings
 
 - [ ] Generate `sdk/dk_machine.h` and `sdk/dk_fx.h` from `sdk.toml`; drop the test that compares the copies.
@@ -173,11 +180,11 @@ Proof: `module:check` for pluck and freqshift; a new C module built in under a s
 
 ### 7. SHARC kernels, style and C pilot
 
-- [ ] Study the shared stock building blocks from step 1b with the public manuals in `out/refs/` (see
+- [x] Study the shared stock building blocks from step 1b with the public manuals in `out/refs/` (see
       `docs/sharc/SOURCES.md`): 2x oversampling with a half-band decimator, per-sample parameter ramps, circular-buffer
       delay, reciprocal with Newton steps. Results in one findings file. We learn idioms only; no firmware code is
       copied into the repo.
-- [ ] A short style guide for readable SHARC assembly (register naming, macros, block-loop layout).
+- [x] A short style guide for readable SHARC assembly (`docs/sharc/style.md`) (register naming, macros, block-loop layout).
 - [ ] SDK DSP kernels (filter, saturator, envelope, ramp, delay), written from those idioms and measured in the emulator.
       Compare with calling the firmware's own kernel through a runtime import (byte-identical on DT2 and DN2): less DSP
       memory, but tied to firmware behaviour.
@@ -186,6 +193,14 @@ Proof: `module:check` for pluck and freqshift; a new C module built in under a s
       cycles measured in the emulator.
 
 Decision: offer `--lang c` for SHARC glue, or keep assembly only.
+
+Study 2026-10-27 ([docs/findings/72-sharc-kernels-1-17.md](../findings/72-sharc-kernels-1-17.md), static): kernels to
+build first are (1) ramp, gain and mix, (2) biquad over 32 samples, (3) circular delay with interpolated read (the
+stock delay takes about 41 instructions per sample without hardware circular buffers; about 15 looks possible),
+(4) soft saturator with ramped drive, (5) reciprocal, rsqrt and divide macros. Own kernels beat the stock ones on
+the hot path; a stock import pays only for the divide. `pluck.s`'s string loop is 23 instructions per sample; about
+8-10 looks possible. Open: short DO loops, whether modules may set B/L for circular buffers, one shared kernel copy
+across modules.
 
 ### 8. Distribution and Transfer tabs
 
