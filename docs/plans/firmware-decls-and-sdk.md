@@ -59,7 +59,7 @@ parallel.
 - [x] Groups: community detection (networkx) on the UI call subgraph, about 30-50 groups, each with its classes,
       strings and members. Export the subgraph as JSON as well.
 - [x] Agents pre-label the top groups and their rows (role guess from decompilation, [O]).
-- [ ] Review page: group -> rows -> call neighbourhood per row, with keep / skip / later, a name and a note. Reviewed
+- [x] Review page: group -> rows -> call neighbourhood per row, with keep / skip / later, a name and a note. Reviewed
       rows seed step 3. The page is the review view of the reference docs in step 5 (same generator).
 
 Proof: the tool runs in seconds on both images; one unit test of the rule suggestion.
@@ -72,6 +72,13 @@ menu plumbing; many single-class groups are destructor families. Two labellers w
 drawing primitives: formatted text draw 0x40113dc8, rectangle fill 0x401131ae, bitmap blit 0x40114168, and the status
 message printf 0x4005b23a (DT2 1.17; all [O] until checked against image bytes). The RTOS mutex and task functions at
 the vector base have the same address on DN2. Score follow-up: down-weight destructors (`vfunc_0`) and libc helpers.
+
+Review 2026-10-27: the page covers the 54 groups with 10+ functions, 910 rows, 119 of them labelled; decisions are
+stored with the page and read back for step 3. Its generator is a scratch script for now; step 5 turns it into the
+reference-docs generator. Two labellers labelled the same 60 rows separately: they agree on what most functions do,
+but chose the same subsystem for only 21 and the same anchor name for 12. Step 3 therefore needs a fixed subsystem
+vocabulary. Most high-scoring class rows are destructors or 12-byte thunks; the real menu base class is `Menu`
+(destructor chain EncoderFilter, View, Menu).
 
 ### 1b. SHARC catalogue (read-only, before step 3)
 
@@ -116,7 +123,7 @@ Proof: `patchkit gen --check`, port files byte-identical, pathcheck.
       `sharc_func` (fixes most of the 182 shared DSP hashes on DT2).
 - [ ] Hooks declare their register contract: inputs, clobbered and preserved registers, and the DSP mode (modify
       registers, SIMD). Today this is prose in findings 45 and 53.
-- [ ] One naming rule: `<cpu>.<subsystem>.<kind>.<name>`, named after the firmware, not after our module.
+- [ ] One naming rule with a fixed subsystem vocabulary: `<cpu>.<subsystem>.<kind>.<name>`, named after the firmware, not after our module.
       `dkrt.*`, `dl.*`, `health.*` and `input.*` get firmware names; old names stay as aliases until the move is done.
 - [ ] Portability count: how many declarations resolve on Syntakt 1.42 (today 27 of 172 ColdFire rules).
 
@@ -218,5 +225,5 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27: plan written. Step 1 tool committed (bcd88027). 1b probe, S1/S2 and finding 70 done. Next: graph context
-and groups in the catalogue, the shared catalogue module and the DSP collector, then pre-labels and the review page.
+2026-10-27: plan written. Steps 1 and 1b done; S1/S2 and finding 70 done. Em is reviewing the catalogue on the review
+page. Next: step 2 (clean-up), then the step 3 declaration design from the kept rows.
