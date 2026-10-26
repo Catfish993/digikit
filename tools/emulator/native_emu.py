@@ -30,6 +30,9 @@ from tools.emulator import digi_env  # noqa: E402
 # (SHARC_BLOCKTRANS), keyed by the SHA-256 of the DN2 .syx. The data lives in
 # tools/emulator/fast_regions.json.
 FAST_REGIONS = {k: v.get("fast_regions", "") for k, v in digi_env.fast_table().items()}
+FALLBACK_REGIONS = {
+    k: v.get("fallback_regions", "") for k, v in digi_env.fast_table().items()
+}
 BLOCKTRANS_ROOTS = {
     k: v.get("blocktrans", "") for k, v in digi_env.fast_table().items()
 }
@@ -55,6 +58,11 @@ def fast_regions_for(syx: pathlib.Path) -> str:
     return _lookup(FAST_REGIONS, syx)
 
 
+def fallback_regions_for(syx: pathlib.Path) -> str:
+    """Runtime fallback roots for this firmware, or empty if unknown."""
+    return _lookup(FALLBACK_REGIONS, syx)
+
+
 def blocktrans_roots_for(syx: pathlib.Path) -> str:
     """The verified block-translator cluster roots for this firmware, or ""."""
     return _lookup(BLOCKTRANS_ROOTS, syx)
@@ -65,8 +73,8 @@ def set_fast_regions(
 ) -> None:
     """Enable the fast tier for a coupled run unless the user chose otherwise.
 
-    SHARC_FAST_REGIONS (and SHARC_BLOCKTRANS) set by the user win;
-    DIGI_EMU_FAST=0 leaves both off.
+    Explicit lists win; DIGI_EMU_FAST=0 suppresses defaults. Explicit regular
+    regions or auto selection suppress fallback defaults for that core.
     """
     if environ.get("DIGI_EMU_FAST") == "0":
         return
@@ -83,6 +91,15 @@ def set_fast_regions(
     ):
         lists.append(("_2", pathlib.Path(args[at])))
     for suffix, firmware in lists:
+        # Check explicit fast settings before installing the regular default.
+        fallback_name = f"SHARC_FAST_FALLBACK_REGIONS{suffix}"
+        if (
+            fallback_name not in environ
+            and f"SHARC_FAST_REGIONS{suffix}" not in environ
+            and "SHARC_FAST_AUTO" not in environ
+            and (fallback := fallback_regions_for(firmware))
+        ):
+            environ[fallback_name] = fallback
         if f"SHARC_FAST_REGIONS{suffix}" not in environ:
             regions = fast_regions_for(firmware)
             if regions:
@@ -130,11 +147,17 @@ def pgo_trained_core(device: str) -> pathlib.Path | None:
 VALUE_OPTIONS = {"--card-image", "--card-folder", "--audio-buffer", "--mirror-dir"}
 
 
-def second_core(device: str) -> tuple[list[str], pathlib.Path | None]:
+def second_core(
+    device: str, *, enabled_by_default: bool = False
+) -> tuple[list[str], pathlib.Path | None]:
     """The other device's ready inputs for a binary with both generated cores (`--also-coupled`) and its generated core
-    (SHARC_GEN_DIR_2). Opt-in with DIGI_EMU_SECOND_CORE=1: that build has no PGO profile yet (the profiles are per
-    single-core binary). Nothing (a one-core launch) when it is off or the other device lacks a ready set or a core."""
-    if os.environ.get("DIGI_EMU_SECOND_CORE") != "1":
+    (SHARC_GEN_DIR_2). Desktop launches enable it by default; daemons opt in with DIGI_EMU_SECOND_CORE=1.
+    DIGI_EMU_SECOND_CORE=0 disables it. The build has no PGO profile yet (profiles are per single-core binary).
+    Nothing (a one-core launch) when it is off or the other device lacks a ready set or a core."""
+    if (
+        os.environ.get("DIGI_EMU_SECOND_CORE", "1" if enabled_by_default else "0")
+        != "1"
+    ):
         return [], None
     other = "dt2" if device == "dn2" else "dn2"
     paths = digi_env.ready_inputs(device=other)
@@ -163,7 +186,9 @@ def second_core(device: str) -> tuple[list[str], pathlib.Path | None]:
     ], gen
 
 
-def default_audio_args(args: list[str] | None = None) -> list[str]:
+def default_audio_args(
+    args: list[str] | None = None, *, second_core_by_default: bool = False
+) -> list[str]:
     """Add local ready audio inputs to a normal launcher command line."""
     args = [] if args is None else list(args)
     positional = next(
@@ -208,7 +233,7 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
     digi_env.check_generated(generated)
     os.environ.setdefault("SHARC_GEN_DIR", str(generated))
     print(f"native core: {generated} ({reason})", file=sys.stderr)
-    also, second = second_core(device)
+    also, second = second_core(device, enabled_by_default=second_core_by_default)
     if second is not None:
         os.environ["SHARC_GEN_DIR_2"] = str(second)
         args.extend(also)
@@ -745,7 +770,7 @@ def main(args: list[str] | None = None) -> None:
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:
-        args = default_audio_args(args)
+        args = default_audio_args(args, second_core_by_default=not daemon)
     if "--coupled" in args or "--auto-coupled" in args:
         generated = generated_core(args)
         if not generated.is_dir():

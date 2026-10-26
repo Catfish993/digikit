@@ -2051,6 +2051,65 @@ fn fast_type_3d_matches_the_interpreter() {
     }
 }
 
+/// Absolute short-word loads use byte addresses, zero-extend high-bit data,
+/// and leave flags and DAG registers alone. Run only the load so the fast
+/// instruction count proves that this transfer itself ran in the kernel.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_type_14d_matches_the_interpreter() {
+    for addr in [0x25_590cu32, LP_DATA + 1, 0x8_0000, 0x25_fffe] {
+        let code = [
+            0x1a46_0000_0000 | u64::from(addr), // R6 = DM(addr) (sw)
+            lp_jump(0x1f, 0),
+        ];
+        let setup = |e: &mut crate::Engine| {
+            lp_regs(
+                e,
+                &[
+                    (6, 0xdead_beef),
+                    (16, 0x1234),
+                    (32, 0xffff_ffff),
+                    (118, 0x55),
+                ],
+            );
+            let a = e.s.mem.canonical_of(addr);
+            e.s.mem.write_byte(a, 0x17);
+            e.s.mem.write_byte(a + 1, 0xe9);
+        };
+        assert_eq!(
+            lp_check(&format!("14d {addr:#x}"), &code, &[0], 1, &setup),
+            1
+        );
+        let mut fast = lp_engine(&code, &[0], true, &setup);
+        assert_eq!(fast.step(1), 1);
+        assert_eq!(fast.s.r[6], V::c(0xe917));
+        assert_eq!(fast.s.r[118], V::c(0x55));
+    }
+}
+
+/// A two-byte absolute window must decline at a page crossing or missing
+/// backing byte. The interpreter then executes the load with the same state
+/// and instruction boundary as a run without the fast tier.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_type_14d_window_fallback_matches_the_interpreter() {
+    for (addr, complete) in [(0x25_ffffu32, true), (0x27_1000, false)] {
+        let code = [0x1a46_0000_0000 | u64::from(addr), lp_jump(0x1f, 0)];
+        let setup = |e: &mut crate::Engine| {
+            lp_regs(e, &[(6, 0xdead_beef), (16, 0x1234), (32, 7), (118, 0x55)]);
+            let a = e.s.mem.canonical_of(addr);
+            e.s.mem.write_byte(a, 0x17);
+            if complete {
+                e.s.mem.write_byte(a + 1, 0xe9);
+            }
+        };
+        assert_eq!(
+            lp_compare(&format!("14d fallback {addr:#x}"), &code, &[0], 1, &setup),
+            0,
+        );
+    }
+}
+
 // -- fast tier: a MODE1 write that enables interrupts ---------------------------------
 
 /// `MODE1 = set(MODE1, mask)` (Type 18a, BOP set).
@@ -2296,4 +2355,272 @@ fn fast_modify_follows_l_written_in_the_region() {
     let all: Vec<u32> = (0..4).map(lp_pc).collect();
     lp_compare("modify after L write", &code, &all, 9, &setup);
     lp_check("modify after L write, region at the write", &code, &[0], 9, &setup);
+}
+
+/// Synthetic dispatch and tier: exercise fallback policy without generated firmware.
+struct FallbackProbe {
+    only: bool,
+}
+
+impl crate::fast::FastTier for FallbackProbe {
+    fn wants(&self, pc: u32) -> bool {
+        pc <= 3
+    }
+
+    fn fallback_only(&self, _pc: u32) -> bool {
+        assert!(self.only, "ordinary tier must not consult fallback policy");
+        self.only
+    }
+
+    fn has_fallback(&self) -> bool {
+        self.only
+    }
+
+    fn exclusively_fallback(&self) -> bool {
+        self.only
+    }
+
+    fn run(&mut self, s: &mut St, _pc: u32) -> Option<u32> {
+        s.r[1] = V::c(1);
+        s.icount = s.limit;
+        Some(crate::EXIT_BUDGET)
+    }
+
+    fn run_chained(&mut self, s: &mut St, pc: u32) -> Option<u32> {
+        self.run(s, pc)
+    }
+}
+
+fn fallback_probe_block(s: &mut St) -> u32 {
+    s.r[0] = V::c(1);
+    s.icount = s.limit;
+    crate::EXIT_BUDGET
+}
+
+fn fallback_probe_engine(code_ok: bool, barred: Option<Vec<u32>>) -> crate::Engine {
+    let mut e = crate::Engine::new(Mem::new());
+    e.s.pc_sw = 0;
+    e.s.r[0] = V::c(0);
+    e.s.r[1] = V::c(0);
+    e.s.runtime_decode = true;
+    e.use_blocks = true;
+    e.dispatch = crate::Dispatch::new(&[(0, fallback_probe_block)], &[0]);
+    e.code_known = true;
+    e.code_checked = e.s.mem.code_gen;
+    e.code_ok = code_ok;
+    e.code_barred = barred;
+    e.set_fast(Some(Box::new(FallbackProbe { only: true })));
+    e
+}
+
+#[test]
+fn fallback_only_requires_a_barred_aot_entry() {
+    for (code_ok, barred, expected) in [
+        (true, Some(vec![]), false),
+        (false, Some(vec![0]), true),
+        (false, Some(vec![3]), false),
+        (false, None, true),
+    ] {
+        let mut e = fallback_probe_engine(code_ok, barred);
+        assert_eq!(e.fast_allowed(0), expected);
+        assert!(!e.fast_allowed(3), "missing dispatch entry");
+        assert!(!e.fast_allowed(4), "unregistered PC");
+        let plan = e.block_plan(10).expect("AOT or fallback plan");
+        assert_eq!(plan.0.is_none(), expected);
+        e.step(10);
+        assert_eq!(e.s.r[1], V::c(i128::from(expected)));
+        assert_eq!(e.s.r[0], V::c(i128::from(!expected)));
+        e.use_blocks = false;
+        assert!(!e.fast_allowed(0), "fallback requires AOT enabled");
+        assert!(e.block_plan(20).is_none());
+    }
+}
+
+#[test]
+fn fallback_continuation_cannot_bypass_code_policy() {
+    for barred in [Some(vec![]), Some(vec![0]), None] {
+        let expected = barred.as_ref().is_none_or(|b| b.contains(&0));
+        let mut e = fallback_probe_engine(false, barred);
+        e.s.limit = 10;
+        let exit = e.fast_continue(10, Some(crate::EXIT_NEXT));
+        assert_eq!(e.s.r[1], V::c(i128::from(expected)));
+        assert_eq!(
+            exit,
+            Some(if expected {
+                crate::EXIT_BUDGET
+            } else {
+                crate::EXIT_NEXT
+            })
+        );
+    }
+    let mut e = fallback_probe_engine(false, None);
+    e.use_blocks = false;
+    assert_eq!(
+        e.fast_continue(10, Some(crate::EXIT_NEXT)),
+        Some(crate::EXIT_NEXT)
+    );
+    assert_eq!(e.s.r[1], V::c(0));
+}
+
+#[test]
+fn ordinary_fast_regions_keep_fast_only_and_stock_behavior() {
+    for use_blocks in [false, true] {
+        let mut e = fallback_probe_engine(true, Some(vec![]));
+        e.set_fast(Some(Box::new(FallbackProbe { only: false })));
+        e.use_blocks = use_blocks;
+        assert!(e.fast_allowed(0));
+        e.step(10);
+        assert_eq!(e.s.r[1], V::c(1));
+        assert_eq!(e.s.r[0], V::c(0));
+    }
+}
+
+#[test]
+fn fallback_registration_preserves_healthy_chain_stops() {
+    use crate::fast::FastTier;
+    let mut f = crate::fast::FastEngine::new(Box::new(crate::fast::interp::InterpBackend), &[1])
+        .with_clusters(&[2])
+        .with_fallback(&[1, 2, 3, 3]);
+    let mut s = St::new(Mem::new());
+    assert!(f.sync_chain_stops(&mut s));
+    assert!(s.chain_stops_at(1));
+    assert!(s.chain_stops_at(2));
+    assert!(!s.chain_stops_at(3));
+    assert!(!f.fallback_only(1));
+    assert!(!f.fallback_only(2));
+    assert!(f.fallback_only(3));
+    assert!(f.wants(3));
+}
+
+#[cfg(not(all(sharc_gen, sharc_image)))]
+#[test]
+fn fallback_continuation_rechecks_code_freshness() {
+    let mut e = fallback_probe_engine(false, None);
+    assert!(e.fast_allowed(0));
+    // A kernel's code store changes the generation; without an image the
+    // fresh verifier reports no protected code, superseding the stale failure.
+    e.s.mem.code_gen += 1;
+    assert_eq!(
+        e.fast_continue(10, Some(crate::EXIT_NEXT)),
+        Some(crate::EXIT_NEXT)
+    );
+    assert_eq!(e.s.r[1], V::c(0));
+    assert!(e.code_ok);
+}
+
+#[test]
+fn ordinary_tier_dispatch_preserves_follow_side_effects() {
+    struct FollowProbe;
+    impl crate::fast::FastTier for FollowProbe {
+        fn wants(&self, _pc: u32) -> bool {
+            false
+        }
+        fn run(&mut self, s: &mut St, _pc: u32) -> Option<u32> {
+            // A tier may flush its follow queue here, even before wants sees it.
+            s.r[1] = V::c(1);
+            None
+        }
+    }
+    let mut e = fallback_probe_engine(true, Some(vec![]));
+    e.set_fast(Some(Box::new(FollowProbe)));
+    e.step(10);
+    assert_eq!(e.s.r[0], V::c(1));
+    assert_eq!(e.s.r[1], V::c(1));
+}
+
+#[test]
+fn fallback_registration_preserves_auto_only_chaining() {
+    use crate::fast::FastTier;
+    for roots in [&[][..], &[3][..]] {
+        let mut f = crate::fast::FastEngine::new(Box::new(crate::fast::interp::InterpBackend), &[])
+            .with_fallback(roots)
+            .with_auto(2, 0, false);
+        assert!(!f.caps_chain());
+        let mut s = St::new(Mem::new());
+        assert!(f.sync_chain_stops(&mut s));
+        assert!(!s.chain_stops_at(3));
+        f.note(1);
+        f.note(1);
+        assert!(f.wants(1));
+        assert!(!f.fallback_only(1));
+        assert!(!f.caps_chain());
+        assert!(f.sync_chain_stops(&mut s));
+        assert!(!s.chain_stops_at(1));
+        assert!(!s.chain_stops_at(3));
+    }
+}
+
+#[test]
+fn healthy_fallback_only_tier_is_inactive_until_code_is_barred() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    struct ActivityProbe(Arc<AtomicUsize>);
+    impl crate::fast::FastTier for ActivityProbe {
+        fn has_fallback(&self) -> bool {
+            true
+        }
+        fn exclusively_fallback(&self) -> bool {
+            true
+        }
+        fn wants(&self, _pc: u32) -> bool {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            true
+        }
+        fn fallback_only(&self, _pc: u32) -> bool {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            true
+        }
+        fn run(&mut self, s: &mut St, _pc: u32) -> Option<u32> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            s.r[1] = V::c(1);
+            s.icount = s.limit;
+            Some(crate::EXIT_BUDGET)
+        }
+        fn sync_chain_stops(&mut self, s: &mut St) -> bool {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            s.chain_stop_add(7);
+            true
+        }
+    }
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut e = fallback_probe_engine(true, Some(vec![]));
+    e.set_fast(Some(Box::new(ActivityProbe(calls.clone()))));
+    e.step(10);
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert_eq!(e.s.r[0], V::c(1));
+    assert_eq!(e.s.r[1], V::c(0));
+    assert!(!e.s.chain_stops_at(7));
+    assert_eq!(
+        e.fast_continue(20, Some(crate::EXIT_NEXT)),
+        Some(crate::EXIT_NEXT)
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    // Simulate a later verification detecting a patched AOT entry.
+    e.code_ok = false;
+    e.code_barred = Some(vec![0]);
+    e.step(10);
+    assert!(calls.load(Ordering::Relaxed) > 0);
+    assert_eq!(e.s.r[1], V::c(1));
+}
+
+#[test]
+fn ordinary_auto_and_follow_tiers_remain_active_with_healthy_code() {
+    use crate::fast::{FastEngine, FastTier, interp::InterpBackend};
+    let fallback = || FastEngine::new(Box::new(InterpBackend), &[]).with_fallback(&[0]);
+    assert!(fallback().has_fallback());
+    assert!(fallback().exclusively_fallback());
+    for f in [
+        fallback().with_follow(true),
+        fallback().with_auto(2, 0, false),
+        fallback().with_clusters(&[1]),
+        FastEngine::new(Box::new(InterpBackend), &[1]).with_fallback(&[0]),
+    ] {
+        assert!(f.has_fallback());
+        assert!(!f.exclusively_fallback());
+        let mut e = fallback_probe_engine(true, Some(vec![]));
+        e.set_fast(Some(Box::new(f)));
+        assert!(e.block_plan(10).unwrap().1.fast_active);
+    }
 }
