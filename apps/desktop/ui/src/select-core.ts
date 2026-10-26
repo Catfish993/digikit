@@ -1,4 +1,4 @@
-// The "select all" checkbox of a pane header (pure, no DOM; apps/web/tests/transfer-page-ui.test.mjs): its three states over the rows
+// The "select all" checkbox of a pane header (pure, no DOM; apps/desktop/ui/tests/transfer-page-ui.test.ts): its three states over the rows
 // that are visible, and what a click does. Ticks of rows that are not visible (another folder, the test modules hidden) are left alone.
 
 export type SelectState = 'none' | 'some' | 'all';

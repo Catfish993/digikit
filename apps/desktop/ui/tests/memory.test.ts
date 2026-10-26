@@ -1,7 +1,9 @@
+import type { Bar, KnownModule } from '../src/memory-core.ts';
+import type { Caps } from '../../../web/src/modules/dkfit.ts';
 // The Memory panel's model (apps/desktop/ui/src/memory-core.ts): one bar per resource the device limits, a segment per loaded module coloured by its
 // type, "other" for the rest of what is used, and the texts.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import {
   amountText,
   buildBars,
@@ -11,19 +13,24 @@ import {
   SPECS,
   usedText,
   widthPct,
-} from '../../desktop/ui/src/memory-core.ts';
+} from '../src/memory-core.ts';
 
 const KiB = 1024;
-const mod = (name, group, needs) => ({ name, label: name.split('/').pop(), group, needs });
+const mod = (name: string, group: KnownModule['group'], needs: KnownModule['needs']): KnownModule => ({
+  name,
+  label: name.split('/').pop()!,
+  group,
+  needs,
+});
 const library = [
   mod('digikit/pluck', 'Machines', { ARENA: 4096, DSP_AREA: 259 * KiB, MACHINE_ROWS: 1, PARAM_ROWS: 4 }),
   mod('digikit/chorus', 'Effects', { ARENA: 2048 }),
   mod('digikit/remote', 'Tools', { ARENA: 1024 }),
   mod('digikit/broken', 'Tools', null), // no needs: the loader would refuse the file
 ];
-const c = (limit, used) => ({ limit, used, largest: limit - used });
+const c = (limit: number, used: number) => ({ limit, used, largest: limit - used });
 // a Digitone II: pages; the runtime's own blocks are in `used` too (6 KiB of the arena, nothing else)
-const dn2 = {
+const dn2: Caps = {
   MODULES: c(8, 3),
   ARENA: c(512 * KiB, 4096 + 2048 + 1024 + 6 * KiB),
   DSP_AREA: c(512 * KiB, 259 * KiB),
@@ -35,7 +42,7 @@ const dn2 = {
   STAGE: c(65536, 0),
 };
 const loaded = ['digikit/pluck', 'digikit/chorus', 'digikit/remote'];
-const by = (bars, r) => bars.find((b) => b.resource === r);
+const by = (bars: Bar[], r: string) => bars.find((b) => b.resource === r)!;
 
 test('one bar per resource the device limits, in the panel order, under the user-facing names', () => {
   const bars = buildBars(dn2, loaded, library);
@@ -170,5 +177,5 @@ test('the texts: KiB for bytes, counts for rows, the module name and amount on h
   assert.equal(kibText(1500), '1.5 KiB');
   assert.equal(amountText({ bytes: false }, 7), '7');
   assert.equal(widthPct(dsp, 256 * KiB), 50);
-  assert.equal(widthPct({ limit: 0 }, 5), 0);
+  assert.equal(widthPct({ limit: 0 } as Bar, 5), 0);
 });

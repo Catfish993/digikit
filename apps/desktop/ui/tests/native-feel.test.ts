@@ -1,12 +1,12 @@
 // The native-feel rules of the desktop app (apps/desktop/ui/src/native-core.ts, native.css).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
-import { NO_DRAG, SELECTABLE, contextMenuAllowed, dragAllowed } from '../../desktop/ui/src/native-core.ts';
+import { test } from 'vitest';
+import { NO_DRAG, SELECTABLE, contextMenuAllowed, dragAllowed } from '../src/native-core.ts';
 
 /** A stand-in for an element: `closest(selector)` finds `self` when the selector list names one of its `matches`. */
-const el = (...matches) => ({
-  closest: (selector) => (selector.split(',').some((s) => matches.includes(s.trim())) ? {} : null),
+const el = (...matches: string[]) => ({
+  closest: (selector: string) => (selector.split(',').some((s) => matches.includes(s.trim())) ? {} : null),
 });
 
 test('the context menu stays in text fields and selectable text only', () => {
@@ -29,8 +29,8 @@ test('links and images are not dragged, anything else may start a drag', () => {
 });
 
 test('native.css makes every selectable selector selectable, and the rest of the app not', () => {
-  const css = readFileSync(new URL('../../desktop/ui/src/native.css', import.meta.url), 'utf8');
-  const rule = (name) => css.slice(css.indexOf(name), css.indexOf('}', css.indexOf(name)));
+  const css = readFileSync(new URL('../src/native.css', import.meta.url), 'utf8');
+  const rule = (name: string) => css.slice(css.indexOf(name), css.indexOf('}', css.indexOf(name)));
   const selectable = css.slice(
     css.indexOf('/* selectable text */'),
     css.indexOf('}', css.indexOf('/* selectable text */')),

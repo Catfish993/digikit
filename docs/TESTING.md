@@ -100,7 +100,7 @@ The preview's fake device cannot show what a page does to a running emulator (a 
 pages over a RUNNING daemon: `uv run python -m tools.devtools.emu_live --device dn2 --run-dir DIR` starts one (runtime patched in, free-running; it prints `{pid, socket}`; stop it with `kill PID`), then
 `DIGI_LIVE_SOCKET=SOCKET pnpm --filter @digi/desktop exec vite --config ui/preview/live.vite.config.ts --port 5298` and `node tools/devtools/memory_live.mjs SOCKET [--check] [--out DIR]`
 measure the Memory panel there: time to the first bars, a Refresh, the read after a visit to the Transfer page, the control calls a second and the emulator's real-time factor open against idle (`--check`: under a second, ratio 0.9 or more).
-`apps/desktop/ui/tests/session-share.test.ts` (one session per target, requests in turn) and `read-gate.test.mjs` (one read at a time, retries, hidden panels) cover the same rules under their desktop-host and web Node owners, respectively.
+`apps/desktop/ui/tests/session-share.test.ts` (one session per target, requests in turn) and `apps/desktop/ui/tests/read-gate.test.ts` (one read at a time, retries, hidden panels) cover the same rules under the desktop-host owner.
 
 ## Digikit boot scenarios (`tests/digikit`)
 
@@ -152,7 +152,7 @@ scenario and its runner/dispatch were removed afterward. Shared live helpers and
 to `packages/dk-session/tests/remote.test.ts` and run in `host`. Normal verification, including broad routing/core/unknown changes, excludes this step;
 runtime cases and helpers retain cheap host checks in `host`, and module/tool routes retain their existing
 Python/Rust and smoke selections. See [regression fixture details](../tests/regression/README.md).
-Host-only: `pnpm test:host` runs the root `vitest.host.config.ts` projects `control-client`,
+Host-only: `mise run test:host` (or `pnpm test:host`) runs the root `vitest.host.config.ts` projects `control-client`,
 `test-support`, `dk-session`, `regression-host` and `desktop-host`, with explicit host-only includes and one worker by
 default (override with `--maxWorkers N`). The `host` step runs this command once with its budget share;
 package-local test commands select their named project from the same config. These checks require no
@@ -166,9 +166,12 @@ both apps consume them. Desktop production helpers retain app checks; app manife
 configuration and unknown paths retain their existing conservative routes. The desktop `test:host`
 script selects `desktop-host`; `typecheck:host` checks its tests and imported helpers with strict
 TypeScript settings, separately from the unchanged `check:ui` application check.
-The desktop helper migration retains eight tests and 29 assertions across session sharing, Remote
-page logic and waiting/failure messages. The root host suite now collects 58 tests in 11 files
-across five projects; all five host type checks pass.
+The desktop helper migrations retain the original eight tests and 29 assertions across session sharing, Remote
+page logic and waiting/failure messages, plus 61 tests across card status/staging, memory bars, native feel,
+read gating, split panes and Transfer logic. The latter eight suites keep their assertions and timing, including
+source/CSS checks; their fake files, timers and transports remain local because they serve distinct behaviors.
+The root host suite is expected to collect 119 tests in 19 files across five projects; runtime/device cases
+remain excluded. The desktop project collects 69 tests in 11 files with strict test types.
 The host formatter invokes root `pnpm fmt:check`; `pnpm fmt` uses the same scope with `--write`.
 Both remain uncached and check the full tree, with native negative globs pruning already ignored
 `out/`, `target/`, `gen/`, `dist/`, `.astro/` and `apps/web/.local/` directories before traversal.

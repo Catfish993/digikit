@@ -1,4 +1,4 @@
-// When a panel reads its device, and never twice at once (pure; apps/web/tests/read-gate.test.mjs). The panels of the Emulator and Remote pages
+// When a panel reads its device, and never twice at once (pure; apps/desktop/ui/tests/read-gate.test.ts). The panels of the Emulator and Remote pages
 // share one session whose requests take turns, so a second read started while one runs would only queue up behind it and, when the device is
 // slow, pile up: the gate runs one read at a time. A trigger that arrives meanwhile (a Transfer job ended, the window got the focus) is kept
 // as ONE read to run after it, however many arrive. A read that fails is tried again later with a growing gap, a few times, then the panel

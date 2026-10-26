@@ -1,12 +1,15 @@
+import type { CardBridge } from '../../../web/src/runtime/cards.ts';
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { cardLine, folderFiles, folderName, startCard } from '../src/runtime/cards.ts';
+import { test } from 'vitest';
+import { cardLine, folderFiles, folderName, startCard } from '../../../web/src/runtime/cards.ts';
 
-const file = (name, path, bytes = [1, 2, 3]) => ({
-  name,
-  webkitRelativePath: path,
-  arrayBuffer: async () => new Uint8Array(bytes).buffer,
-});
+// Only the File members consumed by these helpers are needed by the fake.
+const file = (name: string, path: string, bytes = [1, 2, 3]) =>
+  ({
+    name,
+    webkitRelativePath: path,
+    arrayBuffer: async () => new Uint8Array(bytes).buffer,
+  }) as File;
 
 test('every file of the chosen folder is used with its path inside it, sorted', () => {
   const list = [
@@ -42,14 +45,14 @@ test('the toolbar line follows the controller status', () => {
 });
 
 test('startCard resets, stages every file in order, then starts the job', async () => {
-  const calls = [];
-  const bridge = {
+  const calls: string[] = [];
+  const bridge: CardBridge = {
     reset: async () => void calls.push('reset'),
     stage: async (name, bytes) => void calls.push(`stage ${name} ${bytes.length}`),
     load: async (name) => void calls.push(`load ${name}`),
     status: async () => ({ state: 'idle' }),
   };
-  const progress = [];
+  const progress: [number, number][] = [];
   await startCard(
     bridge,
     folderFiles([file('a.wav', 'x/a.wav', [1]), file('b.wav', 'x/sub/b.wav', [1, 2])]),

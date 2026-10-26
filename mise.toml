@@ -63,7 +63,7 @@ description = "Type-check the web panel (astro check)"
 
 [tasks."web:test"]
 run = "pnpm test"
-description = "Run the web panel's audio-health tests (node --test)"
+description = "Run the web Node suites (node --test)"
 
 [tasks."web:wasm"]
 run = "uv run python -m tools.emulator.native_wasm"
@@ -143,6 +143,10 @@ run = "uv run python -m tools.devtools.verify --full"
 description = "Exactness gate, every step; the AOT = no-AOT sweep runs the fixed subset (`-- --all-no-aot`: all 134 FX scenarios); only after generated-core changes"
 
 # --- tests ---
+
+[tasks."test:host"]
+run = "pnpm test:host"
+description = "Run the host-only Vitest projects with the native test runner; no native/WASM build or device checks"
 
 [tasks."test:quick"]
 run = [

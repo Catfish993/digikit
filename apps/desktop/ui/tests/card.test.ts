@@ -1,6 +1,7 @@
+import type { CardFolder } from '../src/card-core.ts';
 // The pure logic of the desktop Card panel (apps/desktop/ui/src/card-core.ts).
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import {
   agoText,
   canUseDefault,
@@ -9,9 +10,9 @@ import {
   pickStart,
   shortFolder,
   statusText,
-} from '../../desktop/ui/src/card-core.ts';
+} from '../src/card-core.ts';
 
-const card = (extra = {}) => ({
+const card = (extra: Partial<CardFolder> = {}): CardFolder => ({
   folder: '/Users/em/src/digi/digitakt2/plus_drive/dt2',
   continuous: true,
   files: [

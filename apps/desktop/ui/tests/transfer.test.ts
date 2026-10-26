@@ -1,6 +1,7 @@
+import type { Group, RowTag, TransferEvent, TransferRow, TransferView } from '../src/transfer-core.ts';
 // The pure logic of the desktop Transfer page (apps/desktop/ui/src/transfer-core.ts).
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import {
   DONE_ON_CARD,
   applyEvent,
@@ -26,9 +27,9 @@ import {
   storageLine,
   tickedFit,
   warningText,
-} from '../../desktop/ui/src/transfer-core.ts';
+} from '../src/transfer-core.ts';
 
-const row = (id, group, extra = {}) => ({
+const row = (id: string | null, group: Group, extra: Partial<TransferRow> = {}): TransferRow => ({
   id,
   path: `modules/${(id ?? 'x').split('/').pop()}.dkm`,
   name: id ?? 'x',
@@ -40,7 +41,7 @@ const row = (id, group, extra = {}) => ({
   loaded: false,
   ...extra,
 });
-const view = {
+const view: TransferView = {
   device: 'dt2',
   runtime: '0.2.4',
   free_bytes: 1000,
@@ -101,7 +102,7 @@ test('the install progress: bytes by upload, small fixed shares, no select, no r
   assert.equal(p.restart, 'none');
   assert.equal('select' in p, false);
   assert.equal(progressFraction(p), 0);
-  const ev = (e) => (p = applyEvent(p, e));
+  const ev = (e: TransferEvent) => (p = applyEvent(p, e));
   ev({ event: 'upload', id: 'a/x', path: 'modules/x.dkm', bytes: 10000 });
   // the build share of x is over; its bytes have not started
   const base = progressFraction(p);
@@ -167,14 +168,14 @@ test('a file row: upload bar, verifying, then verified or failed; a pending row 
   p = startProgress(['digikit/pluck'], false);
   p = applyEvent(p, { event: 'upload', id: 'digikit/pluck', path: 'modules/pluck.dkm', bytes: 100 });
   assert.equal(onDeviceWithPending(view, p).length, onDevice(view).length);
-  assert.equal(rowStatus(p, {}, 'modules/pluck.dkm').kind, 'uploading');
+  assert.equal(rowStatus(p, {}, 'modules/pluck.dkm')!.kind, 'uploading');
   // without an install: the last VERIFY
   assert.deepEqual(rowStatus(undefined, { 'modules/x.dkm': 'failed' }, 'modules/x.dkm'), { kind: 'failed' });
 });
 
 test('the restart progress: one step, green after the boot, red on an error', () => {
   let p = startProgress([], true);
-  const ev = (e) => (p = applyEvent(p, e));
+  const ev = (e: TransferEvent) => (p = applyEvent(p, e));
   assert.equal(progressFraction(p), 0);
   ev({ event: 'restart' });
   assert.equal(p.restart, 'build');
@@ -219,7 +220,7 @@ test('delete: the ticked card files, the button label, the done text', () => {
 
 test('the delete progress: one step per path, active then done, text from the events', () => {
   let p = startProgress(['modules/a.dkm', 'modules/b.dkm'], false);
-  const ev = (e) => (p = applyEvent(p, e));
+  const ev = (e: TransferEvent) => (p = applyEvent(p, e));
   ev({ event: 'start', paths: ['modules/a.dkm', 'modules/b.dkm'] });
   ev({ event: 'delete', path: 'modules/a.dkm' });
   assert.equal(p.message, 'Deleting modules/a.dkm');
@@ -244,12 +245,12 @@ test('the delete progress: one step per path, active then done, text from the ev
 test('the tags: only what says something; the usual state has none', () => {
   const [pluck, sine0] = view.modules;
   const sine = { ...sine0, test: false };
-  const texts = (tags) => tags.map((t) => t.text);
+  const texts = (tags: RowTag[]) => tags.map((t) => t.text);
   // On your computer: what the device holds of a module, a test build, a fit warning
   assert.deepEqual(texts(localTags({ ...sine, on_card: 'no' })), [], 'not on the device is the usual state');
   assert.deepEqual(texts(localTags({ ...sine, on_card: 'yes' })), ['on device']);
   assert.deepEqual(texts(localTags({ ...sine, on_card: 'other version' })), ['differs']);
-  assert.match(localTags({ ...sine, on_card: 'other version' })[0].title, /Install replaces it/);
+  assert.match(localTags({ ...sine, on_card: 'other version' })[0].title!, /Install replaces it/);
   assert.deepEqual(texts(localTags({ ...sine0, test: true, on_card: 'yes' })), ['test', 'on device']);
   const fit = localTags({ ...sine, warnings: ['arena 2 MiB is more than the free 1 MiB'] });
   assert.deepEqual(
@@ -271,7 +272,7 @@ test('the tags: only what says something; the usual state has none', () => {
   assert.deepEqual(texts(deviceTags(sine)), [], 'a file that is still going there has no tag yet');
   // no tag says "card"
   for (const r of [...view.modules, ...view.card_only])
-    for (const on_card of ['yes', 'no', 'other version'])
+    for (const on_card of ['yes', 'no', 'other version'] as const)
       for (const t of [...localTags({ ...r, on_card }), ...deviceTags({ ...r, on_card })])
         assert.doesNotMatch(t.text + (t.title ?? ''), /on card/);
 });
@@ -308,7 +309,7 @@ test('the ticked modules together: the sum rule against the device limits, in li
     STAGE: { limit: 65536, used: 0, largest: 65536 },
     DSP_AREA: { limit: 524288, used: 400000, largest: 100 },
   };
-  const m = (id, dsp) =>
+  const m = (id: string, dsp: number) =>
     row(id, 'Machines', { label: id, needs: { file_size: 900, ARENA: 64, DSP_AREA: dsp, DSP_ALIGN: 8 } });
   const v = {
     device: 'dt2',
@@ -326,10 +327,10 @@ test('the ticked modules together: the sum rule against the device limits, in li
     text: 'The 2 ticked modules fit the device together.',
     tone: 'ok',
   });
-  const two = tickedFit(v, new Set(['a', 'b']));
+  const two = tickedFit(v, new Set(['a', 'b']))!;
   assert.equal(two.tone, 'warn');
   assert.match(two.text, /^b does not fit with the ticked modules before it: DSP memory 293 KiB needed, 219 KiB free$/);
-  const alone = tickedFit({ ...v, modules: [m('big', 600000)] }, new Set(['big']));
+  const alone = tickedFit({ ...v, modules: [m('big', 600000)] }, new Set(['big']))!;
   assert.match(alone.text, /^big does not fit the device: DSP memory 586 KiB needed, 511 KiB free$/);
 });
 

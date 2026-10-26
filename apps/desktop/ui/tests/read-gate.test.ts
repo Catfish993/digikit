@@ -1,14 +1,16 @@
+type Timer = { fn: () => void; at: number; live: boolean };
+
 // When a panel reads (apps/desktop/ui/src/read-gate-core.ts): one read at a time, the triggers that arrive meanwhile make ONE more, a failed
 // read is tried again with a growing gap a few times, and a hidden panel reads nothing.
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { createReadGate, RETRY_MS } from '../../desktop/ui/src/read-gate-core.ts';
+import { test } from 'vitest';
+import { createReadGate, RETRY_MS } from '../src/read-gate-core.ts';
 
 /** A clock the test moves, and a read the test finishes. */
 function rig() {
-  const timers = [];
+  const timers: Timer[] = [];
   let now = 0;
-  const reads = [];
+  const reads: { finish: (ok: boolean) => void; current: () => boolean; startedAt: number }[] = [];
   const gate = createReadGate({
     run: (current) => new Promise((resolve) => reads.push({ finish: resolve, current, startedAt: now })),
     setTimer: (fn, ms) => {
@@ -16,7 +18,7 @@ function rig() {
       timers.push(t);
       return t;
     },
-    clearTimer: (t) => (t.live = false),
+    clearTimer: (t) => ((t as Timer).live = false),
   });
   const tick = async () => {
     for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -25,11 +27,11 @@ function rig() {
     gate,
     reads,
     timers: () => timers.filter((t) => t.live),
-    async finish(i, ok) {
+    async finish(i: number, ok: boolean) {
       reads[i].finish(ok);
       await tick();
     },
-    async advance(ms) {
+    async advance(ms: number) {
       now += ms;
       for (const t of timers.filter((x) => x.live && x.at <= now)) {
         t.live = false;
@@ -87,7 +89,7 @@ test('triggers during a failing read do not turn into an immediate retry', async
 });
 
 test('a read that throws counts as failed: it is tried again after the first gap', async () => {
-  const timers = [];
+  const timers: number[] = [];
   let runs = 0;
   const gate = createReadGate({
     run: async () => {

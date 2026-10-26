@@ -1,4 +1,4 @@
-// The speed and the time left of a transfer (pure; apps/web/tests/transfer-page-ui.test.mjs): the rate is smoothed over the last ~2 s of
+// The speed and the time left of a transfer (pure; apps/desktop/ui/tests/transfer-page-ui.test.ts): the rate is smoothed over the last ~2 s of
 // progress, so one slow or fast chunk does not make the number jump.
 
 export const RATE_WINDOW_MS = 2000;

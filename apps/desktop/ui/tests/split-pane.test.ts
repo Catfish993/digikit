@@ -1,14 +1,7 @@
 // The pure logic of the split pane (apps/desktop/ui/src/split-core.ts).
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import {
-  HANDLE_PX,
-  PANE_MIN_PX,
-  SPLIT_DEFAULT,
-  clampSplit,
-  parseSplit,
-  splitAt,
-} from '../../desktop/ui/src/split-core.ts';
+import { test } from 'vitest';
+import { HANDLE_PX, PANE_MIN_PX, SPLIT_DEFAULT, clampSplit, parseSplit, splitAt } from '../src/split-core.ts';
 
 test('a saved position is used when it is a fraction, else the default', () => {
   assert.equal(parseSplit('0.4'), 0.4);
