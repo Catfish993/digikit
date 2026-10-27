@@ -28,14 +28,16 @@ type_hint = 16   # the number this machine had before sticky ids (finding 52)
 name = "XSlice-D"
 short = "XSD"
 clone_of = 6
-knobs = [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, "xsd_spare", 0xfe]
 devices = ["dt2"]
+
+# An explicit layout: the descriptor ids of the base machine's rows.
+[machine.dt2]
+knobs = [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, "xsd_spare", 0xfe]
 
 [[param]]
 id = "xsd_spare"
 name = "Spare"
 short = "SPARE"
-template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x2000

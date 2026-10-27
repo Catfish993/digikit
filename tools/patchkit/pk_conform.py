@@ -26,6 +26,7 @@ manifest does yet (the schema of module.toml does not know the table).
 from __future__ import annotations
 
 import dataclasses
+import json
 import random
 import struct
 import tomllib
@@ -201,24 +202,33 @@ def _type_number(mid: str, man: dict, device: str, literal: str | None) -> int:
     )
 
 
-def _params(man: dict, device: str) -> tuple[Param, ...]:
-    machines = man.get("machine") or []
+def _params(moddir: Path, man: dict, device: str) -> tuple[Param, ...]:
+    mid = man.get("module", {}).get("id", moddir.name)
+    path = moddir / "build/gen/gallery.json"
+    if not path.is_file():
+        raise ConformError(f"{mid}: no build/gen/gallery.json: run `patchkit gen`")
+    gallery = json.loads(path.read_text(encoding="utf-8"))
+    machines = gallery.get("machines") or []
     if not machines:
         return ()
-    m = machines[0]
-    knobs = (
-        m.get(device, {}).get("knobs", m.get("knobs", []))
-        if device != "dt2"
-        else m.get("knobs", [])
-    )
-    decl = {p["id"]: p for p in man.get("param", [])}
+    dev = machines[0].get("devices", {}).get(device)
+    if dev is None:
+        return ()
+    listed = gallery.get("params", {}).get(device)
+    decl = {
+        p["id"]: p for p in (listed if listed is not None else man.get("param", []))
+    }
     out = []
-    for j, k in enumerate(knobs):
-        if isinstance(k, str) and k in decl:
-            p = decl[k]
-            out.append(Param(k, j, int(p["min"]), int(p["max"]), int(p["default"])))
-        elif isinstance(k, int) and k in STOCK_KNOBS:
-            name, lo, hi, dflt = STOCK_KNOBS[k]
+    for j, k in enumerate(dev.get("knobs", [])):
+        if not isinstance(k, dict):
+            continue
+        if "param" in k and k["param"] in decl:
+            p = decl[k["param"]]
+            out.append(
+                Param(k["param"], j, int(p["min"]), int(p["max"]), int(p["default"]))
+            )
+        elif k.get("stock") in STOCK_KNOBS:
+            name, lo, hi, dflt = STOCK_KNOBS[k["stock"]]
             out.append(Param(name, j, lo, hi, dflt, True))
     return tuple(out)
 
@@ -257,7 +267,7 @@ def spec(mid: str, device: str) -> MachineSpec | None:
         sources,
         row[0],
         _type_number(mid, man, device, row[1]),
-        _params(man, device),
+        _params(moddir, man, device),
         frame,
         dict(man.get("conformance", {})),
         *_contract(man),

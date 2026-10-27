@@ -42,60 +42,46 @@ id = "pluck"
 name = "Pluck"
 short = "PLK"
 clone_of = 0
-knobs = [0xca, "pluck_decay", "pluck_pick", 0, "pluck_bright", "pluck_color", 0, 0xd1]
+knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
 
-# Digitone II: a machine of its own type (the FM engine renders nothing for it: `own_dsp`) with its own SYN page below:
+# Digitone II: a machine of its own type (the FM engine renders nothing for it: `own_dsp`, derived from the voice) with its own SYN page below:
 # DECAY, PICK, BRIGHT, COLOR on knobs A .. D (sound-array slots 25 .. 28), the engine's level on the last knob.
 [machine.dn2]
 position = 4
-own_dsp = true
-knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
 
-# `template` is the stock code whose row is copied: 0xd1 on the Digitakt II, 0xd5 (A Env Decay, a plain 0 .. 127 word)
-# on the Digitone II. The slot follows from the knob position.
+# `template` is left out: the device's `plain` row (0xd1 on the Digitakt II, 0xd5 on the Digitone II: a plain 0 .. 127 word).
+# The slot follows from the knob position.
 [[param]]
 id = "pluck_decay"
 name = "Decay"
 short = "DECAY"
-template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x4000
-[param.dn2]
-template = 0xd5
 
 [[param]]
 id = "pluck_pick"
 name = "Pick position"
 short = "PICK"
-template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x2000
-[param.dn2]
-template = 0xd5
 
 [[param]]
 id = "pluck_bright"
 name = "Brightness"
 short = "BRIGHT"
-template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x5000
-[param.dn2]
-template = 0xd5
 
 [[param]]
 id = "pluck_color"
 name = "Excitation colour"
 short = "COLOR"
-template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x2800
-[param.dn2]
-template = 0xd5
 
 [[page]]
 id = "pluck_syn"

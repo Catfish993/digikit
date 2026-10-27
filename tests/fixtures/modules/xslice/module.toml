@@ -23,5 +23,8 @@ name = "XSlice"
 short = "XSL"
 clone_of = 6
 position = 7
-knobs = [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0, 0xfe]
 devices = ["dt2"]
+
+# An explicit layout: the descriptor ids of the base machine's rows.
+[machine.dt2]
+knobs = [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0, 0xfe]

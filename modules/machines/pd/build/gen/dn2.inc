@@ -9,34 +9,32 @@
 #define PD_KNOB0_FRAME_OFF 0
 #define PD_KNOB1_FRAME_OFF 1
 #define PD_KNOB2_FRAME_OFF 2
-#define PD_KNOB4_FRAME_OFF 4
-#define PD_KNOB5_FRAME_OFF 5
-#define PD_KNOB7_FRAME_OFF 7
-#define PD_AMOUNT_KNOB 1 // knob position
-#define PD_AMOUNT_SLOT 26 // engine or sound-array slot
-#define PD_AMOUNT_FRAME_OFF 1 // halfwords from knob 0 of the same track
-#define PD_AMOUNT_MIRROR 26 // index in the parameter table
+#define PD_KNOB3_FRAME_OFF 3
+#define PD_AMOUNT_KNOB 0 // knob position
+#define PD_AMOUNT_SLOT 25 // engine or sound-array slot
+#define PD_AMOUNT_FRAME_OFF 0 // halfwords from knob 0 of the same track
+#define PD_AMOUNT_MIRROR 25 // index in the parameter table
 #define PD_AMOUNT_MIN 0
 #define PD_AMOUNT_MAX 32512
 #define PD_AMOUNT_DEFAULT 0
-#define PD_CURVE_KNOB 2 // knob position
-#define PD_CURVE_SLOT 27 // engine or sound-array slot
-#define PD_CURVE_FRAME_OFF 2 // halfwords from knob 0 of the same track
-#define PD_CURVE_MIRROR 27 // index in the parameter table
+#define PD_CURVE_KNOB 1 // knob position
+#define PD_CURVE_SLOT 26 // engine or sound-array slot
+#define PD_CURVE_FRAME_OFF 1 // halfwords from knob 0 of the same track
+#define PD_CURVE_MIRROR 26 // index in the parameter table
 #define PD_CURVE_MIN 0
 #define PD_CURVE_MAX 32512
 #define PD_CURVE_DEFAULT 0
-#define PD_DETUNE_KNOB 4 // knob position
-#define PD_DETUNE_SLOT 29 // engine or sound-array slot
-#define PD_DETUNE_FRAME_OFF 4 // halfwords from knob 0 of the same track
-#define PD_DETUNE_MIRROR 29 // index in the parameter table
+#define PD_DETUNE_KNOB 2 // knob position
+#define PD_DETUNE_SLOT 27 // engine or sound-array slot
+#define PD_DETUNE_FRAME_OFF 2 // halfwords from knob 0 of the same track
+#define PD_DETUNE_MIRROR 27 // index in the parameter table
 #define PD_DETUNE_MIN 0
 #define PD_DETUNE_MAX 32512
 #define PD_DETUNE_DEFAULT 10240
-#define PD_FOLD_KNOB 5 // knob position
-#define PD_FOLD_SLOT 30 // engine or sound-array slot
-#define PD_FOLD_FRAME_OFF 5 // halfwords from knob 0 of the same track
-#define PD_FOLD_MIRROR 30 // index in the parameter table
+#define PD_FOLD_KNOB 3 // knob position
+#define PD_FOLD_SLOT 28 // engine or sound-array slot
+#define PD_FOLD_FRAME_OFF 3 // halfwords from knob 0 of the same track
+#define PD_FOLD_MIRROR 28 // index in the parameter table
 #define PD_FOLD_MIN 0
 #define PD_FOLD_MAX 32512
 #define PD_FOLD_DEFAULT 0

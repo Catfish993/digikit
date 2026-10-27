@@ -9,34 +9,32 @@
 #define BD_KNOB0_FRAME_OFF 0
 #define BD_KNOB1_FRAME_OFF 1
 #define BD_KNOB2_FRAME_OFF 2
-#define BD_KNOB4_FRAME_OFF 4
-#define BD_KNOB5_FRAME_OFF 5
-#define BD_KNOB7_FRAME_OFF 7
-#define BD_BEND_KNOB 1 // knob position
-#define BD_BEND_SLOT 26 // engine or sound-array slot
-#define BD_BEND_FRAME_OFF 1 // halfwords from knob 0 of the same track
-#define BD_BEND_MIRROR 26 // index in the parameter table
+#define BD_KNOB3_FRAME_OFF 3
+#define BD_BEND_KNOB 0 // knob position
+#define BD_BEND_SLOT 25 // engine or sound-array slot
+#define BD_BEND_FRAME_OFF 0 // halfwords from knob 0 of the same track
+#define BD_BEND_MIRROR 25 // index in the parameter table
 #define BD_BEND_MIN 0
 #define BD_BEND_MAX 32512
 #define BD_BEND_DEFAULT 16384
-#define BD_INDEX_KNOB 2 // knob position
-#define BD_INDEX_SLOT 27 // engine or sound-array slot
-#define BD_INDEX_FRAME_OFF 2 // halfwords from knob 0 of the same track
-#define BD_INDEX_MIRROR 27 // index in the parameter table
+#define BD_INDEX_KNOB 1 // knob position
+#define BD_INDEX_SLOT 26 // engine or sound-array slot
+#define BD_INDEX_FRAME_OFF 1 // halfwords from knob 0 of the same track
+#define BD_INDEX_MIRROR 26 // index in the parameter table
 #define BD_INDEX_MIN 0
 #define BD_INDEX_MAX 32512
 #define BD_INDEX_DEFAULT 8192
-#define BD_RATIO_KNOB 4 // knob position
-#define BD_RATIO_SLOT 29 // engine or sound-array slot
-#define BD_RATIO_FRAME_OFF 4 // halfwords from knob 0 of the same track
-#define BD_RATIO_MIRROR 29 // index in the parameter table
+#define BD_RATIO_KNOB 2 // knob position
+#define BD_RATIO_SLOT 27 // engine or sound-array slot
+#define BD_RATIO_FRAME_OFF 2 // halfwords from knob 0 of the same track
+#define BD_RATIO_MIRROR 27 // index in the parameter table
 #define BD_RATIO_MIN 0
 #define BD_RATIO_MAX 32512
 #define BD_RATIO_DEFAULT 0
-#define BD_NOISE_KNOB 5 // knob position
-#define BD_NOISE_SLOT 30 // engine or sound-array slot
-#define BD_NOISE_FRAME_OFF 5 // halfwords from knob 0 of the same track
-#define BD_NOISE_MIRROR 30 // index in the parameter table
+#define BD_NOISE_KNOB 3 // knob position
+#define BD_NOISE_SLOT 28 // engine or sound-array slot
+#define BD_NOISE_FRAME_OFF 3 // halfwords from knob 0 of the same track
+#define BD_NOISE_MIRROR 28 // index in the parameter table
 #define BD_NOISE_MIN 0
 #define BD_NOISE_MAX 32512
 #define BD_NOISE_DEFAULT 0

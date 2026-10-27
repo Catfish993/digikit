@@ -4,25 +4,10 @@
       "devices": {
         "dn2": {
           "clone_of": 0,
-          "knobs": [
-            {
-              "slot": 25,
-              "stock": 202
-            },
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            {
-              "slot": 32,
-              "stock": 209
-            }
-          ],
+          "knobs": [],
           "level": 10,
           "name": "Hang",
-          "own_dsp": false,
+          "own_dsp": true,
           "page": null,
           "position": null,
           "short": "HNG",

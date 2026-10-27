@@ -36,23 +36,15 @@ id = "sine"
 name = "Sine"
 short = "SIN"
 clone_of = 0
-knobs = [0xca, "sine_level", 0, 0, 0, 0, 0, 0xd1]
-
-[machine.dn2]
-own_dsp = true
 knobs = ["sine_level"]
 
 [[param]]
 id = "sine_level"
 name = "Level"
 short = "LEVEL"
-template = 0xd1
 min = 0
 max = 0x7f00
 default = 0x7f00
-
-[param.dn2]
-template = 0xd5
 
 [[page]]
 id = "sine_syn"

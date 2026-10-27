@@ -410,7 +410,6 @@ summary = "t."
 id = "t_a"
 name = "A"
 short = "A"
-template = 0xd1
 min = 0
 max = 100
 default = 50
@@ -418,7 +417,6 @@ default = 50
 id = "t_b"
 name = "B"
 short = "B"
-template = 0xd1
 min = 0
 max = 100
 default = 1
@@ -427,9 +425,9 @@ id = "t"
 name = "T"
 short = "T"
 clone_of = 0
-knobs = [0xca, "t_a", 0, 0, "t_b"]
-[machine.dn2]
 knobs = ["t_a", "t_b"]
+[machine.dt2]
+knobs = [0xca, "t_a", 0, 0, "t_b"]
 "#;
 
     #[test]

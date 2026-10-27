@@ -367,6 +367,14 @@ to = "machine"
 knob_field = "f"
 level_field = "f8"
 level_default = 10          # 0x0a: the track level code
+# Stock parameter codes a machine row carries: TUNE on knob `tune_slot` of [adapter.machine] and LEV on knob `level_knob`.
+tune = 0xca
+level = 0xd1
+level_knob = 7
+
+# Stock parameter rows a module parameter can copy by name: `plain` shows a plain 0..127 value.
+[modules.templates]
+plain = 0xd1
 
 # A clone of SAMPLE (machine 0) keeps knob 3: it is the sample slot, the firmware's own sample number field. The DSP gets only the sample
 # number bits of its value (`value & 0x3ff`), the module default replaces the track's sample number, so no module parameter goes there.

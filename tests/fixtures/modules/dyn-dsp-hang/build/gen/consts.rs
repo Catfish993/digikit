@@ -6,8 +6,6 @@ pub mod dn2 {
     pub const FRAME_STRIDE: u32 = 0x49; // halfwords from one track (voice) to the next
     pub const SLOT_BASE: u32 = 0x19; // slot of knob 0
     pub const KNOBS: u32 = 0x8; // knobs per machine
-    pub const HANG_KNOB0_FRAME_OFF: u32 = 0x0;
-    pub const HANG_KNOB7_FRAME_OFF: u32 = 0x7;
 
     /// Halfword index in the DSP's frame copy of the word at `offset` of `track` (voice).
     pub const fn frame_halfword(track: u32, offset: u32) -> u32 {

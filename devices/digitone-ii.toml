@@ -349,6 +349,10 @@ level_field = "c8"
 level_default = 10          # the track level code
 own_dsp = true
 
+# Stock parameter rows a module parameter can copy by name: `plain` shows a plain 0..127 value.
+[modules.templates]
+plain = 0xd5
+
 # The DSP's copy of the frame holds the word of sound-array slot s of voice v at halfword 0x6d + 0x49 v + (s - 25).
 [modules.frame]
 base = 0x6d

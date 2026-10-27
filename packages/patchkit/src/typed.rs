@@ -3,8 +3,10 @@
 //! A machine module declares what it adds in four small sections instead of hand-written registry rows:
 //!
 //! ```toml
-//! [[param]]    id, name, short, template, min, max, default      (one per parameter; [param.dn2] overrides)
-//! [[machine]]  id, name, short, clone_of, knobs = [...], level   (up to the device's knob count; [machine.dn2] overrides)
+//! [[param]]    id, name, short, template, min, max, default      (one per parameter; [param.dn2] overrides; template: a name of the device's
+//!              [modules.templates], default "plain"; a number only under [param.<device>])
+//! [[machine]]  id, name, short, clone_of, knobs = [...], level   (knobs: parameter names, placed by the device profile; [machine.dn2] knobs is an
+//!              explicit layout; own_dsp is derived from the machine's [[voice]] unless set)
 //! [[page]]     id, machine, name, title                           (only on devices whose knobs live in a page)
 //! [[voice]]    machine, entry | render [, note_on, desc]          (machine id -> DSP entry symbols; desc: `dk_machine_desc`)
 //! [[fx]]       id, process, desc [, defaults]                      (a run-time effect: DSP symbols; desc: `dk_fx_desc`; `.dkm` only)
@@ -43,9 +45,30 @@ pub struct KnobModel {
     /// May a machine render with its own DSP routine (`own_dsp`)?
     #[serde(default)]
     pub own_dsp: bool,
+    /// `machine` devices: stock code of the tune row, written to knob `tune_slot` of `[adapter.machine]` (none: no tune knob).
+    #[serde(default)]
+    pub tune: Option<i64>,
+    /// `machine` devices: stock code of the level row, written to knob `level_knob` (none: no level knob).
+    #[serde(default)]
+    pub level: Option<i64>,
+    #[serde(default)]
+    pub level_knob: Option<usize>,
     /// Knobs the firmware keeps for itself on a clone of a base machine (`[[modules.knobs.reserved]]`).
     #[serde(default)]
     pub reserved: Vec<ReservedKnobs>,
+}
+
+/// The slots of `[adapter.machine]` that place a machine's parameters (the rest of that section is read by `devgen`).
+#[derive(Clone, Debug, Default, Deserialize)]
+struct AdapterSlots {
+    tune_slot: Option<usize>,
+    #[serde(default)]
+    param_slots: Vec<usize>,
+}
+
+#[derive(Deserialize)]
+struct AdapterDoc {
+    machine: Option<AdapterSlots>,
 }
 
 /// Knobs of a base machine that a module parameter must not use: a clone of machine `clone_of` (named `name` in messages) keeps them.
@@ -81,6 +104,9 @@ pub struct FrameModel {
 pub struct ModulesSection {
     pub knobs: KnobModel,
     pub frame: FrameModel,
+    /// `[modules.templates]`: stock parameter rows a module parameter copies by name.
+    #[serde(default)]
+    pub templates: BTreeMap<String, i64>,
 }
 
 #[derive(Clone, Debug)]
@@ -88,6 +114,11 @@ pub struct DeviceModel {
     pub short: String,
     pub knobs: KnobModel,
     pub frame: FrameModel,
+    pub templates: BTreeMap<String, i64>,
+    /// Knob position of the stock tune (`[adapter.machine] tune_slot`).
+    pub tune_slot: Option<usize>,
+    /// Knob positions of a machine's module parameters, in order (`[adapter.machine] param_slots`).
+    pub param_slots: Vec<usize>,
 }
 
 impl DeviceModel {
@@ -107,6 +138,7 @@ impl DeviceModel {
 struct DeviceFile {
     device: Option<DeviceHead>,
     modules: Option<ModulesSection>,
+    adapter: Option<AdapterDoc>,
 }
 #[derive(Deserialize)]
 struct DeviceHead {
@@ -127,6 +159,7 @@ impl Models {
             let (Some(d), Some(m)) = (f.device, f.modules) else {
                 continue;
             };
+            let slots = f.adapter.and_then(|a| a.machine).unwrap_or_default();
             if by_device
                 .insert(
                     d.short.clone(),
@@ -134,6 +167,9 @@ impl Models {
                         short: d.short.clone(),
                         knobs: m.knobs,
                         frame: m.frame,
+                        templates: m.templates,
+                        tune_slot: slots.tune_slot,
+                        param_slots: slots.param_slots,
                     },
                 )
                 .is_some()
@@ -172,13 +208,21 @@ pub enum Knob {
     Param(String),
 }
 
+/// The stock row a parameter copies: a name from the device's `[modules.templates]`, or a stock code (device-specific).
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Template {
+    Name(String),
+    Code(i64),
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ParamDef {
     pub id: String,
     pub name: Option<String>,
     pub short: Option<String>,
-    /// Stock code whose row is copied (owner, flag, kind, formatter).
-    pub template: Option<i64>,
+    /// Stock row that is copied (owner, flag, kind, formatter); default `"plain"`.
+    pub template: Option<Template>,
     pub min: Option<i64>,
     pub max: Option<i64>,
     pub default: Option<i64>,
@@ -194,7 +238,7 @@ pub struct ParamDef {
 struct ParamOver {
     name: Option<String>,
     short: Option<String>,
-    template: Option<i64>,
+    template: Option<Template>,
     min: Option<i64>,
     max: Option<i64>,
     default: Option<i64>,
@@ -207,7 +251,9 @@ pub struct MachineDef {
     pub short: Option<String>,
     pub clone_of: Option<i64>,
     pub position: Option<i64>,
+    /// Default: derived (the device allows own_dsp and the machine has a `[[voice]]` on it); an explicit value overrides.
     pub own_dsp: Option<bool>,
+    /// Shared: parameter names only (placed by the device profile). `[machine.<device>] knobs` is an explicit layout.
     pub knobs: Option<Vec<Knob>>,
     pub level: Option<i64>,
     /// Run-time machine: the type number it prefers on this device (`[machine.<device>] type_hint`); 0 or absent: none.
@@ -442,6 +488,48 @@ fn need<T: Clone>(who: &str, what: &str, key: &str, v: &Option<T>) -> Result<T> 
         .ok_or_else(|| err!("{who}: {what}: no {key} (on this device)"))
 }
 
+/// Place the listed parameters of a machine on a device: the tune and level codes of the profile on a machine-row device, the
+/// parameters in order into the adapter's `param_slots` (the knob positions of a machine row, or the columns of a page).
+fn place(who: &str, what: &str, dev: &str, model: &DeviceModel, names: &[String]) -> Result<Vec<Knob>> {
+    let kn = &model.knobs;
+    let slots = &model.param_slots;
+    if names.len() > slots.len() {
+        return Err(err!(
+            "{who}: {what}: {} parameters, but {dev} places at most {} (param_slots)",
+            names.len(),
+            slots.len()
+        ));
+    }
+    let mut out = vec![Knob::Code(0); kn.count];
+    if kn.to == "machine" {
+        if let (Some(code), Some(slot)) = (kn.tune, model.tune_slot)
+            && let Some(k) = out.get_mut(slot)
+        {
+            *k = Knob::Code(code);
+        }
+        if let (Some(code), Some(j)) = (kn.level, kn.level_knob)
+            && let Some(k) = out.get_mut(j)
+        {
+            *k = Knob::Code(code);
+        }
+    }
+    for (p, &slot) in names.iter().zip(slots) {
+        if slot >= kn.count {
+            return Err(err!(
+                "{who}: {what}: param_slots of {dev} has knob {slot}, but {dev} has {}",
+                kn.count
+            ));
+        }
+        out[slot] = Knob::Param(p.clone());
+    }
+    if kn.to == "page" {
+        while matches!(out.last(), Some(Knob::Code(0))) {
+            out.pop();
+        }
+    }
+    Ok(out)
+}
+
 /// Resolve the typed sections against the device models: one [`DevResolved`] per device that has something.
 pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
     let who = m.module.id.as_str();
@@ -476,7 +564,23 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             let name = need(who, &what, "name", &o.name.or(d.name.clone()))?;
             let short = need(who, &what, "short", &o.short.or(d.short.clone()))?;
             let clone_of = need(who, &what, "clone_of", &o.clone_of.or(d.clone_of))?;
-            let knobs = o.knobs.or(d.knobs.clone()).unwrap_or_default();
+            let mut names = vec![];
+            for k in d.knobs.iter().flatten() {
+                match k {
+                    Knob::Param(p) => names.push(p.clone()),
+                    Knob::Code(_) => {
+                        return Err(err!(
+                            "{what}: knobs lists parameters only; firmware codes come from the device profile \
+                             (a per-device `knobs` may give an explicit layout)"
+                        ));
+                    }
+                }
+            }
+            let knobs = match (o.knobs, &d.knobs) {
+                (Some(k), _) => k,
+                (None, Some(_)) => place(who, &what, dev, model, &names)?,
+                (None, None) => vec![],
+            };
             if knobs.len() > kn.count {
                 return Err(err!(
                     "{who}: {what}: {} knobs, but {dev} has {}",
@@ -484,7 +588,12 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                     kn.count
                 ));
             }
-            let own_dsp = o.own_dsp.or(d.own_dsp).unwrap_or(false);
+            let own_dsp = o.own_dsp.or(d.own_dsp).unwrap_or_else(|| {
+                kn.own_dsp
+                    && m.voice
+                        .iter()
+                        .any(|v| v.machine == d.id && on(&v.devices, dev))
+            });
             if own_dsp && !kn.own_dsp {
                 return Err(err!("{who}: {what}: {dev} has no own_dsp machines"));
             }
@@ -574,11 +683,30 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 continue;
             };
             let o: ParamOver = over(who, &what, &d.per_device, dev)?;
+            let template = match (&o.template, &d.template) {
+                (Some(t), _) => t.clone(),
+                (None, Some(Template::Code(_))) => {
+                    return Err(err!(
+                        "{who}: {what}: a template number is device-specific: use a name, or put the number under [param.{dev}]"
+                    ));
+                }
+                (None, Some(t)) => t.clone(),
+                (None, None) => Template::Name("plain".into()),
+            };
+            let template = match template {
+                Template::Code(c) => c,
+                Template::Name(n) => *model.templates.get(&n).ok_or_else(|| {
+                    err!(
+                        "{who}: {what}: template {n:?} is not one of {:?} on {dev}",
+                        model.templates.keys().collect::<Vec<_>>()
+                    )
+                })?,
+            };
             params.push(RParam {
                 id: d.id.clone(),
                 name: need(who, &what, "name", &o.name.or(d.name.clone()))?,
                 short: need(who, &what, "short", &o.short.or(d.short.clone()))?,
-                template: need(who, &what, "template", &o.template.or(d.template))?,
+                template,
                 min: need(who, &what, "min", &o.min.or(d.min))?,
                 max: need(who, &what, "max", &o.max.or(d.max))?,
                 default: need(who, &what, "default", &o.default.or(d.default))?,
@@ -858,6 +986,11 @@ to = "machine"
 knob_field = "f"
 level_field = "f8"
 level_default = 10
+tune = 0xca
+level = 0xd1
+level_knob = 7
+[modules.templates]
+plain = 0xd1
 [[modules.knobs.reserved]]
 clone_of = 0
 name = "SAMPLE"
@@ -869,6 +1002,9 @@ stride = 48
 group = 4
 gap = 2
 mirror_base = 25
+[adapter.machine]
+tune_slot = 0
+param_slots = [1, 2, 4, 5]
 "#;
     pub const DN2: &str = r#"
 [device]
@@ -882,10 +1018,14 @@ slot_field = "s"
 level_field = "c8"
 level_default = 10
 own_dsp = true
+[modules.templates]
+plain = 0xd5
 [modules.frame]
 base = 0x6d
 stride = 0x49
 mirror_base = 25
+[adapter.machine]
+param_slots = [0, 1, 2, 3]
 "#;
     const MOD: &str = r#"
 [module]
@@ -902,18 +1042,14 @@ summary = "t."
 id = "t_a"
 name = "A"
 short = "A"
-template = 0xd1
 min = 0
 max = 100
 default = 50
-[param.dn2]
-template = 0xd5
 
 [[param]]
 id = "t_b"
 name = "B"
 short = "B"
-template = 0xd1
 min = 0
 max = 100
 default = 1
@@ -923,11 +1059,11 @@ id = "t"
 name = "T"
 short = "T"
 clone_of = 0
+knobs = ["t_a", "t_b"]
+[machine.dt2]
 knobs = [0xca, "t_a", 0, 0, "t_b"]
 [machine.dn2]
 position = 4
-own_dsp = true
-knobs = ["t_a", "t_b"]
 
 [[page]]
 id = "t_syn"
@@ -1021,7 +1157,7 @@ entry = "_t_render"
         let p = on("params");
         assert_eq!(field(p[0], "slot"), Some(&int(25)));
         assert_eq!(field(p[0], "template"), Some(&int(0xd5)));
-        assert_eq!(field(p[1], "template"), Some(&int(0xd1)));
+        assert_eq!(field(p[1], "template"), Some(&int(0xd5)));
         assert_eq!(field(p[1], "slot"), Some(&int(26)));
         let g = on("pages");
         assert_eq!(field(g[0], "machine"), Some(&s("machines.t.index")));
@@ -1084,7 +1220,7 @@ entry = "_t_render"
             e.contains("not in a page") && e.contains("second SRC page"),
             "{e}"
         );
-        // own_dsp where the device has none
+        // an explicit own_dsp on a device that has none
         let e = bad(MOD.replace("clone_of = 0\nknobs", "clone_of = 0\nown_dsp = true\nknobs"));
         assert!(e.contains("no own_dsp"), "{e}");
         // a param pinned to a device where no machine uses it
@@ -1143,6 +1279,92 @@ entry = "_t_render"
         );
         // the Digitone II has no reserved knob: knob 3 of a page is free
         ok(MOD.replace("knobs = [\"t_a\", \"t_b\"]", "knobs = [\"t_a\", \"t_b\"]"));
+    }
+
+    /// MOD with the shared parameter list only: the device profiles place it.
+    fn placed() -> String {
+        MOD.replace("[machine.dt2]\nknobs = [0xca, \"t_a\", 0, 0, \"t_b\"]\n", "")
+    }
+
+    #[test]
+    fn parameter_lists_are_placed_by_the_device_profile() {
+        let r = resolve(&manifest(&placed()), &models()).unwrap();
+        let knobs = |dev: &str| r.iter().find(|x| x.dev == dev).unwrap().machines[0].knobs.clone();
+        let p = |n: &str| Knob::Param(n.into());
+        // machine row: tune, the parameters in param_slots, level
+        assert_eq!(
+            knobs("dt2"),
+            [Knob::Code(0xca), p("t_a"), p("t_b"), Knob::Code(0), Knob::Code(0), Knob::Code(0), Knob::Code(0), Knob::Code(0xd1)]
+        );
+        // page: the parameters in param_slots
+        assert_eq!(knobs("dn2"), [p("t_a"), p("t_b")]);
+        // an explicit per-device list wins
+        let r = resolve(&manifest(MOD), &models()).unwrap();
+        let dt2 = r.iter().find(|x| x.dev == "dt2").unwrap();
+        assert_eq!(dt2.machines[0].knobs.len(), 5);
+    }
+
+    #[test]
+    fn placement_mistakes_are_refused() {
+        let ms = models();
+        let bad = |t: String| -> String {
+            match lower(&mut manifest(&t), &ms) {
+                Err(e) => e.0,
+                Ok(()) => panic!("accepted:\n{t}"),
+            }
+        };
+        // more parameters than the device places
+        let many: String = (0..5)
+            .map(|i| format!("[[param]]\nid = \"t_x{i}\"\nname = \"X\"\nshort = \"X\"\nmin = 0\nmax = 1\ndefault = 0\n\n"))
+            .collect();
+        let e = bad(format!("{}\n{many}", placed().replace("[\"t_a\", \"t_b\"]", "[\"t_a\", \"t_b\", \"t_x0\", \"t_x1\", \"t_x2\"]")));
+        assert!(e.contains("5 parameters, but dn2 places at most 4"), "{e}");
+        // a firmware code in the shared list
+        let e = bad(placed().replace("knobs = [\"t_a\", \"t_b\"]", "knobs = [0xca, \"t_a\", \"t_b\"]"));
+        assert!(e.contains("knobs lists parameters only"), "{e}");
+    }
+
+    #[test]
+    fn templates_default_to_plain_and_resolve_by_name() {
+        let ms = models();
+        let tpl = |t: &str, dev: &str| -> Result<i64> {
+            let r = resolve(&manifest(t), &ms)?;
+            Ok(r.iter().find(|x| x.dev == dev).unwrap().params[0].template)
+        };
+        assert_eq!(tpl(MOD, "dt2").unwrap(), 0xd1);
+        assert_eq!(tpl(MOD, "dn2").unwrap(), 0xd5);
+        let named = MOD.replacen("min = 0", "template = \"plain\"\nmin = 0", 1);
+        assert_eq!(tpl(&named, "dn2").unwrap(), 0xd5);
+        // a number under the device table is fine
+        let over = MOD.replacen(
+            "default = 50\n",
+            "default = 50\n[param.dn2]\ntemplate = 0x75\n",
+            1,
+        );
+        assert_eq!(tpl(&over, "dn2").unwrap(), 0x75);
+        assert_eq!(tpl(&over, "dt2").unwrap(), 0xd1);
+        // a number in the shared table, and an unknown name
+        let e = tpl(&MOD.replacen("min = 0", "template = 0xd1\nmin = 0", 1), "dt2").unwrap_err().0;
+        assert!(e.contains("a template number is device-specific"), "{e}");
+        let e = tpl(&MOD.replacen("min = 0", "template = \"wide\"\nmin = 0", 1), "dt2").unwrap_err().0;
+        assert!(e.contains("\"wide\"") && e.contains("plain"), "{e}");
+    }
+
+    #[test]
+    fn own_dsp_follows_the_voice_routine() {
+        let own = |t: &str, dev: &str| {
+            let r = resolve(&manifest(t), &models()).unwrap();
+            r.iter().find(|x| x.dev == dev).unwrap().machines[0].own_dsp
+        };
+        // a voice on a device that allows it; never where the device does not
+        assert!(own(MOD, "dn2"));
+        assert!(!own(MOD, "dt2"));
+        // no voice routine: the machine renders with the stock engine
+        let novoice = MOD.replace("[[voice]]\nmachine = \"t\"\nentry = \"_t_render\"\n", "");
+        assert!(!own(&novoice, "dn2"));
+        // an explicit value overrides the derivation
+        assert!(own(&novoice.replace("[machine.dn2]", "[machine.dn2]\nown_dsp = true"), "dn2"));
+        assert!(!own(&MOD.replace("[machine.dn2]", "[machine.dn2]\nown_dsp = false"), "dn2"));
     }
 
     #[test]
