@@ -22,12 +22,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <dk/ui.h>
+#include "dk_ui_core.h"
 #include "dk_fw_mem.h"
 #include "dk_fw_string.h"
 #include "dk_fw_view.h"
 #include "dk_fw_menu.h"
 #include "dk_fw_window.h"
 #include "dk_fw_text.h"
+#include "dk_fw_draw.h"
 
 /* The control-block vtables of the two make_shared window types (data anchors; the address is the vtable). */
 extern const uint8_t fw_confirm_cb_vt __asm__("cf.window.site.confirm_cb_vptr_lit");
@@ -464,8 +466,9 @@ static void text_paint(uint8_t *view, uint8_t *canvas)
 }
 
 /* A list with no rows. The firmware's list code is not made for an empty Menu (its paint, LED and key code read the item at the
-   selection), so an empty list keeps one hidden item (see refill) and its paint is ours: the title and the descriptor's empty text,
-   centred. The title is drawn as the stock paint draws it: flags 2 at x 0x40, y 0x41 minus the field at +0x84 (7), the string at +0x1bc as the format. */
+   selection), so an empty list keeps one hidden item (see refill) and its paint is ours: the title bar and the descriptor's empty
+   text, centred. The bar is drawn as the stock paint draws it: clear the bar, the title (flags 2 at x 0x40, y 0x41 minus the field at
+   +0x84, which is 7), the two side lines, then an invert fill of the inside (y counts from the bottom). */
 static void list_paint(uint8_t *view, uint8_t *canvas)
 {
     uint8_t *obj = view - VIEW_AT;
@@ -474,9 +477,16 @@ static void list_paint(uint8_t *view, uint8_t *canvas)
         ((void (*)(uint8_t *, uint8_t *))g_list_stock_paint)(view, canvas);
         return;
     }
-    const char *title = (const char *)read_u32(obj + offsetof(CompactVerticalMenuView, title));
+    const CompactVerticalMenuView *c = (const CompactVerticalMenuView *)obj;
+    int d = (int)read_u32(obj + 0x84);
+    int x0 = c->x, x1 = c->x + (int)c->width - 1;
+    const char *title = (const char *)c->title;
+    dk_fw_draw_fill_rect(canvas, 0, 0x3f, 0x7f, 0x40 - d, 0);
     if (title)
-        dk_fw_text_draw_fmt(canvas, obj + CMP_FONT_AT, 0x40, 0x41 - (int)read_u32(obj + 0x84), 2, "%s", title);
+        dk_fw_text_draw_fmt(canvas, obj + CMP_FONT_AT, 0x40, 0x41 - d, 2, "%s", title);
+    dk_fw_draw_fill_rect(canvas, x0, 0x3e, x0, 0x41 - d, -1);
+    dk_fw_draw_fill_rect(canvas, x1, 0x3e, x1, 0x41 - d, -1);
+    dk_fw_draw_fill_rect(canvas, x0 + 1, 0x3f, x1 - 1, 0x40 - d, -1);
     if (m->d->empty)
         dk_fw_text_draw_fmt(canvas, obj + CMP_FONT_AT, 0x40, 0x1c, 2, "%s", m->d->empty);
 }
@@ -619,12 +629,12 @@ dk_ui_menu *dk_ui_menu_new(const dk_ui_menu_desc *d)
     return m;
 }
 
-/* Fill again: the selection stays on the same row number when it can. */
-static void refill(dk_ui_menu *m)
+/* Fill again: the selection stays on the same row number when it can, or goes to the top (`top`). */
+static void refill(dk_ui_menu *m, int top)
 {
     if (m->filling)
         return;
-    int sel = (int)((CompactVerticalMenuView *)m->obj)->selected;
+    int sel = top ? 0 : (int)((CompactVerticalMenuView *)m->obj)->selected;
     dk_fw_menu_clear_items(m->obj);
     m->n = 0;
     m->filling = 1;
@@ -656,7 +666,7 @@ int dk_ui_open(dk_ui_menu *m)
 {
     if (!m || !m->obj || !m->d || m->kind == K_PANEL)
         return -1;
-    refill(m);
+    refill(m, m->kind == K_TEXT && !dk_ui_is_open(m)); /* a text page opens at its first row */
     if (dk_ui_is_open(m))
         return 0;
     return dk_fw_view_view_controller_push(view_manager(), m->sp, 0) ? 0 : -1;
@@ -665,7 +675,7 @@ int dk_ui_open(dk_ui_menu *m)
 void dk_ui_refresh(dk_ui_menu *m)
 {
     if (m && m->obj && m->d && m->kind != K_PANEL)
-        refill(m);
+        refill(m, 0);
 }
 
 void dk_ui_close(dk_ui_menu *m)

@@ -1,9 +1,7 @@
 /* test/ui-demo: every kind of row and view of <dk/ui.h>, to see core/ui on the screen. */
 #include <stdint.h>
 #include <dk/ui.h>
-
-/* core/ui, for other core modules: a row among the rows of a stock menu. */
-void dk_ui_stock_row(uint8_t *stock_menu, const char *text, dk_ui_act_fn *fn, void *ctx);
+#include <dk_ui_core.h>
 
 static int g_toggle = 1;
 int dk_demo_value = 64;

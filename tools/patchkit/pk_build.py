@@ -347,6 +347,8 @@ def cf_include_dirs(moddir: Path) -> list[Path]:
         moddir / "src",
         ROOT / "modules" / "core" / "fw" / "inc",
         ROOT / "modules" / "core" / "fw" / "include",
+        ROOT / "modules" / "core" / "runtime" / "include",
+        ROOT / "modules" / "core" / "ui" / "include",
         ROOT / "sdk" / "include",
     ]
 

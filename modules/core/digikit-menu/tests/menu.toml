@@ -1,8 +1,8 @@
-# SETTINGS > DIGIKIT: the entry is the ninth row of SETTINGS, opens; MODULES lists the store (the harness card has none:
-# NO STORE); ABOUT shows the runtime; NO leaves. The entry, the main page and the MEMORY page are pinned as frames (hashes in
-# tests/patchkit/smoke/goldens.json): the pages have no glyphs, and MEMORY (a text page) has no highlighted row. MODULES and ABOUT
-# are checked by the state the menu draws them from, not by pixels: ABOUT by the rows it keeps in DK_ABOUT, MEMORY also by those
-# in DK_MEM, MODULES by the store state of its list (2 = no store, no rows), FX ROUTES by the rows it keeps in DK_FXR (no effect is loaded: NO EFFECTS LOADED). A key on a text page must not fault, and one DOWN must not change the frame (the cursor moves, unseen).
+# SETTINGS > DIGIKIT: the entry is the ninth row of SETTINGS and opens the menu (ABOUT, HEALTH, MEMORY, MODULES, DEBUG, REMOTE); MODULES opens the list (the
+# harness card has no store: NO STORE); ABOUT shows the runtime; MEMORY shows the capacity; NO leaves. The entry, the menu and the MEMORY page are pinned as frames
+# (hashes in tests/patchkit/smoke/goldens.json): the pages have no glyphs, and MEMORY (a text page) has no highlighted row. ABOUT is checked by the rows the menu keeps in
+# DK_ABOUT, MEMORY also by those in DK_MEM, MODULES by the store state of its list (2 = no store, no rows). A key on a text page must not fault, and one DOWN must not change
+# the frame (the cursor moves, unseen).
 [test]
 name = "menu"
 devices = ["dt2", "dn2"]
@@ -57,6 +57,18 @@ wait_ms = 500
 [[step]]
 expect_frame = "digikit"
 [[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
 tap = "YES"
 [[step]]
 wait_ms = 800
@@ -69,23 +81,17 @@ tap = "NO"
 [[step]]
 wait_ms = 400
 [[step]]
-tap = "DOWN"
+tap = "UP"
 [[step]]
-wait_ms = 300
+wait_ms = 150
 [[step]]
-tap = "YES"
+tap = "UP"
 [[step]]
-wait_ms = 600
+wait_ms = 150
 [[step]]
-expect_text = {rows = "DK_FXR", count = "DK_FXR_N", stride = 24, has = ["NO EFFECTS LOADED"]}
+tap = "UP"
 [[step]]
-tap = "NO"
-[[step]]
-wait_ms = 400
-[[step]]
-tap = "DOWN"
-[[step]]
-wait_ms = 300
+wait_ms = 150
 [[step]]
 tap = "YES"
 [[step]]
@@ -134,6 +140,10 @@ tap = "UP"
 wait_ms = 300
 [[step]]
 expect_no_fault = true
+[[step]]
+tap = "NO"
+[[step]]
+wait_ms = 400
 [[step]]
 tap = "NO"
 [[step]]

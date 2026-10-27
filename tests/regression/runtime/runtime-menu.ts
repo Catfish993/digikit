@@ -16,8 +16,7 @@ export async function openDigikitMenu(tap: Tap, checkpoint?: (name: string) => P
 }
 
 export async function openRuntimeAbout(tap: Tap): Promise<void> {
-  await tap('DOWN');
-  await tap('DOWN');
+  // ABOUT is the first row of the DIGIKIT menu
   await tap('YES', 3000);
 }
 

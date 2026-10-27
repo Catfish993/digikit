@@ -159,8 +159,8 @@ def describe(short: Short) -> str:
 
 
 def menu_line(short: Short, compact: bool = False) -> str:
-    """The text of the DIGIKIT menu for a short resource (`short_text` in modules/core/digikit-menu): `DSP 400K > 254K FREE`; COMPACT (the list's RESULT
-    row): `DSP 400K>254K`."""
+    """The text for a short resource that the runtime's fit rule gives (`DkrtFitRow.reason`, the text of the DIGIKIT confirm `<NAME> DOES NOT FIT`):
+    `DSP 400K > 254K FREE`; COMPACT (`DkrtFitRow.brief`): `DSP 400K>254K`."""
     name, need, free = short
     label = {
         "MODULES": "MODULES",

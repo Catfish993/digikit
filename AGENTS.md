@@ -79,7 +79,7 @@ Use existing database helpers before one-off queries: `tools/coldfire/cf.py` and
 
 SHARC instruction semantics belong only in `tools/sharc_dev/sharc_core/`; trace/run tools are drivers. Changes there or in `tools/sharc_dev/sharc_transpile/`, `tools/sharc_dev/sharc_transpile_infer.py`, or `tools/sharc_dev/sharc_rsgen.py` change `CORE_FINGERPRINT` and require costly regeneration. Back up each generated directory, regenerate DN2 and DT2 using `out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt`, and regenerate the shared core with `mise run gen:core`.
 
-Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `native_pgo.py` and `sharc_regionbench.py` already take the lock; do not wrap them again. Launcher outputs in `out/native/target/*/pgo-use` are reserved; experiments use another `DIGI_EMU_PGO_VARIANT`.
+Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `native_pgo.py`, `sharc_regionbench.py`, `pk_modcheck` and the scenario runner already take the lock; do not wrap them again (it deadlocks). Launcher outputs in `out/native/target/*/pgo-use` are reserved; experiments use another `DIGI_EMU_PGO_VARIANT`.
 
 ## Delegation
 

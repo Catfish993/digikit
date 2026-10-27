@@ -701,6 +701,9 @@ class Session:
         # wall seconds by kind (spawn_s, load_s, reset_s, run_s) and the emulated milliseconds run (emu_ms)
         self.timings: dict[str, float] = {}
         self.card: str | None = None
+        self.card_override: str | None = (
+            None  # a card image file used instead of the sample card (dk:dev --store)
+        )
         self.image: Path | None = None
 
     # -- lifecycle
@@ -736,7 +739,9 @@ class Session:
         if emu.status().get("audio") is None:
             raise HarnessError("this digi-emud has no coupled audio")
         emu.subscribe()
-        if cell.device == "dt2":
+        if self.card_override:
+            self.card = self.card_override
+        elif cell.device == "dt2":
             samples = OUT / "samples"
             card_check.make_samples(samples)
             with boot_lock(self.cache_dir, Path(f"card-{self.cell.device}")):

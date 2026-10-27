@@ -1,4 +1,4 @@
-"""FX ROUTES page and the manifest's route fields, Digitone II (tests/digikit/scenarios/fx-routes-dn2.toml): the default route from the manifest, the page's rows and messages, APPLY & RESTART and the route in effect after it, the FX view's order."""
+"""The ROUTE... choice of the MODULES side panel and the manifest's route fields, Digitone II (tests/digikit/scenarios/fx-routes-dn2.toml): the default route from the manifest, the routes the choice offers, APPLY & RESTART? and the route in effect after it, the FX view's order."""
 
 import pytest
 from scen_cases import cases, run

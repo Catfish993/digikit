@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fast edit loop for module code on the emulator: build the changed objects, reload a kept daemon, press keys, save screenshots.
 
-    mise run dk:dev -- MODULE_OR_SET [--device dn2[,dt2]] [--keys FILE|INLINE] [--out DIR] [--stop]
+    mise run dk:dev -- MODULE_OR_SET [--device dn2[,dt2]] [--keys FILE|INLINE] [--store IDS] [--out DIR] [--stop]
 
 MODULE_OR_SET is a patch set of devices/<device>.toml (`emulator`), or module ids separated by commas (`test/ui-demo`); the modules
 they require are added. Per device the tool
@@ -29,6 +29,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import sys
 import time
 import tomllib
@@ -43,6 +44,7 @@ from tools.patchkit import modroots, pk_build  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 
 FIRMWARE = {"dt2": "1.17", "dn2": "1.12"}
+STOCK_SYX = {"dt2": "Digitakt_II_OS1.17.syx", "dn2": "Digitone_II_OS1.12.syx"}
 DEVICE_FILE = {"dt2": "digitakt-ii.toml", "dn2": "digitone-ii.toml"}
 SHEET_COLUMNS = 4
 
@@ -120,8 +122,12 @@ def parse_keys(text: str) -> list[dict[str, Any]]:
 def load_keys(keys: str | None) -> list[dict[str, Any]]:
     if not keys:
         return [{"shot": "main"}]
-    path = Path(keys)
-    return parse_keys(path.read_text() if path.is_file() else keys)
+    try:
+        path = Path(keys)
+        is_file = path.is_file()
+    except OSError:  # an inline script longer than a file name
+        is_file = False
+    return parse_keys(path.read_text() if is_file else keys)
 
 
 def contact_sheet(frames: list[tuple[str, bytes]], dest: Path) -> None:
@@ -151,8 +157,12 @@ def contact_sheet(frames: list[tuple[str, bytes]], dest: Path) -> None:
 # ----- one device -------------------------------------------------------------------------------------------------
 
 
-def run_dir_of(device: str, target: str) -> Path:
-    slug = re.sub(r"[^A-Za-z0-9.+-]+", "_", target)
+def run_dir_of(device: str, target: str, store: list[str] | None = None) -> Path:
+    slug = re.sub(
+        r"[^A-Za-z0-9.+-]+",
+        "_",
+        target + ("+store-" + ",".join(store) if store else ""),
+    )
     return H.OUT / f"run-devreload-{device}-{slug}"
 
 
@@ -170,7 +180,45 @@ def connect(run_dir: Path) -> Emu | None:
     return emu
 
 
-def start(cell: H.Cell, run_dir: Path) -> tuple[Emu, H.Session]:
+def store_card(device: str, ids: list[str], run_dir: Path) -> Path:
+    """A card image whose module store holds the modules `ids`, packed for the device (`<leaf>.dkm` under digikit/modules)."""
+    from tools.firmware import config
+    from tools.patchkit import pk_dkrt
+
+    tools = pk_dkrt.Tools()
+    folder = run_dir / "plus_drive"
+    shutil.rmtree(folder, ignore_errors=True)
+    (folder / "digikit" / "modules").mkdir(parents=True)
+    selected = []
+    for mid in ids:
+        pick = mid.endswith(
+            "*"
+        )  # a trailing * puts the module in the card's saved selection (it loads at the boot)
+        mid = mid.rstrip("*")
+        if mid.startswith(
+            "synth:"
+        ):  # synth:NAME:BSS, a module that only needs BSS bytes of arena (dkmsynth)
+            _, name, bss = mid.split(":")
+            out = folder / "digikit" / "modules" / f"{name}.dkm"
+            spec = run_dir / f"{name}.toml"
+            spec.write_text(f'name = "dev/{name}"\nbss = {int(bss) // 4 * 4}\n')
+            tools.patchkit_run("synth-dkm", spec, "--device", device, "-o", out)
+        else:
+            out = folder / "digikit" / "modules" / f"{mid.rpartition('/')[2]}.dkm"
+            tools.patchkit_run("pack", mid, "--device", device, "-o", out)
+        if pick:
+            selected.append(f"modules/{out.name}")
+    syx = config.stock(STOCK_SYX[device])
+    image = run_dir / "store-card.img"
+    pk_dkrt.build_card(tools, folder, image, syx, device)
+    if selected:
+        pk_dkrt.write_selection(image, selected, device)
+    return image
+
+
+def start(
+    cell: H.Cell, run_dir: Path, store: list[str] | None = None
+) -> tuple[Emu, H.Session]:
     """A new daemon that outlives this process: it boots the patched image of the cell (cached by image)."""
     session = H.Session(
         cell,
@@ -179,6 +227,9 @@ def start(cell: H.Cell, run_dir: Path) -> tuple[Emu, H.Session]:
         run_name=f"devreload-{cell.device}",
         run_dir=run_dir,
     )
+    if store:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        session.card_override = str(store_card(cell.device, store, run_dir))
     session.open()
     assert session.emu is not None
     emu = session.emu
@@ -201,8 +252,8 @@ def session_on(emu: Emu, cell: H.Cell, run_dir: Path) -> H.Session:
     return session
 
 
-def stop(device: str, target: str) -> None:
-    run_dir = run_dir_of(device, target)
+def stop(device: str, target: str, store: list[str] | None = None) -> None:
+    run_dir = run_dir_of(device, target, store)
     emu = connect(run_dir)
     if emu is None:
         print(f"{device}: no daemon in {run_dir}")
@@ -220,13 +271,14 @@ def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
         modroots.module_dir(m)
     cell = H.Cell(device, FIRMWARE[device], modules)
     t_build, rebuilt = build(closure(modules))
-    run_dir = run_dir_of(device, a.target)
+    store = [m for m in (a.store or "").split(",") if m]
+    run_dir = run_dir_of(device, a.target, store)
     emu = connect(run_dir)
     started = False
     t_start = 0.0
     if emu is None:
         t = time.monotonic()
-        emu, session = start(cell, run_dir)
+        emu, session = start(cell, run_dir, store)
         t_start, started = time.monotonic() - t, True
     else:
         session = session_on(emu, cell, run_dir)
@@ -306,6 +358,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument(
         "--keys", help="a key script file (JSON or inline text) or the inline text"
     )
+    ap.add_argument(
+        "--store",
+        help="module ids separated by commas: packed into the module store of the card the daemon boots with; an id ending in * is also in the saved selection, synth:NAME:BSS is a module that needs BSS bytes of arena (a kept daemon keeps its card; each list has its own daemon)",
+    )
     ap.add_argument("--out", default=str(ROOT / "out" / "runs" / "devreload"))
     ap.add_argument(
         "--stop", action="store_true", help="end the kept daemons of this module set"
@@ -318,7 +374,7 @@ def main(argv: list[str]) -> int:
             ap.error(f"unknown device {d!r}")
     if a.stop:
         for d in devices:
-            stop(d, a.target)
+            stop(d, a.target, [m for m in (a.store or "").split(",") if m])
         return 0
     results = []
     try:

@@ -189,6 +189,27 @@ After a change to `devices/*.toml` or `sdk/sdk.toml`, run `mise run gen:modules`
 
 Each task takes `-- --help`.
 
+## Fast iteration: runtime, UI and modules
+
+One edit and one look take seconds, not a boot. Iterate on the Digitone II (its boot is about half as long), check the Digitakt II at the end, and finish with the owner's check (`module:check`, the scenarios, the harness).
+
+```sh
+mise run dk:dev -- test/ui-demo --device dn2 --keys 'tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:menu'
+mise run dk:dev -- emulator --device dn2,dt2 --keys FILE.json   # the workbench's module set of devices/*.toml
+mise run dk:dev -- core/digikit-menu --store 'test/dyn-demo*,synth:HUGE:8000000'  # a card with these modules (* = selected)
+mise run dk:dev -- test/ui-demo --stop                          # end the kept daemon
+cargo test --offline -p dkui-host                               # menu and UI logic on the host, about 1 s
+```
+
+`dk:dev` builds what changed, reloads a daemon it keeps per device and module set, runs the keys from the main screen and writes `out/runs/devreload/<device>/sheet.png`. The reload (daemon method `dev.reload`) compares the new patched image with the running one:
+
+- Only UI-layer modules changed (`core/ui`, `core/digikit-menu`, modules that require `core/ui`): it restores the main screen and writes the new code. About 1.5 s, or 4 s for a `dk:dev` round with a short key script.
+- Anything else changed (the Rust runtime, another module, the DSP image): it boots the new image. Cold: DN2 5 s, DT2 10 s; an image booted before: under 1 s.
+
+In the workbench (`mise run wb`) the **Reload modules** button (⇧⌘R) does the same reload for the open session. It does not build: run `dk:dev` or `module:check` first. A watch task that builds on save is planned ([docs/plans/sdk-api.md](plans/sdk-api.md), "Dev loop").
+
+Build times: the Rust runtime 2.3 s, a C object under 1 s. `uv run python -m tools.emulator.boot_phases --device dn2 --cold` measures where a boot spends its time. Details and timings: [TESTING.md, "Fast iteration"](TESTING.md#fast-iteration-dkdev-and-reload); the daemon methods: [CONTROL.md](CONTROL.md).
+
 **Hardware warning**
 
 - Patched images have run on a Digitakt II (OS 1.17) since 2026-10-18 (docs/findings/47-dt2-device-rungs.md). Flash

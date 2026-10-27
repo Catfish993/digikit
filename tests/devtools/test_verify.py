@@ -927,7 +927,7 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
     """The range 457f515b..29086ff7 (one mise.toml task, device tools, runtime objects) ran all 13
     steps; its files now select web, Rust and Python tests, without PCM steps."""
     files = [
-        "modules/core/digikit-menu/build/digikit-menu-rs.dko.json",
+        "modules/core/digikit-menu/build/digikit-menu.dko.json",
         "modules/core/runtime/build/runtime.dko.json",
         "modules/core/runtime/src/rs/src/upload.rs",
         "tests/fixtures/modules/dyn-demo/build/dyn-demo.dko.json",

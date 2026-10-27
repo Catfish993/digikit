@@ -130,7 +130,7 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
 - [x] `core/ui` C adapter on `dk_fw_*.h`. Menus are built once and kept; dialogs are freed by the
       firmware after they close; `std::function` captures are two words, no heap.
 - [x] Host build of `<dk/ui.h>` with a fake adapter that records calls and drives callbacks, for unit tests.
-- [ ] `core/digikit-menu` rewritten in C on `<dk/ui.h>`, in the new design (no pixel-identical
+- [x] `core/digikit-menu` rewritten in C on `<dk/ui.h>`, in the new design (no pixel-identical
       intermediate step):
   - SETTINGS > DIGIKIT stays a vertical menu: ABOUT, HEALTH, MEMORY, MODULES. Glyphs later.
   - MODULES is a list like PRESET MANAGER: a title bar; rows of name, kind and size; a check mark
@@ -140,7 +140,7 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
   - NO with changes pending asks "APPLY & RESTART?": YES applies, NO discards.
   - A module that does not fit gives a toast "NO FIT: NAME".
   - The FX ROUTES screen is removed; the fx-routes scenario uses ROUTE....
-- [ ] Proof: host tests; no firmware-heap growth after the menu, a list and a dialog open and close
+- [x] Proof: host tests; no firmware-heap growth after the menu, a list and a dialog open and close
       50 times; new golden frames approved by Em from screenshots on dt2 and dn2.
 
 ### Phase 4: UI for content modules; remote
@@ -193,4 +193,5 @@ Syntakt adapter (S3, S4).
 2026-10-27: plan agreed. Phase 1 done in ae364ec3. Phase 2 done in 1eb92a86 and its follow-up. Phase 3 started: the ABI spec, the runtime exports and the UI firmware anchors are done; the
 menu is unchanged (goldens match). Then the list-view anchors, `<dk/ui.h>`, core/ui (demo fixture
 `test/ui-demo`, screenshots and a flat heap on dt2 and dn2) and the host harness `dkui-host`.
-Next: the digikit menu in C on `<dk/ui.h>`.
+Then the digikit menu in C on core/ui (the Rust menu crate is deleted; core/ui is in the
+runtime sets of both devices); Em approved the new goldens. Phase 3 done. Next: phase 4.

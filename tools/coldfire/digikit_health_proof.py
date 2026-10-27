@@ -208,9 +208,7 @@ class HealthProof:
         for _ in range(8):
             self.tap("DOWN", 200)
         self.tap("YES", 700)  # DIGIKIT
-        self.tap("DOWN", 200)
-        self.tap("DOWN", 200)
-        self.tap("DOWN", 200)  # MODULES, FX ROUTES, ABOUT, HEALTH
+        self.tap("DOWN", 200)  # ABOUT, HEALTH
         self.tap("YES", 700)
 
     def frame(self, name: str) -> str:
@@ -555,7 +553,8 @@ class HealthProof:
             poll != 0 and r0 >= 1,
             f"poll {poll:#x} redraws {r0}",
         )
-        view = self.w(self.sym("HEALTHV"))
+        # DK_HEALTH_MENU is the core/ui menu object (dk_ui_menu, modules/core/ui/src/ui.c): the firmware's view is the pointer at +4
+        view = self.w(self.w(self.sym("DK_HEALTH_MENU")) + 4)
         dirty_off, parent_off = 0x38 + 0x14, 0x38 + 0x2C
         p0, i0 = self.w(self.sym("DK_POLLS")), self.icount()
         self.rig.s.run_ms(2000)  # no key press
@@ -568,12 +567,18 @@ class HealthProof:
             3 <= r1 - r0 <= 6,
             f"{r0} -> {r1} in 2 s",
         )
-        self.rig.s.run_ms(300)
-        d = self.w(view + dirty_off - dirty_off % 4)
+        # the refresh sets the view's dirty flag and the next frame consumes it: sample it every 50 ms for a second (the refresh is every half
+        # second, so a single read depends on where in that period it falls) and see it set, then cleared
+        states = []
+        for _ in range(20):
+            self.rig.s.run_ms(50)
+            d = self.w(view + dirty_off - dirty_off % 4)
+            states.append(((d >> (8 * (3 - dirty_off % 4))) & 0xFF) != 0)
+        consumed = any(a and not b for a, b in zip(states, states[1:], strict=False))
         self.check(
-            "the firmware redrew the view (its dirty flag is consumed)",
-            ((d >> (8 * (3 - dirty_off % 4))) & 0xFF) == 0,
-            f"flag word {d:#x}",
+            "the firmware redrew the view (its dirty flag is set by a refresh and consumed)",
+            consumed,
+            "".join("1" if x else "0" for x in states),
         )
         self.check(
             "the view is on the stack (parent pointer set)",

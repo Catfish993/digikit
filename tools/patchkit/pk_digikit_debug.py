@@ -299,9 +299,7 @@ def run_card(c: Any) -> None:
             for _ in range(8):
                 tap("DOWN", 200)
             tap("YES", 700)  # DIGIKIT
-            tap("DOWN", 300)  # FX ROUTES
-            tap("DOWN", 300)  # ABOUT
-            tap("YES", 800)
+            tap("YES", 800)  # ABOUT, the first row
             rows = about_rows(rig, plan)
             png = c.work / "about-foreign.png"
             png.write_bytes(rig.emu.frame_png())

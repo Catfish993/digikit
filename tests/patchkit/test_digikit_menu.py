@@ -23,11 +23,10 @@ IMAGES = {
 
 
 def test_committed_objects_are_current_and_plain_coldfire():
-    for name in ("digikit-menu-rs", "digikit-menu-cf"):
-        obj = json.loads((MODULE / "build" / f"{name}.dko.json").read_text())
-        assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
-    if not pk_toolchains.codegen_gcc_ready():
-        pytest.skip("Rust-for-ColdFire toolchain not installed")
+    obj = json.loads((MODULE / "build" / "digikit-menu.dko.json").read_text())
+    assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
+    if pk_toolchains.m68k_bin("gcc") is None:
+        pytest.skip("m68k-elf toolchain not installed")
     pk_build.build_module(MODULE, check=True)
 
 
@@ -86,7 +85,7 @@ def test_plan_helpers(tmp_path):
                 "base": {"device": "dt2", "version": "1.17"},
                 "regions": {"cf.expansion": [0x1000, 0x100000]},
                 "symbols": {
-                    "core/digikit-menu@0.1.0:.sec..bss._RNvCsAbC_15pk_digikit_menu4TICK": 0x47E8C100,
+                    "core/digikit-menu@0.1.0:TICK": 0x47E8C100,
                     "core/runtime@0.1.0:DKRT_STATE": 0x47E8C200,
                 },
             }

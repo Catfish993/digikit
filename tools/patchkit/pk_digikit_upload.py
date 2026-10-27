@@ -22,7 +22,7 @@ docs/findings/43-digikit-upload.md). Run by `tools.patchkit.pk_digikit_scen` (ki
   txfull    a host that never reads: the in-flight word of the firmware's TX function is set high; replies are dropped (counted), none
             reaches the output, a stock Ping still answers, and the reply is sent again once the ring has room.
 
-The through-the-menu proof (an uploaded module appears in DIGIKIT > MODULES, loads after APPLY & RESTART and plays like the
+The through-the-menu proof (an uploaded module appears in DIGIKIT > MODULES, loads after APPLY & RESTART? and plays like the
 card-built module) is the `menu` kind with `upload = true` (tests/digikit/scenarios/menu-upload-*.toml).
 """
 

@@ -77,7 +77,8 @@ int dk_ui_has(int cap);
 
 /* Menus and lists. */
 dk_ui_menu *dk_ui_menu_new(const dk_ui_menu_desc *d); /* 0 when out of memory; d must stay valid */
-int dk_ui_open(dk_ui_menu *m); /* fill, then show on top of the current view; if open, refresh */
+int dk_ui_open(dk_ui_menu *m); /* fill, then show on top of the current view; if open, refresh. A menu or list keeps its selected row
+                                  from the last time; a text page opens at its first row. */
 void dk_ui_close(dk_ui_menu *m);
 int dk_ui_is_open(const dk_ui_menu *m);
 void dk_ui_refresh(dk_ui_menu *m); /* fill again; the selection stays on the same row when it can */

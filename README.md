@@ -105,7 +105,7 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 - [Writing modules](docs/MODULE-AUTHORING.md) and the [SDK](sdk/README.md); SDK plan: [docs/plans/sdk-api.md](docs/plans/sdk-api.md)
 - [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
-- [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, tests, analysis tools, repository layout
+- [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules) (`dk:dev`, Reload modules), tests, analysis tools, repository layout
 - Run `mise run test:changed` before committing
 - [Testing](docs/TESTING.md): test levels and commands
 - [Results of the research](docs/FINDINGS.md)

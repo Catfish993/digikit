@@ -9,3 +9,6 @@ description = "Host test harness for <dk/ui.h>: a fake of every dk_ui_* call wit
 path = "src/lib.rs"
 
 [dependencies]
+
+[build-dependencies]
+cc = "1"
