@@ -8,5 +8,6 @@
 
 /* cf.link.fn.block_isr: no sig yet */
 /* cf.link.fn.frame: no sig yet */
+extern const uint8_t dk_fw_link_block_isr_counter_lit __asm__("cf.link.site.block_isr.counter_lit");
 
 #endif

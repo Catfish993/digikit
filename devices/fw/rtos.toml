@@ -20,24 +20,12 @@ mark = "D"
 users = ["core/runtime"]
 
 [[fn]]
-name = "cf.rtos.fn.reset_init_calls"
-aliases = ["cf.reset.init_calls"]
+name = "cf.rtos.fn.reset.init_calls"
+aliases = ["cf.reset.init_calls", "cf.rtos.fn.reset_init_calls"]
 cpu = "cf"
 rule = { kind = "cf_reset_init_calls" }
 mark = "D"
 users = ["core/expansion"]
-
-# The entry of the main-OS task (`link a6,#-0xa8; movem.l ...; ...; jsr (a4); jsr (a3); move.l d0,-0x80(a6); jsr <next singleton>`),
-# found by the words of its first 28 bytes: Digitakt II (the entry is 2 mod 4: the first word of the row is half of the previous
-# function) and Digitone II (4-aligned).
-[[site]]
-name = "cf.rtos.site.boot"
-aliases = ["dkrt.hook.boot"]
-cpu = "cf"
-rule.dt2 = { kind = "cf_words", as = "code", words = ["*", 0xff5848d7, 0x3cfc49f9, "*", "*", "*", "*", 0x4e944e93, 0x2d40ff80, 0x4eb9400d], offset = 0x2, len = 8 }
-rule.dn2 = { kind = "cf_words", as = "code", words = [0x4e56ff58, 0x48d73cfc, 0x45f94018, "*", "*", 0x4e924e93, 0x2d40ff80, 0x4eb9400d], offset = 0x0, len = 8 }
-mark = "D"
-users = ["core/runtime"]
 
 # The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a
 # function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10;
@@ -63,17 +51,29 @@ rule.dn2 = { kind = "cf_func", hash = "ca0006cf073207083d26359db1321886", offset
 mark = "D"
 users = ["core/health"]
 
+# The entry of the main-OS task (`link a6,#-0xa8; movem.l ...; ...; jsr (a4); jsr (a3); move.l d0,-0x80(a6); jsr <next singleton>`),
+# found by the words of its first 28 bytes: Digitakt II (the entry is 2 mod 4: the first word of the row is half of the previous
+# function) and Digitone II (4-aligned).
+[[site]]
+name = "cf.rtos.site.main_os_task"
+aliases = ["cf.rtos.site.boot", "dkrt.hook.boot"]
+cpu = "cf"
+rule.dt2 = { kind = "cf_words", as = "code", words = ["*", 0xff5848d7, 0x3cfc49f9, "*", "*", "*", "*", 0x4e944e93, 0x2d40ff80, 0x4eb9400d], offset = 0x2, len = 8 }
+rule.dn2 = { kind = "cf_words", as = "code", words = [0x4e56ff58, 0x48d73cfc, 0x45f94018, "*", "*", 0x4e924e93, 0x2d40ff80, 0x4eb9400d], offset = 0x0, len = 8 }
+mark = "D"
+users = ["core/runtime"]
+
 [[value]]
-name = "cf.rtos.value.reset_clear_helper"
-aliases = ["cf.reset.clear_helper"]
+name = "cf.rtos.value.reset.clear_helper"
+aliases = ["cf.reset.clear_helper", "cf.rtos.value.reset_clear_helper"]
 cpu = "cf"
 rule = { kind = "cf_reset_helper", which = "clear" }
 mark = "D"
 users = ["core/expansion"]
 
 [[value]]
-name = "cf.rtos.value.reset_copy_helper"
-aliases = ["cf.reset.copy_helper"]
+name = "cf.rtos.value.reset.copy_helper"
+aliases = ["cf.reset.copy_helper", "cf.rtos.value.reset_copy_helper"]
 cpu = "cf"
 rule = { kind = "cf_reset_helper", which = "copy" }
 mark = "D"

@@ -1,26 +1,33 @@
 # view: Brain, ViewController, View, redraw, the UI loop
 # Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
 
-# View (finding 71 section 2, "View vtable"): the vptr at +0, the manager (ViewController) at +0x2c, 0 when the view is not on the stack; the
-# fields of derived windows start at +0x4c.
-[[struct]]
-name = "cf.view.struct.View"
-size = 0x4c
-fields = [
-  { name = "vptr", off = 0x0, type = "ptr" },
-  { name = "mgr", off = 0x2c, type = "ptr" },
-]
-# The fields are [D] (finding 71); the size is [O]: derived windows start their own fields at +0x4c.
-mark = "O"
-users = ["core/digikit-menu"]
-
 # The Brain singleton.
 [[fn]]
-name = "cf.view.fn.brain"
-aliases = ["cf.menu.fn.brain"]
+name = "cf.view.fn.brain.instance"
+aliases = ["cf.menu.fn.brain", "cf.view.fn.brain"]
 cpu = "cf"
 sig = "u8 *()"
 rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x46, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+# The Brain-level push `(menu, &shared_ptr<View>)` (finding 71 section 2); `menu` is the object that opens the view.
+[[fn]]
+name = "cf.view.fn.brain.push"
+aliases = ["cf.menu.fn.push", "cf.view.fn.push_ctx"]
+cpu = "cf"
+sig = "void (u8 *menu, const shared_ptr *sp)"
+rule = { kind = "cf_func", hash = "5e689a4fa65d49640663c7bce736d9ea", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/digikit-menu"]
+
+# The view manager of a Brain (Brain + 0x40).
+[[fn]]
+name = "cf.view.fn.brain.view_manager"
+aliases = ["cf.menu.fn.mgr_of", "cf.view.fn.mgr_of"]
+cpu = "cf"
+sig = "u8 *(u8 *brain)"
+rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x4e, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
 
@@ -34,33 +41,13 @@ rule = { kind = "cf_func", hash = "06c561b63ac3ef5d6fd66758337bb31f", offset = 0
 mark = "D"
 users = ["core/digikit-menu"]
 
-# The view manager of a Brain (Brain + 0x40).
-[[fn]]
-name = "cf.view.fn.mgr_of"
-aliases = ["cf.menu.fn.mgr_of"]
-cpu = "cf"
-sig = "u8 *(u8 *brain)"
-rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x4e, len = 4 }
-mark = "D"
-users = ["core/digikit-menu"]
-
 # `ViewController::push(mgr, shared_ptr<View> *, exclusive)`.
 [[fn]]
-name = "cf.view.fn.push"
-aliases = ["cf.menu.fn.view_add"]
+name = "cf.view.fn.view_controller_push"
+aliases = ["cf.menu.fn.view_add", "cf.view.fn.push"]
 cpu = "cf"
 sig = "u32 (u8 *mgr, const shared_ptr *sp, u32 exclusive)"
 rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x60, len = 4 }
-mark = "D"
-users = ["core/digikit-menu"]
-
-# The Brain-level push `(menu, &shared_ptr<View>)` (finding 71 section 2); `menu` is the object that opens the view.
-[[fn]]
-name = "cf.view.fn.push_ctx"
-aliases = ["cf.menu.fn.push"]
-cpu = "cf"
-sig = "void (u8 *menu, const shared_ptr *sp)"
-rule = { kind = "cf_func", hash = "5e689a4fa65d49640663c7bce736d9ea", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
 
@@ -74,10 +61,23 @@ users = ["core/runtime"]
 
 # The literal queue address of the UI loop's `pea <queue>` (the boot hook peeks the queue for a held safe-mode key).
 [[site]]
-name = "cf.view.site.ui_queue_lit"
-aliases = ["dkrt.ui.queue_lit"]
+name = "cf.view.site.ui_loop.queue_lit"
+aliases = ["cf.view.site.ui_queue_lit", "dkrt.ui.queue_lit"]
 bind = "static"
 cpu = "cf"
 rule = { kind = "cf_words", as = "code", words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8], offset = 0x2, len = 4 }
 mark = "D"
 users = ["core/runtime"]
+
+# View (finding 71 section 2, "View vtable"): the vptr at +0, the manager (ViewController) at +0x2c, 0 when the view is not on the stack; the
+# fields of derived windows start at +0x4c.
+# The fields are [D] (finding 71); the size is [O]: derived windows start their own fields at +0x4c.
+[[struct]]
+name = "cf.view.struct.View"
+size = 0x4c
+fields = [
+  { name = "vptr", off = 0x0, type = "ptr" },
+  { name = "mgr", off = 0x2c, type = "ptr" },
+]
+mark = "O"
+users = ["core/digikit-menu"]

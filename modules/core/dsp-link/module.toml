@@ -32,9 +32,9 @@ sources = ["src/cf/dsp-link.c", "src/cf/tramp.s"]
 place = "cf.expansion"
 
 [object.externs]
-dl_stock_send = "dl.cf.frame_fn"
-dl_tx_lit = "dl.cf.tx_lit"
-dl_rec_lit = "dl.cf.rec_lit"
+dl_stock_send = "cf.link.fn.frame"
+dl_tx_lit = "cf.link.site.tx_queue_lit"
+dl_rec_lit = "cf.link.site.reply_copy_lit"
 
 [[object]]
 path = "build/dsp-link-dt2.dko.json"
@@ -45,7 +45,7 @@ devices = ["dt2"]
 optional = ["_dl_vrows", "_dl_vcount", "_dl_frows", "_dl_fcount", "_dv_diag", "_dv_rec"]
 
 [object.externs]
-_dl_back = "hook.dl.dsp.block_tail.tail"
+_dl_back = "hook.dsp.link.site.block_tail.tail"
 _dl_vrows = "voices.rows"
 _dl_vcount = "voices.count"
 _dl_frows = "fx.rows"
@@ -60,7 +60,7 @@ devices = ["dn2"]
 optional = ["_dl_vrows", "_dl_vcount", "_dl_frows", "_dl_fcount", "_dv_diag", "_dv_rec"]
 
 [object.externs]
-_dl_back = "hook.dl.dsp.block_tail.tail"
+_dl_back = "hook.dsp.link.site.block_tail.tail"
 _dl_vrows = "voices.rows"
 _dl_vcount = "voices.count"
 _dl_frows = "fx.rows"
@@ -68,18 +68,18 @@ _dl_fcount = "fx.count"
 
 [[op]]
 op = "retarget"
-anchor = "dl.cf.frame_call"
+anchor = "cf.link.site.block_isr.frame_call"
 to = "dl_frame_hook"
 
 [[op]]
 op = "hook"
 cpu = "sharc"
-anchor = "dl.dsp.block_tail"
+anchor = "dsp.link.site.block_tail"
 to = "_dl_hook"
 displaced = "run"
 
 [[claim]]
-resource = "dl.dsp.block_tail"
+resource = "dsp.link.site.block_tail"
 
 [[claim]]
-resource = "dl.cf.frame_call"
+resource = "cf.link.site.block_isr.frame_call"

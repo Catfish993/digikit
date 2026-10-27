@@ -51,8 +51,18 @@ def port(name: str) -> dict:
     return tomllib.loads((ROOT / "devices" / "ports" / f"{name}.toml").read_text())
 
 
+# The anchors core/dsp-link links against (devices/fw/link.toml and devices/fw/dsp/link.toml).
+DSPLINK_ANCHORS = (
+    "cf.link.site.block_isr.frame_call",
+    "cf.link.fn.frame",
+    "cf.link.site.reply_copy_lit",
+    "cf.link.site.tx_queue_lit",
+    "dsp.link.site.block_tail",
+)
+
+
 def anchors(name: str) -> dict:
-    return {a["name"]: a for a in port(name)["anchor"] if a["name"].startswith("dl.")}
+    return {a["name"]: a for a in port(name)["anchor"] if a["name"] in DSPLINK_ANCHORS}
 
 
 def main_os(image: str) -> bytes:
@@ -102,11 +112,11 @@ def test_constants_agree_between_the_two_sides():
 def test_anchors_are_in_the_port(image):
     a = anchors(image)
     assert set(a) == {
-        "dl.cf.frame_call",
-        "dl.cf.frame_fn",
-        "dl.cf.rec_lit",
-        "dl.cf.tx_lit",
-        "dl.dsp.block_tail",
+        "cf.link.site.block_isr.frame_call",
+        "cf.link.fn.frame",
+        "cf.link.site.reply_copy_lit",
+        "cf.link.site.tx_queue_lit",
+        "dsp.link.site.block_tail",
     }
 
 
@@ -118,11 +128,12 @@ def test_call_site_geometry_matches_the_dsp_constants(image):
     a = anchors(image)
     main = main_os(image)
     base = 0x40000400
-    call = a["dl.cf.frame_call"]["addr"] - base
+    call = a["cf.link.site.block_isr.frame_call"]["addr"] - base
     # `jsr abs.l` to the stock driver, preceded by the four pushes: record copy, frame bytes, data, data bytes
     assert main[call : call + 2] == b"\x4e\xb9"
     assert (
-        struct.unpack(">I", main[call + 2 : call + 6])[0] == a["dl.cf.frame_fn"]["addr"]
+        struct.unpack(">I", main[call + 2 : call + 6])[0]
+        == a["cf.link.fn.frame"]["addr"]
     )
     pre = main[call - 20 : call]
     m = re.fullmatch(
@@ -140,12 +151,12 @@ def test_call_site_geometry_matches_the_dsp_constants(image):
         assert define(gen_inc(dev), name) == want
     # the literal of `lea <tx queue>,a0` in the driver
     # the literal of the first `pea` of the handler: the record copy (dl_diag reads it)
-    rl = a["dl.cf.rec_lit"]["addr"] - base
+    rl = a["cf.link.site.reply_copy_lit"]["addr"] - base
     assert main[rl - 2 : rl] == b"\x48\x79"
     assert (
         struct.unpack(">I", main[rl : rl + 4])[0] == struct.unpack(">I", m.group(1))[0]
     )
-    lit = a["dl.cf.tx_lit"]["addr"] - base
+    lit = a["cf.link.site.tx_queue_lit"]["addr"] - base
     assert main[lit - 2 : lit] == b"\x41\xf9"
     assert 0x80000000 <= struct.unpack(">I", main[lit : lit + 4])[0] < 0x80010000
 
@@ -156,7 +167,7 @@ def test_dsp_site_is_the_ring_toggle_store(image):
 
     if not config.stock(IMAGES[image]).exists():
         pytest.skip("firmware not present")
-    pm = anchors(image)["dl.dsp.block_tail"]["pm"]
+    pm = anchors(image)["dsp.link.site.block_tail"]["pm"]
     img = sharc.load("dt2-1.17" if image[:3] == "dt2" else "dn2-1.12")
     rows = dict(img.listing(pm - 1, 4))
     assert re.fullmatch(r"DM\(0x[0-9a-f]+\) = R1", rows[hex(pm)]), rows

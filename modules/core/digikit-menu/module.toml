@@ -32,18 +32,18 @@ sources = ["src/cf/shim.s"]
 place = "cf.expansion"
 
 [object.externs]
-_fw_sp = "cf.menu.fn.make_sp"
-_fw_popup_make = "cf.menu.fn.popup_make"
-_dk_tail = "hook.cf.menu.settings_tail.tail"
+_fw_sp = "cf.string.fn.shared_ptr.make"
+_fw_popup_make = "cf.window.fn.popup_make"
+_dk_tail = "hook.cf.menu.site.settings_list.tail.tail"
 
 # Hook before the last step of the rebuild (the selection restore); the displaced instructions run in the tail.
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.menu.settings_tail"
+anchor = "cf.menu.site.settings_list.tail"
 offset = 0
 to = "dk_hook"
 displaced = "run"
 
 [[claim]]
-resource = "cf.menu.settings_tail"
+resource = "cf.menu.site.settings_list.tail"

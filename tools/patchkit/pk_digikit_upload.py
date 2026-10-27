@@ -1337,7 +1337,7 @@ def run_txfull(c: Any) -> None:
     """A host that never reads its MIDI input leaves the firmware's 4 KiB TX ring full, and the firmware's TX function waits in a loop for
     room. A reply sent into a full ring would hang the MIDI task. The runtime checks the bytes in flight before it sends and drops the reply.
     The emulator does not model the USB IN endpoint, so the test sets the in-flight word of the TX function (the anchor
-    `dkrt.fw.tx_inflight_lit`) to what a host that reads nothing leaves, and checks: replies are dropped and counted, nothing reaches the
+    `cf.midi.site.tx_inflight_lit`) to what a host that reads nothing leaves, and checks: replies are dropped and counted, nothing reaches the
     output, the MIDI task still routes a stock message (the Ping answers), and a reply is sent again once the ring has room."""
     img = c.image_for(B.RT, "run")
     base = c.card(None)
@@ -1345,7 +1345,7 @@ def run_txfull(c: Any) -> None:
         tr = transport(rig)
         up = D.Uploader(tr)
         sym = lambda n: M.sym(img.plan, "core/runtime", n)  # noqa: E731
-        flight = _literal_value(rig, c.image, "dkrt.fw.tx_inflight_lit")
+        flight = _literal_value(rig, c.image, "cf.midi.site.tx_inflight_lit")
         c.check(
             "the in-flight word is a DDR address",
             0x40000000 <= flight < 0x48000000 and flight % 4 == 0,

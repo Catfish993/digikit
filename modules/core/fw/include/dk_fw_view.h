@@ -17,11 +17,11 @@ _Static_assert(sizeof(View) == 0x4c, "View size");
 _Static_assert(offsetof(View, vptr) == 0x0, "View.vptr offset");
 _Static_assert(offsetof(View, mgr) == 0x2c, "View.mgr offset");
 
-uint8_t * dk_fw_view_brain(void) __asm__("cf.view.fn.brain");
+uint8_t * dk_fw_view_brain_instance(void) __asm__("cf.view.fn.brain.instance");
+void dk_fw_view_brain_push(uint8_t *menu, const shared_ptr *sp) __asm__("cf.view.fn.brain.push");
+uint8_t * dk_fw_view_brain_view_manager(uint8_t *brain) __asm__("cf.view.fn.brain.view_manager");
 void dk_fw_view_invalidate(uint8_t *view) __asm__("cf.view.fn.invalidate");
-uint8_t * dk_fw_view_mgr_of(uint8_t *brain) __asm__("cf.view.fn.mgr_of");
-uint32_t dk_fw_view_push(uint8_t *mgr, const shared_ptr *sp, uint32_t exclusive) __asm__("cf.view.fn.push");
-void dk_fw_view_push_ctx(uint8_t *menu, const shared_ptr *sp) __asm__("cf.view.fn.push_ctx");
-extern const uint8_t dk_fw_view_ui_queue_lit __asm__("cf.view.site.ui_queue_lit");
+uint32_t dk_fw_view_view_controller_push(uint8_t *mgr, const shared_ptr *sp, uint32_t exclusive) __asm__("cf.view.fn.view_controller_push");
+extern const uint8_t dk_fw_view_ui_loop_queue_lit __asm__("cf.view.site.ui_loop.queue_lit");
 
 #endif

@@ -45,13 +45,15 @@ from tools.patchkit import pk_proofkit as K  # noqa: E402
 from tools.patchkit.patched_audio_check import DN2_NOTE, TRIG1  # noqa: E402
 
 FW = {"dt2": "1.17", "dn2": "1.12"}
-RETURN_BUS = 0x254778  # Digitakt II: the FX return bus (anchor dsp.fx.return)
-TRACK_BUS = 0x252DF8  # the 16 track buses, 0x100 bytes apart (anchor dsp.fx.trackbus)
-RETURN_BUS_DN2 = 0x25B868  # Digitone II: the FX return bus (anchor dsp.fx.return)
-SLOT_BUS = 0x257EE8  # Digitone II: the 16 voice slots' buses, 0x100 bytes apart (anchor dsp.fx.slotbus)
-SLOT_MAP = (
-    0x257898  # Digitone II: the slot -> track map, 16 halfwords (anchor dsp.fx.slotmap)
+RETURN_BUS = (
+    0x254778  # Digitakt II: the FX return bus (anchor dsp.fx.value.send.return_bus)
 )
+TRACK_BUS = 0x252DF8  # the 16 track buses, 0x100 bytes apart (anchor dsp.fx.value.send.track_bus)
+RETURN_BUS_DN2 = (
+    0x25B868  # Digitone II: the FX return bus (anchor dsp.fx.value.send.return_bus)
+)
+SLOT_BUS = 0x257EE8  # Digitone II: the 16 voice slots' buses, 0x100 bytes apart (anchor dsp.fx.value.send.slot_bus)
+SLOT_MAP = 0x257898  # Digitone II: the slot -> track map, 16 halfwords (anchor dsp.fx.value.send.slot_map)
 W_MIX, W_WAS, W_DIS, W_NFAULT, W_ROUTE, W_AMT0 = (
     13,
     12,

@@ -183,7 +183,7 @@ fn dt2_machines_get_types_7_and_8_and_the_tables_grow() {
             a.plan
                 .writes
                 .iter()
-                .any(|w| w.what.contains("cf.machines.persist"))
+                .any(|w| w.what.contains("cf.machine.site.sound_load_type_bound"))
         );
         // every registry row holds the descriptor ID fields of the entry
         let rows = main.u32s(m["addr"].as_u64().unwrap() as u32, 32);
@@ -274,12 +274,12 @@ fn digitone_ii_clone_gets_type_5() {
             .map(|h| h["anchor"].as_str().unwrap().to_string())
             .collect();
         for h in [
-            "cf.machines.dispatch",
-            "cf.machines.group",
-            "cf.machines.reader",
-            "cf.machines.owner",
-            "cf.machines.frametype",
-            "cf.machines.typemap.0",
+            "cf.machine.fn.dispatch",
+            "cf.machine.site.group",
+            "cf.machine.site.type_reader.load",
+            "cf.machine.site.owner_type_load",
+            "cf.machine.site.frametype",
+            "cf.machine.fn.type_page.count",
         ] {
             assert!(hooks.iter().any(|x| x == h), "{file}: no hook on {h}");
         }
@@ -336,13 +336,13 @@ fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
             .plan
             .writes
             .iter()
-            .filter(|w| w.what.contains("cf.params.ref."))
+            .filter(|w| w.what.contains("cf.param.sites.descriptor_table.ref."))
             .count();
         let bounds = a
             .plan
             .writes
             .iter()
-            .filter(|w| w.what.contains("cf.params.bound."))
+            .filter(|w| w.what.contains("cf.param.sites.descriptor_table.bound."))
             .count();
         assert_eq!((refs, bounds), (56, 54), "{file}");
         // the machine's fields carry the assigned codes

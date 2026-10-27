@@ -570,7 +570,7 @@ def test_the_send_hook_takes_the_first_instruction_of_the_master_function(
         plan_path,
     )
     plan = json.loads(plan_path.read_text())
-    (hook,) = [h for h in plan["hooks"] if h["anchor"] == "dsp.fx.send"]
+    (hook,) = [h for h in plan["hooks"] if h["anchor"] == "dsp.fx.fn.send"]
     assert (
         hook["cpu"] == "sharc" and hook["displaced"] == "run" and hook["site_len"] == 6
     )
@@ -584,7 +584,10 @@ def test_the_send_hook_takes_the_first_instruction_of_the_master_function(
 @needs_image
 def test_the_anchors_of_the_send_route_hold_the_track_bus_and_the_return_bus():
     port = (ROOT / "devices/ports/dt2-1.17.toml").read_text()
-    for name, value in (("dsp.fx.trackbus", 0x252DF8), ("dsp.fx.return", 0x254778)):
+    for name, value in (
+        ("dsp.fx.value.send.track_bus", 0x252DF8),
+        ("dsp.fx.value.send.return_bus", 0x254778),
+    ):
         i = port.index(f'name = "{name}"')
         block = port[i : i + 400]
         assert f"addr = {value:#x}" in block, name

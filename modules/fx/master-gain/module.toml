@@ -21,12 +21,12 @@ sources = ["src/dsp/master_gain.s"]
 place = "dsp.l2"
 
 [object.externs]
-_fw_q31_convert = "dsp.master.q31_converter"
-_fw_master_buf = "dsp.master.float_buf"
+_fw_q31_convert = "dsp.master.fn.q31_converter"
+_fw_master_buf = "dsp.master.value.q31_converter.float_buf"
 
 [[op]]
 op = "retarget"
-anchor = "dsp.master.q31_call"
+anchor = "dsp.master.site.q31_converter.call"
 to = "_mg_hook"
 
 [[claim]]

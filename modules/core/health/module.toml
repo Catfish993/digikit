@@ -31,32 +31,32 @@ sources = ["src/cf/health.c", "src/cf/tramp.s"]
 place = "cf.expansion"
 
 [object.externs]
-health_create_main = "health.fw.create_main"
-health_rec_lit = "health.rec_lit"
-health_desc_lit = "health.heap.desc_lit"
-health_mutex_lit = "health.heap.mutex_lit"
-health_lock_lit = "health.heap.lock_lit"
-health_unlock_lit = "health.heap.unlock_lit"
-health_block_next = "hook.health.hook.block.tail"
+health_create_main = "cf.rtos.fn.create_main"
+health_rec_lit = "cf.link.site.reply_copy_lit"
+health_desc_lit = "cf.mem.site.heap.desc_lit"
+health_mutex_lit = "cf.mem.site.heap.mutex_lit"
+health_lock_lit = "cf.mem.site.heap.lock_lit"
+health_unlock_lit = "cf.mem.site.heap.unlock_lit"
+health_block_next = "hook.cf.link.fn.block_isr.tail"
 
 # The last call of the boot thread (`jsr <create the main-OS task>`) is replaced by a jump to the idle hook. It does not return.
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "health.hook.idle"
+anchor = "cf.rtos.site.idle"
 to = "health_idle_hook"
 displaced = "drop"
 
 [[claim]]
-resource = "health.hook.idle"
+resource = "cf.rtos.site.idle"
 
 # The entry of the block interrupt handler (`link.w a6,#-0xd8; movem.l ...`): the hook counts the block and reads the DSP's cycle
 # count; the two displaced instructions run in the tail.
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "health.hook.block"
+anchor = "cf.link.fn.block_isr"
 to = "health_block_hook"
 
 [[claim]]
-resource = "health.hook.block"
+resource = "cf.link.fn.block_isr"

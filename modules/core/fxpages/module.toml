@@ -42,19 +42,19 @@ place = "cf.expansion"
 devices = ["dt2"]
 
 [object.externs]
-_fp_acc = "cf.fxpages.acc"
-_fp_label = "cf.fxpages.label"
-_fp_graph = "cf.fxpages.graph"
-_fp_list = "cf.fxpages.list"
-_fp_stock = "cf.fxpages.stock"
-_fp_stock_n = "cf.fxpages.stock_n"
+_fp_acc = "cf.page.fn.page_desc"
+_fp_label = "cf.page.site.tab_label_test"
+_fp_graph = "cf.page.site.filter_graph_test"
+_fp_list = "cf.page.site.fx_view_list.load"
+_fp_stock = "cf.page.data.fx_view_list"
+_fp_stock_n = "cf.page.site.fx_view_list.count"
 _fp_p_first = "params.fp0.index"
-_fp_load = "cf.fxpages.load"
-_fp_save = "cf.fxpages.save"
-_fp_init = "cf.fxpages.init"
-_fp_keylist = "cf.fxpages.keylist"
-_fp_keystock = "cf.fxpages.keystock"
-_fp_sound = "cf.fxpages.sound"
+_fp_load = "cf.page.site.fx_array.load"
+_fp_save = "cf.page.site.fx_array.save"
+_fp_init = "cf.page.site.fx_array.init_exit"
+_fp_keylist = "cf.page.site.fx_key_list.load"
+_fp_keystock = "cf.page.data.fx_key_list"
+_fp_sound = "cf.page.site.sound_load_exit"
 _fp_p_send = "params.fs0.index"
 
 [[object]]
@@ -64,25 +64,25 @@ place = "cf.expansion"
 devices = ["dn2"]
 
 [object.externs]
-_fp_acc = "cf.fxpages.acc"
-_fp_label = "cf.fxpages.label"
-_fp_graph = "cf.fxpages.graph"
-_fp_list = "cf.fxpages.list"
-_fp_stock = "cf.fxpages.stock"
-_fp_stock_n = "cf.fxpages.stock_n"
+_fp_acc = "cf.page.fn.page_desc"
+_fp_label = "cf.page.site.tab_label_test"
+_fp_graph = "cf.page.site.filter_graph_test"
+_fp_list = "cf.page.site.fx_view_list.load"
+_fp_stock = "cf.page.data.fx_view_list"
+_fp_stock_n = "cf.page.site.fx_view_list.count"
 _fp_p_first = "params.fp0.index"
-_fp_load = "cf.fxpages.load"
-_fp_save = "cf.fxpages.save"
-_fp_init = "cf.fxpages.init"
-_fp_keylist = "cf.fxpages.keylist"
-_fp_keystock = "cf.fxpages.keystock"
-_fp_sound = "cf.fxpages.sound"
+_fp_load = "cf.page.site.fx_array.load"
+_fp_save = "cf.page.site.fx_array.save"
+_fp_init = "cf.page.site.fx_array.init_exit"
+_fp_keylist = "cf.page.site.fx_key_list.load"
+_fp_keystock = "cf.page.data.fx_key_list"
+_fp_sound = "cf.page.site.sound_load_exit"
 _fp_p_send = "params.fs0.index"
 
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.acc"
+anchor = "cf.page.fn.page_desc"
 offset = 0
 to = "fxp_acc"
 displaced = "drop"
@@ -91,7 +91,7 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.label"
+anchor = "cf.page.site.tab_label_test"
 offset = 0
 to = "fxp_label"
 displaced = "drop"
@@ -100,7 +100,7 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.graph"
+anchor = "cf.page.site.filter_graph_test"
 offset = 0
 to = "fxp_graph"
 displaced = "drop"
@@ -109,7 +109,7 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.list"
+anchor = "cf.page.site.fx_view_list.load"
 offset = 0
 to = "fxp_list"
 displaced = "drop"
@@ -118,7 +118,7 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.load"
+anchor = "cf.page.site.fx_array.load"
 offset = 0
 to = "fxp_load"
 displaced = "drop"
@@ -127,7 +127,7 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.save"
+anchor = "cf.page.site.fx_array.save"
 offset = 0
 to = "fxp_save"
 displaced = "drop"
@@ -136,7 +136,7 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.init"
+anchor = "cf.page.site.fx_array.init_exit"
 offset = 0
 to = "fxp_init"
 displaced = "drop"
@@ -145,7 +145,7 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.keylist"
+anchor = "cf.page.site.fx_key_list.load"
 offset = 0
 to = "fxp_keylist"
 displaced = "drop"
@@ -154,30 +154,30 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.fxpages.sound"
+anchor = "cf.page.site.sound_load_exit"
 offset = 0
 to = "fxp_sound"
 displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[claim]]
-resource = "cf.fxpages.acc"
+resource = "cf.page.fn.page_desc"
 [[claim]]
-resource = "cf.fxpages.label"
+resource = "cf.page.site.tab_label_test"
 [[claim]]
-resource = "cf.fxpages.graph"
+resource = "cf.page.site.filter_graph_test"
 [[claim]]
-resource = "cf.fxpages.list"
+resource = "cf.page.site.fx_view_list.load"
 [[claim]]
-resource = "cf.fxpages.load"
+resource = "cf.page.site.fx_array.load"
 [[claim]]
-resource = "cf.fxpages.save"
+resource = "cf.page.site.fx_array.save"
 [[claim]]
-resource = "cf.fxpages.init"
+resource = "cf.page.site.fx_array.init_exit"
 [[claim]]
-resource = "cf.fxpages.keylist"
+resource = "cf.page.site.fx_key_list.load"
 [[claim]]
-resource = "cf.fxpages.sound"
+resource = "cf.page.site.sound_load_exit"
 
 # ---- reserved parameter rows ---------------------------------------------------------------------------------------------------
 # 8 for each effect slot (fp0 .. fp7 are effect row 0, ...): 7 knobs and the page's level slot (MIX). The template is a placeholder (Delay "Feedback HPF"); the runtime

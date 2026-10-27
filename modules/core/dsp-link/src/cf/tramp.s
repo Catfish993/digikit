@@ -4,7 +4,7 @@
  * four arguments are on the stack as the handler pushed them (data bytes, data, frame bytes, record copy). It runs dl_tick
  * with the same arguments, then continues in the stock driver as if it had been called directly: the stack is as the handler
  * left it. d0/d1/a0/a1 are the registers the C ABI lets dl_tick clobber; the handler has nothing live in them at this call
- * (it has just pushed the arguments, and the driver returns nothing). dl_stock_send is the stock driver (anchor dl.cf.frame_fn). */
+ * (it has just pushed the arguments, and the driver returns nothing). dl_stock_send is the stock driver (anchor cf.link.fn.frame). */
     .text
     .even
     .globl dl_frame_hook

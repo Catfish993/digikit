@@ -20,13 +20,13 @@ place = "cf.expansion"
 devices = ["dt2"]
 
 [object.externs]
-rd_tail = "hook.test.demo.kit_setter.tail"
+rd_tail = "hook.cf.test.fn.kit_vfunc_12.tail"
 
 # P4: the first two instructions of a stock setter (`move.l 8(sp),d0; beq.b skip`, six bytes; the branch is
 # re-encoded in the tail as a 32-bit branch) are displaced; rd_hook counts the call and jumps to the tail.
 [[op]]
 op = "hook"
-anchor = "test.demo.kit_setter"
+anchor = "cf.test.fn.kit_vfunc_12"
 to = "rd_hook"
 displaced = "run"
 devices = ["dt2"]
@@ -34,7 +34,7 @@ devices = ["dt2"]
 # P2: a registry and its entries (a framework and a content module in one file, for the test)
 [[registry]]
 name = "rdemo"
-first = "image.u8(test.demo.kit_setter + 1) + 40"
+first = "image.u8(cf.test.fn.kit_vfunc_12 + 1) + 40"
 max = 4
 region = "cf.expansion"
 devices = ["dt2"]
@@ -73,8 +73,8 @@ devices = ["dt2"]
 name = "rd_copy"
 region = "cf.expansion"
 devices = ["dt2"]
-from = { anchor = "test.demo.kit_setter" }
+from = { anchor = "cf.test.fn.kit_vfunc_12" }
 append = { registry = "rdemo", row = ["$value", "u8:$index", "u16:rdemo.first"] }
 
 [[claim]]
-resource = "test.demo.kit_setter"
+resource = "cf.test.fn.kit_vfunc_12"

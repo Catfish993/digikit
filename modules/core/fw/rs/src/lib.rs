@@ -13,40 +13,45 @@ pub mod link {
     // cf.link.fn.block_isr: no sig yet
 
     // cf.link.fn.frame: no sig yet
+
+    unsafe extern "C" {
+        #[link_name = "cf.link.site.block_isr.counter_lit"]
+        pub static BLOCK_ISR_COUNTER_LIT: u8;
+    }
 }
 
 pub mod machine {
+    // cf.machine.fn.current_track_type: no sig yet
+
     // cf.machine.fn.dispatch: no sig yet
 
-    // cf.machine.fn.list_entry: no sig yet
+    // cf.machine.fn.list.entry: no sig yet
 
-    // cf.machine.fn.name.0: no sig yet
+    // cf.machine.fn.name.long: no sig yet
 
     // cf.machine.fn.permit: no sig yet
 
-    // cf.machine.fn.reader_fn: no sig yet
+    // cf.machine.fn.type_page.count: no sig yet
 
-    // cf.machine.fn.srcpage_type: no sig yet
-
-    // cf.machine.fn.typemap.0: no sig yet
+    // cf.machine.fn.type_reader: no sig yet
 
     unsafe extern "C" {
-        #[link_name = "cf.machine.data.list_table"]
+        #[link_name = "cf.machine.data.list.table"]
         pub static LIST_TABLE: u8;
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.machine.data.names_table"]
-        pub static NAMES_TABLE: u8;
+        #[link_name = "cf.machine.data.name.table"]
+        pub static NAME_TABLE: u8;
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.machine.data.permit_table"]
+        #[link_name = "cf.machine.data.permit.table"]
         pub static PERMIT_TABLE: u8;
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.machine.data.pertype_table"]
+        #[link_name = "cf.machine.data.pertype.table"]
         pub static PERTYPE_TABLE: u8;
     }
 }
@@ -105,8 +110,8 @@ pub mod menu {
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.menu.site.icon_ref"]
-        pub static ICON_REF: u8;
+        #[link_name = "cf.menu.site.settings_list.system_icon_ref"]
+        pub static SETTINGS_LIST_SYSTEM_ICON_REF: u8;
     }
 }
 
@@ -123,47 +128,47 @@ pub mod midi {
 }
 
 pub mod page {
-    // cf.page.fn.acc: no sig yet
+    // cf.page.fn.page_desc: no sig yet
 
     unsafe extern "C" {
-        #[link_name = "cf.page.data.keystock"]
-        pub static KEYSTOCK: u8;
+        #[link_name = "cf.page.data.fx_key_list"]
+        pub static FX_KEY_LIST: u8;
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.page.data.stock"]
-        pub static STOCK: u8;
+        #[link_name = "cf.page.data.fx_view_list"]
+        pub static FX_VIEW_LIST: u8;
     }
 }
 
 pub mod param {
-    // cf.param.fn.t2: no sig yet
+    // cf.param.fn.value_class: no sig yet
 
     unsafe extern "C" {
-        #[link_name = "cf.param.data.master_sidechain_filter"]
-        pub static MASTER_SIDECHAIN_FILTER: u8;
+        #[link_name = "cf.param.data.descriptor_table"]
+        pub static DESCRIPTOR_TABLE: u8;
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.param.data.t1"]
-        pub static T1: u8;
+        #[link_name = "cf.param.data.descriptor_table.master_sidechain_filter"]
+        pub static DESCRIPTOR_TABLE_MASTER_SIDECHAIN_FILTER: u8;
     }
 }
 
 pub mod project {
     unsafe extern "C" {
-        #[link_name = "cf.project.fn.get"]
-        pub fn get() -> u32;
-    }
-
-    unsafe extern "C" {
-        #[link_name = "cf.project.fn.kit_of"]
-        pub fn kit_of(project: u32) -> u32;
+        #[link_name = "cf.project.fn.active_kit"]
+        pub fn active_kit(project: u32) -> u32;
     }
 
     unsafe extern "C" {
         #[link_name = "cf.project.fn.serialize"]
         pub fn serialize() -> i32;
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.project.fn.singleton"]
+        pub fn singleton() -> u32;
     }
 
     unsafe extern "C" {
@@ -177,7 +182,7 @@ pub mod rtos {
 
     // cf.rtos.fn.queue_pop: no sig yet
 
-    // cf.rtos.fn.reset_init_calls: no sig yet
+    // cf.rtos.fn.reset.init_calls: no sig yet
 
     unsafe extern "C" {
         #[link_name = "cf.rtos.site.exc_hook_lit"]
@@ -185,35 +190,30 @@ pub mod rtos {
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.rtos.value.reset_clear_helper"]
+        #[link_name = "cf.rtos.value.reset.clear_helper"]
         pub static RESET_CLEAR_HELPER: u8;
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.rtos.value.reset_copy_helper"]
+        #[link_name = "cf.rtos.value.reset.copy_helper"]
         pub static RESET_COPY_HELPER: u8;
     }
 }
 
 pub mod storage {
     unsafe extern "C" {
-        #[link_name = "cf.storage.fn.block_read"]
+        #[link_name = "cf.storage.fn.block.read"]
         pub fn block_read(sector: u32, bytes: u32, buf: *mut u8) -> i32;
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.storage.fn.block_write"]
+        #[link_name = "cf.storage.fn.block.write"]
         pub fn block_write(sector: u32, bytes: u32, buf: *const u8) -> i32;
     }
 
     unsafe extern "C" {
         #[link_name = "cf.storage.fn.boot_record_write"]
         pub fn boot_record_write();
-    }
-
-    unsafe extern "C" {
-        #[link_name = "cf.storage.site.block_counter_lit"]
-        pub static BLOCK_COUNTER_LIT: u8;
     }
 }
 
@@ -243,31 +243,31 @@ pub mod string {
         assert!(core::mem::offset_of!(std_function, invoker) == 0xc);
     };
 
+    // cf.string.fn.shared_ptr.make: no sig yet
+
     unsafe extern "C" {
-        #[link_name = "cf.string.fn.ctor"]
-        pub fn ctor(s: *mut u32, cstr: *const u8, alloc: *const u8);
+        #[link_name = "cf.string.fn.shared_ptr.move"]
+        pub fn shared_ptr_move(dst: *mut crate::string::shared_ptr, src: *mut crate::string::shared_ptr);
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.string.fn.dtor"]
-        pub fn dtor(s: *mut u32);
-    }
-
-    // cf.string.fn.make_sp: no sig yet
-
-    unsafe extern "C" {
-        #[link_name = "cf.string.fn.sp_move"]
-        pub fn sp_move(dst: *mut crate::string::shared_ptr, src: *mut crate::string::shared_ptr);
+        #[link_name = "cf.string.fn.shared_ptr.release"]
+        pub fn shared_ptr_release(ctl: *mut u32);
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.string.fn.sp_release"]
-        pub fn sp_release(ctl: *mut u32);
+        #[link_name = "cf.string.fn.std_string.ctor"]
+        pub fn std_string_ctor(s: *mut u32, cstr: *const u8, alloc: *const u8);
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.string.fn.std_string.dtor"]
+        pub fn std_string_dtor(s: *mut u32);
     }
 }
 
 pub mod test {
-    // cf.test.fn.demo_kit_setter: no sig yet
+    // cf.test.fn.kit_vfunc_12: no sig yet
 }
 
 pub mod view {
@@ -286,8 +286,18 @@ pub mod view {
     };
 
     unsafe extern "C" {
-        #[link_name = "cf.view.fn.brain"]
-        pub fn brain() -> *mut u8;
+        #[link_name = "cf.view.fn.brain.instance"]
+        pub fn brain_instance() -> *mut u8;
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.view.fn.brain.push"]
+        pub fn brain_push(menu: *mut u8, sp: *const crate::string::shared_ptr);
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.view.fn.brain.view_manager"]
+        pub fn brain_view_manager(brain: *mut u8) -> *mut u8;
     }
 
     unsafe extern "C" {
@@ -296,23 +306,13 @@ pub mod view {
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.view.fn.mgr_of"]
-        pub fn mgr_of(brain: *mut u8) -> *mut u8;
+        #[link_name = "cf.view.fn.view_controller_push"]
+        pub fn view_controller_push(mgr: *mut u8, sp: *const crate::string::shared_ptr, exclusive: u32) -> u32;
     }
 
     unsafe extern "C" {
-        #[link_name = "cf.view.fn.push"]
-        pub fn push(mgr: *mut u8, sp: *const crate::string::shared_ptr, exclusive: u32) -> u32;
-    }
-
-    unsafe extern "C" {
-        #[link_name = "cf.view.fn.push_ctx"]
-        pub fn push_ctx(menu: *mut u8, sp: *const crate::string::shared_ptr);
-    }
-
-    unsafe extern "C" {
-        #[link_name = "cf.view.site.ui_queue_lit"]
-        pub static UI_QUEUE_LIT: u8;
+        #[link_name = "cf.view.site.ui_loop.queue_lit"]
+        pub static UI_LOOP_QUEUE_LIT: u8;
     }
 }
 

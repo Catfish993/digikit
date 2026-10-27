@@ -6,8 +6,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* cf.page.fn.acc: no sig yet */
-extern const uint8_t dk_fw_page_keystock __asm__("cf.page.data.keystock");
-extern const uint8_t dk_fw_page_stock __asm__("cf.page.data.stock");
+/* cf.page.fn.page_desc: no sig yet */
+extern const uint8_t dk_fw_page_fx_key_list __asm__("cf.page.data.fx_key_list");
+extern const uint8_t dk_fw_page_fx_view_list __asm__("cf.page.data.fx_view_list");
 
 #endif

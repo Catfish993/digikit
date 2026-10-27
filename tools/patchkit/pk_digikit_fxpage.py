@@ -41,7 +41,7 @@ FXP_KIT, FXP_SENT, FXP_ERRORS, FXP_SEEDS = 4, 16, 20, 24
 FXP_OWNER, FXP_NKNOB, FXP_CUR, FXP_DSP = 28, 32, 44, 172
 W_MIX = 13
 ONE = 0x3F800000
-# the firmware's FX view list (DEL, REV, CHO): rodata at `cf.fxpages.stock`, the page numbers differ by device
+# the firmware's FX view list (DEL, REV, CHO): rodata at `cf.page.data.fx_view_list`, the page numbers differ by device
 STOCK_PAGES = {"dt2": [13, 14, 15], "dn2": [17, 18, 19]}
 # the encoders: knob A and the level knob
 ENC_A, ENC_LEVEL = "ENC A", "LEVEL"

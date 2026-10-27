@@ -1,6 +1,6 @@
 //! CPU exception capture (docs/findings/46-digikit-debug.md).
 //!
-//! The firmware's default exception handler loads a function pointer from a RAM word (anchor `dkrt.fw.exc_hook_lit` is the 4-byte literal of
+//! The firmware's default exception handler loads a function pointer from a RAM word (anchor `cf.rtos.site.exc_hook_lit` is the 4-byte literal of
 //! that load) and calls it with the stack pointer, which points at the hardware exception frame; the firmware's own function there prints
 //! `EXCEPTION ...` and executes `halt`, so a fault hangs the device until the power is cycled (finding 37). The runtime points the word at
 //! `dkrt_exc_hook` (src/cf/tramp.s: it saves d2-d7 and a2-a6, which are still the faulting code's, and calls `dkrt_exc`). `dkrt_exc` writes

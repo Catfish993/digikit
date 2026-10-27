@@ -14,8 +14,8 @@ mark = "D"
 users = ["core/dsp-voice"]
 
 [[site]]
-name = "dsp.voice.site.render_next"
-aliases = ["dsp.voice.render_next"]
+name = "dsp.voice.site.render_entry.next"
+aliases = ["dsp.voice.render_next", "dsp.voice.site.render_next"]
 cpu = "sharc"
 rule.dt2 = { kind = "sharc_func", reloc_hash = "830c02524f18d34629acb569a92d052d66f23c9ab260ac27ef8e4a9869c22fd2", offset = 0x3, len = 6 }
 rule.dn2 = { kind = "sharc_func", reloc_hash = "7cb2e56b587600a04d8d3876f254fa6fc326af68e6d6e8c7741517e316640dec", offset = 0x3, len = 6 }

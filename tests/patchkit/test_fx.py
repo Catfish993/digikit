@@ -442,7 +442,7 @@ def test_the_hook_takes_the_first_instruction_of_a_function_between_master_and_p
         plan_path,
     )
     plan = json.loads(plan_path.read_text())
-    (hook,) = [h for h in plan["hooks"] if h["anchor"] == "dsp.fx.entry"]
+    (hook,) = [h for h in plan["hooks"] if h["anchor"] == "dsp.fx.fn.entry"]
     assert (
         hook["cpu"] == "sharc" and hook["displaced"] == "run" and hook["site_len"] == 6
     )

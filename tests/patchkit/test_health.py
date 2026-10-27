@@ -15,14 +15,14 @@ from tools.patchkit import pk_build, pk_toolchains  # noqa: E402
 MODULE = ROOT / "modules/core/health"
 IMAGES = ("dt2-1.17", "dn2-1.12")
 ANCHORS = {
-    "health.hook.idle": 6,
-    "health.fw.create_main": 4,
-    "health.hook.block": 8,
-    "health.rec_lit": 4,
-    "health.heap.desc_lit": 4,
-    "health.heap.mutex_lit": 4,
-    "health.heap.lock_lit": 4,
-    "health.heap.unlock_lit": 4,
+    "cf.rtos.site.idle": 6,
+    "cf.rtos.fn.create_main": 4,
+    "cf.link.fn.block_isr": 8,
+    "cf.link.site.reply_copy_lit": 4,
+    "cf.mem.site.heap.desc_lit": 4,
+    "cf.mem.site.heap.mutex_lit": 4,
+    "cf.mem.site.heap.lock_lit": 4,
+    "cf.mem.site.heap.unlock_lit": 4,
 }
 
 
@@ -42,7 +42,10 @@ def test_every_anchor_resolves_on_every_port(image):
         assert name in have, (image, name)
         assert have[name]["len"] == n, (image, name)
     # the hook sites: a 6-byte call (the boot thread's last jsr) and 8 bytes (link.w + movem.l) at the entry of the block handler
-    assert have["health.hook.block"]["addr"] == have["health.rec_lit"]["addr"] - 0x56
+    assert (
+        have["cf.link.fn.block_isr"]["addr"]
+        == have["cf.link.site.reply_copy_lit"]["addr"] - 0x56
+    )
 
 
 def test_module_toml_declares_what_the_object_needs():
@@ -55,10 +58,10 @@ def test_module_toml_declares_what_the_object_needs():
     }
     assert externs >= {u for u in undefined if u.startswith("health_")}
     ops = {o["anchor"]: o for o in t["op"]}
-    assert ops["health.hook.idle"]["displaced"] == "drop"
+    assert ops["cf.rtos.site.idle"]["displaced"] == "drop"
     assert {c["resource"] for c in t["claim"]} == {
-        "health.hook.idle",
-        "health.hook.block",
+        "cf.rtos.site.idle",
+        "cf.link.fn.block_isr",
     }
 
 

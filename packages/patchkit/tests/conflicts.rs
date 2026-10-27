@@ -40,7 +40,7 @@ fn module(id: &str, header_extra: &str, body: &str, dko: Option<serde_json::Valu
 
 fn write_op(offset: i64, hex: &str) -> String {
     format!(
-        "[[op]]\nop = \"write\"\nanchor = \"dsp.master.q31_converter\"\noffset = {offset}\nhex = \"{hex}\"\n"
+        "[[op]]\nop = \"write\"\nanchor = \"dsp.master.fn.q31_converter\"\noffset = {offset}\nhex = \"{hex}\"\n"
     )
 }
 
@@ -166,7 +166,7 @@ fn an_anchor_hash_mismatch_is_refused() {
         for a in p
             .anchor
             .iter_mut()
-            .filter(|a| a.name == "dsp.master.q31_call")
+            .filter(|a| a.name == "dsp.master.site.q31_converter.call")
         {
             a.sha256 = "ab".repeat(32);
         }
@@ -228,7 +228,7 @@ fn retarget_of_something_that_is_not_a_call_is_refused() {
     let m = module(
         "t/r",
         "",
-        "[[op]]\nop = \"retarget\"\nanchor = \"dsp.master.q31_converter\"\nto = \"_x\"\n[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n",
+        "[[op]]\nop = \"retarget\"\nanchor = \"dsp.master.fn.q31_converter\"\nto = \"_x\"\n[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n",
         Some(json!({
             "format": 1, "arch": "sharc", "source_sha256": "0".repeat(64),
             "sections": [{"name": "seg_pmco", "kind": "text", "align": 8, "size": 6, "hex": "000000000000"}],

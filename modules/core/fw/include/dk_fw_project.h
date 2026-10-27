@@ -6,9 +6,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-uint32_t dk_fw_project_get(void) __asm__("cf.project.fn.get");
-uint32_t dk_fw_project_kit_of(uint32_t project) __asm__("cf.project.fn.kit_of");
+uint32_t dk_fw_project_active_kit(uint32_t project) __asm__("cf.project.fn.active_kit");
 int32_t dk_fw_project_serialize(void) __asm__("cf.project.fn.serialize");
+uint32_t dk_fw_project_singleton(void) __asm__("cf.project.fn.singleton");
 int32_t dk_fw_project_track_type(uint32_t kit, int32_t track) __asm__("cf.project.fn.track_type");
 
 #endif

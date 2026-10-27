@@ -2,8 +2,8 @@
 # Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
 
 [[data]]
-name = "cf.machine.data.list_table"
-aliases = ["cf.machines.tab.list"]
+name = "cf.machine.data.list.table"
+aliases = ["cf.machine.data.list_table", "cf.machines.tab.list"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_ptr", hash = "7c680e4200eed1964a22109ee2d43932", offset = 0x50, len = 28 }
 rule.dn2 = { kind = "cf_ptr", hash = "69828342bcd67f7587f7d51d4c4a6575", offset = 0x56, len = 20 }
@@ -11,8 +11,8 @@ mark = "D"
 users = ["core/machines"]
 
 [[data]]
-name = "cf.machine.data.names_table"
-aliases = ["cf.machines.tab.names"]
+name = "cf.machine.data.name.table"
+aliases = ["cf.machine.data.names_table", "cf.machines.tab.names"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_ptr", hash = "5fd4ff30eda1da21d9c57e4c68b890fe", offset = 0x12, len = 84 }
 rule.dn2 = { kind = "cf_ptr", hash = "feed4ccea8848444496f10f25c10b1bc", offset = 0x12, len = 60 }
@@ -20,8 +20,8 @@ mark = "D"
 users = ["core/machines"]
 
 [[data]]
-name = "cf.machine.data.permit_table"
-aliases = ["cf.machines.tab.permit"]
+name = "cf.machine.data.permit.table"
+aliases = ["cf.machine.data.permit_table", "cf.machines.tab.permit"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_ptr", hash = "33592e80678e363e0e66fad4f5d07083", offset = 0x1a, len = 28 }
 rule.dn2 = { kind = "cf_ptr", hash = "36780fb9834dbd3942e3c1be04ae5e07", offset = 0x1a, len = 20 }
@@ -29,11 +29,20 @@ mark = "D"
 users = ["core/machines"]
 
 [[data]]
-name = "cf.machine.data.pertype_table"
-aliases = ["cf.machines.tab.pertype"]
+name = "cf.machine.data.pertype.table"
+aliases = ["cf.machine.data.pertype_table", "cf.machines.tab.pertype"]
 cpu = "cf"
 devices = ["dt2"]
 rule = { kind = "cf_ptr", hash = "d5ac854dcaa12d112a91bb9bac8650c5", offset = 0x4c, len = 7 }
+mark = "D"
+users = ["core/machines"]
+
+[[fn]]
+name = "cf.machine.fn.current_track_type"
+aliases = ["cf.machine.fn.srcpage_type", "cf.machines.srcpage.type"]
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "abb082366c00e8016d04660320944930", offset = 0x0, len = 6 }
 mark = "D"
 users = ["core/machines"]
 
@@ -50,8 +59,8 @@ users = ["core/machines"]
 
 # ---- sites added for the module version (3b.2): hooks that need a longer window, run-time table pointers and exits
 [[fn]]
-name = "cf.machine.fn.list_entry"
-aliases = ["cf.machines.list_entry"]
+name = "cf.machine.fn.list.entry"
+aliases = ["cf.machine.fn.list_entry", "cf.machines.list_entry"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "7c680e4200eed1964a22109ee2d43932", offset = 0x0, len = 8 }
 rule.dn2 = { kind = "cf_func", hash = "69828342bcd67f7587f7d51d4c4a6575", offset = 0x0, len = 8 }
@@ -59,8 +68,8 @@ mark = "D"
 users = ["core/machines"]
 
 [[fn]]
-name = "cf.machine.fn.name.0"
-aliases = ["cf.machines.name.0"]
+name = "cf.machine.fn.name.long"
+aliases = ["cf.machine.fn.name.0", "cf.machines.name.0"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "5fd4ff30eda1da21d9c57e4c68b890fe", offset = 0x0, len = 24 }
 rule.dn2 = { kind = "cf_func", hash = "feed4ccea8848444496f10f25c10b1bc", offset = 0x0, len = 24 }
@@ -77,29 +86,20 @@ mark = "D"
 users = ["core/machines"]
 
 [[fn]]
-name = "cf.machine.fn.reader_fn"
-aliases = ["cf.machines.reader_fn"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "a7a6201a589e7e386aa0e948dc221cd9", offset = 0x0, len = 48 }
-mark = "D"
-users = ["core/machines"]
-
-[[fn]]
-name = "cf.machine.fn.srcpage_type"
-aliases = ["cf.machines.srcpage.type"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "abb082366c00e8016d04660320944930", offset = 0x0, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[fn]]
-name = "cf.machine.fn.typemap.0"
-aliases = ["cf.machines.typemap.0"]
+name = "cf.machine.fn.type_page.count"
+aliases = ["cf.machine.fn.typemap.0", "cf.machines.typemap.0"]
 cpu = "cf"
 devices = ["dn2"]
 rule = { kind = "cf_func", hash = "bb7ea4b4ffdbc9a265444fc127b1fe32", offset = 0x0, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[fn]]
+name = "cf.machine.fn.type_reader"
+aliases = ["cf.machine.fn.reader_fn", "cf.machines.reader_fn"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "a7a6201a589e7e386aa0e948dc221cd9", offset = 0x0, len = 48 }
 mark = "D"
 users = ["core/machines"]
 
@@ -240,17 +240,8 @@ mark = "D"
 users = ["core/machines"]
 
 [[site]]
-name = "cf.machine.site.list"
-aliases = ["cf.machines.list"]
-cpu = "cf"
-rule.dt2 = { kind = "cf_func", hash = "7c680e4200eed1964a22109ee2d43932", offset = 0x44, len = 16 }
-rule.dn2 = { kind = "cf_func", hash = "69828342bcd67f7587f7d51d4c4a6575", offset = 0x4a, len = 16 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.list_alloc"
-aliases = ["cf.machines.list_alloc"]
+name = "cf.machine.site.list.alloc"
+aliases = ["cf.machine.site.list_alloc", "cf.machines.list_alloc"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "7c680e4200eed1964a22109ee2d43932", offset = 0x24, len = 4 }
 rule.dn2 = { kind = "cf_func", hash = "69828342bcd67f7587f7d51d4c4a6575", offset = 0x2a, len = 4 }
@@ -258,8 +249,8 @@ mark = "D"
 users = ["core/machines"]
 
 [[site]]
-name = "cf.machine.site.list_copy"
-aliases = ["cf.dynreg.list_copy"]
+name = "cf.machine.site.list.copy"
+aliases = ["cf.dynreg.list_copy", "cf.machine.site.list_copy"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "7c680e4200eed1964a22109ee2d43932", offset = 0x13e, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "69828342bcd67f7587f7d51d4c4a6575", offset = 0xde, len = 6 }
@@ -267,17 +258,26 @@ mark = "D"
 users = ["core/dynreg"]
 
 [[site]]
-name = "cf.machine.site.name.1"
-aliases = ["cf.machines.name.1"]
+name = "cf.machine.site.list.operands"
+aliases = ["cf.machine.site.list", "cf.machines.list"]
 cpu = "cf"
-rule.dt2 = { kind = "cf_func", hash = "405272bf74679f1207d399966557c9b3", ordinal = 0, offset = 0x0, len = 24 }
-rule.dn2 = { kind = "cf_func", hash = "feed4ccea8848444496f10f25c10b1bc", offset = 0x26, len = 24 }
+rule.dt2 = { kind = "cf_func", hash = "7c680e4200eed1964a22109ee2d43932", offset = 0x44, len = 16 }
+rule.dn2 = { kind = "cf_func", hash = "69828342bcd67f7587f7d51d4c4a6575", offset = 0x4a, len = 16 }
 mark = "D"
 users = ["core/machines"]
 
 [[site]]
-name = "cf.machine.site.name.2"
-aliases = ["cf.machines.name.2"]
+name = "cf.machine.site.list_rank_insert"
+aliases = ["cf.machine.site.rank", "cf.machines.rank"]
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "50c665290477cfa36d46f17239fff705", offset = 0xae, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.name.hint"
+aliases = ["cf.machine.site.name.2", "cf.machines.name.2"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "405272bf74679f1207d399966557c9b3", ordinal = 1, offset = 0x0, len = 24 }
 rule.dn2 = { kind = "cf_func", hash = "feed4ccea8848444496f10f25c10b1bc", offset = 0x4c, len = 24 }
@@ -285,8 +285,17 @@ mark = "D"
 users = ["core/machines"]
 
 [[site]]
-name = "cf.machine.site.owner"
-aliases = ["cf.machines.owner"]
+name = "cf.machine.site.name.short"
+aliases = ["cf.machine.site.name.1", "cf.machines.name.1"]
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "405272bf74679f1207d399966557c9b3", ordinal = 0, offset = 0x0, len = 24 }
+rule.dn2 = { kind = "cf_func", hash = "feed4ccea8848444496f10f25c10b1bc", offset = 0x26, len = 24 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.owner_type_load"
+aliases = ["cf.machine.site.owner", "cf.machines.owner"]
 cpu = "cf"
 devices = ["dn2"]
 rule = { kind = "cf_func", hash = "611122a695e36329f7759bda6a048352", offset = 0x2a, len = 6 }
@@ -294,11 +303,29 @@ mark = "D"
 users = ["core/machines"]
 
 [[site]]
-name = "cf.machine.site.persist"
-aliases = ["cf.machines.persist"]
+name = "cf.machine.site.param_code.args"
+aliases = ["cf.machine.site.typearg.0", "cf.machines.typearg.0"]
 cpu = "cf"
-rule.dt2 = { kind = "cf_func", hash = "d5cd38f131d3119fd16d700d526b4fb9", offset = 0x9c, len = 2 }
-rule.dn2 = { kind = "cf_func", hash = "f766c42c6be0674aadb1177f3f536367", offset = 0x9c, len = 2 }
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "810f1ffd5d04a9c50bfc5d261c714ea7", offset = 0xa, len = 8 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.param_code.exit"
+aliases = ["cf.machine.site.typearg.exit", "cf.machines.typearg.exit"]
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "810f1ffd5d04a9c50bfc5d261c714ea7", offset = 0x82, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.param_code.map"
+aliases = ["cf.machine.site.typemap.2", "cf.machines.typemap.2"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "bb697208cd65a5f73453587214728899", offset = 0x8, len = 8 }
 mark = "D"
 users = ["core/machines"]
 
@@ -357,110 +384,11 @@ mark = "D"
 users = ["core/machines"]
 
 [[site]]
-name = "cf.machine.site.rank"
-aliases = ["cf.machines.rank"]
+name = "cf.machine.site.sound_load_type_bound"
+aliases = ["cf.machine.site.persist", "cf.machines.persist"]
 cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "50c665290477cfa36d46f17239fff705", offset = 0xae, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader"
-aliases = ["cf.machines.reader"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "a7a6201a589e7e386aa0e948dc221cd9", offset = 0x24, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.0"
-aliases = ["cf.machines.reader_call.0"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "644c3ff2522cc84bc9f8df67f4382fbd", offset = 0x30, len = 4 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.1"
-aliases = ["cf.machines.reader_call.1"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "e47218b1266498370e28ee4276faec48", offset = 0x16, len = 4 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.2"
-aliases = ["cf.machines.reader_call.2"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "a367853313630d9dede2edeb6084aef4", offset = 0x27a, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.3"
-aliases = ["cf.machines.reader_call.3"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "63d23fd083e0fe51fed7fb79e9f0bfa1", offset = 0x11a, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.4"
-aliases = ["cf.machines.reader_call.4"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "4939f0cc9176ced67b08dc9cb03e34dc", offset = 0x3c, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.5"
-aliases = ["cf.machines.reader_call.5"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "f538ba5ebebb9adc67aab6af15c0705a", offset = 0x20e, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.6"
-aliases = ["cf.machines.reader_call.6"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "c05fe1eaa6a7ee820420abaa12e079da", offset = 0x9e, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.7"
-aliases = ["cf.machines.reader_call.7"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "5d42addd8bdc36762ad7a3e983a6f9c1", offset = 0x3fe, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_call.8"
-aliases = ["cf.machines.reader_call.8"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "5d42addd8bdc36762ad7a3e983a6f9c1", offset = 0xe48, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.reader_tail"
-aliases = ["cf.machines.reader_tail"]
-cpu = "cf"
-devices = ["dn2"]
-rule = { kind = "cf_func", hash = "7f68bc71629aaed41f2ffa075e03c222", offset = 0x46, len = 6 }
+rule.dt2 = { kind = "cf_func", hash = "d5cd38f131d3119fd16d700d526b4fb9", offset = 0x9c, len = 2 }
+rule.dn2 = { kind = "cf_func", hash = "f766c42c6be0674aadb1177f3f536367", offset = 0x9c, len = 2 }
 mark = "D"
 users = ["core/machines"]
 
@@ -484,26 +412,8 @@ mark = "D"
 users = ["core/machines"]
 
 [[site]]
-name = "cf.machine.site.typearg.0"
-aliases = ["cf.machines.typearg.0"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "810f1ffd5d04a9c50bfc5d261c714ea7", offset = 0xa, len = 8 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.typearg.exit"
-aliases = ["cf.machines.typearg.exit"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "810f1ffd5d04a9c50bfc5d261c714ea7", offset = 0x82, len = 6 }
-mark = "D"
-users = ["core/machines"]
-
-[[site]]
-name = "cf.machine.site.typemap.1"
-aliases = ["cf.machines.typemap.1"]
+name = "cf.machine.site.type_page.desc"
+aliases = ["cf.machine.site.typemap.1", "cf.machines.typemap.1"]
 cpu = "cf"
 devices = ["dn2"]
 rule = { kind = "cf_func", hash = "bc430516afda815e7d3171c08bb89d7a", offset = 0x4, len = 8 }
@@ -511,10 +421,100 @@ mark = "D"
 users = ["core/machines"]
 
 [[site]]
-name = "cf.machine.site.typemap.2"
-aliases = ["cf.machines.typemap.2"]
+name = "cf.machine.site.type_reader.call.0"
+aliases = ["cf.machine.site.reader_call.0", "cf.machines.reader_call.0"]
 cpu = "cf"
 devices = ["dn2"]
-rule = { kind = "cf_func", hash = "bb697208cd65a5f73453587214728899", offset = 0x8, len = 8 }
+rule = { kind = "cf_func", hash = "644c3ff2522cc84bc9f8df67f4382fbd", offset = 0x30, len = 4 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.call.1"
+aliases = ["cf.machine.site.reader_call.1", "cf.machines.reader_call.1"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "e47218b1266498370e28ee4276faec48", offset = 0x16, len = 4 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.call.2"
+aliases = ["cf.machine.site.reader_call.2", "cf.machines.reader_call.2"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "a367853313630d9dede2edeb6084aef4", offset = 0x27a, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.call.3"
+aliases = ["cf.machine.site.reader_call.3", "cf.machines.reader_call.3"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "63d23fd083e0fe51fed7fb79e9f0bfa1", offset = 0x11a, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.call.4"
+aliases = ["cf.machine.site.reader_call.4", "cf.machines.reader_call.4"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "4939f0cc9176ced67b08dc9cb03e34dc", offset = 0x3c, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.call.5"
+aliases = ["cf.machine.site.reader_call.5", "cf.machines.reader_call.5"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "f538ba5ebebb9adc67aab6af15c0705a", offset = 0x20e, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.call.6"
+aliases = ["cf.machine.site.reader_call.6", "cf.machines.reader_call.6"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "c05fe1eaa6a7ee820420abaa12e079da", offset = 0x9e, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.call.7"
+aliases = ["cf.machine.site.reader_call.7", "cf.machines.reader_call.7"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "5d42addd8bdc36762ad7a3e983a6f9c1", offset = 0x3fe, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.call.8"
+aliases = ["cf.machine.site.reader_call.8", "cf.machines.reader_call.8"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "5d42addd8bdc36762ad7a3e983a6f9c1", offset = 0xe48, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.load"
+aliases = ["cf.machine.site.reader", "cf.machines.reader"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "a7a6201a589e7e386aa0e948dc221cd9", offset = 0x24, len = 6 }
+mark = "D"
+users = ["core/machines"]
+
+[[site]]
+name = "cf.machine.site.type_reader.tail_jump"
+aliases = ["cf.machine.site.reader_tail", "cf.machines.reader_tail"]
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "7f68bc71629aaed41f2ffa075e03c222", offset = 0x46, len = 6 }
 mark = "D"
 users = ["core/machines"]

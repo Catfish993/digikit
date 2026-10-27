@@ -6,16 +6,16 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* cf.machine.fn.current_track_type: no sig yet */
 /* cf.machine.fn.dispatch: no sig yet */
-/* cf.machine.fn.list_entry: no sig yet */
-/* cf.machine.fn.name.0: no sig yet */
+/* cf.machine.fn.list.entry: no sig yet */
+/* cf.machine.fn.name.long: no sig yet */
 /* cf.machine.fn.permit: no sig yet */
-/* cf.machine.fn.reader_fn: no sig yet */
-/* cf.machine.fn.srcpage_type: no sig yet */
-/* cf.machine.fn.typemap.0: no sig yet */
-extern const uint8_t dk_fw_machine_list_table __asm__("cf.machine.data.list_table");
-extern const uint8_t dk_fw_machine_names_table __asm__("cf.machine.data.names_table");
-extern const uint8_t dk_fw_machine_permit_table __asm__("cf.machine.data.permit_table");
-extern const uint8_t dk_fw_machine_pertype_table __asm__("cf.machine.data.pertype_table");
+/* cf.machine.fn.type_page.count: no sig yet */
+/* cf.machine.fn.type_reader: no sig yet */
+extern const uint8_t dk_fw_machine_list_table __asm__("cf.machine.data.list.table");
+extern const uint8_t dk_fw_machine_name_table __asm__("cf.machine.data.name.table");
+extern const uint8_t dk_fw_machine_permit_table __asm__("cf.machine.data.permit.table");
+extern const uint8_t dk_fw_machine_pertype_table __asm__("cf.machine.data.pertype.table");
 
 #endif

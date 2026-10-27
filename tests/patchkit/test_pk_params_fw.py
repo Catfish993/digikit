@@ -92,14 +92,15 @@ def test_table_row_expressions_match_the_rust_row_builder():
                 short=0x47F00020,
             )
             got = [
-                eval_expr(e, {"cf.params.t1": T1}, d, image) & 0xFFFFFFFF
+                eval_expr(e, {"cf.param.data.descriptor_table": T1}, d, image)
+                & 0xFFFFFFFF
                 for e in sec["append"]["row"]
             ]
             assert got == rust_row(table, d), (template, slot)
     assert (
         eval_expr(
             sec["from"]["len"],
-            {"cf.params.t2": 0x2000},
+            {"cf.param.fn.value_class": 0x2000},
             image=lambda a, n: FIRST.to_bytes(4, "big")[:n] if a == 0x2006 else b"",
         )
         == FIRST * 60
@@ -108,8 +109,16 @@ def test_table_row_expressions_match_the_rust_row_builder():
 
 def test_bound_and_reference_writes():
     m = tomllib.loads(MANIFEST.read_text())
-    refs = next(o for o in m["op"] if o.get("anchors") == "cf.params.ref.*")
-    bounds = next(o for o in m["op"] if o.get("anchors") == "cf.params.bound.*")
+    refs = next(
+        o
+        for o in m["op"]
+        if o.get("anchors") == "cf.param.sites.descriptor_table.ref.*"
+    )
+    bounds = next(
+        o
+        for o in m["op"]
+        if o.get("anchors") == "cf.param.sites.descriptor_table.bound.*"
+    )
     # `this` stands for the matched anchor: the stand-in binds it to the anchor's address
     img = {
         0x1000: (0x4020F59C + 120).to_bytes(4, "big"),
@@ -118,7 +127,7 @@ def test_bound_and_reference_writes():
     old = int.from_bytes(img[0x1000], "big")
     v = eval_expr(
         refs["value"].replace("this", "0x1000"),
-        {"pf_table": 0x47F00000, "cf.params.t1": 0x4020F59C},
+        {"pf_table": 0x47F00000, "cf.param.data.descriptor_table": 0x4020F59C},
         image=lambda a, n: img[a][:n],
     )
     assert v == 0x47F00000 + (old - 0x4020F59C)

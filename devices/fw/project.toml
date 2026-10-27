@@ -1,23 +1,9 @@
 # project: the project object, kits, tracks, serialisation
 # Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
 
-# The firmware's own per-track machine type, read through three accessors (the debug log's machine-change watch; they are the functions the hot-reload
-# runtime used for "is this machine in use", tag digikit-hot-reload-v1): the Project singleton `Project *f(void)` (DT2 1.16 0x401988a2, DN2 1.11
-# 0x4018a97a), the active kit of a project `Kit *f(Project *)`, and the machine type of a track of a kit `int f(Kit *, int track)` (-1: no such track).
-# The kit and track functions have the same hash on both devices' versions; the Project getters differ per image.
 [[fn]]
-name = "cf.project.fn.get"
-aliases = ["dkrt.fw.project"]
-cpu = "cf"
-sig = "u32 ()"
-rule.dt2 = { kind = "cf_func", hash = "ec70a039cd46fc8071a7e84112decfb1", offset = 0x0, len = 4 }
-rule.dn2 = { kind = "cf_func", hash = "e722721313b9899418dac1e1d039205c", offset = 0x0, len = 4 }
-mark = "D"
-users = ["core/runtime"]
-
-[[fn]]
-name = "cf.project.fn.kit_of"
-aliases = ["dkrt.fw.kit_of"]
+name = "cf.project.fn.active_kit"
+aliases = ["cf.project.fn.kit_of", "dkrt.fw.kit_of"]
 cpu = "cf"
 sig = "u32 (u32 project)"
 devices = ["dt2", "dn2"]
@@ -33,6 +19,20 @@ aliases = ["dkrt.fw.project_serialize"]
 cpu = "cf"
 sig = "i32 ()"
 rule = { kind = "cf_func", hash = "eeb589cf009de58dead8a8e15bbf8998", offset = 0x0, len = 2 }
+mark = "D"
+users = ["core/runtime"]
+
+# The firmware's own per-track machine type, read through three accessors (the debug log's machine-change watch; they are the functions the hot-reload
+# runtime used for "is this machine in use", tag digikit-hot-reload-v1): the Project singleton `Project *f(void)` (DT2 1.16 0x401988a2, DN2 1.11
+# 0x4018a97a), the active kit of a project `Kit *f(Project *)`, and the machine type of a track of a kit `int f(Kit *, int track)` (-1: no such track).
+# The kit and track functions have the same hash on both devices' versions; the Project getters differ per image.
+[[fn]]
+name = "cf.project.fn.singleton"
+aliases = ["cf.project.fn.get", "dkrt.fw.project"]
+cpu = "cf"
+sig = "u32 ()"
+rule.dt2 = { kind = "cf_func", hash = "ec70a039cd46fc8071a7e84112decfb1", offset = 0x0, len = 4 }
+rule.dn2 = { kind = "cf_func", hash = "e722721313b9899418dac1e1d039205c", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/runtime"]
 

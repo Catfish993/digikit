@@ -23,8 +23,8 @@ mark = "D"
 users = ["core/input"]
 
 [[site]]
-name = "cf.input.site.key_mask_lit"
-aliases = ["input.fw.key_mask_lit"]
+name = "cf.input.site.key_decoder.prev_mask_lit"
+aliases = ["cf.input.site.key_mask_lit", "input.fw.key_mask_lit"]
 cpu = "cf"
 rule = { kind = "cf_func", hash = "157be8bc0a941e9aa4c960f56894c227", offset = 0x10, len = 4 }
 mark = "D"

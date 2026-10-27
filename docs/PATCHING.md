@@ -261,8 +261,8 @@ frameworks are modules built on them. One implementation serves the command line
 
 ### Ports and anchors
 
-Modules never contain addresses. A firmware site is a named **anchor** (`dsp.master.q31_call`,
-`cf.machines.dispatch`). A rule in `devices/fw/` ([design](design/firmware-decls.md)) declares how to find it, and
+Modules never contain addresses. A firmware site is a named **anchor** (`dsp.master.site.q31_converter.call`,
+`cf.machine.fn.dispatch`). A rule in `devices/fw/` ([design](design/firmware-decls.md)) declares how to find it, and
 `patch:port` turns the rules into the lockfile. Rule kinds:
 
 - SHARC+: `sharc_func` (a function found by its relocation-insensitive hash, plus an offset), `sharc_literal`,

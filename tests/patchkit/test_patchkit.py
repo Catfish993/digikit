@@ -143,7 +143,7 @@ def test_rust_linker_equals_python_linker(patchkit, tmp_path, fw, image):
     linked = pk_sharc.link(
         obj,
         base_pc,
-        {"_fw_q31_convert": anchors["dsp.master.q31_converter"], "_fw_master_buf": anchors["dsp.master.float_buf"],
+        {"_fw_q31_convert": anchors["dsp.master.fn.q31_converter"], "_fw_master_buf": anchors["dsp.master.value.q31_converter.float_buf"],
          "_mg_gain": gain},
     )  # fmt: skip
     stream = dsp_patch.Stream(port_resolve.sections_of(out)[7])

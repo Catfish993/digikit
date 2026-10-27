@@ -1,30 +1,30 @@
 # param: parameter tables, references and bounds
 # Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
 
-# The descriptor row (60 bytes) of that parameter: mirror index 66, range 0..0x7f00, default 0x5000.
-[[data]]
-name = "cf.param.data.master_sidechain_filter"
-aliases = ["cf.param.master_sidechain_filter"]
-cpu = "cf"
-rule = { kind = "cf_words", words = ["*", 0x42, 0x0, 0x7f00, 0x5000, 0x0, 0x75ffff, 0x116, "*", 0x0, "*", "*", "*", "*", "*"] }
-mark = "D"
-users = ["digikit/master-drive"]
-
 # the parameter table (60-byte rows), by the signature of its reader
 [[data]]
-name = "cf.param.data.t1"
-aliases = ["cf.params.t1"]
+name = "cf.param.data.descriptor_table"
+aliases = ["cf.param.data.t1", "cf.params.t1"]
 cpu = "cf"
 devices = ["dt2", "dn2"]
 rule = { kind = "cf_params_t1" }
 mark = "D"
 users = ["core/params"]
 
+# The descriptor row (60 bytes) of that parameter: mirror index 66, range 0..0x7f00, default 0x5000.
+[[data]]
+name = "cf.param.data.descriptor_table.master_sidechain_filter"
+aliases = ["cf.param.data.master_sidechain_filter", "cf.param.master_sidechain_filter"]
+cpu = "cf"
+rule = { kind = "cf_words", words = ["*", 0x42, 0x0, 0x7f00, 0x5000, 0x0, 0x75ffff, 0x116, "*", 0x0, "*", "*", "*", "*", "*"] }
+mark = "D"
+users = ["digikit/master-drive"]
+
 # the accessor of the second per-code table (0x44-byte value-class objects built at boot): `move.l 4(sp),D0;
 # cmpi.l #0x113,D0`
 [[fn]]
-name = "cf.param.fn.t2"
-aliases = ["cf.params.t2"]
+name = "cf.param.fn.value_class"
+aliases = ["cf.param.fn.t2", "cf.params.t2"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "254d9fca9141d9a4f7f2308730fafa3a", offset = 0x0, len = 10 }
 rule.dn2 = { kind = "cf_func", hash = "ad9a012d7c22efe3de4430746f3ad4cf", offset = 0x0, len = 10 }
@@ -32,19 +32,19 @@ mark = "D"
 users = ["core/params"]
 
 [[sites]]
-name = "cf.param.sites.bound"
-aliases = ["cf.params.bound"]
+name = "cf.param.sites.descriptor_table.bound"
+aliases = ["cf.param.sites.bound", "cf.params.bound"]
 cpu = "cf"
 devices = ["dt2", "dn2"]
-rule = { kind = "cf_params_bounds", exclude_anchors = ["cf.params.t2"] }
+rule = { kind = "cf_params_bounds", exclude_anchors = ["cf.param.fn.value_class"] }
 mark = "D"
 users = ["core/params"]
 
 # every absolute reference into the table (a 32-bit word) and every clamp bound of its readers (7 bytes, the
 # immediate at +2), in address order; the bounds inside the accessor above are left out (the hook handles it)
 [[sites]]
-name = "cf.param.sites.ref"
-aliases = ["cf.params.ref"]
+name = "cf.param.sites.descriptor_table.ref"
+aliases = ["cf.param.sites.ref", "cf.params.ref"]
 cpu = "cf"
 devices = ["dt2", "dn2"]
 rule = { kind = "cf_params_refs" }

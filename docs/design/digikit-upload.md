@@ -29,7 +29,7 @@ F0 7D 64 6B 01 <cmd | 0x40> <seq> <body, 8-in-7 packed> F7   device -> host, one
   separated, no empty, `.` or `..` part; docs/design/digikit-store.md).
 - A request is at most 40 KiB on the wire (the firmware drops a SysEx message over 128 KiB and holds about 150 KiB in its pool).
   A reply is at most 1 KiB on the wire (the firmware's TX ring is 4 KiB and spins when full), and **a reply is sent only when the ring has room**:
-the runtime reads the firmware's count of bytes handed to the USB stack and not yet sent (anchor `dkrt.fw.tx_inflight_lit`) and drops the
+the runtime reads the firmware's count of bytes handed to the USB stack and not yet sent (anchor `cf.midi.site.tx_inflight_lit`) and drops the
 reply when it is above 256 or when the reply would not fit below 0xff0 with it; a host that does not read its input cannot hang the MIDI task.
 The host's retry asks again (`docs/findings/43-digikit-upload.md`, "No unbounded spin on a reply").
 
@@ -225,7 +225,7 @@ selection_sectors - 1`; recorded in `devices/<device>.toml` `[card.store]`, not 
   with `seq + 1`. A power cut before B leaves the old store; between B and A the next reader takes B. Space freed by a delete or a replace is reused by the next BEGIN; BEGIN, DELETE and CLEAR first
   make the two header copies agree.
 - **Full:** BEGIN answers E_FULL with the free bytes. The host's way out is to delete files (the space is reused), or CLEAR and an upload of the files it wants; a module missing at boot is skipped and reported, as today.
-- Every card access goes through the firmware's block read and block write (`dkrt.fw.block_read`, `dkrt.fw.block_write`; the
+- Every card access goes through the firmware's block read and block write (`cf.storage.fn.block.read`, `cf.storage.fn.block.write`; the
   write takes the eMMC mutex), from the MIDI task, one request at a time.
 
 ## Where the device handles it

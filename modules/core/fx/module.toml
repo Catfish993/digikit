@@ -25,8 +25,8 @@ place = "dsp.l2"
 
 [object.externs]
 _fx_table = "fx.rows"
-_fx_master = "dsp.master.float_buf"
-_fx_back = "hook.dsp.fx.entry.tail"
+_fx_master = "dsp.master.value.q31_converter.float_buf"
+_fx_back = "hook.dsp.fx.fn.entry.tail"
 
 # The send route (Digitakt II; docs/findings/62-fx-send-route.md): the hook is the first instruction of the master function, before the master reads the track
 # buses' sums and the FX return bus. The object calls the adapter's routines (`_fx_enter`, `_fx_exec`, `_fx_leave`), so the guard exists once.
@@ -38,9 +38,9 @@ devices = ["dt2"]
 
 [object.externs]
 _fx_table = "fx.rows"
-_fxs_trackbus = "dsp.fx.trackbus"
-_fxs_return = "dsp.fx.return"
-_fxs_back = "hook.dsp.fx.send.tail"
+_fxs_trackbus = "dsp.fx.value.send.track_bus"
+_fxs_return = "dsp.fx.value.send.return_bus"
+_fxs_back = "hook.dsp.fx.fn.send.tail"
 
 # The Digitone II's send route (docs/findings/67-fx-routes-dn2.md): the same hook on its master function, the slot mix of fxsend.s (`FXS_SLOTS`).
 [[object]]
@@ -51,16 +51,16 @@ devices = ["dn2"]
 
 [object.externs]
 _fx_table = "fx.rows"
-_fxs_slotbus = "dsp.fx.slotbus"
-_fxs_slotmap = "dsp.fx.slotmap"
-_fxs_fadetab = "dsp.fx.fadetab"
-_fxs_return = "dsp.fx.return"
-_fxs_back = "hook.dsp.fx.send.tail"
+_fxs_slotbus = "dsp.fx.value.send.slot_bus"
+_fxs_slotmap = "dsp.fx.value.send.slot_map"
+_fxs_fadetab = "dsp.fx.value.send.slot_fade_flags"
+_fxs_return = "dsp.fx.value.send.return_bus"
+_fxs_back = "hook.dsp.fx.fn.send.tail"
 
 [[op]]
 op = "hook"
 cpu = "sharc"
-anchor = "dsp.fx.entry"
+anchor = "dsp.fx.fn.entry"
 offset = 0
 to = "_fx_entry"
 displaced = "run"
@@ -68,7 +68,7 @@ displaced = "run"
 [[op]]
 op = "hook"
 cpu = "sharc"
-anchor = "dsp.fx.send"
+anchor = "dsp.fx.fn.send"
 offset = 0
 to = "_fxs_entry"
 displaced = "run"

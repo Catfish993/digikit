@@ -216,7 +216,7 @@
    "addend": 0,
    "offset": 54,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu11ensure_view",
-   "symbol": "cf.string.fn.ctor",
+   "symbol": "cf.string.fn.std_string.ctor",
    "type": "cf.32"
   },
   {
@@ -230,7 +230,7 @@
    "addend": 0,
    "offset": 92,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu11ensure_view",
-   "symbol": "cf.string.fn.dtor",
+   "symbol": "cf.string.fn.std_string.dtor",
    "type": "cf.32"
   },
   {
@@ -363,42 +363,42 @@
    "addend": 0,
    "offset": 244,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu5popup",
-   "symbol": "cf.string.fn.sp_move",
+   "symbol": "cf.string.fn.shared_ptr.move",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 250,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu5popup",
-   "symbol": "cf.view.fn.brain",
+   "symbol": "cf.view.fn.brain.instance",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 258,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu5popup",
-   "symbol": "cf.view.fn.mgr_of",
+   "symbol": "cf.view.fn.brain.view_manager",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 272,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu5popup",
-   "symbol": "cf.view.fn.push",
+   "symbol": "cf.view.fn.view_controller_push",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 286,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu5popup",
-   "symbol": "cf.string.fn.sp_release",
+   "symbol": "cf.string.fn.shared_ptr.release",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 296,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu5popup",
-   "symbol": "cf.string.fn.sp_release",
+   "symbol": "cf.string.fn.shared_ptr.release",
    "type": "cf.32"
   },
   {
@@ -1511,14 +1511,14 @@
    "addend": 2,
    "offset": 96,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu9make_item",
-   "symbol": "cf.menu.site.icon_ref",
+   "symbol": "cf.menu.site.settings_list.system_icon_ref",
    "type": "cf.32"
   },
   {
    "addend": 4,
    "offset": 106,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu9make_item",
-   "symbol": "cf.menu.site.icon_ref",
+   "symbol": "cf.menu.site.settings_list.system_icon_ref",
    "type": "cf.32"
   },
   {
@@ -5228,7 +5228,7 @@
    "addend": 0,
    "offset": 312,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu8dispatch",
-   "symbol": "cf.view.fn.push_ctx",
+   "symbol": "cf.view.fn.brain.push",
    "type": "cf.32"
   },
   {
@@ -5333,7 +5333,7 @@
    "addend": 0,
    "offset": 434,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu8dispatch",
-   "symbol": "cf.view.fn.push_ctx",
+   "symbol": "cf.view.fn.brain.push",
    "type": "cf.32"
   },
   {
@@ -5459,7 +5459,7 @@
    "addend": 0,
    "offset": 614,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu8dispatch",
-   "symbol": "cf.view.fn.push_ctx",
+   "symbol": "cf.view.fn.brain.push",
    "type": "cf.32"
   },
   {
@@ -5942,7 +5942,7 @@
    "addend": 0,
    "offset": 1530,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu8dispatch",
-   "symbol": "cf.view.fn.push_ctx",
+   "symbol": "cf.view.fn.brain.push",
    "type": "cf.32"
   },
   {
@@ -6005,7 +6005,7 @@
    "addend": 0,
    "offset": 1610,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu8dispatch",
-   "symbol": "cf.view.fn.push_ctx",
+   "symbol": "cf.view.fn.brain.push",
    "type": "cf.32"
   },
   {
@@ -6544,7 +6544,7 @@
    "addend": 0,
    "offset": 2696,
    "section": ".text._RNvCskwqYqlmF7aH_15pk_digikit_menu8dispatch",
-   "symbol": "cf.view.fn.push_ctx",
+   "symbol": "cf.view.fn.brain.push",
    "type": "cf.32"
   },
   {
@@ -9805,7 +9805,7 @@
    "size": 24
   }
  ],
- "source_sha256": "f01ba5dade8cbb0dafe1a21b1e8243dda33387ec50a867c6e2889c8d827dce51",
+ "source_sha256": "3c4c3d6f77d4301b80eb7c0ff63c5155ddfc75be6684c776f8812af3562c639c",
  "symbols": [
   {
    "global": false,
@@ -11843,37 +11843,49 @@
   },
   {
    "global": true,
-   "name": "cf.menu.site.icon_ref",
+   "name": "cf.menu.site.settings_list.system_icon_ref",
    "section": null,
    "value": 0
   },
   {
    "global": true,
-   "name": "cf.string.fn.ctor",
+   "name": "cf.string.fn.shared_ptr.move",
    "section": null,
    "value": 0
   },
   {
    "global": true,
-   "name": "cf.string.fn.dtor",
+   "name": "cf.string.fn.shared_ptr.release",
    "section": null,
    "value": 0
   },
   {
    "global": true,
-   "name": "cf.string.fn.sp_move",
+   "name": "cf.string.fn.std_string.ctor",
    "section": null,
    "value": 0
   },
   {
    "global": true,
-   "name": "cf.string.fn.sp_release",
+   "name": "cf.string.fn.std_string.dtor",
    "section": null,
    "value": 0
   },
   {
    "global": true,
-   "name": "cf.view.fn.brain",
+   "name": "cf.view.fn.brain.instance",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.view.fn.brain.push",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.view.fn.brain.view_manager",
    "section": null,
    "value": 0
   },
@@ -11885,19 +11897,7 @@
   },
   {
    "global": true,
-   "name": "cf.view.fn.mgr_of",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "cf.view.fn.push",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "cf.view.fn.push_ctx",
+   "name": "cf.view.fn.view_controller_push",
    "section": null,
    "value": 0
   },
@@ -12067,7 +12067,7 @@
  "toolchain": {
   "exports": "DK_ABOUT DK_ABOUT_N DK_APPLIES DK_APPLY_RESTART DK_APPLY_SET DK_FXR DK_FXR_APPLIES DK_FXR_FLUSH DK_FXR_N DK_FXR_PEND DK_FXR_RESTART DK_FXR_SET DK_HEALTH DK_LINES DK_LOAD DK_LOAD_N DK_MEM DK_MEM_N DK_NEEDS_READS DK_OFFER DK_POLLS DK_POPUP DK_POPUPS DK_REDRAWS dk_add_item dk_entry_count dk_poll",
   "instructions_redecoded": "7008",
-  "isa_check": "34b9b3f9f33f986bc9525dfc5eef77e635403f53f90fb8debcb46ec4b1841d9b",
+  "isa_check": "0a72954206094d770845fc2276cc85c3181dd1b53936fb2d448d00f5321abbca",
   "libgccjit_gcc": "37ea7cd851f04ee6a313c5067c9fde9328f876aa",
   "rustc": "rustc 1.101.0-nightly (6f5da406b 2026-10-10)",
   "rustc_codegen_gcc": "a7d8a5227b520187e3d93c1f7fc01dd1ba8659cf",

@@ -22,9 +22,9 @@ sources = ["src/dsp/master_drive.s"]
 place = "dsp.l2"
 
 [object.externs]
-_fw_q31_convert = "dsp.master.q31_converter"
-_fw_master_buf = "dsp.master.float_buf"
-_fw_drive_word = "dsp.fx.sidechain_filter_word"
+_fw_q31_convert = "dsp.master.fn.q31_converter"
+_fw_master_buf = "dsp.master.value.q31_converter.float_buf"
+_fw_drive_word = "dsp.fx.value.sidechain_filter_word"
 
 # ColdFire: the new knob label.
 [[object]]
@@ -34,21 +34,21 @@ place = "cf.expansion"
 
 [[op]]
 op = "retarget"
-anchor = "dsp.master.q31_call"
+anchor = "dsp.master.site.q31_converter.call"
 to = "_md_hook"
 
 # Descriptor row of the master compressor's Sidechain Filter: long and short names. The default stays 0x5000: the
 # factory kits hold it, so it is the neutral value of the drive (finding 22).
 [[op]]
 op = "write"
-anchor = "cf.param.master_sidechain_filter"
+anchor = "cf.param.data.descriptor_table.master_sidechain_filter"
 offset = 0x28
 hex = "00000000"
 reloc = [{ offset = 0, type = "cf.32", symbol = "md_name_long" }]
 
 [[op]]
 op = "write"
-anchor = "cf.param.master_sidechain_filter"
+anchor = "cf.param.data.descriptor_table.master_sidechain_filter"
 offset = 0x30
 hex = "00000000"
 reloc = [{ offset = 0, type = "cf.32", symbol = "md_name_short" }]
@@ -61,4 +61,4 @@ resource = "dsp.master.hook"
 resource = "frame.fx66"
 
 [[claim]]
-resource = "cf.param.master_sidechain_filter"
+resource = "cf.param.data.descriptor_table.master_sidechain_filter"

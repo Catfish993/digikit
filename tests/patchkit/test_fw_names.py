@@ -9,7 +9,7 @@ VOCAB = {"cf": {"menu", "machine"}, "dsp": {"master"}}
 
 def test_a_valid_name_passes():
     pr.check_name("cf.menu.fn.item_builder", "fn", VOCAB)
-    pr.check_name("dsp.master.value.float_buf", "value", VOCAB)
+    pr.check_name("dsp.master.value.q31_converter.float_buf", "value", VOCAB)
 
 
 def test_an_index_suffix_is_allowed():

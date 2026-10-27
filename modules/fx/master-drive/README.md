@@ -53,10 +53,10 @@ can be p-locked like any other.
 ## Claims and anchors
 
 - Claims: `dsp.master.hook` (also claimed by `digikit/master-gain`, so the two modules are refused together),
-  `frame.fx66`, `cf.param.master_sidechain_filter`.
+  `frame.fx66`, `cf.param.data.descriptor_table.master_sidechain_filter`.
 - Anchors, all resolved by rules in `module.toml` (`tools/patchkit/port_resolve.py`), none typed: the call and the entry of
-  the converter and the master buffer (as `digikit/master-gain`), `dsp.fx.sidechain_filter_word` (the address inside the
-  stock reader's short-word load: DT2 0x256008, DN2 0x25ced8) and `cf.param.master_sidechain_filter` (the 60-byte
+  the converter and the master buffer (as `digikit/master-gain`), `dsp.fx.value.sidechain_filter_word` (the address inside the
+  stock reader's short-word load: DT2 0x256008, DN2 0x25ced8) and `cf.param.data.descriptor_table.master_sidechain_filter` (the 60-byte
   descriptor row, found by its masked words: mirror index 66, range 0 to 0x7f00, default 0x5000).
 
 ## Test

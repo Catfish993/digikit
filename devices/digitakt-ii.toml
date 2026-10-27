@@ -117,7 +117,7 @@ page_rows = 0
 [fx]
 # The firmware's pointer to the live kit object (an SRAM global; the same table holds the 16 track sound pointers at +8, tools/patchkit/pk_harness.py
 # SOUND_PTRS), and the offset of the kit's array of s16 effect values (the firmware's own "Fx" object, 71 halfwords) in that object. The firmware's kit
-# accessor (anchors dkrt.fw.project and dkrt.fw.kit_of) returns another object, the project's: the encoders edit this one.
+# accessor (anchors cf.project.fn.singleton and cf.project.fn.active_kit) returns another object, the project's: the encoders edit this one.
 kit_ptr = 0x80004704
 array_off = 0x4534
 # The number of stock pages: page numbers 0 .. 32 are in the firmware's page table, the effect pages are 33 and up (core/fxpages answers the
@@ -394,7 +394,7 @@ voices          = 16                      # tracks; each track is rendered on it
 voice_unit      = "track"                 # "track": voice record, voices in pairs; "slot": trig edge
 pitch_hw        = 1                       # frame halfword 1 + t: note << 8
 velocity_hw     = 0x1a                    # frame halfword 0x1a + t: velocity << 8
-type_source     = "cache"                 # the DSP's per-track type cache (anchor dsp.voice.type_cache); DN2: "frame"
+type_source     = "cache"                 # the DSP's per-track type cache (anchor dsp.voice.value.type_cache); DN2: "frame"
 record_active   = 0x1b8                   # byte +0x1b8 of the voice record: ACTIVE
 record_mark     = 0x1b9                   # byte +0x1b9: the note-on mark
 note_on         = "record"                # ACTIVE != 0 and mark == 0; DN2: "trig-edge"

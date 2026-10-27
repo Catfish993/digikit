@@ -22,13 +22,13 @@ place = "cf.flash_cave"
 
 [object.externs]
 pk_segs = "pk.segments"
-pk_copy_helper = "cf.reset.copy_helper"
-pk_clear_helper = "cf.reset.clear_helper"
+pk_copy_helper = "cf.rtos.value.reset.copy_helper"
+pk_clear_helper = "cf.rtos.value.reset.clear_helper"
 
 # `jsr copy; jsr clear` (4eba xxxx 4eba xxxx) becomes `jsr pk_loader.l; nop` (4eb9 <loader> 4e71).
 [[op]]
 op = "write"
-anchor = "cf.reset.init_calls"
+anchor = "cf.rtos.fn.reset.init_calls"
 hex = "4eb9000000004e71"
 
 [[op.reloc]]
@@ -37,4 +37,4 @@ type = "cf.32"
 symbol = "pk_loader"
 
 [[claim]]
-resource = "cf.reset.init_calls"
+resource = "cf.rtos.fn.reset.init_calls"

@@ -190,9 +190,9 @@ fn a_typed_write_evaluates_an_expression_with_image_reads() {
 #[test]
 fn a_typed_write_to_a_value_anchor_lands_in_its_instruction() {
     need_image!(DT2);
-    // `dsp.machines.selector_table` is a SHARC literal: addr = the number the instruction loads, src = the instruction
-    let body = "[[op]]\nop = \"write\"\nanchor = \"dsp.machines.selector_table\"\noffset = 2\nvalue = \"0x1234\"\nwidth = 2\n\
-                [[op]]\nop = \"write\"\nanchor = \"dsp.machines.selector_table\"\noffset = 4\nvalue = \"0x5678\"\nwidth = 2\n";
+    // `dsp.machine.value.selector.table_ref` is a SHARC literal: addr = the number the instruction loads, src = the instruction
+    let body = "[[op]]\nop = \"write\"\nanchor = \"dsp.machine.value.selector.table_ref\"\noffset = 2\nvalue = \"0x1234\"\nwidth = 2\n\
+                [[op]]\nop = \"write\"\nanchor = \"dsp.machine.value.selector.table_ref\"\noffset = 4\nvalue = \"0x5678\"\nwidth = 2\n";
     let lib = library(vec![module("t/v", "", body, None)]);
     let out = run(&lib, &["t/v"]).unwrap();
     let base = Firmware::parse(&image(DT2).unwrap()).unwrap();
@@ -202,7 +202,7 @@ fn a_typed_write_to_a_value_anchor_lands_in_its_instruction() {
         .iter()
         .find(|p| p.port.syx_sha256 == base.syx_sha256)
         .unwrap()
-        .anchor("dsp.machines.selector_table")
+        .anchor("dsp.machine.value.selector.table_ref")
         .unwrap()
         .clone();
     let src = a.src.unwrap() as u32;
@@ -272,7 +272,7 @@ fn typed_writes_check_width_range_and_symbols() {
     let lib = library(vec![module(
         "t/a",
         "",
-        &write_val(0x100, "image.u32(dsp.master.q31_call + 4)", 4),
+        &write_val(0x100, "image.u32(dsp.master.site.q31_converter.call + 4)", 4),
         None,
     )]);
     expect_err(run(&lib, &["t/a"]), "lies outside the anchor");
@@ -280,7 +280,7 @@ fn typed_writes_check_width_range_and_symbols() {
     let lib = library(vec![module(
         "t/a",
         "",
-        &write_val(0x100, "1", 1).replace("cf.main", "dsp.master.q31_call"),
+        &write_val(0x100, "1", 1).replace("cf.main", "dsp.master.site.q31_converter.call"),
         None,
     )]);
     expect_err(run(&lib, &["t/a"]), "no expect_sha256");
@@ -741,7 +741,7 @@ kind = "u16"
 [[section]]
 name = "dsptbl"
 region = "dsp.l2"
-from = { anchor = "dsp.master.q31_converter" }
+from = { anchor = "dsp.master.fn.q31_converter" }
 append = { registry = "toys", row = ["u16:$v", "$index"] }
 "#;
     let lib = library(vec![
@@ -763,7 +763,7 @@ append = { registry = "toys", row = ["u16:$v", "$index"] }
         .iter()
         .find(|p| p.port.syx_sha256 == base.syx_sha256)
         .unwrap()
-        .anchor("dsp.master.q31_converter")
+        .anchor("dsp.master.fn.q31_converter")
         .unwrap()
         .clone();
     let sec = sym(&out, "t/fw", "dsptbl") as u32;
@@ -1050,7 +1050,7 @@ fn a_sharc_hook_replaces_the_instruction_by_a_jump_and_the_tail_executes_it() {
         "symbols": [{"name": "_f", "section": "seg_pmco", "value": 0, "global": true}],
         "relocs": []
     });
-    let body = "[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n[[op]]\nop = \"hook\"\nanchor = \"dsp.master.q31_call\"\nto = \"_f\"\n";
+    let body = "[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n[[op]]\nop = \"hook\"\nanchor = \"dsp.master.site.q31_converter.call\"\nto = \"_f\"\n";
     let lib = library(vec![module("t/h", "", body, Some(dsp_obj))]);
     let reg = registry();
     let out = run_on(DT2, &reg, &lib, &["t/h"]).unwrap();
@@ -1060,7 +1060,7 @@ fn a_sharc_hook_replaces_the_instruction_by_a_jump_and_the_tail_executes_it() {
         .iter()
         .find(|p| p.port.syx_sha256 == base.syx_sha256)
         .unwrap()
-        .anchor("dsp.master.q31_call")
+        .anchor("dsp.master.site.q31_converter.call")
         .unwrap()
         .clone();
     let sb = Stream::parse(base.section(7).unwrap().data.clone()).unwrap();
@@ -1078,8 +1078,8 @@ fn a_sharc_hook_replaces_the_instruction_by_a_jump_and_the_tail_executes_it() {
     assert_eq!(&site[..2], &0x063eu16.to_le_bytes());
     assert_eq!(site[2] as u64, (f >> 16) & 0xff);
     assert_eq!(&site[4..6], &((f & 0xffff) as u16).to_le_bytes());
-    let tail_pc = sym(&out, "t/h", "hook.dsp.master.q31_call.tail");
-    let ret = sym(&out, "t/h", "hook.dsp.master.q31_call.return");
+    let tail_pc = sym(&out, "t/h", "hook.dsp.master.site.q31_converter.call.tail");
+    let ret = sym(&out, "t/h", "hook.dsp.master.site.q31_converter.call.return");
     assert_eq!(ret, a.pm.unwrap() + 3);
     let tail_byte = 0x2000_0000 + (tail_pc as u32 - 0xB8_0000) * 2;
     let t = so.read(tail_byte, 12).unwrap();

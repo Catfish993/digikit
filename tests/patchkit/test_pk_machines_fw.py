@@ -412,11 +412,11 @@ def test_stock_table_copies_append_the_clones_row():
     secs = {s["name"]: s for s in m["section"]}
     # a fake image: the anchors' tables
     anchors = {
-        "cf.machines.tab.names": 0x1000,
-        "cf.machines.tab.permit": 0x2000,
-        "cf.machines.tab.pertype": 0x3000,
-        "dsp.machines.selector_data": 0x4000,
-        "cf.machines.dispatch": 0x9000,
+        "cf.machine.data.name.table": 0x1000,
+        "cf.machine.data.permit.table": 0x2000,
+        "cf.machine.data.pertype.table": 0x3000,
+        "dsp.machine.data.selector.table": 0x4000,
+        "cf.machine.fn.dispatch": 0x9000,
     }
     img = {}
     for t in range(FIRST):

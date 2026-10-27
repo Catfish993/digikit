@@ -1,6 +1,6 @@
 //! Module upload over USB SysEx (docs/design/digikit-upload.md): the device side.
 //!
-//! `dkrt_midi_rx` is called from the firmware's MIDI task (hook `dkrt.hook.midi_rx`, `src/cf/tramp.s`) with every SysEx message that
+//! `dkrt_midi_rx` is called from the firmware's MIDI task (hook `cf.midi.site.rx`, `src/cf/tramp.s`) with every SysEx message that
 //! came in on USB cable 0, after the firmware gathered it and before its router. A message that starts `F0 7D 64 6B` is ours: it is
 //! handled here (one request, one reply, in order) and the router never sees it; any other message returns 0 and takes the stock route.
 //!

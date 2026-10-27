@@ -161,7 +161,7 @@ static NAME_FXR: &[u8] = b"DigikitFxRoutesMenu\0";
 
 /// The address of the stock icon the SYSTEM item uses, read from the operand of the instruction that pushes it.
 unsafe fn icon() -> *const u8 {
-    let r = addr_of!(menu::ICON_REF) as *const u16;
+    let r = addr_of!(menu::SETTINGS_LIST_SYSTEM_ICON_REF) as *const u16;
     (((*r.add(1) as u32) << 16) | *r.add(2) as u32) as *const u8
 }
 
@@ -228,10 +228,10 @@ unsafe fn ensure_view(v: *mut View, name: &'static [u8], title: &'static [u8], p
     let obj = mem::new(size_of::<VerticalMenuView>() as u32);
     let mut s: u32 = 0;
     let alloc: u8 = 0;
-    string::ctor(&mut s, title.as_ptr(), &alloc);
+    string::std_string_ctor(&mut s, title.as_ptr(), &alloc);
     // no icon: the view draws one at the bottom left only when the pointer (`VerticalMenuView::icon`) is not null (`TotalRecallMenuView` passes null)
     menu::vertical_menu_view_ctor(obj, name.as_ptr(), 8, &s, null());
-    string::dtor(&mut s);
+    string::std_string_dtor(&mut s);
     (*v).obj = obj;
     // the View sub-object sits at `VIEW_AT`
     (*v).sp = mem::new(size_of::<SharedPtr>() as u32) as *mut SharedPtr;
@@ -287,7 +287,7 @@ unsafe fn text_page(obj: *mut u8) {
 }
 
 unsafe fn push(from: *mut u8, v: *mut View) {
-    view::push_ctx(from, (*v).sp);
+    view::brain_push(from, (*v).sp);
 }
 
 // ---- small text helpers ------------------------------------------------------------------------------------------
@@ -819,11 +819,11 @@ unsafe fn popup(t: &Text) {
     let mut a = SharedPtr { ptr: 0, ctl: 0 };
     dk_popup_make(&mut a, &text);
     let mut b = SharedPtr { ptr: 0, ctl: 0 };
-    string::sp_move(&mut b, &mut a);
-    let mgr = view::mgr_of(view::brain());
-    view::push(mgr, &b, 0);
-    string::sp_release(&mut b.ctl);
-    string::sp_release(&mut a.ctl);
+    string::shared_ptr_move(&mut b, &mut a);
+    let mgr = view::brain_view_manager(view::brain_instance());
+    view::view_controller_push(mgr, &b, 0);
+    string::shared_ptr_release(&mut b.ctl);
+    string::shared_ptr_release(&mut a.ctl);
 }
 
 // ---- boot state -----------------------------------------------------------------------------------------------------

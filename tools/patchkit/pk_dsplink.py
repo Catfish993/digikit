@@ -267,7 +267,7 @@ def proof(a: argparse.Namespace) -> dict[str, Any]:
         next(
             a["addr"]
             for a in plan_anchors(device, fw)
-            if a["name"] == "dl.dsp.block_tail"
+            if a["name"] == "dsp.link.site.block_tail"
         )
     )
     with Rig(device, fw, ["test/cf-demo"], f"{device}-ref") as stock:

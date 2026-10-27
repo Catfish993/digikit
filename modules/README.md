@@ -123,8 +123,8 @@ sources = ["src/dsp/master_gain.s"]
 place = "dsp.l2"
 
 [object.externs]
-_fw_q31_convert = "dsp.master.q31_converter"
-_fw_master_buf = "dsp.master.float_buf"
+_fw_q31_convert = "dsp.master.fn.q31_converter"
+_fw_master_buf = "dsp.master.value.q31_converter.float_buf"
 ```
 
 An object placed in `cf.expansion` makes patchkit add the built-in `core/expansion` module (loader, segment chain).
@@ -147,7 +147,7 @@ An edit at a firmware site. Common keys: `op`, `anchor`, `offset` (bytes from th
 ```toml
 [[op]]                       # core/expansion: `jsr copy; jsr clear` becomes `jsr pk_loader; nop`
 op = "write"
-anchor = "cf.reset.init_calls"
+anchor = "cf.rtos.fn.reset.init_calls"
 hex = "4eb9000000004e71"
 [[op.reloc]]
 offset = 2
@@ -158,7 +158,7 @@ symbol = "pk_loader"
 ```toml
 [[op]]                       # raise every stock bound by the number of added rows (see core/params)
 op = "write"
-anchors = "cf.params.bound.*"
+anchors = "cf.param.sites.descriptor_table.bound.*"
 offset = 2
 value = "image.u32(this + 2) + params.count"
 width = 4
@@ -174,7 +174,7 @@ ColdFire `jsr`/`bsr`/`jmp` and the SHARC+ direct `CALL`.
 ```toml
 [[op]]
 op = "retarget"
-anchor = "dsp.master.q31_call"
+anchor = "dsp.master.site.q31_converter.call"
 to = "_mg_hook"
 ```
 
@@ -194,7 +194,7 @@ instructions.
 [[op]]
 op = "hook"
 cpu = "sharc"
-anchor = "dsp.voice.render_entry"
+anchor = "dsp.voice.fn.render_entry"
 to = "_dv_entry"
 displaced = "drop"
 ```
@@ -208,7 +208,7 @@ What registers are free at a hook site is the module's business: document it in 
 
 | Key | Meaning |
 |---|---|
-| `resource` | name of the resource, for example `dsp.master.hook` or `cf.reset.init_calls` |
+| `resource` | name of the resource, for example `dsp.master.hook` or `cf.rtos.fn.reset.init_calls` |
 | `devices` | optional device filter |
 
 ### Anchor rules (`devices/fw/`)
@@ -236,7 +236,7 @@ after a second agent checked it), `offset`, `len` (bytes).
 ```toml
 # devices/fw/<subsystem>.toml
 [[site]]
-name = "dsp.master.q31_call"
+name = "dsp.master.site.q31_converter.call"
 cpu = "sharc"
 rule = { kind = "sharc_func", reloc_hash = "65c7ebdfe23c9a760bc6077a912e16c0474c182ee9849925cb0c10af0689f984", offset = 0x15c, len = 6 }
 mark = "D"
@@ -445,8 +445,8 @@ then placed in a region. The firmware table is never stored in the repository.
 [[section]]
 name = "mf_names"
 region = "cf.expansion"
-from = { anchor = "cf.machines.tab.names", len = "(image.u8(cf.machines.dispatch + 1) + 1) * 12" }
-append = { registry = "machines", row = ["$name", "$short", "image.u32(cf.machines.tab.names + 12 * $clone_of + 8)"] }
+from = { anchor = "cf.machine.data.name.table", len = "(image.u8(cf.machine.fn.dispatch + 1) + 1) * 12" }
+append = { registry = "machines", row = ["$name", "$short", "image.u32(cf.machine.data.name.table + 12 * $clone_of + 8)"] }
 ```
 
 ### Expressions
@@ -500,9 +500,9 @@ Workflow:
 them to the 24-bit output.
 
 - **Object.** `src/dsp/master_gain.s` is placed in `dsp.l2`. It has two undefined symbols, the firmware's Q31 converter
-  and the master float buffer. `[object.externs]` maps them to the anchors `dsp.master.q31_converter` and
-  `dsp.master.float_buf`.
-- **Hook.** One `retarget` op changes the converter's single `CALL` (anchor `dsp.master.q31_call`) to `_mg_hook`. The
+  and the master float buffer. `[object.externs]` maps them to the anchors `dsp.master.fn.q31_converter` and
+  `dsp.master.value.q31_converter.float_buf`.
+- **Hook.** One `retarget` op changes the converter's single `CALL` (anchor `dsp.master.site.q31_converter.call`) to `_mg_hook`. The
   routine multiplies the block by the gain word and ends with a jump to the converter, so the converter's frame and
   arguments stay as the firmware expects. The header of the source lists the registers that are free at this site
   ([finding 06](../docs/findings/06-sharc-engine-and-startup.md), "Master hook").

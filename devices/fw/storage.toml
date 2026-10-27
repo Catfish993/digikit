@@ -3,8 +3,8 @@
 
 # The firmware's eMMC block read: int f(u32 sector, u32 bytes, void *buf), 0 = ok (finding 23 S6).
 [[fn]]
-name = "cf.storage.fn.block_read"
-aliases = ["cf.menu.fn.blk_read", "dkrt.fw.block_read"]
+name = "cf.storage.fn.block.read"
+aliases = ["cf.menu.fn.blk_read", "cf.storage.fn.block_read", "dkrt.fw.block_read"]
 cpu = "cf"
 sig = "i32 (u32 sector, u32 bytes, u8 *buf)"
 rule = { kind = "cf_func", hash = "dcf1d4873d4a4fb5ac903e8ada9c1a12", offset = 0x0, len = 4 }
@@ -14,8 +14,8 @@ users = ["core/digikit-menu", "core/runtime"]
 # The firmware's eMMC block write: int f(u32 sector, u32 bytes, const void *buf), 0 = ok; it takes the ESDHC mutex itself
 # (DT2 1.16 FUN_4012e0c0, DN2 1.11 FUN_4012c780). The runtime writes only the two sectors of the selection record with it.
 [[fn]]
-name = "cf.storage.fn.block_write"
-aliases = ["dkrt.fw.block_write"]
+name = "cf.storage.fn.block.write"
+aliases = ["cf.storage.fn.block_write", "dkrt.fw.block_write"]
 cpu = "cf"
 sig = "i32 (u32 sector, u32 bytes, const u8 *buf)"
 rule = { kind = "cf_func", hash = "0dd5a176b94c6e30225068661b58a898", offset = 0x0, len = 2 }
@@ -32,19 +32,5 @@ cpu = "cf"
 sig = "void ()"
 rule.dt2 = { kind = "cf_func", hash = "ce2fecf00cf4757d0252acc24f11436c", offset = 0x0, len = 2 }
 rule.dn2 = { kind = "cf_func", hash = "f2ab3c0214b6212848a6300a70dd6129", offset = 0x0, len = 2 }
-mark = "D"
-users = ["core/runtime"]
-
-# The firmware's own DSP block counter (finding 37, "Safe mode after the first UI pass"): the tail of the block interrupt handler (vector 191,
-# the function core/dsp-link and core/health find by these hashes) adds the block to its clocks with `addq.l #1,<counter>` and nothing else
-# touches the word, so it counts blocks (1500 per second) from boot. The anchor is the 4-byte address literal of that instruction
-# (`52b9 <lit>`): offset 0x1654 in the Digitakt II function, 0x1d4e in the Digitone II one, the same in both versions of each.
-[[site]]
-name = "cf.storage.site.block_counter_lit"
-aliases = ["dkrt.fw.block_counter_lit"]
-bind = "static"
-cpu = "cf"
-rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x1654, len = 4 }
-rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x1d4e, len = 4 }
 mark = "D"
 users = ["core/runtime"]

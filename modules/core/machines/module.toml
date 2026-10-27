@@ -39,7 +39,7 @@ conflicts = []
 
 [[registry]]
 name = "machines"
-first = "image.u8(cf.machines.dispatch + 1) + 1"   # `moveq #last,D1` of the dispatch: the stock type count
+first = "image.u8(cf.machine.fn.dispatch + 1) + 1"   # `moveq #last,D1` of the dispatch: the stock type count
 max = 32
 region = "cf.expansion"
 # Permanent type numbers (types.toml, finding 02 "Stable machine type numbers"): a machine's type is its number in that
@@ -236,44 +236,44 @@ default = 0
 [[section]]
 name = "mf_list_stock"
 region = "cf.expansion"
-from = { anchor = "cf.machines.tab.list", len = "(image.u8(cf.machines.dispatch + 1) + 1) * 4" }
+from = { anchor = "cf.machine.data.list.table", len = "(image.u8(cf.machine.fn.dispatch + 1) + 1) * 4" }
 
 # name table: {long, short, header hint} per type
 [[section]]
 name = "mf_names"
 region = "cf.expansion"
-from = { anchor = "cf.machines.tab.names", len = "(image.u8(cf.machines.dispatch + 1) + 1) * 12" }
-append = { registry = "machines", row = ["$name", "$short", "image.u32(cf.machines.tab.names + 12 * $clone_of + 8)"] }
+from = { anchor = "cf.machine.data.name.table", len = "(image.u8(cf.machine.fn.dispatch + 1) + 1) * 12" }
+append = { registry = "machines", row = ["$name", "$short", "image.u32(cf.machine.data.name.table + 12 * $clone_of + 8)"] }
 
 # permission mask per type
 [[section]]
 name = "mf_permit"
 region = "cf.expansion"
-from = { anchor = "cf.machines.tab.permit", len = "(image.u8(cf.machines.dispatch + 1) + 1) * 4" }
-append = { registry = "machines", row = ["image.u32(cf.machines.tab.permit + 4 * $clone_of)"] }
+from = { anchor = "cf.machine.data.permit.table", len = "(image.u8(cf.machine.fn.dispatch + 1) + 1) * 4" }
+append = { registry = "machines", row = ["image.u32(cf.machine.data.permit.table + 4 * $clone_of)"] }
 
 # one byte per type (Digitakt II only)
 [[section]]
 name = "mf_pertype"
 region = "cf.expansion"
 devices = ["dt2"]
-from = { anchor = "cf.machines.tab.pertype", len = "(image.u8(cf.machines.dispatch + 1) + 1)" }
-append = { registry = "machines", row = ["u8:image.u8(cf.machines.tab.pertype + $clone_of)"] }
+from = { anchor = "cf.machine.data.pertype.table", len = "(image.u8(cf.machine.fn.dispatch + 1) + 1)" }
+append = { registry = "machines", row = ["u8:image.u8(cf.machine.data.pertype.table + $clone_of)"] }
 
 # the type -> selector word table of the DSP's sample renderer chooser (Digitakt II only)
 [[section]]
 name = "mf_selector"
 region = "dsp.l2"
 devices = ["dt2"]
-from = { anchor = "dsp.machines.selector_data", len = "(image.u8(cf.machines.dispatch + 1) + 1) * 4" }
-append = { registry = "machines", row = ["image.u32(dsp.machines.selector_data + 4 * $clone_of)"] }
+from = { anchor = "dsp.machine.data.selector.table", len = "(image.u8(cf.machine.fn.dispatch + 1) + 1) * 4" }
+append = { registry = "machines", row = ["image.u32(dsp.machine.data.selector.table + 4 * $clone_of)"] }
 
 # the type reader of the Digitone II, copied: its callers that want the real type call this copy
 [[section]]
 name = "mf_reader_real"
 region = "cf.expansion"
 devices = ["dn2"]
-from = { anchor = "cf.machines.reader_fn", len = 48 }
+from = { anchor = "cf.machine.fn.type_reader", len = 48 }
 
 # ---- code -----------------------------------------------------------------------------------------------------------
 
@@ -289,27 +289,27 @@ _mf_count = "machines.count"
 _mf_entries = "machines.entries"
 _mf_rows = "machines.rows"
 _mf_list_stock = "mf_list_stock"
-_mf_t_dispatch = "hook.cf.machines.dispatch.tail"
-_mf_t_list = "hook.cf.machines.list_entry.tail"
-_mf_t_rank = "hook.cf.machines.rank.tail"
-_mf_t_typearg = "hook.cf.machines.typearg.0.tail"
-_mf_x_typearg = "cf.machines.typearg.exit"
-_mf_t_clone5 = "hook.cf.machines.clone.5.tail"
-_mf_c0 = "cf.machines.clone.0"
-_mf_c0a = "cf.machines.clone.0.alt"
-_mf_c1 = "cf.machines.clone.1"
-_mf_c1a = "cf.machines.clone.1.alt"
-_mf_c2 = "cf.machines.clone.2"
-_mf_c2a = "cf.machines.clone.2.alt"
-_mf_c3 = "cf.machines.clone.3"
-_mf_c3a = "cf.machines.clone.3.alt"
-_mf_c4 = "cf.machines.clone.4"
-_mf_c4a = "cf.machines.clone.4.alt"
-_mf_c6 = "cf.machines.clone.6"
-_mf_c6a = "cf.machines.clone.6.alt"
-_mf_sp = "cf.machines.srcpage"
-_mf_spa = "cf.machines.srcpage.alt"
-_mf_spt = "cf.machines.srcpage.type"
+_mf_t_dispatch = "hook.cf.machine.fn.dispatch.tail"
+_mf_t_list = "hook.cf.machine.fn.list.entry.tail"
+_mf_t_rank = "hook.cf.machine.site.list_rank_insert.tail"
+_mf_t_typearg = "hook.cf.machine.site.param_code.args.tail"
+_mf_x_typearg = "cf.machine.site.param_code.exit"
+_mf_t_clone5 = "hook.cf.machine.site.clone.5.tail"
+_mf_c0 = "cf.machine.site.clone.0"
+_mf_c0a = "cf.machine.site.clone.0.alt"
+_mf_c1 = "cf.machine.site.clone.1"
+_mf_c1a = "cf.machine.site.clone.1.alt"
+_mf_c2 = "cf.machine.site.clone.2"
+_mf_c2a = "cf.machine.site.clone.2.alt"
+_mf_c3 = "cf.machine.site.clone.3"
+_mf_c3a = "cf.machine.site.clone.3.alt"
+_mf_c4 = "cf.machine.site.clone.4"
+_mf_c4a = "cf.machine.site.clone.4.alt"
+_mf_c6 = "cf.machine.site.clone.6"
+_mf_c6a = "cf.machine.site.clone.6.alt"
+_mf_sp = "cf.machine.site.srcpage"
+_mf_spa = "cf.machine.site.srcpage.alt"
+_mf_spt = "cf.machine.fn.current_track_type"
 
 [[object]]
 path = "build/machines-dn2.dko.json"
@@ -323,24 +323,24 @@ _mf_count = "machines.count"
 _mf_entries = "machines.entries"
 _mf_rows = "machines.rows"
 _mf_list_stock = "mf_list_stock"
-_mf_t_dispatch = "hook.cf.machines.dispatch.tail"
-_mf_t_list = "hook.cf.machines.list_entry.tail"
-_mf_t_group = "hook.cf.machines.group.tail"
-_mf_t_typemap0 = "hook.cf.machines.typemap.0.tail"
-_mf_t_typemap1 = "hook.cf.machines.typemap.1.tail"
-_mf_t_typemap2 = "hook.cf.machines.typemap.2.tail"
-_mf_ft = "cf.machines.frametype"
-_mf_rd = "cf.machines.reader"
-_mf_ow = "cf.machines.owner"
-_mf_rc0 = "cf.machines.reader_call.0"
-_mf_rc1 = "cf.machines.reader_call.1"
-_mf_rc2 = "cf.machines.reader_call.2"
-_mf_rc3 = "cf.machines.reader_call.3"
-_mf_rc4 = "cf.machines.reader_call.4"
-_mf_rc5 = "cf.machines.reader_call.5"
-_mf_rc6 = "cf.machines.reader_call.6"
-_mf_rc7 = "cf.machines.reader_call.7"
-_mf_rc8 = "cf.machines.reader_call.8"
+_mf_t_dispatch = "hook.cf.machine.fn.dispatch.tail"
+_mf_t_list = "hook.cf.machine.fn.list.entry.tail"
+_mf_t_group = "hook.cf.machine.site.group.tail"
+_mf_t_typemap0 = "hook.cf.machine.fn.type_page.count.tail"
+_mf_t_typemap1 = "hook.cf.machine.site.type_page.desc.tail"
+_mf_t_typemap2 = "hook.cf.machine.site.param_code.map.tail"
+_mf_ft = "cf.machine.site.frametype"
+_mf_rd = "cf.machine.site.type_reader.load"
+_mf_ow = "cf.machine.site.owner_type_load"
+_mf_rc0 = "cf.machine.site.type_reader.call.0"
+_mf_rc1 = "cf.machine.site.type_reader.call.1"
+_mf_rc2 = "cf.machine.site.type_reader.call.2"
+_mf_rc3 = "cf.machine.site.type_reader.call.3"
+_mf_rc4 = "cf.machine.site.type_reader.call.4"
+_mf_rc5 = "cf.machine.site.type_reader.call.5"
+_mf_rc6 = "cf.machine.site.type_reader.call.6"
+_mf_rc7 = "cf.machine.site.type_reader.call.7"
+_mf_rc8 = "cf.machine.site.type_reader.call.8"
 _mf_pgrows = "pages.rows"
 _mf_pgn = "pages.count"
 
@@ -351,7 +351,7 @@ _mf_pgn = "pages.count"
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.dispatch"
+anchor = "cf.machine.fn.dispatch"
 offset = 0
 to = "mf_dispatch"
 displaced = "run"
@@ -360,7 +360,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.dispatch"
+anchor = "cf.machine.fn.dispatch"
 offset = 0
 to = "mf_dispatch"
 displaced = "run"
@@ -371,7 +371,7 @@ devices = ["dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.list_entry"
+anchor = "cf.machine.fn.list.entry"
 offset = 0
 to = "mf_list_entry"
 displaced = "run"
@@ -380,7 +380,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.list_entry"
+anchor = "cf.machine.fn.list.entry"
 offset = 0
 to = "mf_list_entry"
 displaced = "run"
@@ -388,7 +388,7 @@ devices = ["dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.list_alloc"
+anchor = "cf.machine.site.list.alloc"
 offset = 0x2
 value = "(machines.first + machines.entries) * 4"
 width = 2
@@ -396,7 +396,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.list"
+anchor = "cf.machine.site.list.operands"
 offset = 0x8
 value = "(machines.first + machines.entries) * 4"
 width = 2
@@ -404,7 +404,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.list"
+anchor = "cf.machine.site.list.operands"
 offset = 0x2
 value = "mf_list_buf + (machines.first + machines.entries) * 4"
 width = 4
@@ -412,7 +412,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.list"
+anchor = "cf.machine.site.list.operands"
 offset = 0xc
 value = "mf_list_buf"
 width = 4
@@ -423,7 +423,7 @@ devices = ["dt2", "dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.rank"
+anchor = "cf.machine.site.list_rank_insert"
 offset = 0
 to = "mf_rank"
 displaced = "run"
@@ -433,7 +433,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.group"
+anchor = "cf.machine.site.group"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -441,7 +441,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.group"
+anchor = "cf.machine.site.group"
 offset = 0x4
 value = "0x65"
 width = 1
@@ -450,7 +450,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.group"
+anchor = "cf.machine.site.group"
 offset = 0
 to = "mf_group"
 displaced = "run"
@@ -460,7 +460,7 @@ devices = ["dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.name.0"
+anchor = "cf.machine.fn.name.long"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -468,7 +468,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.name.0"
+anchor = "cf.machine.fn.name.long"
 offset = 0x12
 value = "mf_names + 0"
 width = 4
@@ -476,7 +476,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.name.1"
+anchor = "cf.machine.site.name.short"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -484,7 +484,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.name.1"
+anchor = "cf.machine.site.name.short"
 offset = 0x14
 value = "mf_names + 4"
 width = 4
@@ -492,7 +492,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.name.2"
+anchor = "cf.machine.site.name.hint"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -500,7 +500,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.name.2"
+anchor = "cf.machine.site.name.hint"
 offset = 0x14
 value = "mf_names + 8"
 width = 4
@@ -510,7 +510,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.permit"
+anchor = "cf.machine.fn.permit"
 offset = 0x3
 value = "machines.first + machines.count - 1"
 width = 1
@@ -518,7 +518,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.permit"
+anchor = "cf.machine.fn.permit"
 offset = 0x1a
 value = "mf_permit"
 width = 4
@@ -528,9 +528,9 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.persist"
+anchor = "cf.machine.site.sound_load_type_bound"
 offset = 0x1
-value = "image.u8(cf.machines.persist + 1) + machines.count"
+value = "image.u8(cf.machine.site.sound_load_type_bound + 1) + machines.count"
 width = 1
 devices = ["dt2", "dn2"]
 
@@ -538,7 +538,7 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.0"
+anchor = "cf.machine.site.pertype.0"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -546,7 +546,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.0"
+anchor = "cf.machine.site.pertype.0"
 offset = 0x8
 value = "mf_pertype"
 width = 4
@@ -554,7 +554,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.1"
+anchor = "cf.machine.site.pertype.1"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -562,7 +562,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.1"
+anchor = "cf.machine.site.pertype.1"
 offset = 0xc
 value = "mf_pertype"
 width = 4
@@ -570,7 +570,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.2"
+anchor = "cf.machine.site.pertype.2"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -578,7 +578,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.2"
+anchor = "cf.machine.site.pertype.2"
 offset = 0xc
 value = "mf_pertype"
 width = 4
@@ -586,7 +586,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.3"
+anchor = "cf.machine.site.pertype.3"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -594,7 +594,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.3"
+anchor = "cf.machine.site.pertype.3"
 offset = 0x10
 value = "mf_pertype"
 width = 4
@@ -602,7 +602,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.4"
+anchor = "cf.machine.site.pertype.4"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -610,7 +610,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.4"
+anchor = "cf.machine.site.pertype.4"
 offset = 0x8
 value = "mf_pertype"
 width = 4
@@ -618,7 +618,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.5"
+anchor = "cf.machine.site.pertype.5"
 offset = 0x1
 value = "machines.first + machines.count - 1"
 width = 1
@@ -626,7 +626,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.pertype.5"
+anchor = "cf.machine.site.pertype.5"
 offset = 0x22
 value = "mf_pertype"
 width = 4
@@ -637,7 +637,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.clone.0"
+anchor = "cf.machine.site.clone.0"
 offset = 0
 to = "mf_clone0"
 displaced = "drop"
@@ -646,7 +646,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.clone.1"
+anchor = "cf.machine.site.clone.1"
 offset = 0
 to = "mf_clone1"
 displaced = "drop"
@@ -655,7 +655,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.clone.2"
+anchor = "cf.machine.site.clone.2"
 offset = 0
 to = "mf_clone2"
 displaced = "drop"
@@ -664,7 +664,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.clone.3"
+anchor = "cf.machine.site.clone.3"
 offset = 0
 to = "mf_clone3"
 displaced = "drop"
@@ -673,7 +673,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.clone.4"
+anchor = "cf.machine.site.clone.4"
 offset = 0
 to = "mf_clone4"
 displaced = "drop"
@@ -682,7 +682,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.clone.5"
+anchor = "cf.machine.site.clone.5"
 offset = 0
 to = "mf_clone5"
 displaced = "run"
@@ -691,7 +691,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.clone.6"
+anchor = "cf.machine.site.clone.6"
 offset = 0
 to = "mf_clone6"
 displaced = "drop"
@@ -702,7 +702,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.typearg.0"
+anchor = "cf.machine.site.param_code.args"
 offset = 0
 to = "mf_typearg"
 displaced = "run"
@@ -713,7 +713,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.srcpage"
+anchor = "cf.machine.site.srcpage"
 offset = 0
 to = "mf_srcpage"
 displaced = "drop"
@@ -723,7 +723,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "dsp.machines.selector_table"
+anchor = "dsp.machine.value.selector.table_ref"
 offset = 2
 value = "(mf_selector >> 16) & 0xffff"
 width = 2
@@ -731,7 +731,7 @@ devices = ["dt2"]
 
 [[op]]
 op = "write"
-anchor = "dsp.machines.selector_table"
+anchor = "dsp.machine.value.selector.table_ref"
 offset = 4
 value = "mf_selector & 0xffff"
 width = 2
@@ -742,7 +742,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.typemap.0"
+anchor = "cf.machine.fn.type_page.count"
 offset = 0
 to = "mf_typemap0"
 displaced = "run"
@@ -751,7 +751,7 @@ devices = ["dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.typemap.1"
+anchor = "cf.machine.site.type_page.desc"
 offset = 0
 to = "mf_typemap1"
 displaced = "run"
@@ -760,7 +760,7 @@ devices = ["dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.typemap.2"
+anchor = "cf.machine.site.param_code.map"
 offset = 0
 to = "mf_typemap2"
 displaced = "run"
@@ -769,7 +769,7 @@ devices = ["dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.frametype"
+anchor = "cf.machine.site.frametype"
 offset = 0
 to = "mf_frametype"
 displaced = "drop"
@@ -778,7 +778,7 @@ devices = ["dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.reader"
+anchor = "cf.machine.site.type_reader.load"
 offset = 0
 to = "mf_reader"
 displaced = "drop"
@@ -787,7 +787,7 @@ devices = ["dn2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.machines.owner"
+anchor = "cf.machine.site.owner_type_load"
 offset = 0
 to = "mf_owner"
 displaced = "drop"
@@ -795,7 +795,7 @@ devices = ["dn2"]
 
 [[op]]
 op = "write"
-anchor = "cf.machines.reader_tail"
+anchor = "cf.machine.site.type_reader.tail_jump"
 offset = 0x2
 value = "mf_reader_real"
 width = 4

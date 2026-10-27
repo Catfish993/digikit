@@ -6,6 +6,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* cf.test.fn.demo_kit_setter: no sig yet */
+/* cf.test.fn.kit_vfunc_12: no sig yet */
 
 #endif

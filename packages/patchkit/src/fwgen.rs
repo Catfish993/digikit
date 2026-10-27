@@ -15,7 +15,7 @@ pub const OUT_DIR: &str = "modules/core/fw";
 /// The generated Rust crate source, relative to the repository root.
 pub const RUST_OUT: &str = "modules/core/fw/rs/src/lib.rs";
 /// Whether a `sig` may return a pointer. Allowed since the static check of 2026-10-27 [D]: our m68k-elf gcc and the Rust backend
-/// read a returned pointer from d0, and operator new, `cf.view.fn.brain` and `cf.view.fn.mgr_of` set d0 (DT2 1.17; operator new on
+/// read a returned pointer from d0, and operator new, `cf.view.fn.brain.instance` and `cf.view.fn.brain.view_manager` set d0 (DT2 1.17; operator new on
 /// DN2 1.12 too).
 pub const POINTER_RETURNS_ALLOWED: bool = true;
 

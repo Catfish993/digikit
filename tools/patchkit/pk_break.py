@@ -34,8 +34,8 @@ from tools.patchkit import modroots, patchkit  # noqa: E402
 BREAKS = {
     "persist": (
         "modules/core/machines/module.toml",
-        'value = "image.u8(cf.machines.persist + 1) + machines.count"',
-        'value = "image.u8(cf.machines.persist + 1)"',
+        'value = "image.u8(cf.machine.site.sound_load_type_bound + 1) + machines.count"',
+        'value = "image.u8(cf.machine.site.sound_load_type_bound + 1)"',
     ),
     "rows": (
         "tests/fixtures/modules/patched-pluck/module.toml",

@@ -1,7 +1,7 @@
 # link: the ColdFire side of the DSP link: block interrupt, frame call, records
 # Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
 
-# The block interrupt handler (vector 191), found by the hashes of core/dsp-link. `health.rec_lit` is the literal of its first `pea`
+# The block interrupt handler (vector 191), found by the hashes of core/dsp-link. `cf.link.site.reply_copy_lit` is the literal of its first `pea`
 # (the address of the record copy: the DSP's last reply, 0xabc bytes; its first word is the DSP's cycle count).
 [[fn]]
 name = "cf.link.fn.block_isr"
@@ -21,14 +21,28 @@ rule.dn2 = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset
 mark = "D"
 users = ["core/dsp-link"]
 
+# The firmware's own DSP block counter (finding 37, "Safe mode after the first UI pass"): the tail of the block interrupt handler (vector 191,
+# the function core/dsp-link and core/health find by these hashes) adds the block to its clocks with `addq.l #1,<counter>` and nothing else
+# touches the word, so it counts blocks (1500 per second) from boot. The anchor is the 4-byte address literal of that instruction
+# (`52b9 <lit>`): offset 0x1654 in the Digitakt II function, 0x1d4e in the Digitone II one, the same in both versions of each.
+[[site]]
+name = "cf.link.site.block_isr.counter_lit"
+aliases = ["cf.storage.site.block_counter_lit", "dkrt.fw.block_counter_lit"]
+bind = "static"
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x1654, len = 4 }
+rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x1d4e, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+
 # ColdFire anchors. The block-frame sender is an interrupt handler (finding 04: vector 191; DT2 vector_191_handler, DN2 the
 # handler at 0x40025e36 in 1.11 and 1.12). It calls the stock driver with `jsr abs.l` at 104 bytes into the handler, in all
 # four images; the driver is found by its masked hash, and the literal `lea <tx queue>,a0` inside it gives the queue's address.
 # Digitakt II:
 # Digitone II:
 [[site]]
-name = "cf.link.site.frame_call"
-aliases = ["dl.cf.frame_call"]
+name = "cf.link.site.block_isr.frame_call"
+aliases = ["cf.link.site.frame_call", "dl.cf.frame_call"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x68, len = 6 }
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x68, len = 6 }
@@ -36,10 +50,10 @@ mark = "D"
 users = ["core/dsp-link"]
 
 # The literal of the handler's first `pea`: the address of the record copy (the DSP's last reply). dl_diag reads the diagnostic
-# words there; the same site as core/health's health.rec_lit.
+# words there; the same site core/health reads.
 [[site]]
-name = "cf.link.site.rec_lit"
-aliases = ["dl.cf.rec_lit", "health.rec_lit"]
+name = "cf.link.site.reply_copy_lit"
+aliases = ["cf.link.site.rec_lit", "dl.cf.rec_lit", "health.rec_lit"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x56, len = 4 }
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x56, len = 4 }
@@ -47,8 +61,8 @@ mark = "D"
 users = ["core/dsp-link", "core/health"]
 
 [[site]]
-name = "cf.link.site.tx_lit"
-aliases = ["dl.cf.tx_lit"]
+name = "cf.link.site.tx_queue_lit"
+aliases = ["cf.link.site.tx_lit", "dl.cf.tx_lit"]
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "c7fa95828acc6073c8bac3dcd78b465f", offset = 0x6c, len = 4 }
 rule.dn2 = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset = 0x92, len = 4 }

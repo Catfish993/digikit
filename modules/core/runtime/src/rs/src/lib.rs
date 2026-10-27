@@ -178,7 +178,7 @@ unsafe fn word_at_literal(lit: *const u32) -> Option<u32> {
 /// The firmware's DSP block counter (1500 per second, from boot; wraps), `None` when the anchor does not point at a DDR word.
 /// `BLOCK_COUNTER_LIT` is the 4-byte address literal in the firmware's code, whose value is the address of the word.
 pub unsafe fn fw_blocks() -> Option<u32> {
-    word_at_literal(addr_of!(dkfw::storage::BLOCK_COUNTER_LIT) as *const u32)
+    word_at_literal(addr_of!(dkfw::link::BLOCK_ISR_COUNTER_LIT) as *const u32)
 }
 
 /// Bytes the firmware has handed to the USB stack for MIDI and not yet sent (0 when the host reads), `None` as for `fw_blocks`.
@@ -543,7 +543,7 @@ pub static mut DKRT_HEALTH: DkrtHealth = unsafe { core::mem::zeroed() };
 #[no_mangle]
 pub static mut DKRT_POLL: usize = 0;
 
-/// DSP blocks counted since boot (1500 per second; wraps): the firmware's own counter (anchor `dkrt.fw.block_counter_lit`), so a clock for
+/// DSP blocks counted since boot (1500 per second; wraps): the firmware's own counter (anchor `cf.link.site.block_isr.counter_lit`), so a clock for
 /// a UI that refreshes at a bounded rate and for the stable period of safe mode. 0 when the anchor does not point at a counter and the
 /// image has no `core/health` (whose own count is the fallback). Any task; reads one word.
 #[no_mangle]

@@ -8,7 +8,7 @@
  * tick, then continues in the stock pop as if it had been called directly: the stack is as the caller left it.
  * d0/d1/a0/a1 are the registers the C ABI lets dkrt_tick clobber; the loop has nothing live in them at this call (it
  * has just pushed the argument, and the result comes back in d0). d2-d7/a2-a6 are preserved by the C function.
- * fw_queue_pop is the stock function (anchor dkrt.fw.queue_pop).
+ * fw_queue_pop is the stock function (anchor cf.rtos.fn.queue_pop).
  */
     .include "device.inc"
     .equ MCF5441X_UART_USR_OFF, 4       /* UART status register, offset from the UART base; bit 3 is TXEMP (transmitter empty) */

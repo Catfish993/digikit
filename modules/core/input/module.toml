@@ -28,10 +28,10 @@ sources = ["src/cf/input.c"]
 place = "cf.expansion"
 
 [object.externs]
-input_fw_key = "input.fw.key_decoder"
-input_fw_turn = "input.fw.enc_decoder"
-input_mask_lit = "input.fw.key_mask_lit"
-input_queue_lit = "dkrt.ui.queue_lit"
+input_fw_key = "cf.input.fn.key_decoder"
+input_fw_turn = "cf.input.fn.enc_decoder"
+input_mask_lit = "cf.input.site.key_decoder.prev_mask_lit"
+input_queue_lit = "cf.view.site.ui_loop.queue_lit"
 
 [[object]]
 path = "build/device-dt2.dko.json"

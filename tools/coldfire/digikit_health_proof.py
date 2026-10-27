@@ -292,9 +292,9 @@ class HealthProof:
             (ROOT / "devices" / "ports" / f"{self.image}.toml").read_text()
         )
         for a in port["anchor"]:
-            if a["name"] == "health.heap.desc_lit":
+            if a["name"] == "cf.mem.site.heap.desc_lit":
                 return self.w(a["addr"])
-        raise KeyError("health.heap.desc_lit")
+        raise KeyError("cf.mem.site.heap.desc_lit")
 
     # ---- scenarios
     def setup(self) -> None:
@@ -315,7 +315,7 @@ class HealthProof:
     def sites_check(self) -> None:
         """An image patched without core/health leaves the boot thread's last call and the block handler's entry as the firmware has them
         (no write of the patch plan touches them); the image with it patches exactly those two sites, for core/health."""
-        sites = {"health.hook.idle": 6, "health.hook.block": 8}
+        sites = {"cf.rtos.site.idle": 6, "cf.link.fn.block_isr": 8}
         without = self.env.build_image(f"{RT},core/digikit-menu", "nohealth")
         plan0, plan1 = without.plan, self.img.plan
 
@@ -430,7 +430,9 @@ class HealthProof:
             (ROOT / "devices" / "ports" / f"{self.image}.toml").read_text()
         )
         rec_lit = next(
-            a["addr"] for a in port["anchor"] if a["name"] == "health.rec_lit"
+            a["addr"]
+            for a in port["anchor"]
+            if a["name"] == "cf.link.site.reply_copy_lit"
         )
         rec = self.w(rec_lit)
         direct = [self.w(rec) for _ in range(4)]

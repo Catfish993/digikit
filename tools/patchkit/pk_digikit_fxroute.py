@@ -48,7 +48,7 @@ AMOUNT = 40  # the amount the scenario turns to: the display says `Send=40`
 CLASSES = {
     "dt2": 0x4293C040,
     "dn2": 0x4243425C,
-}  # the second per-code table (value-class objects of 0x44 bytes; the accessor of core/params' anchor cf.params.t2)
+}  # the second per-code table (value-class objects of 0x44 bytes; the accessor of core/params' anchor cf.param.fn.value_class)
 
 
 def route_key(name: str) -> bytes:

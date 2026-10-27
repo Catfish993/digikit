@@ -6,8 +6,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* cf.param.fn.t2: no sig yet */
-extern const uint8_t dk_fw_param_master_sidechain_filter __asm__("cf.param.data.master_sidechain_filter");
-extern const uint8_t dk_fw_param_t1 __asm__("cf.param.data.t1");
+/* cf.param.fn.value_class: no sig yet */
+extern const uint8_t dk_fw_param_descriptor_table __asm__("cf.param.data.descriptor_table");
+extern const uint8_t dk_fw_param_descriptor_table_master_sidechain_filter __asm__("cf.param.data.descriptor_table.master_sidechain_filter");
 
 #endif

@@ -48,10 +48,10 @@ sources = ["src/cf/tramp.s"]
 place = "cf.expansion"
 
 [object.externs]
-fw_queue_pop = "dkrt.fw.queue_pop"
-dkrt_boot_next = "hook.dkrt.hook.boot.tail"
-dkrt_midi_next = "hook.dkrt.hook.midi_rx.tail"
-dkrt_midi_ret = "hook.dkrt.hook.midi_rx.return"
+fw_queue_pop = "cf.rtos.fn.queue_pop"
+dkrt_boot_next = "hook.cf.rtos.site.main_os_task.tail"
+dkrt_midi_next = "hook.cf.midi.site.rx.tail"
+dkrt_midi_ret = "hook.cf.midi.site.rx.return"
 
 [[object]]
 path = "build/device-dt2.dko.json"
@@ -70,11 +70,11 @@ devices = ["dn2"]
 # continues in the stock pop.
 [[op]]
 op = "retarget"
-anchor = "dkrt.hook.ui_loop"
+anchor = "cf.view.site.ui_loop"
 to = "dkrt_loop_hook"
 
 [[claim]]
-resource = "dkrt.hook.ui_loop"
+resource = "cf.view.site.ui_loop"
 
 # Boot-time loading (finding 37): the entry of the main-OS task jumps to the boot hook, which reads the selection record and loads
 # the selected modules (src/cf/tramp.s dkrt_boot_hook), then runs the displaced prologue and continues in the task. That is before the
@@ -83,12 +83,12 @@ resource = "dkrt.hook.ui_loop"
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "dkrt.hook.boot"
+anchor = "cf.rtos.site.main_os_task"
 offset = 0
 to = "dkrt_boot_hook"
 
 [[claim]]
-resource = "dkrt.hook.boot"
+resource = "cf.rtos.site.main_os_task"
 
 # Module upload (docs/design/digikit-upload.md): the MIDI task's dispatch of a gathered USB (cable 0) SysEx message. The two displaced
 # instructions `movea.l (0,A2,D1*4),A0; jsr (A0)` call the router with (msg, len, source) already pushed. The hook runs the runtime's
@@ -97,10 +97,10 @@ resource = "dkrt.hook.boot"
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "dkrt.hook.midi_rx"
+anchor = "cf.midi.site.rx"
 offset = 0
 displaced = "run"
 to = "dkrt_midi_hook"
 
 [[claim]]
-resource = "dkrt.hook.midi_rx"
+resource = "cf.midi.site.rx"

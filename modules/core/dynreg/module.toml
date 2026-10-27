@@ -88,12 +88,12 @@ _dr_pg_rows = "pages.rows"
 _dr_pg_row_size = "pages.row_size"
 _dr_pg_first = "pages.first"
 _dr_pg_dyn0 = "pages.dpg0.index"
-_dr_t_copy = "cf.dynreg.list_copy"
+_dr_t_copy = "cf.machine.site.list.copy"
 
 # the copy at the end of the machine list getter: `jsr copy(begin, end, dest)`, result in d0 = the end of the copy
 [[op]]
 op = "retarget"
-anchor = "cf.dynreg.list_copy"
+anchor = "cf.machine.site.list.copy"
 to = "dynreg_copy"
 devices = ["dt2"]
 
@@ -102,14 +102,14 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.dynreg.list_copy"
+anchor = "cf.machine.site.list.copy"
 offset = 0
 to = "dynreg_list_hook"
 displaced = "drop"
 devices = ["dn2"]
 
 [[claim]]
-resource = "cf.dynreg.list_copy"
+resource = "cf.machine.site.list.copy"
 
 # ---- reserved rows -------------------------------------------------------------------------------------------------------
 

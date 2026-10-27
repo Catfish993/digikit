@@ -16,7 +16,9 @@ class DspScoreTest(unittest.TestCase):
 
     def test_weak_pair_and_anchored(self) -> None:
         self.assertAlmostEqual(sc.dsp_score(0, "shape", ["near"], []), 0)
-        self.assertAlmostEqual(sc.dsp_score(0, None, ["anchor"], ["dsp.fx.send"]), -3)
+        self.assertAlmostEqual(
+            sc.dsp_score(0, None, ["anchor"], ["dsp.fx.fn.send"]), -3
+        )
 
 
 class AnchorSwTest(unittest.TestCase):

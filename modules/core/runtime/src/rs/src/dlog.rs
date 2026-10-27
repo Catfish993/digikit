@@ -353,8 +353,8 @@ pub unsafe fn tick() {
 /// Nothing is written; with the debug log off the reads still happen but no event is kept.
 unsafe fn watch_tracks(w: &mut Watch) {
     // `Project *f(void)`, `Kit *f(Project *)` (the active kit), `int f(Kit *, int track)` (-1: no such track); read-only.
-    let project = dkfw::project::get;
-    let kit_of = dkfw::project::kit_of;
+    let project = dkfw::project::singleton;
+    let kit_of = dkfw::project::active_kit;
     let track_type = dkfw::project::track_type;
     if !debug_on() {
         return;

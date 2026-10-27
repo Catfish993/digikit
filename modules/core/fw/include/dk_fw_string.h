@@ -23,10 +23,10 @@ _Static_assert(sizeof(std_function) == 0x10, "std_function size");
 _Static_assert(offsetof(std_function, manager) == 0x8, "std_function.manager offset");
 _Static_assert(offsetof(std_function, invoker) == 0xc, "std_function.invoker offset");
 
-void dk_fw_string_ctor(uint32_t *s, const char *cstr, const uint8_t *alloc) __asm__("cf.string.fn.ctor");
-void dk_fw_string_dtor(uint32_t *s) __asm__("cf.string.fn.dtor");
-/* cf.string.fn.make_sp: no sig yet */
-void dk_fw_string_sp_move(shared_ptr *dst, shared_ptr *src) __asm__("cf.string.fn.sp_move");
-void dk_fw_string_sp_release(uint32_t *ctl) __asm__("cf.string.fn.sp_release");
+/* cf.string.fn.shared_ptr.make: no sig yet */
+void dk_fw_string_shared_ptr_move(shared_ptr *dst, shared_ptr *src) __asm__("cf.string.fn.shared_ptr.move");
+void dk_fw_string_shared_ptr_release(uint32_t *ctl) __asm__("cf.string.fn.shared_ptr.release");
+void dk_fw_string_std_string_ctor(uint32_t *s, const char *cstr, const uint8_t *alloc) __asm__("cf.string.fn.std_string.ctor");
+void dk_fw_string_std_string_dtor(uint32_t *s) __asm__("cf.string.fn.std_string.dtor");
 
 #endif

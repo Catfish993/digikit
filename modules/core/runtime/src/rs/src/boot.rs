@@ -233,7 +233,7 @@ unsafe fn update(mut r: Record, current_copy: u32, valid: bool) -> i32 {
 /// shortly after reset; whether they are queued yet at this point is untested on a device **[O]**.)
 unsafe fn key_held() -> bool {
     // `UI_QUEUE_LIT`: the 4-byte literal `pea <ui queue>` of the UI loop.
-    let lit = core::hint::black_box(&raw const dkfw::view::UI_QUEUE_LIT as usize) as u32;
+    let lit = core::hint::black_box(&raw const dkfw::view::UI_LOOP_QUEUE_LIT as usize) as u32;
     if lit == 0 {
         return false;
     }

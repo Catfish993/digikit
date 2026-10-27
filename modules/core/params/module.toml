@@ -26,7 +26,7 @@ conflicts = []
 #
 # The code of a parameter is `params.first + k` (symbol params.<id>.index); a machine's fields name it. Finding 02,
 # "core.params": the table is copied at patch time from the image (nothing of the firmware is stored here), the
-# references and bounds are anchors (cf.params.ref.N, cf.params.bound.N) found by tools/patchkit/port_resolve.py.
+# references and bounds are anchors (cf.param.sites.descriptor_table.ref.N, cf.param.sites.descriptor_table.bound.N) found by tools/patchkit/port_resolve.py.
 # Digitone II: the same, with the slot = the sound-array slot itself (25 .. 64; a slot a machine's pages map with the
 # `pages` registry of core/machines), template a stock code of the 321 rows (e.g. 0xd5, A Env Decay: a plain 0 .. 127
 # word), and the table is 321 rows.
@@ -40,7 +40,7 @@ conflicts = []
 [[registry]]
 name = "params"
 devices = ["dt2"]
-first = "image.u32(cf.params.t2 + 6)"      # the immediate of `cmpi.l #count,D0` in the accessor: the stock row count
+first = "image.u32(cf.param.fn.value_class + 6)"      # the immediate of `cmpi.l #count,D0` in the accessor: the stock row count
 max = 64
 region = "cf.expansion"
 
@@ -71,7 +71,7 @@ kind = "u32"
 [[registry]]
 name = "params"
 devices = ["dn2"]
-first = "image.u32(cf.params.t2 + 6)"      # the immediate of `cmpi.l #count,D0` in the accessor: the stock row count
+first = "image.u32(cf.param.fn.value_class + 6)"      # the immediate of `cmpi.l #count,D0` in the accessor: the stock row count
 max = 64
 region = "cf.expansion"
 
@@ -105,23 +105,23 @@ kind = "u32"
 name = "pf_table"
 region = "cf.expansion"
 devices = ["dt2"]
-from = { anchor = "cf.params.t1", len = "image.u32(cf.params.t2 + 6) * 60" }
+from = { anchor = "cf.param.data.descriptor_table", len = "image.u32(cf.param.fn.value_class + 6) * 60" }
 append = { registry = "params", row = [
-  "image.u32(cf.params.t1 + 60 * $template + 0x00)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x00)",
   "25 + $slot + ($slot >> 2) * 2",
   "$min",
   "$max",
   "$default",
-  "image.u32(cf.params.t1 + 60 * $template + 0x14)",
-  "(0x10 + $slot + ((($slot + 1) >> 2) & 1) * (1 - ($slot >> 2)) * 0xffec) << 16 | (image.u32(cf.params.t1 + 60 * $template + 0x18) & 0xffff)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x14)",
+  "(0x10 + $slot + ((($slot + 1) >> 2) & 1) * (1 - ($slot >> 2)) * 0xffec) << 16 | (image.u32(cf.param.data.descriptor_table + 60 * $template + 0x18) & 0xffff)",
   "0x80 + $slot",
-  "image.u32(cf.params.t1 + 60 * $template + 0x20)",
-  "image.u32(cf.params.t1 + 60 * $template + 0x24)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x20)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x24)",
   "$name",
-  "image.u32(cf.params.t1 + 60 * $template + 0x2c)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x2c)",
   "$short",
-  "image.u32(cf.params.t1 + 60 * $template + 0x34)",
-  "image.u32(cf.params.t1 + 60 * $template + 0x38)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x34)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x38)",
 ] }
 
 # Digitone II: the same 60-byte rows; the slot is the sound-array slot itself (25 .. 64) and the template supplies the
@@ -130,23 +130,23 @@ append = { registry = "params", row = [
 name = "pf_table"
 region = "cf.expansion"
 devices = ["dn2"]
-from = { anchor = "cf.params.t1", len = "image.u32(cf.params.t2 + 6) * 60" }
+from = { anchor = "cf.param.data.descriptor_table", len = "image.u32(cf.param.fn.value_class + 6) * 60" }
 append = { registry = "params", row = [
-  "image.u32(cf.params.t1 + 60 * $template + 0x00)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x00)",
   "$slot",
   "$min",
   "$max",
   "$default",
-  "image.u32(cf.params.t1 + 60 * $template + 0x14)",
-  "image.u32(cf.params.t1 + 60 * $template + 0x18)",
-  "image.u32(cf.params.t1 + 60 * $template + 0x1c)",
-  "image.u32(cf.params.t1 + 60 * $template + 0x20)",
-  "image.u32(cf.params.t1 + 60 * $template + 0x24)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x14)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x18)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x1c)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x20)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x24)",
   "$name",
-  "image.u32(cf.params.t1 + 60 * $template + 0x2c)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x2c)",
   "$short",
-  "image.u32(cf.params.t1 + 60 * $template + 0x34)",
-  "image.u32(cf.params.t1 + 60 * $template + 0x38)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x34)",
+  "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x38)",
 ] }
 
 [[object]]
@@ -160,7 +160,7 @@ _pf_first = "params.first"
 _pf_count = "params.count"
 _pf_rows = "params.rows"
 _pf_rowsize = "params.row_size"
-_pf_t_t2 = "hook.cf.params.t2.4.tail"
+_pf_t_t2 = "hook.cf.param.fn.value_class.4.tail"
 
 [[object]]
 path = "build/params-dn2.dko.json"
@@ -173,13 +173,13 @@ _pf_first = "params.first"
 _pf_count = "params.count"
 _pf_rows = "params.rows"
 _pf_rowsize = "params.row_size"
-_pf_t_t2 = "hook.cf.params.t2.4.tail"
+_pf_t_t2 = "hook.cf.param.fn.value_class.4.tail"
 
 # the second per-code table's accessor: `move.l 4(sp),D0; cmpi.l #count,D0`; hook the compare
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.params.t2"
+anchor = "cf.param.fn.value_class"
 offset = 4
 to = "pf_t2"
 displaced = "run"
@@ -188,16 +188,16 @@ devices = ["dt2"]
 # every absolute reference into the stock table now points into the copy (same offset)
 [[op]]
 op = "write"
-anchors = "cf.params.ref.*"
+anchors = "cf.param.sites.descriptor_table.ref.*"
 offset = 0
-value = "pf_table + (image.u32(this) - cf.params.t1)"
+value = "pf_table + (image.u32(this) - cf.param.data.descriptor_table)"
 width = 4
 devices = ["dt2"]
 
 # every clamp bound `cmpi.l #N,Dn` (N = the stock count or one less) grows by the number of added rows
 [[op]]
 op = "write"
-anchors = "cf.params.bound.*"
+anchors = "cf.param.sites.descriptor_table.bound.*"
 offset = 2
 value = "image.u32(this + 2) + params.count"
 width = 4
@@ -207,7 +207,7 @@ devices = ["dt2"]
 [[op]]
 op = "hook"
 cpu = "cf"
-anchor = "cf.params.t2"
+anchor = "cf.param.fn.value_class"
 offset = 4
 to = "pf_t2"
 displaced = "run"
@@ -216,16 +216,16 @@ devices = ["dn2"]
 # every absolute reference into the stock table now points into the copy (same offset)
 [[op]]
 op = "write"
-anchors = "cf.params.ref.*"
+anchors = "cf.param.sites.descriptor_table.ref.*"
 offset = 0
-value = "pf_table + (image.u32(this) - cf.params.t1)"
+value = "pf_table + (image.u32(this) - cf.param.data.descriptor_table)"
 width = 4
 devices = ["dn2"]
 
 # every clamp bound `cmpi.l #N,Dn` (N = the stock count or one less) grows by the number of added rows
 [[op]]
 op = "write"
-anchors = "cf.params.bound.*"
+anchors = "cf.param.sites.descriptor_table.bound.*"
 offset = 2
 value = "image.u32(this + 2) + params.count"
 width = 4

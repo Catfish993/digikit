@@ -97,7 +97,7 @@ def cost(a: argparse.Namespace) -> dict[str, Any]:
         next(
             x["addr"]
             for x in D.plan_anchors(a.device, fw)
-            if x["name"] == "dl.cf.rec_lit"
+            if x["name"] == "cf.link.site.reply_copy_lit"
         )
     )
     xs = []
@@ -143,7 +143,7 @@ def probe(a: argparse.Namespace) -> dict[str, Any]:
             next(
                 x["addr"]
                 for x in D.plan_anchors(a.device, fw)
-                if x["name"] == "dl.cf.rec_lit"
+                if x["name"] == "cf.link.site.reply_copy_lit"
             )
         )
         if "core/dsp-link" in modules

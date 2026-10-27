@@ -52,7 +52,7 @@ and must keep I6-I12/I14/I15, M0, M5-M15, the L registers and MODE1 (`dsp-voice.
 
 | Item | Digitakt II (`dsp-voice.s`) | Digitone II (`dsp-voice-dn2.s`) |
 | --- | --- | --- |
-| hook | first instruction of the voice renderer, `anchor dsp.voice.render_entry` (`module.toml` of dsp-voice :141-149) | first instruction of a helper the engine calls once per voice buffer after the FM synthesis (:181-192) |
+| hook | first instruction of the voice renderer, `anchor dsp.voice.fn.render_entry` (`module.toml` of dsp-voice :141-149) | first instruction of a helper the engine calls once per voice buffer after the FM synthesis (:181-192) |
 | call unit | 32 voices, two per track (2t, 2t+1); routine runs on the even voice only (`dsp-voice.s:14-16`) | 16 voice slots v, one call each (`dsp-voice-dn2.s:11-13`) |
 | odd voice | adapter copies the even block (`dsp-voice.s:831-845`) | none |
 | registers in | R4 = voice record (0x1d8 bytes), R8 = output block (32 floats), R12 = 32, R0 = type, R1 = voice index (even), R2 = track t (`:21-22`) | R4 = voice buffer (32 floats, 48 kHz), R0 = type, R2 = slot v, R12 = 32 (`:21`) |

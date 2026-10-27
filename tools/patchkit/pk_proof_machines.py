@@ -293,9 +293,11 @@ class Proof(K.Proof):
         port = tomllib.loads(
             (ROOT / "devices" / "ports" / f"dt2-{FW}.toml").read_text()
         )
-        site = next(a for a in port["anchor"] if a["name"] == "cf.machines.persist")[
-            "addr"
-        ]
+        site = next(
+            a
+            for a in port["anchor"]
+            if a["name"] == "cf.machine.site.sound_load_type_bound"
+        )["addr"]
         main = bytearray(pr.sections_of(src)[3])
         at = site + 1 - 0x40000400
         self.check(

@@ -244,7 +244,7 @@
    "addend": 0,
    "offset": 14,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt5store10block_read",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -258,7 +258,7 @@
    "addend": 0,
    "offset": 8,
    "section": ".text._RNvCs8yYvQnS8KWg_4dkrt9fw_blocks",
-   "symbol": "cf.storage.site.block_counter_lit",
+   "symbol": "cf.link.site.block_isr.counter_lit",
    "type": "cf.32"
   },
   {
@@ -5004,7 +5004,7 @@
    "addend": 0,
    "offset": 20,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt4card7ours_at",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -5067,7 +5067,7 @@
    "addend": 0,
    "offset": 68,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt4card5check",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -5123,7 +5123,7 @@
    "addend": 0,
    "offset": 220,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt4card5check",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -5291,7 +5291,7 @@
    "addend": 0,
    "offset": 306,
    "section": ".text._RNvCs8yYvQnS8KWg_4dkrt11block_write",
-   "symbol": "cf.storage.fn.block_write",
+   "symbol": "cf.storage.fn.block.write",
    "type": "cf.32"
   },
   {
@@ -5305,7 +5305,7 @@
    "addend": 0,
    "offset": 330,
    "section": ".text._RNvCs8yYvQnS8KWg_4dkrt11block_write",
-   "symbol": "cf.storage.fn.block_write",
+   "symbol": "cf.storage.fn.block.write",
    "type": "cf.32"
   },
   {
@@ -5361,7 +5361,7 @@
    "addend": 0,
    "offset": 484,
    "section": ".text._RNvCs8yYvQnS8KWg_4dkrt11block_write",
-   "symbol": "cf.storage.fn.block_write",
+   "symbol": "cf.storage.fn.block.write",
    "type": "cf.32"
   },
   {
@@ -5592,7 +5592,7 @@
    "addend": 0,
    "offset": 32,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt4boot7current",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -5613,7 +5613,7 @@
    "addend": 0,
    "offset": 68,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt4boot7current",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -5648,7 +5648,7 @@
    "addend": 0,
    "offset": 166,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt4boot7current",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -6236,7 +6236,7 @@
    "addend": 0,
    "offset": 14,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt6upload2rd",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -6264,7 +6264,7 @@
    "addend": 0,
    "offset": 164,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt6upload5state",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -6404,7 +6404,7 @@
    "addend": 0,
    "offset": 434,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt6upload10cmd_verify",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -6523,7 +6523,7 @@
    "addend": 0,
    "offset": 324,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt6upload6h_read",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -6663,7 +6663,7 @@
    "addend": 0,
    "offset": 316,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt6upload7h_clear",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -6677,7 +6677,7 @@
    "addend": 0,
    "offset": 408,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt6upload7h_clear",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -7986,7 +7986,7 @@
    "addend": 0,
    "offset": 14,
    "section": ".text._RNvNtCs8yYvQnS8KWg_4dkrt8settings2rd",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -11773,7 +11773,7 @@
    "addend": 0,
    "offset": 502,
    "section": ".text.dkrt_boot",
-   "symbol": "cf.view.site.ui_queue_lit",
+   "symbol": "cf.view.site.ui_loop.queue_lit",
    "type": "cf.32"
   },
   {
@@ -15875,14 +15875,14 @@
    "addend": 0,
    "offset": 4070,
    "section": ".text.dkrt_tick",
-   "symbol": "cf.project.fn.get",
+   "symbol": "cf.project.fn.singleton",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 4084,
    "section": ".text.dkrt_tick",
-   "symbol": "cf.project.fn.kit_of",
+   "symbol": "cf.project.fn.active_kit",
    "type": "cf.32"
   },
   {
@@ -16575,7 +16575,7 @@
    "addend": 0,
    "offset": 28,
    "section": ".rodata._RNvCs8yYvQnS8KWg_4dkrt7IMPORTS",
-   "symbol": "cf.storage.fn.block_read",
+   "symbol": "cf.storage.fn.block.read",
    "type": "cf.32"
   },
   {
@@ -21796,7 +21796,7 @@
    "size": 24
   }
  ],
- "source_sha256": "813ffb2a2aae2f93c44fb4fd31202fb81a243289b6fe945cc46e40c6984947a2",
+ "source_sha256": "313bd7d6f3102ea279674d56d2f71032b43941a8d610f5ceb006323ec3196467",
  "symbols": [
   {
    "global": false,
@@ -24422,6 +24422,12 @@
   },
   {
    "global": true,
+   "name": "cf.link.site.block_isr.counter_lit",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "cf.mem.fn.free",
    "section": null,
    "value": 0
@@ -24446,19 +24452,19 @@
   },
   {
    "global": true,
-   "name": "cf.project.fn.get",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "cf.project.fn.kit_of",
+   "name": "cf.project.fn.active_kit",
    "section": null,
    "value": 0
   },
   {
    "global": true,
    "name": "cf.project.fn.serialize",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.project.fn.singleton",
    "section": null,
    "value": 0
   },
@@ -24476,13 +24482,13 @@
   },
   {
    "global": true,
-   "name": "cf.storage.fn.block_read",
+   "name": "cf.storage.fn.block.read",
    "section": null,
    "value": 0
   },
   {
    "global": true,
-   "name": "cf.storage.fn.block_write",
+   "name": "cf.storage.fn.block.write",
    "section": null,
    "value": 0
   },
@@ -24494,13 +24500,7 @@
   },
   {
    "global": true,
-   "name": "cf.storage.site.block_counter_lit",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "cf.view.site.ui_queue_lit",
+   "name": "cf.view.site.ui_loop.queue_lit",
    "section": null,
    "value": 0
   },
@@ -24838,7 +24838,7 @@
  "toolchain": {
   "exports": "DKRT_ARENA DKRT_ASSIGN DKRT_BOOT DKRT_CARD DKRT_CONTRACTS DKRT_CRASH DKRT_DSP DKRT_DSP_STOPPED DKRT_FXP DKRT_FXS DKRT_HEALTH DKRT_LOG DKRT_LOG_COUNT DKRT_MAILBOX DKRT_PATHS DKRT_POLL DKRT_REG DKRT_SAVE_MODE DKRT_SECBUF DKRT_SET DKRT_SETTINGS DKRT_SETTINGS_HDR DKRT_STABLE_BLOCKS DKRT_STAGE DKRT_STATE DKRT_STORE_CAP DKRT_STORE_FP DKRT_STORE_PEEK DKRT_TABLE_BAD DKRT_UI_START DKRT_UPLOAD_BUF DKRT_UPLOAD_COUNT DKRT_UPLOAD_CUT DKRT_UPLOAD_DROPPED DKRT_UPLOAD_LAST DKRT_UPLOAD_TEAR DKRT_UPLOAD_WRITES dkrt_api dkrt_blocks dkrt_boot dkrt_boot_info dkrt_capacity dkrt_debug_set dkrt_diag dkrt_exc dkrt_fx dkrt_health dkrt_load dkrt_midi_rx dkrt_module dkrt_poll_set dkrt_remote_get dkrt_remote_set dkrt_restart dkrt_selection_get dkrt_selection_set dkrt_settings_flush dkrt_settings_get dkrt_settings_put dkrt_settings_remove dkrt_status dkrt_store_list dkrt_store_read_sector dkrt_tick",
   "instructions_redecoded": "28073",
-  "isa_check": "16f5dc76e1dcad63f24bf4905fc1f9c2502a0dd2638a2489d7b233cd8d19bc9a",
+  "isa_check": "e180357a8ccfeb5bb1a038c9777f2ef7583e1d8b535e7c2da3272ac805c2eceb",
   "libgccjit_gcc": "37ea7cd851f04ee6a313c5067c9fde9328f876aa",
   "rustc": "rustc 1.101.0-nightly (6f5da406b 2026-10-10)",
   "rustc_codegen_gcc": "a7d8a5227b520187e3d93c1f7fc01dd1ba8659cf",
