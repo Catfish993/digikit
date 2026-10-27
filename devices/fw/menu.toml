@@ -1,6 +1,15 @@
 # menu: Menu, MenuItem, menu views, the SETTINGS menu
 # Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
 
+[[fn]]
+name = "cf.menu.fn.add_item"
+cpu = "cf"
+sig = "void (u8 *menu, u8 *item)"
+rule = { kind = "cf_func", hash = "2a3c828c0fa23fc30af9aedcb731dee6", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/ui"]
+doc = "`Menu::addItem(menu, item)` (Menu vtable slot 2, also callable directly): `item` is a raw `MenuItem *` from `operator new(0x54)` that the call wraps in a `shared_ptr<MenuItem>` it keeps; the caller does not free it (read in LedSettingsMenuView 0x400970a8)."
+
 # `(item, label cstr, &action, icon, &fn4)`: constructs a MenuItem in `item`; copies both functions.
 [[fn]]
 name = "cf.menu.fn.item_builder"
@@ -10,6 +19,15 @@ rule = { kind = "cf_func", hash = "e115e0c084b379e732551b9618d56beb", offset = 0
 mark = "D"
 users = ["core/digikit-menu"]
 doc = "Constructs a MenuItem in `item` from a label, an action function, an icon and a second function; copies both functions."
+
+[[fn]]
+name = "cf.menu.fn.item_ctor"
+cpu = "cf"
+sig = "void (u8 *this, const std_function *label, const std_function *action, const std_function *draw, const std_function *adjust, i32 id, i32 arg7)"
+rule = { kind = "cf_func", hash = "5e0f8885761a94c4ba81a416aa784d29", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/ui"]
+doc = "`MenuItem(this, label, action, draw, adjust, id, arg7)`: copies the four `std::function`s (an empty one stays empty), stores `id` at +4 (-1 = none) and `arg7*2` at +0x4c (the encoder divisor; stock passes 8). The caller keeps and destroys its own functions afterwards."
 
 [[fn]]
 name = "cf.menu.fn.vertical_menu_view_ctor"
@@ -44,11 +62,16 @@ doc = "The last step of the SETTINGS item list rebuild, before the selection is 
 name = "cf.menu.struct.MenuItem"
 size = 0x54
 fields = [
+  { name = "id", off = 0x4, type = "u32" },
+  { name = "label", off = 0xc, type = "std_function" },
+  { name = "action", off = 0x1c, type = "std_function" },
   { name = "draw", off = 0x2c, type = "std_function" },
+  { name = "adjust", off = 0x3c, type = "std_function" },
+  { name = "enc_div", off = 0x4c, type = "u32" },
 ]
 mark = "D"
-users = ["core/digikit-menu"]
-doc = "MenuItem, 0x54 bytes (finding 71 section 4, \"MenuItem\"). The draw function is a `std::function`; stock items put a bitmap blit there, and core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph."
+users = ["core/digikit-menu", "core/ui"]
+doc = "MenuItem, 0x54 bytes (finding 71 section 4, \"MenuItem\"). Fields as the ctor 0x40115a44 stores them: id +4, label `string f(MenuItem&)` +0xc, action `void f(MenuItem&)` +0x1c, draw `void f(MenuItem&, Canvas&, x, y)` +0x2c, adjust `void f(MenuItem&, int delta)` +0x3c, encoder divisor +0x4c. Stock items put a bitmap blit in draw; core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph."
 
 # VerticalMenuView, 0x1ac bytes (finding 71 section 4, "VerticalMenuView"): the Menu base is at +0, the View sub-object at +0x38. `cursor` is
 # the Menu's cursor row in the window (Menu +0x18, read by core/digikit-menu); `icon` is the icon pointer the ctor stores (+0xa4; the view

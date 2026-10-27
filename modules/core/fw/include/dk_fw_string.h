@@ -30,6 +30,10 @@ _Static_assert(offsetof(std_function, invoker) == 0xc, "std_function.invoker off
 void dk_fw_string_shared_ptr_move(shared_ptr *dst, shared_ptr *src) __asm__("cf.string.fn.shared_ptr.move");
 /* Releases a `shared_ptr` count holder given its control-block word. core/digikit-menu calls it on its temporaries after it pushes a view. */
 void dk_fw_string_shared_ptr_release(uint32_t *ctl) __asm__("cf.string.fn.shared_ptr.release");
+/* Destroys a `std::function`: runs the manager with op 3 (destroy) when the manager is not 0. Called on the temporaries after a constructor has cloned them (2280 call sites). */
+void dk_fw_string_std_function_dtor(std_function *f) __asm__("cf.string.fn.std_function.dtor");
+/* Copy-constructs a COW `std::string` in `dst` (one pointer) from `src`: shares the buffer and counts a reference. Window constructors use it for their title and items. */
+void dk_fw_string_std_string_copy(uint32_t *dst, const uint32_t *src) __asm__("cf.string.fn.std_string.copy");
 /* Constructs a `std::string` from a C string. core/digikit-menu builds the view title with it. */
 void dk_fw_string_std_string_ctor(uint32_t *s, const char *cstr, const uint8_t *alloc) __asm__("cf.string.fn.std_string.ctor");
 /* Destroys a `std::string`. core/digikit-menu calls it after the view constructor has copied the title. */

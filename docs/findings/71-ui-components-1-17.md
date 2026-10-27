@@ -177,6 +177,13 @@ All take Bitmap* first. DN2 pairs are all "same".
   It draws the frame with 0x401131ae, fills the inner area with 0x401134c0,
   and sets the thumb height to `track*visible/count` **[D]**. VerticalMenuView
   calls it at x = w-5..w-1 only when count > visible. It has 18 callers.
+- Toast and popup **[D]**: the toast needs no view. `UIStates` is a
+  singleton of 0x2f8 bytes, returned by 0x401998c0 (DN2 0x4018b2a4; created on
+  first use). 0x4005b23a `(ui, fmt, ...)` and 0x4005b1e0 `(ui, const string*)`
+  (DN2 0x400562e6, 0x4005628c) store up to 32 characters; a message that is
+  already shown is not replaced while `UIStates+0x45` is nonzero (the byte
+  suppresses toasts). PopupWindow (section 5) is a pushed view; its auto-close
+  stays **[O]**.
 - Toast: if `UIStates+0x45` is 0, vsnprintf into 256 bytes, copy up to 32
   chars to a string at `UIStates+0x48`, set +0x4c from 0x4005b1ba (timeout),
   call 0x400f4888 (redraw) **[D]**.
@@ -272,7 +279,15 @@ Item kinds:
   that changes it **[D]**. Example LedSettingsMenuView ctor 0x400970a8:
   adjust 0x40095f80 does `v=clamp(v+delta,0,255)` in global 0x402a1ac8 and
   notifies. Draw 0x40095bec blits, then prints at x+0x4e, y+2.
-- Toggle: same with ON/OFF **[O]**, not traced.
+- Toggle: same as a value item with ON/OFF text **[O]**, not traced. The recipe
+  that is read: allocate 0x54 bytes, build four `std::function`s (label, action,
+  draw, adjust; each a heap-stored 4-byte capture plus a manager and an invoker
+  per lambda), call the ctor 0x40115a44 with id -1 and arg7 8, call
+  `Menu::addItem` (0x4011527a) with the raw `MenuItem *` (it makes the
+  `shared_ptr`), then destroy the four temporaries with 0x40197ce0
+  (LedSettingsMenuView 0x400970a8 does this for every row) **[D]**. A toggle
+  is an adjust function that flips on any delta and a draw function that prints
+  ON or OFF.
 - Submenu: an action that pushes a view (digikit uses 0x4011a592) **[D]**.
 - Separator, disabled or grey: no field found **[O]**.
 
@@ -338,7 +353,12 @@ Typeinfo 0x4021d570, vtable 0x4021d5a4, ctor 0x40117ac2 (DN2 0x40119436)
   vtable **[D]**.
 - Objects use `std::make_shared`: `operator new(size)` = 0x10 control block
   + object. Object size = new size - 0x10. The control-block vptr is
-  0x401ed3b0 in 1.17 **[D]**. The `_Sp_counted_ptr_inplace<...>::ctor_dtor`
+  0x401ed3b0 for ConfirmWindow in 1.17 **[D]**. **[C]** It is not one vptr for all
+  windows: each `make_shared` type has its own `_Sp_counted_ptr_inplace`
+  vtable (MultiChoiceWindow 0x40204fb4). The vptr is the immediate of a
+  `move.l #vptr,(a2)` in the call site. It is declared as the data anchor
+  `cf.window.site.confirm_cb_vptr_lit` / `...multichoice_cb_vptr_lit`
+  (DN2: 0x401dd7e4 / 0x401edba4). The `_Sp_counted_ptr_inplace<...>::ctor_dtor`
   labels are really call-site functions that hold new, ctor and push.
 - std::function is 16 bytes: storage[8], manager at +8, invoker at +0xc
   (libstdc++ style). Invoke helper 0x4019c89a(fn, arg) throws
@@ -378,6 +398,17 @@ specific, not SDK material **[O]**.
   callback(true). Key id 12 = NO: close, callback(false). Keys 0x19..0x28
   are swallowed unless the flag at +0x6c is set. All other keys return
   handled (the window is modal). Physical names of 10 and 12 are **[O]**.
+- Layout and callback **[D]** (step 3b re-read of ctor 0x4011139a and handler
+  0x401114f0): result +0x4c, title string pointer +0x50, text pointer +0x54,
+  line count +0x58 (1, or 2 when the text is not empty), callback
+  `std::function<void(bool)>` +0x5c (the ctor clones it with manager op 2), flag
+  +0x6c, window size 0x7c, `make_shared` block 0x8c. Title and text are cut to
+  0x50 characters. The handler reads the key id with 0x40114984 and tests press
+  with 0x401149ac. The callback runs through the invoke helper 0x4019c89a
+  (`fn, bool`) after the window closed itself (View slot 10).
+- **[C]** Key ids: 10 = YES, 12 = NO. They are the panel keys YES and NO
+  (`devices/digitakt-ii-leds.toml`: 10 YES, 11 UP, 12 NO, 13 LEFT, 14 DOWN,
+  15 RIGHT). Both act on press only.
 - Draw 0x40111234: box centred at x = 0x40, text via 0x40113dc8 at +0x50
   (title) and +0x54 (second line), one or two lines **[D]**.
 - About 48 call sites. Example strings:
@@ -392,10 +423,20 @@ specific, not SDK material **[O]**.
 
 ### MultiChoiceWindow
 
-Key handler 0x40116e44 **[D]**: ids 0xb/0xd (and 0xf) step the selection
-(depends on the layout flag at +0xac). Id 10 or 0x31 selects: invoke the
-callback with the index at +0x9c through 0x40198b5c, then close. Id 12
-cancels: close without callback. Id 0x11 goes to the View default. Callback
+Key handler 0x40116e44 **[D]**, re-read in step 3b. The constructor argument
+`vertical` (last argument, stored at +0xac) decides the layout: 0 puts the
+items side by side (width = sum of item widths), nonzero stacks them (width =
+widest item). **[C]** The earlier text said ids 0xb/0xd with a "layout flag";
+the ids are: vertical, 11 (UP) = previous and 14 (DOWN) = next; side by side,
+13 (LEFT) = previous and 15 (RIGHT) = next. The selection is clamped, not
+wrapped, and starts at 0 (+0x9c). Id 10 (YES) or 0x31 selects: invoke the
+callback with the index through 0x40198b5c (`fn, int`), then close. Id 12 (NO)
+cancels: close without callback. Id 0x11 goes to the View default. Fields:
+item vector +0x74..+0x7c (4-byte COW strings), title lines vector +0x80,
+callback `std::function<void(int)>` +0x8c, selection +0x9c, flag +0xac; size
+0xd8, `make_shared` block 0xe8. The window starts as 0x40 x 0x20 and grows to
+the content. The stock call site 0x400a9f54 builds the callback as a lambda
+with 4 bytes of captured state on the heap (storage word 0 points to it). Callback
 `std::function<void(int)>` at +0x8c. Call site 0x400a9f54: title "SELECT
 INTERFACE", item "USB MIDI" and others, pushed with 0x4011b22a.
 
@@ -436,9 +477,12 @@ ctor are not read **[O]**.
 
 ## 7. Conflicts and open questions
 
-- **Key names 10 and 12.** The device file and ConfirmWindow treat 0xa/0xc
-  as confirm and no. [Finding 50](50-dt2-src-second-page.md) says UP and
-  DOWN are 0xb/0xc. Unresolved. Check the key name table.
+- **Key names 10 to 15.** **[C]** Resolved in step 3b. The key table in
+  `devices/digitakt-ii-leds.toml` names 10 YES, 11 UP, 12 NO, 13 LEFT, 14 DOWN,
+  15 RIGHT. ConfirmWindow (10, 12) and the vertical MultiChoiceWindow (11, 14)
+  use them this way. [Finding 50](50-dt2-src-second-page.md) says UP and DOWN
+  are 0xb/0xc: that is wrong for DOWN (14); 12 is NO. The conclusion of finding
+  50 does not change: UP and DOWN reach the same page handler.
 - Page switching: which variable holds the current page, and how the old
   page is hidden, was not traced. MainScreenView::vfunc_2 (0x400649c4) calls
   push at about 10 sites.

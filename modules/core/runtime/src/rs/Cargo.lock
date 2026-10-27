@@ -7,10 +7,24 @@ name = "dkfw"
 version = "0.1.0"
 
 [[package]]
+name = "dkneeds"
+version = "0.1.0"
+
+[[package]]
 name = "dkrt"
 version = "0.1.0"
 dependencies = [
  "dkfw",
+ "dkneeds",
+ "dkrt-fit",
+ "dkrt-sdk",
+]
+
+[[package]]
+name = "dkrt-fit"
+version = "0.1.0"
+dependencies = [
+ "dkneeds",
  "dkrt-sdk",
 ]
 

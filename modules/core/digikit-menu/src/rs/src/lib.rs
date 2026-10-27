@@ -16,12 +16,10 @@ use core::ptr::{addr_of, addr_of_mut, null, null_mut};
 use dkfw::menu::{MenuItem, VerticalMenuView};
 use dkfw::string::{shared_ptr, std_function};
 use dkfw::{mem, menu, string, view};
-use dkneeds::{needs_of, Bytes};
-use dkrt_fit::{self as fit, Needs, Short};
 use dkrt_sdk::proto::{
     CAPK_ARENA, CAPK_DSP_AREA, CAPK_MACHINE_ROWS, CAPK_MODULES, CAPK_PAGE_ROWS, CAPK_PARAM_ROWS, CAPK_SEND_SLOTS, CAPK_STAGE, CAPK_VOICE_ROWS,
 };
-use dkrt_sdk::{DkrtFx, DkrtStoreEntry, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
+use dkrt_sdk::{DkrtFx, DkrtBootInfo, DkrtCap, CAP_MAX, DkrtDiag, DkrtFitOut, DkrtHealth, CARD_FOREIGN, CARD_UNREADABLE, DkrtScan, SCAN_COMPAT, SCAN_LOADED, SCAN_LOADING, SCAN_MAX, SCAN_NEEDS, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -64,8 +62,6 @@ extern "C" {
     /// This boot: safe mode and why, the modules selected and each one's result.
     fn dkrt_boot_info(out: *mut DkrtBootInfo);
     fn dkrt_status(out: *mut DkrtStatus);
-    /// The `index`th loaded module; 0, or `E_NOT_FOUND` past the end.
-    fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32;
     /// CPU load, the DSP's block time, the heap, the arena and the DSP area (finding 41).
     fn dkrt_health(out: *mut DkrtHealth);
     /// The CAPACITY command's entries (limit, used, largest per resource); how many were written, at most `max`.
@@ -78,11 +74,12 @@ extern "C" {
     fn dkrt_diag(out: *mut DkrtDiag);
     /// The debug log keeps every event (1) or errors only (0); saved in the selection record. 0 or an `E_*` code (`E_CARD_RO`: held until the next boot).
     fn dkrt_debug_set(on: u32) -> i32;
-    /// The files of the module store whose path starts with `prefix` (NUL-terminated), sorted by path, at most `max` into `out`: the count, or a negative code
-    /// (`E_NOT_FOUND`: no store).
-    fn dkrt_store_list(prefix: *const u8, out: *mut DkrtStoreEntry, max: u32) -> i32;
-    /// One sector of the store (relative to its start) into `out` (512 bytes, 16-byte aligned).
-    fn dkrt_store_read_sector(rel: u32, out: *mut u8) -> i32;
+    /// The `.dkm` files under `modules/` with their header verdict, needs and loaded state: the count, or a negative code (`E_NOT_FOUND`: no store).
+    fn dkrt_scan(out: *mut DkrtScan, max: u32) -> i32;
+    /// The sector reads the last scan made to read the needs.
+    fn dkrt_scan_reads() -> u32;
+    /// Which of the entries fit next to the ticked ones, the texts of the verdicts and the load line.
+    fn dkrt_fit(entries: *const DkrtScan, n: u32, ticked: *const u8, out: *mut DkrtFitOut) -> i32;
     /// The REMOTE switch (the commands of the remote range are answered only while it is on; not saved): 1 on, 0 off, -1 when the image has no input
     /// adapter (core/input) and so no remote control.
     fn dkrt_remote_get() -> i32;
@@ -362,36 +359,50 @@ impl Text {
 
 // ---- the module store (docs/design/digikit-store.md; the runtime reads it: `dkrt_store_list`, `dkrt_store_read_sector`) -------------------
 
-const MAX_ENT: usize = 32;
-/// The store files under `modules/` as the runtime listed them (path, first sector, size), in path order.
-static mut ENTRIES: [DkrtStoreEntry; MAX_ENT] = unsafe { core::mem::zeroed() };
+const MAX_ENT: usize = SCAN_MAX;
+/// The `.dkm` files under `modules/` as `dkrt_scan` gave them (path, header verdict, needs, loaded), in path order.
+static mut ENTRIES: [DkrtScan; MAX_ENT] = unsafe { core::mem::zeroed() };
 
 /// 0 = not read, 1 = ok, 2 = no store, 3 = read error, 4 = bad or too big
 static mut STORE: u32 = 0;
-/// Indices into `ENTRIES` of the `.dkm` files.
-static mut ENT: [u8; MAX_ENT] = [0; MAX_ENT];
 /// The pending selection: 1 when the row is ticked. It starts as the saved selection and is only saved by APPLY & RESTART.
 static mut TICK: [u8; MAX_ENT] = [0; MAX_ENT];
 /// 1 when the saved selection (`dkrt_selection_get`) holds the row's file.
 static mut SAVED: [u8; MAX_ENT] = [0; MAX_ENT];
 /// Paths of the saved selection that no row has (the file is gone from the store): APPLY would drop them.
 static mut SAVED_EXTRA: u32 = 0;
-/// 1 when the runtime has the entry's file loaded in this boot (2: still loading its DSP part).
-static mut LOADED: [u8; MAX_ENT] = [0; MAX_ENT];
 static mut NENT: usize = 0;
-/// 1 when the file's header says this runtime or device cannot load it (shown greyed out, `[-]`, and cannot be ticked).
+/// 1 when the file's header says this runtime or device cannot load it (from `dkrt_scan`; read by the menu proof).
 static mut NOK: [u8; MAX_ENT] = [0; MAX_ENT];
-/// The needs of each file, inferred from its contents (`read_needs`), read once per scan; 1 in `HAS_NEEDS` when it has them (a file that is not a readable `.dkm` has none).
-static mut NEEDS: [Needs; MAX_ENT] = [NO_NEEDS; MAX_ENT];
-static mut HAS_NEEDS: [u8; MAX_ENT] = [0; MAX_ENT];
-const NO_NEEDS: Needs = Needs { file_size: 0, arena: 0, arena_xfer: 0, dsp_area: 0, dsp_align: 0, machine_rows: 0, voice_rows: 0, param_rows: 0, page_rows: 0, fx_slots: 0 };
-/// 1 when the row's module does not fit next to the ticked ones (`refit`), and the first short resource.
-static mut WONT: [u8; MAX_ENT] = [0; MAX_ENT];
-static mut SHORT: [Short; MAX_ENT] = [Short { kind: 0, need: 0, free: 0 }; MAX_ENT];
-/// The load line of the ticked set (`refit`): the DSP and the CPU memory, `DSP 85% CPU 1%`; empty when nothing is ticked.
-static mut LOAD_LINE: Text = Text::new();
-/// One 512-byte, 16-byte aligned firmware heap block the card DMA fills with a file's header sector.
-static mut HDR: *mut u8 = null_mut();
+/// 1 when the runtime has the entry's file loaded in this boot, 2 while its DSP part still loads (from `dkrt_scan`; read by the menu proof).
+static mut LOADED: [u8; MAX_ENT] = [0; MAX_ENT];
+/// The verdict of `dkrt_fit` for the rows (`refit`): which do not fit next to the ticked ones and why, the memory each takes, and the load line of the ticked
+/// set (the DSP and the CPU memory, `DSP 85% CPU 1%`; empty when nothing is ticked).
+static mut FIT: DkrtFitOut = unsafe { core::mem::zeroed() };
+
+/// 1 when the file's header says this runtime or device cannot load it (shown greyed out, `[-]`, and cannot be ticked).
+unsafe fn nok(i: usize) -> bool {
+    ENTRIES[i].flags & SCAN_COMPAT == 0
+}
+/// 1 when the row has needs (a file that is not a readable `.dkm` has none).
+unsafe fn has_needs(i: usize) -> bool {
+    ENTRIES[i].flags & SCAN_NEEDS != 0
+}
+/// 1 when the runtime has the row's file loaded in this boot (2: still loading its DSP part).
+unsafe fn loaded(i: usize) -> u32 {
+    let f = ENTRIES[i].flags;
+    if f & SCAN_LOADED == 0 {
+        0
+    } else if f & SCAN_LOADING != 0 {
+        2
+    } else {
+        1
+    }
+}
+/// 1 when the row's module does not fit next to the ticked ones (`refit`).
+unsafe fn wont(i: usize) -> bool {
+    FIT.rows[i].wont != 0
+}
 /// The saved selection as the runtime gave it, and this boot's info (safe mode, results).
 static mut SEL: DkrtSelection = DkrtSelection { count: 0, flags: 0, paths: [[0; SEL_PATH]; SEL_MAX] };
 static mut BOOT: DkrtBootInfo = unsafe { core::mem::zeroed() };
@@ -418,16 +429,9 @@ pub static mut DK_APPLIES: u32 = 0;
 #[no_mangle]
 pub static mut DK_OFFER: u32 = 0;
 
-#[repr(C)]
-struct ModBuf {
-    m: DkrtModule,
-    ext: [u32; 8],
-}
-const MOD_STATE_OFF: usize = 112;
-const MOD_LOADING: u32 = 1;
-
-unsafe fn entry_path(e: usize) -> &'static [u8] {
-    let p = &ENTRIES[e].path;
+/// The path of row `i` (the store path of its `.dkm`).
+unsafe fn entry_path(i: usize) -> &'static [u8] {
+    let p = &ENTRIES[i].path;
     let mut n = 0;
     while n < 63 && p[n] != 0 {
         n += 1;
@@ -435,202 +439,15 @@ unsafe fn entry_path(e: usize) -> &'static [u8] {
     &p[..n]
 }
 
-/// Ask the runtime which modules it holds and match their store paths against the rows.
-unsafe fn refresh_loaded() {
-    LOADED = [0; MAX_ENT];
-    let mut index = 0;
-    loop {
-        let mut m: ModBuf = core::mem::zeroed();
-        if dkrt_module(index, &mut m.m) != OK {
-            break;
-        }
-        index += 1;
-        let mstate = *(&m as *const ModBuf as *const u8).add(MOD_STATE_OFF).cast::<u32>();
-        let mut n = 0;
-        while n < 63 && m.m.path[n] != 0 {
-            n += 1;
-        }
-        for i in 0..NENT {
-            if entry_path(ENT[i] as usize) == &m.m.path[..n] {
-                LOADED[i] = if mstate == MOD_LOADING { 2 } else { 1 };
-            }
-        }
-    }
-}
-
-const DKM_MAGIC: u32 = 0x444b_4d46; // "DKMF"
-const REG_MAGIC: u32 = 0x444b_5247; // "DKRG"
-/// A header word at byte `off` of the file starting at store sector `first`, read through the block reader; None on an error.
-unsafe fn file_word(first: u32, off: u32) -> Option<u32> {
-    if dkrt_store_read_sector(first + off / 512, HDR) != OK {
-        return None;
-    }
-    let p = HDR.add((off % 512) as usize);
-    Some(((*p as u32) << 24) | ((*p.add(1) as u32) << 16) | ((*p.add(2) as u32) << 8) | (*p.add(3) as u32))
-}
-
-/// Whether the file at store sector `first` can be loaded by this runtime on this device, judged from its header: the `.dkm`
-/// format's SDK contracts (header 0x38..0x3f, the loader's rule: a declared contract with another major or a minor above the
-/// runtime's refuses), and the device of its register records (docs/design/digikit-dkm.md; a module without records runs on
-/// either device). A file that is not a `.dkm` or cannot be read passes: the runtime then names the real reason at boot.
-unsafe fn compatible(first: u32, device: u32) -> bool {
-    match file_word(first, 0) {
-        Some(DKM_MAGIC) => {}
-        _ => return true,
-    }
-    let rt = [
-        dkrt_sdk::contract::API,
-        dkrt_sdk::contract::MACHINE,
-        dkrt_sdk::contract::FX,
-        dkrt_sdk::contract::SERVICE,
-    ];
-    for half in 0..2u32 {
-        if let Some(w) = file_word(first, 0x38 + 4 * half) {
-            for k in 0..2usize {
-                let c = 2 * half as usize + k;
-                let major = (w >> (24 - 16 * k as u32)) as u8;
-                let minor = (w >> (16 - 16 * k as u32)) as u8;
-                if major != 0 && (major != rt[c].0 || minor > rt[c].1) {
-                    return false;
-                }
-            }
-        }
-    }
-    let (Some(off), Some(size)) = (file_word(first, 0x90), file_word(first, 0x94)) else {
-        return true;
-    };
-    if size == 0 || off % 16 != 0 {
-        return true;
-    }
-    if file_word(first, off) != Some(REG_MAGIC) {
-        return true;
-    }
-    match file_word(first, off + 8) {
-        Some(d) => d == device || device == 0,
-        None => true,
-    }
-}
-
 /// The sector reads the last scan made to read the needs (the cost of opening the page; read by the proof).
 #[no_mangle]
 pub static mut DK_NEEDS_READS: u32 = 0;
 
-/// A card file as the needs reader's byte source: the store's sector reads through the block reader, one sector cached (the file is never staged).
-struct CardFile {
-    first: u32,
-    size: u32,
-    /// the file's sector held in `HDR`
-    held: u32,
-}
-
-impl Bytes for CardFile {
-    fn size(&self) -> u32 {
-        self.size
-    }
-    fn read(&mut self, at: u32, out: &mut [u8]) -> bool {
-        if at > self.size || out.len() as u32 > self.size - at {
-            return false;
-        }
-        let mut i = 0usize;
-        while i < out.len() {
-            let pos = at + i as u32;
-            let sector = pos / 512;
-            if self.held != sector {
-                // `held` is not trusted across a failed read: the block reader may have written part of the buffer
-                self.held = u32::MAX;
-                unsafe { DK_NEEDS_READS += 1 };
-                if unsafe { dkrt_store_read_sector(self.first + sector, HDR) } != OK {
-                    return false;
-                }
-                self.held = sector;
-            }
-            out[i] = unsafe { *HDR.add((pos % 512) as usize) };
-            i += 1;
-        }
-        true
-    }
-}
-
-/// The needs of the `.dkm` at store sector `first` (`size` bytes), inferred from its contents (`dkneeds`, the code patchkit runs): the header, the
-/// `register` records and the DSP section's header and voice table, read by sector. None for a file that is not a readable `.dkm` of this format: it
-/// has no verdict here and the runtime names the reason at boot.
-unsafe fn read_needs(first: u32, size: u32) -> Option<Needs> {
-    let mut f = CardFile { first, size, held: u32::MAX };
-    needs_of(&mut f).ok()
-}
-
-/// Which modules fit. A module set is fixed per session, so the ticked set loads at the next boot into an empty runtime: start from the limits (CAPACITY's
-/// limit of each resource, nothing used) and take in the ticked modules in list order; a ticked one that no longer fits is flagged and not taken.
-/// Then each unticked module is checked against what the ticked ones leave.
+/// Which modules fit: the runtime judges the ticked set (`dkrt_fit`) and gives the rows' verdicts, texts and the load line.
 unsafe fn refit() {
-    WONT = [0; MAX_ENT];
-    let mut caps = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; CAP_MAX];
-    let n = dkrt_capacity(caps.as_mut_ptr(), CAP_MAX as u32) as usize;
-    let caps = &mut caps[..n];
-    fit::empty(caps);
-    LOAD_LINE.clear();
-    for pass in 0..2 {
-        if pass == 1 {
-            // the ticked modules that fit are taken: the DSP and CPU memory of the limits they leave
-            let mut any = false;
-            for i in 0..NENT {
-                any |= TICK[i] != 0;
-            }
-            if any {
-                let mut buf = [0u8; fit::LINE_MAX];
-                let n = fit::load_line(caps, &mut buf);
-                LOAD_LINE.s(&buf[..n]);
-            }
-        }
-        for i in 0..NENT {
-            if HAS_NEEDS[i] == 0 || NOK[i] != 0 || (TICK[i] != 0) != (pass == 0) {
-                continue;
-            }
-            match fit::fits_now(&NEEDS[i], caps) {
-                None => {
-                    if pass == 0 {
-                        fit::take(&NEEDS[i], caps);
-                    }
-                }
-                Some(s) => {
-                    WONT[i] = 1;
-                    SHORT[i] = s;
-                }
-            }
-        }
-    }
-}
-
-/// `n` bytes in K for a row: `<1K`, `259K`, `1.2M`.
-fn size_k(t: &mut Text, n: u32) {
-    if n < 1024 {
-        t.s(b"<1K");
-    } else if n.div_ceil(1024) < 1000 {
-        t.num(n.div_ceil(1024)).s(b"K");
-    } else {
-        let tenth = (n / 1024 * 10) / 1024;
-        t.num(tenth / 10).s(b".").num(tenth % 10).s(b"M");
-    }
-}
-
-/// The names of the CAPACITY kinds a fit can be short of, by kind number (0 and the kinds that cannot be short: empty).
-const SHORT_NAME: [&str; 13] = ["", "MODULES", "SELECTED", "CPU", "FILE", "DSP", "MACHINES", "VOICES", "PARAMS", "PAGES", "FX", "", ""];
-
-/// What is short, in K for bytes and as numbers for rows and slots (the need rounded up, what is free rounded down): `DSP 400K > 254K FREE`, in a
-/// popup (28 characters fit with `NO FIT: `); `compact` for the list's RESULT row (about 18 characters fit): `DSP 400K>254K`.
-fn short_text(t: &mut Text, s: &Short, compact: bool) {
-    let k = s.kind as usize;
-    t.s(if k < 13 { SHORT_NAME[k].as_bytes() } else { b"" }).s(b" ");
-    let bytes = s.kind == CAPK_ARENA || s.kind == CAPK_DSP_AREA || s.kind == CAPK_STAGE;
-    let gt: &[u8] = if compact { b">" } else { b" > " };
-    if bytes {
-        t.num(s.need.div_ceil(1024)).s(b"K").s(gt).num(s.free / 1024).s(b"K");
-    } else {
-        t.num(s.need).s(gt).num(s.free);
-    }
-    if !compact {
-        t.s(if s.kind == CAPK_STAGE { b" MAX" } else { b" FREE" });
-    }
+    let mut ticked = [0u8; MAX_ENT];
+    ticked[..NENT].copy_from_slice(&TICK[..NENT]);
+    dkrt_fit(addr_of!(ENTRIES) as *const DkrtScan, NENT as u32, ticked.as_ptr(), addr_of_mut!(FIT));
 }
 
 /// The saved selection, matched against the rows: a ticked row for each path the store still has.
@@ -648,7 +465,7 @@ unsafe fn load_selection() {
         }
         let mut found = false;
         for i in 0..NENT {
-            if entry_path(ENT[i] as usize) == &p[..l] {
+            if entry_path(i) == &p[..l] {
                 TICK[i] = 1;
                 found = true;
             }
@@ -660,57 +477,36 @@ unsafe fn load_selection() {
     SAVED = TICK;
 }
 
-/// Scan the store: the runtime lists the files under `modules/`, and a commit of the upload (the MIDI task) that ran during the list makes it start
-/// again inside the runtime (finding 43, "the menu's reader and a commit"); the file words read after belong to the same table or fail the load check.
+/// Scan the store: the runtime lists the `.dkm` files under `modules/` with their header verdict, needs and loaded state (`dkrt_scan`; a commit of the
+/// upload that ran during the list makes it start again inside the runtime, finding 43).
 unsafe fn scan_store() {
-    if HDR.is_null() {
-        HDR = mem::new(512);
-    }
-    scan_once();
-}
-
-unsafe fn scan_once() {
     NENT = 0;
-    NOK = [0; MAX_ENT];
     TICK = [0; MAX_ENT];
     SAVED = [0; MAX_ENT];
     SAVED_EXTRA = 0;
     RESULT.clear();
     ARMED = 0;
-    let n = dkrt_store_list(b"modules/\0".as_ptr(), addr_of_mut!(ENTRIES) as *mut DkrtStoreEntry, MAX_ENT as u32);
+    let n = dkrt_scan(addr_of_mut!(ENTRIES) as *mut DkrtScan, MAX_ENT as u32);
     if n < 0 {
         STORE = if n == E_NOT_FOUND { 2 } else if n == E_READ { 3 } else { 4 };
         return;
     }
-    for e in 0..n as usize {
-        let p = entry_path(e);
-        let l = p.len();
-        if l > 4
-            && p[l - 4] == b'.'
-            && lower(p[l - 3]) == b'd'
-            && lower(p[l - 2]) == b'k'
-            && lower(p[l - 1]) == b'm'
-            && NENT < MAX_ENT
-        {
-            ENT[NENT] = e as u8;
-            NENT += 1;
-        }
-    }
+    NENT = n as usize;
     STORE = 1;
-    let mut st: DkrtStatus = core::mem::zeroed();
-    dkrt_status(&mut st);
-    HAS_NEEDS = [0; MAX_ENT];
-    DK_NEEDS_READS = 0;
+    NOK = [0; MAX_ENT];
+    LOADED = [0; MAX_ENT];
     for i in 0..NENT {
-        let first = ENTRIES[ENT[i] as usize].first;
-        if !compatible(first, st.device) {
+        let f = ENTRIES[i].flags;
+        if f & SCAN_COMPAT == 0 {
             NOK[i] = 1;
-        } else if let Some(n) = read_needs(first, ENTRIES[ENT[i] as usize].size) {
-            NEEDS[i] = n;
-            HAS_NEEDS[i] = 1;
+        }
+        if f & SCAN_LOADING != 0 {
+            LOADED[i] = 2;
+        } else if f & SCAN_LOADED != 0 {
+            LOADED[i] = 1;
         }
     }
-    refresh_loaded();
+    DK_NEEDS_READS = dkrt_scan_reads();
     load_selection();
 }
 
@@ -803,7 +599,7 @@ fn name_of(p: &[u8], max: usize, head: bool, t: &mut Text) {
 
 /// The row's file name without `.dkm`, upper case, its first `max` characters.
 unsafe fn upper_name(i: usize, max: usize, t: &mut Text) {
-    let p = entry_path(ENT[i] as usize);
+    let p = entry_path(i);
     let l = p.len();
     let p = if l > 4 && p[l - 4] == b'.' && lower(p[l - 3]) == b'd' && lower(p[l - 2]) == b'k' && lower(p[l - 1]) == b'm' { &p[..l - 4] } else { p };
     name_of(p, max, true, t);
@@ -952,16 +748,16 @@ unsafe fn fill_load() {
             // `[-]` a file this runtime or device cannot load (it cannot be ticked); otherwise `[X]` ticked (in the pending
             // selection), `[ ]` not; the fourth character is `*` when this boot loaded the module, `L` while it loads its DSP part,
             // `x` when it does not fit next to the ticked ones (`refit`); then the name and the memory it takes (`<1K`, `259K`)
-            t.s(if NOK[i] != 0 {
+            t.s(if nok(i) {
                 b"[-]"
             } else if TICK[i] != 0 {
                 b"[X]"
             } else {
                 b"[ ]"
             });
-            t.s(match LOADED[i] {
+            t.s(match loaded(i) {
                 0 => {
-                    if WONT[i] != 0 {
+                    if wont(i) {
                         b"x"
                     } else {
                         b" "
@@ -971,19 +767,21 @@ unsafe fn fill_load() {
                 _ => b"L",
             });
             upper_name(i, ROW_NAME, &mut t);
-            if HAS_NEEDS[i] != 0 {
+            if has_needs(i) {
                 t.pad(4 + ROW_NAME + 1);
                 let mut sz = Text::new();
-                size_k(&mut sz, NEEDS[i].arena + NEEDS[i].dsp_area);
+                sz.s(&FIT.rows[i].mem);
                 t.pad(4 + ROW_NAME + 1 + 4 - sz.n);
                 t.s(&sz.b);
             }
-            lrow(m, &t.b, if NOK[i] != 0 { A_NOP } else { A_TOGGLE + i as u32 });
+            lrow(m, &t.b, if nok(i) { A_NOP } else { A_TOGGLE + i as u32 });
         }
         DK_OFFER = differs() as u32;
         // the memory the ticked set takes, directly above APPLY & RESTART (or where it would be)
-        if LOAD_LINE.n > 0 {
-            lrow(m, &LOAD_LINE.b, A_NOP);
+        if FIT.line[0] != 0 {
+            let mut t = Text::new();
+            t.s(&FIT.line);
+            lrow(m, &t.b, A_NOP);
         }
         if DK_OFFER != 0 {
             lrow(m, if ARMED != 0 { b"CONFIRM RESTART\0" } else { b"APPLY & RESTART\0" }, A_APPLY);
@@ -1583,7 +1381,7 @@ unsafe fn do_apply() {
     let mut n = 0;
     for i in 0..NENT {
         if TICK[i] != 0 && n < SEL_MAX {
-            let p = entry_path(ENT[i] as usize);
+            let p = entry_path(i);
             if p.len() < SEL_PATH {
                 sel.paths[n][..p.len()].copy_from_slice(p);
                 n += 1;
@@ -1688,13 +1486,13 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         safe_popup();
     } else if act >= A_TOGGLE {
         let i = (act - A_TOGGLE) as usize;
-        if i < NENT && TICK[i] == 0 && WONT[i] != 0 {
+        if i < NENT && TICK[i] == 0 && wont(i) {
             // a module that does not fit next to the ticked ones is not ticked: say which resource is short
             RESULT.clear();
-            short_text(&mut RESULT, &SHORT[i], true);
+            RESULT.s(&FIT.rows[i].brief);
             let mut t = Text::new();
             t.s(b"NO FIT: ");
-            short_text(&mut t, &SHORT[i], false);
+            t.s(&FIT.rows[i].reason);
             popup(&t);
         } else if i < NENT {
             TICK[i] ^= 1;

@@ -115,11 +115,13 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
 
 ### Phase 3: `<dk/ui.h>`, `core/ui` in C, and the runtime menu in C
 
-- [ ] `abi.toml` (new) in `modules/core/runtime/`: the `dkrt_*` exports and structs. `patchkit gen` writes
-      the C header and the Rust `gen_abi.rs` (layout asserts, signature checks).
-- [ ] Anchors in `devices/fw/` for ConfirmWindow, MultiChoiceWindow, Toast and text drawing,
+- [x] `abi.toml` (new) in `modules/core/runtime/`: the `dkrt_*` exports and structs. `patchkit gen` writes
+      the C header and the Rust `gen_abi.rs` (layout asserts, signature checks). Card scan,
+      compatibility, needs and fit move from the menu to runtime exports (`dkrt_scan`, `dkrt_fit`).
+- [x] Anchors in `devices/fw/` for ConfirmWindow, MultiChoiceWindow, Toast and text drawing,
       checked on DT2 1.17 and DN2 1.12.
-- [ ] Trace the toggle menu item, value formatting and the key ids for YES and NO (10/12 or 0xb/0xc).
+- [x] Trace the toggle menu item, value formatting and the key ids for YES and NO: 10 is YES, 12 is NO
+      (finding 71). `fw.py dossier` and a faster `emit-rule` came out of this work.
 - [ ] `<dk/ui.h>`: menus, menu items (action, toggle, value, submenu), confirm, choice, toast,
       `dk_ui_has(cap)`.
 - [ ] `core/ui` C adapter on `dk_fw_*.h`.
@@ -166,4 +168,5 @@ Syntakt adapter (S3, S4).
 
 ## Status at end of session
 
-2026-10-27: plan agreed. Phase 1 done in ae364ec3. Phase 2 done in 1eb92a86 and its follow-up. Next: phase 3 (`<dk/ui.h>`, core/ui and the runtime menu in C).
+2026-10-27: plan agreed. Phase 1 done in ae364ec3. Phase 2 done in 1eb92a86 and its follow-up. Phase 3 started: the ABI spec, the runtime exports and the UI firmware anchors are done; the
+menu is unchanged (goldens match). Next: trace the preset-manager list view, then core/ui in C.

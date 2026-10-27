@@ -3,6 +3,32 @@
 #![no_std]
 #![allow(non_camel_case_types, non_snake_case, dead_code)]
 
+pub mod draw {
+    unsafe extern "C" {
+        /// Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, data pointer at +0x14.
+        #[link_name = "cf.draw.fn.blit"]
+        pub fn blit(dst: *mut u8, src: *mut u8, x: i32, y: i32, centre: u8);
+    }
+
+    unsafe extern "C" {
+        /// Fills the rectangle x0, y0 to x1, y1 (inclusive, corners in any order, clipped) in a Bitmap with `color`; the screen Bitmap is 0x80 x 0x40, 1 bpp.
+        #[link_name = "cf.draw.fn.fill_rect"]
+        pub fn fill_rect(bitmap: *mut u8, x0: i32, y0: i32, x1: i32, y1: i32, color: i32);
+    }
+
+    unsafe extern "C" {
+        /// Orders the corners, then calls rect and fill_rect on the same box. The roles of `color` in the second call are not fully read; the stock menu uses it for the selection bar.
+        #[link_name = "cf.draw.fn.invert_rect"]
+        pub fn invert_rect(bitmap: *mut u8, x0: i32, y0: i32, x1: i32, y1: i32, color: i32);
+    }
+
+    unsafe extern "C" {
+        /// Draws the outline of the rectangle x0, y0 to x1, y1 (four lines) in a Bitmap.
+        #[link_name = "cf.draw.fn.rect"]
+        pub fn rect(bitmap: *mut u8, x0: i32, y0: i32, x1: i32, y1: i32, color: i32);
+    }
+}
+
 pub mod input {
     // cf.input.fn.enc_decoder: no sig yet
 
@@ -82,17 +108,28 @@ pub mod mem {
 }
 
 pub mod menu {
-    /// MenuItem, 0x54 bytes (finding 71 section 4, "MenuItem"). The draw function is a `std::function`; stock items put a bitmap blit there, and core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph.
+    /// MenuItem, 0x54 bytes (finding 71 section 4, "MenuItem"). Fields as the ctor 0x40115a44 stores them: id +4, label `string f(MenuItem&)` +0xc, action `void f(MenuItem&)` +0x1c, draw `void f(MenuItem&, Canvas&, x, y)` +0x2c, adjust `void f(MenuItem&, int delta)` +0x3c, encoder divisor +0x4c. Stock items put a bitmap blit in draw; core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph.
     #[repr(C)]
     pub struct MenuItem {
-        pub _pad0: [u8; 44],
+        pub _pad0: [u8; 4],
+        pub id: u32,
+        pub _pad1: [u8; 4],
+        pub label: crate::string::std_function,
+        pub action: crate::string::std_function,
         pub draw: crate::string::std_function,
-        pub _pad1: [u8; 24],
+        pub adjust: crate::string::std_function,
+        pub enc_div: u32,
+        pub _pad2: [u8; 4],
     }
     #[cfg(target_arch = "m68k")]
     const _: () = {
         assert!(core::mem::size_of::<MenuItem>() == 0x54);
+        assert!(core::mem::offset_of!(MenuItem, id) == 0x4);
+        assert!(core::mem::offset_of!(MenuItem, label) == 0xc);
+        assert!(core::mem::offset_of!(MenuItem, action) == 0x1c);
         assert!(core::mem::offset_of!(MenuItem, draw) == 0x2c);
+        assert!(core::mem::offset_of!(MenuItem, adjust) == 0x3c);
+        assert!(core::mem::offset_of!(MenuItem, enc_div) == 0x4c);
     };
 
     /// VerticalMenuView, 0x1ac bytes (finding 71 section 4, "VerticalMenuView"): the Menu base is at +0, the View sub-object at +0x38.
@@ -115,9 +152,21 @@ pub mod menu {
     };
 
     unsafe extern "C" {
+        /// `Menu::addItem(menu, item)` (Menu vtable slot 2, also callable directly): `item` is a raw `MenuItem *` from `operator new(0x54)` that the call wraps in a `shared_ptr<MenuItem>` it keeps; the caller does not free it (read in LedSettingsMenuView 0x400970a8).
+        #[link_name = "cf.menu.fn.add_item"]
+        pub fn add_item(menu: *mut u8, item: *mut u8);
+    }
+
+    unsafe extern "C" {
         /// Constructs a MenuItem in `item` from a label, an action function, an icon and a second function; copies both functions.
         #[link_name = "cf.menu.fn.item_builder"]
         pub fn item_builder(item: *mut u8, label: *const u8, action: *const crate::string::std_function, icon: *const u8, fn4: *const crate::string::std_function);
+    }
+
+    unsafe extern "C" {
+        /// `MenuItem(this, label, action, draw, adjust, id, arg7)`: copies the four `std::function`s (an empty one stays empty), stores `id` at +4 (-1 = none) and `arg7*2` at +0x4c (the encoder divisor; stock passes 8). The caller keeps and destroys its own functions afterwards.
+        #[link_name = "cf.menu.fn.item_ctor"]
+        pub fn item_ctor(this: *mut u8, label: *const crate::string::std_function, action: *const crate::string::std_function, draw: *const crate::string::std_function, adjust: *const crate::string::std_function, id: i32, arg7: i32);
     }
 
     unsafe extern "C" {
@@ -300,6 +349,18 @@ pub mod string {
     }
 
     unsafe extern "C" {
+        /// Destroys a `std::function`: runs the manager with op 3 (destroy) when the manager is not 0. Called on the temporaries after a constructor has cloned them (2280 call sites).
+        #[link_name = "cf.string.fn.std_function.dtor"]
+        pub fn std_function_dtor(f: *mut crate::string::std_function);
+    }
+
+    unsafe extern "C" {
+        /// Copy-constructs a COW `std::string` in `dst` (one pointer) from `src`: shares the buffer and counts a reference. Window constructors use it for their title and items.
+        #[link_name = "cf.string.fn.std_string.copy"]
+        pub fn std_string_copy(dst: *mut u32, src: *const u32);
+    }
+
+    unsafe extern "C" {
         /// Constructs a `std::string` from a C string. core/digikit-menu builds the view title with it.
         #[link_name = "cf.string.fn.std_string.ctor"]
         pub fn std_string_ctor(s: *mut u32, cstr: *const u8, alloc: *const u8);
@@ -314,6 +375,26 @@ pub mod string {
 
 pub mod test {
     // cf.test.fn.kit_vfunc_12: no sig yet
+}
+
+pub mod text {
+    unsafe extern "C" {
+        /// Draws the plain string `s` at x, y: a 36-byte wrapper of the text routine 0x40113a84 with flags 0. Returns the advance. `maxw` is the fifth argument of the wrapper; its exact meaning is not read.
+        #[link_name = "cf.text.fn.draw"]
+        pub fn draw(bitmap: *mut u8, font: *mut u8, x: i32, y: i32, maxw: i32, s: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Draws printf-formatted text in a cleared box next to `x`, `y`: `align` 0 left, 1 centre, 2 right of x; `prefix` is an optional C string (0 = none) measured with the text; a frame is cleared first with fill_rect. The meaning of `arg6` is not read; the signature is from the entry code only.
+        #[link_name = "cf.text.fn.draw_box"]
+        pub fn draw_box(bitmap: *mut u8, font: *mut u8, x: i32, y: i32, align: i32, arg6: i32, prefix: *const u8, fmt: *const u8, ...) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Draws printf-formatted text (vsnprintf into 128 bytes) and returns the advance. `flags`: bit 0 proportional path, 1 centre, 2 right-align, 3 outline after, 4 clear box before (bits 3 and 4 = 0x18), 5 centre vertically, 6 bottom-align, 7 translate (finding 71 section 3).
+        #[link_name = "cf.text.fn.draw_fmt"]
+        pub fn draw_fmt(bitmap: *mut u8, font: *mut u8, x: i32, y: i32, flags: u32, fmt: *const u8, ...) -> i32;
+    }
 }
 
 pub mod view {
@@ -373,5 +454,86 @@ pub mod view {
 }
 
 pub mod window {
+    /// ConfirmWindow (View at +0, fields from +0x4c), 0x7c bytes; the make_shared block is 0x8c with the 0x10-byte control block. result: 1 = YES, 2 = NO. title and text are COW string pointers; lines is 1, or 2 when text is not empty; cb is `std::function<void(bool)>`.
+    #[repr(C)]
+    pub struct ConfirmWindow {
+        pub _pad0: [u8; 76],
+        pub result: u32,
+        pub title: u32,
+        pub text: u32,
+        pub lines: u32,
+        pub cb: crate::string::std_function,
+        pub flag: u8,
+        pub _pad1: [u8; 15],
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<ConfirmWindow>() == 0x7c);
+        assert!(core::mem::offset_of!(ConfirmWindow, result) == 0x4c);
+        assert!(core::mem::offset_of!(ConfirmWindow, title) == 0x50);
+        assert!(core::mem::offset_of!(ConfirmWindow, text) == 0x54);
+        assert!(core::mem::offset_of!(ConfirmWindow, lines) == 0x58);
+        assert!(core::mem::offset_of!(ConfirmWindow, cb) == 0x5c);
+        assert!(core::mem::offset_of!(ConfirmWindow, flag) == 0x6c);
+    };
+
+    /// MultiChoiceWindow (OverlayWindow base, Observer sub-object at +0x58), 0xd8 bytes; the make_shared block is 0xe8. items is a vector of COW strings (4 bytes each), title the title lines, cb `std::function<void(int)>`, selected the index passed to cb.
+    #[repr(C)]
+    pub struct MultiChoiceWindow {
+        pub _pad0: [u8; 116],
+        pub items_begin: u32,
+        pub items_end: u32,
+        pub _pad1: [u8; 4],
+        pub title_begin: u32,
+        pub title_end: u32,
+        pub _pad2: [u8; 4],
+        pub cb: crate::string::std_function,
+        pub selected: u32,
+        pub _pad3: [u8; 12],
+        pub vertical: u8,
+        pub _pad4: [u8; 43],
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<MultiChoiceWindow>() == 0xd8);
+        assert!(core::mem::offset_of!(MultiChoiceWindow, items_begin) == 0x74);
+        assert!(core::mem::offset_of!(MultiChoiceWindow, items_end) == 0x78);
+        assert!(core::mem::offset_of!(MultiChoiceWindow, title_begin) == 0x80);
+        assert!(core::mem::offset_of!(MultiChoiceWindow, title_end) == 0x84);
+        assert!(core::mem::offset_of!(MultiChoiceWindow, cb) == 0x8c);
+        assert!(core::mem::offset_of!(MultiChoiceWindow, selected) == 0x9c);
+        assert!(core::mem::offset_of!(MultiChoiceWindow, vertical) == 0xac);
+    };
+
+    unsafe extern "C" {
+        /// `ConfirmWindow(this, title, text, cb, flag)`: `title` and `text` point at COW `std::string`s (each cut to 80 chars; an empty `text` gives one line), `cb` is a `std::function<void(bool)>` that the constructor clones into +0x5c, `flag` is stored at +0x6c (0: the TRIG keys 0x19 to 0x28 are swallowed). The key handler (0x401114f0) closes the window on press of key 10 (YES) and calls cb(true), on key 12 (NO) and calls cb(false); it sets +0x4c to 1 or 2, and every other key is handled (modal). Allocate 0x8c bytes as a make_shared block: 0x10 control block, then the object at +0x10; push with `cf.menu.fn.view_add` (replace = 0).
+        #[link_name = "cf.window.fn.confirm_ctor"]
+        pub fn confirm_ctor(this: *mut u8, title: *const u32, text: *const u32, cb: *const crate::string::std_function, flag: u8);
+    }
+
+    unsafe extern "C" {
+        /// `MultiChoiceWindow(this, items, title, cb, vertical)`: `items` points at a vector of COW `std::string` (begin, end, capacity; copied), `title` at a `std::string` (split at line breaks into the title lines at +0x80), `cb` is a `std::function<void(int)>` cloned into +0x8c, `vertical` is stored at +0xac (nonzero: items stacked and UP 11 / DOWN 14 move the selection; 0: items side by side and LEFT 13 / RIGHT 15). The selection index is at +0x9c. The key handler (0x40116e44) calls cb(index) and closes on press of key 10 (YES) or 0x31, and closes without a callback on key 12 (NO). The window is 0x40 x 0x20 pixels before sizing. Allocate 0xe8 bytes as a make_shared block (0x10 control block, object at +0x10); push with `cf.view.fn.view_push`.
+        #[link_name = "cf.window.fn.multichoice_ctor"]
+        pub fn multichoice_ctor(this: *mut u8, items_vector: *const u32, title: *const u32, cb: *const crate::string::std_function, vertical: u8);
+    }
+
     // cf.window.fn.popup_make: no sig yet
+
+    unsafe extern "C" {
+        /// Shows a short message on the main screen: if the byte at `UIStates+0x45` is 0, formats `fmt` with vsnprintf into 256 bytes, keeps up to 32 characters in the string at `UIStates+0x48`, sets the timeout at +0x4c and requests a redraw. The text shows for a short time and then goes away; no view is pushed.
+        #[link_name = "cf.window.fn.toast"]
+        pub fn toast(ui_states: *mut u8, fmt: *const u8, ...);
+    }
+
+    unsafe extern "C" {
+        /// As `cf.window.fn.toast` for a ready `std::string` (pointer to the one-word COW string): keeps up to 32 characters, sets the timeout, requests a redraw; does nothing when `UIStates+0x45` is not 0.
+        #[link_name = "cf.window.fn.toast_str"]
+        pub fn toast_str(ui_states: *mut u8, text: *const u32);
+    }
+
+    unsafe extern "C" {
+        /// Returns the UIStates singleton (0x2f8 bytes, created on first use), the first argument of the toast functions. Read in the stock `shared_ptr<UIStates>` accessor.
+        #[link_name = "cf.window.fn.ui_states"]
+        pub fn ui_states() -> *mut u8;
+    }
 }

@@ -17,6 +17,7 @@ pub mod fwgen;
 pub mod syx;
 
 pub use error::{Error, Result};
+pub mod abigen;
 pub mod apply;
 pub mod bootrom;
 pub mod dkm;

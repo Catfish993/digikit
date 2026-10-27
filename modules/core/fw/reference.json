@@ -4,6 +4,182 @@
       "at": {
         "dn2-1.12": [
           {
+            "addr": "0x40115adc",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40114168",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_draw_blit",
+        "rust": "dkfw::draw::blit"
+      },
+      "cpu": "cf",
+      "doc": "Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, data pointer at +0x14.",
+      "file": "devices/fw/draw.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.draw.fn.blit",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *dst, u8 *src, i32 x, i32 y, u8 centre)",
+      "subsystem": "draw",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40114b22",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x401131ae",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_draw_fill_rect",
+        "rust": "dkfw::draw::fill_rect"
+      },
+      "cpu": "cf",
+      "doc": "Fills the rectangle x0, y0 to x1, y1 (inclusive, corners in any order, clipped) in a Bitmap with `color`; the screen Bitmap is 0x80 x 0x40, 1 bpp.",
+      "file": "devices/fw/draw.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.draw.fn.fill_rect",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *bitmap, i32 x0, i32 y0, i32 x1, i32 y1, i32 color)",
+      "subsystem": "draw",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40114c34",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x401132c0",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_draw_invert_rect",
+        "rust": "dkfw::draw::invert_rect"
+      },
+      "cpu": "cf",
+      "doc": "Orders the corners, then calls rect and fill_rect on the same box. The roles of `color` in the second call are not fully read; the stock menu uses it for the selection bar.",
+      "file": "devices/fw/draw.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.draw.fn.invert_rect",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *bitmap, i32 x0, i32 y0, i32 x1, i32 y1, i32 color)",
+      "subsystem": "draw",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40114906",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40112f92",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_draw_rect",
+        "rust": "dkfw::draw::rect"
+      },
+      "cpu": "cf",
+      "doc": "Draws the outline of the rectangle x0, y0 to x1, y1 (four lines) in a Bitmap.",
+      "file": "devices/fw/draw.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.draw.fn.rect",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *bitmap, i32 x0, i32 y0, i32 x1, i32 y1, i32 color)",
+      "subsystem": "draw",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
             "addr": "0x4011ff0c",
             "len": 2
           }
@@ -3565,6 +3741,50 @@
       "at": {
         "dn2-1.12": [
           {
+            "addr": "0x40116bee",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4011527a",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_menu_add_item",
+        "rust": "dkfw::menu::add_item"
+      },
+      "cpu": "cf",
+      "doc": "`Menu::addItem(menu, item)` (Menu vtable slot 2, also callable directly): `item` is a raw `MenuItem *` from `operator new(0x54)` that the call wraps in a `shared_ptr<MenuItem>` it keeps; the caller does not free it (read in LedSettingsMenuView 0x400970a8).",
+      "file": "devices/fw/menu.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.menu.fn.add_item",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *menu, u8 *item)",
+      "subsystem": "menu",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
             "addr": "0x40117504",
             "len": 4
           }
@@ -3602,6 +3822,50 @@
       "subsystem": "menu",
       "users": [
         "core/digikit-menu"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x401173b8",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40115a44",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_menu_item_ctor",
+        "rust": "dkfw::menu::item_ctor"
+      },
+      "cpu": "cf",
+      "doc": "`MenuItem(this, label, action, draw, adjust, id, arg7)`: copies the four `std::function`s (an empty one stays empty), stores `id` at +4 (-1 = none) and `arg7*2` at +0x4c (the encoder divisor; stock passes 8). The caller keeps and destroys its own functions afterwards.",
+      "file": "devices/fw/menu.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.menu.fn.item_ctor",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *this, const std_function *label, const std_function *action, const std_function *draw, const std_function *adjust, i32 id, i32 arg7)",
+      "subsystem": "menu",
+      "users": [
+        "core/ui"
       ],
       "was": []
     },
@@ -3800,12 +4064,37 @@
         "rust": "MenuItem"
       },
       "cpu": "cf",
-      "doc": "MenuItem, 0x54 bytes (finding 71 section 4, \"MenuItem\"). The draw function is a `std::function`; stock items put a bitmap blit there, and core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph.",
+      "doc": "MenuItem, 0x54 bytes (finding 71 section 4, \"MenuItem\"). Fields as the ctor 0x40115a44 stores them: id +4, label `string f(MenuItem&)` +0xc, action `void f(MenuItem&)` +0x1c, draw `void f(MenuItem&, Canvas&, x, y)` +0x2c, adjust `void f(MenuItem&, int delta)` +0x3c, encoder divisor +0x4c. Stock items put a bitmap blit in draw; core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph.",
       "fields": [
+        {
+          "name": "id",
+          "off": 4,
+          "type": "u32"
+        },
+        {
+          "name": "label",
+          "off": 12,
+          "type": "std_function"
+        },
+        {
+          "name": "action",
+          "off": 28,
+          "type": "std_function"
+        },
         {
           "name": "draw",
           "off": 44,
           "type": "std_function"
+        },
+        {
+          "name": "adjust",
+          "off": 60,
+          "type": "std_function"
+        },
+        {
+          "name": "enc_div",
+          "off": 76,
+          "type": "u32"
         }
       ],
       "file": "devices/fw/menu.toml",
@@ -3815,7 +4104,8 @@
       "size": 84,
       "subsystem": "menu",
       "users": [
-        "core/digikit-menu"
+        "core/digikit-menu",
+        "core/ui"
       ],
       "was": []
     },
@@ -6936,6 +7226,94 @@
       "at": {
         "dn2-1.12": [
           {
+            "addr": "0x40188366",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40197ce0",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_string_std_function_dtor",
+        "rust": "dkfw::string::std_function_dtor"
+      },
+      "cpu": "cf",
+      "doc": "Destroys a `std::function`: runs the manager with op 3 (destroy) when the manager is not 0. Called on the temporaries after a constructor has cloned them (2280 call sites).",
+      "file": "devices/fw/string.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.string.fn.std_function.dtor",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (std_function *f)",
+      "subsystem": "string",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x401ce1ae",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x401e7570",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_string_std_string_copy",
+        "rust": "dkfw::string::std_string_copy"
+      },
+      "cpu": "cf",
+      "doc": "Copy-constructs a COW `std::string` in `dst` (one pointer) from `src`: shares the buffer and counts a reference. Window constructors use it for their title and items.",
+      "file": "devices/fw/string.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.string.fn.std_string.copy",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 *dst, const u32 *src)",
+      "subsystem": "string",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
             "addr": "0x401ceab8",
             "len": 4
           }
@@ -7084,7 +7462,8 @@
       "size": 16,
       "subsystem": "string",
       "users": [
-        "core/digikit-menu"
+        "core/digikit-menu",
+        "core/ui"
       ],
       "was": []
     },
@@ -7154,6 +7533,138 @@
       "subsystem": "test",
       "users": [
         "test/registry-demo"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x401156d4",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40113d60",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_text_draw",
+        "rust": "dkfw::text::draw"
+      },
+      "cpu": "cf",
+      "doc": "Draws the plain string `s` at x, y: a 36-byte wrapper of the text routine 0x40113a84 with flags 0. Returns the advance. `maxw` is the fifth argument of the wrapper; its exact meaning is not read.",
+      "file": "devices/fw/text.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.text.fn.draw",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u8 *bitmap, u8 *font, i32 x, i32 y, i32 maxw, const char *s)",
+      "subsystem": "text",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40115948",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40113fd4",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_text_draw_box",
+        "rust": "dkfw::text::draw_box"
+      },
+      "cpu": "cf",
+      "doc": "Draws printf-formatted text in a cleared box next to `x`, `y`: `align` 0 left, 1 centre, 2 right of x; `prefix` is an optional C string (0 = none) measured with the text; a frame is cleared first with fill_rect. The meaning of `arg6` is not read; the signature is from the entry code only.",
+      "file": "devices/fw/text.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.text.fn.draw_box",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u8 *bitmap, u8 *font, i32 x, i32 y, i32 align, i32 arg6, const char *prefix, const char *fmt, ...)",
+      "subsystem": "text",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4011573c",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40113dc8",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_text_draw_fmt",
+        "rust": "dkfw::text::draw_fmt"
+      },
+      "cpu": "cf",
+      "doc": "Draws printf-formatted text (vsnprintf into 128 bytes) and returns the advance. `flags`: bit 0 proportional path, 1 centre, 2 right-align, 3 outline after, 4 clear box before (bits 3 and 4 = 0x18), 5 centre vertically, 6 bottom-align, 7 translate (finding 71 section 3).",
+      "file": "devices/fw/text.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.text.fn.draw_fmt",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u8 *bitmap, u8 *font, i32 x, i32 y, u32 flags, const char *fmt, ...)",
+      "subsystem": "text",
+      "users": [
+        "core/ui"
       ],
       "was": []
     },
@@ -7561,6 +8072,94 @@
       "at": {
         "dn2-1.12": [
           {
+            "addr": "0x40112d0e",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4011139a",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_window_confirm_ctor",
+        "rust": "dkfw::window::confirm_ctor"
+      },
+      "cpu": "cf",
+      "doc": "`ConfirmWindow(this, title, text, cb, flag)`: `title` and `text` point at COW `std::string`s (each cut to 80 chars; an empty `text` gives one line), `cb` is a `std::function<void(bool)>` that the constructor clones into +0x5c, `flag` is stored at +0x6c (0: the TRIG keys 0x19 to 0x28 are swallowed). The key handler (0x401114f0) closes the window on press of key 10 (YES) and calls cb(true), on key 12 (NO) and calls cb(false); it sets +0x4c to 1 or 2, and every other key is handled (modal). Allocate 0x8c bytes as a make_shared block: 0x10 control block, then the object at +0x10; push with `cf.menu.fn.view_add` (replace = 0).",
+      "file": "devices/fw/window.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.window.fn.confirm_ctor",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *this, const u32 *title, const u32 *text, const std_function *cb, u8 flag)",
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40118492",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40116b1e",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_window_multichoice_ctor",
+        "rust": "dkfw::window::multichoice_ctor"
+      },
+      "cpu": "cf",
+      "doc": "`MultiChoiceWindow(this, items, title, cb, vertical)`: `items` points at a vector of COW `std::string` (begin, end, capacity; copied), `title` at a `std::string` (split at line breaks into the title lines at +0x80), `cb` is a `std::function<void(int)>` cloned into +0x8c, `vertical` is stored at +0xac (nonzero: items stacked and UP 11 / DOWN 14 move the selection; 0: items side by side and LEFT 13 / RIGHT 15). The selection index is at +0x9c. The key handler (0x40116e44) calls cb(index) and closes on press of key 10 (YES) or 0x31, and closes without a callback on key 12 (NO). The window is 0x40 x 0x20 pixels before sizing. Allocate 0xe8 bytes as a make_shared block (0x10 control block, object at +0x10); push with `cf.view.fn.view_push`.",
+      "file": "devices/fw/window.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.window.fn.multichoice_ctor",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *this, const u32 *items_vector, const u32 *title, const std_function *cb, u8 vertical)",
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
             "addr": "0x401a80d8",
             "len": 4
           }
@@ -7601,6 +8200,323 @@
       "was": [
         "cf.menu.fn.popup_make"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400562e6",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4005b23a",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_window_toast",
+        "rust": "dkfw::window::toast"
+      },
+      "cpu": "cf",
+      "doc": "Shows a short message on the main screen: if the byte at `UIStates+0x45` is 0, formats `fmt` with vsnprintf into 256 bytes, keeps up to 32 characters in the string at `UIStates+0x48`, sets the timeout at +0x4c and requests a redraw. The text shows for a short time and then goes away; no view is pushed.",
+      "file": "devices/fw/window.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.window.fn.toast",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *ui_states, const char *fmt, ...)",
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4005628c",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4005b1e0",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_window_toast_str",
+        "rust": "dkfw::window::toast_str"
+      },
+      "cpu": "cf",
+      "doc": "As `cf.window.fn.toast` for a ready `std::string` (pointer to the one-word COW string): keeps up to 32 characters, sets the timeout, requests a redraw; does nothing when `UIStates+0x45` is not 0.",
+      "file": "devices/fw/window.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.window.fn.toast_str",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *ui_states, const u32 *text)",
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4018b2a4",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x401998c0",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_window_ui_states",
+        "rust": "dkfw::window::ui_states"
+      },
+      "cpu": "cf",
+      "doc": "Returns the UIStates singleton (0x2f8 bytes, created on first use), the first argument of the toast functions. Read in the stock `shared_ptr<UIStates>` accessor.",
+      "file": "devices/fw/window.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.window.fn.ui_states",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *()",
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x401dd7e4",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x401ed3b0",
+            "len": 4
+          }
+        ]
+      },
+      "cpu": "cf",
+      "doc": "The 4-byte vtable literal of the `_Sp_counted_ptr_inplace<ConfirmWindow>` control block (the immediate of `move.l #vptr,(a2)` in the stock call site 0x40084d02, \"CLEAR SONG?\"); the anchor is that vtable. A module that builds a ConfirmWindow stores this value in word 0 of its 0x10-byte control block (use count and weak count 1 at +4, +8, object pointer at +0xc).",
+      "file": "devices/fw/window.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.window.site.confirm_cb_vptr_lit",
+      "rule": {
+        "dn2": {
+          "kind": "cf_ptr",
+          "len": 4,
+          "offset": 74
+        },
+        "dt2": {
+          "kind": "cf_ptr",
+          "len": 4,
+          "offset": 74
+        }
+      },
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x401edba4",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40204fb4",
+            "len": 4
+          }
+        ]
+      },
+      "cpu": "cf",
+      "doc": "The 4-byte vtable literal of the `_Sp_counted_ptr_inplace<MultiChoiceWindow>` control block (the immediate of `move.l #vptr,(a2)` at 0x400aa04c in the stock call site 0x400a9f54, SELECT INTERFACE); the anchor is that vtable. This vtable differs from the ConfirmWindow one: each make_shared type has its own.",
+      "file": "devices/fw/window.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.window.site.multichoice_cb_vptr_lit",
+      "rule": {
+        "dn2": {
+          "kind": "cf_ptr",
+          "len": 4,
+          "offset": 250
+        },
+        "dt2": {
+          "kind": "cf_ptr",
+          "len": 4,
+          "offset": 250
+        }
+      },
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "bindings": {
+        "c": "ConfirmWindow",
+        "gas": "ConfirmWindow_size",
+        "rust": "ConfirmWindow"
+      },
+      "cpu": "cf",
+      "doc": "ConfirmWindow (View at +0, fields from +0x4c), 0x7c bytes; the make_shared block is 0x8c with the 0x10-byte control block. result: 1 = YES, 2 = NO. title and text are COW string pointers; lines is 1, or 2 when text is not empty; cb is `std::function<void(bool)>`.",
+      "fields": [
+        {
+          "name": "result",
+          "off": 76,
+          "type": "u32"
+        },
+        {
+          "name": "title",
+          "off": 80,
+          "type": "ptr"
+        },
+        {
+          "name": "text",
+          "off": 84,
+          "type": "ptr"
+        },
+        {
+          "name": "lines",
+          "off": 88,
+          "type": "u32"
+        },
+        {
+          "name": "cb",
+          "off": 92,
+          "type": "std_function"
+        },
+        {
+          "name": "flag",
+          "off": 108,
+          "type": "u8"
+        }
+      ],
+      "file": "devices/fw/window.toml",
+      "kind": "struct",
+      "mark": "D",
+      "name": "cf.window.struct.ConfirmWindow",
+      "size": 124,
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
+    },
+    {
+      "bindings": {
+        "c": "MultiChoiceWindow",
+        "gas": "MultiChoiceWindow_size",
+        "rust": "MultiChoiceWindow"
+      },
+      "cpu": "cf",
+      "doc": "MultiChoiceWindow (OverlayWindow base, Observer sub-object at +0x58), 0xd8 bytes; the make_shared block is 0xe8. items is a vector of COW strings (4 bytes each), title the title lines, cb `std::function<void(int)>`, selected the index passed to cb.",
+      "fields": [
+        {
+          "name": "items_begin",
+          "off": 116,
+          "type": "ptr"
+        },
+        {
+          "name": "items_end",
+          "off": 120,
+          "type": "ptr"
+        },
+        {
+          "name": "title_begin",
+          "off": 128,
+          "type": "ptr"
+        },
+        {
+          "name": "title_end",
+          "off": 132,
+          "type": "ptr"
+        },
+        {
+          "name": "cb",
+          "off": 140,
+          "type": "std_function"
+        },
+        {
+          "name": "selected",
+          "off": 156,
+          "type": "u32"
+        },
+        {
+          "name": "vertical",
+          "off": 172,
+          "type": "u8"
+        }
+      ],
+      "file": "devices/fw/window.toml",
+      "kind": "struct",
+      "mark": "D",
+      "name": "cf.window.struct.MultiChoiceWindow",
+      "size": 216,
+      "subsystem": "window",
+      "users": [
+        "core/ui"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -8535,6 +9451,13 @@
   ],
   "subsystems": [
     {
+      "count": 4,
+      "cpu": "cf",
+      "file": "devices/fw/draw.toml",
+      "meaning": "pixels, rectangles, bitmaps, the screen",
+      "name": "draw"
+    },
+    {
       "count": 3,
       "cpu": "cf",
       "file": "devices/fw/input.toml",
@@ -8563,7 +9486,7 @@
       "name": "mem"
     },
     {
-      "count": 7,
+      "count": 9,
       "cpu": "cf",
       "file": "devices/fw/menu.toml",
       "meaning": "Menu, MenuItem, menu views, the SETTINGS menu",
@@ -8612,7 +9535,7 @@
       "name": "storage"
     },
     {
-      "count": 7,
+      "count": 9,
       "cpu": "cf",
       "file": "devices/fw/string.toml",
       "meaning": "std::string, std::function and shared_ptr helpers",
@@ -8626,6 +9549,13 @@
       "name": "test"
     },
     {
+      "count": 3,
+      "cpu": "cf",
+      "file": "devices/fw/text.toml",
+      "meaning": "fonts and text drawing",
+      "name": "text"
+    },
+    {
       "count": 9,
       "cpu": "cf",
       "file": "devices/fw/view.toml",
@@ -8633,7 +9563,7 @@
       "name": "view"
     },
     {
-      "count": 1,
+      "count": 10,
       "cpu": "cf",
       "file": "devices/fw/window.toml",
       "meaning": "popups and dialogs",

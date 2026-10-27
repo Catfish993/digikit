@@ -11,7 +11,7 @@ from the address (>= 0x400000 is ColdFire) or with --cpu. Set FW_IMAGE to skip
 "... N more" tail, so a single call never floods the context.
 
 Subcommands: fn decomp disasm callers callees xref str class path port sql
-search atlas catalog batch. In a batch file each line is one command line (without
+search atlas catalog dossier batch. In a batch file each line is one command line (without
 "fw.py"); lines starting with # are comments; every result block starts with
 "## <line>". The call graph is cached on disk (out/cache/fw/), keyed by the
 database hash, so a cold process only pays for opening SQLite.
@@ -1210,6 +1210,319 @@ def cmd_catalog(
     return out
 
 
+# --- dossier: everything about one function, optionally with its pair on another image ----
+
+DOSSIER_MAX = 90
+REFERENCE = os.path.join(ROOT, "modules", "core", "fw", "reference.json")
+_DIS = re.compile(r"^([0-9a-f]{8})  [0-9a-f ]+?\s{2,}(\S.*)$")
+_A0_LOAD = re.compile(r"^(movea\.l|move\.l|lea)\s.*,A0$")
+
+
+def parse_disasm(text: str) -> list[tuple[int, str]]:
+    """(address, instruction text) of the instruction lines of a Ghidra disassembly dump."""
+    out = []
+    for ln in text.splitlines():
+        m = _DIS.match(ln)
+        if m:
+            out.append((int(m.group(1), 16), m.group(2).strip()))
+    return out
+
+
+def hidden_return_ptr(insn: str) -> bool:
+    """True for a load of A0 (the register that carries a hidden struct return pointer)."""
+    return bool(_A0_LOAD.match(insn))
+
+
+def call_setup(insns: Sequence[tuple[int, str]], site: int, n: int) -> list[str]:
+    """The N instructions before the call at SITE and the call itself ('>'), A0 loads marked."""
+    before = [i for i in insns if i[0] < site][-n:]
+    lines = [
+        "    %08x  %s%s"
+        % (a, t, "   ; A0: hidden return ptr?" if hidden_return_ptr(t) else "")
+        for a, t in before
+    ]
+    lines += ["  > %08x  %s" % (a, t) for a, t in insns if a == site]
+    return lines
+
+
+def anchors_for(
+    entries: Sequence[dict[str, Any]], image: str, entry: int, end: int
+) -> list[str]:
+    """Declared ColdFire anchors on IMAGE that point into [entry, end) or whose doc names the entry address."""
+    out = []
+    for e in entries:
+        if e.get("cpu") != "cf":
+            continue
+        spots = [int(s["addr"], 16) for s in e.get("at", {}).get(image, [])]
+        inside = [a for a in spots if entry <= a < end]
+        if inside or "0x%x" % entry in (e.get("doc") or ""):
+            where = "+0x%x" % (inside[0] - entry) if inside else " (doc)"
+            out.append("%s [%s]%s" % (e["name"], e.get("mark", "?"), where))
+    return out
+
+
+def anchor_addrs(entries: Sequence[dict[str, Any]], image: str) -> dict[int, str]:
+    out: dict[int, str] = {}
+    for e in entries:
+        if e.get("cpu") == "cf":
+            for s in e.get("at", {}).get(image, []):
+                out.setdefault(int(s["addr"], 16), e["name"])
+    return out
+
+
+def load_reference() -> list[dict[str, Any]]:
+    import json
+
+    try:
+        with open(REFERENCE) as fh:
+            return json.load(fh)["entries"]
+    except (OSError, ValueError, KeyError):
+        return []
+
+
+def catalog_row(image: str, entry: int) -> dict[str, Any] | None:
+    path = os.path.join(ATLAS_DIR, short_image(image) + ".sqlite")
+    if not os.path.exists(path):
+        return None
+    con = open_ro(path)
+    cols = (
+        "h_strict",
+        "hash_count",
+        "pair_addr",
+        "pair_method",
+        "rule_kind",
+        "rule_ordinal",
+        "rule_both",
+    )
+    try:
+        if not _has(con, "catalog"):
+            return None
+        row = con.execute(
+            "SELECT %s FROM catalog WHERE addr=?" % ", ".join(cols), (entry,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        con.close()
+    return dict(zip(cols, row, strict=True)) if row else None
+
+
+def hash_entries(img: CF, h: str | None) -> list[int]:
+    if h is None:
+        return []
+    return [
+        r[0]
+        for r in img.db.execute(
+            "SELECT entry FROM func_hash WHERE h_strict=? ORDER BY entry", (h,)
+        )
+    ]
+
+
+def own_slot(img: CF, entry: int) -> tuple[str, int, int] | None:
+    """(class, offset_to_top, slot) of a vtable of its own class that holds ENTRY, or None."""
+    return img.db.execute(
+        "SELECT class, offset_to_top, slot FROM vtables WHERE target=? AND owner=class "
+        "ORDER BY offset_to_top<>0, abs(offset_to_top), class LIMIT 1",
+        (entry,),
+    ).fetchone()
+
+
+def rule_targets(
+    img: CF,
+    kind: str,
+    ordinal: int | None,
+    h: str | None,
+    slot: tuple[str, int, int] | None,
+) -> list[int]:
+    """Where the rule (kind, ordinal, hash or vtable slot) resolves on IMG."""
+    if kind == "cf_func":
+        hits = hash_entries(img, h)
+        return hits if ordinal is None else hits[ordinal : ordinal + 1]
+    if kind == "cf_vtable_slot" and slot:
+        return [
+            r[0]
+            for r in img.db.execute(
+                "SELECT DISTINCT target FROM vtables WHERE class=? AND offset_to_top=? AND slot=?",
+                slot,
+            )
+        ]
+    return []
+
+
+def _caller_lines(img: CF, entry: int, n_callers: int, n_insn: int) -> list[str]:
+    rows = [r for r in img.callers(entry) if r[0] is not None and r[0] != entry]
+    funcs = sorted({r[0] for r in rows})
+    sites = len(img.callers(entry))
+    out = ["callers: %d sites in %d functions" % (sites, len(funcs))]
+    seen: set[int] = set()
+    for fn, site, kind in rows:
+        if fn in seen:
+            continue
+        if len(seen) >= n_callers:
+            break
+        seen.add(fn)
+        out.append("  <- %s @%08x %s" % (img.label(fn), site, kind[:4]))
+        frow = img.func_row(fn)
+        text = img.read_dump(frow[7]) if frow else None
+        if text:
+            out.extend(call_setup(parse_disasm(text), site, n_insn))
+    if len(funcs) > len(seen):
+        out.append("  ... %d more callers (callers ADDR)" % (len(funcs) - len(seen)))
+    return out
+
+
+def find_pair(
+    img: CF,
+    other: CF,
+    entry: int,
+    row: dict[str, Any] | None,
+    rule: tuple[str, int | None, str | None, tuple[str, int, int] | None],
+) -> tuple[int | None, str]:
+    """The function on OTHER that matches ENTRY and how it was found."""
+    if row and row["pair_addr"] is not None:
+        return row["pair_addr"], "catalog pair_addr (%s)" % row["pair_method"]
+    kind, ordinal, h, slot = rule
+    hits = rule_targets(other, kind, ordinal, h, slot)
+    if len(hits) == 1:
+        return hits[0], "rule %s resolves uniquely" % kind
+    rows = other.db.execute(
+        "SELECT dst_entry, method FROM matches WHERE src_image=? AND src_entry=?",
+        (img.db_name, entry),
+    ).fetchall()
+    if rows:
+        return rows[0][0], "cfmatch %s%s" % (
+            rows[0][1],
+            " (%d candidates)" % len(rows) if len(rows) > 1 else "",
+        )
+    rev = other.db.execute(
+        "SELECT src_entry, method FROM matches WHERE src_image=? AND dst_entry=?",
+        (img.db_name, entry),
+    ).fetchall()
+    if rev:
+        return rev[0][0], "cfmatch %s (reverse)" % rev[0][1]
+    return None, "no pair found (try: port %s --from %s --to %s)" % (
+        "0x%x" % entry,
+        img.image,
+        other.image,
+    )
+
+
+def cmd_dossier(
+    sess: Session,
+    image: str | None,
+    token: str,
+    other_image: str | None,
+    n_callers: int = 3,
+    n_decomp: int = 12,
+) -> list[str]:
+    """One block about the function containing TOKEN; with OTHER_IMAGE also its pair there."""
+    img = sess.get(image, token, "cf")
+    assert isinstance(img, CF)
+    other = sess.get(other_image, None, "cf") if other_image else None
+    assert other is None or isinstance(other, CF)
+    entry = img.resolve(token)
+    f = img.func_row(entry)
+    assert f is not None
+    from tools.firmware.catalog import suggest_rule
+
+    refs = load_reference()
+    hrow = img.db.execute(
+        "SELECT h_strict FROM func_hash WHERE entry=?", (entry,)
+    ).fetchone()
+    h = hrow[0] if hrow else None
+    same = hash_entries(img, h)
+    how = ""
+    out = [
+        "dossier %s %s" % (img.image, img.label(entry)),
+        "entry=%08x size=%d end=%08x hash=%s (%d with this hash)"
+        % (entry, f[4], f[1], h[:12] if h else "none", len(same)),
+    ]
+    if f[5]:
+        out.append("sig: " + clip(f[5]))
+    slot = own_slot(img, entry)
+    slots = img.vtable_slots(entry)
+    if slots:
+        more = " ..." if len(slots) > 6 else ""
+        out.append("vfunc: " + ", ".join("%s#%d" % s for s in slots[:6]) + more)
+    else:
+        out.append("vfunc: no")
+    strs = img.strings_of(entry, 6)
+    if strs:
+        out.append("strings: " + "; ".join(repr(clip(t, 40)) for _a, t in strs))
+    anchors = anchors_for(refs, img.image, entry, f[1])
+    out.append("anchors: " + ("; ".join(anchors) if anchors else "none"))
+    row = catalog_row(img.image, entry)
+    if row and row["rule_kind"]:
+        kind, ordinal, source = row["rule_kind"], row["rule_ordinal"], "catalog"
+    else:
+        kind, ordinal = suggest_rule(entry, same, slot is not None)
+        source = "computed"
+    ord_txt = " ordinal=%d" % ordinal if ordinal is not None else ""
+    slot_txt = (
+        " class=%s slot=%d" % (slot[0], slot[2])
+        if kind == "cf_vtable_slot" and slot
+        else ""
+    )
+    both_txt = (
+        " both_devices=%s" % row["rule_both"]
+        if row and row["rule_both"] is not None
+        else ""
+    )
+    out.append("rule (%s): %s%s%s%s" % (source, kind, ord_txt, slot_txt, both_txt))
+    rule = (kind, ordinal, h, slot)
+    pair: int | None = None
+    if other is not None:
+        got = rule_targets(other, kind, ordinal, h, slot)
+        pair, how = find_pair(img, other, entry, row, rule)
+        out.append(
+            "on %s the rule resolves to: %s%s"
+            % (
+                other.image,
+                ", ".join("%08x" % a for a in got) if got else "nothing",
+                "  (the pair)" if pair is not None and got == [pair] else "",
+            )
+        )
+    out.extend(_caller_lines(img, entry, n_callers, 8))
+    callees = img.callees(entry)
+    named = anchor_addrs(refs, img.image)
+    ranked = sorted(
+        callees,
+        key=lambda c: (c[0] not in named, img.names().get(c[0]) is None, c[0]),
+    )
+    out.append("callees: %d" % len(callees))
+    for c, _k in ranked[:8]:
+        tag = "  {%s}" % named[c] if c in named else ""
+        out.append("  -> %s%s" % (img.label(c), tag))
+    if len(ranked) > 8:
+        out.append("  -> ... %d more" % (len(ranked) - 8))
+    text = img.read_dump(f[6])
+    if text:
+        body = _decomp_body(text)
+        out.append("decomp (%d of %d lines):" % (min(n_decomp, len(body)), len(body)))
+        out.extend("  " + ln[:110] for ln in body[:n_decomp])
+    else:
+        out.append("decomp: none")
+    if other is not None:
+        out.append("")
+        if pair is None:
+            out.append("pair on %s: %s" % (other.image, how))
+        else:
+            pf = other.func_row(pair)
+            ph = other.db.execute(
+                "SELECT h_strict FROM func_hash WHERE entry=?", (pair,)
+            ).fetchone()
+            out.append("pair on %s: %s" % (other.image, other.label(pair)))
+            out.append("  found by: " + how)
+            if pf:
+                sig = "  sig: " + clip(pf[5], 80) if pf[5] else ""
+                out.append(
+                    "  size=%d same strict hash=%s%s"
+                    % (pf[4], "yes" if ph and ph[0] == h else "no", sig)
+                )
+            out.extend("  " + ln for ln in _caller_lines(other, pair, 2, 4))
+    return out
+
+
 # --- argument parsing and dispatch -----------------------------------------------
 
 
@@ -1283,6 +1596,19 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument(
         "--groups", action="store_true", help="list the groups (top N by size)"
     )
+    sp = common(
+        sub.add_parser(
+            "dossier",
+            help="one block on a function (signature, class, strings, callers with argument setup, callees, "
+            "decomp, anchors, rule) and with --other its pair",
+        )
+    )
+    sp.add_argument("target", help="address (hex), Ghidra name or cf_names name")
+    sp.add_argument(
+        "--other", help="the other image, e.g. dn2-1.12: find the pair there"
+    )
+    sp.add_argument("--callers", type=int, default=3, help="callers to show")
+    sp.add_argument("--decomp", type=int, default=12, help="decompiled lines to show")
     sp = common(sub.add_parser("batch", help="run many queries from FILE or - (stdin)"))
     sp.add_argument("file")
     return p
@@ -1291,11 +1617,22 @@ def build_parser() -> argparse.ArgumentParser:
 def run(
     sess: Session, args: argparse.Namespace, default_image: str | None = None
 ) -> str:
-    cap = DEFAULT_MAX if args.max is None else args.max
-    image = args.image or default_image
     c = args.cmd
+    cap = (
+        (DOSSIER_MAX if c == "dossier" else DEFAULT_MAX)
+        if args.max is None
+        else args.max
+    )
+    image = args.image or default_image
     if c == "batch":
         raise FwError("batch cannot be nested")
+    if c == "dossier":
+        return capped(
+            cmd_dossier(
+                sess, image, args.target, args.other, args.callers, args.decomp
+            ),
+            cap,
+        )
     if c == "sql":
         return capped(cmd_sql(sess.get(image, None, args.cpu), args.query), cap)
     if c == "search":
@@ -1352,7 +1689,7 @@ def run_line(
         args = parser.parse_args(argv)
     except SystemExit:
         return "error: bad arguments: " + " ".join(argv)
-    if args.max is None:
+    if args.max is None and args.cmd != "dossier":
         args.max = default_max
     try:
         return run(sess, args, default_image)

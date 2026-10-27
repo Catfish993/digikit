@@ -298,10 +298,9 @@ def rule_at(image: str, addr: int, length: int, cpu: str, root: Path) -> dict:
     """The rule for the LENGTH bytes at ADDR on the stock image IMAGE."""
     from tools.patchkit import port_resolve
 
-    cf, dsp = port_resolve.load_image(image, root)
     if cpu == "cf":
-        return port_resolve.cf_rule_at(cf, addr, length)
-    return port_resolve.sharc_rule_at(dsp, addr, length)
+        return port_resolve.cf_rule_at(port_resolve.load_cf(image, root), addr, length)
+    return port_resolve.sharc_rule_at(port_resolve.load_dsp(image, root), addr, length)
 
 
 def catalog_pair(image: str, cpu: str, entry: int, root: Path) -> int | None:

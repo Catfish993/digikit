@@ -254,7 +254,8 @@ def fw_hooks(root: Path) -> list[dict]:
     return hooks
 
 
-def sections_of(syx: Path) -> dict[int, bytes]:
+def sections_of(syx: Path, only: tuple[int, ...] | None = None) -> dict[int, bytes]:
+    """The depacked sections of SYX; with ONLY, just those section ids (depacking is the slow part)."""
     from tools.firmware.container import sections
     from tools.firmware.elz import depack_section
     from tools.firmware.extract import classify
@@ -262,6 +263,8 @@ def sections_of(syx: Path) -> dict[int, bytes]:
     c, table = sections(str(syx))
     out = {}
     for sid, off, clen, _dest in table:
+        if only is not None and sid not in only:
+            continue
         kind, payload = classify(bytes(c[off : off + clen]))
         out[sid] = depack_section(payload) if kind == "packed" else bytes(payload)
     return out
@@ -342,23 +345,35 @@ class CfFacts:
         from tools.coldfire import regions
 
         self.name = name
-        self.analysis = regions.analyse(name)
-        self.reset = self.analysis["reset"]
         self.main = main
         self.base = regions.MAIN_BASE
+
+    @functools.cached_property
+    def analysis(self) -> dict:
+        """The region analysis of the image (slow: it scans the whole image); only the reset and cave rules need it."""
+        from tools.coldfire import regions
+
+        return regions.analyse(self.name)
+
+    @functools.cached_property
+    def reset(self) -> dict:
+        return self.analysis["reset"]
+
+    @functools.cached_property
+    def db(self):
+        from tools.coldfire import cf
+
+        return cf.load(f"{self.name}-emac").db
 
     def bytes_at(self, addr: int, n: int) -> bytes:
         return self.main[addr - self.base : addr - self.base + n]
 
     def funcs_by_hash(self, h: str) -> list[int]:
         """Entries of the functions whose cfdb h_strict is H, in address order."""
-        from tools.coldfire import cf
-
         image = f"{self.name}-emac"
-        db = cf.load(image).db
         return [
             r[0]
-            for r in db.execute(
+            for r in self.db.execute(
                 "SELECT entry FROM func_hash WHERE image=? AND h_strict=? ORDER BY entry",
                 (image, h),
             )
@@ -366,10 +381,8 @@ class CfFacts:
 
     def func_at(self, addr: int) -> tuple[int, str | None] | None:
         """(entry, h_strict) of the cfdb function that contains ADDR (h_strict None without a hash), or None."""
-        from tools.coldfire import cf
-
         image = f"{self.name}-emac"
-        db = cf.load(image).db
+        db = self.db
         row = db.execute(
             "SELECT entry FROM functions WHERE image=? AND entry<=? AND end>?",
             (image, addr, addr),
@@ -384,13 +397,10 @@ class CfFacts:
 
     def vtable_slot(self, cls: str, slot: int, offset_to_top: int = 0) -> list[int]:
         """Targets of the cfdb vtables rows for CLS, OFFSET_TO_TOP and SLOT."""
-        from tools.coldfire import cf
-
         image = f"{self.name}-emac"
-        db = cf.load(image).db
         return [
             int(r[0])
-            for r in db.execute(
+            for r in self.db.execute(
                 "SELECT target FROM vtables WHERE image=? AND class=? AND offset_to_top=? AND slot=?",
                 (image, cls, offset_to_top, slot),
             )
@@ -398,13 +408,10 @@ class CfFacts:
 
     def own_vtable_slots(self, entry: int) -> list[tuple[str, int, int]]:
         """(class, offset_to_top, slot) of the vtables rows that point at ENTRY and whose owner is the class itself."""
-        from tools.coldfire import cf
-
         image = f"{self.name}-emac"
-        db = cf.load(image).db
         return [
             (r[0], int(r[1]), int(r[2]))
-            for r in db.execute(
+            for r in self.db.execute(
                 "SELECT class, offset_to_top, slot FROM vtables WHERE image=? AND target=? AND owner=class",
                 (image, entry),
             )
@@ -922,17 +929,33 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
     return f"{device}-{version}", render(port, limits, regions, unique, hooks)
 
 
-@functools.cache
-def load_image(name: str, root: Path = ROOT) -> tuple[CfFacts, Dsp]:
-    """The ColdFire facts and the DSP of the stock firmware called NAME (`<device>-<version>`, e.g. "dt2-1.17"),
-    found through the `[[firmware]]` entries of devices/*.toml."""
+def stock_profile(name: str, root: Path = ROOT) -> tuple[Path, dict]:
+    """(stock file, profile) of the firmware called NAME (`<device>-<version>`, e.g. "dt2-1.17"), found through the
+    `[[firmware]]` entries of devices/*.toml."""
     for prof in load_profiles(root).values():
         if f"{prof['device']}-{prof['version']}" == name:
             f = prof["filename"]
-            syx = Path(f) if Path(f).exists() else config.stock(f)
-            secs = sections_of(syx)
-            return CfFacts(name, secs[3]), Dsp(secs[7], prof["dsp"])
+            return (Path(f) if Path(f).exists() else config.stock(f)), prof
     raise ResolveError(f"{name}: not a firmware listed in devices/*.toml")
+
+
+@functools.cache
+def load_cf(name: str, root: Path = ROOT) -> CfFacts:
+    """The ColdFire facts of the stock firmware NAME; depacks only the MAIN OS section."""
+    syx, _prof = stock_profile(name, root)
+    return CfFacts(name, sections_of(syx, (3,))[3])
+
+
+@functools.cache
+def load_dsp(name: str, root: Path = ROOT) -> Dsp:
+    """The DSP of the stock firmware NAME; depacks only the DSP section."""
+    syx, prof = stock_profile(name, root)
+    return Dsp(sections_of(syx, (7,))[7], prof["dsp"])
+
+
+def load_image(name: str, root: Path = ROOT) -> tuple[CfFacts, Dsp]:
+    """The ColdFire facts and the DSP of the stock firmware called NAME."""
+    return load_cf(name, root), load_dsp(name, root)
 
 
 def cf_rule_at(cf: CfFacts, addr: int, length: int) -> dict:
@@ -992,11 +1015,10 @@ def sharc_rule_at(dsp: SharcFuncs, pc: int, length: int) -> dict:
 def check_rule(image_name: str, rule: dict, cpu: str, root: Path = ROOT) -> int:
     """Resolve RULE on the stock image IMAGE_NAME and return the address it finds: the entry + offset for a ColdFire
     rule, the pc for a SHARC `sharc_func` rule (any other SHARC kind: the resolved address). Raises ResolveError."""
-    cf, dsp = load_image(image_name, root)
     named = {"name": "rule", **rule}
     if cpu == "cf":
-        return resolve_cf_anchor(cf, named)["addr"]
-    a = resolve_anchor(dsp, named)
+        return resolve_cf_anchor(load_cf(image_name, root), named)["addr"]
+    a = resolve_anchor(load_dsp(image_name, root), named)
     return a.get("pm", a["addr"])
 
 

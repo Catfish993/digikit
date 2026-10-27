@@ -8,14 +8,25 @@
 #include "dk_fw_string.h"
 #include "dk_fw_view.h"
 
-/* MenuItem, 0x54 bytes (finding 71 section 4, "MenuItem"). The draw function is a `std::function`; stock items put a bitmap blit there, and core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph. */
+/* MenuItem, 0x54 bytes (finding 71 section 4, "MenuItem"). Fields as the ctor 0x40115a44 stores them: id +4, label `string f(MenuItem&)` +0xc, action `void f(MenuItem&)` +0x1c, draw `void f(MenuItem&, Canvas&, x, y)` +0x2c, adjust `void f(MenuItem&, int delta)` +0x3c, encoder divisor +0x4c. Stock items put a bitmap blit in draw; core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph. */
 typedef struct MenuItem {
-    uint8_t _pad0[44];
+    uint8_t _pad0[4];
+    uint32_t id;
+    uint8_t _pad1[4];
+    std_function label;
+    std_function action;
     std_function draw;
-    uint8_t _pad1[24];
+    std_function adjust;
+    uint32_t enc_div;
+    uint8_t _pad2[4];
 } MenuItem;
 _Static_assert(sizeof(MenuItem) == 0x54, "MenuItem size");
+_Static_assert(offsetof(MenuItem, id) == 0x4, "MenuItem.id offset");
+_Static_assert(offsetof(MenuItem, label) == 0xc, "MenuItem.label offset");
+_Static_assert(offsetof(MenuItem, action) == 0x1c, "MenuItem.action offset");
 _Static_assert(offsetof(MenuItem, draw) == 0x2c, "MenuItem.draw offset");
+_Static_assert(offsetof(MenuItem, adjust) == 0x3c, "MenuItem.adjust offset");
+_Static_assert(offsetof(MenuItem, enc_div) == 0x4c, "MenuItem.enc_div offset");
 
 /* VerticalMenuView, 0x1ac bytes (finding 71 section 4, "VerticalMenuView"): the Menu base is at +0, the View sub-object at +0x38. */
 typedef struct VerticalMenuView {
@@ -32,8 +43,12 @@ _Static_assert(offsetof(VerticalMenuView, cursor) == 0x18, "VerticalMenuView.cur
 _Static_assert(offsetof(VerticalMenuView, view) == 0x38, "VerticalMenuView.view offset");
 _Static_assert(offsetof(VerticalMenuView, icon) == 0xa4, "VerticalMenuView.icon offset");
 
+/* `Menu::addItem(menu, item)` (Menu vtable slot 2, also callable directly): `item` is a raw `MenuItem *` from `operator new(0x54)` that the call wraps in a `shared_ptr<MenuItem>` it keeps; the caller does not free it (read in LedSettingsMenuView 0x400970a8). */
+void dk_fw_menu_add_item(uint8_t *menu, uint8_t *item) __asm__("cf.menu.fn.add_item");
 /* Constructs a MenuItem in `item` from a label, an action function, an icon and a second function; copies both functions. */
 void dk_fw_menu_item_builder(uint8_t *item, const char *label, const std_function *action, const uint8_t *icon, const std_function *fn4) __asm__("cf.menu.fn.item_builder");
+/* `MenuItem(this, label, action, draw, adjust, id, arg7)`: copies the four `std::function`s (an empty one stays empty), stores `id` at +4 (-1 = none) and `arg7*2` at +0x4c (the encoder divisor; stock passes 8). The caller keeps and destroys its own functions afterwards. */
+void dk_fw_menu_item_ctor(uint8_t *this, const std_function *label, const std_function *action, const std_function *draw, const std_function *adjust, int32_t id, int32_t arg7) __asm__("cf.menu.fn.item_ctor");
 /* `VerticalMenuView(this, name cstr, reserve, const std::string *title, icon)`; `title` points at the one-pointer COW string. */
 void dk_fw_menu_vertical_menu_view_ctor(uint8_t *this, const char *name, uint32_t reserve, const uint32_t *title, const uint8_t *icon) __asm__("cf.menu.fn.vertical_menu_view_ctor");
 /* The `pea (icon).l` instruction of the SYSTEM item (6 bytes of code); its operand is the address of a stock icon object built at run time. */

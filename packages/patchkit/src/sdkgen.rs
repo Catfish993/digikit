@@ -1026,16 +1026,16 @@ const IMPORT_NAME_MAX: usize = 27;
 
 /// A type of a signature: `const`, a base, the number of `*`; `td` marks a name of `[api.types]` (a function type).
 #[derive(Clone)]
-struct Ty {
-    is_const: bool,
-    base: String,
-    ptr: usize,
-    td: bool,
+pub(crate) struct Ty {
+    pub(crate) is_const: bool,
+    pub(crate) base: String,
+    pub(crate) ptr: usize,
+    pub(crate) td: bool,
 }
 
-struct Sig {
-    ret: Ty,
-    args: Vec<(Ty, String)>,
+pub(crate) struct Sig {
+    pub(crate) ret: Ty,
+    pub(crate) args: Vec<(Ty, String)>,
 }
 
 enum FieldKind {
@@ -1054,7 +1054,7 @@ struct View {
     fns: Vec<(String, Sig, String)>,
 }
 
-fn is_ident(s: &str) -> bool {
+pub(crate) fn is_ident(s: &str) -> bool {
     !s.is_empty()
         && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         && !s.starts_with(|c: char| c.is_ascii_digit())
@@ -1097,7 +1097,7 @@ fn parse_ty(
 }
 
 /// A signature `<ret> [name](<type> <name>, ...)`: the name of the function when there is one.
-fn parse_fn(
+pub(crate) fn parse_fn(
     what: &str,
     s: &str,
     types: &BTreeMap<String, String>,
@@ -1163,7 +1163,7 @@ fn rust_ty(t: &Ty) -> String {
 }
 
 /// `unsafe extern "C" fn(a: u32) -> i32` (the result is left out for `void`).
-fn rust_fn(sig: &Sig) -> String {
+pub(crate) fn rust_fn(sig: &Sig) -> String {
     let args: Vec<String> = sig
         .args
         .iter()
@@ -1204,7 +1204,7 @@ fn c_ty(t: &Ty) -> String {
 }
 
 /// A C declaration of `name` with type `t` (the `*` binds to the name).
-fn c_decl(t: &Ty, name: &str) -> String {
+pub(crate) fn c_decl(t: &Ty, name: &str) -> String {
     let s = c_ty(t);
     if s.ends_with('*') {
         format!("{s}{name}")
@@ -1213,7 +1213,7 @@ fn c_decl(t: &Ty, name: &str) -> String {
     }
 }
 
-fn c_args(sig: &Sig) -> String {
+pub(crate) fn c_args(sig: &Sig) -> String {
     if sig.args.is_empty() {
         return "void".to_string();
     }
@@ -1877,9 +1877,38 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
     ])
 }
 
-/// The outputs, reading `sdk/sdk.toml` under the repository root.
+/// What the runtime's ABI spec (`abigen`) takes from `sdk/sdk.toml`: the load result codes, the CAPACITY kinds and `SEL_MAX`.
+pub(crate) struct AbiInputs {
+    /// (name, code, text) from -1 down.
+    pub(crate) codes: Vec<(String, i32, String)>,
+    /// (name, kind) in kind order.
+    pub(crate) kinds: Vec<(String, u8)>,
+    pub(crate) sel_max: u64,
+}
+
+/// `AbiInputs` of a `sdk/sdk.toml` text.
+pub(crate) fn abi_inputs(text: &str) -> Result<AbiInputs> {
+    let sdk = parse(text)?;
+    Ok(AbiInputs {
+        codes: by_code(&sdk.load.status)
+            .into_iter()
+            .map(|(n, s)| (n.clone(), s.code, s.text.clone()))
+            .collect(),
+        kinds: by_value(&sdk.capacity.kinds)
+            .into_iter()
+            .map(|(n, k)| (n.clone(), k))
+            .collect(),
+        sel_max: sdk.limits.max.modules,
+    })
+}
+
+/// The outputs, reading `sdk/sdk.toml` and the runtime's `abi.toml` under the repository root.
 pub fn generate(root: &std::path::Path) -> Result<Vec<(String, String)>> {
     let path = root.join(SOURCE);
     let text = std::fs::read_to_string(&path).map_err(|e| err!("{}: {e}", path.display()))?;
-    render(&text)
+    let mut files = render(&text)?;
+    let abi_path = root.join(crate::abigen::SOURCE);
+    let abi = std::fs::read_to_string(&abi_path).map_err(|e| err!("{}: {e}", abi_path.display()))?;
+    files.extend(crate::abigen::render(&abi, &abi_inputs(&text)?)?);
+    Ok(files)
 }

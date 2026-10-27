@@ -31,6 +31,15 @@ users = ["core/digikit-menu"]
 doc = "Releases a `shared_ptr` count holder given its control-block word. core/digikit-menu calls it on its temporaries after it pushes a view."
 
 [[fn]]
+name = "cf.string.fn.std_function.dtor"
+cpu = "cf"
+sig = "void (std_function *f)"
+rule = { kind = "cf_func", hash = "efe55a2f3d70528bc8f21ca8a6c96c4a", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/ui"]
+doc = "Destroys a `std::function`: runs the manager with op 3 (destroy) when the manager is not 0. Called on the temporaries after a constructor has cloned them (2280 call sites)."
+
+[[fn]]
 name = "cf.string.fn.std_string.ctor"
 was = ["cf.menu.fn.str_ctor", "cf.string.fn.ctor"]
 cpu = "cf"
@@ -39,6 +48,15 @@ rule = { kind = "cf_func", hash = "0b0f2cd7a2d5144343e1fd5ad21658be", offset = 0
 mark = "D"
 users = ["core/digikit-menu"]
 doc = "Constructs a `std::string` from a C string. core/digikit-menu builds the view title with it."
+
+[[fn]]
+name = "cf.string.fn.std_string.copy"
+cpu = "cf"
+sig = "void (u32 *dst, const u32 *src)"
+rule = { kind = "cf_func", hash = "3321bcddaccf5a02042b542fe85bba51", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/ui"]
+doc = "Copy-constructs a COW `std::string` in `dst` (one pointer) from `src`: shares the buffer and counts a reference. Window constructors use it for their title and items."
 
 [[fn]]
 name = "cf.string.fn.std_string.dtor"
@@ -69,5 +87,5 @@ fields = [
   { name = "invoker", off = 0xc, type = "ptr" },
 ]
 mark = "D"
-users = ["core/digikit-menu"]
+users = ["core/digikit-menu", "core/ui"]
 doc = "libstdc++ `std::function<void()>`: 8 bytes of functor storage (left as padding), manager at +8 (0 = empty), invoker at +0xc (finding 71 section 5, \"std::function is 16 bytes\")."

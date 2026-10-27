@@ -160,7 +160,7 @@ pub unsafe fn fx_entry(index: u32, out: &mut DkrtFx) -> i32 {
             if seen == index {
                 out.row = k as u32;
                 out.allowed = s.allow[k] as u32;
-                out.default = s.dflt[k] as u32;
+                out.dflt = s.dflt[k] as u32;
                 out.running = if s.route[k] != 0 { ROUTE_SEND as u32 } else { ROUTE_MASTER as u32 };
                 out.saved = saved_route(k) as u32;
                 out.tab = [0; 8];

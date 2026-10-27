@@ -27,164 +27,26 @@ pub mod device {
 /// Slot 0 runs once per pass of the UI task's event loop (about 120 Hz), as `extern "C" fn(*const Api)`.
 pub const SLOTS: usize = 8;
 
-/// Result codes of `dkrt_load` and `Api::store_read` (negative = error).
-pub const OK: i32 = 0;
-// The codes themselves are written by `patchkit gen` from `[load.status]` of `sdk/sdk.toml` (`gen_sdk.rs`, module `load`, with their
+/// The structs, constants and function types of the runtime's C ABI, written by `patchkit gen` from `core/runtime/abi.toml` (also the C header
+/// `core/runtime/include/dkrt.h`): `OK`, `LOADING`, `Dkrt*`, `HEALTH_*`, `SAFE_*`, `CARD_*`, `SCAN_*`, `sig`.
+pub mod gen_abi;
+pub use gen_abi::*;
+
+// Result codes of `dkrt_load` and `Api::store_read` (negative = error; `OK` is in `gen_abi`). The codes themselves are written by `patchkit gen` from `[load.status]` of `sdk/sdk.toml` (`gen_sdk.rs`, module `load`, with their
 // texts): -1 to -14 `dkrt_load`; -20 to -29 the run-time registry (`register` records, docs/design/digikit-registry.md); -30 to -39 the
 // DSP side's (docs/design/digikit-dkm.md, "DSP section"); -40 to -49 boot-time loading (finding 37). Additive: a code is never renumbered.
 pub use gen_sdk::load::*;
-
-/// The boot-time load of a module with DSP code answers `LOADING`: its ColdFire part is live, the DSP part follows over the first
-/// UI-loop passes (the transfer takes many audio blocks). The final result is in `DkrtBootInfo::results`. A module whose DSP part is
-/// still going is reported by `dkrt_module` with `state` `MOD_LOADING`.
-pub const LOADING: i32 = 1;
 
 // The `Api` table and `ServiceCmd` are written by `patchkit gen` from `[api]` and `[api.types]` of `sdk/sdk.toml` (`gen_sdk.rs`, module `api`).
 pub use gen_sdk::api;
 pub use gen_sdk::api::{Api, ServiceCmd};
 
-/// `dkrt_status` result. The caller owns the memory; the layout only grows at the end.
-#[repr(C)]
-pub struct DkrtStatus {
-    pub magic: u32, // 'DKRT'
-    pub runtime: u32,
-    pub device: u32,
-    pub arena_base: u32,
-    pub arena_size: u32,
-    pub arena_free: u32,
-    pub arena_largest: u32,
-    pub modules: u32,
-    pub ticks: u32,
-    pub last_result: i32,
-    pub loads: u32,
-    pub slot_calls: u32,
-    /// `STATE_IDLE` or `STATE_LOADING` (a module's DSP code is being sent).
-    pub state: u32,
-    /// Bytes of the DSP area (0: the image has none) and of it free; the largest free range.
-    pub dsp_size: u32,
-    pub dsp_free: u32,
-    pub dsp_largest: u32,
-}
+// `DkrtStatus`, `DkrtCap`, `DkrtHealth`, `DkrtStoreEntry`, `DkrtModule`, `DkrtFx`, `DkrtSelection`, `DkrtBootInfo`, `DkrtDiag` and the scan and fit
+// structs, with `STATE_*`, `MOD_*`, `CAP_MAX`, `HEALTH_*`, `SEL_PATH`, `SAFE_*`, `CARD_*` and `DIAG_MAGIC`, are in `gen_abi`.
 
-pub const STATE_IDLE: u32 = 0;
-pub const STATE_LOADING: u32 = 1;
-pub const STATE_UNLOADING: u32 = 2; // archived with hot reload; never reported now
-
-/// `DkrtModule::state`.
-pub const MOD_LOADED: u32 = 0;
-pub const MOD_LOADING: u32 = 1;
-
-/// One entry of `dkrt_capacity` (the CAPACITY command's entries; `kind` is a `proto::CAPK_*` number). `largest` is 0 where a largest piece has no
-/// meaning. The layout only grows at the end.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct DkrtCap {
-    pub kind: u32,
-    pub limit: u32,
-    pub used: u32,
-    pub largest: u32,
-}
-/// Room for the entries a caller of `dkrt_capacity` gives (the runtime has 11 kinds; new kinds are appended).
-pub const CAP_MAX: usize = 16;
-
-/// `dkrt_health` result (finding 41). The caller owns the memory; the layout only grows at the end. A figure is valid when its flag is
-/// set; the others are 0. Loads are in tenths of a percent (0 to 1000).
-#[repr(C)]
-pub struct DkrtHealth {
-    pub magic: u32,   // 'HLTH'
-    pub version: u32, // 1
-    pub flags: u32,   // `HEALTH_*`
-    /// DSP blocks seen since boot (1500 per second) and windows (one second each) closed.
-    pub blocks: u32,
-    pub windows: u32,
-    /// CPU: load of the last window (`HEALTH_CPU`), the idle-loop iterations in it and the best window so far (100 % idle).
-    pub cpu_x10: u32,
-    pub idle_win: u32,
-    pub idle_ref: u32,
-    /// DSP block handler, cycles per block (the DSP's own EMUCLK difference): average and maximum of the last window, the cycles a
-    /// block has (`DSP_BLOCK_CYCLES`), and both as tenths of a percent of it (`HEALTH_DSP`).
-    pub dsp_avg: u32,
-    pub dsp_max: u32,
-    pub dsp_period: u32,
-    pub dsp_avg_x10: u32,
-    pub dsp_max_x10: u32,
-    /// The firmware heap (`HEALTH_HEAP`): bytes in all, free, the largest free block, live allocations, free blocks walked.
-    pub heap_total: u32,
-    pub heap_free: u32,
-    pub heap_largest: u32,
-    pub heap_allocs: u32,
-    pub heap_free_blocks: u32,
-    /// The runtime's module arena and the DSP area (0: the image has none): bytes in all, free, the largest free range.
-    pub arena_total: u32,
-    pub arena_free: u32,
-    pub arena_largest: u32,
-    pub dsp_area_total: u32,
-    pub dsp_area_free: u32,
-    pub dsp_area_largest: u32,
-    /// The module store (`HEALTH_STORE`; version 3 of this struct): **KiB** (a store can be 22 GiB) the store may use in all (header, tables and files), the
-    /// current header says are used, and a new file may still take in all (the room for the table's next entry kept back; not one contiguous piece).
-    pub store_total: u32,
-    pub store_used: u32,
-    pub store_free: u32,
-}
-
-/// A store file for the DIGIKIT menu (`dkrt_store_list`): its path (at most 63 bytes, NUL-terminated), the first sector (relative to the store) and
-/// the size in bytes.
-#[repr(C)]
-pub struct DkrtStoreEntry {
-    pub path: [u8; 64],
-    pub first: u32,
-    pub size: u32,
-}
-
-pub const HEALTH_MAGIC: u32 = 0x484c_5448; // "HLTH"
-/// `DkrtHealth::flags`: the image has `core/health`; the CPU load is valid (a second window closed); the DSP figures are valid
-/// (a window with counts); the heap figures are valid; the heap walk stopped at its bound (the free figure is a lower bound);
-/// the free lists looked corrupt (the walk stopped).
-pub const HEALTH_MODULE: u32 = 1;
-pub const HEALTH_CPU: u32 = 2;
-pub const HEALTH_DSP: u32 = 4;
-pub const HEALTH_HEAP: u32 = 8;
-pub const HEALTH_HEAP_CUT: u32 = 16;
-pub const HEALTH_HEAP_BAD: u32 = 32;
-/// The store figures are valid (a store header was read; a card without a store has none).
-pub const HEALTH_STORE: u32 = 64;
 /// Cycles in one DSP block (32 samples at 48 kHz, 1500 blocks per second) at the 1 GHz core clock of the emulator's model
 /// (`[board]` of the device files). The real clock of the device is not known **[O]** (finding 41): the DSP percentages scale with it.
 pub const DSP_BLOCK_CYCLES: u32 = device::DSP_BLOCK_CYCLES;
-
-/// `dkrt_module` result: one loaded module.
-#[repr(C)]
-pub struct DkrtModule {
-    pub name: [u8; 32],
-    pub version: u32,
-    pub base: u32,
-    pub size: u32,
-    pub slots: u32, // bit n = slot n bound
-    /// Store path the module was loaded from (NUL-terminated, at most 63 bytes kept), for example `modules/dyn-demo.dkm`.
-    pub path: [u8; 64],
-    /// `MOD_LOADED` or `MOD_LOADING`.
-    pub state: u32,
-    /// Bytes of the module's range in the DSP area (0: none).
-    pub dsp_size: u32,
-}
-
-/// `dkrt_fx` result: one effect with a page (FX routing, finding 62 to 65). Routes are bit masks: 1 master, 2 send.
-#[repr(C)]
-pub struct DkrtFx {
-    /// The effect's row in the chain.
-    pub row: u32,
-    /// The routes the effect's record allows (`routes` of the manifest) and its default (`route`).
-    pub allowed: u32,
-    pub default: u32,
-    /// The route it runs on in this boot, and the route the settings give it now (the stored one when allowed, else the default): they differ after a change before the restart.
-    pub running: u32,
-    pub saved: u32,
-    /// The tab label of its page (NUL-terminated, up to 3 characters).
-    pub tab: [u8; 8],
-    /// The id of its module (NUL-terminated): the settings key is `fx/route/<id>`.
-    pub id: [u8; 32],
-}
 
 /// Text for a result code, for a menu line (upper case, at most 14 characters). A table, not a `match`: the compiler turns a
 /// dense `match` into a PC-relative jump table that is not ColdFire code.
@@ -254,59 +116,10 @@ pub const CMD_SETTINGS_GET: u32 = 10;
 pub const CMD_SETTINGS_REMOVE: u32 = 11;
 pub const CMD_SETTINGS_FLUSH: u32 = 12;
 
-/// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
-/// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
-pub const SEL_MAX: usize = gen_sdk::limits::SEL_MAX; // `[limits.max] modules` of sdk/sdk.toml (the record's format)
-pub const SEL_PATH: usize = 56;
-#[repr(C)]
-pub struct DkrtSelection {
-    /// Number of paths in use, 0 to `SEL_MAX`.
-    pub count: u32,
-    /// Bit 0: start in safe mode once (the boot that honours it clears the bit).
-    pub flags: u32,
-    pub paths: [[u8; SEL_PATH]; SEL_MAX],
-}
-
-/// Why a boot ran in safe mode (`DkrtBootInfo::reason`).
-pub const SAFE_NONE: u32 = 0;
-pub const SAFE_COUNTER: u32 = 1; // two boots in a row did not reach the UI loop
-pub const SAFE_KEY: u32 = 2; // the safe-mode key was held at power-on
-pub const SAFE_FLAG: u32 = 3; // the selection record asked for it (`DkrtSelection::flags` bit 0)
+// The selection (what the next boot loads): `SEL_MAX` (`[limits.max] modules` of sdk/sdk.toml, the record's format), `SEL_PATH` and `DkrtSelection` are in
+// `gen_abi`, as are `SAFE_*`, `SAFE_AFTER`, `STABLE_BLOCKS` and `DkrtBootInfo`.
 /// The key held at power-on for safe mode (`[digikit] safe_key` of the device files; RECORD, panel button 19).
 pub const SAFE_KEY_CODE: u32 = device::SAFE_KEY_CODE;
-/// Boots in a row that did not stay up for `STABLE_BLOCKS` after which the next one is safe mode.
-pub const SAFE_AFTER: u32 = 2;
-/// The stable period: DSP blocks (1500 per second) of UI loop after which the boot counter is cleared. 45,000 blocks are 30 seconds
-/// (finding 37). A boot that dies before then counts as bad.
-pub const STABLE_BLOCKS: u32 = 45_000;
-
-/// `dkrt_boot_info` result: this boot.
-#[repr(C)]
-pub struct DkrtBootInfo {
-    pub magic: u32, // 'DKBT'
-    pub version: u32,
-    /// 1 when this boot loaded nothing because of safe mode, and `SAFE_*` why.
-    pub safe: u32,
-    pub reason: u32,
-    /// The boot counter as the record held it at the start of this boot (before the runtime raised it).
-    pub counter: u32,
-    /// Sequence number of the record in use (0: no valid record) and which copy held it (0 = A, 1 = B).
-    pub seq: u32,
-    pub copy: u32,
-    /// Modules selected, and how many of them loaded without an error.
-    pub count: u32,
-    pub loaded: u32,
-    /// 1 once the UI loop has run (the boot counter is back to 0).
-    pub ui_reached: u32,
-    /// `OK`, a negative code, or `LOADING` (the CF part is live, the DSP part is still going) per selected module, in selection order.
-    pub results: [i32; SEL_MAX],
-    /// Reserved (0). The boot does not wait for DSP code: the frames that carry it start later, so a module with DSP code is
-    /// reported `LOADING` until its DSP part is in, over the first UI-loop passes.
-    pub dsp_wait: u32,
-    /// 1 once the boot counter is back to 0: after `STABLE_BLOCKS` DSP blocks of UI loop in a normal boot, at the first UI-loop pass in a
-    /// safe boot (finding 37, "Safe mode after the first UI pass"). Appended; the layout only grows at the end.
-    pub stable: u32,
-}
 
 /// The selection record (docs/design/digikit-store.md): one sector, big endian, in two copies at the end of the store range.
 pub mod sel {
@@ -459,53 +272,8 @@ pub mod store;
 /// The settings record, two copies before the selection record (docs/design/digikit-store.md, "The settings record").
 pub mod settings;
 
-/// State of the card's store area as the runtime found it at boot (`DkrtDiag::card_state`; docs/findings/46-digikit-debug.md).
-pub const CARD_UNKNOWN: u32 = 0;
-/// A valid store header, or a valid selection copy: the area is ours.
-pub const CARD_OURS: u32 = 1;
-/// No structure of ours, and every sector of the range reads all 0x00 or all 0xFF: the first write may claim it.
-pub const CARD_BLANK: u32 = 2;
-/// Something else is there: the runtime never writes the card.
-pub const CARD_FOREIGN: u32 = 3;
-/// A read of the area failed: the runtime cannot tell, so it never writes the card.
-pub const CARD_UNREADABLE: u32 = 4;
-/// The card is smaller than the area the device file gives the store (its last sector cannot be read): there is no store, the runtime reads and
-/// writes nothing there, and the boot goes on.
-pub const CARD_TOO_SMALL: u32 = 5;
-
-/// `dkrt_diag` result (finding 46): what the debug log and the card check found. The caller owns the memory; the layout only grows at the end.
-#[repr(C)]
-pub struct DkrtDiag {
-    pub magic: u32, // 'DIAG'
-    pub version: u32,
-    /// `CARD_*`, the first sector (relative to the store) that was not blank (`u32::MAX`: none) and a crc32 of it, card writes refused
-    /// (range or read-only), and reads that failed in the check.
-    pub card_state: u32,
-    pub card_first_nonblank: u32,
-    pub card_hash: u32,
-    pub card_refused: u32,
-    pub card_read_errors: u32,
-    /// 1 when the debug log keeps every event (SETTINGS > DIGIKIT > DEBUG), 0 when it keeps errors only.
-    pub debug_on: u32,
-    /// Sequence numbers of the oldest and the newest event in the log ring (0, 0: empty).
-    pub log_oldest: u32,
-    pub log_newest: u32,
-    /// 1 when `dl_diag` is in the image and answered; 1 when the heartbeat watch decided the DSP stopped; the last heartbeat word.
-    pub dsp_diag_ok: u32,
-    pub dsp_stopped: u32,
-    pub dsp_heartbeat: u32,
-    /// A crash record from the boot before was found at this boot: 1, its program counter, vector and the module slot it was in
-    /// (`u32::MAX`: none).
-    pub crash_found: u32,
-    pub crash_pc: u32,
-    pub crash_vec: u32,
-    /// 1 when the keep-probe word of the boot before was still in RAM at this boot (RAM survived the reset that led here).
-    pub ram_kept: u32,
-    /// The DSP's last breadcrumb when the watch decided it stopped (0 before): stage | voice << 8 | machine type << 16 (finding 48).
-    pub dsp_crumb: u32,
-}
-
-pub const DIAG_MAGIC: u32 = 0x4449_4147; // "DIAG"
+// `CARD_*` (the state of the card's store area as the runtime found it at boot), `DkrtDiag` and `DIAG_MAGIC` are in `gen_abi`
+// (docs/findings/46-digikit-debug.md).
 
 /// Event kinds of the debug log (docs/findings/46-digikit-debug.md has the argument meanings; `tools/device/dklog.py` the readable names).
 /// An event is 32 bytes: `seq`, `time` (the firmware's block counter, 1500 per second), `kind`, `flags` (bit 0: an error, kept when debug is

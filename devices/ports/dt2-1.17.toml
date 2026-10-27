@@ -39,6 +39,46 @@ excludes = [[0x200fa000, 0x200fe000]]
 mark = "D"
 
 [[anchor]]
+name = "cf.draw.fn.blit"
+cpu = "cf"
+kind = "code"
+addr = 0x40114168
+len = 4
+sha256 = "0a035a96c5f98782833c495bfb3529a3105d38be9772f5157dae27fa03ee5018"
+mark = "D"
+rule = "fw/draw:cf_func"
+
+[[anchor]]
+name = "cf.draw.fn.fill_rect"
+cpu = "cf"
+kind = "code"
+addr = 0x401131ae
+len = 4
+sha256 = "3f2a7a23497cd06e30629c3e1ea8ba643f614ea616aba5feafae54b013ae9750"
+mark = "D"
+rule = "fw/draw:cf_func"
+
+[[anchor]]
+name = "cf.draw.fn.invert_rect"
+cpu = "cf"
+kind = "code"
+addr = 0x401132c0
+len = 4
+sha256 = "8c532fe588d875e129a1fbdda2d83ead4577a118ea3f1fad8d75b63983c1d9bc"
+mark = "D"
+rule = "fw/draw:cf_func"
+
+[[anchor]]
+name = "cf.draw.fn.rect"
+cpu = "cf"
+kind = "code"
+addr = 0x40112f92
+len = 4
+sha256 = "3f2a7a23497cd06e30629c3e1ea8ba643f614ea616aba5feafae54b013ae9750"
+mark = "D"
+rule = "fw/draw:cf_func"
+
+[[anchor]]
 name = "cf.input.fn.enc_decoder"
 cpu = "cf"
 kind = "code"
@@ -603,12 +643,32 @@ mark = "D"
 rule = "fw/mem:cf_func"
 
 [[anchor]]
+name = "cf.menu.fn.add_item"
+cpu = "cf"
+kind = "code"
+addr = 0x4011527a
+len = 4
+sha256 = "7b530b25939fbe347fbdca9bc607e4240a2f48c532375707069ec848ec2b38ca"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
 name = "cf.menu.fn.item_builder"
 cpu = "cf"
 kind = "code"
 addr = 0x40115b90
 len = 4
 sha256 = "ad05516232f2d537c8351773c3e9c14894d385c6cfd4c9f7533f7018e5a1c773"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.item_ctor"
+cpu = "cf"
+kind = "code"
+addr = 0x40115a44
+len = 4
+sha256 = "4f9e319e2e3e4323fd538c347afb5f9d196e601c8e8a19886d025ce0c272db78"
 mark = "D"
 rule = "fw/menu:cf_func"
 
@@ -2110,6 +2170,26 @@ mark = "D"
 rule = "fw/string:cf_ptr"
 
 [[anchor]]
+name = "cf.string.fn.std_function.dtor"
+cpu = "cf"
+kind = "code"
+addr = 0x40197ce0
+len = 4
+sha256 = "1f6b50a3616f922607a92f5ea30e249ecfae4035c48517445d22acbd059dd2ec"
+mark = "D"
+rule = "fw/string:cf_func"
+
+[[anchor]]
+name = "cf.string.fn.std_string.copy"
+cpu = "cf"
+kind = "code"
+addr = 0x401e7570
+len = 4
+sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
+mark = "D"
+rule = "fw/string:cf_func"
+
+[[anchor]]
 name = "cf.string.fn.std_string.ctor"
 cpu = "cf"
 kind = "code"
@@ -2138,6 +2218,36 @@ len = 14
 sha256 = "edf0c43e5e5151ab9431443cbfde43e61e9174eee9a1da59d50b36e0bbd6931a"
 mark = "D"
 rule = "fw/test:cf_func"
+
+[[anchor]]
+name = "cf.text.fn.draw"
+cpu = "cf"
+kind = "code"
+addr = 0x40113d60
+len = 4
+sha256 = "279a670cda6e51ff3488e23c06d47105d24149ed89403e4963e0041cfecceb56"
+mark = "D"
+rule = "fw/text:cf_func"
+
+[[anchor]]
+name = "cf.text.fn.draw_box"
+cpu = "cf"
+kind = "code"
+addr = 0x40113fd4
+len = 4
+sha256 = "ec14cab1ae48b2997b1c972f33bbb27f9ed4db329a5a712d35fac582f66395b7"
+mark = "D"
+rule = "fw/text:cf_func"
+
+[[anchor]]
+name = "cf.text.fn.draw_fmt"
+cpu = "cf"
+kind = "code"
+addr = 0x40113dc8
+len = 4
+sha256 = "f88a5638ad9d3568653cf1237c4f5dfbaa69278b8fef4895f61411923397600d"
+mark = "D"
+rule = "fw/text:cf_func"
 
 [[anchor]]
 name = "cf.view.fn.brain.instance"
@@ -2213,6 +2323,26 @@ mark = "D"
 rule = "fw/view:cf_words"
 
 [[anchor]]
+name = "cf.window.fn.confirm_ctor"
+cpu = "cf"
+kind = "code"
+addr = 0x4011139a
+len = 4
+sha256 = "e26a6edd1fa03cb09e71e68d5c523db6fb0975d75aaf4aabb1a08024a42e5344"
+mark = "D"
+rule = "fw/window:cf_func"
+
+[[anchor]]
+name = "cf.window.fn.multichoice_ctor"
+cpu = "cf"
+kind = "code"
+addr = 0x40116b1e
+len = 4
+sha256 = "90dc61142907269c3a05b62e1564c7ed49dec5c08711d5509b8ae38f1b97c382"
+mark = "D"
+rule = "fw/window:cf_func"
+
+[[anchor]]
 name = "cf.window.fn.popup_make"
 cpu = "cf"
 kind = "data"
@@ -2220,6 +2350,58 @@ addr = 0x401b87bc
 src = 0x400a49c8
 len = 4
 sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
+mark = "D"
+rule = "fw/window:cf_ptr"
+
+[[anchor]]
+name = "cf.window.fn.toast"
+cpu = "cf"
+kind = "code"
+addr = 0x4005b23a
+len = 4
+sha256 = "e6678488dd6c64d90aa925468b895962a1480da1c720524cd7e57d31d558af4c"
+mark = "D"
+rule = "fw/window:cf_func"
+
+[[anchor]]
+name = "cf.window.fn.toast_str"
+cpu = "cf"
+kind = "code"
+addr = 0x4005b1e0
+len = 4
+sha256 = "7b35d7a1813034b0eb02cb2bfaf086ef79803b342b9956787674713e7d226db8"
+mark = "D"
+rule = "fw/window:cf_func"
+
+[[anchor]]
+name = "cf.window.fn.ui_states"
+cpu = "cf"
+kind = "code"
+addr = 0x401998c0
+len = 4
+sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
+mark = "D"
+rule = "fw/window:cf_func"
+
+[[anchor]]
+name = "cf.window.site.confirm_cb_vptr_lit"
+cpu = "cf"
+kind = "data"
+addr = 0x401ed3b0
+src = 0x40084d4c
+len = 4
+sha256 = "07b93d1b63767fef520bdee790b57222dc16daace93cb2032d002875eb81fe1f"
+mark = "D"
+rule = "fw/window:cf_ptr"
+
+[[anchor]]
+name = "cf.window.site.multichoice_cb_vptr_lit"
+cpu = "cf"
+kind = "data"
+addr = 0x40204fb4
+src = 0x400aa04e
+len = 4
+sha256 = "1c83d7d64eae2b2428fc2f4b51d66f88ff9f7954b0748d3a9ac09d6ddcd8ccd7"
 mark = "D"
 rule = "fw/window:cf_ptr"
 

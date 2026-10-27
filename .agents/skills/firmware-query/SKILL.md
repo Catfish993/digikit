@@ -18,6 +18,36 @@ Use `batch` for more than one question: one process, one `## query` block each.
     str WRONG UI
     Q
 
+## Recipe: one primitive on both devices
+
+1. `atlas TERM -i dt2-1.17` finds the candidate functions.
+2. One `batch`, one `dossier ADDR --other dn2-1.12` line per hit. It prints name, size, hash, class and vtable slot, strings, callers with the argument setup before each call (an A0 load is marked as a possible hidden return pointer), callees, the first decompiled lines, existing anchors, the suggested rule and its pair on the other device.
+3. `uv run python -m tools.firmware.catalog declare dt2-1.17 ADDR NAME --other dn2-1.12 --write` once the rule is the same on both.
+
+Do not run `fn`, `decomp`, `disasm`, `callers` or `str` again for what dossier already printed; use `--callers N --decomp N` for more. Keep each question in one batch.
+
+    $ fw.py dossier 0x4011139a -i dt2-1.17 --other dn2-1.12      (0.2 s; trimmed)
+    dossier dt2-1.17 4011139a ConfirmWindow::ctor_dtor
+    entry=4011139a size=342 end=401114f0 hash=2946e3541ac1 (1 with this hash)
+    vfunc: no
+    anchors: none
+    rule (catalog): cf_func both_devices=1
+    on dn2-1.12 the rule resolves to: 40112d0e  (the pair)
+    callers: 48 sites in 47 functions
+      <- 400112a8 std::_Sp_counted_ptr_inplace<ConfirmWindow,...>::ctor_dtor @40011442 call
+        40011430  lea (-0x10b2,PC),A0   ; A0: hidden return ptr?
+        40011434  clr.l -(SP)
+        40011436  move.l D4,-(SP)
+        ...
+      > 40011442  jsr ctor_dtor.l
+    callees: 7
+      -> 401e63ca FUN_401e63ca  {cf.string.fn.std_string.dtor}
+      -> 4011b06e View::ctor_dtor
+    decomp (12 of 36 lines): ...
+
+The A0 mark is a hint: a PC-relative `lea` into A0 that is then stored is a function pointer, not a hidden
+return pointer. A hidden return pointer is an A0 load right before the `jsr` that the callee writes through.
+
 Order of work:
 1. `atlas TERM` for "where is X handled" (terms: machine, fx, parameter, step, pattern, kit, sound, track,
    page, menu, lfo, p-lock, trig, retrig, song, chain, plus-drive, sample, filter, midi, project ...).
