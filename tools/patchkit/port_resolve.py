@@ -16,14 +16,14 @@ entry is one declaration; its `rule` is shared, or `rule.dt2` / `rule.dn2` give 
     [[fn]]
     name = "dsp.master.fn.q31_converter"   # <cpu>.<subsystem>.<kind>.<name>; the kind is the table, the
                                            # subsystems are listed in devices/fw/subsystems.toml
-    aliases = ["dsp.master.q31_converter"] # old names: each resolves to the same anchor
     cpu = "sharc"
     devices = ["dt2"]                # the devices that have it; the entry is skipped on the others
     rule = { kind = "sharc_func", reloc_hash = "...", offset = 0x0, len = 6 }   # kind: see below
     mark = "D"
 
 The tables fn, site, data and value hold single anchors and sites holds multi-site rules. The tables hook and struct
-are not resolved. An unknown table is an error.
+are not resolved. An unknown table is an error. A renamed entry lists its former names in `was = [...]`; they are for
+reading older docs, never resolve, and must not be a current name.
 
 Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py):
 
@@ -176,10 +176,10 @@ def check_name(name: str, table: str, vocab: dict[str, set[str]]) -> None:
 
 def fw_rules(root: Path) -> list[dict]:
     """The rules of devices/fw/**/*.toml, one dict per device filter, with `_source` = "fw/<file without .toml>".
-    Each has the declaration's `aliases` (old names; empty by default)."""
+    Each has the declaration's `was` (former names, never resolved; empty by default)."""
     fw = root / "devices" / "fw"
     vocab = load_subsystems(root)
-    owner: dict[str, str] = {}  # a name or alias -> the declaration that holds it
+    former: list[tuple[str, str]] = []  # (a former name, the declaration it was)
     rules = []
     for f in sorted(fw.rglob("*.toml")):
         if f == fw / SUBSYSTEMS:
@@ -192,21 +192,15 @@ def fw_rules(root: Path) -> list[dict]:
                 raise ResolveError(f"{f}: unknown table [[{table}]]")
             for e in entries:
                 check_name(e["name"], table, vocab)
-                aliases = list(e.get("aliases", []))
-                if e["name"] in aliases:
-                    raise ResolveError(f"{e['name']}: lists itself as an alias")
-                for n in (e["name"], *aliases):
-                    if owner.setdefault(n, e["name"]) != e["name"]:
-                        raise ResolveError(
-                            f"{n}: held by both {owner[n]} and {e['name']}"
-                        )
+                was = list(e.get("was", []))
+                former += [(n, e["name"]) for n in was]
                 rule = e["rule"]
                 if "kind" in rule:
                     shared = [(e.get("devices"), rule)]
                 else:
                     shared = [([dev], r) for dev, r in rule.items()]
                 for devices, r in shared:
-                    out = {"name": e["name"], "aliases": aliases}
+                    out = {"name": e["name"], "was": was}
                     if "cpu" in e:
                         out["cpu"] = e["cpu"]
                     out.update({k: v for k, v in r.items() if k != "mark"})
@@ -215,6 +209,10 @@ def fw_rules(root: Path) -> list[dict]:
                         out["devices"] = devices
                     out["_source"] = source
                     rules.append(out)
+    current = {r["name"] for r in rules}
+    for n, name in former:
+        if n in current:
+            raise ResolveError(f"{n}: a former name of {name} is a current name")
     return rules
 
 
@@ -786,8 +784,7 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
             "rule": f"{rule['_source']}:{rule['kind']}",
             **a,
         }
-        # every alias is the same anchor under another name
-        anchors += [anchor, *({**anchor, "name": n} for n in rule["aliases"])]
+        anchors.append(anchor)
     known = {a["name"]: a for a in anchors}
     for rule in pending:
         for i, a in enumerate(resolve_cf_multi(cf, rule, known)):
@@ -798,10 +795,7 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
                 "rule": f"{rule['_source']}:{rule['kind']}",
                 **a,
             }
-            anchors += [
-                anchor,
-                *({**anchor, "name": f"{n}.{i}"} for n in rule["aliases"]),
-            ]
+            anchors.append(anchor)
     # one anchor name may be declared more than once; the resolved anchors must agree
     seen: dict[str, dict] = {}
     unique = []

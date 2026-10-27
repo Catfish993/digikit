@@ -1,9 +1,9 @@
 # window: popups and dialogs
-# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+# Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
 
 [[fn]]
 name = "cf.window.fn.popup_make"
-aliases = ["cf.menu.fn.popup_make"]
+was = ["cf.menu.fn.popup_make"]
 cpu = "cf"
 rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x32, len = 4 }
 mark = "D"

@@ -173,7 +173,7 @@ per-worktree dirs in `out/cache/rust` are no longer used.
 - [x] DT2 1.16 and DN2 1.11 dropped as patch targets (68381bbe); they stay as analysis references.
 - [x] Name review with Em and rename (bd0af72c): 89 renames, dot-separated groups for places of one firmware object,
       every user moved to the final names. Old names are still listed as `aliases`.
-- [ ] 4c: rename the `aliases` key to `was` (former names, kept for reading older docs, never resolved);
+- [x] 4c: rename the `aliases` key to `was` (former names, kept for reading older docs, never resolved);
       `port_resolve.py` stops writing alias anchors (port files shrink from about 640 to about 235 anchors); fwgen
       reads `was`; `catalog declare` rejects a former name; fix the design-doc and `port_resolve.py` docstring examples
       (they still show pre-rename names on purpose). Proof: byte-identical patched images and no remaining old name
@@ -286,9 +286,10 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27 (23 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
-(findings 70-72), and step 5 up to the rename (see the step 5 list). Next, in order: 4c, hook contracts, reference
-docs, then step 6. Em's rules for this branch: stop before every commit and show the diff and message; no Rust build
+2026-10-27 (25 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
+(findings 70-72), and step 5 up to 4c (see the step 5 list). Next, in order: hook declarations with generated
+trampolines, reference docs, then step 6. Em's rules for this branch: stop before every commit and show the diff and
+message; no Rust build
 without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions
 (https://claude.ai/artifact/HsY3xPsoDhyCMfVhmzrPBW, decisions stored with the page), why the `Value<T>` project-data
 classes matter, retiring the legacy `machinebuild.py`/`machinepatch.py`/`machineprofile.py` and the

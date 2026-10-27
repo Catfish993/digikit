@@ -51,7 +51,7 @@ struct Files {
 struct Entry {
     name: String,
     #[serde(default)]
-    aliases: Vec<String>,
+    was: Vec<String>,
     cpu: String,
     #[serde(default)]
     devices: Vec<String>,
@@ -75,7 +75,7 @@ struct Hook {
     mode: String,
     regs: toml::Value,
     #[serde(default)]
-    aliases: Vec<String>,
+    was: Vec<String>,
     cpu: Option<String>,
     #[serde(default)]
     devices: Vec<String>,

@@ -6,12 +6,12 @@ Design: [docs/design/firmware-decls.md](../../docs/design/firmware-decls.md).
 
 ```toml
 [[site]]
-name = "cf.menu.site.settings_tail"
-aliases = ["cf.menu.settings_tail"]
-doc = "End of the SETTINGS item list rebuild."
-devices = ["dt2", "dn2"]
+name = "cf.menu.site.settings_list.tail"
+was = ["cf.menu.settings_tail", "cf.menu.site.settings_tail"]
+cpu = "cf"
 rule = { kind = "cf_func", hash = "8db782f6fd735f89d3b7c856316c0b90", offset = 0x3a8, len = 8 }
 mark = "D"
+users = ["core/digikit-menu"]
 ```
 
 `tools/patchkit/port_resolve.py` reads these files (`mise run patch:port`) and writes `devices/ports/`. Names follow
@@ -42,7 +42,6 @@ takes only its address); no other `bind` value exists. A `[[struct]]` has `name`
 `type` is a scalar, `ptr` or a struct short name. `patchkit gen` writes the `cf` bindings to `modules/core/fw/`:
 `rs/src/lib.rs` (crate `dkfw`), `include/dk_fw_<subsystem>.h` and `inc/dk_fw_<subsystem>.inc` (GAS).
 
-The old names stay as `aliases` until step 5 (every user has moved). The port file lists each anchor under its name and
-under every alias with the same values, and a multi-site entry lists `<alias>.<i>` for each `<name>.<i>`. An alias must
-not be the name or alias of another declaration. Content modules never use these declarations; only `core/*` adapters
-do.
+A renamed declaration lists its former names in `was`, for reading older docs and findings. A former name never
+resolves: the port file lists each anchor only under its current name. A former name must not be a current name, and
+`catalog declare` refuses one. Content modules never use these declarations; only `core/*` adapters do.

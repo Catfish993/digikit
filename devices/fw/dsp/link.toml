@@ -1,11 +1,11 @@
 # link: the DSP side of the link
-# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+# Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
 
 # The second last instruction of the block handler's common tail, `DM(<ring toggle>) = R1`: every command path of the
 # handler ends there, after the handler has built the record. The same relocation-insensitive hash on both devices.
 [[site]]
 name = "dsp.link.site.block_tail"
-aliases = ["dl.dsp.block_tail"]
+was = ["dl.dsp.block_tail"]
 cpu = "sharc"
 rule = { kind = "sharc_func", reloc_hash = "64b66b0db31c9fe533e67c75374b1041e22aae334bc3cd8743a491ab2448ecde", offset = 0xf4, len = 6 }
 mark = "D"

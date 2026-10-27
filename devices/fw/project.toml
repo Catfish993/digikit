@@ -1,9 +1,9 @@
 # project: the project object, kits, tracks, serialisation
-# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+# Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
 
 [[fn]]
 name = "cf.project.fn.active_kit"
-aliases = ["cf.project.fn.kit_of", "dkrt.fw.kit_of"]
+was = ["cf.project.fn.kit_of", "dkrt.fw.kit_of"]
 cpu = "cf"
 sig = "u32 (u32 project)"
 devices = ["dt2", "dn2"]
@@ -15,7 +15,7 @@ users = ["core/runtime"]
 # The same hash on all four images.
 [[fn]]
 name = "cf.project.fn.serialize"
-aliases = ["dkrt.fw.project_serialize"]
+was = ["dkrt.fw.project_serialize"]
 cpu = "cf"
 sig = "i32 ()"
 rule = { kind = "cf_func", hash = "eeb589cf009de58dead8a8e15bbf8998", offset = 0x0, len = 2 }
@@ -28,7 +28,7 @@ users = ["core/runtime"]
 # The kit and track functions have the same hash on both devices' versions; the Project getters differ per image.
 [[fn]]
 name = "cf.project.fn.singleton"
-aliases = ["cf.project.fn.get", "dkrt.fw.project"]
+was = ["cf.project.fn.get", "dkrt.fw.project"]
 cpu = "cf"
 sig = "u32 ()"
 rule.dt2 = { kind = "cf_func", hash = "ec70a039cd46fc8071a7e84112decfb1", offset = 0x0, len = 4 }
@@ -38,7 +38,7 @@ users = ["core/runtime"]
 
 [[fn]]
 name = "cf.project.fn.track_type"
-aliases = ["dkrt.fw.track_type"]
+was = ["dkrt.fw.track_type"]
 cpu = "cf"
 sig = "i32 (u32 kit, i32 track)"
 rule.dt2 = { kind = "cf_func", hash = "9a76292be32cf9c7a8fd2e7c031c41d9", offset = 0x0, len = 4 }

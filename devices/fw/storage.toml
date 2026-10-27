@@ -1,10 +1,10 @@
 # storage: block device reads and writes, the boot record
-# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 (docs/design/firmware-decls.md).
+# Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
 
 # The firmware's eMMC block read: int f(u32 sector, u32 bytes, void *buf), 0 = ok (finding 23 S6).
 [[fn]]
 name = "cf.storage.fn.block.read"
-aliases = ["cf.menu.fn.blk_read", "cf.storage.fn.block_read", "dkrt.fw.block_read"]
+was = ["cf.menu.fn.blk_read", "cf.storage.fn.block_read", "dkrt.fw.block_read"]
 cpu = "cf"
 sig = "i32 (u32 sector, u32 bytes, u8 *buf)"
 rule = { kind = "cf_func", hash = "dcf1d4873d4a4fb5ac903e8ada9c1a12", offset = 0x0, len = 4 }
@@ -15,7 +15,7 @@ users = ["core/digikit-menu", "core/runtime"]
 # (DT2 1.16 FUN_4012e0c0, DN2 1.11 FUN_4012c780). The runtime writes only the two sectors of the selection record with it.
 [[fn]]
 name = "cf.storage.fn.block.write"
-aliases = ["cf.storage.fn.block_write", "dkrt.fw.block_write"]
+was = ["cf.storage.fn.block_write", "dkrt.fw.block_write"]
 cpu = "cf"
 sig = "i32 (u32 sector, u32 bytes, const u8 *buf)"
 rule = { kind = "cf_func", hash = "0dd5a176b94c6e30225068661b58a898", offset = 0x0, len = 2 }
@@ -27,7 +27,7 @@ users = ["core/runtime"]
 # and addresses differ per device, so the hash does.
 [[fn]]
 name = "cf.storage.fn.boot_record_write"
-aliases = ["dkrt.fw.boot_record_write"]
+was = ["dkrt.fw.boot_record_write"]
 cpu = "cf"
 sig = "void ()"
 rule.dt2 = { kind = "cf_func", hash = "ce2fecf00cf4757d0252acc24f11436c", offset = 0x0, len = 2 }

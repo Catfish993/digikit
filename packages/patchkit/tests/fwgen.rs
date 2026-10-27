@@ -19,15 +19,15 @@ fn out(text: &str, suffix: &str) -> String {
 
 #[test]
 fn sig_with_pointers_and_const() {
-    let t = fn_entry("cf.view.fn.push", "u32 (void *v, const char *name, u8 flag)");
+    let t = fn_entry("cf.view.fn.view_controller_push", "u32 (void *v, const char *name, u8 flag)");
     let rs = out(&t, "rs/src/lib.rs");
-    assert!(rs.contains("#[link_name = \"cf.view.fn.push\"]"));
+    assert!(rs.contains("#[link_name = \"cf.view.fn.view_controller_push\"]"));
     assert!(rs.contains(
-        "pub fn push(v: *mut core::ffi::c_void, name: *const u8, flag: u8) -> u32;"
+        "pub fn view_controller_push(v: *mut core::ffi::c_void, name: *const u8, flag: u8) -> u32;"
     ));
     let c = out(&t, "include/dk_fw_view.h");
     assert!(c.contains(
-        "uint32_t dk_fw_view_push(void *v, const char *name, uint8_t flag) __asm__(\"cf.view.fn.push\");"
+        "uint32_t dk_fw_view_view_controller_push(void *v, const char *name, uint8_t flag) __asm__(\"cf.view.fn.view_controller_push\");"
     ));
 }
 
@@ -89,19 +89,19 @@ fn pointer_return_renders_in_rust_and_c() {
 #[test]
 fn site_bind_static_makes_a_static() {
     let site = |extra: &str| {
-        format!("[[site]]\nname = \"cf.menu.site.icon_ref\"\n{RULE}{extra}")
+        format!("[[site]]\nname = \"cf.menu.site.settings_list.system_icon_ref\"\n{RULE}{extra}")
     };
     let rs = out(&site("bind = \"static\"\n"), "rs/src/lib.rs");
-    assert!(rs.contains("#[link_name = \"cf.menu.site.icon_ref\"]"));
-    assert!(rs.contains("pub static ICON_REF: u8;"));
+    assert!(rs.contains("#[link_name = \"cf.menu.site.settings_list.system_icon_ref\"]"));
+    assert!(rs.contains("pub static SETTINGS_LIST_SYSTEM_ICON_REF: u8;"));
     let plain = render(&[("t.toml", site("").as_str())]).expect("renders");
-    assert!(!plain[0].1.contains("ICON_REF"));
+    assert!(!plain[0].1.contains("SETTINGS_LIST_SYSTEM_ICON_REF"));
     assert!(render(&[("t.toml", site("bind = \"extern\"\n").as_str())]).is_err());
 }
 
 #[test]
 fn unknown_key_is_an_error() {
-    let t = format!("{}colour = \"red\"\n", fn_entry("cf.view.fn.push", "void ()"));
+    let t = format!("{}colour = \"red\"\n", fn_entry("cf.view.fn.view_controller_push", "void ()"));
     assert!(render(&[("t.toml", t.as_str())]).is_err());
 }
 

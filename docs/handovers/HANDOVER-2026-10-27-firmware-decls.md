@@ -20,7 +20,7 @@ the step 5 list. Design: [docs/design/firmware-decls.md](../design/firmware-decl
 
 ## Next
 
-1. 4c: `aliases` -> `was`, port files without alias anchors, fix the design-doc examples.
+1. Done: 4c, `aliases` -> `was`, port files without alias anchors, design-doc examples fixed.
 2. Hook declarations with register contracts and generated trampolines.
 3. Reference docs per subsystem.
 4. Plan step 6 (C SDK for content modules), then 7 (SHARC kernels and C pilot), 8 (distribution), 9 (UI services).

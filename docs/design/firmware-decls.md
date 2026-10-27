@@ -20,8 +20,8 @@ firmware.
 2. Each entry is one declaration: a function, a data object, a value, a site list, a hook site or a struct. It has a
    name, the devices it exists on, a rule per device (or one shared rule), a type, a mark and a short description.
    `users` lists the modules that use it (provenance only; the linker does not read it).
-3. Names follow `<cpu>.<subsystem>.<kind>.<name>` with a fixed subsystem list. Old names stay as aliases until every
-   user has moved.
+3. Names follow `<cpu>.<subsystem>.<kind>.<name>` with a fixed subsystem list. A renamed declaration lists its former
+   names in `was`: they are for reading older docs and findings, never resolve, and must not be a current name.
 4. `port_resolve.py` reads `devices/fw/` and writes `devices/ports/<dev>-<os>.toml` as today. Rule kinds and matching do
    not change in this step.
 5. Step 5 generates bindings (Rust, C, assembly) from the same files. Content modules never see these declarations;
@@ -53,12 +53,12 @@ file per device.
 
 | Kind | Names | Today's rule kinds | Port anchor kind |
 |---|---|---|---|
-| `fn` | `cf.view.fn.push` | `cf_func`, `cf_vtable_slot`, `sharc_func` | `code` |
-| `data` | `cf.menu.data.icon_ref` | `cf_ptr`, `sharc_table`, `sharc_mem_addr` | `data` |
+| `fn` | `cf.view.fn.view_controller_push` | `cf_func`, `cf_vtable_slot`, `sharc_func` | `code` |
+| `data` | `cf.machine.data.name.table` | `cf_ptr`, `sharc_table`, `sharc_mem_addr` | `data` |
 | `value` | `dsp.voice.value.frame_base` | `sharc_literal` | `value` |
-| `sites` | `cf.params.sites.ref` | `cf_params_refs`, `cf_params_bounds` | `sites` |
-| `site` | `cf.menu.site.settings_tail` | `cf_func` / `cf_words` with an offset into a function | `code` |
-| `hook` | `cf.menu.hook.settings_tail` | (today `[[op]]` in the manifest) | none; describes a `site` |
+| `sites` | `cf.param.sites.descriptor_table.ref` | `cf_params_refs`, `cf_params_bounds` | `sites` |
+| `site` | `cf.menu.site.settings_list.tail` | `cf_func` / `cf_words` with an offset into a function | `code` |
+| `hook` | `cf.menu.hook.settings_list.tail` | (today `[[op]]` in the manifest) | none; describes a `site` |
 | `struct` | `cf.menu.struct.MenuItem` | none | none; generated types only |
 
 An `fn` may use a `cf_ptr` rule: a pointer literal to a function (the port anchor kind is then `data`).
@@ -72,8 +72,7 @@ generation: an `fn` becomes a callable binding, a `site` never does.
 ```toml
 # the view subsystem file (written by the rename commit)
 [[fn]]
-name = "cf.view.fn.push"
-aliases = ["cf.menu.fn.view_add"]
+name = "cf.view.fn.view_controller_push"
 sig = "bool (ViewController *mgr, shared_ptr_View *sp, bool replace_same_class)"
 doc = "Push a view on the view stack; replaces a view of the same class when asked (finding 71)."
 devices = ["dt2", "dn2"]
@@ -99,16 +98,15 @@ mark = "D"
 ```toml
 # devices/fw/menu.toml
 [[site]]
-name = "cf.menu.site.settings_tail"
-aliases = ["cf.menu.settings_tail"]
+name = "cf.menu.site.settings_list.tail"
 doc = "End of the SETTINGS item list rebuild."
 devices = ["dt2", "dn2"]
 rule = { kind = "cf_func", hash = "8db782f6fd735f89d3b7c856316c0b90", offset = 0x3a8, len = 8 }
 mark = "D"
 
 [[hook]]
-name = "cf.menu.hook.settings_tail"
-site = "cf.menu.site.settings_tail"
+name = "cf.menu.hook.settings_list.tail"
+site = "cf.menu.site.settings_list.tail"
 mode = "tail"                       # the displaced code runs, then the hook
 regs = { in = [], clobbers = ["d0", "d1", "a0", "a1"], preserves = ["d2-d7", "a2-a6"] }
 ```
@@ -117,8 +115,8 @@ A SHARC hook carries its DSP mode as well:
 
 ```toml
 [[hook]]
-name = "dsp.master.hook.q31_call"
-site = "dsp.master.site.q31_call"
+name = "dsp.master.hook.q31_converter.call"
+site = "dsp.master.site.q31_converter.call"
 mode = "retarget"
 regs = { in = ["r4", "r8", "r12"], preserves = ["i0-i7", "m0-m4"], modes = { m5 = 0, m6 = 1, m7 = -1, simd = false } }
 ```
@@ -153,7 +151,7 @@ mark = "D"
   clobbered); SHARC entries without `sig` are not callable from C and only have a register contract in their hook.
 
 A `sig` may return a pointer: our m68k-elf gcc and the Rust backend read it from d0, and the firmware's operator new
-(0x4011e954), `cf.view.fn.brain` (0x40198c24) and `cf.view.fn.mgr_of` (0x40030a42) on DT2 1.17, and operator new on DN2
+(0x4011e954), `cf.view.fn.brain.instance` (0x40198c24) and `cf.view.fn.brain.view_manager` (0x40030a42) on DT2 1.17, and operator new on DN2
 1.12, set d0 **[D]** (static check, 2026-10-27).
 
 A `site` with `bind = "static"` also becomes a static (like a `data` entry), for a module that takes only its address.
@@ -176,9 +174,9 @@ firmware functions too, and the planned `adapters/*` modules will depend on them
 - `kind`: `fn data value sites site hook struct`.
 - `name`: snake case, named after what the firmware does.
 
-Renames this brings (old names stay as `aliases`): `dkrt.fw.*`, `dkrt.hook.*`, `dkrt.ui`, `health.*`, `input.*`,
-`dl.*` and the kind-less names such as `cf.menu.settings_tail`. The port file lists each anchor under its new name and
-under every alias, so existing modules keep linking until step 5 moves them.
+The rename moved `dkrt.fw.*`, `dkrt.hook.*`, `dkrt.ui`, `health.*`, `input.*`, `dl.*` and the kind-less names to this
+form. Each renamed declaration lists its former names in `was`. The port file lists each anchor only under its current
+name.
 
 ## Resolution and proof
 
@@ -190,7 +188,9 @@ under every alias, so existing modules keep linking until step 5 moves them.
      mark) is identical before and after. Only the `rule` provenance text changes.
   2. Rename: every old tuple is still present unchanged (as an alias), and each new name has exactly the values of
      its alias. The rename merged three pairs that were the same firmware object (operator new, the block read and
-     the link record literal) into one declaration each, with the larger `len`.
+     the link record literal) into one declaration each, with the larger `len`. Step 5 then moved every user to the
+     new names, renamed `aliases` to `was` and removed the alias anchors from the port files; the patched images
+     stayed byte-identical.
 - `cf.params.fmt` and `cf.params.slotbuild` (generator only, never used) are dropped. The `pk_*_rules*.py` generators
   are deleted; new rules come from `catalog emit-rule ADDR` on the current image.
 
@@ -203,5 +203,6 @@ under every alias, so existing modules keep linking until step 5 moves them.
 ## Decisions (Em, 2026-10-27)
 
 1. One file per subsystem; SHARC subsystems in `devices/fw/dsp/`.
-2. Aliases now; step 5 moves the users to the new names when generated bindings replace `[object.externs]`.
+2. Former names are kept in `was`; step 5 moved the users to the new names when generated bindings replaced
+   `[object.externs]`.
 3. `catalog declare ADDR NAME` writes a declaration stub from the review decision and the suggested rule.

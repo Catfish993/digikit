@@ -419,7 +419,7 @@ def new_file_text(root: Path, name: str, entry: str) -> str:
     ][subsystem]
     return (
         f"# {subsystem}: {meaning}\n"
-        "# Names follow <cpu>.<subsystem>.<kind>.<name>; aliases are the old names until step 5 "
+        "# Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved "
         "(docs/design/firmware-decls.md).\n\n" + entry
     )
 
@@ -461,9 +461,13 @@ def cmd_declare(a: argparse.Namespace) -> int:
     table = a.table or ("fn" if rule["offset"] == 0 else "site")
     port_resolve.check_name(a.name, table, port_resolve.load_subsystems(root))
     for e in port_resolve.fw_rules(root):
-        if a.name in (e["name"], *e["aliases"]):
+        if a.name == e["name"]:
             raise port_resolve.ResolveError(
-                f"{a.name}: already declared as {e['name']} ({e['_source']})"
+                f"{a.name}: already declared ({e['_source']})"
+            )
+        if a.name in e["was"]:
+            raise port_resolve.ResolveError(
+                f"{a.name}: a former name of {e['name']} ({e['_source']}); use a new name"
             )
     rules = {device_of(a.image): rule}
     if a.other:

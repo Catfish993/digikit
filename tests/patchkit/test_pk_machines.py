@@ -69,14 +69,8 @@ def test_framework_rules_are_declared_once_per_site():
     ]
     keys = [(r["name"], tuple(r.get("devices", []))) for r in machine_rules]
     assert len(keys) == len(set(keys))
-    # every anchor a hook, write, section or extern of the manifest names has a rule for each device it is active on;
-    # the manifest still uses the old names, which are aliases
-    rules = {
-        (n, dev)
-        for r in machine_rules
-        for n in (r["name"], *r["aliases"])
-        for dev in r.get("devices", [])
-    }
+    # every anchor a hook, write, section or extern of the manifest names has a rule for each device it is active on
+    rules = {(r["name"], dev) for r in machine_rules for dev in r.get("devices", [])}
     named = set()
     for op in m["op"]:
         named.add((op.get("anchor"), tuple(op.get("devices", ["dt2", "dn2"]))))
