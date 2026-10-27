@@ -163,16 +163,31 @@ per-worktree dirs in `out/cache/rust` are no longer used.
 
 ### 5. Generated bindings
 
-- [ ] Generate `sdk/dk_machine.h` and `sdk/dk_fx.h` from `sdk.toml`; drop the test that compares the copies.
-- [ ] `patchkit gen` emits Rust (`#[link_name = "<anchor>"]`), C headers (`__asm__("<anchor>")`) and assembly `.equ`
-      files from the new fw directory under devices, with size and offset asserts for structs.
-- [ ] Hook trampolines are generated from hook declarations. Hand assembly remains only where code enters at a patch
-      site with the displaced code's registers.
-- [ ] `[object.externs]` is removed.
-- [ ] Reference docs: one page per subsystem with each declared anchor (signature, devices, rule, mark, status), from
-      the same generator as the step 1 review page.
+- [x] `patchkit gen` emits the `dkfw` Rust crate (`#[link_name = "<anchor>"]`), C headers (`__asm__("<anchor>")`) and
+      GAS `.equ` files under `modules/core/fw/` from `devices/fw/`, with size and offset asserts for structs (08e41214).
+- [x] Generate the C contract numbers from `sdk.toml` (`sdk/dk_machine_consts.h`, `sdk/dk_fx_consts.h`; 64fe5f94).
+- [x] d0/a0 check [D]: our gcc and Rust backend read a returned pointer from d0, and the firmware's operator new,
+      `brain` and `mgr_of` set d0, so pointer return types are allowed.
+- [x] `core/digikit-menu` (9411a223) and `core/runtime` (31122ad6) use the bindings; their Rust objects have no
+      `[object.externs]`. The assembly and C objects keep their `[object.externs]` tables, now pointing at final names.
+- [x] DT2 1.16 and DN2 1.11 dropped as patch targets (68381bbe); they stay as analysis references.
+- [x] Name review with Em and rename (bd0af72c): 89 renames, dot-separated groups for places of one firmware object,
+      every user moved to the final names. Old names are still listed as `aliases`.
+- [ ] 4c: rename the `aliases` key to `was` (former names, kept for reading older docs, never resolved);
+      `port_resolve.py` stops writing alias anchors (port files shrink from about 640 to about 235 anchors); fwgen
+      reads `was`; `catalog declare` rejects a former name; fix the design-doc and `port_resolve.py` docstring examples
+      (they still show pre-rename names on purpose). Proof: byte-identical patched images and no remaining old name
+      in users (`out/firmware-decls/rename2.py ... leftovers`).
+- [ ] Hook declarations with register contracts (inputs, clobbers, preserves, DSP modes; today prose in findings 45
+      and 53), and generated trampolines where code enters at a patch site.
+- [ ] Reference docs: one page per subsystem with each declared anchor (signature, devices, rule, mark), from the same
+      generator as the step 1 review page.
+- Deferred (Em): a repo rename tool (`fwrename`). The working codemod is `out/firmware-decls/rename2.py`
+  (modes `decls`, `users`, `leftovers`; input `proposals-v2.json`).
 
-Proof: applied-patch bytes identical for the core modules.
+Proof for every commit of this step: `zsh out/firmware-decls/apply_all.sh <dir>` before and after, then `cmp` every
+image and the `rc.txt` exit codes (34 applies on DT2 1.17 and DN2 1.12); `pk_build build-all --check`; `patchkit gen
+--check`; the touched tests; `mise run test:changed` with its exit status checked directly (never through a pipe).
 
 ### 6. Content-module SDK in C
 
@@ -271,6 +286,10 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27: plan written. Steps 1 and 1b done; S1/S2 and findings 70 and 71 done. Review page generator in the repo
-(`tools/firmware/catalog_page.py`); Em reviews later. Steps 2, 3 and 4 done (hook register contracts move to step 5); step 7 study done. Next: step 5, generated
-bindings.
+2026-10-27 (23 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
+(findings 70-72), and step 5 up to the rename (see the step 5 list). Next, in order: 4c, hook contracts, reference
+docs, then step 6. Em's rules for this branch: stop before every commit and show the diff and message; no Rust build
+without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions
+(https://claude.ai/artifact/HsY3xPsoDhyCMfVhmzrPBW, decisions stored with the page), why the `Value<T>` project-data
+classes matter, retiring the legacy `machinebuild.py`/`machinepatch.py`/`machineprofile.py` and the
+`dsp_master_hook.py` spike (both pinned to 1.16/1.11).
