@@ -1,7 +1,7 @@
 # The module contract: version numbers, log kinds and the SysEx protocol numbers. `patchkit gen` writes
 # modules/core/runtime/sdk/src/gen_sdk.rs, tools/device/dklog_kinds.py, tools/device/dkproto.py and
-# packages/dkupload/src/gen_proto.rs, packages/dk-session/src/gen_proto.ts, sdk/dk_machine.inc, sdk/dk_fx.inc, sdk/dk_machine_consts.h,
-# sdk/dk_fx_consts.h, sdk/dk_machine.h, sdk/dk_fx.h and sdk/dk_api.h from this file (`patchkit gen --check` fails when they are stale).
+# packages/dkupload/src/gen_proto.rs, packages/dk-session/src/gen_proto.ts, sdk/asm/dk_machine.inc, sdk/asm/dk_fx.inc,
+# sdk/include/dk/gen/machine_consts.h, fx_consts.h, machine.h, fx.h and api.h from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
 version = "0.5.1"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
@@ -11,10 +11,10 @@ version = "0.5.1"   # 0.x: MINOR may break (contract major, store format, SysEx 
                     # An appended Api function is a minor bump; a changed or removed one is a major bump.
 api = [1, 2]        # the ColdFire Api table (every module, `raw` included); minor 1: `log_lv` appended; minor 2: `register_cmds` appended
 machine = [1, 0]
-fx = [1, 0]         # run-time effects (sdk/dk_fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
+fx = [1, 0]         # run-time effects (sdk/include/dk/gen/fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
 
-# The table a .dkm module gets in dkm_init (`patchkit gen` writes the Rust `Api` in gen_sdk.rs and sdk/dk_api.h from it). Fields are only
+# The table a .dkm module gets in dkm_init (`patchkit gen` writes the Rust `Api` in gen_sdk.rs and sdk/include/dk/gen/api.h from it). Fields are only
 # appended, each is 4 bytes; a new field is a minor bump of `[contract] api` and gets `since` = that minor. `type` is `u32`, `addr` (the
 # address of a helper: usize in Rust, `<name>_addr` in C) or a function signature `<ret> (<type> <name>, ...)` with the types u8 u16 u32
 # i8 i16 i32 bool void char float, pointers, `const` and the names of [api.types].
@@ -46,8 +46,8 @@ fields = [
 # negative status (a `proto::E_*` code or its own: sent as the reply's status with no body).
 service_cmd = "i32 (u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)"
 
-# The machine contract's numbers (sdk/dk_machine.h is the generated C view; it includes the generated sdk/dk_machine_consts.h).
-# `patchkit gen` writes sdk/dk_machine.inc and sdk/dk_machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
+# The machine contract's numbers (sdk/include/dk/gen/machine.h is the generated C view; it includes the generated sdk/include/dk/gen/machine_consts.h).
+# `patchkit gen` writes sdk/asm/dk_machine.inc and sdk/include/dk/gen/machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
 [machine]
 consts = [
     { name = "DK_MACHINE_V1", value = 1, doc = "Contract version." },
@@ -69,11 +69,11 @@ desc = [
     "state_clear_bytes", "max_cycles_block", "max_cycles_note_on", "max_call_depth", "stack_bytes",
 ]                                                          # struct dk_machine_desc, DK_DESC_*
 
-# The typed C view that `patchkit gen` writes sdk/dk_machine.h from: `"<type> <name> // doc"` per field (4 bytes each; the names must equal
+# The typed C view that `patchkit gen` writes sdk/include/dk/gen/machine.h from: `"<type> <name> // doc"` per field (4 bytes each; the names must equal
 # `voice_in` and `desc` above, in order) and `"<ret> <name>(<args>) // doc"` per entry point. Types: u32 i32 float, pointers, `const`.
 [machine.c]
-intro = '''The numbers are in sdk/sdk.toml [machine], from which `patchkit gen` writes sdk/dk_machine_consts.h (included here) and
-   sdk/dk_machine.inc for assembly. Each constant is documented in the consts header.'''
+intro = '''The numbers are in sdk/sdk.toml [machine], from which `patchkit gen` writes sdk/include/dk/gen/machine_consts.h (included here) and
+   sdk/asm/dk_machine.inc for assembly. Each constant is documented in the consts header.'''
 desc_doc = "One per module in read-only data, found by the manifest's symbol. No function pointers: the manifest names the entry symbols."
 rules = '''Entry points (symbols named in the manifest). SHARC+ assembly, v1: the adapter enters with `I13 = return address;
    JUMP (M13, I12)` and the module returns with `JUMP (M13, I13)`. Arguments R4 = state, R8 = in, R12 = params; result R0.
@@ -101,8 +101,8 @@ fns = [
     "i32 render(void *state, const dk_voice_in *in, const i32 *params) // Once per block while the voice runs, including the note-on block after note_on. Writes DK_BLOCK floats to in->out. params: DK_MAX_PARAMS words. Returns dk_status.",
 ]
 
-# The FX contract's numbers (sdk/dk_fx.h is the generated C view; it includes the generated sdk/dk_fx_consts.h).
-# `patchkit gen` writes sdk/dk_fx.inc and sdk/dk_fx_consts.h from this table. Do not include it together with dk_machine.inc (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both).
+# The FX contract's numbers (sdk/include/dk/gen/fx.h is the generated C view; it includes the generated sdk/include/dk/gen/fx_consts.h).
+# `patchkit gen` writes sdk/asm/dk_fx.inc and sdk/include/dk/gen/fx_consts.h from this table. Do not include it together with dk_machine.inc (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both).
 [fx]
 consts = [
     { name = "DK_FX_V1", value = 1, doc = "Contract version." },
@@ -119,12 +119,12 @@ desc = [
     "magic", "contract", "n_params", "state_bytes", "max_cycles_block", "max_call_depth", "stack_bytes",
 ]                                                          # struct dk_fx_desc, DK_FX_DESC_*
 
-# The typed C view of sdk/dk_fx.h (as [machine.c]).
+# The typed C view of sdk/include/dk/gen/fx.h (as [machine.c]).
 [fx.c]
 intro = '''An effect processes the final stereo block of the device (the master, before the USB pack and the DAC converter).
-   The numbers are in sdk/sdk.toml [fx], from which `patchkit gen` writes sdk/dk_fx_consts.h (included here) and sdk/dk_fx.inc for assembly.
+   The numbers are in sdk/sdk.toml [fx], from which `patchkit gen` writes sdk/include/dk/gen/fx_consts.h (included here) and sdk/asm/dk_fx.inc for assembly.
    Do not include dk_fx.inc and dk_machine.inc in one assembly file (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both).'''
-desc_doc = '''One per module in read-only data, found by the module's registry row (patched in) or its `[[fx]]` record (run-time, DSP section version 4
+desc_doc = '''One per module in read-only data, found by the module's registry row (patched in) or its DK_FX record (run-time, DSP section version 4
    of the .dkm). The row holds DK_FX_MAX_PARAMS parameter words, p0 to p7: word i of `params` is p_i, all 0 unless the row says otherwise (a run-time
    effect's record gives defaults). The adapter passes the words as they are; n_params says how many the effect reads. No function pointers.'''
 rules = '''Entry point. SHARC+ assembly, v1: the adapter enters with `I13 = return address; JUMP (M13, I12)` and the module returns with
@@ -148,8 +148,55 @@ fns = [
     "i32 process(void *state, const dk_fx_in *in, const i32 *params) // Block entry point. params: DK_FX_MAX_PARAMS words. Returns dk_fx_status; a negative number is a fault: the block plays dry. Entered as note_on of dk_machine.h.",
 ]
 
+# Descriptor records: what a module declares with the DK_* macros of <dk/fx.h>. The macros place them in the
+# `.dk.desc` section of the module's ColdFire object. `patchkit pack` reads them and lowers them to the register
+# records of the .dkm; they never reach the device. `patchkit gen` writes sdk/include/dk/gen/desc.h from this table.
+# Fields are 4 bytes (big-endian) or char arrays whose length is a multiple of 4: text is printable ASCII, NUL-padded.
+[desc]
+section = ".dk.desc"
+consts = [
+    { name = "DK_DESC_FX", value = 1, doc = "Record kind of dk_desc_fx." },
+    { name = "DK_FX_KNOBS", value = 7, doc = "Knobs on an effect page, p0 to p6." },
+    { name = "DK_PERCENT", value = 1, doc = "A knob shown as 0 .. 127 (the default)." },
+    { name = "DK_BIPOLAR", value = 2, doc = "A knob shown as -64 .. +63." },
+    { name = "DK_ROUTE_MASTER", value = 1, doc = "The effect runs on the master block." },
+    { name = "DK_ROUTE_SEND", value = 2, doc = "The effect runs on a send bus (one amount per track)." },
+]
+
+[[desc.record]]
+name = "dk_desc_knob"
+doc = "One knob of an effect page. Knob i sets parameter word p_i."
+fields = [
+    "u32 word // the parameter word the knob sets, equal to its index in dk_desc_fx.knob",
+    "u32 position // 0 .. 7, the knob position on the page",
+    "u32 display // DK_PERCENT or DK_BIPOLAR; 0 = DK_PERCENT",
+    "float min // the value at the lowest knob position",
+    "float max // the value at the highest knob position",
+    "float def // the default, from min to max",
+    "char name[24] // 1 to 23 characters, shown while the knob turns",
+    "char short_name[8] // 1 to 6 characters, under the knob",
+]
+
+[[desc.record]]
+name = "dk_desc_fx"
+kind = "DK_DESC_FX"
+doc = "One effect. The process routine and its dk_fx_desc are symbols of the module's SHARC+ object."
+fields = [
+    "u32 kind // DK_DESC_FX",
+    "u32 size // sizeof(dk_desc_fx)",
+    "char id[16] // the effect id, unique in the module; saved kits keep module id + effect id",
+    "char process[32] // the SHARC+ symbol of the process routine",
+    "char desc[32] // the SHARC+ symbol of the dk_fx_desc",
+    "char tab[8] // 1 to 3 characters on the FX page tab; empty = no page",
+    "char title[24] // 1 to 23 characters, the page title",
+    "u32 mix // 0 .. 127, the MIX knob default",
+    "u32 route // DK_ROUTE_MASTER or DK_ROUTE_SEND; 0 = DK_ROUTE_MASTER",
+    "u32 routes // the routes the user may choose, a mask; 0 = the default for `route`",
+    "dk_desc_knob knob[DK_FX_KNOBS] // knobs, from index 0, without gaps; unused entries are zero",
+]
+
 # The names a module may import, in the order of the runtime's table (modules/core/runtime/src/rs/src/lib.rs `IMPORTS`). `kind` `helper`: a
-# compiler helper that gcc calls by itself (no prototype in sdk/dk_api.h); `fw`: a firmware function. `requires`: the module whose absence
+# compiler helper that gcc calls by itself (no prototype in <dk/api.h>); `fw`: a firmware function. `requires`: the module whose absence
 # makes the address 0 (the import is then not found).
 [[import]]
 name = "fw_block_read"

@@ -103,7 +103,7 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 
 ## More
 
-- [Writing modules](docs/MODULE-AUTHORING.md), and the planned module SDK: [docs/design/module-sdk.md](docs/design/module-sdk.md)
+- [Writing modules](docs/MODULE-AUTHORING.md) and the [SDK](sdk/README.md); SDK plan: [docs/plans/sdk-api.md](docs/plans/sdk-api.md)
 - [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
 - [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, tests, analysis tools, repository layout

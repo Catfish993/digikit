@@ -1135,7 +1135,7 @@ def test_sample_clients_select_sample_acceptance_without_module_uploads(
     "path",
     [
         "modules/core/runtime/module.toml",
-        "sdk/dk_machine.h",
+        "sdk/include/dk/gen/machine.h",
         "modules/no/such/module.toml",
     ],
 )

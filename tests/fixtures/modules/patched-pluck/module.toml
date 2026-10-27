@@ -25,7 +25,7 @@ place = "dsp.l2"
 # device with the knob model of devices/<device>.toml into the `voices`, `machines`, `params` and `pages` rows.
 
 # The DSP routines render the permanent type number of this machine (core/machines types.toml), one body for both devices: a machine of
-# the SDK contract (sdk/dk_machine.h), `desc` holds its voices, state and clear bytes.
+# the SDK contract (<dk/machine.h>), `desc` holds its voices, state and clear bytes.
 [[voice]]
 machine = "pluck"
 render = "_pk_render"

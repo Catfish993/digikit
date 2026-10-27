@@ -1,4 +1,4 @@
-"""The fit rule of tools/device/dkfit.py on the shared vectors (sdk/fit-vectors.json); dkrt_fit and apps/web/src/modules/dkfit.ts read the same file."""
+"""The fit rule of tools/device/dkfit.py on the shared vectors (sdk/vectors/fit-vectors.json); dkrt_fit and apps/web/src/modules/dkfit.ts read the same file."""
 
 import json
 from pathlib import Path
@@ -8,7 +8,9 @@ import pytest
 from tools.device import dkfit as F
 
 VECTORS = json.loads(
-    (Path(__file__).resolve().parents[2] / "sdk" / "fit-vectors.json").read_text()
+    (
+        Path(__file__).resolve().parents[2] / "sdk" / "vectors" / "fit-vectors.json"
+    ).read_text()
 )
 
 

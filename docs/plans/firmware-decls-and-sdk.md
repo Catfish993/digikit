@@ -163,7 +163,7 @@ per-worktree dirs in `out/cache/rust` are no longer used.
 
 - [x] `patchkit gen` emits the `dkfw` Rust crate (`#[link_name = "<anchor>"]`), C headers (`__asm__("<anchor>")`) and
       GAS `.equ` files under `modules/core/fw/` from `devices/fw/`, with size and offset asserts for structs (08e41214).
-- [x] Generate the C contract numbers from `sdk.toml` (`sdk/dk_machine_consts.h`, `sdk/dk_fx_consts.h`; 64fe5f94).
+- [x] Generate the C contract numbers from `sdk.toml` (`sdk/include/dk/gen/machine_consts.h`, `sdk/include/dk/gen/fx_consts.h`; 64fe5f94).
 - [x] d0/a0 check [D]: our gcc and Rust backend read a returned pointer from d0, and the firmware's operator new,
       `brain` and `mgr_of` set d0, so pointer return types are allowed.
 - [x] `core/digikit-menu` (9411a223) and `core/runtime` (31122ad6) use the bindings; their Rust objects have no
@@ -194,8 +194,8 @@ image and the `rc.txt` exit codes (34 applies on DT2 1.17 and DN2 1.12); `pk_bui
 - [x] C object cache key includes header dependencies (gcc `-MM`, gas `--MD`) and the toolchain; the committed
       ColdFire objects were rebuilt once (only `source_sha256` changed).
 - [x] Generated C header for the runtime `Api` table and `dkrt_*` exports: `sdk.toml` `[api]` and `[[import]]` generate
-      the Rust `Api`, `sdk/dk_api.h` and a compile-time check of the runtime's import table; `dk_machine.h` and
-      `dk_fx.h` are generated too.
+      the Rust `Api`, `sdk/include/dk/gen/api.h` and a compile-time check of the runtime's import table; `gen/machine.h` and
+      `gen/fx.h` are generated too.
 - [x] Generated per-module header from `module.toml` (parameter ids, knob order) for C, assembly and Rust:
       `build/gen/module.h` holds the device-independent numbers, effects also get `build/gen/module.inc`; the
       per-device numbers stay in `consts.rs` and `<dev>.inc`.
@@ -269,6 +269,9 @@ across modules.
 
 ### 8. Distribution and Transfer tabs
 
+The prebuilt-object model is superseded on 2026-10-27: a `.dkmod` holds source only and the
+receiver compiles it. See [sdk-api.md](sdk-api.md), phase 6.
+
 - [ ] `.dkmod` is the shared unit: source, manifest, prebuilt objects and a reproducible-build hash.
 - [ ] The desktop Transfer tab packs the `.dkm` for the connected device and firmware at upload.
 - [ ] The web Transfer tab lists modules published as Pages assets and packs and sends them in the browser. ColdFire
@@ -279,6 +282,8 @@ across modules.
 Proof: screenshots of both tabs before Em tries them.
 
 ### 9. UI runtime services
+
+Superseded on 2026-10-27 by [sdk-api.md](sdk-api.md), phases 3 and 4.
 
 - [ ] A generated `<dk/ui.h>` with concepts, not firmware classes: menu and menu item, list, value, text, plus
       `dk_ui_has(cap)`. A missing feature reads as false or as a weak import of 0, never as a crash.

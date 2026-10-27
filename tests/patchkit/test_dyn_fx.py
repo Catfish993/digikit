@@ -142,7 +142,7 @@ def test_the_fit_rule_counts_the_effect_slots_of_the_device(packed):
     assert short == ("FX_SLOTS", 1, 0)
     assert dkfit.describe(short) == "effect slots 1 needed, 0 free"
     assert dkfit.menu_line(short) == "FX 1 > 0 FREE"
-    # (a set of four effects stops at the fourth: the "sets" vector of sdk/fit-vectors.json, read by tests/digikit/test_dkfit.py)
+    # (a set of four effects stops at the fourth: the "sets" vector of sdk/vectors/fit-vectors.json, read by tests/digikit/test_dkfit.py)
 
 
 def test_the_effect_packs_for_the_digitone_too(packed, tmp_path):

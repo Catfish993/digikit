@@ -5,7 +5,7 @@
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx --modules a,b [-o OUT.syx]   apply; writes out/patch/
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx [--set NAME]   no --modules: the device's patch set (default `device`)
     uv run python -m tools.patchkit.patchkit explain --firmware X.syx --modules a,b              site-by-site account
-    uv run python -m tools.patchkit.patchkit list|inspect|check|verify|preflight|gen ...                   passed through
+    uv run python -m tools.patchkit.patchkit list|inspect|check|verify|preflight|gen|desc ...                  passed through
     uv run python -m tools.patchkit.patchkit needs [--json] FILE.dkm...   what a load of each file takes (arena, DSP area, rows), inferred from its contents
     uv run python -m tools.patchkit.patchkit pack MODULE --device dt2|dn2 [-o OUT.dkm]  pack a run-time module (default out/patch/<name>-<device>.dkm)
     uv run python -m tools.patchkit.patchkit bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
@@ -341,6 +341,7 @@ def main(argv: list[str]) -> int:
         "reference",
         "needs",
         "dkm-info",
+        "desc",
     ):
         return run([cmd, *args]).returncode
     print(__doc__)

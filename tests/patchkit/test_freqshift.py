@@ -20,7 +20,7 @@ from support.paths import REPO_ROOT
 
 from tools import python_env
 from tools.patchkit import freqshift_ref as R
-from tools.patchkit import pk_toolchains
+from tools.patchkit import pk_conform, pk_toolchains
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
@@ -234,11 +234,12 @@ def test_the_oscillator_does_not_drift_in_a_run_of_a_minute():
     check_long(long_run(90000, 3600))
 
 
-def test_the_manifest_declares_the_page_and_the_knob():
+def test_the_module_declares_the_page_and_the_knob():
     man = tomllib.loads((MODULE / "module.toml").read_text())
     assert man["module"]["id"] == "digikit/freqshift"
     assert len(man["module"]["summary"]) < 120
-    (fx,) = man["fx"]
+    assert "fx" not in man  # the effect is declared in src/module.c
+    (fx,) = pk_conform.fx_records("digikit/freqshift")
     assert (fx["id"], fx["tab"], fx["title"], fx["mix"]) == (
         "fshift",
         "FSH",

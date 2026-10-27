@@ -4,7 +4,7 @@ __ID__: a ColdFire service module in C, loaded at run time. It logs "hello" when
 `src/c/__NAME__.c`.
 
 - `module.toml`: the module and its C object (`place = "cf.expansion"`).
-- `src/c/__NAME__.c`: `dkm_init` and `dkm_fini` (`sdk/dk_api.h`). To add SysEx commands, allocate a range in `sdk/sdk.toml`
+- `src/c/__NAME__.c`: `dkm_init` and `dkm_fini` (`<dk/api.h>`). To add SysEx commands, allocate a range in `sdk/sdk.toml`
   `[protocol.ranges]` and call `api->register_cmds` in `dkm_init`.
 
 ```sh

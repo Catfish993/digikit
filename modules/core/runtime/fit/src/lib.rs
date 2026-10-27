@@ -3,7 +3,7 @@
 //! The runtime's CAPACITY entries (`dkrt_capacity`) give limit, used and largest free piece per resource; `dkneeds::needs_of` (docs/design/digikit-dkm.md,
 //! "Needs are inferred from the contents") gives what a load takes. `fits_now` compares them and names the first short resource; `take` takes a module's needs out of a capacity,
 //! so a set is checked by loading its modules in turn (the sum rule: fragmentation is not modelled, so it is conservative). The rule is written
-//! again in apps/web/src/modules/dkfit.ts and tools/device/dkfit.py; `sdk/fit-vectors.json` keeps the three equal.
+//! again in apps/web/src/modules/dkfit.ts and tools/device/dkfit.py; `sdk/vectors/fit-vectors.json` keeps the three equal.
 //!
 //! The runtime's module set is fixed per session, so the menu checks a selection against the limits with the other ticked modules taken out
 //! (the next boot loads them into an empty runtime), and a host checks against CAPACITY as the device reports it.

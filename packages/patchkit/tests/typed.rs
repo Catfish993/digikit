@@ -223,3 +223,14 @@ fn bundle_lowering_matches_the_scan() {
         "dt2: voice, machine, 4 params; dn2: voice, machine, 4 params, page"
     );
 }
+
+/// A manifest that still declares `[[fx]]` is refused, so an effect is never dropped without a word.
+#[test]
+fn a_manifest_fx_section_is_refused() {
+    let dir = root().join("tests/fixtures/modules/dyn-fx-gain");
+    let mut text = std::fs::read_to_string(dir.join("module.toml")).unwrap();
+    text.push_str("\n[[fx]]\nid = \"gain\"\nprocess = \"_dg_process\"\ndesc = \"_dg_desc\"\n");
+    let none = |p: &str| Err(patchkit::Error(format!("{p}: no such file")));
+    let e = patchkit::module::Module::from_parts_lenient(&text, &none).unwrap_err();
+    assert!(e.to_string().contains("DK_FX"), "{e}");
+}

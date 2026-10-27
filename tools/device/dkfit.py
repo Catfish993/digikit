@@ -1,6 +1,6 @@
 """The fit rule: does a module, from the needs inferred from its .dkm, fit the capacity of a device (docs/plans/what-fits.md)?
 
-The compare is written three times and kept equal by one set of vectors (sdk/fit-vectors.json): `dkrt_fit` (Rust: the DIGIKIT menu),
+The compare is written three times and kept equal by one set of vectors (sdk/vectors/fit-vectors.json): `dkrt_fit` (Rust: the DIGIKIT menu),
 apps/web/src/modules/dkfit.ts (the host app) and this file (dev tools: `dk run`, `module:check`). The needs themselves are computed once, in Rust
 (packages/dkneeds), not here.
 

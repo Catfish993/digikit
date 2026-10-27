@@ -12,7 +12,7 @@
  * the pending count (it drains PACE_DRAIN per PACE_BLOCKS blocks of 1/1500 s, deliberately slower than the firmware) and takes only what fits below
  * the limit, so the firmware's clamp is never the thing that drops or delays a turn. */
 
-#include "dk_api.h"
+#include <dk/api.h>
 
 typedef uint32_t u32;
 typedef uint8_t u8;

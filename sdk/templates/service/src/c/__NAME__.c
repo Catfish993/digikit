@@ -7,7 +7,7 @@
  *     api->register_cmds(FIRST_CMD, COUNT, handler);
  */
 
-#include "dk_api.h"
+#include <dk/api.h>
 
 int32_t dkm_init(const dk_api *api)
 {

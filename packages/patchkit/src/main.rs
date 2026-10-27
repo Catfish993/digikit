@@ -25,6 +25,7 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
   pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm
                                          (a `dynamic = true` module: its machine and param records for --device)
+  desc    MODULE_ID                      the effects the module declares (the DK_FX records of its ColdFire object), as JSON
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
                                          the spec keys are in packages/patchkit/src/dkmsynth.rs)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
@@ -467,6 +468,16 @@ plan.json {}",
                 .filter(|(o, _)| o.arch == "cf")
                 .collect();
             let dynamic = m.manifest.module.dynamic;
+            let desc_section = patchkit::sdkgen::desc_spec().section;
+            if !dynamic
+                && m.objects
+                    .iter()
+                    .any(|o| o.sections.iter().any(|s| s.name == desc_section))
+            {
+                return Err(Error(format!(
+                    "{id}: descriptor records need `dynamic = true`"
+                )));
+            }
             if cf.len() > 1 || (cf.is_empty() && !dynamic) {
                 return Err(Error(format!(
                     "{id} has {} ColdFire objects; a .dkm packs exactly one",
@@ -525,10 +536,10 @@ plan.json {}",
                         ranges,
                     });
                 }
-                // the effects of the device (`[[fx]]`): process routine and descriptor in the DSP object; a page's knobs set the first words of the row
-                let dev_fx: Vec<_> = m
-                    .manifest
-                    .fx
+                // the effects of the device (the `DK_FX` records of the ColdFire object): process routine and descriptor in the DSP object;
+                // a page's knobs set the first words of the row
+                let all_fx = patchkit::desc::module_fx(m)?;
+                let dev_fx: Vec<_> = all_fx
                     .iter()
                     .filter(|f| f.devices.is_empty() || f.devices.iter().any(|d| *d == dev))
                     .collect();
@@ -580,7 +591,9 @@ plan.json {}",
             } else {
                 vec![]
             };
-            let file = patchkit::dkm::pack_full(cf.first().map(|c| c.0), &reg, &dsp, &opts)?;
+            // the descriptor records stay behind: the object of the .dkm has no `.dk.desc` section
+            let cf_obj = cf.first().and_then(|c| patchkit::desc::strip(c.0));
+            let file = patchkit::dkm::pack_full(cf_obj.as_ref(), &reg, &dsp, &opts)?;
             write(&out, &file)?;
             let d = patchkit::dkm::Dkm::parse(&file)?;
             println!(
@@ -594,6 +607,15 @@ plan.json {}",
                 d.sha256
             );
             println!("size     {out}: {}", d.size_summary(file.len()));
+        }
+        "desc" => {
+            let id = need(rest)?;
+            let lib = library(&a.root, rest)?;
+            let m = lib
+                .get(id)
+                .ok_or_else(|| Error(format!("no module {id}")))?;
+            let fx = patchkit::desc::module_fx(m)?;
+            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "fx": fx }))?);
         }
         "dkm-dsp-image" => {
             // the DSP image of a .dkm placed at the L2 byte address BASE, imports as NAME=VALUE: the reference loader

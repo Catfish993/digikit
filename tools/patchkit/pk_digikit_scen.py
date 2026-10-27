@@ -50,7 +50,7 @@ Kinds:
              one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
   fxsend     a run-time effect on the send route of `core/fx` (Digitakt II): the row's route and amount words are written with `dsp.patch`; no amount, or an amount on a silent track, leaves the PCM
              dry bit for bit; an amount on the playing track adds the effect's return (the amount squared, as the stock sends); the effect runs once a block; tools/patchkit/pk_digikit_fxsend.py.
-  fxroutes   SETTINGS > DIGIKIT > FX ROUTES and the manifest's route fields (`route`, `routes` of `[[fx]]`; Digitakt II): a send-default effect starts on the send route, the page lists each
+  fxroutes   SETTINGS > DIGIKIT > FX ROUTES and the effect's route fields (`route`, `routes` of DK_FX; Digitakt II): a send-default effect starts on the send route, the page lists each
              effect as `<TAB>  SEND` or `<TAB>  MASTER`, YES switches the pending route (MASTER ONLY, SEND ONLY and NO SEND SLOT are messages), APPLY & RESTART writes the settings and restarts and the
              route is in effect after it (row word, FX key page, PCM, `patchkit store dump`), the FX view lists send effects first; tools/patchkit/pk_digikit_fxroutes.py.
   settings   the settings store of the runtime (docs/design/digikit-store.md, "The settings record"): a key put through the mailbox is written 2 s after the last change to the copy that is not

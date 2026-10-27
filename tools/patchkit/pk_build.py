@@ -329,12 +329,24 @@ def cf_object(sources: list[Path], include_dirs: list[Path] | None = None) -> di
     }
 
 
+def sharc_include_dirs(moddir: Path) -> list[Path]:
+    """The include directories of a SHARC+ object of the module, for the build, the hash and the test rigs. The
+    directories of the sources come after these."""
+    return [
+        moddir / "build" / "gen",
+        moddir / "src",
+        ROOT / "sdk" / "asm",
+        ROOT / "sdk",
+    ]
+
+
 def cf_include_dirs(moddir: Path) -> list[Path]:
     """The include directories of a ColdFire C or assembly object of the module, for the build and for the hash."""
     return [
         moddir / "build" / "gen",
+        moddir / "src",
         ROOT / "modules" / "core" / "fw" / "inc",
-        ROOT / "sdk",
+        ROOT / "sdk" / "include",
     ]
 
 
@@ -350,7 +362,7 @@ def source_hash(moddir: Path, o: dict) -> str | None:
     if {p.suffix for p in paths} <= {".s"} and any(
         "dsp" in Path(s).parts for s in srcs
     ):
-        dirs = [moddir / "build" / "gen", ROOT / "sdk", *{p.parent for p in paths}]
+        dirs = [*sharc_include_dirs(moddir), *{p.parent for p in paths}]
         text = apply_conditionals(
             expand_includes("\n".join(p.read_text() for p in paths), dirs)
         )
@@ -409,7 +421,7 @@ def build_module(
         paths = [moddir / s for s in srcs]
         kinds = {p.suffix for p in paths}
         if kinds <= {".s"} and any("dsp" in Path(s).parts for s in srcs):
-            obj = sharc_object(paths, [moddir / "build" / "gen", ROOT / "sdk"], defines)
+            obj = sharc_object(paths, sharc_include_dirs(moddir), defines)
         else:
             if defines:
                 raise BuildError("--define applies to DSP sources only")

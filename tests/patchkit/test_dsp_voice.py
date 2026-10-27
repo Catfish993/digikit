@@ -502,10 +502,9 @@ def test_the_deep_breadcrumbs_come_in_order_inside_the_frame_save(name):
     context_intact(out)
 
 
-INCLUDES = [
-    CORE.parents[2] / "build" / "gen",
-    CORE.parents[5] / "sdk",
-]  # the adapter's generated includes and the SDK's
+INCLUDES = pk_build.sharc_include_dirs(
+    CORE.parents[2]
+)  # the adapter's includes and the SDK's
 
 
 def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_register(

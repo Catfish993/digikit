@@ -1,6 +1,6 @@
 ---
 name: digikit-module
-description: Create, build, check, pack, run, export or import a digikit content module (a machine, an effect with its own FX page and master or send routes, or a ColdFire service loaded from the card as a .dkm) for the Digitakt II or Digitone II. Use for module:new, module:check, module:pack, module:export, module:import, dk:run, the module.toml manifest, the machine contract (render, note_on, desc), the effect contract ([[fx]], [[fx.knob]], route, routes) and knob and parameter rules. Patched-in core modules: references/patched-in.md. Not for firmware analysis.
+description: Create, build, check, pack, run, export or import a digikit content module (a machine, an effect with its own FX page and master or send routes, or a ColdFire service loaded from the card as a .dkm) for the Digitakt II or Digitone II. Use for module:new, module:check, module:pack, module:export, module:import, dk:run, the module.toml manifest, the machine contract (render, note_on, desc), the effect contract (DK_FX, DK_KNOB, route, routes in src/module.c) and knob and parameter rules. Patched-in core modules: references/patched-in.md. Not for firmware analysis.
 ---
 
 # digikit modules
@@ -25,6 +25,8 @@ The guide is `docs/MODULE-AUTHORING.md`. Read the section you need there; this f
 1. Create: `mise run module:new -- KIND AUTHOR/NAME [--dir DIR] [--title T] [--short S] [--no-build]` (guide 3). `KIND` is `machine`, `fx` or `service`.
    With `--dir`, set `PATCHKIT_MODULES=DIR`.
 2. Edit `module.toml` and the source (guide 4 to 7). Reuse `references/dsp-recipes.md`, avoid `references/selas-pitfalls.md`, size with `references/devices.md`.
+   An effect declares its page and knobs in C (`DK_FX` in `src/module.c`, word numbers in a shared `src/NAME.h`); `patchkit desc AUTHOR/NAME` prints them.
+   Machines still use the manifest sections.
 3. After a change to `module.toml`, `devices/*.toml` or `sdk/sdk.toml`: `mise run gen:modules` (`-- --check` lists stale files). Never edit `build/gen/`.
 4. Build: `mise run module:build -- PATH [--check]`.
 5. Check, no emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (guide 8).

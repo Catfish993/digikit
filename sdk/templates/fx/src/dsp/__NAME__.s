@@ -1,9 +1,9 @@
-// __ID__: an effect of the FX contract (sdk/dk_fx.h): out = in * gain, and one state word that counts the calls.
+// __ID__: an effect of the FX contract (<dk/fx.h>): out = in * gain, and one state word that counts the calls.
 // The effect is loaded at run time: the runtime places and relocates this object, reserves the state behind it and
 // publishes a free row of the chain with the knob at its default.
 
 #include "dk_fx.inc"
-#include "module.inc"
+#include "__NAME__.h"
 
 .SECTION/PM seg_pmco;
 .GLOBAL ___NAME___process;

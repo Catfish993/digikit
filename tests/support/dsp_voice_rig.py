@@ -136,7 +136,7 @@ class Rig:
         self.core = pk_sharc.assemble(
             pk_build.expand_includes(
                 pk_build.apply_conditionals(CORE.read_text(), defines),
-                [CORE.parents[2] / "build" / "gen", ROOT / "sdk", CORE.parent],
+                [*pk_build.sharc_include_dirs(CORE.parents[2]), CORE.parent],
             )
         )
         self.sine = pk_sharc.assemble(SINE.read_text())

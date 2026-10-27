@@ -97,7 +97,7 @@ def test_fx_specs_find_the_fixtures_and_keep_the_negative_apart():
 
 
 def test_fx_specs_include_run_time_effects_and_turn_case_values_into_knob_floats():
-    """A `[[fx]]` record (a run-time effect: no state symbol, the page's knobs give the floats of the words) is an effect spec too."""
+    """A `DK_FX` record (a run-time effect: no state symbol, the page's knobs give the floats of the words) is an effect spec too."""
     import struct
 
     s = c.fx_spec("digikit/freqshift")

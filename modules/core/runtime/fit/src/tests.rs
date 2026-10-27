@@ -154,7 +154,7 @@ impl Parser<'_> {
 }
 
 fn vectors() -> Value {
-    let text = include_str!("../../../../../sdk/fit-vectors.json");
+    let text = include_str!("../../../../../sdk/vectors/fit-vectors.json");
     Parser {
         b: text.as_bytes(),
         at: 0,

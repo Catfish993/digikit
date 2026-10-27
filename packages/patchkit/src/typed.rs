@@ -9,8 +9,9 @@
 //!              explicit layout; own_dsp is derived from the machine's [[voice]] unless set)
 //! [[page]]     id, machine, name, title                           (only on devices whose knobs live in a page)
 //! [[voice]]    machine, entry | render [, note_on, desc]          (machine id -> DSP entry symbols; desc: `dk_machine_desc`)
-//! [[fx]]       id, process, desc [, defaults]                      (a run-time effect: DSP symbols; desc: `dk_fx_desc`; `.dkm` only)
 //! ```
+//!
+//! A run-time effect (`FxDef`) is not a section: it is a `DK_FX` record in C (sdk/include/dk/fx.h), read by `desc`.
 //!
 //! `lower` turns them, per device, into the `[[entry]]` rows the frameworks (`core/machines`, `core/params`,
 //! `core/dsp-voice`) take. What a knob means on a device is device data: `[modules.knobs]` and `[modules.frame]` in
@@ -19,7 +20,7 @@
 
 use crate::error::*;
 use crate::module::{EntryDef, Manifest};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 // ---- device data ---------------------------------------------------------------------------------------------
@@ -311,15 +312,15 @@ pub struct VoiceDef {
     pub devices: Vec<String>,
 }
 
-/// A run-time effect (`[[fx]]`, DSP section version 4 of a `.dkm`; docs/design/digikit-dkm.md): `process` is the global text symbol of its process routine
-/// (sdk/dk_fx.h), `desc` the data symbol of its `dk_fx_desc` (n_params and state_bytes come from it), `defaults` the words p0 ... of its row (at most
+/// A run-time effect (a `DK_FX` record, DSP section version 4 of a `.dkm`; docs/design/digikit-dkm.md): `process` is the global text symbol of its process routine
+/// (<dk/fx.h>), `desc` the data symbol of its `dk_fx_desc` (n_params and state_bytes come from it), `defaults` the words p0 ... of its row (at most
 /// `n_params`, the words the DSP reads as they are; none: all 0). Only the packer reads it: a patched-in effect is an `[[entry]]` row of the registry `fx`.
 ///
 /// An effect with a `tab` has a page of its own in the FX view (docs/design/digikit-registry.md "Effect pages"): `tab` is the label of the page's tab
 /// (1 to 3 characters), `title` the page title (up to 23), `mix` the default of the MIX knob on the level slot (0 to 127; the adapter blends dry and wet, the
 /// effect writes only the wet signal), `route` and `routes` the default route and the allowed ones (`"master"`, `"send"`) and `knob` the knobs, up to 7: knob i is parameter word p_i, shown at `position` of the 8 knob positions of the page
 /// (default: i). A knob's value reaches the effect as a float in [`min`, `max`]; its default fills p_i of the row (so `defaults` names no word a knob has).
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FxDef {
     pub id: String,
@@ -351,8 +352,8 @@ fn default_mix() -> i64 {
     127
 }
 
-/// One knob of an effect page (`[[fx.knob]]`).
-#[derive(Clone, Debug, Deserialize)]
+/// One knob of an effect page (a `DK_KNOB` entry of a `DK_FX` record).
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FxKnob {
     /// The long name shown while the knob is turned (1 to 23 characters).

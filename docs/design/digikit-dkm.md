@@ -107,7 +107,7 @@ Names that are capacity kinds (`[capacity.kinds]` of `sdk/sdk.toml`) are in the 
 Who calls it: the DIGIKIT menu (`modules/core/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
 `patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`, `pk_capacity`). The arithmetic exists once.
 
-The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit`, `dkfit.ts`, `dkfit.py`, vectors in `sdk/fit-vectors.json`; the compare is written three times, the needs once): the staging buffer holds the file, a module record and a selection path are free,
+The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit`, `dkfit.ts`, `dkfit.py`, vectors in `sdk/vectors/fit-vectors.json`; the compare is written three times, the needs once): the staging buffer holds the file, a module record and a selection path are free,
 the DSP range (with up to `DSP_ALIGN - 8` bytes for alignment) is at most the largest free range, the arena holds the module's block and the block of its DSP image together (each block at most the largest free block), and every row count is at most
 limit - used. A kind that a device's CAPACITY lacks is not judged.
 `tests/digikit/scenarios/inferred-needs-*.toml` (`tools/patchkit/pk_digikit_capacity.py run_inferred_needs`) loads every run-time module and fixture that packs
@@ -159,7 +159,7 @@ All integers are big endian. Offsets are from the start of the section.
   16 `clear_bytes` (zeroed at note-on), 20 to 51 the eight ranges, 52 `voices` (number of voice states to reserve), 56 to 63 reserved 0. The packer
   takes them from `[[voice]] render, note_on, desc` (`desc`: a `dk_machine_desc` data symbol). The runtime reserves
   `align8(image + bss)` plus, per voice record, `voices * align8(state_bytes)` for state, in record order, in the module's range.
-- **Effects** (version 4): 64 bytes each, the effects of the FX contract (`sdk/dk_fx.h`) that the module brings, from the manifest's `[[fx]]` (`id`, `process`: the process
+- **Effects** (version 4): 64 bytes each, the effects of the FX contract (`<dk/fx.h>`) that the module brings, from the effect's `DK_FX` record (`sdk/include/dk/fx.h`; this section says `[[fx]]` for its fields) (`id`, `process`: the process
   routine's global symbol, `desc`: the `dk_fx_desc` data symbol, `defaults`: the words p0 ... of the row, at most `n_params`, the words the DSP reads as they are;
   `devices`). Record: 0 `process` (image byte offset of the routine), 4 `desc` (image byte offset of its `dk_fx_desc`), 8 `state_bytes`, 12 `n_params` (both
   from the descriptor, which the packer reads and checks: magic `DKFX`, contract 1, `n_params` at most 8, `state_bytes` a multiple of 4), 16 flags (the routes, below; 0 = master only), 20 to 51 the words

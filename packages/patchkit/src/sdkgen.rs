@@ -14,19 +14,21 @@ pub const RUST_OUT: &str = "modules/core/runtime/sdk/src/gen_sdk.rs";
 /// The generated Python file, relative to the repository root.
 pub const PY_OUT: &str = "tools/device/dklog_kinds.py";
 /// The generated SHARC+ include of the machine contract, relative to the repository root.
-pub const INC_OUT: &str = "sdk/dk_machine.inc";
+pub const INC_OUT: &str = "sdk/asm/dk_machine.inc";
 /// The generated SHARC+ include of the FX contract, relative to the repository root.
-pub const FX_INC_OUT: &str = "sdk/dk_fx.inc";
+pub const FX_INC_OUT: &str = "sdk/asm/dk_fx.inc";
 /// The generated C header of the machine contract's numbers, relative to the repository root.
-pub const C_MACHINE_OUT: &str = "sdk/dk_machine_consts.h";
+pub const C_MACHINE_OUT: &str = "sdk/include/dk/gen/machine_consts.h";
 /// The generated C header of the FX contract's numbers, relative to the repository root.
-pub const C_FX_OUT: &str = "sdk/dk_fx_consts.h";
+pub const C_FX_OUT: &str = "sdk/include/dk/gen/fx_consts.h";
 /// The generated C header of the machine contract's structs and entry points, relative to the repository root.
-pub const C_MACHINE_VIEW_OUT: &str = "sdk/dk_machine.h";
+pub const C_MACHINE_VIEW_OUT: &str = "sdk/include/dk/gen/machine.h";
 /// The generated C header of the FX contract's structs and entry point, relative to the repository root.
-pub const C_FX_VIEW_OUT: &str = "sdk/dk_fx.h";
+pub const C_FX_VIEW_OUT: &str = "sdk/include/dk/gen/fx.h";
 /// The generated C header of the Api table, the imports and the `.dkm` entry points, relative to the repository root.
-pub const C_API_OUT: &str = "sdk/dk_api.h";
+pub const C_API_OUT: &str = "sdk/include/dk/gen/api.h";
+/// The generated C header of the descriptor records, relative to the repository root.
+pub const C_DESC_OUT: &str = "sdk/include/dk/gen/desc.h";
 /// The generated Python protocol numbers, relative to the repository root.
 pub const PROTO_PY_OUT: &str = "tools/device/dkproto.py";
 /// The generated Rust protocol numbers of the host client, relative to the repository root.
@@ -54,6 +56,26 @@ struct Sdk {
     api: Api,
     import: Vec<Import>,
     dkm: Dkm,
+    desc: DescToml,
+}
+/// The descriptor records a module declares with the `DK_*` macros: `[desc]` of `sdk/sdk.toml`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DescToml {
+    /// The section of the module's ColdFire object that holds the records.
+    section: String,
+    consts: Vec<MachineConst>,
+    record: Vec<DescRecordToml>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DescRecordToml {
+    name: String,
+    /// The name of the const that is the record kind; a record without one is only a part of another record.
+    kind: Option<String>,
+    doc: String,
+    /// `"<type> <name> // doc"`; `<type>` is `u32`, `i32`, `float`, `char` or an earlier record, the last two with `name[N]`.
+    fields: Vec<String>,
 }
 /// The table a `.dkm` module gets in `dkm_init`: `[api]` of `sdk/sdk.toml`.
 #[derive(Deserialize)]
@@ -235,7 +257,7 @@ pub struct Machine {
     pub voice_in: Vec<String>,
     /// Field names of `struct dk_machine_desc` in order (each field is 4 bytes).
     pub desc: Vec<String>,
-    /// The typed view that `sdk/dk_machine.h` is written from.
+    /// The typed view that `sdk/include/dk/gen/machine.h` is written from.
     pub c: CView,
 }
 #[derive(Deserialize)]
@@ -257,7 +279,7 @@ pub struct Fx {
     pub fx_in: Vec<String>,
     /// Field names of `struct dk_fx_desc` in order (each field is 4 bytes).
     pub desc: Vec<String>,
-    /// The typed view that `sdk/dk_fx.h` is written from.
+    /// The typed view that `sdk/include/dk/gen/fx.h` is written from.
     pub c: CView,
 }
 
@@ -861,11 +883,11 @@ fn python(sdk: &Sdk) -> Result<String> {
     Ok(s)
 }
 
-/// `sdk/dk_machine.inc`: `#define` lines, decimal values (the assembler upper-cases macro text, which breaks `0x` literals).
+/// `sdk/asm/dk_machine.inc`: `#define` lines, decimal values (the assembler upper-cases macro text, which breaks `0x` literals).
 fn machine_inc(sdk: &Sdk) -> String {
     let m = &sdk.machine;
     let mut s = format!(
-        "// {HEADER}\n// Decimal values: the assembler upper-cases macro text, which breaks `0x` literals after `+`.\n// The C view is sdk/dk_machine.h.\n"
+        "// {HEADER}\n// Decimal values: the assembler upper-cases macro text, which breaks `0x` literals after `+`.\n// The C view is sdk/include/dk/gen/machine.h.\n"
     );
     for c in &m.consts {
         let _ = writeln!(s, "#define {} {}", c.name, c.value);
@@ -883,11 +905,11 @@ fn machine_inc(sdk: &Sdk) -> String {
     s
 }
 
-/// `sdk/dk_fx.inc`: the same form as `dk_machine.inc` (`DK_FX_IN_*`, `DK_FX_DESC_*`).
+/// `sdk/asm/dk_fx.inc`: the same form as `dk_machine.inc` (`DK_FX_IN_*`, `DK_FX_DESC_*`).
 fn fx_inc(sdk: &Sdk) -> String {
     let m = &sdk.fx;
     let mut s = format!(
-        "// {HEADER}\n// Decimal values: the assembler upper-cases macro text, which breaks `0x` literals after `+`.\n// The C view is sdk/dk_fx.h. Do not include it together with dk_machine.inc (DK_BLOCK is in both).\n"
+        "// {HEADER}\n// Decimal values: the assembler upper-cases macro text, which breaks `0x` literals after `+`.\n// The C view is sdk/include/dk/gen/fx.h. Do not include it together with dk_machine.inc (DK_BLOCK is in both).\n"
     );
     for c in &m.consts {
         let _ = writeln!(s, "#define {} {}", c.name, c.value);
@@ -955,11 +977,11 @@ fn c_consts(
     s
 }
 
-/// `sdk/dk_machine_consts.h`: the numbers of `sdk/dk_machine.h`.
+/// `sdk/include/dk/gen/machine_consts.h`: the numbers of `sdk/include/dk/gen/machine.h`.
 fn machine_consts_h(sdk: &Sdk) -> String {
     let m = &sdk.machine;
     c_consts(
-        "DK_MACHINE_CONSTS_H",
+        "DK_GEN_MACHINE_CONSTS_H",
         &m.consts,
         &[
             ("dk_status", is_machine_status),
@@ -970,11 +992,11 @@ fn machine_consts_h(sdk: &Sdk) -> String {
     )
 }
 
-/// `sdk/dk_fx_consts.h`: the numbers of `sdk/dk_fx.h`.
+/// `sdk/include/dk/gen/fx_consts.h`: the numbers of `sdk/include/dk/gen/fx.h`.
 fn fx_consts_h(sdk: &Sdk) -> String {
     let m = &sdk.fx;
     c_consts(
-        "DK_FX_CONSTS_H",
+        "DK_GEN_FX_CONSTS_H",
         &m.consts,
         &[("dk_fx_status", is_fx_status)],
         "DK_FX_",
@@ -1369,6 +1391,7 @@ fn check_views(sdk: &Sdk) -> Result<()> {
     }
     machine_view(sdk)?;
     fx_view(sdk)?;
+    desc_layout(&sdk.desc)?;
     Ok(())
 }
 
@@ -1418,12 +1441,12 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
     Ok(s)
 }
 
-/// `sdk/dk_api.h`: the Api table, the imports and the entry points of a `.dkm`.
+/// `sdk/include/dk/gen/api.h`: the Api table, the imports and the entry points of a `.dkm`.
 fn api_h(sdk: &Sdk) -> Result<String> {
     let major = sdk.contract.api[0];
     let fields = api_fields(sdk)?;
     let mut s = format!(
-        "/* {HEADER} */\n/* sdk/dk_api.h -- the Api table a .dkm module gets in dkm_init, the names it may import and its entry points (docs/design/digikit-dkm.md).\n   ColdFire: pointers are 32 bits (the size checks are skipped on other targets). */\n#ifndef DK_API_H\n#define DK_API_H\n\n#include <stddef.h>\n#include <stdint.h>\n\n"
+        "/* {HEADER} */\n/* sdk/include/dk/gen/api.h -- the Api table a .dkm module gets in dkm_init, the names it may import and its entry points (docs/design/digikit-dkm.md).\n   ColdFire: pointers are 32 bits (the size checks are skipped on other targets). */\n#ifndef DK_GEN_API_H\n#define DK_GEN_API_H\n\n#include <stddef.h>\n#include <stdint.h>\n\n"
     );
     for (n, sig) in api_types(sdk)? {
         let _ = writeln!(s, "/* The function type `{n}` of [api.types]. */");
@@ -1499,7 +1522,7 @@ fn api_h(sdk: &Sdk) -> Result<String> {
         );
     }
     let _ = writeln!(s, "\n#define DK_API_MINOR {}", sdk.contract.api[1]);
-    s.push_str("\n#endif /* DK_API_H */\n");
+    s.push_str("\n#endif /* DK_GEN_API_H */\n");
     Ok(s)
 }
 
@@ -1523,13 +1546,13 @@ fn view_h(
     fns: &[(String, Sig, String)],
     c: &CView,
 ) -> String {
-    let mut s = format!("/* {HEADER} */\n/* sdk/{file} -- {purpose} */\n");
+    let mut s = format!("/* {HEADER} */\n/* sdk/include/dk/gen/{file} -- {purpose} */\n");
     if let Some(t) = &c.intro {
         let _ = writeln!(s, "/* {} */", t.trim());
     }
     let _ = write!(
         s,
-        "#ifndef {guard}\n#define {guard}\n\n#include <stdint.h>\n#include \"{consts_h}\"\n\n"
+        "#ifndef {guard}\n#define {guard}\n\n#include <stdint.h>\n#include <dk/gen/{consts_h}>\n\n"
     );
     for (i, (name, comment, fields)) in structs.into_iter().enumerate() {
         let comment = match (&c.desc_doc, i) {
@@ -1553,14 +1576,14 @@ fn view_h(
     s
 }
 
-/// `sdk/dk_machine.h`: the structs and the entry points of the machine contract.
+/// `sdk/include/dk/gen/machine.h`: the structs and the entry points of the machine contract.
 fn machine_h(sdk: &Sdk) -> Result<String> {
     let v = machine_view(sdk)?;
     Ok(view_h(
-        "DK_MACHINE_H",
-        "dk_machine.h",
+        "DK_GEN_MACHINE_H",
+        "machine.h",
         "the machine contract, version DK_MACHINE_V1 (docs/design/module-sdk.md 4.1): structs and SHARC+ entry points.",
-        "dk_machine_consts.h",
+        "machine_consts.h",
         [
             ("dk_voice_in", "per call, built by the adapter", &v.input),
             ("dk_machine_desc", "one per module in read-only data, found by the manifest's symbol", &v.desc),
@@ -1570,14 +1593,14 @@ fn machine_h(sdk: &Sdk) -> Result<String> {
     ))
 }
 
-/// `sdk/dk_fx.h`: the structs and the entry point of the FX contract.
+/// `sdk/include/dk/gen/fx.h`: the structs and the entry point of the FX contract.
 fn fx_h(sdk: &Sdk) -> Result<String> {
     let v = fx_view(sdk)?;
     Ok(view_h(
-        "DK_FX_H",
-        "dk_fx.h",
+        "DK_GEN_FX_H",
+        "fx.h",
         "the FX contract, version DK_FX_V1 (docs/design/module-sdk.md 4.2): structs and the SHARC+ entry point.",
-        "dk_fx_consts.h",
+        "fx_consts.h",
         [
             ("dk_fx_in", "per call, built by the adapter", &v.input),
             ("dk_fx_desc", "one per module in read-only data", &v.desc),
@@ -1585,6 +1608,250 @@ fn fx_h(sdk: &Sdk) -> Result<String> {
         &v.fns,
         &sdk.fx.c,
     ))
+}
+
+// ---- the descriptor records ---------------------------------------------------------------------------------------------
+
+/// The type of a field of a descriptor record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DescTy {
+    U32,
+    I32,
+    F32,
+    /// Text: this many bytes.
+    Char(usize),
+    /// An array of an earlier record.
+    Rec { rec: String, count: usize },
+}
+
+/// A field of a descriptor record: its place in bytes.
+#[derive(Clone, Debug)]
+pub struct DescField {
+    pub name: String,
+    pub ty: DescTy,
+    pub off: usize,
+    pub size: usize,
+}
+
+/// A descriptor record: `kind` is `None` for a record that is only a part of another one.
+#[derive(Clone, Debug)]
+pub struct DescRecord {
+    pub name: String,
+    pub kind: Option<u32>,
+    pub size: usize,
+    pub fields: Vec<DescField>,
+}
+
+impl DescRecord {
+    pub fn field(&self, name: &str) -> Result<&DescField> {
+        self.fields
+            .iter()
+            .find(|f| f.name == name)
+            .ok_or_else(|| err!("{SOURCE}: [[desc.record]] {}: no field {name}", self.name))
+    }
+}
+
+/// The layout of the descriptor records: `[desc]` of `sdk/sdk.toml`.
+#[derive(Clone, Debug)]
+pub struct DescSpec {
+    /// The section of the ColdFire object that holds the records.
+    pub section: String,
+    pub consts: BTreeMap<String, u32>,
+    pub records: Vec<DescRecord>,
+}
+
+/// The `[desc]` layout of the `sdk/sdk.toml` this crate was built with.
+pub fn desc_spec() -> DescSpec {
+    let sdk = parse(include_str!("../../../sdk/sdk.toml")).expect("sdk/sdk.toml parses");
+    desc_layout(&sdk.desc).expect("parse checked [desc]").0
+}
+
+/// What the header prints of a field: its doc and the text of its array length (a number or a const name).
+struct DescText {
+    doc: String,
+    count: Option<String>,
+}
+
+/// The layout of `[desc]`, checked, and the texts of the fields (per record, per field).
+fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
+    if d.section.is_empty() {
+        return Err(err!("{SOURCE}: [desc] section is empty"));
+    }
+    let mut consts = BTreeMap::new();
+    for c in &d.consts {
+        if !is_ident(&c.name) || consts.insert(c.name.clone(), c.value).is_some() {
+            return Err(err!("{SOURCE}: [desc] const {}: bad name or name twice", c.name));
+        }
+    }
+    let mut records: Vec<DescRecord> = Vec::new();
+    let mut texts = Vec::new();
+    for r in &d.record {
+        let what = format!("[[desc.record]] {}", r.name);
+        if !is_ident(&r.name) || records.iter().any(|o| o.name == r.name) {
+            return Err(err!("{SOURCE}: {what}: bad name or name twice"));
+        }
+        if r.doc.is_empty() || r.doc.contains("*/") {
+            return Err(err!("{SOURCE}: {what}: needs a doc without a comment end"));
+        }
+        let kind = match &r.kind {
+            Some(k) => {
+                let v = *consts
+                    .get(k)
+                    .ok_or_else(|| err!("{SOURCE}: {what}: kind {k:?} is not a const of [desc]"))?;
+                if records.iter().any(|o| o.kind == Some(v)) {
+                    return Err(err!("{SOURCE}: {what}: kind {k} is used twice"));
+                }
+                Some(v)
+            }
+            None => None,
+        };
+        let mut fields: Vec<DescField> = Vec::new();
+        let mut text = Vec::new();
+        let mut off = 0;
+        for entry in &r.fields {
+            let (decl, doc) = entry.split_once(" // ").unwrap_or((entry, ""));
+            if doc.contains("*/") {
+                return Err(err!("{SOURCE}: {what}: {entry:?}: the doc has a comment end"));
+            }
+            let Some((ty_text, rest)) = decl.trim().split_once(char::is_whitespace) else {
+                return Err(err!("{SOURCE}: {what}: {entry:?} needs a type and a name"));
+            };
+            let (name, count_text) = match rest.trim().split_once('[') {
+                Some((n, c)) => {
+                    let Some(c) = c.strip_suffix(']') else {
+                        return Err(err!("{SOURCE}: {what}: {entry:?}: bad array length"));
+                    };
+                    (n.trim(), Some(c.trim()))
+                }
+                None => (rest.trim(), None),
+            };
+            if !is_ident(name) || fields.iter().any(|o| o.name == name) {
+                return Err(err!("{SOURCE}: {what}: field {name:?}: bad name or name twice"));
+            }
+            let count = |t: &str| -> Result<usize> {
+                let n = match t.parse::<u32>() {
+                    Ok(n) => n,
+                    Err(_) => *consts.get(t).ok_or_else(|| {
+                        err!("{SOURCE}: {what}: field {name}: {t:?} is not a number or a const of [desc]")
+                    })?,
+                };
+                if n == 0 {
+                    return Err(err!("{SOURCE}: {what}: field {name}: array length is 0"));
+                }
+                Ok(n as usize)
+            };
+            let (ty, size) = match (ty_text, count_text) {
+                ("u32", None) => (DescTy::U32, 4),
+                ("i32", None) => (DescTy::I32, 4),
+                ("float", None) => (DescTy::F32, 4),
+                ("char", Some(c)) => {
+                    let n = count(c)?;
+                    if n % 4 != 0 {
+                        return Err(err!(
+                            "{SOURCE}: {what}: field {name}: char array length {n} is not a multiple of 4"
+                        ));
+                    }
+                    (DescTy::Char(n), n)
+                }
+                (t, Some(c)) if records.iter().any(|o| o.name == t) => {
+                    let n = count(c)?;
+                    let size = records.iter().find(|o| o.name == t).map_or(0, |o| o.size);
+                    (
+                        DescTy::Rec {
+                            rec: t.to_string(),
+                            count: n,
+                        },
+                        n * size,
+                    )
+                }
+                (t, _) => {
+                    return Err(err!(
+                        "{SOURCE}: {what}: field {name}: unknown type {t:?} (or a missing or extra array length)"
+                    ));
+                }
+            };
+            fields.push(DescField {
+                name: name.to_string(),
+                ty,
+                off,
+                size,
+            });
+            text.push(DescText {
+                doc: doc.to_string(),
+                count: count_text.map(str::to_string),
+            });
+            off += size;
+        }
+        if fields.is_empty() {
+            return Err(err!("{SOURCE}: {what}: has no fields"));
+        }
+        records.push(DescRecord {
+            name: r.name.clone(),
+            kind,
+            size: off,
+            fields,
+        });
+        texts.push(text);
+    }
+    let spec = DescSpec {
+        section: d.section.clone(),
+        consts,
+        records,
+    };
+    Ok((spec, texts))
+}
+
+/// `sdk/include/dk/gen/desc.h`: the descriptor records as C structs, with the checks of their layout.
+fn desc_h(sdk: &Sdk) -> Result<String> {
+    let (spec, texts) = desc_layout(&sdk.desc)?;
+    let mut s = format!(
+        "/* {HEADER} */\n/* sdk/include/dk/gen/desc.h -- the descriptor records a module declares with the DK_* macros of <dk/fx.h>; `patchkit pack` reads them from the {} section of the object. */\n#ifndef DK_GEN_DESC_H\n#define DK_GEN_DESC_H\n\n#include <stddef.h>\n#include <stdint.h>\n\n",
+        spec.section
+    );
+    for c in &sdk.desc.consts {
+        if let Some(d) = &c.doc {
+            let _ = writeln!(s, "/* {d} */");
+        }
+        let _ = writeln!(s, "#define {} {}", c.name, c.value);
+    }
+    for ((rec, toml), text) in spec.records.iter().zip(&sdk.desc.record).zip(&texts) {
+        let _ = writeln!(s, "\n/* {} */\ntypedef struct {{", toml.doc);
+        for (f, t) in rec.fields.iter().zip(text) {
+            let count = t.count.as_deref().unwrap_or_default();
+            let decl = match &f.ty {
+                DescTy::U32 => format!("uint32_t {}", f.name),
+                DescTy::I32 => format!("int32_t {}", f.name),
+                DescTy::F32 => format!("float {}", f.name),
+                DescTy::Char(_) => format!("char {}[{count}]", f.name),
+                DescTy::Rec { rec, .. } => format!("{rec} {}[{count}]", f.name),
+            };
+            let d = format!("    {decl};");
+            if t.doc.is_empty() {
+                let _ = writeln!(s, "{d}");
+            } else {
+                let _ = writeln!(s, "{d:<44} /* {} */", t.doc);
+            }
+        }
+        let _ = writeln!(s, "}} {};", rec.name);
+    }
+    s.push('\n');
+    for rec in &spec.records {
+        let n = &rec.name;
+        let _ = writeln!(
+            s,
+            "_Static_assert(sizeof({n}) == {}, \"{n} size\");",
+            rec.size
+        );
+        for f in &rec.fields {
+            let _ = writeln!(
+                s,
+                "_Static_assert(offsetof({n}, {}) == {}, \"{n}.{}\");",
+                f.name, f.off, f.name
+            );
+        }
+    }
+    s.push_str("\n#endif /* DK_GEN_DESC_H */\n");
+    Ok(s)
 }
 
 /// The outputs from the text of `sdk/sdk.toml`: (path relative to the repository root, text).
@@ -1606,6 +1873,7 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
         (C_MACHINE_VIEW_OUT.to_string(), machine_h(&sdk)?),
         (C_FX_VIEW_OUT.to_string(), fx_h(&sdk)?),
         (C_API_OUT.to_string(), api_h(&sdk)?),
+        (C_DESC_OUT.to_string(), desc_h(&sdk)?),
     ])
 }
 

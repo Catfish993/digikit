@@ -37,9 +37,9 @@ pub struct Manifest {
     pub page: Vec<crate::typed::PageDef>,
     #[serde(default)]
     pub voice: Vec<crate::typed::VoiceDef>,
-    /// Run-time effects (`[[fx]]`); read by `patchkit pack` only.
+    /// A removed form (`[[fx]]`): kept only to refuse it with a clear error.
     #[serde(default)]
-    pub fx: Vec<crate::typed::FxDef>,
+    fx: Option<toml::Value>,
     /// `[[gen]]`: files `patchkit gen` writes from device data (`crate::devgen`).
     #[serde(default, rename = "gen")]
     pub gens: Vec<GenDef>,
@@ -471,6 +471,11 @@ impl Module {
         lenient: bool,
     ) -> Result<Module> {
         let manifest: Manifest = toml::from_str(manifest_text)?;
+        if manifest.fx.is_some() {
+            return Err(err!(
+                "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"
+            ));
+        }
         let mut objects = vec![];
         let mut all = manifest_text.to_string();
         for o in &manifest.object {

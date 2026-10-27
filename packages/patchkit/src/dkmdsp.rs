@@ -67,9 +67,9 @@ pub const ROUTE_SEND: u32 = 2;
 pub const FXF_SEND: u32 = 1;
 pub const FXF_NOMASTER: u32 = 2;
 pub const FXF_DEFAULT_SEND: u32 = 4;
-/// Effects a module may carry (`DK_FX_MAX` of sdk/dk_fx.h).
+/// Effects a module may carry (`DK_FX_MAX` of <dk/fx.h>).
 pub const MAX_FX: usize = 4;
-/// `dk_fx_desc` (sdk/dk_fx.h): magic "DKFX", the contract number the packer accepts, its size in u32 words and the most parameter words.
+/// `dk_fx_desc` (<dk/fx.h>): magic "DKFX", the contract number the packer accepts, its size in u32 words and the most parameter words.
 pub const FX_DESC_MAGIC: u32 = 0x444b_4658;
 pub const FX_DESC_CONTRACT: u32 = 1;
 pub const FX_DESC_WORDS: usize = 7;

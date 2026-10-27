@@ -5,6 +5,7 @@ into a `.dkm` file. The digikit runtime loads the file from the card at boot. Yo
 
 Run every command from the repository root. Nothing here touches hardware. Flashing is a separate step (see "Safety and hardware" in
 [PATCHING.md](PATCHING.md)). No file in the repository contains firmware bytes.
+The SDK (headers, includes, templates) is described in [sdk/README.md](../sdk/README.md).
 
 ## 1. What a module is
 
@@ -146,7 +147,7 @@ Do not edit anything in `build/gen/`. A `.dkmod` export leaves out `build/` (sec
 | `machine` | The `id` of the `[[machine]]`. |
 | `render` | The render routine's symbol. |
 | `note_on` | The note-on routine's symbol. |
-| `desc` | The data symbol of the `dk_machine_desc` (`sdk/dk_machine.h`). |
+| `desc` | The data symbol of the `dk_machine_desc` (`<dk/machine.h>`). |
 
 `[[machine]]`:
 
@@ -226,32 +227,52 @@ because it is specific to one device. Most modules need none of these tables.
 
 ### 5.4 Effect sections
 
-`[[fx]]`:
+An effect is declared in C, in a source file of the module (by convention `src/module.c`). List the file as an `[[object]]` with
+`place = "cf.expansion"`. The file holds only the `.dk.desc` record. `patchkit pack` reads it and leaves it out of the `.dkm`; the device never sees it.
+(Machines still use the manifest sections until phase 2 of `docs/plans/sdk-api.md`. A manifest `[[fx]]` is refused.)
 
-| Key | Meaning |
+```c
+#include <dk/fx.h>
+#include "freqshift.h"
+
+DK_FX(fshift, .process = "_fs_process", .desc = "_fs_desc",
+      .tab = "FSH", .title = "Freq Shifter", .mix = 127,
+      .route = DK_ROUTE_SEND, .routes = DK_ROUTE_SEND | DK_ROUTE_MASTER,
+      .knob = {DK_KNOB(FSHIFT_SHIFT_WORD, "Freq Shift", "SHIFT", DK_BIPOLAR, -64, 63, 0)});
+```
+
+`DK_FX(ID, ...)`: `ID` is a C identifier. It is the effect's name inside the module. With the module id it makes the effect ID of saved kits.
+Never rename either. The other arguments are field initializers:
+
+| Field | Meaning |
 | --- | --- |
-| `id` | The effect's name inside the module. With the module id it makes the effect ID of saved kits. Never rename either. |
-| `process`, `desc` | The global symbol of the process routine. The data symbol of its `dk_fx_desc`. |
-| `defaults` | Words p0 and up at load. Not allowed together with knobs. Default: all 0. |
-| `tab` | The page tab label, 1 to 3 characters. An effect with a `tab` has its own page after CHO in FUNC + FX. |
-| `title` | The page title, 1 to 23 characters. Use mixed case ("Freq Shifter"). |
-| `mix` | Default of the framework's MIX knob, 0 to 127. Default: 127. |
-| `route` | Where the effect starts: `"master"` (default) or `"send"`. A send needs a `tab`. |
-| `routes` | The routes the user may choose in SETTINGS > DIGIKIT > FX ROUTES. Left out: `["master"]`, or `["send", "master"]` when `route = "send"`. |
-| `devices` | `["dt2", "dn2"]`. |
+| `.process`, `.desc` | The global symbol of the process routine. The data symbol of its `dk_fx_desc`. Strings. |
+| `.defaults` | Words p0 and up at load. Not allowed together with knobs. Default: all 0. |
+| `.tab` | The page tab label, 1 to 3 characters. An effect with a `tab` has its own page after CHO in FUNC + FX. |
+| `.title` | The page title, 1 to 23 characters. Use mixed case ("Freq Shifter"). |
+| `.mix` | Default of the framework's MIX knob, 0 to 127. Default: 127. |
+| `.route` | Where the effect starts: `DK_ROUTE_MASTER` (default) or `DK_ROUTE_SEND`. A send needs a `.tab`. |
+| `.routes` | The routes the user may choose in SETTINGS > DIGIKIT > FX ROUTES, `DK_ROUTE_*` values or-ed. Left out: master only, or send and master when `.route` is send. |
+| `.knob` | Up to 7 knobs: `DK_KNOB(...)` or `DK_KNOB_AT(...)`. |
 
-`[[fx.knob]]` (up to 7). Knob i is the parameter word p_i, a float.
+`DK_KNOB(WORD, NAME, SHORT, DISPLAY, MIN, MAX, DEF)` declares knob `WORD`, the parameter word p_WORD, a float. It sits at page position `WORD`.
+`DK_KNOB_AT(WORD, POS, NAME, ...)` sets the page position `POS` (0 to 7) apart from the word.
 
-| Key | Meaning |
+| Argument | Meaning |
 | --- | --- |
-| `name` | Name shown while the knob turns, 1 to 23 characters. |
-| `short` | Label under the knob, 1 to 6 characters. |
-| `min`, `max` | The floats at the bottom and the top of the knob. |
-| `default` | Inside `min` .. `max`. It is also the word's value at load. |
-| `display` | `"percent"` (0 to 127, default) or `"bipolar"` (-64 to +63). |
-| `position` | 0 to 7: the place on the page. Default: the place in the list. |
+| `NAME` | Name shown while the knob turns, 1 to 23 characters. |
+| `SHORT` | Label under the knob, 1 to 6 characters. |
+| `DISPLAY` | `DK_PERCENT` (0 to 127) or `DK_BIPOLAR` (-64 to +63). |
+| `MIN`, `MAX` | The floats at the bottom and the top of the knob. |
+| `DEF` | Inside `MIN` .. `MAX`. It is also the word's value at load. |
 
-Knob placement is the same on both devices. The device profile does not change it.
+Text longer than its field is a compile error. `patchkit pack` checks the rest: lengths, ranges, routes, `mix`, distinct positions and the
+knob slots of the D1 device. Knob placement is the same on both devices. The device profile does not change it.
+
+Put the word numbers in a header in the module's `src/` (`freqshift.h`). The C file and the SHARC+ assembly both include it, because the build
+searches `src/` for both. Use only decimal `#define`s and `//` comments on their own line: the SHARC+ assembler keeps a trailing comment in the macro text and upper-cases macro text.
+
+`patchkit desc MODULE_ID` prints the effects of a module as JSON (`{"fx": [...]}`), from the `DK_FX` records.
 
 MIX, the route and the send amounts belong to the framework. Never declare them. The effect writes the wet signal only.
 
@@ -353,8 +374,7 @@ and the profiles declare. They hold no firmware bytes.
 
 | File | Written for | What it holds | Who includes it |
 | --- | --- | --- | --- |
-| `build/gen/module.h` | machine, fx | C `#define`s of the numbers that are the same on every device: per parameter its index and range, per effect knob its word, position and float range. | C code of the module. |
-| `build/gen/module.inc` | fx | The integer values of `module.h` for assembly, for example `FSHIFT_KNOBS` and `FSHIFT_SHIFT_WORD`. | The effect's `.s`: `#include "module.inc"`. |
+| `build/gen/module.h` | machine | C `#define`s of the numbers that are the same on every device: per parameter its index and range. | C code of the module. |
 | `build/gen/dt2.inc`, `build/gen/dn2.inc` | machine | Per-device numbers for assembly: frame base and stride, and for each parameter its knob, slot, frame offset, mirror index and range. | The machine's `.s`: `#include "dt2.inc"`. `module:build` expands it from `build/gen/`. |
 | `build/gen/consts.rs` | machine | The same per-device numbers as Rust constants. | A Rust module crate: `include!("consts.rs");`. |
 | `build/gen/gallery.json` | machine | Machines with their knobs and parameters, for each device. | The web gallery. |
@@ -363,16 +383,17 @@ Device-independent numbers (`module.h`) are the same on both devices. If a value
 there. Per-device numbers (`<dev>.inc`) depend on the profile. One example is the frame offset of a knob. Use the name, for example
 `PLUCK_DECAY_FRAME_OFF`, and never the literal number.
 
-The SDK headers in `sdk/` are generated from `sdk/sdk.toml` in the same way.
+The SDK headers are generated from `sdk/sdk.toml` in the same way. Modules include the public headers in `sdk/include/dk/`.
+The generated files are in `sdk/include/dk/gen/` and `sdk/asm/`.
 
 | File | What it holds | Who includes it |
 | --- | --- | --- |
-| `sdk/dk_api.h` | The `dk_api` table, the import names and the entry points of a `.dkm`. | Service modules in C. |
-| `sdk/dk_machine.h` | The machine contract: `dk_voice_in`, `dk_machine_desc`, the entry points. | Reference for machines. Includes `dk_machine_consts.h`. |
-| `sdk/dk_machine_consts.h` | The machine constants as C `#define`s. | `dk_machine.h`. |
-| `sdk/dk_machine.inc` | The machine constants and field offsets for assembly. | The machine's `.s`. |
-| `sdk/dk_fx.h`, `sdk/dk_fx_consts.h` | The effect contract in C and its constants. | Reference for effects. |
-| `sdk/dk_fx.inc` | The effect constants and field offsets for assembly. | The effect's `.s`. |
+| `<dk/api.h>` | The `dk_api` table, the import names and the entry points of a `.dkm`. | Service modules in C. |
+| `<dk/machine.h>` | The machine contract: `dk_voice_in`, `dk_machine_desc`, the entry points. | Reference for machines. Includes `machine_consts.h`. |
+| `sdk/include/dk/gen/machine_consts.h` | The machine constants as C `#define`s. | `<dk/machine.h>`. |
+| `sdk/asm/dk_machine.inc` | The machine constants and field offsets for assembly. | The machine's `.s`. |
+| `<dk/fx.h>`, `sdk/include/dk/gen/fx_consts.h` | The effect contract in C and its constants. | Reference for effects. |
+| `sdk/asm/dk_fx.inc` | The effect constants and field offsets for assembly. | The effect's `.s`. |
 
 Do not include `dk_fx.inc` and `dk_machine.inc` in one assembly file. `DK_BLOCK` and `DK_LEVEL_BOUND_BITS` are in both.
 
@@ -390,7 +411,7 @@ Run `gen:modules` after you change `module.toml`, `devices/*.toml` or `sdk/sdk.t
 
 The headers are the reference. This section lists what you need to know before you read them.
 
-### 7.1 Machine voice (`sdk/dk_machine.h`)
+### 7.1 Machine voice (`<dk/machine.h>`)
 
 | Entry | When it runs | Result |
 | --- | --- | --- |
@@ -427,7 +448,7 @@ are shared by all voices. State that differs per voice goes in `state`. The conf
 
 The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first. Pitch tests: `tests/patchkit/test_sine.py`.
 
-### 7.2 Effect (`sdk/dk_fx.h`)
+### 7.2 Effect (`<dk/fx.h>`)
 
 | Entry | When it runs | Result |
 | --- | --- | --- |
@@ -477,7 +498,7 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
 - The instruction budget of the conformance suite is `pk_conform.fx_budget()` (about 31,000 for the effect today, 900 for the adapter). Read it
   from the report (`-rA`).
 
-### 7.3 Service (`sdk/dk_api.h`)
+### 7.3 Service (`<dk/api.h>`)
 
 A service is C code for the ColdFire CPU. The runtime calls these symbols of your object:
 
@@ -579,8 +600,8 @@ Device facts for authors are in `.agents/skills/digikit-module/references/device
   | Contract | Version | Covers |
   | --- | --- | --- |
   | `api` | `[1, 2]` | The `dk_api` table. Every module has it, `raw` included. |
-  | `machine` | `[1, 0]` | `sdk/dk_machine.h` |
-  | `fx` | `[1, 0]` | `sdk/dk_fx.h` |
+  | `machine` | `[1, 0]` | `<dk/machine.h>` |
+  | `fx` | `[1, 0]` | `<dk/fx.h>` |
   | `service` | `[1, 0]` | Service modules |
 
 - `pack` writes the contracts a module uses into the `.dkm` header.
@@ -629,7 +650,7 @@ allows a known id. Without `--dir` it uses the first folder of `PATCHKIT_MODULES
 | Question | Where |
 | --- | --- |
 | Version numbers, imports, log kinds, protocol numbers | `sdk/sdk.toml` |
-| Machine, effect and service contracts | `sdk/dk_machine.h`, `sdk/dk_fx.h`, `sdk/dk_api.h` |
+| Machine, effect and service contracts | `<dk/machine.h>`, `<dk/fx.h>`, `<dk/api.h>` |
 | What differs between the devices | `devices/digitakt-ii.toml`, `devices/digitone-ii.toml`, `.agents/skills/digikit-module/references/devices.md` |
 | Knob and parameter rules | Sections 5.2, 5.3 and 5.7, `docs/findings/02-machines-and-parameters.md` |
 | DSP recipes and assembler traps | `.agents/skills/digikit-module/references/dsp-recipes.md`, `selas-pitfalls.md` |

@@ -33,7 +33,7 @@ fn the_fx_chain_cap_is_the_registrys() {
 fn the_contract_files_are_current() {
     let text = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
     let files = sdkgen::render(&text).unwrap();
-    assert_eq!(files.len(), 12);
+    assert_eq!(files.len(), 13);
     for (rel, text) in files {
         let path = root().join(&rel);
         let have = std::fs::read_to_string(&path).unwrap_or_default();
@@ -82,6 +82,23 @@ fn a_bad_type_or_view_is_refused() {
     let broken = text.replace("\"i32 pitch // ", "\"i32 pitchx // ");
     assert_ne!(broken, text);
     assert!(sdkgen::render(&broken).unwrap_err().0.contains("name list"));
+}
+
+#[test]
+fn a_bad_descriptor_layout_is_refused() {
+    let text = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
+    // text that needs padding
+    let broken = text.replace("char short_name[8]", "char short_name[6]");
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).unwrap_err().0.contains("multiple of 4"));
+    // a type that is not a base type or an earlier record
+    let broken = text.replace("float min //", "double min //");
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).unwrap_err().0.contains("unknown type"));
+    // a length that is not a const of [desc]
+    let broken = text.replace("knob[DK_FX_KNOBS]", "knob[DK_NOPE]");
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).unwrap_err().0.contains("DK_NOPE"));
 }
 
 #[test]

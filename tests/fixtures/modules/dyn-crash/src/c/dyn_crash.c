@@ -5,7 +5,7 @@
  * of the divide (mode 1), which is the program counter the crash record must show. (A read of an unmapped address is no good as a second
  * kind: the emulator reports it as a bus fault of the run, not as an exception the guest can handle.) */
 
-#include "dk_api.h"
+#include <dk/api.h>
 
 typedef uint32_t u32;
 

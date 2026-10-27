@@ -86,7 +86,7 @@ def kernel(
             "",
         ]
     )
-    text = pk_build.expand_includes(text, [ROOT / "sdk"])
+    text = pk_build.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"])
     _, linked = pk_sharc.build(text, BASE)
     dm = {}
     for base, vec in zip((IN0, IN1), inputs, strict=False):
@@ -253,7 +253,8 @@ def test_biquad_from_assembly_two_blocks_in_a_row():
                 ]
             )
             _, linked = pk_sharc.build(
-                pk_build.expand_includes(text, [ROOT / "sdk"]), BASE
+                pk_build.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+                BASE,
             )
             regs = {**BQ_SAVED, **BQ_CONSTS, "I6": BQ_STACK, "I7": BQ_STACK}
             r = pk_sharc.run_call(
@@ -298,7 +299,9 @@ def test_biquad_never_reads_past_the_input_block():
             "",
         ]
     )
-    _, linked = pk_sharc.build(pk_build.expand_includes(text, [ROOT / "sdk"]), BASE)
+    _, linked = pk_sharc.build(
+        pk_build.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]), BASE
+    )
     regs = {**BQ_SAVED, **BQ_CONSTS, "I6": BQ_STACK, "I7": BQ_STACK}
     # the watch is a read watchpoint of the core's driver (CallSession.record_reads); the control range proves that it fires
     for lo, count, must_hit in ((BQ_IN[0] + N, 2, False), (BQ_IN[0] + N - 2, 2, True)):
@@ -326,7 +329,8 @@ void run(int x, int y, int st) { dk_biquad(x, y, st); }
     )
     kbase = BASE + 0x1000
     _, kernel = pk_sharc.build(
-        pk_build.expand_includes(kernel_text, [ROOT / "sdk"]), kbase
+        pk_build.expand_includes(kernel_text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+        kbase,
     )
     caller = pk_sharc.link(
         pk_sharc.compile_c(c), BASE, {"dk_biquad.": kernel.symbols["dk_biquad."]}
@@ -402,7 +406,9 @@ def block_calls(inc, name, args, entry):
 def build_calls(inc, name, args, externs=None):
     text = block_calls(inc, name, args, "_h")
     return pk_sharc.build(
-        pk_build.expand_includes(text, [ROOT / "sdk"]), BASE, externs
+        pk_build.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+        BASE,
+        externs,
     )[1]
 
 

@@ -363,8 +363,8 @@ A module can also ask for constants from the device files (`devices/*.toml`: `[b
 what each kind holds, which fact lives where and what a new device needs are in `docs/design/device-data.md`.
 
 `sdk/sdk.toml` is the one source of the runtime version (0.1.0, packed `major<<16|minor<<8|patch`; runtimes 1 to 5 read as 0.0.1 to 0.0.5), the
-contract versions (api, machine, fx, service) and the log kinds. `gen` writes the SDK headers in `sdk/` (`dk_api.h`, `dk_machine.h`, `dk_fx.h`
-and their constants), `modules/core/runtime/sdk/src/gen_sdk.rs` and
+contract versions (api, machine, fx, service) and the log kinds. `gen` writes the SDK headers in `sdk/include/dk/gen/` (`api.h`, `machine.h`, `fx.h`
+and their constants) and the SHARC+ includes in `sdk/asm/`, `modules/core/runtime/sdk/src/gen_sdk.rs` and
 `tools/device/dklog_kinds.py` from it, and the per-type limits (`[limits]` in `devices/*.toml`: modules, machine_rows, arena_bytes,
 stage_bytes) into the runtime's `device.rs`. The patchkit tests fail on a stale file. `runtime_min` (header byte 0x30) is informational;
 a module is refused only on a contract mismatch (`E_CONTRACT` -48: rebuild the module). The runtime refuses further loads when its
@@ -501,7 +501,7 @@ of its own: three frameworks do the firmware work, and the module only declares 
 ### An effect: `[[entry]] registry = "fx"`
 
 An effect module requires `core/fx` (the effects adapter, `modules/core/fx/`) and adds one row to its registry `fx`; the chain runs in module order, at most
-`DK_FX_MAX` (4) effects. The routine, its `dk_fx_desc` and its state block are symbols of the module's DSP object (`sdk/dk_fx.h`,
+`DK_FX_MAX` (4) effects. The routine, its `dk_fx_desc` and its state block are symbols of the module's DSP object (`<dk/fx.h>`,
 [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), section 7.2):
 
 ```toml
@@ -515,7 +515,8 @@ state = "_fg_state"      # .PKBSS _fg_state, <state_bytes>;
 
 `tests/fixtures/modules/fx-gain` (0.5 gain) is the example and the fixture of `core/fx`'s tests; `fx-nan` is the negative one. An empty chain plays the stock audio.
 
-A run-time effect (`dynamic = true`, a `.dkm`) declares `[[fx]]` instead of the `[[entry]]` row. It takes one of the 3 free rows that `core/dynfx`
+A run-time effect (`dynamic = true`, a `.dkm`) declares a `DK_FX` record in C (`modules/fx/freqshift/src/module.c`)
+instead of the `[[entry]]` row. It takes one of the 3 free rows that `core/dynfx`
 reserves, and `core/fxpages` reserves the pages. Its manifest, pages and routes are in [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md),
 sections 5.4 and 7.2. The format is `docs/design/digikit-dkm.md`; the design of the pages is "Effect pages" in `docs/design/digikit-registry.md`.
 Example and fixture: `tests/fixtures/modules/dyn-fx-gain`.

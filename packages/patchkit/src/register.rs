@@ -178,7 +178,7 @@ fn f32_bits(what: &str, v: f64) -> Result<u32> {
     Ok(f.to_bits())
 }
 
-/// The effect page of `[[fx]]` number `fx` (its index in the device's effect list), or None when it declares no `tab`. A knob's default is a float in
+/// The effect page of effect number `fx` (its index in the device's effect list), or None when it declares no `tab`. A knob's default is a float in
 /// [min, max]; positions are distinct, 0 to 7.
 pub fn effect_page(module: &str, fx: usize, d: &crate::typed::FxDef) -> Result<Option<EffectPage>> {
     let Some(tab) = &d.tab else {
@@ -242,7 +242,7 @@ pub fn effect_page(module: &str, fx: usize, d: &crate::typed::FxDef) -> Result<O
     Ok(Some(e))
 }
 
-/// The routes of `[[fx]]` `d` as (mask of `dkmdsp::ROUTE_*`, default route). `route` is `"master"` (the default when left out) or `"send"`. `routes` lists the routes the user may
+/// The routes of effect `d` as (mask of `dkmdsp::ROUTE_*`, default route). `route` is `"master"` (the default when left out) or `"send"`. `routes` lists the routes the user may
 /// choose in DIGIKIT > FX ROUTES; left out it is `["master"]`, and `["send", "master"]` when `route = "send"` (so a send effect falls back to the master when the send slots
 /// are taken, and a master effect is a master effect). A send-only effect says `routes = ["send"]`. Refused: a name that is not `master` or `send`, an empty `routes`, a route twice,
 /// and a `route` that `routes` does not list.
@@ -921,7 +921,7 @@ mod tests {
                 .0
                 .contains("needs a `tab`")
         );
-        // the manifest reader takes the two keys and no other spelling
+        // the TOML form of an effect takes the two keys and no other spelling
         let m: crate::typed::FxDef = toml::from_str(
             "id = \"g\"\nprocess = \"p\"\ndesc = \"d\"\ntab = \"GAN\"\ntitle = \"T\"\nroute = \"send\"\nroutes = [\"send\"]\n",
         )

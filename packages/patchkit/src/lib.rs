@@ -22,6 +22,7 @@ pub mod bootrom;
 pub mod dkm;
 pub mod dkmdsp;
 pub mod dkmsynth;
+pub mod desc;
 pub mod dko;
 pub mod dsp;
 pub mod explain;

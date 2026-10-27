@@ -147,6 +147,24 @@ def _manifest(moddir: Path) -> dict:
     return tomllib.loads((moddir / "module.toml").read_text(encoding="utf-8"))
 
 
+@cache
+def fx_records(mid: str) -> list[dict]:
+    """The effects of module `mid` as `patchkit desc` prints them (from the `DK_FX` records of its ColdFire object)."""
+    from tools.patchkit import patchkit
+
+    r = patchkit.run(["desc", mid], capture=True)
+    if r.returncode:
+        raise RuntimeError(f"patchkit desc {mid} failed:\n{r.stderr}")
+    return json.loads(r.stdout)["fx"]
+
+
+def _fx_records(mid: str, man: dict) -> list[dict]:
+    """The effects of an effect module: the records `patchkit desc` finds. Only `type = "fx"` modules, so `desc` does not run for every module."""
+    if man.get("module", {}).get("type") == "fx":
+        return fx_records(mid)
+    return []
+
+
 def _entry_row(man: dict) -> tuple[str, str | None] | None:
     """(render symbol, literal type or None) of the module's voice."""
     for v in man.get("voice", []):
@@ -422,12 +440,12 @@ def cases(sp: MachineSpec) -> list[Case]:
     return out
 
 
-# ---- effects (the FX contract, sdk/dk_fx.h) -------------------------------------------------------------------------------
+# ---- effects (the FX contract, <dk/fx.h>) -------------------------------------------------------------------------------
 # An effect module is a DSP object behind an `[[entry]] registry = "fx"` row. It is run on the concrete core through core/fx
 # (tests/support/fx_rig.py) one block at a time; the cases and checks are those of tests/modules/test_fx_conformance.py.
 FX_MAX = max(
     pk_device.limits(d).fx_slots for d in pk_device.digikit_devices()
-)  # effects in the chain (devices/*.toml [limits] fx_slots, at most sdk/dk_fx.h DK_FX_MAX)
+)  # effects in the chain (devices/*.toml [limits] fx_slots, at most <dk/fx.h> DK_FX_MAX)
 # Instructions of core/fx around one process call at most (a fade block: copy, output check, crossfade; measured 855 with an effect of 210).
 # The budget below is the effect's own.
 FX_ADAPTER_MAX = 900
@@ -442,7 +460,7 @@ class FxSpec:
     sources: tuple[Path, ...]  # the DSP sources of the module
     process: str
     desc: str
-    state: str  # "": a run-time effect (`[[fx]]`), whose state the runtime reserves (the rig does the same)
+    state: str  # "": a run-time effect (`DK_FX`), whose state the runtime reserves (the rig does the same)
     knobs: tuple[
         tuple[float, float], ...
     ] = ()  # (min, max) of the page knob that feeds parameter word i (a run-time effect with a page)
@@ -467,7 +485,7 @@ def fx_word(spec: FxSpec, j: int, raw: int) -> int:
 
 
 def fx_spec(mid: str) -> FxSpec | None:
-    """The spec of effect module MID, or None when it has no `[[entry]] registry = "fx"` row (patched in) and no `[[fx]]` record (run time) with a DSP object."""
+    """The spec of effect module MID, or None when it has no `[[entry]] registry = "fx"` row (patched in) and no `DK_FX` record (run time) with a DSP object."""
     if mid.split("/")[0] == "core":
         return None
     moddir = modroots.module_dir(mid)
@@ -485,7 +503,7 @@ def fx_spec(mid: str) -> FxSpec | None:
                 e["desc"],
                 e["state"],
             )
-    for fx in man.get("fx", []):
+    for fx in _fx_records(mid, man):
         if isinstance(fx.get("process"), str) and isinstance(fx.get("desc"), str):
             sources = tuple(s for d in DEVICES for s in _dsp_sources(man, moddir, d))
             if not sources:
