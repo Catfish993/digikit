@@ -57,10 +57,8 @@ DSP_CACHE = 0x255970  # DSP DM: a 16-bit type per track at +2t
 SLICE_DOWNS = (
     4  # presses of DOWN from the top of the machine list to SLICE, XSLICE, XClone
 )
-XCLONE_DOWNS = 8  # RECHECK: the list position of XClone now that test/xslice is gone (it was 8 after XSLICE at 7)
-XCLONE_TYPE = (
-    8  # RECHECK: "test/machine-clone:xclone" in modules/core/machines/types.toml
-)
+XCLONE_DOWNS = 8  # the list position of XClone
+XCLONE_TYPE = 8  # "test/machine-clone:xclone" in modules/core/machines/types.toml
 FW = "1.17"  # --fw
 MODS_ONE = ["core/machines", "test/machine-clone"]
 

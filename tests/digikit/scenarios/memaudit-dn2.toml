@@ -13,4 +13,4 @@ must_run = ["test/dyn-demo"]
 [[debug.machines]]
 track = 1
 machine = "test/dyn-dn2:dyn_pluck"
-hint = 5   # RECHECK: dyn-dn2 has a DSP and a voice row now; memory and list position may differ
+hint = 5

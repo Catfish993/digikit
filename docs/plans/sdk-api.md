@@ -104,8 +104,11 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
       byte-identical on dt2 and dn2; patched images of bd, analog, pd and patched-pluck (dt2) are
       byte-identical. Changed on purpose: patched-pluck on dn2 (no position), dyn-dn2 and twin-dn2
       (sine DSP), dyn-params (4 params), dyn-guard-nan on dt2 (param on both devices).
-- [ ] Emulator re-checks of the scenario and proof values marked `# RECHECK`, and the smoke cells
-      of patched-pluck on dn2.
+- [x] Emulator re-checks (1eb92a86 + fixes): every RECHECK value confirmed but equiv-dn2-set
+      `voices = 2`; scenarios equiv-dn2-set, memaudit-dn2, equiv-mixed, roundtrip-dt2 (3) and
+      roundtrip-dn2 pass; the smoke cells of patched-pluck and machine-clone pass. Found and fixed: a
+      patched-in machine on the Digitone II needs a list position (`[modules.knobs] list_position`
+      of the device file), and the `pk_break rows` teeth test rebuilds its copied module.
 - [ ] Later: per-machine knob maps in core/dsp-voice (free encoder placement, more than 4 params,
       several pages per machine); several pages per effect in core/fxpages; a module type that
       patches stock machines.
@@ -163,4 +166,4 @@ Syntakt adapter (S3, S4).
 
 ## Status at end of session
 
-2026-10-27: plan agreed. Phase 1 done in ae364ec3. Phase 2 done statically, not committed; emulator re-checks pending.
+2026-10-27: plan agreed. Phase 1 done in ae364ec3. Phase 2 done in 1eb92a86 and its follow-up. Next: phase 3 (`<dk/ui.h>`, core/ui and the runtime menu in C).

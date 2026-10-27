@@ -9,8 +9,9 @@ The break is made in a copy of the module sources (out/broken/KIND/modules; the 
 
   persist  core/machines leaves the persistence immediate at the stock value: a saved project does not keep the
            machine type (the type falls back to SAMPLE or FM TONE when the project is loaded).
-  rows     test/patched-pluck lists DECAY and PICK in each other's descriptor fields (a wrong parameter mapping): the
-           knobs, the names and the sound of those two parameters are exchanged.
+  rows     test/patched-pluck exchanges the words of DECAY and PICK in its DK_PARAM declarations (a wrong parameter
+           mapping; the module's objects are rebuilt in the copy): the knobs, the names and the sound of those two
+           parameters are exchanged.
 
 `PK_PROOF_IMAGE` makes every proof session that has modules load that image instead of the patch of its modules
 (tools/patchkit/pk_proofkit.py); the plan (symbols) is read from OUT.plan.json next to it.
@@ -27,6 +28,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
+from tools import python_env  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import modroots, patchkit  # noqa: E402
 
@@ -38,11 +40,15 @@ BREAKS = {
         'value = "image.u8(cf.machine.site.sound_load_type_bound + 1)"',
     ),
     "rows": (
-        "tests/fixtures/modules/patched-pluck/src/module.c",  # RECHECK: the machine is declared in C; this needs the object rebuilt from the edited source
-        "DK_KNOB(0), DK_KNOB(1), DK_KNOB(2)",
-        "DK_KNOB(1), DK_KNOB(0), DK_KNOB(2)",
+        "tests/fixtures/modules/patched-pluck/src/module.c",
+        'DK_PARAM(pluck, 0, pluck_decay, "Decay", "DECAY", 0, 127, 64);\n'
+        'DK_PARAM(pluck, 1, pluck_pick, "Pick position", "PICK", 0, 127, 32);',
+        'DK_PARAM(pluck, 1, pluck_decay, "Decay", "DECAY", 0, 127, 64);\n'
+        'DK_PARAM(pluck, 0, pluck_pick, "Pick position", "PICK", 0, 127, 32);',
     ),
 }
+# kinds whose edit is in a C source: the module's objects are rebuilt in the copied root (patchkit reads the committed objects)
+REBUILD = {"rows": "tests/fixtures/modules/patched-pluck"}
 FIRMWARE = {
     ("dt2", "1.17"): "Digitakt_II_OS1.17.syx",
     ("dn2", "1.12"): "Digitone_II_OS1.12.syx",
@@ -64,6 +70,13 @@ def build(kind: str, mods: str, device: str, fw: str, out: Path) -> Path:
             f"{manifest}: the text to break occurs {text.count(old)} times"
         )
     path.write_text(text.replace(old, new))
+    if kind in REBUILD:
+        b = subprocess.run(
+            [sys.executable, "-m", "tools.patchkit.pk_build", "build", str(root / REBUILD[kind])],
+            cwd=ROOT, env=python_env(), capture_output=True, text=True,
+        )  # fmt: skip
+        if b.returncode:
+            raise SystemExit(f"pk_build failed:\n{(b.stderr or b.stdout)[-1500:]}")
     out.parent.mkdir(parents=True, exist_ok=True)
     plan = out.with_suffix(".plan.json")
     r = subprocess.run(

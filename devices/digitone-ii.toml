@@ -344,6 +344,7 @@ count = 8
 slot_base = 25
 to = "page"
 clone_of = 0                # every run-time machine is a clone of machine 0
+list_position = 4           # list position of a patched-in machine row: before MIDI; core/machines on the Digitone II lists a row only with a position
 knob_field = "c"
 slot_field = "s"
 level_field = "c8"

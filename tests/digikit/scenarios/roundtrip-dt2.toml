@@ -11,7 +11,7 @@ tier = "quick"
 order = ["A", "B"]
 types = ["digikit/pluck:pluck", "test/sine:sine"]   # read from the boot's assignment (D7)
 lock_turn = 11
-sound_lock_turn = 2   # RECHECK: sine has one parameter (level); the sound lock turn may need a different knob
+sound_lock_turn = 2   # sine has one parameter (level)
 
 [roundtrip.sets]
 A = ["digikit/pluck", "test/sine"]
@@ -26,4 +26,4 @@ hint = 7
 [[roundtrip.machines]]
 track = 2
 machine = "test/sine:sine"
-hint = 8   # RECHECK
+hint = 8

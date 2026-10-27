@@ -734,7 +734,7 @@ def part_modules(c: Any, img: Any) -> None:
             and (
                 pl["dsp_off"] + pl["dsp_len"] <= xs["dsp_off"]
                 or xs["dsp_off"] + xs["dsp_len"] <= pl["dsp_off"]
-            ),  # RECHECK: the field names and units of the sine range
+            ),
             f"dsp free {m['dsp_free']}, pluck {pl['dsp_off']:#x}+{pl['dsp_len']:#x}, sine {xs['dsp_off']:#x}+{xs['dsp_len']:#x}",
         )
         t_pl = rig.dyn_type("digikit/pluck", "pluck")
@@ -750,7 +750,7 @@ def part_modules(c: Any, img: Any) -> None:
             and len(pl_rows) == 1
             and len(xs_rows) == 1
             and rows[pl_rows[0]] == t_pl
-            and rows[xs_rows[0]] == t_xs,  # RECHECK
+            and rows[xs_rows[0]] == t_xs,
             f"{pl['types']} {xs['types']} rows {pl['rows']:#x} {xs['rows']:#x}",
         )
         c.check(
@@ -792,7 +792,7 @@ def part_modules(c: Any, img: Any) -> None:
             "CAPACITY use agrees with MODULES: two modules, two voice rows, two machine types, the arena and DSP figures equal",
             cap["MODULES"]["used"] == 2
             and cap["SELECTION"]["used"] == 2
-            and cap["VOICE_ROWS"]["used"] == 2  # RECHECK
+            and cap["VOICE_ROWS"]["used"] == 2
             and cap["MACHINE_ROWS"]["used"] == 2
             and cap["MAP_ENTRIES"]["used"] == 2
             and cap["PARAM_ROWS"]["used"] > 0
@@ -836,7 +836,7 @@ def run_sticky(c: Any) -> None:
 
     PL, XS, PA = (
         ("digikit/pluck", "pluck"),
-        ("test/sine", "sine"),  # RECHECK: sine has a DSP section; the rigs are cf_only
+        ("test/sine", "sine"),  # sine has a DSP section; the rigs are cf_only
         ("test/dyn-params", "dynp"),
     )
     files = {m: c.pack(m, m.split("/")[-1] + ".dkm") for m in (PL[0], XS[0], PA[0])}

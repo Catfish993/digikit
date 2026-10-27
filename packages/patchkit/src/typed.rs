@@ -30,6 +30,9 @@ pub struct KnobModel {
     pub to: String,
     /// The machine type every run-time machine of the device clones.
     pub clone_of: i64,
+    /// List position of a patched-in machine row (none: the device lists a row without one).
+    #[serde(default)]
+    pub list_position: Option<i64>,
     /// Field prefix of knob `i` (`f` gives `f0`, `f1` ...).
     pub knob_field: String,
     /// `page` only: field prefix of the slot of knob `i`.
@@ -326,6 +329,8 @@ pub struct RMachine {
     pub name: String,
     pub short: String,
     pub clone_of: i64,
+    /// List position of a patched-in row (`[modules.knobs] list_position`).
+    pub position: Option<i64>,
     pub own_dsp: bool,
     pub knobs: Vec<Knob>,
     pub level: i64,
@@ -554,6 +559,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 name: d.name.clone(),
                 short: d.short.clone(),
                 clone_of: kn.clone_of,
+                position: kn.list_position,
                 own_dsp,
                 knobs,
                 level: kn.level_default,
@@ -702,6 +708,9 @@ pub fn entries(resolved: &[DevResolved]) -> Vec<EntryDef> {
                 kv("short", s(&m.short)),
                 kv("clone_of", int(m.clone_of)),
             ];
+            if let Some(p) = m.position {
+                f.push(kv("position", int(p)));
+            }
             if m.own_dsp {
                 f.push(kv("own_dsp", int(1)));
             }
@@ -823,6 +832,7 @@ count = 8
 slot_base = 25
 to = "page"
 clone_of = 0
+list_position = 4
 knob_field = "c"
 slot_field = "s"
 level_field = "c8"
@@ -958,7 +968,8 @@ summary = "t."
         };
         let mach = on("machines");
         assert_eq!(field(mach[0], "own_dsp"), Some(&int(1)));
-        assert!(field(mach[0], "position").is_none() && field(mach[0], "c0").is_none());
+        assert_eq!(field(mach[0], "position"), Some(&int(4)));
+        assert!(field(mach[0], "c0").is_none());
         let q = on("params");
         assert_eq!(field(q[0], "slot"), Some(&int(25)));
         assert_eq!(field(q[1], "template"), Some(&int(0xd5)));

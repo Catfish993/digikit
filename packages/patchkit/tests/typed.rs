@@ -44,7 +44,7 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitone_II_OS1.12.syx",
         "test/patched-pluck",
-        "7845ba1f9d5d8f9541024fa18972493696a018c53c151ee8e11c6e412a87cc1e", // dn2: no machine position since phase 2
+        "01e1d441c6e9bdfd5bb82eb5d3f2f39493d6ce4f16c61d121622dfc0da74ea40",
     ),
 ];
 
