@@ -148,14 +148,19 @@ def _manifest(moddir: Path) -> dict:
 
 
 @cache
-def fx_records(mid: str) -> list[dict]:
-    """The effects of module `mid` as `patchkit desc` prints them (from the `DK_FX` records of its ColdFire object)."""
+def desc_records(mid: str) -> dict:
+    """The records of module `mid` as `patchkit desc` prints them (from the `DK_*` records of its ColdFire object): keys fx, machines, params, pages, voices."""
     from tools.patchkit import patchkit
 
     r = patchkit.run(["desc", mid], capture=True)
     if r.returncode:
         raise RuntimeError(f"patchkit desc {mid} failed:\n{r.stderr}")
-    return json.loads(r.stdout)["fx"]
+    return json.loads(r.stdout)
+
+
+def fx_records(mid: str) -> list[dict]:
+    """The effects of module `mid` as `patchkit desc` prints them."""
+    return desc_records(mid)["fx"]
 
 
 def _fx_records(mid: str, man: dict) -> list[dict]:
@@ -165,10 +170,17 @@ def _fx_records(mid: str, man: dict) -> list[dict]:
     return []
 
 
-def _entry_row(man: dict) -> tuple[str, str | None] | None:
+def _voices(mid: str, man: dict) -> list[dict]:
+    """The voice records of a machine module (`patchkit desc`); only `type = "machine"` modules, so `desc` does not run for every module."""
+    if man.get("module", {}).get("type") == "machine":
+        return desc_records(mid)["voices"]
+    return []
+
+
+def _entry_row(mid: str, man: dict) -> tuple[str, str | None] | None:
     """(render symbol, literal type or None) of the module's voice."""
-    for v in man.get("voice", []):
-        return v.get("render") or v["entry"], None
+    for v in _voices(mid, man):
+        return v["render"], None
     for e in man.get("entry", []):
         if e.get("registry") == "voices" and isinstance(
             e.get("pc"), str
@@ -177,8 +189,8 @@ def _entry_row(man: dict) -> tuple[str, str | None] | None:
     return None
 
 
-def _contract(man: dict) -> tuple[str | None, str | None]:
-    for v in man.get("voice", []):
+def _contract(mid: str, man: dict) -> tuple[str | None, str | None]:
+    for v in _voices(mid, man):
         return v.get("note_on"), v.get("desc")
     return None, None
 
@@ -204,7 +216,8 @@ def _type_number(mid: str, man: dict, device: str, literal: str | None) -> int:
     types = tomllib.loads((ROOT / "modules/core/machines/types.toml").read_text())[
         device
     ]
-    mach = (man.get("machine") or [{}])[0].get("id") or (man.get("voice") or [{}])[
+    recs = desc_records(mid) if man.get("module", {}).get("type") == "machine" else {}
+    mach = (recs.get("machines") or [{}])[0].get("id") or (recs.get("voices") or [{}])[
         0
     ].get("machine")
     if literal is not None:  # "machines.<name>.index": the type allocated to <name>
@@ -233,9 +246,7 @@ def _params(moddir: Path, man: dict, device: str) -> tuple[Param, ...]:
     if dev is None:
         return ()
     listed = gallery.get("params", {}).get(device)
-    decl = {
-        p["id"]: p for p in (listed if listed is not None else man.get("param", []))
-    }
+    decl = {p["id"]: p for p in (listed or [])}
     out = []
     for j, k in enumerate(dev.get("knobs", [])):
         if not isinstance(k, dict):
@@ -270,7 +281,10 @@ def spec(mid: str, device: str) -> MachineSpec | None:
         )
     moddir = modroots.module_dir(mid)
     man = _manifest(moddir)
-    row = _entry_row(man)
+    ports = man.get("module", {}).get("ports", [])
+    if ports and not any(p.split("-")[0] == device for p in ports):
+        return None
+    row = _entry_row(mid, man)
     if row is None:
         return None
     sources = _dsp_sources(man, moddir, device)
@@ -288,7 +302,7 @@ def spec(mid: str, device: str) -> MachineSpec | None:
         _params(moddir, man, device),
         frame,
         dict(man.get("conformance", {})),
-        *_contract(man),
+        *_contract(mid, man),
     )
 
 

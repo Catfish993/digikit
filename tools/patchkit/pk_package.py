@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export and import a module as a `.dkmod` package (`mise run module:export`, `mise run module:import`).
 
-    uv run python -m tools.patchkit.pk_package export ID [-o FILE] [--previous OLD.dkmod]
+    uv run python -m tools.patchkit.pk_package export ID [-o FILE]
     uv run python -m tools.patchkit.pk_package import FILE [--dir DIR] [--replace]
 
 A `.dkmod` is a deterministic zip of a module folder without `build/`, plus a top-level `package.toml`::
@@ -17,9 +17,6 @@ A `.dkmod` is a deterministic zip of a module folder without `build/`, plus a to
 
 Deterministic: entries sorted by path (`package.toml` first), modification time 1980-01-01, fixed permissions, no OS junk files
 (`.DS_Store`, `__pycache__`, ...). Two exports of one tree are byte-identical.
-
-`--previous OLD.dkmod` refuses a parameter that the old package's `knobs` lists put on one knob and the new ones put on another (per
-machine and device): projects store parameter values by slot (docs/design/module-sdk.md 11.5 D1). A removed parameter is allowed.
 
 `import` checks the sha256 of every file against `package.toml` (and refuses extra or missing files), refuses the author `core` and
 the type `framework`, refuses an id that the module roots already know unless `--replace`, and unpacks into `DIR/<name>`. Without
@@ -47,7 +44,6 @@ PACKAGE = "package.toml"
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 JUNK_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 JUNK_DIRS = {"__pycache__", ".git", ".venv", "node_modules", ".pytest_cache"}
-DEVICES = ("dt2", "dn2")
 
 
 class PackageError(SystemExit):
@@ -106,20 +102,6 @@ def build_zip(manifest: dict, files: dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
-def knob_slots(manifest: dict) -> dict[str, dict[str, int]]:
-    """device -> {parameter id: knob} of the machines' `knobs` lists (stock codes and empty knobs are not parameters)."""
-    out: dict[str, dict[str, int]] = {d: {} for d in DEVICES}
-    for m in manifest.get("machine", []):
-        for dev in DEVICES:
-            if m.get("devices") and dev not in m["devices"]:
-                continue
-            knobs = m.get(dev, {}).get("knobs", m.get("knobs", []))
-            for j, k in enumerate(knobs):
-                if isinstance(k, str):
-                    out[dev].setdefault(k, j)
-    return out
-
-
 def read_package(path: Path) -> tuple[dict, dict[str, bytes]]:
     """(package.toml as a dict, the other entries) of a .dkmod; refuses an unsafe entry name."""
     with zipfile.ZipFile(path) as z:
@@ -141,27 +123,9 @@ def read_package(path: Path) -> tuple[dict, dict[str, bytes]]:
     return pkg, entries
 
 
-def check_previous(manifest: dict, old: Path) -> None:
-    pkg, files = read_package(old)
-    if "module.toml" not in files:
-        raise PackageError(f"{old}: no module.toml")
-    before = knob_slots(tomllib.loads(files["module.toml"].decode()))
-    after = knob_slots(manifest)
-    for dev in DEVICES:
-        for param, was in before[dev].items():
-            now = after[dev].get(param)
-            if now is not None and now != was:
-                raise PackageError(
-                    f"parameter {param} moved from knob {was} to knob {now} on {dev}: "
-                    f"a released parameter keeps its slot (projects store values by slot); previous package {old.name}"
-                )
-
-
-def export(mid: str, out: Path | None = None, previous: Path | None = None) -> Path:
+def export(mid: str, out: Path | None = None) -> Path:
     moddir = modroots.module_dir(mid)
     manifest = tomllib.loads((moddir / "module.toml").read_text(encoding="utf-8"))
-    if previous is not None:
-        check_previous(manifest, previous)
     files = module_files(moddir)
     data = build_zip(manifest, files)
     ver = manifest["module"]["version"]
@@ -241,11 +205,6 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument(
         "-o", "--out", type=Path, help="default out/patch/<id>-<version>.dkmod"
     )
-    e.add_argument(
-        "--previous",
-        type=Path,
-        help="the last released .dkmod: refuse a moved parameter",
-    )
     i = sub.add_parser("import", help="unpack a .dkmod")
     i.add_argument("file", type=Path)
     i.add_argument(
@@ -256,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     a = ap.parse_args(argv)
     if a.cmd == "export":
-        print(f"exported {export(a.id, a.out, a.previous)}")
+        print(f"exported {export(a.id, a.out)}")
     else:
         print(f"imported {import_package(a.file, a.dir, a.replace)}")
     return 0

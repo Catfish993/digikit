@@ -16,54 +16,13 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "unsupported"
 
+# The machine declaration (DK_MACHINE and DK_PARAM in src/module.c). It holds only .dk.desc records.
+[[object]]
+path = "build/bd-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
 [[object]]
 path = "build/bd-dsp.dko.json"
 sources = ["src/dsp/bd.s"]
 place = "dsp.l2"
-
-[[voice]]
-machine = "bd"
-render = "_bd_render"
-note_on = "_bd_note_on"
-desc = "_bd_desc"
-
-# TUNE (slot 0) is the kick's note. Parameters take the first positions of the device's param_slots list --
-# 1, 2 and 4 on the Digitakt II -- whatever positions are written here.
-[[machine]]
-id = "bd"
-name = "Bass Drum"
-short = "BD"
-clone_of = 0
-knobs = ["bd_bend", "bd_index", "bd_ratio", "bd_noise"]
-
-[[param]]
-id = "bd_bend"
-name = "Bend"
-short = "BEND"
-min = 0
-max = 0x7f00
-default = 0x4000
-
-[[param]]
-id = "bd_index"
-name = "FM Index"
-short = "INDEX"
-min = 0
-max = 0x7f00
-default = 0x2000
-
-[[param]]
-id = "bd_ratio"
-name = "Ratio"
-short = "RATIO"
-min = 0
-max = 0x7f00
-default = 0x0000
-
-[[param]]
-id = "bd_noise"
-name = "Noise"
-short = "NOISE"
-min = 0
-max = 0x7f00
-default = 0x0000

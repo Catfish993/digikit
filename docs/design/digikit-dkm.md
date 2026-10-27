@@ -4,6 +4,10 @@ Status: built, 2026-10-16 (packer `packages/patchkit/src/dkm.rs`, loader `module
 `docs/plans/digikit-runtime.md` (Module file, Load sequence). Runtime: `docs/design/digikit-runtime.md`. Store the file lives in:
 `docs/design/digikit-store.md`.
 
+Note (2026-10-27): where this file says `[[machine]]`, `[[param]]`, `[[page]]` or `[[voice]]` in `module.toml`, machines are now declared in C
+with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` (`sdk/include/dk/machine.h`). The packer reads these records and the `.dkm` format is unchanged.
+See `docs/MODULE-AUTHORING.md`, section 5.2.
+
 A `.dkm` is one ColdFire module in a form the runtime can load at run time. It holds no firmware address and no host path: the
 same file serves every image whose runtime has the imports it names. It is made from the module's `.dko` object (the object
 `patchkit` links at patch time) by `patchkit pack`:

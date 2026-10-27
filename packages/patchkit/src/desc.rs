@@ -1,20 +1,59 @@
-//! Descriptor records: what a content module declares in C with the `DK_*` macros of `<dk/fx.h>`.
+//! Descriptor records: what a content module declares in C with the `DK_*` macros of `<dk/fx.h>`, `<dk/machine.h>` and `<dk/page.h>`.
 //!
-//! The macros put fixed-layout records in the `.dk.desc` section of the module's ColdFire object. `read` decodes them to the typed values
-//! of `typed::FxDef`, which `pack` lowers; `strip` takes the section out of the object, as the
-//! records never reach the device. The layout is `[desc]` of `sdk/sdk.toml` (`sdkgen::desc_spec`); no offset is written here.
+//! The macros put fixed-layout records in the `.dk.desc` section of the module's ColdFire object. `read_objects` decodes them to
+//! the typed values of `typed` (`FxDef`, `MachineDef`, `ParamDef`, `PageDef`, `VoiceDef`); `Module` loading puts them in the
+//! manifest, and `pack` lowers them. `strip` takes the section out of the object, as the records never reach the device.
+//! The layout is `[desc]` of `sdk/sdk.toml` (`sdkgen::desc_spec`); no offset is written here.
 
 use crate::dko::{Dko, ISA_CHECK_KEY};
 use crate::error::*;
 use crate::module::Module;
+use crate::register::EFFECT_KNOBS;
 use crate::sdkgen::{self, DescRecord, DescSpec, DescTy};
-use crate::typed::{FxDef, FxKnob};
+use crate::typed::{FxDef, FxKnob, MachineDef, PageDef, PageKnob, ParamDef, VoiceDef};
 
-/// The declarations of one object.
+/// The declarations of a set of objects.
 #[derive(Debug)]
 pub struct Desc {
     /// The effects, sorted by id.
     pub fx: Vec<FxDef>,
+    /// The machines, sorted by id.
+    pub machines: Vec<MachineDef>,
+    /// The machines' parameters, by machine id, then word.
+    pub params: Vec<ParamDef>,
+    /// The machines' pages, by machine id, then in the order of the records.
+    pub pages: Vec<PageDef>,
+    /// The machines' DSP routines, sorted by machine id.
+    pub voices: Vec<VoiceDef>,
+}
+
+/// One record as it was read, before the records are put together.
+enum Rec {
+    Fx {
+        what: String,
+        def: FxDef,
+    },
+    FxParam {
+        what: String,
+        fx: String,
+        word: u32,
+        knob: FxKnob,
+    },
+    Machine {
+        def: MachineDef,
+        voice: VoiceDef,
+    },
+    Param {
+        what: String,
+        def: ParamDef,
+    },
+    Page {
+        what: String,
+        owner: String,
+        name: String,
+        title: String,
+        knobs: Vec<PageKnob>,
+    },
 }
 
 fn be(b: &[u8], off: usize) -> u32 {
@@ -40,6 +79,11 @@ fn word(b: &[u8], rec: &DescRecord, name: &str) -> Result<u32> {
     Ok(be(b, rec.field(name)?.off))
 }
 
+/// A signed word field.
+fn sword(b: &[u8], rec: &DescRecord, name: &str) -> Result<i64> {
+    Ok(i64::from(word(b, rec, name)? as i32))
+}
+
 /// A text field of the record in `b`: printable ASCII up to a NUL, NUL-padded to the end.
 fn text(what: &str, b: &[u8], rec: &DescRecord, name: &str) -> Result<String> {
     let f = rec.field(name)?;
@@ -56,11 +100,21 @@ fn text(what: &str, b: &[u8], rec: &DescRecord, name: &str) -> Result<String> {
     Ok(raw[..nul].iter().map(|&c| c as char).collect())
 }
 
-fn knob(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord, i: usize) -> Result<FxKnob> {
-    let w = word(b, rec, "word")?;
-    if w as usize != i {
-        return Err(err!("{what}: word {w} is not its index {i}"));
+/// A text field that must not be empty.
+fn req(what: &str, b: &[u8], rec: &DescRecord, name: &str) -> Result<String> {
+    let t = text(what, b, rec, name)?;
+    if t.is_empty() {
+        return Err(err!("{what}: {name} is empty"));
     }
+    Ok(t)
+}
+
+/// A text field that may be empty.
+fn opt(what: &str, b: &[u8], rec: &DescRecord, name: &str) -> Result<Option<String>> {
+    Ok(Some(text(what, b, rec, name)?).filter(|t| !t.is_empty()))
+}
+
+fn fx_param(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord) -> Result<Rec> {
     let display = match word(b, rec, "display")? {
         0 => None,
         d if d == konst(spec, "DK_PERCENT")? => Some("percent".to_string()),
@@ -68,28 +122,23 @@ fn knob(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord, i: usize) -> Re
         d => return Err(err!("{what}: display {d} is not DK_PERCENT or DK_BIPOLAR")),
     };
     let float = |name: &str| -> Result<f64> { Ok(f64::from(f32::from_bits(word(b, rec, name)?))) };
-    Ok(FxKnob {
-        name: text(what, b, rec, "name")?,
-        short: text(what, b, rec, "short_name")?,
-        min: float("min")?,
-        max: float("max")?,
-        default: float("def")?,
-        display,
-        position: Some(word(b, rec, "position")?),
+    Ok(Rec::FxParam {
+        what: what.to_string(),
+        fx: req(what, b, rec, "fx")?,
+        word: word(b, rec, "word")?,
+        knob: FxKnob {
+            name: req(what, b, rec, "name")?,
+            short: req(what, b, rec, "short_name")?,
+            min: float("min")?,
+            max: float("max")?,
+            default: float("def")?,
+            display,
+            position: None,
+        },
     })
 }
 
-fn fx_def(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord) -> Result<FxDef> {
-    let req = |name: &str| -> Result<String> {
-        let t = text(what, b, rec, name)?;
-        if t.is_empty() {
-            return Err(err!("{what}: {name} is empty"));
-        }
-        Ok(t)
-    };
-    let opt = |name: &str| -> Result<Option<String>> {
-        Ok(Some(text(what, b, rec, name)?).filter(|t| !t.is_empty()))
-    };
+fn fx_def(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord) -> Result<Rec> {
     let master = konst(spec, "DK_ROUTE_MASTER")?;
     let send = konst(spec, "DK_ROUTE_SEND")?;
     let route = match word(b, rec, "route")? {
@@ -120,7 +169,58 @@ fn fx_def(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord) -> Result<FxD
         }
         Some(v)
     };
-    // the knobs: a prefix of present entries, the rest all zero
+    Ok(Rec::Fx {
+        what: what.to_string(),
+        def: FxDef {
+            id: req(what, b, rec, "id")?,
+            process: req(what, b, rec, "process")?,
+            desc: req(what, b, rec, "desc")?,
+            defaults: vec![],
+            devices: vec![],
+            tab: None,
+            title: None,
+            mix: i64::from(word(b, rec, "mix")?),
+            knob: vec![],
+            route,
+            routes,
+        },
+    })
+}
+
+fn machine_def(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
+    let id = req(what, b, rec, "id")?;
+    Ok(Rec::Machine {
+        def: MachineDef {
+            id: id.clone(),
+            name: req(what, b, rec, "name")?,
+            short: req(what, b, rec, "short_name")?,
+        },
+        voice: VoiceDef {
+            machine: id,
+            render: req(what, b, rec, "render")?,
+            note_on: req(what, b, rec, "note_on")?,
+            desc: req(what, b, rec, "desc")?,
+        },
+    })
+}
+
+fn param_def(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
+    Ok(Rec::Param {
+        what: what.to_string(),
+        def: ParamDef {
+            id: req(what, b, rec, "id")?,
+            machine: req(what, b, rec, "machine")?,
+            word: word(b, rec, "word")?,
+            name: req(what, b, rec, "name")?,
+            short: req(what, b, rec, "short_name")?,
+            min: sword(b, rec, "min")?,
+            max: sword(b, rec, "max")?,
+            default: sword(b, rec, "def")?,
+        },
+    })
+}
+
+fn page_def(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord) -> Result<Rec> {
     let kf = rec.field("knob")?;
     let DescTy::Rec { rec: kname, count } = &kf.ty else {
         return Err(err!(
@@ -130,51 +230,54 @@ fn fx_def(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord) -> Result<FxD
         ));
     };
     let krec = record(spec, kname)?;
+    let auto = konst(spec, "DK_POS_AUTO")?;
     let mut knobs = vec![];
     let mut absent = false;
     for i in 0..*count {
         let kb = &b[kf.off + i * krec.size..kf.off + (i + 1) * krec.size];
         let kwhat = format!("{what}: knob {i}");
-        if text(&kwhat, kb, krec, "name")?.is_empty() {
-            if kb.iter().any(|&c| c != 0) {
-                return Err(err!("{kwhat}: has no name but is not all zero"));
+        match word(kb, krec, "used")? {
+            0 => {
+                if kb.iter().any(|&c| c != 0) {
+                    return Err(err!("{kwhat}: is unused but not all zero"));
+                }
+                absent = true;
             }
-            absent = true;
-            continue;
+            1 => {
+                if absent {
+                    return Err(err!("{kwhat}: follows an unused entry (a gap)"));
+                }
+                let p = word(kb, krec, "position")?;
+                let position = if p == auto {
+                    None
+                } else if (p as usize) < *count {
+                    Some(p)
+                } else {
+                    return Err(err!(
+                        "{kwhat}: position {p} is not 0 to {} or DK_POS_AUTO",
+                        count - 1
+                    ));
+                };
+                knobs.push(PageKnob {
+                    word: word(kb, krec, "word")?,
+                    position,
+                });
+            }
+            u => return Err(err!("{kwhat}: used {u} is 0 or 1")),
         }
-        if absent {
-            return Err(err!("{kwhat}: follows an unused entry (a gap)"));
-        }
-        knobs.push(knob(&kwhat, spec, kb, krec, i)?);
     }
-    Ok(FxDef {
-        id: req("id")?,
-        process: req("process")?,
-        desc: req("desc")?,
-        defaults: vec![],
-        devices: vec![],
-        tab: opt("tab")?,
-        title: opt("title")?,
-        mix: i64::from(word(b, rec, "mix")?),
-        knob: knobs,
-        route,
-        routes,
+    Ok(Rec::Page {
+        what: what.to_string(),
+        owner: req(what, b, rec, "owner")?,
+        name: req(what, b, rec, "name")?,
+        title: req(what, b, rec, "title")?,
+        knobs,
     })
 }
 
-/// Sort by id; an id twice is an error.
-fn sorted(mut fx: Vec<FxDef>) -> Result<Vec<FxDef>> {
-    fx.sort_by(|a, b| a.id.cmp(&b.id));
-    if let Some(w) = fx.windows(2).find(|w| w[0].id == w[1].id) {
-        return Err(err!("effect {} is declared twice", w[0].id));
-    }
-    Ok(fx)
-}
-
-/// The records of an object. Only a ColdFire object can hold them.
-pub fn read(obj: &Dko) -> Result<Desc> {
-    let spec = sdkgen::desc_spec();
-    let mut fx = vec![];
+/// The records of one object, in order. Only a ColdFire object can hold them.
+fn records(obj: &Dko, spec: &DescSpec) -> Result<Vec<Rec>> {
+    let mut out = vec![];
     for sec in obj.sections.iter().filter(|s| s.name == spec.section) {
         let sname = &sec.name;
         if obj.arch != "cf" {
@@ -191,9 +294,8 @@ pub fn read(obj: &Dko) -> Result<Desc> {
             ));
         }
         let b = unhex(&sec.hex)?;
-        let head = record(&spec, "dk_desc_fx")?;
+        let head = record(spec, "dk_desc_fx")?;
         let (kind_off, size_off) = (head.field("kind")?.off, head.field("size")?.off);
-        let fx_kind = konst(&spec, "DK_DESC_FX")?;
         let mut at = 0;
         let mut index = 0;
         while at < b.len() {
@@ -222,16 +324,255 @@ pub fn read(obj: &Dko) -> Result<Desc> {
                     b.len() - at
                 ));
             }
-            if kind == fx_kind {
-                fx.push(fx_def(&what, &spec, &b[at..at + size], rec)?);
-            } else {
-                return Err(err!("{what}: no reader for {}", rec.name));
-            }
+            let rb = &b[at..at + size];
+            out.push(match rec.name.as_str() {
+                "dk_desc_fx" => fx_def(&what, spec, rb, rec)?,
+                "dk_desc_fx_param" => fx_param(&what, spec, rb, rec)?,
+                "dk_desc_machine" => machine_def(&what, rb, rec)?,
+                "dk_desc_param" => param_def(&what, rb, rec)?,
+                "dk_desc_page" => page_def(&what, spec, rb, rec)?,
+                _ => return Err(err!("{what}: no reader for {}", rec.name)),
+            });
             at += size;
             index += 1;
         }
     }
-    Ok(Desc { fx: sorted(fx)? })
+    Ok(out)
+}
+
+/// Check that `words` are 0, 1, 2 ... once the list is sorted; `who` names the owner in the message.
+fn gapless(who: &str, what: &str, words: &mut [u32]) -> Result<()> {
+    words.sort_unstable();
+    for (i, w) in words.iter().enumerate() {
+        if *w as usize != i {
+            return Err(if i > 0 && words[i - 1] == *w {
+                err!("{who}: {what} word {w} is declared twice")
+            } else {
+                err!("{who}: {what} words have a gap: word {i} is missing")
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The page positions of the entries `(word, position)`: explicit ones stay, the others take the lowest free position in order.
+fn positions(what: &str, entries: &[PageKnob]) -> Result<Vec<u32>> {
+    let mut taken: Vec<u32> = vec![];
+    for e in entries {
+        if let Some(p) = e.position {
+            if taken.contains(&p) {
+                return Err(err!("{what}: two knobs at position {p}"));
+            }
+            taken.push(p);
+        }
+    }
+    let mut out = vec![];
+    for e in entries {
+        out.push(match e.position {
+            Some(p) => p,
+            None => {
+                let p = (0..8)
+                    .find(|p| !taken.contains(p))
+                    .ok_or_else(|| err!("{what}: more than 8 knobs"))?;
+                taken.push(p);
+                p
+            }
+        });
+    }
+    Ok(out)
+}
+
+/// Put the records together: ids, owners and words are checked here.
+fn assemble(recs: Vec<Rec>) -> Result<Desc> {
+    let mut fxs: Vec<(String, FxDef)> = vec![];
+    let mut fx_params: Vec<(String, String, u32, FxKnob)> = vec![];
+    let mut machines: Vec<(MachineDef, VoiceDef)> = vec![];
+    let mut params: Vec<(String, ParamDef)> = vec![];
+    let mut pages: Vec<(String, String, String, String, Vec<PageKnob>)> = vec![];
+    for r in recs {
+        match r {
+            Rec::Fx { what, def } => fxs.push((what, def)),
+            Rec::FxParam {
+                what,
+                fx,
+                word,
+                knob,
+            } => fx_params.push((what, fx, word, knob)),
+            Rec::Machine { def, voice } => machines.push((def, voice)),
+            Rec::Param { what, def } => params.push((what, def)),
+            Rec::Page {
+                what,
+                owner,
+                name,
+                title,
+                knobs,
+            } => pages.push((what, owner, name, title, knobs)),
+        }
+    }
+    fxs.sort_by(|a, b| a.1.id.cmp(&b.1.id));
+    if let Some(w) = fxs.windows(2).find(|w| w[0].1.id == w[1].1.id) {
+        return Err(err!("effect {} is declared twice", w[0].1.id));
+    }
+    machines.sort_by(|a, b| a.0.id.cmp(&b.0.id));
+    if let Some(w) = machines.windows(2).find(|w| w[0].0.id == w[1].0.id) {
+        return Err(err!("machine {} is declared twice", w[0].0.id));
+    }
+    if let Some((_, f)) = fxs
+        .iter()
+        .find(|(_, f)| machines.iter().any(|(m, _)| m.id == f.id))
+    {
+        return Err(err!("{} is declared as a machine and as an effect", f.id));
+    }
+
+    // the machines' parameters
+    params.sort_by(|a, b| (&a.1.machine, a.1.word).cmp(&(&b.1.machine, b.1.word)));
+    let mut ids: Vec<&str> = vec![];
+    for (what, p) in &params {
+        if !machines.iter().any(|(m, _)| m.id == p.machine) {
+            return Err(err!("{what}: machine {} is not declared", p.machine));
+        }
+        if ids.contains(&p.id.as_str()) {
+            return Err(err!("{what}: param {} is declared twice", p.id));
+        }
+        ids.push(&p.id);
+    }
+    for (m, _) in &machines {
+        let mut words: Vec<u32> = params
+            .iter()
+            .filter(|(_, p)| p.machine == m.id)
+            .map(|(_, p)| p.word)
+            .collect();
+        gapless(&format!("machine {}", m.id), "param", &mut words)?;
+    }
+
+    // the pages
+    let mut machine_pages: Vec<PageDef> = vec![];
+    let mut fx_pages: Vec<(String, String, String, Vec<PageKnob>)> = vec![];
+    for (what, owner, name, title, knobs) in pages {
+        if machines.iter().any(|(m, _)| m.id == owner) {
+            let mut seen: Vec<u32> = vec![];
+            for (i, k) in knobs.iter().enumerate() {
+                if !params
+                    .iter()
+                    .any(|(_, p)| p.machine == owner && p.word == k.word)
+                {
+                    return Err(err!(
+                        "{what}: knob {i} names word {}, but machine {owner} has no such param",
+                        k.word
+                    ));
+                }
+                if seen.contains(&k.word) {
+                    return Err(err!("{what}: knob {i}: word {} is on the page twice", k.word));
+                }
+                seen.push(k.word);
+            }
+            let n = machine_pages.iter().filter(|p| p.machine == owner).count();
+            machine_pages.push(PageDef {
+                id: format!("{owner}_p{n}"),
+                machine: owner,
+                name,
+                title,
+                knobs,
+            });
+        } else if fxs.iter().any(|(_, f)| f.id == owner) {
+            if fx_pages.iter().any(|p| p.0 == owner) {
+                return Err(err!("{what}: an effect has one page for now"));
+            }
+            fx_pages.push((owner, name, title, knobs));
+        } else {
+            return Err(err!(
+                "{what}: owner {owner} is neither a machine nor an effect of the module"
+            ));
+        }
+    }
+    machine_pages.sort_by(|a, b| a.machine.cmp(&b.machine));
+
+    // the effects: parameters, then the page
+    for (what, fx, _, _) in &fx_params {
+        if !fxs.iter().any(|(_, f)| &f.id == fx) {
+            return Err(err!("{what}: effect {fx} is not declared"));
+        }
+    }
+    let mut fx_out = vec![];
+    for (_, mut f) in fxs {
+        let mut mine: Vec<(u32, FxKnob)> = fx_params
+            .iter()
+            .filter(|p| p.1 == f.id)
+            .map(|p| (p.2, p.3.clone()))
+            .collect();
+        let who = format!("effect {}", f.id);
+        if mine.len() > EFFECT_KNOBS {
+            return Err(err!(
+                "{who}: {} params; at most {EFFECT_KNOBS} (and MIX)",
+                mine.len()
+            ));
+        }
+        gapless(&who, "param", &mut mine.iter().map(|m| m.0).collect::<Vec<_>>())?;
+        mine.sort_by_key(|m| m.0);
+        match fx_pages.iter().find(|p| p.0 == f.id) {
+            Some((_, name, title, knobs)) => {
+                for k in knobs {
+                    if k.word as usize >= mine.len() {
+                        return Err(err!(
+                            "{who}: page {name}: a knob names word {}, but the effect has no such param",
+                            k.word
+                        ));
+                    }
+                }
+                for w in 0..mine.len() as u32 {
+                    match knobs.iter().filter(|k| k.word == w).count() {
+                        1 => {}
+                        0 => {
+                            return Err(err!("{who}: page {name}: param word {w} is not on the page"));
+                        }
+                        _ => {
+                            return Err(err!("{who}: page {name}: param word {w} is on the page twice"));
+                        }
+                    }
+                }
+                let pos = positions(&format!("{who}: page {name}"), knobs)?;
+                f.tab = Some(name.clone());
+                f.title = Some(title.clone());
+                f.knob = mine
+                    .into_iter()
+                    .map(|(w, mut k)| {
+                        let at = knobs.iter().position(|e| e.word == w).unwrap();
+                        k.position = Some(pos[at]);
+                        k
+                    })
+                    .collect();
+            }
+            None => {
+                f.defaults = mine
+                    .iter()
+                    .map(|(_, k)| (k.default as f32).to_bits())
+                    .collect();
+            }
+        }
+        fx_out.push(f);
+    }
+    Ok(Desc {
+        fx: fx_out,
+        params: params.into_iter().map(|p| p.1).collect(),
+        pages: machine_pages,
+        voices: machines.iter().map(|m| m.1.clone()).collect(),
+        machines: machines.into_iter().map(|m| m.0).collect(),
+    })
+}
+
+/// The declarations in a set of objects (a module's).
+pub fn read_objects<'a>(objs: impl IntoIterator<Item = &'a Dko>) -> Result<Desc> {
+    let spec = sdkgen::desc_spec();
+    let mut recs = vec![];
+    for o in objs {
+        recs.extend(records(o, &spec)?);
+    }
+    assemble(recs)
+}
+
+/// The declarations in one object.
+pub fn read(obj: &Dko) -> Result<Desc> {
+    read_objects([obj])
 }
 
 /// A copy of the object without the descriptor sections, their symbols and their relocations; `None` when nothing is left in it.
@@ -254,74 +595,113 @@ pub fn strip(obj: &Dko) -> Option<Dko> {
 
 /// The effects of a module: the records of its ColdFire objects.
 pub fn module_fx(m: &Module) -> Result<Vec<FxDef>> {
-    let mut fx = vec![];
-    for o in &m.objects {
-        fx.extend(read(o)?.fx);
-    }
-    sorted(fx)
+    Ok(read_objects(&m.objects)?.fx)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dko::{DkoReloc, DkoSection, DkoSymbol};
-    use crate::sdkgen::DescField;
 
-    fn put(b: &mut [u8], off: usize, v: u32) {
-        b[off..off + 4].copy_from_slice(&v.to_be_bytes());
+    /// A record under construction: fields are set by name.
+    struct Rb {
+        rec: DescRecord,
+        krec: DescRecord,
+        b: Vec<u8>,
     }
 
-    /// Text in field `f` of the record that starts at `base`.
-    fn put_text(b: &mut [u8], base: usize, f: &DescField, s: &str) {
-        let at = base + f.off;
-        b[at..at + f.size].fill(0);
-        b[at..at + s.len()].copy_from_slice(s.as_bytes());
+    impl Rb {
+        fn new(name: &str) -> Rb {
+            let spec = sdkgen::desc_spec();
+            let rec = record(&spec, name).unwrap().clone();
+            let mut r = Rb {
+                krec: record(&spec, "dk_desc_page_knob").unwrap().clone(),
+                b: vec![0u8; rec.size],
+                rec,
+            };
+            let (kind, size) = (r.rec.kind.unwrap(), r.rec.size as u32);
+            r.num("kind", kind).num("size", size);
+            r
+        }
+        fn num(&mut self, f: &str, v: u32) -> &mut Rb {
+            let off = self.rec.field(f).unwrap().off;
+            self.b[off..off + 4].copy_from_slice(&v.to_be_bytes());
+            self
+        }
+        fn text(&mut self, f: &str, s: &str) -> &mut Rb {
+            let f = self.rec.field(f).unwrap();
+            self.b[f.off..f.off + f.size].fill(0);
+            self.b[f.off..f.off + s.len()].copy_from_slice(s.as_bytes());
+            self
+        }
+        /// Page entry `i`.
+        fn knob(&mut self, i: usize, word: u32, position: u32) -> &mut Rb {
+            let base = self.rec.field("knob").unwrap().off + i * self.krec.size;
+            for (f, v) in [("used", 1), ("word", word), ("position", position)] {
+                let off = base + self.krec.field(f).unwrap().off;
+                self.b[off..off + 4].copy_from_slice(&v.to_be_bytes());
+            }
+            self
+        }
+        fn done(&self) -> Vec<u8> {
+            self.b.clone()
+        }
     }
 
-    /// One knob entry at index `i` of the effect record `b`.
-    fn set_knob(b: &mut [u8], spec: &DescSpec, i: usize, name: &str, position: u32) {
-        let fx = record(spec, "dk_desc_fx").unwrap();
-        let k = record(spec, "dk_desc_knob").unwrap();
-        let base = fx.field("knob").unwrap().off + i * k.size;
-        put(b, base + k.field("word").unwrap().off, i as u32);
-        put(b, base + k.field("position").unwrap().off, position);
-        put(b, base + k.field("display").unwrap().off, 2);
-        put(b, base + k.field("min").unwrap().off, (-64.0f32).to_bits());
-        put(b, base + k.field("max").unwrap().off, 63.0f32.to_bits());
-        put(b, base + k.field("def").unwrap().off, 0.0f32.to_bits());
-        put_text(b, base, k.field("name").unwrap(), name);
-        put_text(b, base, k.field("short_name").unwrap(), "SHIFT");
+    const AUTO: u32 = 255;
+
+    fn fx(id: &str) -> Rb {
+        let mut r = Rb::new("dk_desc_fx");
+        r.text("id", id)
+            .text("process", "_fs_process")
+            .text("desc", "_fs_desc")
+            .num("mix", 127)
+            .num("route", 2)
+            .num("routes", 3);
+        r
     }
 
-    /// An effect record `id` with one knob.
-    fn fx_bytes(id: &str) -> Vec<u8> {
-        let spec = sdkgen::desc_spec();
-        let fx = record(&spec, "dk_desc_fx").unwrap();
-        let mut b = vec![0u8; fx.size];
-        put(
-            &mut b,
-            fx.field("kind").unwrap().off,
-            spec.consts["DK_DESC_FX"],
-        );
-        put(&mut b, fx.field("size").unwrap().off, fx.size as u32);
-        put_text(&mut b, 0, fx.field("id").unwrap(), id);
-        put_text(&mut b, 0, fx.field("process").unwrap(), "_fs_process");
-        put_text(&mut b, 0, fx.field("desc").unwrap(), "_fs_desc");
-        put_text(&mut b, 0, fx.field("tab").unwrap(), "FSH");
-        put_text(&mut b, 0, fx.field("title").unwrap(), "Freq Shifter");
-        put(&mut b, fx.field("mix").unwrap().off, 127);
-        put(
-            &mut b,
-            fx.field("route").unwrap().off,
-            spec.consts["DK_ROUTE_SEND"],
-        );
-        put(
-            &mut b,
-            fx.field("routes").unwrap().off,
-            spec.consts["DK_ROUTE_SEND"] | spec.consts["DK_ROUTE_MASTER"],
-        );
-        set_knob(&mut b, &spec, 0, "Freq Shift", 0);
-        b
+    fn fx_param(fx: &str, word: u32, name: &str) -> Rb {
+        let mut r = Rb::new("dk_desc_fx_param");
+        r.text("fx", fx)
+            .num("word", word)
+            .num("display", 2)
+            .num("min", (-64.0f32).to_bits())
+            .num("max", 63.0f32.to_bits())
+            .num("def", 0.0f32.to_bits())
+            .text("name", name)
+            .text("short_name", "SHIFT");
+        r
+    }
+
+    fn machine(id: &str) -> Rb {
+        let mut r = Rb::new("dk_desc_machine");
+        r.text("id", id)
+            .text("name", "Pluck")
+            .text("short_name", "PLK")
+            .text("render", "_pk_render")
+            .text("note_on", "_pk_note_on")
+            .text("desc", "_pk_desc");
+        r
+    }
+
+    fn param(machine: &str, id: &str, word: u32) -> Rb {
+        let mut r = Rb::new("dk_desc_param");
+        r.text("machine", machine)
+            .text("id", id)
+            .num("word", word)
+            .num("min", 0)
+            .num("max", 0x7f00)
+            .num("def", 0x4000)
+            .text("name", "Decay")
+            .text("short_name", "DECAY");
+        r
+    }
+
+    fn page(owner: &str) -> Rb {
+        let mut r = Rb::new("dk_desc_page");
+        r.text("owner", owner).text("name", "PLUCK").text("title", "Pluck");
+        r
     }
 
     fn obj(bytes: &[u8]) -> Dko {
@@ -342,17 +722,25 @@ mod tests {
         }
     }
 
-    /// The error of reading the default record after `edit`.
-    fn broken(edit: impl Fn(&mut Vec<u8>, &DescSpec)) -> String {
-        let spec = sdkgen::desc_spec();
-        let mut b = fx_bytes("fshift");
-        edit(&mut b, &spec);
-        read(&obj(&b)).unwrap_err().0
+    fn all(recs: &[&Rb]) -> Vec<u8> {
+        recs.iter().flat_map(|r| r.done()).collect()
+    }
+
+    fn err_of(recs: &[&Rb]) -> String {
+        read(&obj(&all(recs))).unwrap_err().0
+    }
+
+    /// An effect with one parameter and a page for it.
+    fn fshift() -> (Rb, Rb, Rb) {
+        let mut pg = page("fshift");
+        pg.text("name", "FSH").text("title", "Freq Shifter").knob(0, 0, 0);
+        (fx("fshift"), fx_param("fshift", 0, "Freq Shift"), pg)
     }
 
     #[test]
-    fn an_effect_record_reads_to_its_fx_def() {
-        let d = read(&obj(&fx_bytes("fshift"))).unwrap();
+    fn an_effect_with_a_page_reads_to_its_fx_def() {
+        let (f, p, g) = fshift();
+        let d = read(&obj(&all(&[&f, &p, &g]))).unwrap();
         let [f] = d.fx.as_slice() else {
             panic!("one effect")
         };
@@ -380,106 +768,162 @@ mod tests {
             (k.display.as_deref(), k.position),
             (Some("bipolar"), Some(0))
         );
+        assert!(d.machines.is_empty() && d.pages.is_empty());
+    }
+
+    #[test]
+    fn an_effect_without_a_page_keeps_the_defaults_of_its_params() {
+        let mut p1 = fx_param("fshift", 1, "Other");
+        p1.num("def", 2.0f32.to_bits()).num("max", 3.0f32.to_bits());
+        let d = read(&obj(&all(&[&fx("fshift"), &p1, &fx_param("fshift", 0, "A")]))).unwrap();
+        let f = &d.fx[0];
+        assert!(f.tab.is_none() && f.title.is_none() && f.knob.is_empty());
+        assert_eq!(f.defaults, [0.0f32.to_bits(), 2.0f32.to_bits()]);
+    }
+
+    #[test]
+    fn auto_positions_take_the_lowest_free_one_in_entry_order() {
+        let mut g = page("fshift");
+        g.knob(0, 0, AUTO).knob(1, 1, 0).knob(2, 2, AUTO);
+        let recs = [&fx("fshift"), &fx_param("fshift", 0, "A"), &fx_param("fshift", 1, "B"), &fx_param("fshift", 2, "C"), &g];
+        let d = read(&obj(&all(&recs))).unwrap();
+        let pos: Vec<_> = d.fx[0].knob.iter().map(|k| k.position).collect();
+        assert_eq!(pos, [Some(1), Some(0), Some(2)]);
     }
 
     #[test]
     fn effects_are_sorted_and_an_id_twice_is_refused() {
-        let mut b = fx_bytes("zeta");
-        b.extend(fx_bytes("alpha"));
-        let ids: Vec<_> = read(&obj(&b))
-            .unwrap()
-            .fx
-            .into_iter()
-            .map(|f| f.id)
-            .collect();
+        let mut b = fx("zeta").done();
+        b.extend(fx("alpha").done());
+        let ids: Vec<_> = read(&obj(&b)).unwrap().fx.into_iter().map(|f| f.id).collect();
         assert_eq!(ids, ["alpha", "zeta"]);
-        let mut b = fx_bytes("same");
-        b.extend(fx_bytes("same"));
-        assert!(read(&obj(&b)).unwrap_err().0.contains("twice"));
+        assert!(err_of(&[&fx("same"), &fx("same")]).contains("twice"));
+    }
+
+    #[test]
+    fn machine_records_read_to_machines_params_pages_and_voices() {
+        let mut g = page("pluck");
+        g.knob(0, 1, AUTO).knob(1, 0, 3);
+        let recs = [&machine("pluck"), &param("pluck", "pk_b", 1), &param("pluck", "pk_a", 0), &g];
+        let d = read(&obj(&all(&recs))).unwrap();
+        assert_eq!(d.machines.len(), 1);
+        assert_eq!((d.machines[0].name.as_str(), d.machines[0].short.as_str()), ("Pluck", "PLK"));
+        assert_eq!(d.voices[0].render, "_pk_render");
+        assert_eq!(d.voices[0].desc, "_pk_desc");
+        // in word order
+        let ids: Vec<_> = d.params.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["pk_a", "pk_b"]);
+        assert_eq!((d.params[0].min, d.params[0].max, d.params[0].default), (0, 0x7f00, 0x4000));
+        let [pg] = d.pages.as_slice() else {
+            panic!("one page")
+        };
+        assert_eq!((pg.machine.as_str(), pg.name.as_str(), pg.title.as_str()), ("pluck", "PLUCK", "Pluck"));
+        assert_eq!(pg.knobs[0].word, 1);
+        assert_eq!(pg.knobs[0].position, None);
+        assert_eq!(pg.knobs[1].position, Some(3));
+    }
+
+    #[test]
+    fn mistakes_in_the_declarations_are_refused() {
+        let m = machine("pluck");
+        // a gap in the words of a machine
+        let e = err_of(&[&m, &param("pluck", "a", 0), &param("pluck", "b", 2)]);
+        assert!(e.contains("gap") && e.contains("word 1"), "{e}");
+        // a word twice
+        let e = err_of(&[&m, &param("pluck", "a", 0), &param("pluck", "b", 0)]);
+        assert!(e.contains("declared twice"), "{e}");
+        // a param id twice, and a param of no machine
+        let e = err_of(&[&m, &param("pluck", "a", 0), &param("pluck", "a", 1)]);
+        assert!(e.contains("param a is declared twice"), "{e}");
+        let e = err_of(&[&m, &param("nope", "a", 0)]);
+        assert!(e.contains("machine nope is not declared"), "{e}");
+        // a page of an owner nobody declares
+        let e = err_of(&[&m, &page("ghost")]);
+        assert!(e.contains("owner ghost"), "{e}");
+        // a page entry for a word the machine has no param for
+        let mut g = page("pluck");
+        g.knob(0, 5, AUTO);
+        let e = err_of(&[&m, &param("pluck", "a", 0), &g]);
+        assert!(e.contains("names word 5"), "{e}");
+        // a machine and an effect with one id
+        let e = err_of(&[&m, &fx("pluck")]);
+        assert!(e.contains("machine and as an effect"), "{e}");
+        // a machine without its routines
+        let mut bare = machine("pluck");
+        bare.text("render", "");
+        assert!(err_of(&[&bare]).contains("render is empty"));
+    }
+
+    #[test]
+    fn mistakes_in_an_effect_page_are_refused() {
+        let (f, p, g) = fshift();
+        // two pages
+        let e = err_of(&[&f, &p, &g, &g]);
+        assert!(e.contains("one page for now"), "{e}");
+        // a param that is not on the page
+        let e = err_of(&[&f, &p, &fx_param("fshift", 1, "B"), &g]);
+        assert!(e.contains("word 1 is not on the page"), "{e}");
+        // an entry for a missing word
+        let mut g2 = page("fshift");
+        g2.knob(0, 0, 0).knob(1, 3, 1);
+        let e = err_of(&[&f, &p, &g2]);
+        assert!(e.contains("word 3"), "{e}");
+        // two entries at one position
+        let mut g3 = page("fshift");
+        g3.knob(0, 0, 2).knob(1, 1, 2);
+        let e = err_of(&[&f, &p, &fx_param("fshift", 1, "B"), &g3]);
+        assert!(e.contains("two knobs at position 2"), "{e}");
+        // a position that is no encoder; an entry after a gap; a gap in the effect's words
+        let mut g4 = page("fshift");
+        g4.knob(0, 0, 9);
+        assert!(err_of(&[&f, &p, &g4]).contains("position 9"));
+        let mut g5 = page("fshift");
+        g5.knob(2, 0, 0);
+        assert!(err_of(&[&f, &p, &g5]).contains("gap"));
+        let e = err_of(&[&f, &fx_param("fshift", 1, "B")]);
+        assert!(e.contains("gap"), "{e}");
+        // display that is neither percent nor bipolar
+        let mut bad = fx_param("fshift", 0, "A");
+        bad.num("display", 3);
+        assert!(err_of(&[&f, &bad]).contains("display 3"));
     }
 
     #[test]
     fn a_malformed_text_field_is_refused() {
-        let id = |spec: &DescSpec| {
-            record(spec, "dk_desc_fx")
-                .unwrap()
-                .field("id")
-                .unwrap()
-                .clone()
+        let id = |b: &mut Vec<u8>, f: &dyn Fn(&mut [u8])| {
+            let off = record(&sdkgen::desc_spec(), "dk_desc_fx").unwrap().field("id").unwrap().off;
+            f(&mut b[off..off + 16]);
         };
-        assert!(
-            broken(|b, s| {
-                let f = id(s);
-                b[f.off..f.off + f.size].fill(b'a');
-            })
-            .contains("no NUL")
-        );
-        assert!(broken(|b, s| b[id(s).off + 10] = b'x').contains("after the NUL"));
-        assert!(broken(|b, s| b[id(s).off] = 0x7f).contains("printable"));
-    }
-
-    #[test]
-    fn a_malformed_knob_is_refused() {
-        let fx_knob = |spec: &DescSpec| {
-            let fx = record(spec, "dk_desc_fx").unwrap();
-            let k = record(spec, "dk_desc_knob").unwrap();
-            (fx.field("knob").unwrap().off, k.clone())
+        let broken = |f: &dyn Fn(&mut [u8])| {
+            let mut b = fx("fshift").done();
+            id(&mut b, f);
+            read(&obj(&b)).unwrap_err().0
         };
-        // display is not DK_PERCENT or DK_BIPOLAR
-        assert!(
-            broken(|b, s| {
-                let (base, k) = fx_knob(s);
-                put(b, base + k.field("display").unwrap().off, 3);
-            })
-            .contains("display 3")
-        );
-        // knob 2 present while knob 1 is unused
-        assert!(broken(|b, s| set_knob(b, s, 2, "Other", 2)).contains("gap"));
-        // the word is not the index
-        assert!(
-            broken(|b, s| {
-                let (base, k) = fx_knob(s);
-                put(b, base + k.field("word").unwrap().off, 1);
-            })
-            .contains("word 1")
-        );
-        // an unused entry holds data
-        assert!(
-            broken(|b, s| {
-                let (base, k) = fx_knob(s);
-                b[base + k.size + k.field("min").unwrap().off] = 1;
-            })
-            .contains("not all zero")
-        );
+        assert!(broken(&|s| s.fill(b'a')).contains("no NUL"));
+        assert!(broken(&|s| s[10] = b'x').contains("after the NUL"));
+        assert!(broken(&|s| s[0] = 0x7f).contains("printable"));
     }
 
     #[test]
     fn a_malformed_record_is_refused() {
-        let fx_field =
-            |spec: &DescSpec, n: &str| record(spec, "dk_desc_fx").unwrap().field(n).unwrap().off;
-        assert!(broken(|b, s| put(b, fx_field(s, "kind"), 99)).contains("unknown record kind"));
-        assert!(
-            broken(|b, s| {
-                let size = record(s, "dk_desc_fx").unwrap().size as u32;
-                put(b, fx_field(s, "size"), size + 4);
-            })
-            .contains("size")
-        );
+        let mut b = fx("fshift").done();
+        b[3] = 99;
+        assert!(read(&obj(&b)).unwrap_err().0.contains("unknown record kind"));
+        let mut b = fx("fshift").done();
+        b[7] += 4;
+        assert!(read(&obj(&b)).unwrap_err().0.contains("size"));
         // a record cut short
-        let b = fx_bytes("fshift");
-        assert!(
-            read(&obj(&b[..b.len() - 4]))
-                .unwrap_err()
-                .0
-                .contains("do not fit")
-        );
+        let b = fx("fshift").done();
+        assert!(read(&obj(&b[..b.len() - 4])).unwrap_err().0.contains("do not fit"));
         // routes with a bit that is no route
-        assert!(broken(|b, s| put(b, fx_field(s, "routes"), 8)).contains("routes"));
+        let mut r = fx("fshift");
+        r.num("routes", 8);
+        assert!(err_of(&[&r]).contains("routes"));
     }
 
     #[test]
     fn a_relocation_or_a_sharc_object_is_refused() {
-        let mut o = obj(&fx_bytes("fshift"));
+        let mut o = obj(&fx("fshift").done());
         o.relocs.push(DkoReloc {
             section: o.sections[0].name.clone(),
             offset: 0,
@@ -488,7 +932,7 @@ mod tests {
             addend: 0,
         });
         assert!(read(&o).unwrap_err().0.contains("relocation"));
-        let mut o = obj(&fx_bytes("fshift"));
+        let mut o = obj(&fx("fshift").done());
         o.arch = "sharc".into();
         assert!(read(&o).unwrap_err().0.contains("ColdFire"));
     }
@@ -496,9 +940,9 @@ mod tests {
     #[test]
     fn strip_takes_the_records_out() {
         // a records-only object has nothing left
-        assert!(strip(&obj(&fx_bytes("fshift"))).is_none());
+        assert!(strip(&obj(&fx("fshift").done())).is_none());
         // the other sections stay; the records' symbols and relocations go
-        let mut o = obj(&fx_bytes("fshift"));
+        let mut o = obj(&fx("fshift").done());
         let desc = o.sections[0].name.clone();
         o.sections.push(DkoSection {
             name: ".text".into(),

@@ -13,8 +13,8 @@ There are three kinds of content module. The kind is `[module] type` in `module.
 
 | Kind | What it does | Language | Entry points | Template |
 | --- | --- | --- | --- | --- |
-| `machine` | A new sound source. It renders one voice. | SHARC+ assembly | `render`, `note_on`, `desc` | `sdk/templates/machine` |
-| `fx` | An effect on the master block or on a send bus. It has its own FX page. | SHARC+ assembly | `process`, `desc` | `sdk/templates/fx` |
+| `machine` | A new sound source. It renders one voice. | SHARC+ assembly, declared in C | `render`, `note_on`, `desc` | `sdk/templates/machine` |
+| `fx` | An effect on the master block or on a send bus. It has its own FX page. | SHARC+ assembly, declared in C | `process`, `desc` | `sdk/templates/fx` |
 | `service` | ColdFire code. It adds commands, reads the store or reacts to the UI loop. | C | `dkm_init`, `dkm_fini`, `dkm_slot_N` | `sdk/templates/service` |
 
 Two more types exist. `raw` is code with no contract and only the generic load checks. The menu shows it as unchecked. `framework` is
@@ -57,7 +57,7 @@ mise run module:new -- KIND AUTHOR/NAME [--dir DIR] [--title T] [--short S] [--n
 | `--dir DIR` | Write `DIR/NAME` instead of the repository folder. |
 | `--title T` | Display name, 1 to 23 characters. Default: the name in Title Case. |
 | `--short S` | Short name, 3 to 6 characters of A-Z and 0-9. Default: the first 4 letters of the name in upper case. |
-| `--no-build` | Write the files and the generated headers, but do not compile. |
+| `--no-build` | Write the files, but do not compile. |
 
 Examples:
 
@@ -67,12 +67,12 @@ mise run module:new -- fx alice/crunch --title Crunch --short CRU
 mise run module:new -- service alice/hello --dir ~/my-modules
 ```
 
-The command copies the template, replaces the names, runs `patchkit gen` for the module and builds it. You start from code that compiles.
+The command copies the template, replaces the names and builds it. You start from code that compiles.
 
 | Kind | Folder | Files you get |
 | --- | --- | --- |
-| `machine` | `modules/machines/NAME` | `module.toml`, `README.md`, `src/dsp/NAME.s` (a sine voice with one level parameter) |
-| `fx` | `modules/fx/NAME` | `module.toml`, `README.md`, `src/dsp/NAME.s` (a gain effect with one knob and a page) |
+| `machine` | `modules/machines/NAME` | `module.toml`, `README.md`, `src/module.c` (the declaration), `src/dsp/NAME.s` (a sine voice with one level parameter) |
+| `fx` | `modules/fx/NAME` | `module.toml`, `README.md`, `src/module.c` (the declaration), `src/dsp/NAME.s` (a gain effect with one knob and a page) |
 | `service` | `modules/tools/NAME` | `module.toml`, `README.md`, `src/c/NAME.c` (`dkm_init` logs a line, `dkm_fini` is empty) |
 
 The command ends with the next commands: `module:check`, `module:pack` and `dk:run -- AUTHOR/NAME --emu --seconds 10` (section 8).
@@ -90,13 +90,14 @@ mise run module:check -- alice/hello
 
 ```text
 module.toml        the manifest
+src/module.c       the declaration of the machine or effect (DK_MACHINE, DK_FX, ...)
 src/dsp/NAME.s     SHARC+ assembly (machine, effect)
 src/c/NAME.c       ColdFire C (service)
 tests/             the module's own tests: test_*.py
 README.md          for a player: what the module does, in one or two sentences
 gallery/icon.svg   optional card icon
 build/             built objects: *.dko.json
-build/gen/         generated headers and tables (section 6)
+build/gen/         the generated gallery.json (section 6)
 ```
 
 Commit `build/`, including `build/gen/`. The browser build has no compilers: it builds firmware and `.dkm` files from these objects. A diff of
@@ -106,8 +107,8 @@ Do not edit anything in `build/gen/`. A `.dkmod` export leaves out `build/` (sec
 
 ## 5. The manifest
 
-`module.toml` has plain sections for every module and typed sections for the kind. The device profile (`devices/digitakt-ii.toml`,
-`devices/digitone-ii.toml`) fills in what is specific to a device. You write one manifest for both devices.
+`module.toml` has plain sections for every module. The machine or effect itself is declared in C (sections 5.2 and 5.4). The device profile
+(`devices/digitakt-ii.toml`, `devices/digitone-ii.toml`) fills in what is specific to a device. You write one declaration for both devices.
 
 ### 5.1 Sections for every module
 
@@ -138,107 +139,109 @@ Do not edit anything in `build/gen/`. A `.dkmod` export leaves out `build/` (sec
 | `place` | `dsp.l2` for SHARC+ code, `cf.expansion` for ColdFire code. |
 | `devices` | Optional: `["dt2"]`, `["dn2"]` or both. Default: both. |
 
-### 5.2 Machine sections
+The declaration file (`src/module.c`) is an `[[object]]` with `place = "cf.expansion"`. It holds only `.dk.desc` records. `patchkit pack` reads
+them and leaves them out of the `.dkm`; the device never sees them.
 
-`[[voice]]` names the DSP symbols. One body serves both devices.
+A manifest with `[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]` or `[[fx]]` is refused.
 
-| Key | Meaning |
+### 5.2 Declaring a machine
+
+A machine is declared in C, in `src/module.c`, with the macros of `<dk/machine.h>`. This is `modules/machines/pluck/src/module.c`:
+
+```c
+#include <dk/machine.h>
+
+DK_MACHINE(pluck, .name = "Pluck", .short_name = "PLK", .render = "_pk_render",
+           .note_on = "_pk_note_on", .desc = "_pk_desc");
+DK_PARAM(pluck, 0, pluck_decay, "Decay", "DECAY", 0, 127, 64);
+DK_PARAM(pluck, 1, pluck_pick, "Pick position", "PICK", 0, 127, 32);
+DK_PARAM(pluck, 2, pluck_bright, "Brightness", "BRIGHT", 0, 127, 80);
+DK_PARAM(pluck, 3, pluck_color, "Excitation colour", "COLOR", 0, 127, 40);
+DK_PAGE(pluck, "PLUCK", "Pluck", DK_KNOB(0), DK_KNOB(1), DK_KNOB(2), DK_KNOB(3));
+```
+
+`DK_MACHINE(ID, ...)`: `ID` is a C identifier. It is the machine's name inside the module. The other arguments are field initializers:
+
+| Field | Meaning |
 | --- | --- |
-| `machine` | The `id` of the `[[machine]]`. |
-| `render` | The render routine's symbol. |
-| `note_on` | The note-on routine's symbol. |
-| `desc` | The data symbol of the `dk_machine_desc` (`<dk/machine.h>`). |
+| `.name` | Display name, 23 characters at most. |
+| `.short_name` | Label in the machine list. |
+| `.render`, `.note_on` | The global symbols of the DSP routines. Strings. Both are required. |
+| `.desc` | The data symbol of the `dk_machine_desc` (`<dk/machine.h>`). String. |
 
-`[[machine]]`:
+A machine needs DSP routines. A machine with no DSP code (a data-only clone of a stock machine) cannot be declared.
 
-| Key | Meaning |
+`DK_PARAM(MACHINE, WORD, ID, NAME, SHORT, MIN, MAX, DEF)` declares parameter word `WORD` of the machine:
+
+| Argument | Meaning |
 | --- | --- |
-| `id` | The machine's name inside the module. |
-| `name` | Display name, 23 characters at most. |
-| `short` | Label in the machine list. |
-| `clone_of` | The stock machine whose page layout it copies. `0` is SAMPLE. |
-| `knobs` | Parameter ids, in the order of the DSP `params` words. Names only. |
-| `position` | Optional: place in the machine list. Default: last. |
-| `level` | Optional: level code. Default: the device profile. |
-| `own_dsp` | Optional. Derived from the `[[voice]]` and the profile; set it only to override. |
-| `devices` | Optional: restrict to one device. |
+| `WORD` | The index of the word in the DSP `params`, 0 to 3. Words come in order, without gaps. |
+| `ID` | A C identifier, unique in the module. Do not rename it after a release. |
+| `NAME` | Name shown while the knob turns, 31 characters at most. |
+| `SHORT` | Label under the knob, 15 characters at most. |
+| `MIN`, `MAX`, `DEF` | Knob units, 0 to 127. Fractions are allowed. |
 
-`[[param]]`:
-
-| Key | Meaning |
-| --- | --- |
-| `id` | The parameter's name. Do not rename it after a release. |
-| `name` | Name shown while the knob turns, 31 characters at most. |
-| `short` | Label under the knob, 15 characters at most. |
-| `template` | A template name from the device profile. Default: `"plain"`, a plain 0 to 127 value. |
-| `min`, `max`, `default` | Words, 0 to 0x7f00. The UI value is the word divided by 256. |
-| `devices` | Optional: restrict to one device. |
-
-The adapter clamps each word to `min` .. `max` before your code reads it. The build does not check that `default` lies inside the range. Keep it true yourself.
-`pack` refuses `min` above `max`. Names are printable ASCII. There is no `kind` key. The kind is a convention for the word:
+The stored word is the knob unit times 256, so 127.0 is the word `0x7f00`. The adapter clamps each word to `MIN` .. `MAX` before your code reads
+it. The build does not check that `DEF` lies inside the range. Keep it true yourself. `pack` refuses `MIN` above `MAX`.
+Names are printable ASCII. Text longer than its field is a compile error. The kind of a parameter is a convention for the word:
 
 | Kind | Word range | UI | Rest value | Use for |
 | --- | --- | --- | --- | --- |
-| percent | 0 .. 0x7f00 | 0 .. 127 | none, use `default` | amounts, times, mix, decay |
+| percent | 0 .. 0x7f00 | 0 .. 127 | none, use `DEF` | amounts, times, mix, decay |
 | bipolar | 0 .. 0x7f00 | -64 .. +63 | 0x4000 | detune, pan, tilt |
 | enum | step x 256 | step number | step 0 | a switch or a mode with n steps |
 | pitch | 0 .. 0x7f00 | semitone offset | 0x4000 | a pitch offset the adapter adds to `pitch` |
 
-For an enum, set `max` to (n-1) x 256. No module uses an enum yet. Only the templates `0xd1` (Digitakt II) and `0xd5` (Digitone II) are known
-to give a plain 0 to 127 display. A template with a signed or named display is not known.
+Every parameter shows as a plain 0 to 127 value. For an enum, set `MAX` to n-1 (the word is (n-1) x 256). No module uses an enum yet.
+A signed or named display is not available for a machine.
 
 Scaling the word: the stock DSP converts a word to a float with the scale 1/32512 (0x7f00 = 1.0). Your routine may use any scale. Document
 it in the source header, as `modules/machines/pluck/src/dsp/pluck.s` does.
 
-`[[page]]` (Digitone II only):
+`DK_PAGE(MACHINE, NAME, TITLE, DK_KNOB(WORD), ...)` declares the page of encoders:
 
-| Key | Meaning |
+| Argument | Meaning |
 | --- | --- |
-| `id`, `machine`, `name`, `title` | The page id, the machine it belongs to, the tab name and the page title. |
-| `knobs` | Optional. Default: the machine's knobs on that device. |
-| `devices` | `["dn2"]`. A page on the Digitakt II is a build error. |
+| `NAME` | The tab name. |
+| `TITLE` | The page title. |
+| `DK_KNOB(WORD)` | The encoder of parameter `WORD`. List the words in order. |
+
+A machine has at most one `DK_PAGE`. Use `DK_KNOB` only. `DK_KNOB_AT` is for effects. The page is optional.
+
+`patchkit desc MODULE_ID` prints the machines, parameters, pages, voices and effects of a module as JSON, from the records.
 
 ### 5.3 What the device profile fills in
 
-You write parameter names. The profile (`[modules.knobs]`, `[modules.templates]`, `[modules.frame]` and `[adapter.machine]` in
-`devices/<device>.toml`) places them.
+You declare words. The profile (`[modules.knobs]`, `[adapter.machine]` and `[modules.frame]` in `devices/<device>.toml`) places them on
+knobs. `clone_of` is fixed by the profile (`[modules.knobs] clone_of = 0`, the SAMPLE machine). You cannot set it.
 
 | Item | Digitakt II | Digitone II |
 | --- | --- | --- |
-| Where knobs live | Fields of the machine row. Engine slots 0 to 7. | Columns of a `[[page]]`. Sound-array slots 25 to 32. |
-| Fixed knobs | TUNE on knob 0. LEV on knob 7. | None. |
-| Knobs for your parameters | 1, 2, 4, 5 (`param_slots`). The parameters fill them in order. | 0, 1, 2, 3. |
-| Reserved knob | Knob 3 of a SAMPLE clone is the sample slot. The build refuses a parameter there. | None. |
-| Template `plain` | `0xd1` | `0xd5` |
-| `own_dsp` | Not allowed. | Derived as true when the machine has a `[[voice]]`. |
+| Where knobs live | Fields of the machine row. Engine slots 0 to 7. | Columns of a page. Sound-array slots 25 to 32. |
+| Fixed knobs | TUNE on knob 0. Sample slot on knob 3. LEV on knob 7. | None. |
+| Knobs for your words | 1, 2, 4, 5 (`param_slots`). Word w goes to the w-th of them. | 0, 1, 2, 3. |
+| Page | The machine has its SRC page. `DK_PAGE` is not used. | The `DK_PAGE` name and title. Without a `DK_PAGE`, a page named after the machine. |
 
 Rules that follow:
 
-- Only the knobs in `param_slots` reach the DSP. A machine has at most 4 contract parameters today. The build refuses more than the profile places.
-- A parameter's position is its slot. Projects store values by slot. After a release, do not move a parameter to another knob.
-  `module:export --previous` checks this. Removing a parameter is allowed.
-- A parameter that no machine of a device uses is left out on that device.
-- `type_hint` is gone. The runtime assigns the machine's type number at load. Never write a number into code or a test.
+- A machine has at most 4 parameters (words 0 to 3), at most one page, and the words are in order. Free placement of knobs (`DK_KNOB_AT`) and
+  several pages for a machine need adapter work. They are planned.
+- A parameter's position is its slot. Projects store values by slot. After a release, do not move a parameter to another word.
+  Removing a parameter is allowed.
+- The runtime assigns the machine's type number at load. Never write a number into code or a test.
 
-A per-device table is only for unusual layouts. `[machine.dt2]` and `[machine.dn2]` may set `name`, `short`, `clone_of`, `position`, `own_dsp`,
-`knobs` and `level`. A per-device `knobs` is an explicit layout. It may hold stock codes (`0xca` TUNE, `0xd1` LEV) and `0` for an empty knob.
-`[param.dt2]` and `[param.dn2]` may set `name`, `short`, `template`, `min`, `max` and `default`. A template number is allowed only there,
-because it is specific to one device. Most modules need none of these tables.
+### 5.4 Declaring an effect
 
-### 5.4 Effect sections
-
-An effect is declared in C, in a source file of the module (by convention `src/module.c`). List the file as an `[[object]]` with
-`place = "cf.expansion"`. The file holds only the `.dk.desc` record. `patchkit pack` reads it and leaves it out of the `.dkm`; the device never sees it.
-(Machines still use the manifest sections until phase 2 of `docs/plans/sdk-api.md`. A manifest `[[fx]]` is refused.)
+An effect is declared in C too, in `src/module.c`, with the macros of `<dk/fx.h>` (`DK_FX`, `DK_FX_PARAM`) and `DK_PAGE` from `<dk/page.h>`.
 
 ```c
 #include <dk/fx.h>
 #include "freqshift.h"
 
-DK_FX(fshift, .process = "_fs_process", .desc = "_fs_desc",
-      .tab = "FSH", .title = "Freq Shifter", .mix = 127,
-      .route = DK_ROUTE_SEND, .routes = DK_ROUTE_SEND | DK_ROUTE_MASTER,
-      .knob = {DK_KNOB(FSHIFT_SHIFT_WORD, "Freq Shift", "SHIFT", DK_BIPOLAR, -64, 63, 0)});
+DK_FX(fshift, .process = "_fs_process", .desc = "_fs_desc", .mix = 127,
+      .route = DK_ROUTE_SEND, .routes = DK_ROUTE_SEND | DK_ROUTE_MASTER);
+DK_FX_PARAM(fshift, FSHIFT_SHIFT_WORD, "Freq Shift", "SHIFT", DK_BIPOLAR, -64, 63, 0);
+DK_PAGE(fshift, "FSH", "Freq Shifter", DK_KNOB_AT(FSHIFT_SHIFT_WORD, 0));
 ```
 
 `DK_FX(ID, ...)`: `ID` is a C identifier. It is the effect's name inside the module. With the module id it makes the effect ID of saved kits.
@@ -247,16 +250,12 @@ Never rename either. The other arguments are field initializers:
 | Field | Meaning |
 | --- | --- |
 | `.process`, `.desc` | The global symbol of the process routine. The data symbol of its `dk_fx_desc`. Strings. |
-| `.defaults` | Words p0 and up at load. Not allowed together with knobs. Default: all 0. |
-| `.tab` | The page tab label, 1 to 3 characters. An effect with a `tab` has its own page after CHO in FUNC + FX. |
-| `.title` | The page title, 1 to 23 characters. Use mixed case ("Freq Shifter"). |
+| `.defaults` | Words p0 and up at load. Not allowed together with `DK_FX_PARAM`. Default: all 0. |
 | `.mix` | Default of the framework's MIX knob, 0 to 127. Default: 127. |
-| `.route` | Where the effect starts: `DK_ROUTE_MASTER` (default) or `DK_ROUTE_SEND`. A send needs a `.tab`. |
+| `.route` | Where the effect starts: `DK_ROUTE_MASTER` (default) or `DK_ROUTE_SEND`. A send needs a `DK_PAGE`. |
 | `.routes` | The routes the user may choose in SETTINGS > DIGIKIT > FX ROUTES, `DK_ROUTE_*` values or-ed. Left out: master only, or send and master when `.route` is send. |
-| `.knob` | Up to 7 knobs: `DK_KNOB(...)` or `DK_KNOB_AT(...)`. |
 
-`DK_KNOB(WORD, NAME, SHORT, DISPLAY, MIN, MAX, DEF)` declares knob `WORD`, the parameter word p_WORD, a float. It sits at page position `WORD`.
-`DK_KNOB_AT(WORD, POS, NAME, ...)` sets the page position `POS` (0 to 7) apart from the word.
+`DK_FX_PARAM(FX, WORD, NAME, SHORT, DISPLAY, MIN, MAX, DEF)` declares parameter word p_WORD, a float:
 
 | Argument | Meaning |
 | --- | --- |
@@ -266,133 +265,83 @@ Never rename either. The other arguments are field initializers:
 | `MIN`, `MAX` | The floats at the bottom and the top of the knob. |
 | `DEF` | Inside `MIN` .. `MAX`. It is also the word's value at load. |
 
+`DK_PAGE(FX, TAB, TITLE, KNOB, ...)` declares the page. An effect with a page has its own page after CHO in FUNC + FX.
+
+| Argument | Meaning |
+| --- | --- |
+| `TAB` | The page tab label, 1 to 3 characters. |
+| `TITLE` | The page title, 1 to 23 characters. Use mixed case ("Freq Shifter"). |
+| `DK_KNOB(WORD)` | The encoder of parameter `WORD`, at the lowest free position. |
+| `DK_KNOB_AT(WORD, POS)` | The encoder at position `POS`, 0 to 7. The effect's MIX is on the level slot. |
+
+An effect may have up to 7 knobs. Effect knobs can sit at any position. Knob placement is the same on both devices. The device profile does not
+change it.
+
 Text longer than its field is a compile error. `patchkit pack` checks the rest: lengths, ranges, routes, `mix`, distinct positions and the
-knob slots of the D1 device. Knob placement is the same on both devices. The device profile does not change it.
+knob slots of the D1 device.
 
 Put the word numbers in a header in the module's `src/` (`freqshift.h`). The C file and the SHARC+ assembly both include it, because the build
 searches `src/` for both. Use only decimal `#define`s and `//` comments on their own line: the SHARC+ assembler keeps a trailing comment in the macro text and upper-cases macro text.
-
-`patchkit desc MODULE_ID` prints the effects of a module as JSON (`{"fx": [...]}`), from the `DK_FX` records.
 
 MIX, the route and the send amounts belong to the framework. Never declare them. The effect writes the wet signal only.
 
 ### 5.5 Service sections
 
-A service has `[module]`, `[targets]` and one `[[object]]` with `place = "cf.expansion"` and a C source. It has no `[[voice]]`, `[[machine]]`,
-`[[param]]`, `[[page]]` or `[[fx]]`. The service template does not set `dynamic`.
+A service has `[module]`, `[targets]` and one `[[object]]` with `place = "cf.expansion"` and a C source. It has no declaration macros. The
+service template does not set `dynamic`.
 
-### 5.6 Example: PLUCK
+### 5.6 Examples
 
-`modules/machines/pluck/module.toml` (shortened):
+For a machine, see `modules/machines/pluck` (section 5.2). The profile turns its declaration into this layout. On the Digitakt II, DECAY is on
+knob 1, PICK on knob 2, BRIGHT on knob 4 and COLOR on knob 5. TUNE and LEV are on knobs 0 and 7. On the Digitone II the four parameters sit on
+page columns 0 to 3, on the page PLUCK.
 
-```toml
-[[object]]
-path = "build/pluck-dsp.dko.json"
-sources = ["src/dsp/pluck.s"]
-place = "dsp.l2"
+For an effect, see `modules/fx/freqshift` (section 5.4). It has one bipolar knob, `.route = DK_ROUTE_SEND` and both routes.
 
-[[voice]]
-machine = "pluck"
-render = "_pk_render"
-note_on = "_pk_note_on"
-desc = "_pk_desc"
+### 5.7 Persistence and limits
 
-[[machine]]
-id = "pluck"
-name = "Pluck"
-short = "PLK"
-clone_of = 0
-knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
+`patchkit pack` refuses a declaration that breaks a rule above: more than 4 machine parameters, words out of order, a second page for a
+machine, `DK_KNOB_AT` on a machine, a machine without DSP symbols, and a manifest with the removed sections.
 
-[[param]]
-id = "pluck_decay"
-name = "Decay"
-short = "DECAY"
-min = 0
-max = 0x7f00
-default = 0x4000
-# ... pluck_pick, pluck_bright, pluck_color in the same form
-
-[[page]]
-id = "pluck_syn"
-machine = "pluck"
-name = "PLUCK"
-title = "Pluck"
-devices = ["dn2"]
-```
-
-The profile turns this into the layout in `modules/machines/pluck/build/gen/dt2.inc`: DECAY on knob 1, PICK on knob 2, BRIGHT on knob 4, COLOR on
-knob 5. TUNE and LEV are added on knobs 0 and 7. On the Digitone II the four parameters sit on page columns 0 to 3.
-
-For an effect, see `modules/fx/freqshift/module.toml`. It has one bipolar knob, `route = "send"` and `routes = ["send", "master"]`.
-
-### 5.7 Build errors, persistence and limits
-
-Errors for `knobs` and parameters (the message starts with the module and the machine):
-
-| Cause | Message (start) |
-| --- | --- |
-| More knobs than the device has | `9 knobs, but dt2 has 8` |
-| Parameter on a reserved knob | `param "x" sits at knob 3, but knob 3 of a SAMPLE clone is the sample slot` |
-| A name that is no `[[param]]` | `knob 1 names "x", which is not a [[param]] of this module` |
-| A `[[param]]` limited to another device | `knob j names "x", which is not a param of dn2` |
-| A parameter twice in one list | `knob 2 names "x", which knob 1 already names` |
-| One parameter at two positions (two machines, or machine and page) | `param x sits at knob 1 and knob 2; one param has one slot` |
-| A `[[param]]` with explicit `devices` that no machine of the device uses | `param x: no machine of dn2 uses it` |
-| `own_dsp` on the Digitakt II | `dt2 has no own_dsp machines` |
-| A stock code in a page | `a stock code on a page is not supported yet (name a param)` |
-| A page on the Digitakt II | `a second SRC page for a Digitakt II machine is not supported yet` |
-
-Not refused today: a `default` outside `min` .. `max`, and a parameter on a knob that is not in `param_slots` (it is stored, shown and saved, but
-no `params` word carries it).
+Not refused today: a `DEF` outside `MIN` .. `MAX`.
 
 Layout facts:
 
 - Digitakt II: the machine row holds the knobs as `f0..f7` and the level as `f8`. A page shows 8 of the 10 engine slots. An added machine has one
-  SRC page. A SAMPLE clone has TUNE on knob 0, PLAY 1, SAMP 3, STRT 4, LEN 5, LOOP 6 and LEV 7. Any slot but knob 3 may take a module parameter.
-- Digitone II: a stock page holds eight knobs and the track level. A machine with its own page sets `own_dsp`. The typed `[[page]]` gives one
-  page for each machine. A second page needs hand-written `registry = "pages"` rows and is possible only in a patched-in module.
+  SRC page: TUNE on knob 0, sample slot on knob 3, level on knob 7.
+- Digitone II: a stock page holds eight knobs and the track level. A machine gets one page, from its `DK_PAGE` or named after the machine.
 - Limits per module (run-time pack): 16 parameters, 8 machines, 8 pages, 32 records in a register section.
 
 Persistence and modulation:
 
-- Values persist on both devices. Projects store raw words by slot, so a released parameter must keep its knob.
+- Values persist on both devices. Projects store raw words by slot, so a released parameter must keep its word.
 - If the module is absent at load, the track keeps its type and saves it back unchanged. Stock firmware loads the track as SAMPLE
   (Digitakt II) or FM TONE (Digitone II) and loses the type on re-save.
 - p-lock on a module parameter: not shown. LFO as a destination: the MOD page lists the parameter names on the Digitakt II, but that an LFO moves
   the DSP value is not known. The clamp stays on, because an LFO can drive a word out of range.
 - MIDI CC and NRPN are ignored for added parameters. Effect knobs cannot be locked or modulated either.
 
-Recipe for N knobs: N is at most 4 contract parameters. Put them on Digitakt II knobs 1, 2, 4, 5 in the order the DSP reads them, and on Digitone II
-knobs 0 to 3. A fifth control on the Digitakt II is a stock row (`0xca`, `0xd1`) or a stored-only parameter. Run `module:check` with `--device dt2`
-and `--device dn2`.
+Patching a stock machine will become a separate module type. It is not part of the content modules.
 
 ## 6. Generated files
 
-`patchkit gen` writes the files in `build/gen/` from `module.toml`, the device profiles and `sdk/sdk.toml`. They hold only numbers that the module
-and the profiles declare. They hold no firmware bytes.
+`patchkit gen` writes `build/gen/gallery.json` from the module's declaration and the device profiles. It holds the machines with their
+knobs and parameters, for each device, for the web gallery. It holds no firmware bytes. Do not edit it.
 
-| File | Written for | What it holds | Who includes it |
-| --- | --- | --- | --- |
-| `build/gen/module.h` | machine | C `#define`s of the numbers that are the same on every device: per parameter its index and range. | C code of the module. |
-| `build/gen/dt2.inc`, `build/gen/dn2.inc` | machine | Per-device numbers for assembly: frame base and stride, and for each parameter its knob, slot, frame offset, mirror index and range. | The machine's `.s`: `#include "dt2.inc"`. `module:build` expands it from `build/gen/`. |
-| `build/gen/consts.rs` | machine | The same per-device numbers as Rust constants. | A Rust module crate: `include!("consts.rs");`. |
-| `build/gen/gallery.json` | machine | Machines with their knobs and parameters, for each device. | The web gallery. |
+There is no generated header for the module. The module declares its numbers in C and in its own `src/` header (section 5.4).
 
-Device-independent numbers (`module.h`) are the same on both devices. If a value differs between devices, `patchkit gen` refuses to write it
-there. Per-device numbers (`<dev>.inc`) depend on the profile. One example is the frame offset of a knob. Use the name, for example
-`PLUCK_DECAY_FRAME_OFF`, and never the literal number.
-
-The SDK headers are generated from `sdk/sdk.toml` in the same way. Modules include the public headers in `sdk/include/dk/`.
+The SDK headers are generated from `sdk/sdk.toml`. Modules include the public headers in `sdk/include/dk/`.
 The generated files are in `sdk/include/dk/gen/` and `sdk/asm/`.
 
 | File | What it holds | Who includes it |
 | --- | --- | --- |
 | `<dk/api.h>` | The `dk_api` table, the import names and the entry points of a `.dkm`. | Service modules in C. |
-| `<dk/machine.h>` | The machine contract: `dk_voice_in`, `dk_machine_desc`, the entry points. | Reference for machines. Includes `machine_consts.h`. |
+| `<dk/machine.h>` | The machine contract and `DK_MACHINE`, `DK_PARAM`. | The machine's `module.c`. Includes `gen/machine.h`. |
+| `<dk/fx.h>` | The effect contract and `DK_FX`, `DK_FX_PARAM`. | The effect's `module.c`. Includes `gen/fx.h`. |
+| `<dk/page.h>` | `DK_PAGE`, `DK_KNOB`, `DK_KNOB_AT`. Shared by both. Includes `gen/desc.h`, the record layouts from `[desc]` in `sdk/sdk.toml`. | `<dk/machine.h>`, `<dk/fx.h>`. |
 | `sdk/include/dk/gen/machine_consts.h` | The machine constants as C `#define`s. | `<dk/machine.h>`. |
 | `sdk/asm/dk_machine.inc` | The machine constants and field offsets for assembly. | The machine's `.s`. |
-| `<dk/fx.h>`, `sdk/include/dk/gen/fx_consts.h` | The effect contract in C and its constants. | Reference for effects. |
+| `sdk/include/dk/gen/fx_consts.h` | The effect constants as C `#define`s. | `<dk/fx.h>`. |
 | `sdk/asm/dk_fx.inc` | The effect constants and field offsets for assembly. | The effect's `.s`. |
 
 Do not include `dk_fx.inc` and `dk_machine.inc` in one assembly file. `DK_BLOCK` and `DK_LEVEL_BOUND_BITS` are in both.
@@ -405,7 +354,7 @@ mise run gen:modules -- --check                          # list stale files, wri
 uv run python -m tools.patchkit.patchkit gen --modules AUTHOR/NAME    # one module
 ```
 
-Run `gen:modules` after you change `module.toml`, `devices/*.toml` or `sdk/sdk.toml`.
+Run `gen:modules` after you change `module.toml`, `src/module.c`, `devices/*.toml` or `sdk/sdk.toml`.
 
 ## 7. Contracts
 
@@ -471,12 +420,12 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
   delay) freezes.
 - Data stack: `stack_bytes` below `I7`. Write nothing outside your own data. Include `dk_fx.inc`, not together with `dk_machine.inc`.
 - The runtime reserves the state behind your image. There is no state symbol. A page needs no ColdFire code.
-- Values arrive in `params` as the float `min + (max - min) * raw / 0x7f00`, about 3 ms after a turn. At load every word is its knob's `default`.
+- Values arrive in `params` as the float `min + (max - min) * raw / 0x7f00`, about 3 ms after a turn. At load every word is its knob's `DEF`.
   Choose the range so that a turn is audible.
 - The adapter makes `master = dry + mix * (wet - dry)` per sample, with mix = raw / 127. MIX 127 is exactly the wet signal and 0 is exactly the
   dry one. It costs about 7 DSP instructions a block at mix 1.0 and about 400 at another mix.
-- Kits keep the knob values and MIX of each loaded effect, with an effect ID made from the module id and the effect `id`. Load Kit gives an
-  effect its stored values only when the stored ID for its row is its own. Otherwise the effect gets its manifest defaults. Effects count by row,
+- Kits keep the knob values and MIX of each loaded effect, with an effect ID made from the module id and the effect `ID`. Load Kit gives an
+  effect its stored values only when the stored ID for its row is its own. Otherwise the effect gets its declared defaults. Effects count by row,
   so the same effects loaded in another order get defaults. A kit saved with effects also loads on stock firmware.
 - Not supported: p-locks, LFO and other modulation on a knob, MIDI CC, a second page for one effect, and a knob that does not reach the DSP as a
   float. An image without `core/fxpages` refuses a module with a page (`E_NO_REGISTRY`). The Digitone II image needs `core/dynfx` and
@@ -484,11 +433,11 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
 - Text is printable ASCII. Write titles in mixed case. The firmware font draws a capital Q like an O.
 - Routes: a send effect gets the sum of the tracks' send amounts as its input block. Its wet output times MIX is added to the FX return. The
   user chooses the route in SETTINGS > DIGIKIT > FX ROUTES (the setting `fx/route/<module id>`). A stored route that the effect no longer allows is
-  ignored. Use `routes = ["master"]` for a gain or limiter or any effect with a dry path of its own, `["send"]` for a pure return such as a reverb, and
+  ignored. Use `DK_ROUTE_MASTER` only for a gain or limiter or any effect with a dry path of its own, `DK_ROUTE_SEND` only for a pure return such as a reverb, and
   both for the rest. The send amounts live in the settings store and the DSP row, never in your state or in a kit file. FUNC + FX lists DEL, REV,
   CHO, the send effects, then the master effects. A changed route takes effect after a restart. `pack` refuses an unknown or repeated route, an
-  empty `routes`, a `route` that `routes` does not list, and any send route without a `tab`.
-- A centred knob: `display = "bipolar"`, `min = -64.0`, `max = 63.0`, `default = 0.0`. A mapping with `2^x - 1` and no constant term gives exactly 0.
+  empty `.routes`, a `.route` that `.routes` does not list, and any send route without a `DK_PAGE`.
+- A centred knob: `DK_BIPOLAR`, `MIN = -64`, `MAX = 63`, `DEF = 0`. A mapping with `2^x - 1` and no constant term gives exactly 0.
   A send effect with MIX default 127 changes nothing until a track has a send amount. On the master the same default means fully wet, so say in the
   README what it means there.
 - Clamp the output to +-7.9. An input at the level bound times a filter's overshoot would otherwise refuse the block. Use an integer phase
@@ -553,7 +502,7 @@ wait. The request body is at most 160 bytes. The reply body is at most 879 bytes
 | Build | `mise run module:build -- PATH [--check]` | Compiles the sources to `build/*.dko.json`. `PATH` is the module folder. `--check` fails when the objects are stale. |
 | Check | `mise run module:check -- ID [--device dt2\|dn2]` | See below. |
 | Memory audit | `mise run module:audit -- NAME [--device dt2\|dn2]` | Loads the module on a ColdFire-only emulator, drives the UI and reports ColdFire stores outside the module's blocks. About 10 to 30 s per device. |
-| Pack | `mise run module:pack -- ID --device dt2\|dn2 [-o FILE]` | Makes the `.dkm`. Default: `out/patch/NAME-DEVICE.dkm`. It refuses a bad page, a bad route and a send without a `tab`. |
+| Pack | `mise run module:pack -- ID --device dt2\|dn2 [-o FILE]` | Makes the `.dkm`. Default: `out/patch/NAME-DEVICE.dkm`. It refuses a bad declaration, a bad route and a send without a page. |
 | Pack all | `mise run module:pack-all [-- --force]` | Packs every run-time module for every device into `out/modules/<device>/<id>.dkm`. |
 | Emulator | `mise run workbench` | Starts the emulator. Run it in another shell. |
 | Run | `mise run dk:run -- ID --emu` | Builds, packs, uploads, selects, restarts and follows the log. |
@@ -611,14 +560,13 @@ Device facts for authors are in `.agents/skills/digikit-module/references/device
 - `[module] version` is yours. Change it for every release. The export file name carries it.
 - A run-time machine has no fixed type number. The runtime assigns one at load, and the card remembers it under the global id
   `<module id>:<machine id>`. Never write the number into code or a test.
-- The effect ID of saved kits comes from the module id and the effect `id`. Do not rename either after users have kits.
+- The effect ID of saved kits comes from the module id and the effect `ID`. Do not rename either after users have kits.
 
 ## 10. Export and import
 
 ```sh
-mise run module:export -- AUTHOR/NAME                       # out/patch/AUTHOR-NAME-VERSION.dkmod
-mise run module:export -- AUTHOR/NAME --previous OLD.dkmod  # refuse a parameter that moved to another knob
-mise run module:import -- FILE.dkmod --dir ~/my-modules     # unpack into ~/my-modules
+mise run module:export -- AUTHOR/NAME                    # out/patch/AUTHOR-NAME-VERSION.dkmod
+mise run module:import -- FILE.dkmod --dir ~/my-modules  # unpack into ~/my-modules
 ```
 
 A `.dkmod` is a deterministic zip. It holds the module folder without `build/` and without OS junk files. Entries are sorted and share one time
@@ -650,7 +598,7 @@ allows a known id. Without `--dir` it uses the first folder of `PATCHKIT_MODULES
 | Question | Where |
 | --- | --- |
 | Version numbers, imports, log kinds, protocol numbers | `sdk/sdk.toml` |
-| Machine, effect and service contracts | `<dk/machine.h>`, `<dk/fx.h>`, `<dk/api.h>` |
+| Machine, effect and service contracts | `<dk/machine.h>`, `<dk/fx.h>`, `<dk/page.h>`, `<dk/api.h>` |
 | What differs between the devices | `devices/digitakt-ii.toml`, `devices/digitone-ii.toml`, `.agents/skills/digikit-module/references/devices.md` |
 | Knob and parameter rules | Sections 5.2, 5.3 and 5.7, `docs/findings/02-machines-and-parameters.md` |
 | DSP recipes and assembler traps | `.agents/skills/digikit-module/references/dsp-recipes.md`, `selas-pitfalls.md` |

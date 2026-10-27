@@ -18,37 +18,13 @@ conflicts = []
 
 # `patchkit pack test/sine --device dt2|dn2 -o sine.dkm` makes the .dkm; the digikit runtime sends the DSP object to the DSP and
 # publishes the voice row and the machine row.
+# The machine declaration (DK_MACHINE, DK_PARAM and DK_PAGE in src/module.c). It holds only .dk.desc records.
+[[object]]
+path = "build/sine-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
 [[object]]
 path = "build/sine-dsp.dko.json"
 sources = ["src/dsp/sine.s"]
 place = "dsp.l2"
-
-[[voice]]
-machine = "sine"
-render = "_sn_render"
-note_on = "_sn_note_on"
-desc = "_sn_desc"
-
-# Digitakt II: SAMPLE's TUNE (0xca) and LEV (0xd1) rows and the level parameter on knob 1. Digitone II: a machine of its own type (own_dsp)
-# with a SYN page of one knob.
-[[machine]]
-id = "sine"
-name = "Sine"
-short = "SIN"
-clone_of = 0
-knobs = ["sine_level"]
-
-[[param]]
-id = "sine_level"
-name = "Level"
-short = "LEVEL"
-min = 0
-max = 0x7f00
-default = 0x7f00
-
-[[page]]
-id = "sine_syn"
-machine = "sine"
-name = "SINE"
-title = "Sine"
-devices = ["dn2"]

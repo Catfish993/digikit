@@ -77,7 +77,7 @@ SLOTS = {
     6: (33, 7),
     7: (34, 8),
 }
-# module defaults of manifest tests/fixtures/modules/patched-pluck/module.toml
+# module defaults of the DK_PARAM declarations in tests/fixtures/modules/patched-pluck/src/module.c  # RECHECK: the slots and values after the move to C
 DEFAULTS = {25: 0x4000, 26: 0x4000, 27: 0x2000, 31: 0x5000, 32: 0x2800, 34: 0x6400}
 DECAY, PICK, BRIGHT, COLOR = 26, 27, 31, 32
 ENC = {DECAY: 2, PICK: 3, BRIGHT: 5, COLOR: 6}

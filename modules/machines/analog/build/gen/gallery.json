@@ -25,7 +25,10 @@
           "level": 10,
           "name": "Analog",
           "own_dsp": true,
-          "page": null,
+          "page": {
+            "name": "ANALOG",
+            "title": "Analog"
+          },
           "position": null,
           "short": "ANA",
           "type": 13

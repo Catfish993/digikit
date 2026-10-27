@@ -1,11 +1,9 @@
-//! Typed module sections (`[[machine]]`, `[[param]]`, `[[page]]`, `[[voice]]`) over the real device models, ports and
+//! Typed module sections (the `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` records of a module) over the real device models, ports and
 //! stock images (the image tests are skipped when the images are absent).
 //!
-//! The pins are the SHA-256 of every section except 7 of the images that the hand-written `[[entry]]` rows of
-//! `test/patched-pluck` (then `digikit/pluck`) and `test/xslice` produced before they were re-expressed in the typed form (commit 8606b7f);
-//! the typed form must lower to the same rows, so those sections must stay byte-identical on every port the modules
-//! support. Section 7 (the SHARC DSP stream) is left out: it moves with every DSP edit to pluck or core/dsp-voice, which
-//! the conformance, PCM and scenario tests guard (the whole-image pins moved seven times with section 7 only).
+//! The pins are the SHA-256 of every section except 7 of the images that `test/patched-pluck` produces; its records must lower to
+//! the same rows on every port the module supports. Section 7 (the SHARC DSP stream) is left out: it moves with every DSP edit to pluck
+//! or core/dsp-voice, which the conformance, PCM and scenario tests guard (the whole-image pins moved seven times with section 7 only).
 
 use patchkit::apply;
 use patchkit::error::sha256_hex;
@@ -44,24 +42,14 @@ const PINS: &[(&str, &str, &str)] = &[
         "5c4a69710cc8ca3012e251c1c50380b11b4856bafe6597de75aa500b5c5e7c3e",
     ),
     (
-        "Digitakt_II_OS1.17.syx",
-        "test/xslice",
-        "b2e056f9bd7bd9d007546c3815796306560ba8f09c6c1084395fc5f3eb87d8a6",
-    ),
-    (
-        "Digitakt_II_OS1.17.syx",
-        "test/patched-pluck,test/xslice",
-        "e3ded375a517f7262e37f435f50ad1df1913da1b7f82d17fb4a389f054d9a0c1",
-    ),
-    (
         "Digitone_II_OS1.12.syx",
         "test/patched-pluck",
-        "01e1d441c6e9bdfd5bb82eb5d3f2f39493d6ce4f16c61d121622dfc0da74ea40",
+        "7845ba1f9d5d8f9541024fa18972493696a018c53c151ee8e11c6e412a87cc1e", // dn2: no machine position since phase 2
     ),
 ];
 
 #[test]
-fn typed_form_patches_to_the_images_of_the_hand_written_rows() {
+fn declared_machines_patch_to_the_pinned_images() {
     let lib = library();
     let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
     let mut ran = 0;
@@ -80,20 +68,6 @@ fn typed_form_patches_to_the_images_of_the_hand_written_rows() {
         ran += 1;
     }
     eprintln!("typed oracle: {ran} of {} pins ran", PINS.len());
-}
-
-#[test]
-fn xslice_stays_off_the_digitone() {
-    let lib = library();
-    let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
-    let Ok(raw) = std::fs::read(root().join("firmware/Digitone_II_OS1.12.syx")) else {
-        return;
-    };
-    let ids = lib.with_requires(&["test/xslice".to_string()]).unwrap().0;
-    let Err(e) = apply::apply(&raw, &reg, &lib, &ids) else {
-        panic!("xslice applied to a Digitone II");
-    };
-    assert!(e.0.contains("not compatible"), "{e}");
 }
 
 /// The committed `build/gen/` files equal fresh ones (`patchkit gen` rewrites them).
@@ -115,7 +89,7 @@ fn generated_files_are_current() {
             n += 1;
         }
     }
-    assert!(n >= 7, "pluck and xslice generate files, got {n}");
+    assert!(n >= 1, "pluck generates a gallery, got {n}");
 }
 
 /// What pluck's DSP sources hard-code must be what the device models say (finding 04: frame words of the machine
@@ -124,51 +98,42 @@ fn generated_files_are_current() {
 fn device_models_match_the_hard_coded_frame_layout_of_pluck() {
     let lib = library();
     let models = Models::from_dir(&root().join("devices")).unwrap();
-    let files = modgen::generate(&lib, &models, "test/patched-pluck").unwrap();
-    let g: serde_json::Value = serde_json::from_str(
-        &files
+    let m = lib.get("test/patched-pluck").unwrap();
+    let res = patchkit::typed::resolve(&m.manifest, &models).unwrap();
+    let layout = |dev: &str| {
+        let r = res.iter().find(|r| r.dev == dev).unwrap();
+        let p: Vec<_> = r
+            .params
             .iter()
-            .find(|f| f.0.ends_with("gallery.json"))
-            .unwrap()
-            .1,
-    )
-    .unwrap();
+            .map(|p| (p.id.as_str(), p.frame_off, p.mirror, p.slot))
+            .collect();
+        (r.model.frame.base, r.model.frame.stride, p)
+    };
+    let (base, stride, p) = layout("dt2");
+    assert_eq!((base, stride), (109, 48));
+    let offs: Vec<_> = p.iter().map(|x| (x.0, x.1)).collect();
+    assert_eq!(
+        offs,
+        [
+            ("pluck_decay", 1),
+            ("pluck_pick", 2),
+            ("pluck_bright", 6),
+            ("pluck_color", 7)
+        ]
+    );
+    assert_eq!((p[0].2, p[3].2), (26, 32));
+    let (_, stride, p) = layout("dn2");
+    assert_eq!(stride, 73);
+    assert_eq!((p[0].1, p[3].1), (0, 3));
+    assert_eq!((p[0].3, p[3].3), (25, 28));
+    let files = modgen::generate(&lib, &models, "test/patched-pluck").unwrap();
+    let g: serde_json::Value = serde_json::from_str(&files[0].1).unwrap();
     let dt2 = &g["machines"][0]["devices"]["dt2"];
     assert_eq!(dt2["type"], 9);
     assert_eq!(dt2["knobs"][1]["param"], "pluck_decay");
-    let inc = |dev: &str| {
-        files
-            .iter()
-            .find(|f| f.0.ends_with(&format!("{dev}.inc")))
-            .unwrap()
-            .1
-            .clone()
-    };
-    let (dt2, dn2) = (inc("dt2"), inc("dn2"));
-    for want in [
-        "#define FRAME_BASE 109 ",
-        "#define FRAME_STRIDE 48 ",
-        "#define PLUCK_DECAY_FRAME_OFF 1 ",
-        "#define PLUCK_PICK_FRAME_OFF 2 ",
-        "#define PLUCK_BRIGHT_FRAME_OFF 6 ",
-        "#define PLUCK_COLOR_FRAME_OFF 7 ",
-        "#define PLUCK_DECAY_MIRROR 26 ",
-        "#define PLUCK_COLOR_MIRROR 32 ",
-    ] {
-        assert!(dt2.contains(want), "dt2: {want}");
-    }
-    for want in [
-        "#define FRAME_STRIDE 73 ",
-        "#define PLUCK_DECAY_FRAME_OFF 0 ",
-        "#define PLUCK_COLOR_FRAME_OFF 3 ",
-        "#define PLUCK_DECAY_SLOT 25 ",
-        "#define PLUCK_COLOR_SLOT 28 ",
-    ] {
-        assert!(dn2.contains(want), "dn2: {want}");
-    }
 }
 
-/// `patchkit gen` loads a module whose object files do not exist yet (the generated headers are inputs of the build).
+/// `patchkit gen` loads a module whose object files do not exist yet (the generated headers are inputs of the build): it has no records then.
 #[test]
 fn generation_needs_no_object_files() {
     let models = Models::from_dir(&root().join("devices")).unwrap();
@@ -177,11 +142,10 @@ fn generation_needs_no_object_files() {
     let missing = |p: &str| Err(patchkit::Error(format!("{p}: no such file")));
     assert!(patchkit::module::Module::from_parts(&text, &missing).is_err());
     let m = patchkit::module::Module::from_parts_lenient(&text, &missing).unwrap();
-    assert!(m.objects.is_empty());
+    assert!(m.objects.is_empty() && m.manifest.machine.is_empty());
     let mut lib = Library { modules: vec![m] };
     lib.lower(&models).unwrap();
-    let files = modgen::generate(&lib, &models, "test/patched-pluck").unwrap();
-    assert!(files.iter().any(|f| f.0.ends_with("dt2.inc")));
+    assert!(modgen::generate(&lib, &models, "test/patched-pluck").unwrap().is_empty());
 }
 
 /// The bundle path of the browser: the same lowering from texts (ports, manifests, objects, device files).
@@ -233,4 +197,20 @@ fn a_manifest_fx_section_is_refused() {
     let none = |p: &str| Err(patchkit::Error(format!("{p}: no such file")));
     let e = patchkit::module::Module::from_parts_lenient(&text, &none).unwrap_err();
     assert!(e.to_string().contains("DK_FX"), "{e}");
+}
+
+/// A manifest that still declares machines, params, pages or voices is refused: they are DK_MACHINE, DK_PARAM and DK_PAGE records now.
+#[test]
+fn a_manifest_machine_section_is_refused() {
+    let dir = root().join("tests/fixtures/modules/patched-pluck");
+    let base = std::fs::read_to_string(dir.join("module.toml")).unwrap();
+    let none = |p: &str| Err(patchkit::Error(format!("{p}: no such file")));
+    for section in ["machine", "param", "page", "voice"] {
+        let text = format!("{base}\n[[{section}]]\nid = \"x\"\n");
+        let e = patchkit::module::Module::from_parts_lenient(&text, &none).unwrap_err();
+        assert!(
+            e.to_string().contains("DK_MACHINE") && e.to_string().contains(section),
+            "{e}"
+        );
+    }
 }

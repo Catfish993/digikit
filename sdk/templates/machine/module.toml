@@ -18,36 +18,14 @@ conflicts = []
 
 # `patchkit pack __ID__ --device dt2|dn2 -o __NAME__.dkm` makes the .dkm; the digikit runtime sends the DSP object to the DSP and
 # publishes the voice row and the machine row.
+# The machine declaration (DK_MACHINE, DK_PARAM and DK_PAGE in src/module.c). It holds only .dk.desc records; patchkit pack reads them
+# and leaves them out of the .dkm.
+[[object]]
+path = "build/__NAME__-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
 [[object]]
 path = "build/__NAME__-dsp.dko.json"
 sources = ["src/dsp/__NAME__.s"]
 place = "dsp.l2"
-
-[[voice]]
-machine = "__NAME__"
-render = "___NAME___render"
-note_on = "___NAME___note_on"
-desc = "___NAME___desc"
-
-# `knobs` lists parameter names only: the device profile places them on the knobs.
-[[machine]]
-id = "__NAME__"
-name = "__TITLE__"
-short = "__SHORT__"
-clone_of = 0
-knobs = ["__NAME___level"]
-
-[[param]]
-id = "__NAME___level"
-name = "Level"
-short = "LEVEL"
-min = 0
-max = 0x7f00
-default = 0x7f00
-
-[[page]]
-id = "__NAME___syn"
-machine = "__NAME__"
-name = "__SHORT__"
-title = "__TITLE__"
-devices = ["dn2"]

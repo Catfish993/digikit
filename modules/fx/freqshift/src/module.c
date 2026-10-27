@@ -9,6 +9,6 @@
 #include "freqshift.h"
 
 DK_FX(fshift, .process = "_fs_process", .desc = "_fs_desc",
-      .tab = "FSH", .title = "Freq Shifter", .mix = 127,
-      .route = DK_ROUTE_SEND, .routes = DK_ROUTE_SEND | DK_ROUTE_MASTER,
-      .knob = {DK_KNOB(FSHIFT_SHIFT_WORD, "Freq Shift", "SHIFT", DK_BIPOLAR, -64, 63, 0)});
+      .mix = 127, .route = DK_ROUTE_SEND, .routes = DK_ROUTE_SEND | DK_ROUTE_MASTER);
+DK_FX_PARAM(fshift, FSHIFT_SHIFT_WORD, "Freq Shift", "SHIFT", DK_BIPOLAR, -64, 63, 0);
+DK_PAGE(fshift, "FSH", "Freq Shifter", DK_KNOB_AT(FSHIFT_SHIFT_WORD, 0));

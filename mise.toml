@@ -313,7 +313,7 @@ description = "Pack a run-time module as a .dkm: mise run module:pack -- digikit
 
 [tasks."module:export"]
 run = "uv run python -m tools.patchkit.pk_package export"
-description = "Export a module as a deterministic .dkmod: mise run module:export -- ID [-o FILE] [--previous OLD.dkmod] (no build/, package.toml with sha256 per file; --previous refuses a parameter that moved to another knob)"
+description = "Export a module as a deterministic .dkmod: mise run module:export -- ID [-o FILE] (no build/, package.toml with sha256 per file)"
 
 [tasks."module:import"]
 run = "uv run python -m tools.patchkit.pk_package import"

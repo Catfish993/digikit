@@ -25,7 +25,10 @@
           "level": 10,
           "name": "Phase Dist",
           "own_dsp": true,
-          "page": null,
+          "page": {
+            "name": "PHASE DIST",
+            "title": "Phase Dist"
+          },
           "position": null,
           "short": "PD",
           "type": 14

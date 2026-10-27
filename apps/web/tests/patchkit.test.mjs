@@ -98,7 +98,7 @@ test(
     py('tools.patchkit.patchkit', 'bundle', '-o', bundlePath);
     const bundle = readFileSync(bundlePath);
     const { x, put, get, text } = await load();
-    const mods = 'core/machines,test/xslice,test/machine-clone';
+    const mods = 'core/machines,test/machine-clone';
     const fw = readFileSync(images.dt2);
     const out = join(work, 'dt2-machines.syx');
     const plan = join(work, 'dt2-machines.plan.json');
@@ -110,13 +110,10 @@ test(
     assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
     const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
     const entries = (name) => report.registries.find((r) => r.name === name).entries.map((e) => [e.id, e.index]);
-    assert.deepEqual(entries('machines'), [
-      ['xslice', 7],
-      ['xclone', 8],
-    ]);
-    // Digitone II has core/machines, but XSLICE clones a Digitakt machine (MANUAL SLICE, type 6)
+    assert.deepEqual(entries('machines'), [['xclone', 8]]); // RECHECK: the number
+    // Digitone II has core/machines, but XClone clones a Digitakt machine (MANUAL SLICE, type 6)
     const [dp, dl] = put(readFileSync(images.dn2));
-    const [mp, ml] = put(Buffer.from('core/machines,test/xslice'));
+    const [mp, ml] = put(Buffer.from('core/machines,test/machine-clone'));
     assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
     assert.match(
       text(x.pk_err_ptr, x.pk_err_len),

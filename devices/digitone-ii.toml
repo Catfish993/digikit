@@ -343,6 +343,7 @@ header_b_sector = 0x2e19fdd  # store header copy B: the sector before the settin
 count = 8
 slot_base = 25
 to = "page"
+clone_of = 0                # every run-time machine is a clone of machine 0
 knob_field = "c"
 slot_field = "s"
 level_field = "c8"

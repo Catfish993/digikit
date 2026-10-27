@@ -28,18 +28,27 @@ pub struct Manifest {
     /// ... and entries it adds to registries (a content module).
     #[serde(default)]
     pub entry: Vec<EntryDef>,
-    /// Typed sections (`crate::typed`); `typed::lower` turns them into `entry` rows per device.
-    #[serde(default)]
+    /// Typed sections (`crate::typed`), filled at load from the descriptor records of the objects (`crate::desc`);
+    /// `typed::lower` turns them into `entry` rows per device.
+    #[serde(skip)]
     pub machine: Vec<crate::typed::MachineDef>,
-    #[serde(default)]
+    #[serde(skip)]
     pub param: Vec<crate::typed::ParamDef>,
-    #[serde(default)]
+    #[serde(skip)]
     pub page: Vec<crate::typed::PageDef>,
-    #[serde(default)]
+    #[serde(skip)]
     pub voice: Vec<crate::typed::VoiceDef>,
-    /// A removed form (`[[fx]]`): kept only to refuse it with a clear error.
+    /// Removed forms (`[[fx]]`, `[[machine]]`, `[[param]]`, `[[page]]`, `[[voice]]`): kept only to refuse them with a clear error.
     #[serde(default)]
     fx: Option<toml::Value>,
+    #[serde(default, rename = "machine")]
+    machine_old: Option<toml::Value>,
+    #[serde(default, rename = "param")]
+    param_old: Option<toml::Value>,
+    #[serde(default, rename = "page")]
+    page_old: Option<toml::Value>,
+    #[serde(default, rename = "voice")]
+    voice_old: Option<toml::Value>,
     /// `[[gen]]`: files `patchkit gen` writes from device data (`crate::devgen`).
     #[serde(default, rename = "gen")]
     pub gens: Vec<GenDef>,
@@ -369,7 +378,7 @@ fn reserve_voice_state(m: &mut Module) -> Result<()> {
         .manifest
         .voice
         .iter()
-        .filter_map(|v| v.desc.clone().map(|d| (v.machine.clone(), d)))
+        .map(|v| (v.machine.clone(), v.desc.clone()))
         .collect();
     for (machine, desc) in voices {
         if m.manifest.voice_state.contains_key(&machine) {
@@ -470,11 +479,23 @@ impl Module {
         read: &dyn Fn(&str) -> Result<String>,
         lenient: bool,
     ) -> Result<Module> {
-        let manifest: Manifest = toml::from_str(manifest_text)?;
+        let mut manifest: Manifest = toml::from_str(manifest_text)?;
         if manifest.fx.is_some() {
             return Err(err!(
                 "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"
             ));
+        }
+        for (name, old) in [
+            ("machine", &manifest.machine_old),
+            ("param", &manifest.param_old),
+            ("page", &manifest.page_old),
+            ("voice", &manifest.voice_old),
+        ] {
+            if old.is_some() {
+                return Err(err!(
+                    "[[{name}]] is no longer read: declare machines with DK_MACHINE in C (sdk/include/dk/machine.h)"
+                ));
+            }
         }
         let mut objects = vec![];
         let mut all = manifest_text.to_string();
@@ -486,6 +507,38 @@ impl Module {
             };
             all.push_str(&t);
             objects.push(Dko::parse(&t).map_err(|e| err!("{}: {e}", o.path))?);
+        }
+        // the descriptor records of the objects fill the typed sections; a module loaded without all its objects has none
+        if objects.len() == manifest.object.len() {
+            let d = crate::desc::read_objects(&objects)
+                .map_err(|e| err!("{}: {e}", manifest.module.id))?;
+            manifest.machine = d.machines;
+            manifest.param = d.params;
+            manifest.page = d.pages;
+            manifest.voice = d.voices;
+            // a patched-in module keeps the records out of the image: the objects lose their descriptor sections
+            if !manifest.module.dynamic {
+                // an object that held only records is removed with its manifest entry (the two lists stay aligned)
+                let section = crate::sdkgen::desc_spec().section;
+                let mut kept = vec![];
+                let mut kept_refs = vec![];
+                for (o, r) in objects.drain(..).zip(manifest.object.drain(..)) {
+                    if o.sections.iter().any(|s| s.name == section) {
+                        match crate::desc::strip(&o) {
+                            Some(s) => {
+                                kept.push(s);
+                                kept_refs.push(r);
+                            }
+                            None => {}
+                        }
+                    } else {
+                        kept.push(o);
+                        kept_refs.push(r);
+                    }
+                }
+                objects = kept;
+                manifest.object = kept_refs;
+            }
         }
         let mut alloc = BTreeMap::new();
         for r in &manifest.registry {

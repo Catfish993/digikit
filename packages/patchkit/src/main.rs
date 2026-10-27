@@ -468,16 +468,6 @@ plan.json {}",
                 .filter(|(o, _)| o.arch == "cf")
                 .collect();
             let dynamic = m.manifest.module.dynamic;
-            let desc_section = patchkit::sdkgen::desc_spec().section;
-            if !dynamic
-                && m.objects
-                    .iter()
-                    .any(|o| o.sections.iter().any(|s| s.name == desc_section))
-            {
-                return Err(Error(format!(
-                    "{id}: descriptor records need `dynamic = true`"
-                )));
-            }
             if cf.len() > 1 || (cf.is_empty() && !dynamic) {
                 return Err(Error(format!(
                     "{id} has {} ColdFire objects; a .dkm packs exactly one",
@@ -503,6 +493,14 @@ plan.json {}",
                         patchkit::devdata::short_list()
                     ))
                 })?;
+                // `ports` is the only device restriction of a module
+                let ports = &m.manifest.module.ports;
+                if !ports.is_empty() && !ports.iter().any(|p| p.split('-').next() == Some(dev.as_str())) {
+                    return Err(Error(format!(
+                        "{id} is not built for {dev}: its ports are {}",
+                        ports.join(", ")
+                    )));
+                }
                 let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
                 let res = patchkit::typed::resolve(&m.manifest, &models)?;
                 // the DSP object of the device, if any: its voices are the `[[voice]]` entries (type from the machine)
@@ -615,7 +613,17 @@ plan.json {}",
                 .get(id)
                 .ok_or_else(|| Error(format!("no module {id}")))?;
             let fx = patchkit::desc::module_fx(m)?;
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "fx": fx }))?);
+            let mf = &m.manifest;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "fx": fx,
+                    "machines": mf.machine,
+                    "params": mf.param,
+                    "pages": mf.page,
+                    "voices": mf.voice,
+                }))?
+            );
         }
         "dkm-dsp-image" => {
             // the DSP image of a .dkm placed at the L2 byte address BASE, imports as NAME=VALUE: the reference loader

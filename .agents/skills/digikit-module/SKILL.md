@@ -1,6 +1,6 @@
 ---
 name: digikit-module
-description: Create, build, check, pack, run, export or import a digikit content module (a machine, an effect with its own FX page and master or send routes, or a ColdFire service loaded from the card as a .dkm) for the Digitakt II or Digitone II. Use for module:new, module:check, module:pack, module:export, module:import, dk:run, the module.toml manifest, the machine contract (render, note_on, desc), the effect contract (DK_FX, DK_KNOB, route, routes in src/module.c) and knob and parameter rules. Patched-in core modules: references/patched-in.md. Not for firmware analysis.
+description: Create, build, check, pack, run, export or import a digikit content module (a machine, an effect with its own FX page and master or send routes, or a ColdFire service loaded from the card as a .dkm) for the Digitakt II or Digitone II. Use for module:new, module:check, module:pack, module:export, module:import, dk:run, the module.toml manifest, the machine contract (render, note_on, desc), the machine declaration (DK_MACHINE, DK_PARAM, DK_PAGE in src/module.c), the effect contract (DK_FX, DK_FX_PARAM, DK_PAGE, route, routes) and knob and parameter rules. Patched-in core modules: references/patched-in.md. Not for firmware analysis.
 ---
 
 # digikit modules
@@ -25,16 +25,17 @@ The guide is `docs/MODULE-AUTHORING.md`. Read the section you need there; this f
 1. Create: `mise run module:new -- KIND AUTHOR/NAME [--dir DIR] [--title T] [--short S] [--no-build]` (guide 3). `KIND` is `machine`, `fx` or `service`.
    With `--dir`, set `PATCHKIT_MODULES=DIR`.
 2. Edit `module.toml` and the source (guide 4 to 7). Reuse `references/dsp-recipes.md`, avoid `references/selas-pitfalls.md`, size with `references/devices.md`.
-   An effect declares its page and knobs in C (`DK_FX` in `src/module.c`, word numbers in a shared `src/NAME.h`); `patchkit desc AUTHOR/NAME` prints them.
-   Machines still use the manifest sections.
-3. After a change to `module.toml`, `devices/*.toml` or `sdk/sdk.toml`: `mise run gen:modules` (`-- --check` lists stale files). Never edit `build/gen/`.
+   A machine and an effect are declared in C in `src/module.c`. Machine: `DK_MACHINE`, `DK_PARAM`, `DK_PAGE` (`<dk/machine.h>`). Effect: `DK_FX`,
+   `DK_FX_PARAM`, `DK_PAGE` (`<dk/fx.h>`). Word numbers go in a shared `src/NAME.h`. `patchkit desc AUTHOR/NAME` prints the records as JSON.
+   A manifest with `[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]` or `[[fx]]` is refused.
+3. After a change to `module.toml`, `src/module.c`, `devices/*.toml` or `sdk/sdk.toml`: `mise run gen:modules` (`-- --check` lists stale files). Never edit `build/gen/`.
 4. Build: `mise run module:build -- PATH [--check]`.
 5. Check, no emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (guide 8).
 6. Pack: `mise run module:pack -- AUTHOR/NAME --device dt2|dn2 [-o FILE.dkm]`.
 7. Run: start `mise run workbench` in another shell, then `mise run dk:run -- AUTHOR/NAME --emu --seconds 10`. On a device with the runtime:
    `mise run dk:run -- AUTHOR/NAME --port Digitakt`. Hardware is Em's decision every time; never flash anything.
 8. Log: `mise run dk:log -- --emu follow --module NAME` (guide 11).
-9. Share: `mise run module:export -- AUTHOR/NAME [--previous OLD.dkmod]` and `mise run module:import -- FILE [--dir DIR] [--replace]` (guide 10).
+9. Share: `mise run module:export -- AUTHOR/NAME` and `mise run module:import -- FILE [--dir DIR] [--replace]` (guide 10).
 
 Each task takes `-- --help`.
 
@@ -43,9 +44,10 @@ Each task takes `-- --help`.
 - **No firmware bytes in the repository.** Modules hold our code and hashes only. Patched images and anything derived from firmware stay under `out/`.
   Never name, copy or quote the vendor DSP toolchain's files.
 - **Reserved authors.** `core` and `test` are reserved. Use `digikit` or your own author. `module:new` refuses `core` and `framework`.
-- **Commit `build/`**, including `build/gen/`. Do not edit `build/gen/` by hand (guide 4, 6).
-- **Knobs and parameters.** Parameter names only in `knobs`; the device profile places them. The position is the slot, so a released parameter keeps its
-  knob. No parameter on knob 3 of a Digitakt II SAMPLE clone. At most 4 contract parameters (guide 5.3, 5.7).
+- **Commit `build/`**, including `build/gen/` (only `gallery.json` is generated there). Do not edit it by hand (guide 4, 6).
+- **Knobs and parameters.** A machine has at most 4 `DK_PARAM` words (0 to 3, in order, knob units 0 to 127) and at most one `DK_PAGE` with `DK_KNOB` only.
+  The adapter places word w on a fixed knob (Digitakt II 1, 2, 4, 5; Digitone II 0 to 3). The word is the slot, so a released parameter keeps its word.
+  Effect knobs may sit at any position 0 to 7 (`DK_KNOB_AT`). No data-only machines; `clone_of` is fixed by the profile (guide 5.2, 5.3, 5.7).
 - **No fixed type number** for a run-time machine. The runtime assigns it at load. Never write a number into code or a test.
 - **Effects.** MIX, the route and the send amounts belong to the framework. Write the wet signal only and do not assume you are last (guide 5.4, 7.2).
   Never rename the module id or the effect `id` after release.

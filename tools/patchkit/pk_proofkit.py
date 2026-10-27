@@ -17,7 +17,7 @@ gives it
   * `PK_PROOF_IMAGE=IMAGE` (tools/patchkit/pk_break.py): sessions with modules load that image, to show that a proof fails;
   * `verify-restore`: the boot cache gives the same state digest and PCM as a cold boot.
 
-    uv run python -m tools.patchkit.pk_proofkit verify-restore --device dt2 --fw 1.17 --mods core/machines,test/xslice
+    uv run python -m tools.patchkit.pk_proofkit verify-restore --device dt2 --fw 1.17 --mods core/machines,test/machine-clone
 
 Tool layout:
 

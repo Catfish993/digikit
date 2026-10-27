@@ -22,39 +22,11 @@ conflicts = []
 # is harmless on a device: the guard zeroes the block and, after 8 faults in a second, switches the machine off until the next start
 # (docs/findings/51-pluck-tune-guard.md).
 [[object]]
+path = "build/dyn-guard-nan-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+[[object]]
 path = "build/dyn-guard-nan-dsp.dko.json"
 sources = ["src/dsp/nan.s"]
 place = "dsp.l2"
-
-[[voice]]
-machine = "guardnan"
-render = "_gn_render"
-note_on = "_gn_note_on"
-desc = "_gn_desc"
-
-[[machine]]
-id = "guardnan"
-name = "NaN fixture"
-short = "NAN"
-clone_of = 0
-knobs = []
-
-# Digitone II: a machine of its own type (own_dsp, derived from the voice) with a SYN page of one knob (a machine without a page has nothing to show); the render is the same body.
-[machine.dn2]
-knobs = ["nan_a"]   # explicit: the parameter exists on the Digitone II only
-
-[[param]]
-id = "nan_a"
-name = "Nan alpha"
-short = "ALPH"
-min = 0
-max = 0x7f00
-default = 0x2000
-devices = ["dn2"]
-
-[[page]]
-id = "nan_syn"
-machine = "guardnan"
-name = "NAN"
-title = "NaN fixture"
-devices = ["dn2"]

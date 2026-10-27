@@ -45,7 +45,6 @@ def test_machines_are_found_and_the_framework_is_not():
     } <= labels
     assert not any(label.startswith("core/") for label in labels)
     assert "test/dyn-dsp-hang@dt2" in {s.label for s in c.machine_specs(negative=True)}
-    assert not c.is_machine_module("test/xslice")  # a machine row without a DSP routine
 
 
 def test_the_budget_follows_the_headroom_of_the_device():

@@ -16,64 +16,18 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# A machine loaded at run time (docs/findings/32-runtime-dsp-machines.md). `patchkit pack digikit/pluck --device dt2 -o ...dkm` lowers the
-# typed sections below into the `register` records and links the DSP object into the `.dkm` DSP section; the digikit runtime sends the code
-# to the DSP and publishes the voice row (type 18 on the Digitakt II, 17 on the Digitone II) and the machine row.
-# The patched-in twin test/patched-pluck (tests/fixtures/modules) builds from the same source file (one body for both devices), so the
+# A machine loaded at run time (docs/findings/32-runtime-dsp-machines.md). `patchkit pack digikit/pluck --device dt2 -o ...dkm` reads the
+# declaration in src/module.c (DK_MACHINE, DK_PARAM, DK_PAGE) into the `register` records and links the DSP object into the `.dkm` DSP
+# section; the digikit runtime sends the code to the DSP and publishes the voice row (type 18 on the Digitakt II, 17 on the Digitone II)
+# and the machine row.
+# The patched-in twin test/patched-pluck (tests/fixtures/modules) builds from the same DSP source file (one body for both devices), so the
 # routine that runs is the same in both.
+[[object]]
+path = "build/pluck-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
 [[object]]
 path = "build/pluck-dsp.dko.json"
 sources = ["src/dsp/pluck.s"]
 place = "dsp.l2"
-
-[[voice]]
-machine = "pluck"
-render = "_pk_render"
-note_on = "_pk_note_on"
-desc = "_pk_desc"
-
-[[machine]]
-id = "pluck"
-name = "Pluck"
-short = "PLK"
-clone_of = 0
-knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
-
-[[param]]
-id = "pluck_decay"
-name = "Decay"
-short = "DECAY"
-min = 0
-max = 0x7f00
-default = 0x4000
-
-[[param]]
-id = "pluck_pick"
-name = "Pick position"
-short = "PICK"
-min = 0
-max = 0x7f00
-default = 0x2000
-
-[[param]]
-id = "pluck_bright"
-name = "Brightness"
-short = "BRIGHT"
-min = 0
-max = 0x7f00
-default = 0x5000
-
-[[param]]
-id = "pluck_color"
-name = "Excitation colour"
-short = "COLOR"
-min = 0
-max = 0x7f00
-default = 0x2800
-
-[[page]]
-id = "pluck_syn"
-machine = "pluck"
-name = "PLUCK"
-title = "Pluck"
-devices = ["dn2"]

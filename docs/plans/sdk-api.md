@@ -89,12 +89,26 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
 - [ ] Follow-up: an editor config (clangd) with the SDK include paths, so authors see no false
       errors in `module.c`.
 
-### Phase 2: pluck
+### Phase 2: machines, params and pages in C
 
-- [ ] `DK_MACHINE`, `DK_PAGE` and `DK_PARAM` macros in `<dk/machine.h>`.
-- [ ] Page placement per device comes from the device profile, not from the module.
-- [ ] pluck: `src/module.c` replaces `[[voice]]`, `[[machine]]`, `[[param]]` and `[[page]]`.
-- [ ] Proof: same register records; pluck plays in the emulator on dt2 and dn2.
+- [x] `DK_MACHINE`, `DK_PARAM` (knob units 0..127) in `<dk/machine.h>`; `DK_PAGE`, `DK_KNOB`,
+      `DK_KNOB_AT` in `<dk/page.h>`, shared by machines and effects; `DK_FX_PARAM` in `<dk/fx.h>`.
+- [x] Placement per device comes from the device profile: word w sits at `param_slots[w]`
+      (Digitakt II 1, 2, 4, 5; Digitone II 0..3). `clone_of` is `[modules.knobs] clone_of` of the
+      profile. `ports` is the only device restriction (`pack` and conformance check it).
+- [x] pluck, bd, analog, pd, freqshift, the templates and the fixtures use C records. Removed:
+      `[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]` (refused), clone_of, position, own_dsp,
+      level, stock knob codes, per-device tables, templates, data-only machines, the generated
+      `consts.rs`, `<dev>.inc` and `module.h`, and the fixtures test/xslice, twin-xslice, dyn-xslice.
+- [x] Proof: `.dkm` files of pluck, sine, dyn-dsp-hang, dyn-guard-nan (dn2) and every effect are
+      byte-identical on dt2 and dn2; patched images of bd, analog, pd and patched-pluck (dt2) are
+      byte-identical. Changed on purpose: patched-pluck on dn2 (no position), dyn-dn2 and twin-dn2
+      (sine DSP), dyn-params (4 params), dyn-guard-nan on dt2 (param on both devices).
+- [ ] Emulator re-checks of the scenario and proof values marked `# RECHECK`, and the smoke cells
+      of patched-pluck on dn2.
+- [ ] Later: per-machine knob maps in core/dsp-voice (free encoder placement, more than 4 params,
+      several pages per machine); several pages per effect in core/fxpages; a module type that
+      patches stock machines.
 
 ### Phase 3: `<dk/ui.h>`, `core/ui` in C, and the runtime menu in C
 
@@ -149,4 +163,4 @@ Syntakt adapter (S3, S4).
 
 ## Status at end of session
 
-2026-10-27: plan agreed. Phase 1 done, not committed, waiting for Em's review. Next: phase 2 (pluck).
+2026-10-27: plan agreed. Phase 1 done in ae364ec3. Phase 2 done statically, not committed; emulator re-checks pending.

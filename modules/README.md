@@ -318,10 +318,14 @@ patchkit refuses an entry for an unknown registry, an unknown or missing field, 
 
 ### Typed sections: `[[machine]]`, `[[param]]`, `[[page]]`, `[[voice]]`
 
-The typed sections of content modules (`[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]`) are described in
-[docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), section 5. Patched-in modules also use them, so this part keeps what is specific to
-patching. patchkit lowers the sections per device into the rows of `core/machines`, `core/params` and `core/dsp-voice`
-(`packages/patchkit/src/typed.rs`; the lowering also runs in the browser). `test/patched-pluck` and `test/xslice` are the patched-in examples.
+**Note.** Authors no longer write these sections. A machine is declared in C with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE`
+(`sdk/include/dk/machine.h`; see [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), section 5.2). A manifest with `[[voice]]`,
+`[[machine]]`, `[[param]]` or `[[page]]` is refused, and the generated `consts.rs`, `dt2.inc`, `dn2.inc` and `module.h` are gone. The
+`test/xslice` fixtures are deleted. Patching a stock machine will become a separate module type. The text below describes the lowering
+into registry rows as it was; the rows are the same.
+
+The typed sections (`[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]`) were lowered per device into the rows of `core/machines`,
+`core/params` and `core/dsp-voice` (`packages/patchkit/src/typed.rs`; the lowering also runs in the browser).
 
 - You write parameter names. The device profile places them (`[modules.knobs]`, `[modules.templates]` and `[modules.frame]` in
   `devices/<device>.toml`). A device file that has no `[modules]` section takes no typed sections, and a new device is a new TOML file.
@@ -474,6 +478,7 @@ mise run patch:test -- --cell "dt2-1.17:digikit/master-gain,test/cf-demo"
 `tests/fixtures/modules/patched-pluck/` adds a PLUCK machine (Karplus-Strong string) to the Digitakt II. It is the patched-in twin of the
 run-time module `digikit/pluck` (`modules/machines/pluck/`), which builds from the same DSP source. It needs no ColdFire code
 of its own: three frameworks do the firmware work, and the module only declares data.
+(The machine is now declared in C; see the note under "Typed sections" above. The text below uses the older section names.)
 
 - **`requires = ["core/dsp-voice", "core/machines", "core/params"]`** and `ports = ["dt2-1.17", "dn2-1.12"]`. Patch it
   with all four modules: `--modules core/dsp-voice,core/machines,core/params,test/patched-pluck`.

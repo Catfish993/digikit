@@ -96,7 +96,7 @@ fn a_bad_descriptor_layout_is_refused() {
     assert_ne!(broken, text);
     assert!(sdkgen::render(&broken).unwrap_err().0.contains("unknown type"));
     // a length that is not a const of [desc]
-    let broken = text.replace("knob[DK_FX_KNOBS]", "knob[DK_NOPE]");
+    let broken = text.replace("knob[DK_PAGE_KNOBS]", "knob[DK_NOPE]");
     assert_ne!(broken, text);
     assert!(sdkgen::render(&broken).unwrap_err().0.contains("DK_NOPE"));
 }

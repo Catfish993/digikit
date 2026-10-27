@@ -3,7 +3,8 @@
 __ID__: a SHARC+ voice machine for the Digitakt II and the Digitone II, loaded at run time. It plays a pitched sine with one
 level parameter. Replace the render loop in `src/dsp/__NAME__.s` with your own voice.
 
-- `module.toml`: the module, one `[[voice]]`, one `[[machine]]`, its `[[param]]` and the Digitone II page.
+- `module.toml`: the module and its objects.
+- `src/module.c`: the machine, its parameter and its page (`DK_MACHINE`, `DK_PARAM`, `DK_PAGE` of `<dk/machine.h>`).
 - `src/dsp/__NAME__.s`: `render`, `note_on` and the descriptor (`<dk/machine.h>`).
 
 ```sh

@@ -1,0 +1,31 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [],
+ "sections": [
+  {
+   "align": 4,
+   "hex": "00000002000000a868616e6700000000000000000000000048616e670000000000000000000000000000000000000000484e470000000000000000000000000000000000000000005f68675f72656e646572000000000000000000000000000000000000000000005f68675f6e6f74655f6f6e0000000000000000000000000000000000000000005f68675f64657363000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": ".dk.desc",
+   "size": 168
+  }
+ ],
+ "source_sha256": "5aa7e0e13c283c651a216a1754870d36740b206e46b039fb7984393ceb5940ef",
+ "symbols": [
+  {
+   "global": false,
+   "name": "dk_desc_machine_hang",
+   "section": ".dk.desc",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "0",
+  "isa_check": "177b5b5f16cca6945c80349fa5b4d59190a7e08bdc9c3b5afdbd211052c4caa1",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

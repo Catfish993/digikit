@@ -135,78 +135,28 @@ fn section<'a>(p: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
         .unwrap_or_else(|| panic!("no section {name}"))
 }
 
-const XS: [&str; 3] = ["core/machines", "test/xslice", "test/machine-clone"];
-
-#[test]
-fn dt2_machines_get_types_7_and_8_and_the_tables_grow() {
-    for file in [DT2_117] {
-        let lib = library(vec![]);
-        let Some(r) = run(file, &lib, &XS) else {
-            continue;
-        };
-        let a = r.unwrap();
-        let p = plan(&a);
-        let m = reg(&p, "machines");
-        assert_eq!(
-            (m["first"].as_u64(), m["count"].as_u64()),
-            (Some(7), Some(2))
-        );
-        assert_eq!(m["row_size"], 64);
-        assert_eq!(m["entries"][0]["id"], "xslice");
-        assert_eq!(m["entries"][0]["index"], 7);
-        assert_eq!(m["entries"][1]["index"], 8);
-        let main = Main::new(&a.syx, stock_len(file));
-        // names: 7 stock rows of 12 bytes, then one per machine; the hint word is the clone's (type 6)
-        let n = section(&p, "mf_names");
-        assert_eq!(
-            (n["copied"].as_u64(), n["appended_rows"].as_u64()),
-            (Some(84), Some(2))
-        );
-        let t = main.u32s(n["addr"].as_u64().unwrap() as u32, 27);
-        assert_eq!(t[7 * 3 + 2], t[6 * 3 + 2]);
-        assert_eq!(t[8 * 3 + 2], t[6 * 3 + 2]);
-        assert_eq!(main.cstr(t[7 * 3]), "XSlice");
-        assert_eq!(main.cstr(t[8 * 3 + 1]), "XCL");
-        let pm = section(&p, "mf_permit");
-        let pt = main.u32s(pm["addr"].as_u64().unwrap() as u32, 9);
-        assert_eq!((pt[7], pt[8]), (pt[6], pt[6]));
-        let ty = section(&p, "mf_pertype");
-        let tb = main.read(ty["addr"].as_u64().unwrap() as u32, 9);
-        assert_eq!((tb[7], tb[8]), (tb[6], tb[6]));
-        let sel = section(&p, "mf_selector");
-        assert_eq!(
-            (sel["copied"].as_u64(), sel["appended_rows"].as_u64()),
-            (Some(28), Some(2))
-        );
-        // the stock tables are copied unchanged: the first rows equal the image's
-        assert!(
-            a.plan
-                .writes
-                .iter()
-                .any(|w| w.what.contains("cf.machine.site.sound_load_type_bound"))
-        );
-        // every registry row holds the descriptor ID fields of the entry
-        let rows = main.u32s(m["addr"].as_u64().unwrap() as u32, 32);
-        assert_eq!(
-            &rows[2..11],
-            &[0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0, 0xfe, 0x0a]
-        );
-        assert_eq!(rows[11], 6); // clone_of
-        assert_eq!(rows[12], 7); // position
-        assert_eq!(rows[16 + 12], 255); // the second machine has the default position
-    }
-}
+const PL: [&str; 4] = [
+    "core/dsp-voice",
+    "core/machines",
+    "core/params",
+    "test/patched-pluck",
+];
 
 #[test]
 fn the_selection_order_does_not_change_the_bytes() {
     let lib = library(vec![]);
-    let Some(r1) = run(DT2_117, &lib, &XS) else {
+    let Some(r1) = run(DT2_117, &lib, &PL) else {
         return;
     };
     let r2 = run(
         DT2_117,
         &lib,
-        &["test/machine-clone", "test/xslice", "core/machines"],
+        &[
+            "test/patched-pluck",
+            "core/params",
+            "core/machines",
+            "core/dsp-voice",
+        ],
     )
     .unwrap();
     assert!(r1.unwrap().syx == r2.unwrap().syx);
@@ -216,7 +166,7 @@ fn the_selection_order_does_not_change_the_bytes() {
 fn every_instruction_the_framework_places_decodes() {
     let lib = library(vec![]);
     for (file, ids) in [
-        (DT2_117, &XS[..]),
+        (DT2_117, &PL[..]),
         (DN2_112, &["core/machines", "test/dn2-clone"][..]),
     ] {
         let Some(r) = run(file, &lib, ids) else {
@@ -284,23 +234,6 @@ fn digitone_ii_clone_gets_type_5() {
             assert!(hooks.iter().any(|x| x == h), "{file}: no hook on {h}");
         }
     }
-}
-
-#[test]
-fn a_digitakt_machine_is_refused_on_the_digitone() {
-    let lib = library(vec![]);
-    let Some(r) = run(DN2_112, &lib, &["core/machines", "test/xslice"]) else {
-        return;
-    };
-    // MANUAL SLICE (type 6) is not a Digitone II type: the clone's table reads lie outside the anchors
-    let e = err_of(r);
-    assert!(
-        e.contains("outside the anchor")
-            || e.contains("anchor")
-            || e.contains("no number in the allocation table")
-            || e.contains("not compatible"), // test/xslice lists its ports
-        "{e}"
-    );
 }
 
 #[test]

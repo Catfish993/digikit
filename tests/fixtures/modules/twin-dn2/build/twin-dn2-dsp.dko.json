@@ -1,0 +1,75 @@
+{
+ "arch": "sharc",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 26,
+   "section": "seg_pmco",
+   "symbol": "_dv_exp2",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 154,
+   "section": "seg_pmco",
+   "symbol": "_sn_done",
+   "type": "sharc.abs24"
+  }
+ ],
+ "sections": [
+  {
+   "align": 8,
+   "hex": "7e70bf09be703f0908968102800f20008001051508978102089400008c0100aa010ffe4600008e01a11a010faa39abaa9301a100be0600000000010f3239629a93010104089401008c0100a0020f0138040202cffe70bf08089280008c0110a112cf01cf010f003f000093010109089403003e703f08089680060e0f003f00000f0f803e00000b0f803f0000000c00204b003e010800de203e010e000f313e01080011123e01080020203e0113000001020f28421a3c3e0113002102030f99c266693e01080023123e0113002102030fa342e3353e01080023123e0113002102030f25c2e75d3e01080023123e0113002102030fc940db0f3e01080023123e01130020023e01130029023e010a0020223e010800d41d3e010800db2322010a00301dbe510081000008978006000f0100007750c3220600000000800f00003f083f68800f01003f083f68800f00003f083f68",
+   "kind": "text",
+   "name": "seg_pmco",
+   "size": 338
+  },
+  {
+   "align": 8,
+   "hex": "414d4b44010000000100000010000000080000000800000040060000a40600000200000000000000",
+   "kind": "data",
+   "name": "seg_dmda",
+   "size": 40
+  }
+ ],
+ "source_sha256": "ec6c7778177ee1f6c0e4e76a68abf83e2253233c0b5c2c9f809f64ab40122f59",
+ "symbols": [
+  {
+   "global": false,
+   "name": "_sn_done",
+   "section": "seg_pmco",
+   "value": 161
+  },
+  {
+   "global": true,
+   "name": "_sn_note_on",
+   "section": "seg_pmco",
+   "value": 165
+  },
+  {
+   "global": true,
+   "name": "_sn_render",
+   "section": "seg_pmco",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_sn_desc",
+   "section": "seg_dmda",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_exp2",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "instructions_redecoded": "68",
+  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
+  "selas_sha256": "042aa5aa52ddfc9e687f627580e413b259b18a29874c28e2f2bf0251429514c0",
+  "seldump_sha256": "527162a78a7b94377c310e31b025ba51dafe8b6194d71ee09a575b6a9eb78916"
+ }
+}

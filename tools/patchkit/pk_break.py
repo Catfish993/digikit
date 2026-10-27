@@ -38,9 +38,9 @@ BREAKS = {
         'value = "image.u8(cf.machine.site.sound_load_type_bound + 1)"',
     ),
     "rows": (
-        "tests/fixtures/modules/patched-pluck/module.toml",
-        'knobs = [0xca, "pluck_decay", "pluck_pick", 0,',
-        'knobs = [0xca, "pluck_pick", "pluck_decay", 0,',
+        "tests/fixtures/modules/patched-pluck/src/module.c",  # RECHECK: the machine is declared in C; this needs the object rebuilt from the edited source
+        "DK_KNOB(0), DK_KNOB(1), DK_KNOB(2)",
+        "DK_KNOB(1), DK_KNOB(0), DK_KNOB(2)",
     ),
 }
 FIRMWARE = {

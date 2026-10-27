@@ -20,4 +20,4 @@ A2 = ["test/sine", "test/dyn-dn2"]
 [[roundtrip.machines]]
 track = 1
 machine = "test/dyn-dn2:dyn_pluck"
-hint = 5
+hint = 5   # RECHECK: dyn-dn2 has a DSP now; the list position may differ

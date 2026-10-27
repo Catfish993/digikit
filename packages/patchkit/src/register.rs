@@ -396,12 +396,6 @@ impl Register {
             });
         }
         for m in &r.machines {
-            if m.position.is_some_and(|p| p != POS_END as i64) {
-                return Err(err!(
-                    "machine {}: a run-time machine is listed after the built-in ones; drop `position`",
-                    m.id
-                ));
-            }
             let t = key(&m.id);
             if t == 0 {
                 return Err(err!("machine {}: its id hashes to 0; rename it", m.id));

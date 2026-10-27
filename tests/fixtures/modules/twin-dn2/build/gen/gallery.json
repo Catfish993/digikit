@@ -32,6 +32,44 @@
           "position": null,
           "short": "DSY",
           "type": 10
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "dn_a",
+              "slot": 1
+            },
+            {
+              "param": "dn_b",
+              "slot": 2
+            },
+            null,
+            {
+              "param": "dn_c",
+              "slot": 4
+            },
+            {
+              "param": "dn_d",
+              "slot": 5
+            },
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "DynSyn",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "DSY",
+          "type": null
         }
       },
       "id": "dyn_pluck",
@@ -81,6 +119,48 @@
         "short": "DELT",
         "slot": 28,
         "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 8192,
+        "id": "dn_a",
+        "max": 32512,
+        "min": 0,
+        "name": "Dyn Alpha",
+        "short": "ALPH",
+        "slot": 1,
+        "template": 209
+      },
+      {
+        "default": 4096,
+        "id": "dn_b",
+        "max": 16128,
+        "min": 0,
+        "name": "Dyn Beta",
+        "short": "BETA",
+        "slot": 2,
+        "template": 209
+      },
+      {
+        "default": 28672,
+        "id": "dn_c",
+        "max": 32512,
+        "min": 256,
+        "name": "Dyn Gamma",
+        "short": "GAMA",
+        "slot": 4,
+        "template": 209
+      },
+      {
+        "default": 16384,
+        "id": "dn_d",
+        "max": 32512,
+        "min": 0,
+        "name": "Dyn Delta",
+        "short": "DELT",
+        "slot": 5,
+        "template": 209
       }
     ]
   }

@@ -364,6 +364,7 @@ header_b_sector = 0x2e19fdd  # store header copy B: the sector before the settin
 count = 8
 slot_base = 0
 to = "machine"
+clone_of = 0                # every run-time machine is a clone of SAMPLE (machine 0)
 knob_field = "f"
 level_field = "f8"
 level_default = 10          # 0x0a: the track level code

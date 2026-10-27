@@ -8,7 +8,10 @@
           "level": 10,
           "name": "Hang",
           "own_dsp": true,
-          "page": null,
+          "page": {
+            "name": "HANG",
+            "title": "Hang"
+          },
           "position": null,
           "short": "HNG",
           "type": null

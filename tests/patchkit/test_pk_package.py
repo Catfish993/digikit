@@ -21,42 +21,14 @@ ports = ["dt2-1.17"]
 requires = []
 conflicts = []
 
-[[machine]]
-id = "demo"
-name = "Demo"
-short = "DEMO"
-clone_of = 0
-knobs = {knobs}
-
-[[param]]
-id = "demo_a"
-name = "A"
-short = "A"
-template = 0xd1
-min = 0
-max = 100
-default = 1
-
-[[param]]
-id = "demo_b"
-name = "B"
-short = "B"
-template = 0xd1
-min = 0
-max = 100
-default = 1
 """
 
-KNOBS = '[0xca, "demo_a", "demo_b", 0, 0, 0, 0, 0xd1]'
 
-
-def make(
-    root: Path, knobs: str = KNOBS, author: str = "em", name: str = "demo"
-) -> Path:
+def make(root: Path, author: str = "em", name: str = "demo") -> Path:
     d = root / name
     (d / "src" / "dsp").mkdir(parents=True)
     (d / "build" / "gen").mkdir(parents=True)
-    (d / "module.toml").write_text(MODULE.format(author=author, knobs=knobs))
+    (d / "module.toml").write_text(MODULE.format(author=author))
     (d / "src" / "dsp" / "demo.s").write_text("// demo\n")
     (d / "README.md").write_text("# Demo\n")
     (d / "build" / "demo.dko.json").write_text("{}")
@@ -151,9 +123,7 @@ def test_the_core_author_and_the_framework_type_are_refused(
     with pytest.raises(SystemExit, match="core"):
         pkg.import_package(out)
     (roots / "demo" / "module.toml").write_text(
-        MODULE.format(author="em", knobs=KNOBS).replace(
-            'type = "machine"', 'type = "framework"'
-        )
+        MODULE.format(author="em").replace('type = "machine"', 'type = "framework"')
     )
     monkeypatch.setenv("PATCHKIT_MODULES", str(roots))
     out = pkg.export("em/demo", tmp_path / "fw.dkmod")
@@ -175,24 +145,3 @@ def test_a_known_id_needs_replace_and_the_default_target_is_patchkit_modules(
     monkeypatch.delenv("PATCHKIT_MODULES")
     with pytest.raises(SystemExit, match="--dir"):
         pkg.import_package(out)
-
-
-def test_a_moved_parameter_is_refused_with_previous_and_a_removed_one_is_not(
-    roots, tmp_path
-):
-    make(roots)
-    old = pkg.export("em/demo", tmp_path / "old.dkmod")
-
-    def make_toml(knobs: str) -> None:
-        (roots / "demo" / "module.toml").write_text(
-            MODULE.format(author="em", knobs=knobs)
-        )
-
-    make_toml('[0xca, "demo_a", "demo_b", 0, 0, 0, 0, 0xd1]')
-    pkg.export("em/demo", tmp_path / "same.dkmod", previous=old)
-    make_toml('[0xca, "demo_b", "demo_a", 0, 0, 0, 0, 0xd1]')
-    with pytest.raises(SystemExit) as e:
-        pkg.export("em/demo", tmp_path / "moved.dkmod", previous=old)
-    assert "demo_a moved from knob 1 to knob 2 on dt2" in str(e.value)
-    make_toml('[0xca, "demo_a", 0, 0, 0, 0, 0, 0xd1]')
-    pkg.export("em/demo", tmp_path / "removed.dkmod", previous=old)

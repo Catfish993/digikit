@@ -801,15 +801,9 @@ pub fn apply_with(
 
     // Every anchor a selected module uses must hold the bytes the port recorded.
     let mut used: BTreeSet<String> = BTreeSet::new();
-    let desc_section = crate::sdkgen::desc_spec().section;
     for id in &order {
         let m = lib.get(id).unwrap();
         for (o, dko) in m.manifest.object.iter().zip(&m.objects) {
-            if dko.sections.iter().any(|s| s.name == desc_section) {
-                return Err(err!(
-                    "{id}: an object has descriptor records ({desc_section}); only `patchkit pack` reads them, a module with records cannot be patched into firmware"
-                ));
-            }
             if on(&o.devices, &dev) {
                 for sy in dko.symbols.iter().filter(|s| s.section.is_none()) {
                     let name = o.externs.get(&sy.name).unwrap_or(&sy.name);

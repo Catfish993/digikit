@@ -5,6 +5,10 @@ Status: built for Digitakt II 1.16 and 1.17 (2026-10-16) and Digitone II 1.11 an
 `docs/design/digikit-runtime.md`. Code: `modules/core/dynreg` (patch time), `modules/core/runtime/src/rs/src/registry.rs` (run time),
 `packages/patchkit/src/register.rs` (records, packer).
 
+Note (2026-10-27): the typed manifest sections named below (`[[machine]]`, `[[param]]`, `[[voice]]`, `[[page]]`) are replaced by `DK_MACHINE`,
+`DK_PARAM` and `DK_PAGE` in C (`sdk/include/dk/machine.h`). The registry records and rows are unchanged. `clone_of` is fixed by the device
+profile and not written by authors.
+
 ## What it does
 
 A `.dkm` carries typed machine and parameter records in its `register` section. The boot-time load checks them and writes them into rows that

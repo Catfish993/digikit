@@ -32,13 +32,13 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
     tools = pk_dkrt.Tools()
     a, b = tmp_path / "a.dkm", tmp_path / "b.dkm"
     for out in (a, b):
-        tools.patchkit_run("pack", "test/dyn-xslice", "--device", "dt2", "-o", out)
+        tools.patchkit_run("pack", "test/dyn-params", "--device", "dt2", "-o", out)
     assert a.read_bytes() == b.read_bytes()
     info = tools.patchkit_run("dkm-info", a)
-    assert "device 1 (1 params, 1 machines, 0 pages)" in info
+    assert "device 1 (4 params, 1 machines, 0 pages)" in info
     # the type field is the machine key: the hash of "<module id>:<machine id>" (D7); the runtime assigns the number at load
     assert (
-        f'machine type h{machine_hash("test/dyn-xslice", "xslice_d"):06x} "XSlice-D" "XSD" clone_of 6'
+        f'machine type h{machine_hash("test/dyn-params", "dynp"):06x} "DynP" "DYP"'
         in info
     )
     # a run-time module needs its device, and a machine module that is not dynamic cannot be packed without code
@@ -47,7 +47,7 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
         "--root",
         ROOT,
         "pack",
-        "test/dyn-xslice",
+        "test/dyn-params",
         "-o",
         tmp_path / "x.dkm",
     )
@@ -80,7 +80,7 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
         "--root",
         ROOT,
         "pack",
-        "test/xslice",
+        "test/patched-pluck",
         "--device",
         "dt2",
         "-o",

@@ -5,6 +5,11 @@ tree at `f02cf0ac`. Marks as in AGENTS.md: **[D]** read once here, **[O]** open.
 Related: `docs/plans/digikit-runtime.md` (Phase 11), `docs/design/digikit-dkm.md`, `digikit-runtime.md`, `digikit-registry.md`,
 `digikit-store.md`, `digikit-upload.md`, `device-data.md`, finding 27 (typed schema), finding 51 (guard).
 
+Note (2026-10-27): this document is history for the manifest sections. Machines are now declared in C with `DK_MACHINE`, `DK_PARAM` and
+`DK_PAGE` (`sdk/include/dk/machine.h`), and effects with `DK_FX`, `DK_FX_PARAM` and `DK_PAGE`. The manifest sections `[[voice]]`, `[[machine]]`,
+`[[param]]` and `[[page]]` are refused, and `build/gen/consts.rs`, `dt2.inc`, `dn2.inc` and `module.h` are gone. Current rules:
+`docs/MODULE-AUTHORING.md`, section 5.
+
 ## 1. Today
 
 ### 1.1 Module kinds

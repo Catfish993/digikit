@@ -1805,7 +1805,7 @@ fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
 fn desc_h(sdk: &Sdk) -> Result<String> {
     let (spec, texts) = desc_layout(&sdk.desc)?;
     let mut s = format!(
-        "/* {HEADER} */\n/* sdk/include/dk/gen/desc.h -- the descriptor records a module declares with the DK_* macros of <dk/fx.h>; `patchkit pack` reads them from the {} section of the object. */\n#ifndef DK_GEN_DESC_H\n#define DK_GEN_DESC_H\n\n#include <stddef.h>\n#include <stdint.h>\n\n",
+        "/* {HEADER} */\n/* sdk/include/dk/gen/desc.h -- the descriptor records a module declares with the DK_* macros of <dk/fx.h>, <dk/machine.h> and <dk/page.h>; `patchkit pack` reads them from the {} section of the object. */\n#ifndef DK_GEN_DESC_H\n#define DK_GEN_DESC_H\n\n#include <stddef.h>\n#include <stdint.h>\n\n",
         spec.section
     );
     for c in &sdk.desc.consts {

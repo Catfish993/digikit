@@ -25,7 +25,10 @@
           "level": 10,
           "name": "Bass Drum",
           "own_dsp": true,
-          "page": null,
+          "page": {
+            "name": "BASS DRUM",
+            "title": "Bass Drum"
+          },
           "position": null,
           "short": "BD",
           "type": 15
