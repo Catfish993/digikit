@@ -35,6 +35,3 @@ name = "Hang"
 short = "HNG"
 clone_of = 0
 knobs = []
-
-[machine.dt2]
-type_hint = 19   # the number this machine had before sticky ids (finding 52)

@@ -24,7 +24,6 @@ conflicts = []
 # is a parameter of this module: it exercises the parameter records.
 [[machine]]
 id = "xslice_d"
-type_hint = 16   # the number this machine had before sticky ids (finding 52)
 name = "XSlice-D"
 short = "XSD"
 clone_of = 6

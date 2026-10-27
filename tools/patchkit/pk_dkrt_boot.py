@@ -450,7 +450,7 @@ class BootRig(M.Rig):
 
     def assign_table(self) -> dict[str, Any]:
         """The boot's machine-type assignment (`DKRT_ASSIGN`, assign.rs): the sticky map and, per machine of the selection, its module's
-        selection index, machine key (`hash << 8 | type_hint`) and assigned type (0: none was free)."""
+        selection index, machine key (`hash << 8`) and assigned type (0: none was free)."""
         base = M.sym(self.plan, "core/runtime", "DKRT_ASSIGN")
         w = [self.w(base + 4 * i) for i in range(3 + 8 + 3 * 64)]
         n = w[1]
@@ -466,7 +466,6 @@ class BootRig(M.Rig):
 
     def dyn_type(self, module: str, machine: str) -> int:
         """The type number the runtime assigned to `<module>:<machine>` in this boot (read from `DKRT_ASSIGN`)."""
-        # the key's low byte is the machine's type_hint
         h = M.machine_hash(module, machine)
         for m in self.assign_table()["machines"]:
             if m["key"] >> 8 == h and m["type"]:

@@ -200,8 +200,9 @@ image and the `rc.txt` exit codes (34 applies on DT2 1.17 and DN2 1.12); `pk_bui
       `build/gen/module.h` holds the device-independent numbers, effects also get `build/gen/module.inc`; the
       per-device numbers stay in `consts.rs` and `<dev>.inc`.
 - [ ] `module:new` templates: ColdFire C, SHARC assembly machine, effect.
-- [ ] Move firmware codes (`template`, stock knob codes, `type_hint`) from author manifests to device profiles. This is
-      what makes module source device-agnostic.
+- [x] Move firmware codes (`template`, stock knob codes, `type_hint`) from author manifests to device profiles:
+      knob placement, the stock TUNE/LEV codes and the `plain` template come from the profiles, `own_dsp` is
+      derived, and `type_hint` is removed (the runtime assigns run-time numbers and keeps them on the card).
 - [ ] One authoring guide; old SDK docs folded in or deleted.
 
 Proof: `module:check` for pluck and freqshift; a new C module built in under a second.
@@ -291,7 +292,7 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27 (30 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
+2026-10-27 (32 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
 (findings 70-72), and step 5 (see the step 5 list). Next: step 6. Em's rules for this branch: stop before every commit and show the diff and
 message; no Rust build
 without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions

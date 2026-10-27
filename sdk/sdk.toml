@@ -394,7 +394,7 @@ id = 29
 name = "TABLE_BAD"
 args = ["invariant", "module", "a", "b", "-"]
 
-# a run-time machine got its type number at the boot load (docs/design/module-sdk.md 11.5 D7); `sticky` 1: the number the card remembered; `rule` 0 lowest free, 1 the map, 2 the machine's type_hint
+# a run-time machine got its type number at the boot load (docs/design/module-sdk.md 11.5 D7); `sticky` 1: the number the card remembered; `rule` 0 lowest free, 1 the map
 [[log.kind]]
 id = 30
 name = "MACHINE_TYPE_ASSIGNED"

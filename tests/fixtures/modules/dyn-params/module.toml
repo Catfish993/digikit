@@ -19,7 +19,6 @@ conflicts = []
 # so that every slot's row formula is exercised.
 [[machine]]
 id = "dynp"
-type_hint = 17   # the number this machine had before sticky ids (finding 52)
 name = "DynP"
 short = "DYP"
 clone_of = 0

@@ -508,10 +508,7 @@ plan.json {}",
                 let resolved = res.iter().find(|r| r.dev == dev);
                 let mut voices = vec![];
                 for v in resolved.map(|r| r.voices.as_slice()).unwrap_or_default() {
-                    let hint = resolved
-                        .and_then(|r| r.machines.iter().find(|m| m.id == v.machine))
-                        .map_or(0, |m| m.type_hint);
-                    let t = patchkit::register::machine_key(id, &v.machine, hint);
+                    let t = patchkit::register::machine_key(id, &v.machine);
                     let ranges = resolved
                         .map(|r| patchkit::typed::voice_ranges(r, &v.machine))
                         .unwrap_or([0; 8]);
@@ -562,11 +559,7 @@ plan.json {}",
                     None => {}
                 }
                 let mut regs = match resolved {
-                    Some(r) => {
-                        let (first, last) = patchkit::devgen::dyn_range(&lib, &dev)?;
-                        patchkit::register::check_type_hints(r, id, first, last)?;
-                        Some(patchkit::register::Register::lower(r, id)?)
-                    }
+                    Some(r) => Some(patchkit::register::Register::lower(r, id)?),
                     None if !dsp.is_empty() => None,
                     None => return Err(Error(format!("{id}: nothing for device {dev}"))),
                 };

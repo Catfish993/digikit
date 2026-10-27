@@ -40,11 +40,7 @@ clone_of = 0
 knobs = []
 
 # Digitone II: a machine of its own type (own_dsp, derived from the voice) with a SYN page of one knob (a machine without a page has nothing to show); the render is the same body.
-[machine.dt2]
-type_hint = 20   # the numbers these machines had before sticky ids (finding 52)
-
 [machine.dn2]
-type_hint = 18
 knobs = ["nan_a"]   # explicit: the parameter exists on the Digitone II only
 
 [[param]]

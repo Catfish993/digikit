@@ -39,13 +39,6 @@ short = "PLK"
 clone_of = 0
 knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
 
-# Digitone II: a machine of its own type (own_dsp, derived from the voice) with its own SYN page: DECAY, PICK, BRIGHT, COLOR on knobs A .. D.
-[machine.dt2]
-type_hint = 18   # the numbers these machines had before sticky ids (finding 52)
-
-[machine.dn2]
-type_hint = 17
-
 [[param]]
 id = "pluck_decay"
 name = "Decay"

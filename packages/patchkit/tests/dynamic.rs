@@ -58,7 +58,7 @@ fn the_register_records_are_the_lowered_typed_sections() {
     let mach = &reg.machines[0];
     assert_eq!(
         (mach.type_no, mach.clone_of, mach.position, mach.level),
-        (machine_key("test/dyn-xslice", "xslice_d", 16), 6, 255, 10)
+        (machine_key("test/dyn-xslice", "xslice_d"), 6, 255, 10)
     );
     // knobs: XSLICE's stock codes, knob 6 the module's own parameter (index 0)
     assert_eq!(
@@ -82,7 +82,7 @@ fn the_register_records_are_the_lowered_typed_sections() {
     assert_eq!(d.init, Some(0));
     assert_eq!(Register::parse(&d.register).unwrap(), reg);
     // the key is the 24-bit FNV-1a hash of "<module id>:<machine id>" above a zero type byte (D7)
-    assert_eq!(mach.type_no & 0xff, 16); // its type_hint
+    assert_eq!(mach.type_no & 0xff, 0);
     assert_eq!(machine_hash("a", "b"), 0xbd8540);
 }
 
@@ -152,52 +152,26 @@ fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
     eprintln!("dynreg: {ran} images");
 }
 
-/// `type_hint` (docs/findings/52-sticky-machine-ids.md): the machine key carries it in the low byte, per device, and the pack refuses a hint
-/// outside the device's run-time range.
+/// `type_hint` is gone: a manifest that still sets it is refused, and a machine key keeps the low byte 0.
 #[test]
-fn a_type_hint_is_the_low_byte_of_the_machine_key_and_is_range_checked() {
-    use patchkit::register::{check_type_hints, fmt_type};
+fn a_manifest_with_a_type_hint_is_refused() {
     let lib = library();
     let models = Models::from_dir(&root().join("devices")).unwrap();
-    let m = lib.get("digikit/pluck").unwrap();
-    let res = resolve(&m.manifest, &models).unwrap();
-    let key = |dev: &str| {
-        let r = res.iter().find(|r| r.dev == dev).unwrap();
-        Register::lower(r, "digikit/pluck").unwrap().machines[0].type_no
-    };
-    let h = machine_hash("digikit/pluck", "pluck") << 8;
-    assert_eq!(key("dt2"), h | 18);
-    assert_eq!(key("dn2"), h | 17);
-    assert_eq!(fmt_type(key("dt2")), format!("h{:06x}+18", h >> 8));
-    // a machine without a hint keeps the low byte 0
-    let text =
-        std::fs::read_to_string(root().join("tests/fixtures/modules/dyn-xslice/module.toml"))
-            .unwrap();
-    let none = text.replace("type_hint = 16", "");
-    let mx: patchkit::module::Manifest = toml::from_str(&none).unwrap();
-    let rx = resolve(&mx, &models).unwrap();
-    assert_eq!(
-        Register::lower(&rx[0], "test/dyn-xslice").unwrap().machines[0].type_no & 0xff,
-        0
-    );
-    // the range: 16 ..= 23 is fine, 15 and 24 are pack errors that name the machine
-    let dt2 = res.iter().find(|r| r.dev == "dt2").unwrap();
-    assert!(check_type_hints(dt2, "digikit/pluck", 16, 23).is_ok());
-    for (first, last) in [(19, 23), (16, 17)] {
-        let e = check_type_hints(dt2, "digikit/pluck", first, last)
-            .unwrap_err()
-            .0;
-        assert!(e.contains("type_hint 18") && e.contains("pluck"), "{e}");
-    }
-    // a hint of 300 is not a type number
     let bad = std::fs::read_to_string(root().join("modules/machines/pluck/module.toml"))
         .unwrap()
-        .replace("type_hint = 18", "type_hint = 300");
+        .replace("[[machine]]\n", "[[machine]]\ntype_hint = 18\n");
     let mf: patchkit::module::Manifest = toml::from_str(&bad).unwrap();
     assert!(
         resolve(&mf, &models)
             .unwrap_err()
             .0
-            .contains("type_hint 300")
+            .contains("type_hint is gone")
+    );
+    let m = lib.get("digikit/pluck").unwrap();
+    let res = resolve(&m.manifest, &models).unwrap();
+    let r = res.iter().find(|r| r.dev == "dt2").unwrap();
+    assert_eq!(
+        Register::lower(r, "digikit/pluck").unwrap().machines[0].type_no,
+        machine_hash("digikit/pluck", "pluck") << 8
     );
 }
