@@ -8,12 +8,11 @@ author = "digikit"
 status = "experimental"
 summary = "A Digitone II machine added at run time: its own SYN page with four knobs, data only (no DSP code)."
 dynamic = true
-ports = ["dn2-1.11", "dn2-1.12"]
+ports = ["dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # Test fixture (docs/design/digikit-registry.md, finding 33): a machine of its own type (the permanent number is

@@ -1,4 +1,4 @@
-"""Boot-time loading of run-time modules (finding 37): the selection record, the anchors of the boot hook on the four ports, the
+"""Boot-time loading of run-time modules (finding 37): the selection record, the anchors of the boot hook on the two ports, the
 packed test modules; and, slow, the emulator proof (tools/patchkit/pk_dkrt_boot.py)."""
 
 import hashlib

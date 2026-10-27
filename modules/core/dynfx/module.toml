@@ -9,10 +9,9 @@ status = "experimental"
 summary = "Reserves the DSP side of run-time effects: free rows in the effect chain of core/fx and the table of their addresses that the digikit runtime reads"
 requires = ["core/runtime", "core/dsp-link", "core/dyndsp", "core/fx"]
 conflicts = []
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 

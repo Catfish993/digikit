@@ -76,7 +76,7 @@ Numbers can be written as TOML integers or as strings holding an *expression* (s
 | `summary` | one sentence for the gallery card |
 | `requires` | module ids that must be selected too (frameworks) |
 | `conflicts` | module ids that must not be selected |
-| `ports` | optional: only these ports, for example `["dt2-1.16", "dt2-1.17"]` (empty: any firmware whose anchors resolve) |
+| `ports` | optional: only these ports, for example `["dt2-1.17"]` (empty: any firmware whose anchors resolve) |
 | `dynamic` | optional, default false: a run-time module. It is never patched into an image (patchkit refuses it); its typed sections are not lowered into rows; `patchkit pack MODULE --device dt2 -o X.dkm` lowers them into the `.dkm` `register` records that the digikit runtime writes into the rows `core/dynreg` reserved (docs/design/digikit-registry.md). Its machines have no number in `core/machines/types.toml`: the runtime assigns a type in 16 to 23 when it loads the module and the card remembers it (the sticky map of the selection record; docs/design/digikit-registry.md "Machine keys") |
 
 ```toml
@@ -95,7 +95,7 @@ conflicts = []
 
 ### `[targets]`
 
-Test status per port (`dt2-1.16`, `dt2-1.17`, `dn2-1.11`, `dn2-1.12`): `untested`, `experimental` or `stable`.
+Test status per port (`dt2-1.17`, `dn2-1.12`): `untested`, `experimental` or `stable`.
 
 ```toml
 [targets]
@@ -528,7 +528,7 @@ mise run patch:test -- --cell "dt2-1.17:digikit/master-gain,test/cf-demo"
 run-time module `digikit/pluck` (`modules/machines/pluck/`), which builds from the same DSP source. It needs no ColdFire code
 of its own: three frameworks do the firmware work, and the module only declares data.
 
-- **`requires = ["core/dsp-voice", "core/machines", "core/params"]`** and `ports = ["dt2-1.16", "dt2-1.17"]`. Patch it
+- **`requires = ["core/dsp-voice", "core/machines", "core/params"]`** and `ports = ["dt2-1.17", "dn2-1.12"]`. Patch it
   with all four modules: `--modules core/dsp-voice,core/machines,core/params,test/patched-pluck`.
 - **The DSP voice.** `[[object]]` places `../../../../modules/machines/pluck/src/dsp/pluck.s` in `dsp.l2` (`devices = ["dt2"]`). An `[[entry]]` in the
   `voices` registry of `core/dsp-voice` gives the machine type (`machines.pluck.index`) and the routine (`_pk_render`).

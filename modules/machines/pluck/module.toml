@@ -8,14 +8,12 @@ author = "digikit"
 status = "experimental"
 summary = "A plucked-string synth machine with decay, pick position, brightness and colour, loaded at run time."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # A machine loaded at run time (docs/findings/32-runtime-dsp-machines.md). `patchkit pack digikit/pluck --device dt2 -o ...dkm` lowers the

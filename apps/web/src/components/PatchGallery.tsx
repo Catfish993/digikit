@@ -339,9 +339,7 @@ export default function PatchGallery(props: { modules: ModuleInfo[] }) {
                 <SyxFile />
                 <div class="drop-text">
                   <strong>Drop your stock .syx here</strong>
-                  <span>
-                    Digitakt II OS 1.16 or 1.17, Digitone II OS 1.11 or 1.12. Download it from Elektron's support site.
-                  </span>
+                  <span>Digitakt II OS 1.17 or Digitone II OS 1.12. Download it from Elektron's support site.</span>
                 </div>
                 <label class="btn primary" for="firmware-file">
                   Choose file
@@ -393,8 +391,8 @@ export default function PatchGallery(props: { modules: ModuleInfo[] }) {
             <Show when={check() && !check()!.port}>
               <p class="callout warn" role="status">
                 <Glyph d={INFO} />
-                This file is not a stock release digikit supports: use Digitakt II 1.16 or 1.17, or Digitone II 1.11 or
-                1.12. A file that digikit already patched cannot be patched again; start from the stock .syx.
+                This file is not a stock release digikit supports: use Digitakt II 1.17 or Digitone II 1.12. A file that
+                digikit already patched cannot be patched again; start from the stock .syx.
               </p>
             </Show>
           </Show>

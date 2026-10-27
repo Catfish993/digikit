@@ -1,4 +1,4 @@
-"""core/dsp-link (docs/findings/31-dsp-link.md): static checks of the module against the four stock images, and the
+"""core/dsp-link (docs/findings/31-dsp-link.md): static checks of the module against the two stock images, and the
 ColdFire half (dl_send, dl_poll, dl_tick) on the native ColdFire core. The DSP half and the whole channel run in the
 coupled emulator: `uv run python -m tools.patchkit.pk_dsplink proof` (tools/patchkit/pk_dsplink.py).
 

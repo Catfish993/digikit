@@ -3,7 +3,7 @@
 `core/dsp-link` is a framework module: it lets the digikit runtime send bytes (DSP code and data) to the DSP while
 the device runs. Nothing changes for the player. Emulator only.
 
-- Firmware: Digitakt II 1.16 and 1.17, Digitone II 1.11 and 1.12 (the same anchor rules on all four).
+- Firmware: Digitakt II 1.17 and Digitone II 1.12 (the same anchor rules on both).
 - What it adds: a hook on the ColdFire's per-block frame sender (to put a chunk in the unused end of the frame) and a hook
   at the end of the DSP's block handler (to take the chunk, copy it into a reserved area of free L2 (512 KiB on the Digitakt II, 320 KiB on the Digitone II), and
   acknowledge). The ColdFire interface is `dl_send(dst_l2, buf, len)`, `dl_send_win(win, dst_word, buf, len)` (window 1: the voices registry of

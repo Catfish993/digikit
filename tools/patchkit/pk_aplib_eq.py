@@ -26,9 +26,7 @@ from tools.firmware.elz import depack_section  # noqa: E402
 from tools.firmware.extract import classify  # noqa: E402
 
 FIRMWARE = [
-    "Digitakt_II_OS1.16.syx",
     "Digitakt_II_OS1.17.syx",
-    "Digitone_II_OS1.11.syx",
     "Digitone_II_OS1.12.syx",
 ]
 CACHE = ROOT / "out" / "cache" / "pk-aplib"

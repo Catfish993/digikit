@@ -8,12 +8,11 @@ author = "digikit"
 status = "experimental"
 summary = "Test effect of the FX contract, loaded at run time on the Digitakt II: scales the master block by its parameter p0, the GAIN knob of its FX page (0 to 1.27, default 0.5)."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 

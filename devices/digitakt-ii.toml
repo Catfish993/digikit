@@ -42,8 +42,6 @@ softfloat_abi = true
 # function hashes of 0xb88a49/0xb88aa6 match 0xb8636d/0xb863ca). sample_link:
 # how card samples reach the DSP (findings 15): ColdFire FlexBus writes to link
 # port 0, so the peer must be fed them.
-# Has a port lockfile (devices/ports/): tools/patchkit/port_resolve.py resolves every firmware with `port = true`.
-port = true
 dsp = { image = "dt2-1.16", idle_start = 0xb8636d, idle_end = 0xb863df, idle_head = 0xb863cf, sample_link = "lp0" }
 
 [[firmware]]

@@ -11,9 +11,7 @@ requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # C, packed like test/dyn-fault-late. `dkm_init` reads the store file `cfg/crash-after.bin` (4 bytes big endian: blocks after the first slot call;

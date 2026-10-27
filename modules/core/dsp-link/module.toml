@@ -7,14 +7,12 @@ type = "framework"
 author = "digikit"
 status = "experimental"
 summary = "Sends code and data to the DSP while it runs, through the unused end of the ColdFire's block frame."
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "untested"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "untested"
 
 # Constants of the DSP objects (tail geometry, area size) from the device files, written by `patchkit gen`.

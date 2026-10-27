@@ -232,7 +232,7 @@ selection_sectors - 1`; recorded in `devices/<device>.toml` `[card.store]`, not 
 
 In the firmware's MIDI task, after the SysEx gather (finding 42 section 2, stage 4), before the router: a message that
 starts `F0 7D 64 6B` goes to the runtime; every other message takes the stock route unchanged. The exact hook is a ported
-anchor on all four ports (`dkrt.fw.*`). The runtime's upload buffer is a static 16-byte aligned object of 36,896 bytes (see "Behaviour the first draft left open").
+anchor on both ports (`dkrt.fw.*`). The runtime's upload buffer is a static 16-byte aligned object of 36,896 bytes (see "Behaviour the first draft left open").
 
 ## Tests
 

@@ -7,15 +7,13 @@ type = "framework"
 author = "digikit"
 status = "experimental"
 summary = "Effects adapter of the SHARC engine: effects registered by other modules process the master block in a chain, before the USB pack and the DAC converter, or (Digitakt II, route send) run on a send bus of the 16 tracks and add to the FX return bus; an empty chain plays the stock audio"
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 # Test status per firmware; patchkit does not read it.
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "untested"
 "dn2-1.12" = "experimental"
 
 # One DSP object for both devices: the hook is the first instruction of the post-master function (H1, docs/findings/53), the master block is the

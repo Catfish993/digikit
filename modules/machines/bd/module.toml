@@ -8,14 +8,12 @@ author = "fadedlimes"
 status = "experimental"
 summary = "An FM bass drum: a decaying modulator index turns a clang into a sine, over a carrier that punches down."
 dynamic = false
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.17"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "unsupported"
 "dn2-1.12" = "unsupported"
 
 [[object]]

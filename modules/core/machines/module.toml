@@ -32,9 +32,7 @@ conflicts = []
 # Contract, evidence and limits: finding 02, "core.machines" and "DN2 own parameter pages: built".
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # ---- the registry --------------------------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 """Resolve the anchors and regions of one firmware into its port lockfile.
 
     uv run python -m tools.patchkit.port_resolve resolve FIRMWARE.syx [--out devices/ports/NAME.toml]
-    uv run python -m tools.patchkit.port_resolve resolve-all [--root DIR]      # the four supported firmwares
+    uv run python -m tools.patchkit.port_resolve resolve-all [--root DIR]      # the two supported firmwares
     uv run python -m tools.patchkit.port_resolve rule-sharc IMAGE PC [--len N] # print a devices/fw rule for a SHARC pc
     (for a rule of either CPU and a declaration entry, see tools/firmware/catalog.py: emit-rule, declare)
 
@@ -977,7 +977,7 @@ def main() -> int:
     rs.add_argument("pc", type=lambda s: int(s, 0))
     rs.add_argument("--len", type=int)
     argv = sys.argv[1:]
-    # `mise run patch:port [-- X.syx]`: a firmware resolves that one, nothing resolves all four
+    # `mise run patch:port [-- X.syx]`: a firmware resolves that one, nothing resolves both
     if not argv:
         argv = ["resolve-all"]
     elif argv[0] not in ("resolve", "resolve-all", "rule-sharc") and not argv[

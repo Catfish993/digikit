@@ -10,7 +10,7 @@ Read [Safety and hardware](#safety-and-hardware) before you flash anything.
 New to modules? Start with [MODULE-AUTHORING.md](MODULE-AUTHORING.md): the short path from an empty module to a
 patched firmware running in the emulator.
 
-Supported firmware (a "port" exists for each): Digitakt II 1.16 and 1.17, Digitone II 1.11 and 1.12. Use your own
+Supported firmware (a "port" exists for each): Digitakt II 1.17 and Digitone II 1.12. Use your own
 copy of the `.syx` files; the repository never contains them.
 
 Other documents: [modules/README.md](../modules/README.md) (write a module),
@@ -73,7 +73,7 @@ mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules d
 mise run patch:mem -- digikit/master-gain digikit/master-drive --device dt2 --firmware 1.17    # bytes used and free per region
 ```
 
-- `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.11, dn2-1.12").
+- `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.12").
 - `patch:mem` (`tools/patchkit/pk_mem.py`, `--json` for scripts) applies the modules with the placement's own first-fit
   allocator and prints, per region of the port (`cf.flash_cave`, `cf.expansion`, `dsp.l2`), the size, the bytes each
   module uses (modules pulled in by `requires` included), the free bytes and the percent used. It exits 1 with the
@@ -222,7 +222,7 @@ the manifest reference.
 
 ```sh
 mise run patch:port -- firmware/Digitakt_II_OS1.17.syx   # one firmware -> devices/ports/dt2-1.17.toml
-mise run patch:port                             # the four supported firmwares
+mise run patch:port                             # the two supported firmwares
 ```
 
 A port records the anchors that modules need (address, length, SHA-256 of the bytes there) and the free regions of
@@ -394,7 +394,7 @@ or `PATCHKIT_MODULES`. The web page builds its module data from committed files 
 The bootstrap (section 2) runs on the emulated ColdFire core. It tests [FUNC] before MAIN OS is touched, shows the
 STARTUP menu over a MAIN OS that faults at reset, accepts patchkit images, rejects corrupt ones, and does not rewrite
 itself for a 1.16 or 1.17 image (finding 01, spike 0.2). Patched images boot to the main screen with DSP audio
-(DT2 1.16 and 1.17, DN2 1.12), the smoke matrix passes, and the module proofs measure the sound. None of this is a
+(DT2 1.17, DN2 1.12), the smoke matrix passes, and the module proofs measure the sound. None of this is a
 hardware result.
 
 ### Recovery
@@ -825,4 +825,4 @@ there should be **no** `MACHINE_FAULT` (the clamp in the routine prevents the ca
 ### Status
 
 No patched image has been flashed to a device. Whether and when to flash is the maintainer's decision, every time.
-The device on the desk is a Digitakt II on 1.16, so a first hardware step would use the DT2 1.16 port.
+The device on the desk is a Digitakt II on 1.17, so a first hardware step would use the DT2 1.17 port.

@@ -8,12 +8,11 @@ author = "digikit"
 status = "experimental"
 summary = "A run-time machine with seven parameters, one per knob but knob 3, to check the parameter rows the registry writes."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.17"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
 # Test fixture (docs/design/digikit-registry.md): a clone of SAMPLE (type 0) whose knobs but knob 3 (the sample slot) are parameters of its own,

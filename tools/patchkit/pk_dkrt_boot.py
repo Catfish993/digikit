@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Boot-time loading of run-time modules in the emulator (docs/findings/37-boot-load.md).
 
-    uv run python -m tools.patchkit.pk_dkrt_boot proof [--image dt2-1.17|dt2-1.16|dn2-1.12|dn2-1.11] [--quick] [--keep DIR] [--only a,b]
+    uv run python -m tools.patchkit.pk_dkrt_boot proof [--image dt2-1.17|dn2-1.12] [--quick] [--keep DIR] [--only a,b]
 
 The runtime loads the modules of the selection record (two sectors at the end of the card's store range) at boot, from a hook just
 before the MainScreenView constructor. `proof` builds the images and cards and boots them in the coupled emulator (cold boots of the

@@ -8,12 +8,11 @@ author = "digikit"
 status = "experimental"
 summary = "Test effect of the FX contract with the route fields of the manifest (route = send, routes = send only): the same gain as test/dyn-fx-gain, for the FX ROUTES scenario."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 

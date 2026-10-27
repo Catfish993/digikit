@@ -7,12 +7,11 @@ type = "machine"
 author = "digikit"
 status = "experimental"
 summary = "Test fixture: test/dyn-dn2 patched in (a static twin), to compare a run-time machine with its patched-in form."
-ports = ["dn2-1.11", "dn2-1.12"]
+ports = ["dn2-1.12"]
 requires = ["core/machines", "core/params"]
 conflicts = []
 
 [targets]
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # Static twin of test/dyn-dn2 (same typed sections, patched in at build time): tests/digikit compares the rows.

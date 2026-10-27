@@ -8,12 +8,11 @@ author = "digikit"
 status = "experimental"
 summary = "Test effect of the FX contract with route fields (route = master, routes = master and send): the same gain and the same page (tab GAN) as test/dyn-fx-gain, an insert that can be switched to a send; for the send-page scenario fx-route-dt2."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 

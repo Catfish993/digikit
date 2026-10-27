@@ -7,14 +7,12 @@ type = "fx"
 author = "digikit"
 status = "experimental"
 summary = "Test effect of core/fx: scales the master block by 0.5, patched into the chain; for tests only."
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = ["core/fx"]
 conflicts = []
 
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "untested"
 "dn2-1.12" = "experimental"
 
 [[object]]

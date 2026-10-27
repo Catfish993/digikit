@@ -8,12 +8,11 @@ author = "digikit"
 status = "experimental"
 summary = "A slice machine added at run time: XSLICE as a data-only module for the digikit runtime."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.17"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
 # A run-time module (`dynamic = true`): never patched into an image. `patchkit pack test/dyn-xslice --device dt2 -o ...`

@@ -13,7 +13,7 @@ from tools.coldfire import digikit_health_proof as hp  # noqa: E402
 from tools.patchkit import pk_build, pk_toolchains  # noqa: E402
 
 MODULE = ROOT / "modules/core/health"
-IMAGES = ("dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12")
+IMAGES = ("dt2-1.17", "dn2-1.12")
 ANCHORS = {
     "health.hook.idle": 6,
     "health.fw.create_main": 4,

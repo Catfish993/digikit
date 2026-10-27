@@ -33,7 +33,7 @@ uv run --with pytest python -m pytest tests -q
 | `tools/coldfire/ddr_geometry.py` | Derive DDR geometry from the bootstrap's initialization sequence. |
 | `tools/coldfire/regions.py` | RAM map of a MAIN OS image, flash caves and the expansion region per image; `confirm` canary-fills a region and runs the emulator; `loader-test` boots a patched image with a reset-path loader. |
 | `tools/firmware/plusdrive_check.py` | `mise run dev:plusdrive-check`: build a `plus_drive/`-style fixture (nested folders, a plain file, a 702-entry directory, multi-extent files) with `plusdrive build`, boot the DT2 with it and compare the firmware's own mount, readdir, lookup and file reads with the folder (about 1 min). |
-| `tools/firmware/aplib_check.py` | Pack every section of the four firmwares with `tools/firmware/aplibpack.py` and check it with `tools/firmware/elz.py` and the bootstrap's own depacker on the native core. |
+| `tools/firmware/aplib_check.py` | Pack every section of the two firmwares with `tools/firmware/aplibpack.py` and check it with `tools/firmware/elz.py` and the bootstrap's own depacker on the native core. |
 
 Never patch the bootstrap or updater sections. See
 [`PATCHING.md`](PATCHING.md) before producing an image intended for hardware.

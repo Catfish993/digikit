@@ -8,14 +8,12 @@ author = "digikit"
 status = "experimental"
 summary = "Test machine and template: a pitched sine of the SDK contract with one level parameter, one DSP body for both devices, loaded at run time."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # `patchkit pack test/sine --device dt2|dn2 -o sine.dkm` makes the .dkm; the digikit runtime sends the DSP object to the DSP and

@@ -38,7 +38,7 @@ One firmware site: the call at the top of the UI task's event loop that pops the
 
 A `retarget` op changes the `jsr` target to `dkrt_loop_hook`, which saves d0/d1/a0/a1, calls `dkrt_tick` (C ABI, so d2-d7 and
 a2-a6 are kept) and jumps to the stock pop with the stack as the caller left it. The site is found by a masked signature of the
-six words around it (`cf_words` with `as = "code"`), the same rule on all four images. Why here: it runs in task context (the UI
+six words around it (`cf_words` with `as = "code"`), the same rule on both images. Why here: it runs in task context (the UI
 task, which also calls the card filesystem and block read, finding 23 S3), once per event (key, timer tick, ...; about 0.2 passes
 per million instructions in an idle emulator, **[D]** finding 29), before the task blocks, and nothing live is in d0/d1/a0/a1 there.
 It is not an interrupt, so the loader may block in the card read.

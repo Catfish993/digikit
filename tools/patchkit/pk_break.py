@@ -45,7 +45,6 @@ BREAKS = {
 }
 FIRMWARE = {
     ("dt2", "1.17"): "Digitakt_II_OS1.17.syx",
-    ("dt2", "1.16"): "Digitakt_II_OS1.16.syx",
     ("dn2", "1.12"): "Digitone_II_OS1.12.syx",
 }
 

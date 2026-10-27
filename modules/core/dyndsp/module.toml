@@ -9,12 +9,10 @@ status = "experimental"
 summary = "Reserves the DSP side of run-time machines: free voice rows and the table of DSP addresses the digikit runtime uses (emulator only)"
 requires = ["core/runtime", "core/dsp-link", "core/dsp-voice"]
 conflicts = []
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # Patch-time half of the DSP side of run-time machines (docs/design/digikit-dkm.md "DSP section", docs/findings/32-runtime-dsp-machines.md).

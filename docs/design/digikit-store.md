@@ -155,7 +155,7 @@ that was written before the map existed has zeros there (an empty map). The boot
 the higher `seq` (equal: A). No valid copy is an empty selection with counter 0.
 
 **Writing** (`dkrt_selection_set`, the boot counter): the runtime writes with the firmware's block write (DT2 1.16 `FUN_4012e0c0`,
-DN2 1.11 `FUN_4012c780`; anchor `dkrt.fw.block_write`, hash-found on all four ports; it takes the eMMC mutex itself) and only to these two
+DN2 1.11 `FUN_4012c780`; anchor `dkrt.fw.block_write`, hash-found on both ports; it takes the eMMC mutex itself) and only to these two
 sectors. A new selection writes both copies with `seq + 1`, A first, then B, so a power cut between the two writes leaves one valid
 copy (A new, B old: the higher seq wins; a torn A fails its CRC and B still holds the old record). **The boot counter** is raised at the
 start of a boot that has modules selected and cleared when the session has been stable: `stable_blocks` (default 45,000, 30 s) DSP blocks

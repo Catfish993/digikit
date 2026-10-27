@@ -1,6 +1,6 @@
 # FX chain
 
-**Category:** core  **Devices:** Digitakt II 1.16, 1.17; Digitone II 1.11, 1.12 (the send route: both)  **Status:** experimental (emulator only)
+**Category:** core  **Devices:** Digitakt II 1.17; Digitone II 1.12 (the send route: both)  **Status:** experimental (emulator only)
 
 A framework module: it lets other modules process the final stereo block of the device with their own DSP routine (the FX contract,
 `sdk/dk_fx.h`). On its own it changes nothing: a patched image with an empty chain plays exactly the stock audio.

@@ -1,6 +1,6 @@
 # Pluck
 
-**Category:** machines  **Devices:** Digitakt II 1.16, 1.17; Digitone II 1.12  **Status:** experimental (emulator only)  **Kind:** run-time module (`.dkm`)
+**Category:** machines  **Devices:** Digitakt II 1.17; Digitone II 1.12  **Status:** experimental (emulator only)  **Kind:** run-time module (`.dkm`)
 
 A new machine in the SRC machine list: a plucked string (Karplus-Strong). On the Digitakt II every track with the
 PLUCK machine is one string tuned to the note you play, so it follows the keyboard, the sequencer's notes and the

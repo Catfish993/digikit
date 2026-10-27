@@ -8,14 +8,12 @@ author = "digikit"
 status = "experimental"
 summary = "Test fixture: a run-time machine whose DSP routine outputs NaN while a voice is active, to see the runtime guard of core/dsp-voice."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # Like test/dyn-dsp-hang, with a machine of the SDK contract whose render outputs NaN (src/dsp/nan.s: one body for both devices; the rig runs it on both,

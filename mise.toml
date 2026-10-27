@@ -362,7 +362,7 @@ description = "Every emulator proof on its quick tier, in sequence (DT2: gain, d
 
 [tasks."patch:port"]
 run = "uv run python -m tools.patchkit.port_resolve"
-description = "Resolve the anchors and regions of a firmware into devices/ports/*.toml: mise run patch:port [-- X.syx] (no argument: the four supported firmwares)"
+description = "Resolve the anchors and regions of a firmware into devices/ports/*.toml: mise run patch:port [-- X.syx] (no argument: the two supported firmwares)"
 
 # --- dk: the digikit runtime on a device or the emulator ---
 

@@ -130,9 +130,7 @@ conflicts = []
 
 # Test status per firmware; patchkit does not read it.
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "untested"
-"dn2-1.11" = "untested"
 "dn2-1.12" = "untested"
 """
     ]

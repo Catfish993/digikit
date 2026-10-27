@@ -68,9 +68,7 @@ MODULE_SIZE = 88
 STATE_BYTES = 1256
 MB_CMD, MB_SEQ, MB_RESULT, MB_ARG = 0, 4, 8, 12
 DEVICE_SYX = {
-    "dt2-1.16": "Digitakt_II_OS1.16.syx",
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
-    "dn2-1.11": "Digitone_II_OS1.11.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
 }
 RUN = 25_000_000  # instructions between samples: the UI task's event loop passes about every 4 million

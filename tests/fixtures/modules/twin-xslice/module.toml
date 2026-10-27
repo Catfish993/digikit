@@ -7,12 +7,11 @@ type = "machine"
 author = "digikit"
 status = "experimental"
 summary = "Test fixture: test/dyn-xslice patched in (a static twin), to compare a run-time machine with its patched-in form."
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.17"]
 requires = ["core/machines", "core/params"]
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
 # Static twin of test/dyn-xslice (same typed sections, patched in at build time): tests/digikit compares the rows.

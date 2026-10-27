@@ -86,7 +86,6 @@ PITCH_WORD = (
 )
 T1_BASE = {
     "1.17": 0x4020F59C,
-    "1.16": 0x4020F18C,
 }  # stock table; patched images read it back from the code
 
 

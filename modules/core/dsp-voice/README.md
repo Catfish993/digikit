@@ -1,6 +1,6 @@
 # DSP voice hook
 
-**Category:** core  **Devices:** Digitakt II 1.16, 1.17; Digitone II 1.11, 1.12  **Status:** experimental (emulator only)
+**Category:** core  **Devices:** Digitakt II 1.17; Digitone II 1.12  **Status:** experimental (emulator only)
 
 A framework module: it lets other modules render a machine's sound with their own DSP routine (`digikit/pluck` is the
 example). On its own it changes nothing: a patched image with no registered machine plays exactly the stock audio.

@@ -34,9 +34,7 @@ conflicts = []
 # destination list) end on `bne`/`beq`, not on a clamp, and keep the stock count: the new rows do not enter them.
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "untested"
 "dn2-1.12" = "experimental"
 
 [[registry]]

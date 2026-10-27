@@ -178,7 +178,7 @@ fn an_anchor_hash_mismatch_is_refused() {
 #[test]
 fn a_module_for_another_firmware_is_refused() {
     need_image!();
-    let m = module("t/pinned", "ports = [\"dt2-1.16\"]", "", None);
+    let m = module("t/pinned", "ports = [\"dn2-1.12\"]", "", None);
     let lib = library(vec![m]);
     expect_err(run(&lib, &["t/pinned"]), "not compatible");
 }

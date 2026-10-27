@@ -11,9 +11,7 @@ requires = ["core/runtime"]
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # The menu is built from the firmware's own menu classes (finding 28): a hook at the end of the SETTINGS item list

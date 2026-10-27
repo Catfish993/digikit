@@ -32,7 +32,7 @@ Adds **SETTINGS > DIGIKIT** (the ninth row, after SYSTEM). Emulator only: nothin
 
 The DIGIKIT rows and pages draw no glyph (the SETTINGS row keeps its own), and the ABOUT, HEALTH and MEMORY pages show no highlighted row (finding 28, "Glyphs and text pages"). MODULES keeps its cursor bar.
 
-Firmware: DT2 1.16 and 1.17, DN2 1.11 and 1.12 (the same sites and helpers, found by function hash).
+Firmware: DT2 1.17 and DN2 1.12 (the same sites and helpers, found by function hash).
 
 ## The interface to the runtime
 
@@ -62,4 +62,4 @@ same reader. The menu has its own tables of result texts (`TEXT_RUNTIME`, `TEXT_
   shim (`src/cf/shim.s`) still has its own externs table.
 - The table buffer (16 KiB) and the view objects come from the firmware heap, so the module RAM is written by this code only. The
   runtime's staging buffer is written by the card DMA, by design (the proof leaves it out of the write-watch).
-- Proof: `uv run python -m tools.coldfire.digikit_menu_proof run [--image dn2-1.11] [--regress] [--quick] [--only-boot]`.
+- Proof: `uv run python -m tools.coldfire.digikit_menu_proof run [--image dn2-1.12] [--regress] [--quick] [--only-boot]`.

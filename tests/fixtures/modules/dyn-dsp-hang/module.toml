@@ -8,12 +8,11 @@ author = "digikit"
 status = "experimental"
 summary = "Test fixture: a run-time machine whose DSP routine never returns after a few blocks, to see what the debug log shows when the SHARC stops."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.17"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
 # Like test/dyn-guard-nan, a machine of the SDK contract whose render hangs on the third block of a note (src/dsp/hang.s). `patchkit pack test/dyn-dsp-hang --device dt2` makes the .dkm.

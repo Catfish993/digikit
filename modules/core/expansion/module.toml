@@ -12,9 +12,7 @@ conflicts = []
 
 # patchkit adds this module by itself whenever a module places an object in cf.expansion.
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "untested"
 "dn2-1.12" = "experimental"
 
 [[object]]

@@ -37,8 +37,6 @@ readiness_contract = "main-panel-v1"
 # The softfloat ABI shortcuts (packages/emulator/boot softfloat) are verified on this MAIN OS.
 softfloat_abi = true
 # The SHARC+ DSP the coupled audio runs (see devices/digitakt-ii.toml).
-# Has a port lockfile (devices/ports/): tools/patchkit/port_resolve.py resolves every firmware with `port = true`.
-port = true
 dsp = { image = "dn2-1.11", idle_start = 0xb88a49, idle_end = 0xb88abb, idle_head = 0xb88aab }
 
 [[firmware]]
