@@ -12,6 +12,7 @@ rule.dt2 = { kind = "sharc_func", reloc_hash = "830c02524f18d34629acb569a92d052d
 rule.dn2 = { kind = "sharc_func", reloc_hash = "7cb2e56b587600a04d8d3876f254fa6fc326af68e6d6e8c7741517e316640dec", offset = 0x0, len = 6 }
 mark = "D"
 users = ["core/dsp-voice"]
+doc = "The per-voice DSP render function, called once per voice buffer (on DN2 after the FM synthesis); its first instruction `I7 = MODIFY(I7, imm)` (48 bits) is the hook point of core/dsp-voice."
 
 [[site]]
 name = "dsp.voice.site.render_entry.next"
@@ -21,8 +22,8 @@ rule.dt2 = { kind = "sharc_func", reloc_hash = "830c02524f18d34629acb569a92d052d
 rule.dn2 = { kind = "sharc_func", reloc_hash = "7cb2e56b587600a04d8d3876f254fa6fc326af68e6d6e8c7741517e316640dec", offset = 0x3, len = 6 }
 mark = "D"
 users = ["core/dsp-voice"]
+doc = "The instruction after the first 48-bit instruction of the per-voice render function (+3 parcels); the hook wrapper runs the displaced `MODIFY(I7, imm)` and then jumps here."
 
-# The DSP's copy of the ColdFire frame: the literal `I5 = 0x2558dc` of the per-block copy.
 [[value]]
 name = "dsp.voice.value.frame_base"
 was = ["dsp.voice.frame_base"]
@@ -31,8 +32,8 @@ rule.dt2 = { kind = "sharc_literal", reloc_hash = "55a5d8458350a1b67249f5aca8d49
 rule.dn2 = { kind = "sharc_literal", reloc_hash = "4cc8a46bca990a7bd883d1784307a9cd72aa828a1ae846977e337fbc5c54c010", offset = 0x165 }
 mark = "D"
 users = ["core/dsp-voice"]
+doc = "The DSP's copy of the ColdFire frame: the literal `I5 = 0x2558dc` of the per-block copy."
 
-# The DSP's per-track machine type cache: the literal `I4 = 0x255970` in the per-track unpack.
 [[value]]
 name = "dsp.voice.value.type_cache"
 was = ["dsp.voice.type_cache"]
@@ -41,6 +42,7 @@ devices = ["dt2"]
 rule = { kind = "sharc_literal", reloc_hash = "d2c02a587786f9ee328897985095c271ff1c5b65f289224e435968ea4b5d3f00", offset = 0x1e5 }
 mark = "D"
 users = ["core/dsp-voice"]
+doc = "The DSP's per-track machine type cache: the literal `I4 = 0x255970` in the per-track unpack."
 
 [[hook]]
 name = "dsp.voice.hook.render_entry"

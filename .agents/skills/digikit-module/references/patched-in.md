@@ -4,6 +4,7 @@ A module without `dynamic = true` is linked into a stock firmware image by patch
 firmware code (master-bus effects, ColdFire UI changes). The project's PLUCK machine (`digikit/pluck`) is a run-time module; its patched-in twin `test/patched-pluck` is a test fixture.
 The browser patch page lists patched-in modules only; a `.dkm` goes to the device through `/upload`.
 
+- **Look up declared anchors** in `modules/core/fw/reference.json` or with `mise run fw:reference`.
 - **Anchors, not addresses.** Every firmware site is a named anchor resolved by a rule declared in `devices/fw/` (masked signature, `cfmatch`
   offset, or SHARC `reloc_hash` plus offset) into `devices/ports/<dev>-<ver>.toml` by `mise run patch:port`. A rule that matches nothing or
   twice is an error: fix the rule, never type an address.

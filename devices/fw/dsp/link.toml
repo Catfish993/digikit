@@ -10,6 +10,7 @@ cpu = "sharc"
 rule = { kind = "sharc_func", reloc_hash = "64b66b0db31c9fe533e67c75374b1041e22aae334bc3cd8743a491ab2448ecde", offset = 0xf4, len = 6 }
 mark = "D"
 users = ["core/dsp-link"]
+doc = "The second last instruction of the DSP block handler's common tail, `DM(<ring toggle>) = R1`; every command path ends there after the record is built."
 
 [[hook]]
 name = "dsp.link.hook.block_tail"

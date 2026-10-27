@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* `std::shared_ptr<View>`: pointer and control block (core/digikit-menu `SharedPtr`; finding 71 section 2, the view stack nodes). */
 typedef struct shared_ptr {
     uint32_t ptr;
     uint32_t ctl;
@@ -14,6 +15,7 @@ _Static_assert(sizeof(shared_ptr) == 0x8, "shared_ptr size");
 _Static_assert(offsetof(shared_ptr, ptr) == 0x0, "shared_ptr.ptr offset");
 _Static_assert(offsetof(shared_ptr, ctl) == 0x4, "shared_ptr.ctl offset");
 
+/* libstdc++ `std::function<void()>`: 8 bytes of functor storage (left as padding), manager at +8 (0 = empty), invoker at +0xc (finding 71 section 5, "std::function is 16 bytes"). */
 typedef struct std_function {
     uint8_t _pad0[8];
     uint32_t manager;
@@ -24,9 +26,13 @@ _Static_assert(offsetof(std_function, manager) == 0x8, "std_function.manager off
 _Static_assert(offsetof(std_function, invoker) == 0xc, "std_function.invoker offset");
 
 /* cf.string.fn.shared_ptr.make: no sig yet */
+/* Moves a `shared_ptr` from `src` to `dst`. core/digikit-menu uses it when it pushes a popup view. */
 void dk_fw_string_shared_ptr_move(shared_ptr *dst, shared_ptr *src) __asm__("cf.string.fn.shared_ptr.move");
+/* Releases a `shared_ptr` count holder given its control-block word. core/digikit-menu calls it on its temporaries after it pushes a view. */
 void dk_fw_string_shared_ptr_release(uint32_t *ctl) __asm__("cf.string.fn.shared_ptr.release");
+/* Constructs a `std::string` from a C string. core/digikit-menu builds the view title with it. */
 void dk_fw_string_std_string_ctor(uint32_t *s, const char *cstr, const uint8_t *alloc) __asm__("cf.string.fn.std_string.ctor");
+/* Destroys a `std::string`. core/digikit-menu calls it after the view constructor has copied the title. */
 void dk_fw_string_std_string_dtor(uint32_t *s) __asm__("cf.string.fn.std_string.dtor");
 
 #endif

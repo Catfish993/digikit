@@ -7,7 +7,9 @@
 #include <stddef.h>
 
 /* cf.param.fn.value_class: no sig yet */
+/* the parameter table (60-byte rows), by the signature of its reader */
 extern const uint8_t dk_fw_param_descriptor_table __asm__("cf.param.data.descriptor_table");
+/* The descriptor row (60 bytes) of that parameter: mirror index 66, range 0..0x7f00, default 0x5000. */
 extern const uint8_t dk_fw_param_descriptor_table_master_sidechain_filter __asm__("cf.param.data.descriptor_table.master_sidechain_filter");
 
 #endif

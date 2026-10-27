@@ -19,6 +19,9 @@ users = ["core/digikit-menu"]
 (each has one file: `<subsystem>.toml`, or `dsp/<subsystem>.toml` for the DSP), and `kind` is the table of the entry
 (`fn`, `data`, `value`, `sites`, `site`). `port_resolve.py` refuses a name that breaks the rule.
 
+Every entry needs a `doc`: one line on what the object is or does. `patchkit gen` refuses an entry without one.
+`mise run fw:reference` writes the searchable reference page.
+
 To declare a function, use `tools/firmware/catalog.py` on a stock image (SHARC if the address is below 0x1000000). Both
 commands compute the rule from the function that contains ADDR, check that it resolves back to ADDR, and with `--other`
 check the other device against the atlas catalogue pair:

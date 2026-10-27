@@ -38,6 +38,9 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   list                                   modules under modules/ and ports under devices/ports/
   gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
                                          a SHARC include per device, gallery JSON
+  reference [-o OUT.html] [--fragment]   the searchable firmware reference page (default out/reference/fw.html) from
+                                         modules/core/fw/reference.json (written by `gen`); --fragment writes the
+                                         page body without the document tags, for publishing
 ";
 
 struct Args {
@@ -295,7 +298,7 @@ fn run(a: Args) -> Result<()> {
                     println!("wrote    {}", path.display());
                 }
             }
-            for (rel, text) in patchkit::fwgen::generate(&a.root)? {
+            for (rel, text) in patchkit::fwgen::generate_with_ports(&a.root)? {
                 let path = a.root.join(&rel);
                 let have = std::fs::read_to_string(&path).ok();
                 if have.as_deref() == Some(text.as_str()) {
@@ -318,6 +321,24 @@ fn run(a: Args) -> Result<()> {
                     "{stale} generated file(s) are stale: run `patchkit gen`"
                 )));
             }
+        }
+        "reference" => {
+            let src = a.root.join(patchkit::fwgen::REFERENCE_OUT);
+            let json = std::fs::read_to_string(&src)
+                .map_err(|_| Error(format!("{}: missing: run `patchkit gen`", src.display())))?;
+            let frag = include_str!("fwref.html").replace("__DATA__", &json.replace("</", "<\\/"));
+            let page = if rest.iter().any(|x| x == "--fragment") {
+                frag
+            } else {
+                format!("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n</head>\n<body>\n{frag}\n</body>\n</html>\n")
+            };
+            let out = PathBuf::from(flag(rest, "-o").unwrap_or_else(|| "out/reference/fw.html".into()));
+            let out = if out.is_absolute() { out } else { a.root.join(out) };
+            if let Some(d) = out.parent() {
+                std::fs::create_dir_all(d).map_err(|e| Error(format!("{}: {e}", d.display())))?;
+            }
+            write(&out.to_string_lossy(), page.as_bytes())?;
+            println!("{}", out.display());
         }
         "explain" => {
             let fwp = flag(rest, "--firmware").ok_or_else(|| Error(USAGE.into()))?;

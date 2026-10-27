@@ -338,6 +338,7 @@ def main(argv: list[str]) -> int:
         "apply",
         "rebuild",
         "gen",
+        "reference",
         "needs",
         "dkm-info",
     ):

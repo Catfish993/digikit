@@ -154,17 +154,20 @@ struct StructDef {
     short: String,
     size: u32,
     slots: Vec<Slot>,
+    doc: String,
 }
 
 struct FnDef {
     name: String,
     rust: String,
     sig: Option<Sig>,
+    doc: String,
 }
 
 struct StaticDef {
     name: String,
     rust: String,
+    doc: String,
 }
 
 /// Where a handler argument comes from at the hook.
@@ -496,7 +499,8 @@ fn rust_fn(f: &FnDef, sig: &Sig, info: &Info) -> String {
         format!(" -> {}", rs_ty(&sig.ret, info))
     };
     format!(
-        "    unsafe extern \"C\" {{\n        #[link_name = \"{}\"]\n        pub fn {}({}){ret};\n    }}\n",
+        "    unsafe extern \"C\" {{\n        /// {}\n        #[link_name = \"{}\"]\n        pub fn {}({}){ret};\n    }}\n",
+        f.doc,
         f.name,
         f.rust,
         args.join(", ")
@@ -544,7 +548,7 @@ fn rust_hook(h: &HookDef, info: &Info) -> String {
 }
 
 fn rust_struct(s: &StructDef, info: &Info) -> String {
-    let mut o = format!("    #[repr(C)]\n    pub struct {} {{\n", s.short);
+    let mut o = format!("    /// {}\n    #[repr(C)]\n    pub struct {} {{\n", s.doc, s.short);
     for sl in &s.slots {
         match sl {
             Slot::Field { name, ty, .. } => {
@@ -593,7 +597,8 @@ fn rust(subs: &BTreeMap<String, Sub>, info: &Info) -> String {
         }
         for v in &d.statics {
             items.push(format!(
-                "    unsafe extern \"C\" {{\n        #[link_name = \"{}\"]\n        pub static {}: u8;\n    }}\n",
+                "    unsafe extern \"C\" {{\n        /// {}\n        #[link_name = \"{}\"]\n        pub static {}: u8;\n    }}\n",
+                v.doc,
                 v.name,
                 v.rust.to_uppercase()
             ));
@@ -648,7 +653,8 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
         let _ = writeln!(s, "#include \"dk_fw_{o}.h\"");
     }
     for st in &d.structs {
-        let _ = writeln!(s, "\ntypedef struct {} {{", st.short);
+        let _ = writeln!(s, "\n/* {} */", c_comment(&st.doc));
+        let _ = writeln!(s, "typedef struct {} {{", st.short);
         for sl in &st.slots {
             match sl {
                 Slot::Field { name, ty, .. } => {
@@ -692,6 +698,7 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
                 if args.is_empty() {
                     args.push("void".into());
                 }
+                let _ = writeln!(s, "/* {} */", c_comment(&f.doc));
                 let _ = writeln!(
                     s,
                     "{} dk_fw_{sub}_{}({}) __asm__(\"{}\");",
@@ -707,6 +714,7 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
         }
     }
     for v in &d.statics {
+        let _ = writeln!(s, "/* {} */", c_comment(&v.doc));
         let _ = writeln!(
             s,
             "extern const uint8_t dk_fw_{sub}_{} __asm__(\"{}\");",
@@ -796,6 +804,7 @@ fn gas_hook(sub: &str, h: &HookDef) -> String {
 fn gas_inc(sub: &str, d: &Sub) -> String {
     let mut s = format!("/* {HEADER} */\n");
     for st in &d.structs {
+        let _ = writeln!(s, "/* {}: {} */", st.name, c_comment(&st.doc));
         let _ = writeln!(s, ".equ {}_size, {:#x}", st.short, st.size);
         for sl in &st.slots {
             if let Slot::Field { name, off, .. } = sl {
@@ -973,6 +982,24 @@ pub fn render(decls: &[(&str, &str)]) -> Result<Vec<(String, String)>> {
         let f: Files = toml::from_str(text).map_err(|e| err!("{path}: {e}"))?;
         files.push(f);
     }
+    // every entry needs a doc
+    for f in &files {
+        let docs = f
+            .r#fn
+            .iter()
+            .chain(&f.site)
+            .chain(&f.data)
+            .chain(&f.value)
+            .chain(&f.sites)
+            .map(|e| (&e.name, &e.doc))
+            .chain(f.r#struct.iter().map(|s| (&s.name, &s.doc)))
+            .chain(f.hook.iter().map(|h| (&h.name, &h.doc)));
+        for (name, doc) in docs {
+            if doc.as_deref().is_none_or(|d| d.trim().is_empty()) {
+                return Err(err!("{name}: no doc"));
+            }
+        }
+    }
     // the structs first: their short names and sizes are the types of the other entries
     let mut info = Info::new();
     for f in &files {
@@ -1003,6 +1030,7 @@ pub fn render(decls: &[(&str, &str)]) -> Result<Vec<(String, String)>> {
                         short,
                         size: s.size,
                         slots,
+                        doc: s.doc.clone().unwrap_or_default(),
                     });
                 }
                 _ => {}
@@ -1041,15 +1069,18 @@ pub fn render(decls: &[(&str, &str)]) -> Result<Vec<(String, String)>> {
                             name: e.name.clone(),
                             rust,
                             sig,
+                            doc: e.doc.clone().unwrap_or_default(),
                         });
                     }
                     "data" | "value" => d.statics.push(StaticDef {
                         name: e.name.clone(),
                         rust,
+                        doc: e.doc.clone().unwrap_or_default(),
                     }),
                     "site" if bound => d.statics.push(StaticDef {
                         name: e.name.clone(),
                         rust,
+                        doc: e.doc.clone().unwrap_or_default(),
                     }),
                     _ => {}
                 }
@@ -1135,4 +1166,336 @@ pub fn generate(root: &Path) -> Result<Vec<(String, String)>> {
     collect(root, &root.join(SOURCE), SOURCE, &mut files)?;
     let refs: Vec<(&str, &str)> = files.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
     render(&refs)
+}
+
+/// The reference data, relative to the repository root.
+pub const REFERENCE_OUT: &str = "modules/core/fw/reference.json";
+
+/// The fields every reference entry has.
+struct Meta<'a> {
+    name: &'a str,
+    kind: &'a str,
+    cpu: &'a str,
+    sub: &'a str,
+    file: &'a str,
+    doc: &'a Option<String>,
+    mark: &'a Option<String>,
+    devices: &'a [String],
+    users: &'a [String],
+    was: &'a [String],
+}
+
+fn meta(m: &Meta) -> serde_json::Map<String, serde_json::Value> {
+    use serde_json::json;
+    let mut o = serde_json::Map::new();
+    o.insert("name".into(), json!(m.name));
+    o.insert("kind".into(), json!(m.kind));
+    o.insert("cpu".into(), json!(m.cpu));
+    o.insert("subsystem".into(), json!(m.sub));
+    o.insert("file".into(), json!(m.file));
+    o.insert("doc".into(), json!(m.doc));
+    o.insert("mark".into(), json!(m.mark));
+    if !m.devices.is_empty() {
+        o.insert("devices".into(), json!(m.devices));
+    }
+    o.insert("users".into(), json!(m.users));
+    o.insert("was".into(), json!(m.was));
+    o
+}
+
+/// The anchors a name resolves to on each port (`<name>.<i>` for a `sites` entry), ports without one left out.
+fn resolve(reg: &crate::port::Registry, name: &str, multi: bool) -> serde_json::Value {
+    use serde_json::json;
+    let mut at = serde_json::Map::new();
+    for p in &reg.ports {
+        let found: Vec<&crate::port::Anchor> = if multi {
+            (0..).map_while(|i| p.anchor(&format!("{name}.{i}"))).collect()
+        } else {
+            p.anchor(name).into_iter().collect()
+        };
+        if found.is_empty() {
+            continue;
+        }
+        let list: Vec<serde_json::Value> = found
+            .iter()
+            .map(|a| {
+                let mut o = serde_json::Map::new();
+                o.insert("addr".into(), json!(format!("{:#x}", a.addr)));
+                o.insert("len".into(), json!(a.len));
+                if a.pm.is_some() {
+                    o.insert("pm".into(), json!(true));
+                }
+                serde_json::Value::Object(o)
+            })
+            .collect();
+        at.insert(p.id(), json!(list));
+    }
+    serde_json::Value::Object(at)
+}
+
+/// The rule of an entry under each device it applies to: the kind, and the offset and length when present.
+fn rule_json(rule: &toml::Value, devices: &[String]) -> serde_json::Value {
+    use serde_json::json;
+    let one = |rule: &toml::Value| {
+        let mut r = serde_json::Map::new();
+        r.insert("kind".into(), json!(rule.get("kind").and_then(|k| k.as_str()).unwrap_or("")));
+        for key in ["offset", "len"] {
+            if let Some(v) = rule.get(key).and_then(|v| v.as_integer()) {
+                r.insert(key.into(), json!(v));
+            }
+        }
+        r
+    };
+    let mut o = serde_json::Map::new();
+    if rule.get("kind").is_some() {
+        let r = one(rule);
+        for d in devices {
+            o.insert(d.clone(), serde_json::Value::Object(r.clone()));
+        }
+    } else if let Some(t) = rule.as_table() {
+        // one table per device; its own mark overrides the mark of the entry
+        for (d, v) in t {
+            let mut r = one(v);
+            if let Some(m) = v.get("mark").and_then(|m| m.as_str()) {
+                r.insert("mark".into(), json!(m));
+            }
+            o.insert(d.clone(), serde_json::Value::Object(r));
+        }
+    }
+    serde_json::Value::Object(o)
+}
+
+/// Where a hook runs on each port that lists it: its site anchor plus the offset.
+fn resolve_hook(reg: &crate::port::Registry, name: &str, site: &str, offset: u32) -> serde_json::Value {
+    use serde_json::json;
+    let mut at = serde_json::Map::new();
+    for p in &reg.ports {
+        if p.hook(name).is_none() {
+            continue;
+        }
+        let Some(a) = p.anchor(site) else { continue };
+        let mut o = serde_json::Map::new();
+        o.insert("addr".into(), json!(format!("{:#x}", a.addr + u64::from(offset))));
+        if a.pm.is_some() {
+            o.insert("pm".into(), json!(true));
+        }
+        at.insert(p.id(), json!([serde_json::Value::Object(o)]));
+    }
+    serde_json::Value::Object(at)
+}
+
+fn bindings(pairs: &[(&str, String)]) -> serde_json::Value {
+    let mut o = serde_json::Map::new();
+    for (k, v) in pairs {
+        o.insert((*k).into(), serde_json::Value::String(v.clone()));
+    }
+    serde_json::Value::Object(o)
+}
+
+/// The reference data (JSON text) of the declarations, the `subsystems` text and the ports: every entry with its rule, its anchors
+/// per port and the bindings `render` makes. The declarations are checked by `render` first.
+pub fn reference(decls: &[(&str, &str)], subsystems: &str, reg: &crate::port::Registry) -> Result<String> {
+    use serde_json::{Value, json};
+    render(decls)?;
+    let table: toml::Table = toml::from_str(subsystems).map_err(|e| err!("{SOURCE}/subsystems.toml: {e}"))?;
+    let mut all_devices: Vec<String> = reg.ports.iter().map(|p| p.port.device.clone()).collect();
+    all_devices.sort();
+    all_devices.dedup();
+    let mut entries: Vec<(String, Value)> = Vec::new();
+    // (cpu, subsystem) -> (declaring file, entries)
+    let mut subs: BTreeMap<(String, String), (String, usize)> = BTreeMap::new();
+    for (path, text) in decls {
+        let f: Files = toml::from_str(text).map_err(|e| err!("{path}: {e}"))?;
+        let mut note = |cpu: &str, sub: &str| {
+            subs.entry((cpu.to_string(), sub.to_string()))
+                .or_insert_with(|| (path.to_string(), 0))
+                .1 += 1;
+        };
+        for (kind, list) in [
+            ("fn", &f.r#fn),
+            ("data", &f.data),
+            ("value", &f.value),
+            ("site", &f.site),
+            ("sites", &f.sites),
+        ] {
+            for e in list {
+                let cf = is_cf(&e.name, &e.cpu)?;
+                let (sub, rust) = split_name(&e.name, kind)?;
+                note(&e.cpu, &sub);
+                let mut o = meta(&Meta {
+                    name: &e.name,
+                    kind,
+                    cpu: &e.cpu,
+                    sub: &sub,
+                    file: path,
+                    doc: &e.doc,
+                    mark: &e.mark,
+                    devices: &e.devices,
+                    users: &e.users,
+                    was: &e.was,
+                });
+                if let Some(s) = &e.sig {
+                    o.insert("sig".into(), json!(s));
+                }
+                if let Some(b) = &e.bind {
+                    o.insert("bind".into(), json!(b));
+                }
+                let devs = if e.devices.is_empty() { &all_devices } else { &e.devices };
+                o.insert("rule".into(), rule_json(&e.rule, devs));
+                o.insert("at".into(), resolve(reg, &e.name, kind == "sites"));
+                if cf {
+                    let b = match kind {
+                        "fn" => Some(bindings(&[
+                            ("rust", format!("dkfw::{sub}::{rust}")),
+                            ("c", format!("dk_fw_{sub}_{rust}")),
+                        ])),
+                        "data" | "value" => Some(bindings(&[
+                            ("rust", format!("dkfw::{sub}::{}", rust.to_uppercase())),
+                            ("c", format!("dk_fw_{sub}_{rust}")),
+                        ])),
+                        "site" if e.bind.is_some() => Some(bindings(&[
+                            ("rust", format!("dkfw::{sub}::{}", rust.to_uppercase())),
+                            ("c", format!("dk_fw_{sub}_{rust}")),
+                        ])),
+                        _ => None,
+                    };
+                    if let Some(b) = b {
+                        o.insert("bindings".into(), b);
+                    }
+                }
+                entries.push((e.name.clone(), Value::Object(o)));
+            }
+        }
+        for h in &f.hook {
+            let (sub, rust) = split_name(&h.name, "hook")?;
+            let cpu = match &h.cpu {
+                Some(c) => c.as_str(),
+                None if h.name.starts_with("cf.") => "cf",
+                None => "sharc",
+            };
+            let cf = is_cf(&h.name, cpu)?;
+            note(cpu, &sub);
+            let mut o = meta(&Meta {
+                name: &h.name,
+                kind: "hook",
+                cpu,
+                sub: &sub,
+                file: path,
+                doc: &h.doc,
+                mark: &h.mark,
+                devices: &h.devices,
+                users: &h.users,
+                was: &h.was,
+            });
+            o.insert("site".into(), json!(h.site));
+            if h.offset != 0 {
+                o.insert("offset".into(), json!(h.offset));
+            }
+            o.insert("mode".into(), json!(h.mode));
+            let mut regs = serde_json::Map::new();
+            regs.insert("in".into(), json!(h.regs.inputs));
+            regs.insert("clobbers".into(), json!(h.regs.clobbers));
+            if let Some(m) = &h.regs.modes {
+                regs.insert("modes".into(), serde_json::to_value(m)?);
+            }
+            o.insert("regs".into(), Value::Object(regs));
+            if let Some(hd) = &h.handler {
+                o.insert("handler".into(), json!({ "sig": hd.sig, "args": hd.args }));
+                o.insert("sig".into(), json!(hd.sig));
+                if cf {
+                    o.insert(
+                        "bindings".into(),
+                        bindings(&[
+                            ("rust", format!("dkfw::{sub}::{}Hook", camel(&rust))),
+                            ("c", format!("dk_fw_{sub}_{rust}_hook")),
+                            ("gas", format!("dk_fw_{sub}_{rust}_hook")),
+                        ]),
+                    );
+                }
+            }
+            o.insert("at".into(), resolve_hook(reg, &h.name, &h.site, h.offset));
+            entries.push((h.name.clone(), Value::Object(o)));
+        }
+        for s in &f.r#struct {
+            let cpu = match &s.cpu {
+                Some(c) => c.as_str(),
+                None if s.name.starts_with("cf.") => "cf",
+                None => "sharc",
+            };
+            let cf = is_cf(&s.name, cpu)?;
+            // the declaring file names the subsystem
+            let sub = Path::new(path).file_stem().unwrap_or_default().to_string_lossy().to_string();
+            note(cpu, &sub);
+            let mut o = meta(&Meta {
+                name: &s.name,
+                kind: "struct",
+                cpu,
+                sub: &sub,
+                file: path,
+                doc: &s.doc,
+                mark: &s.mark,
+                devices: &[],
+                users: &s.users,
+                was: &[],
+            });
+            o.insert("size".into(), json!(s.size));
+            let fields: Vec<Value> = s
+                .fields
+                .iter()
+                .map(|x| json!({ "name": x.name, "off": x.off, "type": x.r#type }))
+                .collect();
+            o.insert("fields".into(), json!(fields));
+            if cf {
+                let short = s.name.rsplit('.').next().unwrap_or(&s.name);
+                o.insert(
+                    "bindings".into(),
+                    bindings(&[
+                        ("rust", short.to_string()),
+                        ("c", short.to_string()),
+                        ("gas", format!("{short}_size")),
+                    ]),
+                );
+            }
+            entries.push((s.name.clone(), Value::Object(o)));
+        }
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let ports: Vec<Value> = reg
+        .ports
+        .iter()
+        .map(|p| json!({ "id": p.id(), "device": p.port.device, "version": p.port.version }))
+        .collect();
+    let subsystems: Vec<Value> = subs
+        .iter()
+        .map(|((cpu, name), (file, count))| {
+            let meaning = table
+                .get(if cpu == "cf" { "cf" } else { "dsp" })
+                .and_then(|t| t.get(name.as_str()))
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
+            json!({ "cpu": cpu, "name": name, "meaning": meaning, "file": file, "count": count })
+        })
+        .collect();
+    let entries: Vec<Value> = entries.into_iter().map(|(_, v)| v).collect();
+    let doc = json!({
+        "generated_by": "patchkit gen from devices/fw and devices/ports. Do not edit.",
+        "ports": ports,
+        "subsystems": subsystems,
+        "entries": entries,
+    });
+    Ok(serde_json::to_string_pretty(&doc)? + "\n")
+}
+
+/// `generate` plus the reference data, reading the subsystems file and the ports under the repository root.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn generate_with_ports(root: &Path) -> Result<Vec<(String, String)>> {
+    let mut out = generate(root)?;
+    let mut files = Vec::new();
+    collect(root, &root.join(SOURCE), SOURCE, &mut files)?;
+    let refs: Vec<(&str, &str)> = files.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+    let sp = root.join(SOURCE).join("subsystems.toml");
+    let subsystems = std::fs::read_to_string(&sp).map_err(|e| err!("{}: {e}", sp.display()))?;
+    let reg = crate::port::Registry::from_dir(&root.join("devices/ports"))?;
+    out.push((REFERENCE_OUT.to_string(), reference(&refs, &subsystems, &reg)?));
+    Ok(out)
 }

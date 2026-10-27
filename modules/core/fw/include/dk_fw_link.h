@@ -8,6 +8,7 @@
 
 /* cf.link.fn.block_isr: no sig yet */
 /* cf.link.fn.frame: no sig yet */
+/* The 4-byte address literal of `addq.l #1,<counter>` in the block interrupt handler's tail: the firmware's DSP block counter, 1500 per second from boot. core/runtime reads it. */
 extern const uint8_t dk_fw_link_block_isr_counter_lit __asm__("cf.link.site.block_isr.counter_lit");
 /* Entry of the DSP block interrupt handler (vector 191); the hook point for per-block counting and reading the DSP's cycle count. */
 typedef void dk_fw_link_block_isr_hook(void);

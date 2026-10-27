@@ -10,8 +10,8 @@ sig = "u8 *()"
 rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x46, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "The Brain singleton."
 
-# The Brain-level push `(menu, &shared_ptr<View>)` (finding 71 section 2); `menu` is the object that opens the view.
 [[fn]]
 name = "cf.view.fn.brain.push"
 was = ["cf.menu.fn.push", "cf.view.fn.push_ctx"]
@@ -20,8 +20,8 @@ sig = "void (u8 *menu, const shared_ptr *sp)"
 rule = { kind = "cf_func", hash = "5e689a4fa65d49640663c7bce736d9ea", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "The Brain-level push `(menu, &shared_ptr<View>)` (finding 71 section 2); `menu` is the object that opens the view."
 
-# The view manager of a Brain (Brain + 0x40).
 [[fn]]
 name = "cf.view.fn.brain.view_manager"
 was = ["cf.menu.fn.mgr_of", "cf.view.fn.mgr_of"]
@@ -30,8 +30,8 @@ sig = "u8 *(u8 *brain)"
 rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x4e, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "The view manager of a Brain (Brain + 0x40)."
 
-# `View::invalidate(View *)`: asks for a redraw of the view.
 [[fn]]
 name = "cf.view.fn.invalidate"
 was = ["cf.menu.fn.invalidate"]
@@ -40,8 +40,8 @@ sig = "void (u8 *view)"
 rule = { kind = "cf_func", hash = "06c561b63ac3ef5d6fd66758337bb31f", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "`View::invalidate(View *)`: asks for a redraw of the view."
 
-# `ViewController::push(mgr, shared_ptr<View> *, exclusive)`.
 [[fn]]
 name = "cf.view.fn.view_controller_push"
 was = ["cf.menu.fn.view_add", "cf.view.fn.push"]
@@ -50,6 +50,7 @@ sig = "u32 (u8 *mgr, const shared_ptr *sp, u32 exclusive)"
 rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x60, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "`ViewController::push(mgr, shared_ptr<View> *, exclusive)`."
 
 [[site]]
 name = "cf.view.site.ui_loop"
@@ -58,8 +59,8 @@ cpu = "cf"
 rule = { kind = "cf_words", as = "code", words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8], offset = 0x6, len = 6 }
 mark = "D"
 users = ["core/runtime"]
+doc = "The `jsr` at the top of the UI task's event loop that pops the next event; core/runtime retargets it to run its per-pass tick."
 
-# The literal queue address of the UI loop's `pea <queue>` (the boot hook peeks the queue for a held safe-mode key).
 [[site]]
 name = "cf.view.site.ui_loop.queue_lit"
 was = ["cf.view.site.ui_queue_lit", "dkrt.ui.queue_lit"]
@@ -68,10 +69,8 @@ cpu = "cf"
 rule = { kind = "cf_words", as = "code", words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8], offset = 0x2, len = 4 }
 mark = "D"
 users = ["core/runtime"]
+doc = "The literal queue address of the UI loop's `pea <queue>` (the boot hook peeks the queue for a held safe-mode key)."
 
-# View (finding 71 section 2, "View vtable"): the vptr at +0, the manager (ViewController) at +0x2c, 0 when the view is not on the stack; the
-# fields of derived windows start at +0x4c.
-# The fields are [D] (finding 71); the size is [O]: derived windows start their own fields at +0x4c.
 [[struct]]
 name = "cf.view.struct.View"
 size = 0x4c
@@ -81,6 +80,7 @@ fields = [
 ]
 mark = "O"
 users = ["core/digikit-menu"]
+doc = "View (finding 71 section 2, \"View vtable\"): the vptr at +0, the manager (ViewController) at +0x2c, 0 when the view is not on the stack; the fields of derived windows start at +0x4c. The fields are [D] (finding 71); the size is [O]: derived windows start their own fields at +0x4c."
 
 [[hook]]
 name = "cf.view.hook.ui_loop"

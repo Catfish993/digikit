@@ -18,7 +18,7 @@ firmware.
 1. Firmware facts live in one place: `devices/fw/<subsystem>.toml`, one file per firmware subsystem. Module manifests
    no longer hold `[[anchor_rule]]`.
 2. Each entry is one declaration: a function, a data object, a value, a site list, a hook site or a struct. It has a
-   name, the devices it exists on, a rule per device (or one shared rule), a type, a mark and a short description.
+   name, the devices it exists on, a rule per device (or one shared rule), a type, a mark and a short description (`doc`, required).
    `users` lists the modules that use it (provenance only; the linker does not read it).
 3. Names follow `<cpu>.<subsystem>.<kind>.<name>` with a fixed subsystem list. A renamed declaration lists its former
    names in `was`: they are for reading older docs and findings, never resolve, and must not be a current name.
@@ -249,6 +249,13 @@ name.
      stayed byte-identical.
 - `cf.params.fmt` and `cf.params.slotbuild` (generator only, never used) are dropped. The `pk_*_rules*.py` generators
   are deleted; new rules come from `catalog emit-rule ADDR` on the current image.
+
+## Reference
+
+`patchkit gen` also writes `modules/core/fw/reference.json`. It holds every declaration with its doc, the rule per
+device, the resolved address per port, the binding names, the hook contract and the struct layout. `patchkit gen --check`
+fails when the file is out of date. `mise run fw:reference` renders it as a searchable page, by default
+`out/reference/fw.html`. Open an entry with `#<entry name>` or a subsystem with `#<cpu>.<subsystem>`.
 
 ## What modules declare
 

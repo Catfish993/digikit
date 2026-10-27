@@ -22,7 +22,7 @@ the step 5 list. Design: [docs/design/firmware-decls.md](../design/firmware-decl
 
 1. Done: 4c, `aliases` -> `was`, port files without alias anchors, design-doc examples fixed.
 2. Done: hook declarations with register contracts and generated trampolines (see the plan).
-3. Reference docs per subsystem.
+3. Done: reference data and page (`mise run fw:reference`).
 4. Plan step 6 (C SDK for content modules), then 7 (SHARC kernels and C pilot), 8 (distribution), 9 (UI services).
 
 ## Rules Em set in this session

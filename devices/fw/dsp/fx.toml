@@ -16,6 +16,7 @@ rule.dt2 = { kind = "sharc_func", reloc_hash = "7a928b18c09b0bf52532b537d848258a
 rule.dn2 = { kind = "sharc_func", reloc_hash = "0655a833019771f60976478adc8625fad9fec2879dc1156c2fc50d621cea2974", offset = 0x0, len = 6 }
 mark = "D"
 users = ["core/fx"]
+doc = "The hook: the first instruction of a function that the block orchestrator calls once per block after the master mix and before the USB pack (48 bits, `I7 = MODIFY(I7, imm)`, one caller)."
 
 # The send route's sites (Digitakt II FUN_1c207b, the master function; one reloc hash for all three, offsets in parcels from its entry, finding 62):
 #   the hook, its first instruction (called at 0x1c3099; `I7 = modify(I7, -0x14)`, 48 bits);
@@ -36,6 +37,7 @@ rule.dt2 = { kind = "sharc_func", reloc_hash = "cd922cc4821f7d3912560bd7e559ebe2
 rule.dn2 = { kind = "sharc_func", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x0, len = 6 }
 mark = "D"
 users = ["core/fx"]
+doc = "The DSP master function; its first instruction `I7 = modify(I7, imm)` (48 bits) is the hook point of the send route. The other send anchors are literals inside it."
 
 [[value]]
 name = "dsp.fx.value.send.return_bus"
@@ -45,6 +47,7 @@ rule.dt2 = { kind = "sharc_literal", reloc_hash = "cd922cc4821f7d3912560bd7e559e
 rule.dn2 = { kind = "sharc_literal", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x1dc }
 mark = "D"
 users = ["core/fx"]
+doc = "The FX return bus address: the literal `I5 = 0x254778` (DT2) or `I2 = 0x25b868` (DN2) where the master function mixes the FX return. core/fx adds the send output to it."
 
 [[value]]
 name = "dsp.fx.value.send.slot_bus"
@@ -54,6 +57,7 @@ devices = ["dn2"]
 rule = { kind = "sharc_literal", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x84 }
 mark = "D"
 users = ["core/fx"]
+doc = "DN2 only: base of the 16 voice-slot buses (0x100 bytes each), the literal `I4 = 0x257ee8` of the loop that sums the slots into the track buses. core/fx reads it for the send mix."
 
 [[value]]
 name = "dsp.fx.value.send.slot_fade_flags"
@@ -63,6 +67,7 @@ devices = ["dn2"]
 rule = { kind = "sharc_literal", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x7e }
 mark = "D"
 users = ["core/fx"]
+doc = "DN2 only: the 16 slot fade flag bytes (literal `I5 = 0x2578b8`); the master fades a slot out over the block when its byte is not 0. core/fx applies the same fade to the send mix."
 
 [[value]]
 name = "dsp.fx.value.send.slot_map"
@@ -72,6 +77,7 @@ devices = ["dn2"]
 rule = { kind = "sharc_literal", reloc_hash = "f8858e9860e4b5ec810b5f452283c08e7b3121684a47434acd0f48b08a9f4296", offset = 0x81 }
 mark = "D"
 users = ["core/fx"]
+doc = "DN2 only: the slot-to-track map, the literal `I2 = 0x257898` of the slot-sum loop (16 halfwords, slot v in half v % 2 of word v / 2). core/fx uses it to find each slot's track."
 
 [[value]]
 name = "dsp.fx.value.send.track_bus"
@@ -81,9 +87,8 @@ devices = ["dt2"]
 rule = { kind = "sharc_literal", reloc_hash = "cd922cc4821f7d3912560bd7e559ebe263957a4e55d8a784b0ce16bf06dd7454", offset = 0x6f }
 mark = "D"
 users = ["core/fx"]
+doc = "DT2 only: base of the 16 track buses (0x100 bytes apart), the literal `I13 = 0x252df8` of the master function's loop over the tracks. core/fx reads the send bus input from it."
 
-# The Sidechain Filter word (fx[66]) in the DSP's copy of the frame: the address in the stock reader's short-word load
-# (DT2 0x256008, DN2 0x25ced8; finding 04). The reading function differs per device.
 [[value]]
 name = "dsp.fx.value.sidechain_filter_word"
 was = ["dsp.fx.sidechain_filter_word"]
@@ -92,6 +97,7 @@ rule.dt2 = { kind = "sharc_mem_addr", reloc_hash = "55a5d8458350a1b67249f5aca8d4
 rule.dn2 = { kind = "sharc_mem_addr", reloc_hash = "4cc8a46bca990a7bd883d1784307a9cd72aa828a1ae846977e337fbc5c54c010", offset = 0x87d }
 mark = "D"
 users = ["digikit/master-drive"]
+doc = "The Sidechain Filter word (fx[66]) in the DSP's copy of the frame: the address in the stock reader's short-word load (DT2 0x256008, DN2 0x25ced8; finding 04). The reading function differs per device."
 
 [[hook]]
 name = "dsp.fx.hook.entry"

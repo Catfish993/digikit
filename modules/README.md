@@ -202,6 +202,7 @@ What registers are free at a hook site is the module's business: document it in 
 ### Anchor rules (`devices/fw/`)
 
 A module manifest has no rules. Rules are declared in `devices/fw/*.toml` ([design](../docs/design/firmware-decls.md)).
+To look up anchors, addresses and binding names, run `mise run fw:reference`.
 They tell `mise run patch:port` how to find a firmware site. It writes the result (address, length, SHA-256) into
 `devices/ports/*.toml`. The same anchor name may have one rule per device (`devices = [...]`). A rule that finds no
 match or two matches is an error. The keys below go in the `rule` table of a declaration.

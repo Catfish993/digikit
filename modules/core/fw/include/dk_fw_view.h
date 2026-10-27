@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include "dk_fw_string.h"
 
+/* View (finding 71 section 2, "View vtable"): the vptr at +0, the manager (ViewController) at +0x2c, 0 when the view is not on the stack; the fields of derived windows start at +0x4c. The fields are [D] (finding 71); the size is [O]: derived windows start their own fields at +0x4c. */
 typedef struct View {
     uint32_t vptr;
     uint8_t _pad0[40];
@@ -17,11 +18,17 @@ _Static_assert(sizeof(View) == 0x4c, "View size");
 _Static_assert(offsetof(View, vptr) == 0x0, "View.vptr offset");
 _Static_assert(offsetof(View, mgr) == 0x2c, "View.mgr offset");
 
+/* The Brain singleton. */
 uint8_t * dk_fw_view_brain_instance(void) __asm__("cf.view.fn.brain.instance");
+/* The Brain-level push `(menu, &shared_ptr<View>)` (finding 71 section 2); `menu` is the object that opens the view. */
 void dk_fw_view_brain_push(uint8_t *menu, const shared_ptr *sp) __asm__("cf.view.fn.brain.push");
+/* The view manager of a Brain (Brain + 0x40). */
 uint8_t * dk_fw_view_brain_view_manager(uint8_t *brain) __asm__("cf.view.fn.brain.view_manager");
+/* `View::invalidate(View *)`: asks for a redraw of the view. */
 void dk_fw_view_invalidate(uint8_t *view) __asm__("cf.view.fn.invalidate");
+/* `ViewController::push(mgr, shared_ptr<View> *, exclusive)`. */
 uint32_t dk_fw_view_view_controller_push(uint8_t *mgr, const shared_ptr *sp, uint32_t exclusive) __asm__("cf.view.fn.view_controller_push");
+/* The literal queue address of the UI loop's `pea <queue>` (the boot hook peeks the queue for a held safe-mode key). */
 extern const uint8_t dk_fw_view_ui_loop_queue_lit __asm__("cf.view.site.ui_loop.queue_lit");
 /* The jsr at the top of the UI task's event loop that pops the next event; the hook point for the runtime's per-pass tick. */
 typedef void dk_fw_view_ui_loop_hook(void);

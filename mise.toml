@@ -254,6 +254,10 @@ description = "Generate a firmware block library (AOT core) and register it by D
 run = "uv run python -m tools.patchkit.patchkit gen"
 description = "Write the generated module sources from devices/*.toml and sdk/sdk.toml (runtime device.rs and .inc files, gen_sdk.rs, tools/device/dklog_kinds.py): mise run gen:modules [-- --check]"
 
+[tasks."fw:reference"]
+run = "uv run python -m tools.patchkit.patchkit reference"
+description = "Write the searchable firmware reference page out/reference/fw.html from modules/core/fw/reference.json"
+
 [tasks."gen:core"]
 run = "uv run python -m tools.sharc_dev.sharc_transpile --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
 description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"

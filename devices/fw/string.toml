@@ -8,6 +8,7 @@ cpu = "cf"
 rule = { kind = "cf_func", hash = "e427a70e2c95815987c648e84eba4737", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "The firmware's `shared_ptr<View>` constructor: `out` in a0, (parent, view) on the stack. core/digikit-menu calls it through its dk_make_sp shim."
 
 [[fn]]
 name = "cf.string.fn.shared_ptr.move"
@@ -17,6 +18,7 @@ sig = "void (shared_ptr *dst, shared_ptr *src)"
 rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x40, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "Moves a `shared_ptr` from `src` to `dst`. core/digikit-menu uses it when it pushes a popup view."
 
 [[fn]]
 name = "cf.string.fn.shared_ptr.release"
@@ -26,6 +28,7 @@ sig = "void (u32 *ctl)"
 rule = { kind = "cf_ptr", hash = "ec84bde0abe50c47c39ea02790968411", offset = 0x58, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "Releases a `shared_ptr` count holder given its control-block word. core/digikit-menu calls it on its temporaries after it pushes a view."
 
 [[fn]]
 name = "cf.string.fn.std_string.ctor"
@@ -35,6 +38,7 @@ sig = "void (u32 *s, const char *cstr, const u8 *alloc)"
 rule = { kind = "cf_func", hash = "0b0f2cd7a2d5144343e1fd5ad21658be", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "Constructs a `std::string` from a C string. core/digikit-menu builds the view title with it."
 
 [[fn]]
 name = "cf.string.fn.std_string.dtor"
@@ -44,8 +48,8 @@ sig = "void (u32 *s)"
 rule = { kind = "cf_func", hash = "f1d2e07e127babad6c183b5ca51041d1", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "Destroys a `std::string`. core/digikit-menu calls it after the view constructor has copied the title."
 
-# `std::shared_ptr<View>`: pointer and control block (core/digikit-menu `SharedPtr`; finding 71 section 2, the view stack nodes).
 [[struct]]
 name = "cf.string.struct.shared_ptr"
 size = 0x8
@@ -55,9 +59,8 @@ fields = [
 ]
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "`std::shared_ptr<View>`: pointer and control block (core/digikit-menu `SharedPtr`; finding 71 section 2, the view stack nodes)."
 
-# libstdc++ `std::function<void()>`: 8 bytes of functor storage (left as padding), manager at +8 (0 = empty), invoker at +0xc
-# (finding 71 section 5, "std::function is 16 bytes").
 [[struct]]
 name = "cf.string.struct.std_function"
 size = 0x10
@@ -67,3 +70,4 @@ fields = [
 ]
 mark = "D"
 users = ["core/digikit-menu"]
+doc = "libstdc++ `std::function<void()>`: 8 bytes of functor storage (left as padding), manager at +8 (0 = empty), invoker at +0xc (finding 71 section 5, \"std::function is 16 bytes\")."

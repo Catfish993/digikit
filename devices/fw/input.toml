@@ -1,8 +1,6 @@
 # input: key and encoder decoding
 # Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
 
-# The encoder decoder `void f(u32 encoder0, int delta)`: it adds the delta to the encoder's pending count; a periodic tick flushes it, clamped to +-30
-# every 4 ticks. DT2 1.17 0x4011e598, DN2 1.12 0x4011ff0c.
 [[fn]]
 name = "cf.input.fn.enc_decoder"
 was = ["input.fw.enc_decoder"]
@@ -10,6 +8,7 @@ cpu = "cf"
 rule = { kind = "cf_func", hash = "173900efe85a324d026b5b84e6c72999", offset = 0x0, len = 2 }
 mark = "D"
 users = ["core/input"]
+doc = "The encoder decoder `void f(u32 encoder0, int delta)`: it adds the delta to the encoder's pending count; a periodic tick flushes it, clamped to +-30 every 4 ticks. DT2 1.17 0x4011e598, DN2 1.12 0x4011ff0c."
 
 # The button decoder `void f(u32 channel, u32 new_mask)`: it compares the channel's new mask with the previous one (a byte per channel in RAM), updates
 # the previous one and queues the events (key down and up, chords, repeat). DT2 1.17 0x4011e318, DN2 1.12 0x4011fc8c: the same code, cfdb h_strict hash
@@ -21,6 +20,7 @@ cpu = "cf"
 rule = { kind = "cf_func", hash = "157be8bc0a941e9aa4c960f56894c227", offset = 0x0, len = 2 }
 mark = "D"
 users = ["core/input"]
+doc = "The button decoder `void f(u32 channel, u32 new_mask)`: compares the channel's new mask with the previous one, updates it and queues the events (key down and up, chords, repeat)."
 
 [[site]]
 name = "cf.input.site.key_decoder.prev_mask_lit"
@@ -29,3 +29,4 @@ cpu = "cf"
 rule = { kind = "cf_func", hash = "157be8bc0a941e9aa4c960f56894c227", offset = 0x10, len = 4 }
 mark = "D"
 users = ["core/input"]
+doc = "The 4-byte literal at +0x10 of the button decoder (its first `lea`): the address of the previous masks, one byte per channel. core/input reads the old mask there."

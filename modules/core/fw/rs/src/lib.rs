@@ -15,6 +15,7 @@ pub mod link {
     // cf.link.fn.frame: no sig yet
 
     unsafe extern "C" {
+        /// The 4-byte address literal of `addq.l #1,<counter>` in the block interrupt handler's tail: the firmware's DSP block counter, 1500 per second from boot. core/runtime reads it.
         #[link_name = "cf.link.site.block_isr.counter_lit"]
         pub static BLOCK_ISR_COUNTER_LIT: u8;
     }
@@ -42,21 +43,25 @@ pub mod machine {
     // cf.machine.fn.type_reader: no sig yet
 
     unsafe extern "C" {
+        /// Table of the machine list: one long per stock machine type (28 bytes on DT2, 20 on DN2), read by the machine list builder; core/machines copies it with the added types inserted.
         #[link_name = "cf.machine.data.list.table"]
         pub static LIST_TABLE: u8;
     }
 
     unsafe extern "C" {
+        /// Display-name table of the machines, 12 bytes per type (long name, short name, header hint); the anchor is the pointer operand at +0x12 of the long-name accessor.
         #[link_name = "cf.machine.data.name.table"]
         pub static NAME_TABLE: u8;
     }
 
     unsafe extern "C" {
+        /// Table of permission longs, one per machine type (7 on DT2, 5 on DN2); the anchor is the pointer operand of the permit function's lea at +0x1a.
         #[link_name = "cf.machine.data.permit.table"]
         pub static PERMIT_TABLE: u8;
     }
 
     unsafe extern "C" {
+        /// DT2 only: a 7-byte per-type byte table (cd d6 df e8 f1 00 fb) read behind a type bound by six firmware functions; what the bytes mean is not known.
         #[link_name = "cf.machine.data.pertype.table"]
         pub static PERTYPE_TABLE: u8;
     }
@@ -64,17 +69,20 @@ pub mod machine {
 
 pub mod mem {
     unsafe extern "C" {
+        /// The firmware's free, `void f(u8 *p)`, paired with operator new (32 MiB buddy allocator). core/runtime registers it as fw_free.
         #[link_name = "cf.mem.fn.free"]
         pub fn free(p: *mut u8);
     }
 
     unsafe extern "C" {
+        /// operator new and its free (the 32 MiB buddy allocator, finding 01): void *f(u32), void f(void *)
         #[link_name = "cf.mem.fn.new"]
         pub fn new(size: u32) -> *mut u8;
     }
 }
 
 pub mod menu {
+    /// MenuItem, 0x54 bytes (finding 71 section 4, "MenuItem"). The draw function is a `std::function`; stock items put a bitmap blit there, and core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph.
     #[repr(C)]
     pub struct MenuItem {
         pub _pad0: [u8; 44],
@@ -87,6 +95,7 @@ pub mod menu {
         assert!(core::mem::offset_of!(MenuItem, draw) == 0x2c);
     };
 
+    /// VerticalMenuView, 0x1ac bytes (finding 71 section 4, "VerticalMenuView"): the Menu base is at +0, the View sub-object at +0x38.
     #[repr(C)]
     pub struct VerticalMenuView {
         pub _pad0: [u8; 24],
@@ -106,16 +115,19 @@ pub mod menu {
     };
 
     unsafe extern "C" {
+        /// Constructs a MenuItem in `item` from a label, an action function, an icon and a second function; copies both functions.
         #[link_name = "cf.menu.fn.item_builder"]
         pub fn item_builder(item: *mut u8, label: *const u8, action: *const crate::string::std_function, icon: *const u8, fn4: *const crate::string::std_function);
     }
 
     unsafe extern "C" {
+        /// `VerticalMenuView(this, name cstr, reserve, const std::string *title, icon)`; `title` points at the one-pointer COW string.
         #[link_name = "cf.menu.fn.vertical_menu_view_ctor"]
         pub fn vertical_menu_view_ctor(this: *mut u8, name: *const u8, reserve: u32, title: *const u32, icon: *const u8);
     }
 
     unsafe extern "C" {
+        /// The `pea (icon).l` instruction of the SYSTEM item (6 bytes of code); its operand is the address of a stock icon object built at run time.
         #[link_name = "cf.menu.site.settings_list.system_icon_ref"]
         pub static SETTINGS_LIST_SYSTEM_ICON_REF: u8;
     }
@@ -126,11 +138,13 @@ pub mod menu {
 
 pub mod midi {
     unsafe extern "C" {
+        /// The firmware's MIDI send `void f(u32 len, const u8 *msg, u32 port)` (DT2 1.16 FUN_401217fc): port 2 sends to USB through the TX function with the TX mutex taken. Same hash on all four images.
         #[link_name = "cf.midi.fn.send"]
         pub fn send(len: u32, msg: *const u8, port: u32);
     }
 
     unsafe extern "C" {
+        /// The USB MIDI transmit function (DT2 1.16 FUN_40004734, `void f(u32 len, const u8 *msg)`, hash identical on the four images): the 4-byte address literal of its `movea.l (<in flight>).l,a0`, the bytes handed to the USB stack and not yet sent (added by the submit function, taken off by the completion).
         #[link_name = "cf.midi.site.tx_inflight_lit"]
         pub static TX_INFLIGHT_LIT: u8;
     }
@@ -140,11 +154,13 @@ pub mod page {
     // cf.page.fn.page_desc: no sig yet
 
     unsafe extern "C" {
+        /// The pointer operand (4 bytes) of `move.l #list,D0` in the FX view builder: the rodata list {12} of the track FX key's one-page view. core/fxpages substitutes its own list.
         #[link_name = "cf.page.data.fx_key_list"]
         pub static FX_KEY_LIST: u8;
     }
 
     unsafe extern "C" {
+        /// The stock list itself (rodata, three page numbers) and the stock count (the byte of `moveq 3,D1` at +1): the runtime copies them in front of its pages. The stock list (rodata 0x401e0448, pages 17, 18, 19) and the stock count.
         #[link_name = "cf.page.data.fx_view_list"]
         pub static FX_VIEW_LIST: u8;
     }
@@ -154,11 +170,13 @@ pub mod param {
     // cf.param.fn.value_class: no sig yet
 
     unsafe extern "C" {
+        /// the parameter table (60-byte rows), by the signature of its reader
         #[link_name = "cf.param.data.descriptor_table"]
         pub static DESCRIPTOR_TABLE: u8;
     }
 
     unsafe extern "C" {
+        /// The descriptor row (60 bytes) of that parameter: mirror index 66, range 0..0x7f00, default 0x5000.
         #[link_name = "cf.param.data.descriptor_table.master_sidechain_filter"]
         pub static DESCRIPTOR_TABLE_MASTER_SIDECHAIN_FILTER: u8;
     }
@@ -166,21 +184,25 @@ pub mod param {
 
 pub mod project {
     unsafe extern "C" {
+        /// `Kit *f(Project *)`: the active kit of a project. core/runtime uses it with the project singleton and track_type to watch each track's machine type.
         #[link_name = "cf.project.fn.active_kit"]
         pub fn active_kit(project: u32) -> u32;
     }
 
     unsafe extern "C" {
+        /// The firmware's "serialize the live project into the persistent arena" (FUN_40030c9c on DT2, FUN_4002c694 on DN2: `int f(void)`, returns 1). The same hash on all four images.
         #[link_name = "cf.project.fn.serialize"]
         pub fn serialize() -> i32;
     }
 
     unsafe extern "C" {
+        /// The Project singleton getter `Project *f(void)`; its code differs per image. core/runtime reads it for the machine-change watch.
         #[link_name = "cf.project.fn.singleton"]
         pub fn singleton() -> u32;
     }
 
     unsafe extern "C" {
+        /// `int f(Kit *, int track)`: the machine type of a track of a kit, -1 when the track does not exist. core/runtime uses it for the machine-change watch.
         #[link_name = "cf.project.fn.track_type"]
         pub fn track_type(kit: u32, track: i32) -> i32;
     }
@@ -194,16 +216,19 @@ pub mod rtos {
     // cf.rtos.fn.reset.init_calls: no sig yet
 
     unsafe extern "C" {
+        /// The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10; move.l <save>,-(sp); jsr (a0); ...; rte`.
         #[link_name = "cf.rtos.site.exc_hook_lit"]
         pub static EXC_HOOK_LIT: u8;
     }
 
     unsafe extern "C" {
+        /// Address of the reset code's bss clear helper, the second call of cf.rtos.fn.reset.init_calls; the expansion loader calls it after it copies its segments.
         #[link_name = "cf.rtos.value.reset.clear_helper"]
         pub static RESET_CLEAR_HELPER: u8;
     }
 
     unsafe extern "C" {
+        /// Address of the reset code's .data copy helper, the first call of cf.rtos.fn.reset.init_calls; the expansion loader calls it after it copies its segments.
         #[link_name = "cf.rtos.value.reset.copy_helper"]
         pub static RESET_COPY_HELPER: u8;
     }
@@ -214,22 +239,26 @@ pub mod rtos {
 
 pub mod storage {
     unsafe extern "C" {
+        /// The firmware's eMMC block read: int f(u32 sector, u32 bytes, void *buf), 0 = ok (finding 23 S6).
         #[link_name = "cf.storage.fn.block.read"]
         pub fn block_read(sector: u32, bytes: u32, buf: *mut u8) -> i32;
     }
 
     unsafe extern "C" {
+        /// The firmware's eMMC block write: int f(u32 sector, u32 bytes, const void *buf), 0 = ok; it takes the ESDHC mutex itself (DT2 1.16 FUN_4012e0c0, DN2 1.11 FUN_4012c780). The runtime writes only the two sectors of the selection record with it.
         #[link_name = "cf.storage.fn.block.write"]
         pub fn block_write(sector: u32, bytes: u32, buf: *const u8) -> i32;
     }
 
     unsafe extern "C" {
+        /// The firmware's normal writer of the boot record (finding 36 section 2; DT2 1.16 FUN_400f044a, 1.17 0x400f05ae; DN2 1.11 FUN_400f1e26, 1.12 FUN_400f1f8a): writes the arena to the next of the two record slots, invalidates the other, one shot per boot.
         #[link_name = "cf.storage.fn.boot_record_write"]
         pub fn boot_record_write();
     }
 }
 
 pub mod string {
+    /// `std::shared_ptr<View>`: pointer and control block (core/digikit-menu `SharedPtr`; finding 71 section 2, the view stack nodes).
     #[repr(C)]
     pub struct shared_ptr {
         pub ptr: u32,
@@ -242,6 +271,7 @@ pub mod string {
         assert!(core::mem::offset_of!(shared_ptr, ctl) == 0x4);
     };
 
+    /// libstdc++ `std::function<void()>`: 8 bytes of functor storage (left as padding), manager at +8 (0 = empty), invoker at +0xc (finding 71 section 5, "std::function is 16 bytes").
     #[repr(C)]
     pub struct std_function {
         pub _pad0: [u8; 8],
@@ -258,21 +288,25 @@ pub mod string {
     // cf.string.fn.shared_ptr.make: no sig yet
 
     unsafe extern "C" {
+        /// Moves a `shared_ptr` from `src` to `dst`. core/digikit-menu uses it when it pushes a popup view.
         #[link_name = "cf.string.fn.shared_ptr.move"]
         pub fn shared_ptr_move(dst: *mut crate::string::shared_ptr, src: *mut crate::string::shared_ptr);
     }
 
     unsafe extern "C" {
+        /// Releases a `shared_ptr` count holder given its control-block word. core/digikit-menu calls it on its temporaries after it pushes a view.
         #[link_name = "cf.string.fn.shared_ptr.release"]
         pub fn shared_ptr_release(ctl: *mut u32);
     }
 
     unsafe extern "C" {
+        /// Constructs a `std::string` from a C string. core/digikit-menu builds the view title with it.
         #[link_name = "cf.string.fn.std_string.ctor"]
         pub fn std_string_ctor(s: *mut u32, cstr: *const u8, alloc: *const u8);
     }
 
     unsafe extern "C" {
+        /// Destroys a `std::string`. core/digikit-menu calls it after the view constructor has copied the title.
         #[link_name = "cf.string.fn.std_string.dtor"]
         pub fn std_string_dtor(s: *mut u32);
     }
@@ -283,6 +317,7 @@ pub mod test {
 }
 
 pub mod view {
+    /// View (finding 71 section 2, "View vtable"): the vptr at +0, the manager (ViewController) at +0x2c, 0 when the view is not on the stack; the fields of derived windows start at +0x4c. The fields are [D] (finding 71); the size is [O]: derived windows start their own fields at +0x4c.
     #[repr(C)]
     pub struct View {
         pub vptr: u32,
@@ -298,31 +333,37 @@ pub mod view {
     };
 
     unsafe extern "C" {
+        /// The Brain singleton.
         #[link_name = "cf.view.fn.brain.instance"]
         pub fn brain_instance() -> *mut u8;
     }
 
     unsafe extern "C" {
+        /// The Brain-level push `(menu, &shared_ptr<View>)` (finding 71 section 2); `menu` is the object that opens the view.
         #[link_name = "cf.view.fn.brain.push"]
         pub fn brain_push(menu: *mut u8, sp: *const crate::string::shared_ptr);
     }
 
     unsafe extern "C" {
+        /// The view manager of a Brain (Brain + 0x40).
         #[link_name = "cf.view.fn.brain.view_manager"]
         pub fn brain_view_manager(brain: *mut u8) -> *mut u8;
     }
 
     unsafe extern "C" {
+        /// `View::invalidate(View *)`: asks for a redraw of the view.
         #[link_name = "cf.view.fn.invalidate"]
         pub fn invalidate(view: *mut u8);
     }
 
     unsafe extern "C" {
+        /// `ViewController::push(mgr, shared_ptr<View> *, exclusive)`.
         #[link_name = "cf.view.fn.view_controller_push"]
         pub fn view_controller_push(mgr: *mut u8, sp: *const crate::string::shared_ptr, exclusive: u32) -> u32;
     }
 
     unsafe extern "C" {
+        /// The literal queue address of the UI loop's `pea <queue>` (the boot hook peeks the queue for a held safe-mode key).
         #[link_name = "cf.view.site.ui_loop.queue_lit"]
         pub static UI_LOOP_QUEUE_LIT: u8;
     }

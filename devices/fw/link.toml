@@ -1,8 +1,6 @@
 # link: the ColdFire side of the DSP link: block interrupt, frame call, records
 # Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
 
-# The block interrupt handler (vector 191), found by the hashes of core/dsp-link. `cf.link.site.reply_copy_lit` is the literal of its first `pea`
-# (the address of the record copy: the DSP's last reply, 0xabc bytes; its first word is the DSP's cycle count).
 [[fn]]
 name = "cf.link.fn.block_isr"
 was = ["health.hook.block"]
@@ -11,6 +9,7 @@ rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x0, len = 8 }
 mark = "D"
 users = ["core/health"]
+doc = "The block interrupt handler (vector 191), found by the hashes of core/dsp-link. `cf.link.site.reply_copy_lit` is the literal of its first `pea` (the address of the record copy: the DSP's last reply, 0xabc bytes; its first word is the DSP's cycle count)."
 
 [[fn]]
 name = "cf.link.fn.frame"
@@ -20,6 +19,7 @@ rule.dt2 = { kind = "cf_func", hash = "c7fa95828acc6073c8bac3dcd78b465f", offset
 rule.dn2 = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset = 0x0, len = 2 }
 mark = "D"
 users = ["core/dsp-link"]
+doc = "The stock block-frame driver, called by the block interrupt handler with `jsr abs.l` at +0x68; core/dsp-link keeps it as the stock sender."
 
 # The firmware's own DSP block counter (finding 37, "Safe mode after the first UI pass"): the tail of the block interrupt handler (vector 191,
 # the function core/dsp-link and core/health find by these hashes) adds the block to its clocks with `addq.l #1,<counter>` and nothing else
@@ -34,6 +34,7 @@ rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x1d4e, len = 4 }
 mark = "D"
 users = ["core/runtime"]
+doc = "The 4-byte address literal of `addq.l #1,<counter>` in the block interrupt handler's tail: the firmware's DSP block counter, 1500 per second from boot. core/runtime reads it."
 
 # ColdFire anchors. The block-frame sender is an interrupt handler (finding 04: vector 191; DT2 vector_191_handler, DN2 the
 # handler at 0x40025e36 in 1.11 and 1.12). It calls the stock driver with `jsr abs.l` at 104 bytes into the handler, in all
@@ -48,9 +49,8 @@ rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x68, len = 6 }
 mark = "D"
 users = ["core/dsp-link"]
+doc = "ColdFire anchors."
 
-# The literal of the handler's first `pea`: the address of the record copy (the DSP's last reply). dl_diag reads the diagnostic
-# words there; the same site core/health reads.
 [[site]]
 name = "cf.link.site.reply_copy_lit"
 was = ["cf.link.site.rec_lit", "dl.cf.rec_lit", "health.rec_lit"]
@@ -59,6 +59,7 @@ rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x56, len = 4 }
 mark = "D"
 users = ["core/dsp-link", "core/health"]
+doc = "The literal of the handler's first `pea`: the address of the record copy (the DSP's last reply). dl_diag reads the diagnostic words there; the same site core/health reads."
 
 [[site]]
 name = "cf.link.site.tx_queue_lit"
@@ -68,6 +69,7 @@ rule.dt2 = { kind = "cf_func", hash = "c7fa95828acc6073c8bac3dcd78b465f", offset
 rule.dn2 = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset = 0x92, len = 4 }
 mark = "D"
 users = ["core/dsp-link"]
+doc = "The 4-byte literal of `lea <tx queue>,a0` inside the stock frame driver: the address of the DSP transmit queue. core/dsp-link writes to it."
 
 [[hook]]
 name = "cf.link.hook.block_isr"
