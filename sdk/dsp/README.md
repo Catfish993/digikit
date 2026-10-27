@@ -66,6 +66,8 @@ and `selcc`-compiled C call it the same way. `call.inc` has the macros and the f
 | File | Routine | Instructions per sample | Per call (32 samples, with `DK_CALL`) | Notes |
 | --- | --- | --- | --- | --- |
 | `biquad.inc` | `_dk_biquad` | 5 | 203 | transposed direct form II; R12 = 7 words b0, b1, b2, a1, a2, s1, s2; in place allowed; reads only the input block |
+| `delay.inc` | `_dk_delay` | 4 | 175 | linearly interpolated delay, hardware circular ring; R12 = 4 words ring base, ring length L (>= 34), write offset w, delay d (float, 1 <= d <= L - 2); in place allowed; L1 and L2 are 0 on return |
+| `halfband.inc` | `_dk_halfband_down` | 20 per output (2 inputs) | 701 | 2x decimator, 23-tap half-band (Kaiser window), 64 inputs to 32 outputs; R12 = 2 words history ring base (32 words), offset (unchanged by a call); coefficient table 2 c_j in DM (`.SECTION/DM`); L1 is 0 on return |
 
 The counts are by reading until `tests/patchkit/test_dsp_kernels.py` measures them. The assembler spelling of `CJUMP`,
 `DM(I7, M7) = PC`, multifunction instructions with a memory access, and the `dk_<name>.` symbol are unconfirmed.

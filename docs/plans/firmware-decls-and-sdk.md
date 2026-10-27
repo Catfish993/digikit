@@ -230,6 +230,10 @@ Proof: `module:check` for pluck and freqshift; a new C module built in under a s
       `fast::lower::tests::flat_access_*` (a Cranelift "fill your block before switching" panic, also on the commit
       before step 7); the fast-vs-core differential vectors never set `assume_nw32`, so the (nw) 19a guard is covered
       by the Python tests only.
+      Two assembler/decoder points from the delay and half-band kernels, open: `MODIFY(Ix, My)` (register modifier)
+      comes out of `selas` in a 32-bit form that our decode table does not list, so our decoder reads it as a 48-bit
+      Type 7a (a gap in our table or a `selas` mis-encoding: check against the PRM); and Selache lists short
+      load/store forms with M0-M3 outside a DO loop as 4-byte rows, which the verify step rejects (kernels use M4).
 - [ ] Own SHARC+ assembler (follow-up after the kernels): replace Selache `selas` with an assembler built from our
       encoding table (`tools/sharc_dev/sharcspec/decode_table.json`, `compute_table.json`, from the manuals in
       `out/refs`). Write it in Rust next to the generated decoder (a new Rust package, working name sharcasm), so a wasm
@@ -319,7 +323,7 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27 (37 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
+2026-10-27 (38 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
 (findings 70-72), and steps 5 and 6. Next: step 7: kernels, then the C glue pilot, then our own SHARC assembler. Em's rules for this branch: stop before every commit and show the diff and
 message; no Rust build
 without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions

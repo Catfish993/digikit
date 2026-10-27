@@ -48,3 +48,8 @@ Write it as you mean it.
 "It decodes" is not proof. When you use a form with an immediate that no module uses yet, compare its bytes with the same
 form in the stock image (`tools/sharc_dev/sharc.py`, `img.sql("select raw from insn where ...")`) and add what you learn
 here and to the cookbook finding.
+
+- `MODIFY(Ix, My)` with a register modifier: our decoder reads `selas`'s encoding as a 48-bit Type 7a and the
+  emulator stops. Move a circular pointer with a dummy load `Fx = DM(Ix, My);` instead (open item in the plan).
+- Short loads and stores with M0-M3 outside a DO loop: Selache's listing shows them as 4-byte rows and the verify step
+  rejects the build. Use M4 for such a modifier.

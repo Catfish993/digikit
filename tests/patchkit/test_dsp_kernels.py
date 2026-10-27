@@ -356,6 +356,295 @@ void run(int x, int y, int st) { dk_biquad(x, y, st); }
         assert np.array_equal(np.array(r["y"], dtype=np.uint32), bits(y1))
 
 
+# --- delay and half-band block routines (sdk/dsp/delay.inc, halfband.inc): circular buffers on the C convention ---
+
+KR = (
+    BUF + 0x600
+)  # the buffers of these routines; the frames grow down from BQ_STACK below it
+NAN_WORD = 0x7FC00001  # marker words around every buffer; a routine that reads one makes the output NaN
+L_REGS = tuple(f"L{i}" for i in range(6))
+# MODE1 as the firmware start-up sets it (0x1011800, includes CBUFEN, bit 24): load/store post-modify wraps only with CBUFEN set
+SAVED_REGS = {
+    **BQ_SAVED,
+    **BQ_CONSTS,
+    "I6": BQ_STACK,
+    "I7": BQ_STACK,
+    "MODE1": 0x1011800,
+}
+
+
+def marks(dm, base, count):
+    """NaN markers on the two words before and the two after [base, base + count)."""
+    for a in (base - 2, base - 1, base + count, base + count + 1):
+        dm[a] = NAN_WORD
+
+
+def block_calls(inc, name, args, entry):
+    """A harness that calls `name` once for every (R4, R8, R12) of `args`, then returns."""
+    lines = [
+        "#define DK_BLOCK 32",
+        '#include "dsp/call.inc"',
+        '#include "dsp/%s.inc"' % inc,
+        ".SECTION/PM seg_pmco;",
+        ".GLOBAL %s;" % entry,
+        "%s:" % entry,
+    ]
+    for x, y, st in args:
+        lines += [
+            "    R4 = %d;" % x,
+            "    R8 = %d;" % y,
+            "    R12 = %d;" % st,
+            "    DK_CALL(%s);" % name,
+        ]
+    return "\n".join([*lines, "    RTS;", ""])
+
+
+def build_calls(inc, name, args, externs=None):
+    text = block_calls(inc, name, args, "_h")
+    return pk_sharc.build(
+        pk_build.expand_includes(text, [ROOT / "sdk"]), BASE, externs
+    )[1]
+
+
+def check_saved(r):
+    for name, want in SAVED_REGS.items():
+        assert r["regs"][name] == want, name
+    for name in L_REGS:  # circular buffering is off again: every L register is 0
+        assert r["regs"][name] == 0, name
+
+
+DL_L = 64
+DL_RING = KR + 0x10
+DL_IN = (KR + 0x100, KR + 0x140)
+DL_OUT = (KR + 0x180, KR + 0x1C0)
+DL_ST = KR + 0x200
+DL_CALL, DL_ROUTINE = (
+    3,
+    172,
+)  # DK_CALL; _dk_delay: 30 before the loop, 8 x 16 in it, 14 after (measured)
+DL_RNG = np.random.default_rng(11)
+DL_RING0 = DL_RNG.uniform(-1.0, 1.0, DL_L).astype(f32)
+DL_X = DL_RNG.uniform(-1.0, 1.0, 2 * N).astype(f32)
+DL_W = 60  # near the end of the ring: the writes and the reads wrap inside a block
+
+
+def dl_poke(d, w):
+    dm = {DL_ST: DL_RING, DL_ST + 1: DL_L, DL_ST + 2: w, DL_ST + 3: b(d)}
+    dm.update({DL_RING + i: x for i, x in enumerate(bits(DL_RING0))})
+    marks(dm, DL_RING, DL_L)
+    for k in range(2):
+        dm.update({DL_IN[k] + i: x for i, x in enumerate(bits(DL_X[k * N :][:N]))})
+        marks(dm, DL_IN[k], N)
+    return dm
+
+
+def dl_model(d, w):
+    y1, ring, w = dsp_ref.delay(DL_X[:N], DL_RING0, w, d)
+    y2, ring, w = dsp_ref.delay(DL_X[N:], ring, w, d)
+    return y1, y2, ring, w
+
+
+@pytest.mark.parametrize("d", [1.0, 2.5, 7.25, DL_L - 2.0])
+def test_delay_from_assembly_two_blocks_in_a_row(d):
+    for in_place in (False, True):
+        outs = DL_IN if in_place else DL_OUT
+        linked = build_calls(
+            "delay", "_dk_delay", [(DL_IN[k], outs[k], DL_ST) for k in range(2)]
+        )
+        r = pk_sharc.run_call(
+            linked,
+            "_h",
+            regs=SAVED_REGS,
+            dm_words=dl_poke(d, DL_W),
+            reads={
+                "y0": (outs[0], N),
+                "y1": (outs[1], N),
+                "w": (DL_ST + 2, 1),
+                "ring": (DL_RING, DL_L),
+            },
+            read_regs=(*BQ_READ_REGS, *L_REGS, "MODE1"),
+        )
+        assert r["halt"]["reason"] == "breakpoint", r["halt"]
+        y1, y2, ring, w = dl_model(d, DL_W)
+        assert np.array_equal(np.array(r["y0"], dtype=np.uint32), bits(y1))
+        assert np.array_equal(np.array(r["y1"], dtype=np.uint32), bits(y2))
+        assert r["w"] == [w]
+        assert np.array_equal(np.array(r["ring"], dtype=np.uint32), bits(ring))
+        # the cost: 3 loads of R4/R8/R12 and DK_CALL per block, the routine, the final RTS
+        assert r["instructions"] <= 2 * (3 + DL_CALL + DL_ROUTINE) + 1
+        check_saved(r)
+
+
+def test_delay_d_one_is_the_previous_input():
+    y1, _, _ = dsp_ref.delay(DL_X[:N], DL_RING0, DL_W, 1.0)
+    want = np.concatenate([[DL_RING0[DL_W - 1]], DL_X[: N - 1]]).astype(f32)
+    assert np.array_equal(y1.view(np.uint32), want.view(np.uint32))
+
+
+def test_delay_never_reads_outside_the_buffers():
+    linked = build_calls("delay", "_dk_delay", [(DL_IN[0], DL_OUT[0], DL_ST)])
+    watches = (
+        (DL_IN[0] + N, 2, False),  # after the input block
+        (DL_IN[0] + N - 2, 2, True),  # control: the last input words
+        (DL_RING - 2, 2, False),  # before the ring
+        (DL_RING + DL_L, 2, False),  # after the ring
+        (DL_RING + DL_L - 2, 2, True),  # control: the last ring words
+    )
+    for lo, count, must_hit in watches:
+        sess = pk_sharc.CallSession([linked], 0xB9F000)
+        for addr, word in dl_poke(7.25, DL_W).items():
+            sess.poke(addr, word)
+        sess.record_reads(lo, count)
+        r = sess.call("_h", SAVED_REGS)
+        assert r["halt"]["reason"] == "breakpoint", r["halt"]
+        assert bool(sess.stores) == must_hit, (lo, [e.address for e in sess.stores])
+
+
+HB_RING = KR + 0x310
+HB_ST = KR + 0x300
+HB_TABLE = (
+    KR + 0x340
+)  # the coefficient words the include's .VAR table stands for (see test_halfband_table_is_the_model)
+HB_IN = tuple(KR + 0x400 + 0x80 * k for k in range(3))
+HB_OUT = tuple(KR + 0x600 + 0x40 * k for k in range(3))
+HB_L = 32  # history ring cells
+HB_OFF = 25  # the history offset: the writes and reads wrap inside the first calls
+HB_CALL, HB_ROUTINE = (
+    3,
+    698,
+)  # DK_CALL; _dk_halfband_down: 39 before the loop, 20 x 31 in it, 21 for the last output, 18 after (measured)
+HB_RNG = np.random.default_rng(13)
+HB_RING0 = HB_RNG.uniform(-1.0, 1.0, HB_L).astype(f32)
+_T = np.arange(3 * 2 * N)
+# a low sine (passband), a high sine (stopband), a sine at 0.2 fs and an impulse early in the third block
+HB_X = (
+    0.5 * np.sin(2 * np.pi * 0.03 * _T)
+    + 0.25 * np.sin(2 * np.pi * 0.41 * _T)
+    + 0.125 * np.sin(2 * np.pi * 0.2 * _T)
+).astype(f32)
+HB_X[2 * N + 6] += f32(1.0)
+
+
+def hb_poke():
+    dm = {HB_ST: HB_RING, HB_ST + 1: HB_OFF}
+    dm.update({HB_TABLE + i: w for i, w in enumerate(bits(dsp_ref.HALFBAND_C))})
+    dm.update({HB_RING + i: x for i, x in enumerate(bits(HB_RING0))})
+    marks(dm, HB_RING, HB_L)
+    for k in range(3):
+        dm.update(
+            {HB_IN[k] + i: x for i, x in enumerate(bits(HB_X[k * 2 * N :][: 2 * N]))}
+        )
+        marks(dm, HB_IN[k], 2 * N)
+    return dm
+
+
+def hb_model():
+    ring, off, ys = HB_RING0, HB_OFF, []
+    for k in range(3):
+        y, ring, off = dsp_ref.halfband_down(HB_X[k * 2 * N :][: 2 * N], ring, off)
+        ys.append(y)
+    return ys, ring, off
+
+
+def hb_build(calls):
+    return build_calls(
+        "halfband",
+        "_dk_halfband_down",
+        [(HB_IN[k], HB_OUT[k], HB_ST) for k in range(calls)],
+        {"_dk_halfband_c1": HB_TABLE},
+    )
+
+
+def test_halfband_down_from_assembly_three_blocks_in_a_row():
+    r = pk_sharc.run_call(
+        hb_build(3),
+        "_h",
+        regs=SAVED_REGS,
+        dm_words=hb_poke(),
+        reads={
+            "y0": (HB_OUT[0], N),
+            "y1": (HB_OUT[1], N),
+            "y2": (HB_OUT[2], N),
+            "off": (HB_ST + 1, 1),
+            "ring": (HB_RING, HB_L),
+        },
+        read_regs=(*BQ_READ_REGS, *L_REGS, "MODE1"),
+        max_steps=200000,
+    )
+    assert r["halt"]["reason"] == "breakpoint", r["halt"]
+    ys, ring, off = hb_model()
+    for k in range(3):
+        assert np.array_equal(np.array(r["y%d" % k], dtype=np.uint32), bits(ys[k])), k
+    assert (
+        r["off"] == [off] == [HB_OFF]
+    )  # 64 inputs are 2 turns of the 32-cell ring: the offset does not change
+    assert np.array_equal(np.array(r["ring"], dtype=np.uint32), bits(ring))
+    # the cost: 3 loads of R4/R8/R12 and DK_CALL per block, the routine, the final RTS
+    assert r["instructions"] <= 3 * (3 + HB_CALL + HB_ROUTINE) + 1
+    check_saved(r)
+
+
+def test_halfband_down_never_reads_outside_the_buffers():
+    linked = hb_build(1)
+    watches = (
+        (HB_IN[0] + 2 * N, 2, False),  # after the input block
+        (HB_IN[0] + 2 * N - 2, 2, True),  # control: the last input words
+        (HB_RING - 2, 2, False),  # before the history ring
+        (HB_RING + HB_L, 2, False),  # after it
+        (HB_RING + HB_L - 2, 2, True),  # control: the last ring words
+    )
+    for lo, count, must_hit in watches:
+        sess = pk_sharc.CallSession([linked], 0xB9F000)
+        for addr, word in hb_poke().items():
+            sess.poke(addr, word)
+        sess.record_reads(lo, count)
+        r = sess.call("_h", SAVED_REGS, max_steps=200000)
+        assert r["halt"]["reason"] == "breakpoint", r["halt"]
+        assert bool(sess.stores) == must_hit, (lo, [e.address for e in sess.stores])
+
+
+def test_halfband_table_is_the_model():
+    """The words of the .VAR table in halfband.inc are the float32 table of the design, 2 c_j (the harness pokes the model's
+    words at HB_TABLE, so this is the only check of the include's own table)."""
+    import re
+
+    text = (ROOT / "sdk" / "dsp" / "halfband.inc").read_text()
+    words = [
+        int(m.group(2), 16)
+        for m in re.finditer(
+            r"^\.VAR _dk_halfband_c(\d+) = (0x[0-9a-fA-F]+);", text, re.M
+        )
+    ]
+    assert words == bits(dsp_ref.HALFBAND_C)
+
+
+def halfband_response(c, f):
+    """H(f) of the 23-tap half-band with odd taps c (f in cycles per input sample): 0.5 + 2 sum c_j cos(2 pi j f)."""
+    c = np.asarray(c, dtype=np.float64)
+    f = np.asarray(f, dtype=np.float64)
+    j = np.array([1.0, 3.0, 5.0, 7.0, 9.0, 11.0])
+    return 0.5 + 2.0 * np.sum(c * np.cos(2 * np.pi * np.outer(f, j)), axis=1)
+
+
+def test_halfband_design():
+    """Measured on the float32 table (Kaiser window, beta 3.4, 23 taps): the DC gain is 1.0 (error 2.4e-8); the passband
+    (0 .. 0.2 fs) ripple is 0.01227 (0.106 dB); the stopband (0.3 .. 0.5 fs) maximum is 0.01227 (-38.2 dB). The bounds are
+    the ripple x 1.2 and the stopband + 1 dB. A half-band has H(f) + H(0.5 - f) = 1, so the two ripples are equal."""
+    taps = np.array(dsp_ref.HALFBAND_C, dtype=np.float64) / 2  # the table holds 2 c_j
+    assert np.array_equal(
+        np.array(dsp_ref.HALFBAND_C, dtype=np.float32),
+        (2.0 * dsp_ref.halfband_design()).astype(np.float32),
+    )
+    pass_f = np.linspace(0.0, 0.2, 401)
+    stop_f = np.linspace(0.3, 0.5, 401)
+    hp = halfband_response(taps, pass_f)
+    hs = halfband_response(taps, stop_f)
+    assert abs(hp[0] - 1.0) <= 1e-6
+    assert np.max(np.abs(hp - 1.0)) <= 0.0148
+    assert np.max(np.abs(hs)) <= 0.0138
+    assert np.allclose(hp + halfband_response(taps, 0.5 - pass_f), 1.0, atol=1e-6)
+
+
 def test_sat():
     consts = {"R4": b(1.0), "R5": b(0.5), "R6": b(1.5)}  # one, half, k15
     out, n, ceiling = kernel(
