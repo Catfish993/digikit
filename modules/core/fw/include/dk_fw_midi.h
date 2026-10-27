@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* cf.midi.fn.send: no sig yet */
+void dk_fw_midi_send(uint32_t len, const uint8_t *msg, uint32_t port) __asm__("cf.midi.fn.send");
+extern const uint8_t dk_fw_midi_tx_inflight_lit __asm__("cf.midi.site.tx_inflight_lit");
 
 #endif

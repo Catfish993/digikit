@@ -6,6 +6,7 @@
 name = "cf.storage.fn.block_read"
 aliases = ["cf.menu.fn.blk_read", "dkrt.fw.block_read"]
 cpu = "cf"
+sig = "i32 (u32 sector, u32 bytes, u8 *buf)"
 rule = { kind = "cf_func", hash = "dcf1d4873d4a4fb5ac903e8ada9c1a12", offset = 0x0, len = 4 }
 mark = "D"
 users = ["core/digikit-menu", "core/runtime"]
@@ -16,6 +17,7 @@ users = ["core/digikit-menu", "core/runtime"]
 name = "cf.storage.fn.block_write"
 aliases = ["dkrt.fw.block_write"]
 cpu = "cf"
+sig = "i32 (u32 sector, u32 bytes, const u8 *buf)"
 rule = { kind = "cf_func", hash = "0dd5a176b94c6e30225068661b58a898", offset = 0x0, len = 2 }
 mark = "D"
 users = ["core/runtime"]
@@ -27,6 +29,7 @@ users = ["core/runtime"]
 name = "cf.storage.fn.boot_record_write"
 aliases = ["dkrt.fw.boot_record_write"]
 cpu = "cf"
+sig = "void ()"
 rule.dt2 = { kind = "cf_func", hash = "ce2fecf00cf4757d0252acc24f11436c", offset = 0x0, len = 2 }
 rule.dn2 = { kind = "cf_func", hash = "f2ab3c0214b6212848a6300a70dd6129", offset = 0x0, len = 2 }
 mark = "D"
@@ -39,6 +42,7 @@ users = ["core/runtime"]
 [[site]]
 name = "cf.storage.site.block_counter_lit"
 aliases = ["dkrt.fw.block_counter_lit"]
+bind = "static"
 cpu = "cf"
 rule.dt2 = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0x1654, len = 4 }
 rule.dn2 = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0x1d4e, len = 4 }

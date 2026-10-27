@@ -9,6 +9,7 @@
 name = "cf.project.fn.get"
 aliases = ["dkrt.fw.project"]
 cpu = "cf"
+sig = "u32 ()"
 rule.dt2 = { kind = "cf_func", hash = "ec70a039cd46fc8071a7e84112decfb1", offset = 0x0, len = 4 }
 rule.dn2 = { kind = "cf_func", hash = "e722721313b9899418dac1e1d039205c", offset = 0x0, len = 4 }
 mark = "D"
@@ -18,6 +19,7 @@ users = ["core/runtime"]
 name = "cf.project.fn.kit_of"
 aliases = ["dkrt.fw.kit_of"]
 cpu = "cf"
+sig = "u32 (u32 project)"
 devices = ["dt2", "dn2"]
 rule = { kind = "cf_func", hash = "f29fb6421b637b6883ebb6d384a09179", offset = 0x0, len = 4 }
 mark = "D"
@@ -29,6 +31,7 @@ users = ["core/runtime"]
 name = "cf.project.fn.serialize"
 aliases = ["dkrt.fw.project_serialize"]
 cpu = "cf"
+sig = "i32 ()"
 rule = { kind = "cf_func", hash = "eeb589cf009de58dead8a8e15bbf8998", offset = 0x0, len = 2 }
 mark = "D"
 users = ["core/runtime"]
@@ -37,6 +40,7 @@ users = ["core/runtime"]
 name = "cf.project.fn.track_type"
 aliases = ["dkrt.fw.track_type"]
 cpu = "cf"
+sig = "i32 (u32 kit, i32 track)"
 rule.dt2 = { kind = "cf_func", hash = "9a76292be32cf9c7a8fd2e7c031c41d9", offset = 0x0, len = 4 }
 rule.dn2 = { kind = "cf_func", hash = "7f68bc71629aaed41f2ffa075e03c222", offset = 0x0, len = 4 }
 mark = "D"

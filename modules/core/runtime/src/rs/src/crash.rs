@@ -48,8 +48,6 @@ const W_CRC: usize = W_TAIL + TAIL * 8;
 const REC_WORDS: usize = W_CRC + 1;
 
 extern "C" {
-    /// The 4-byte literal in the firmware's default exception handler whose value is the address of the hook word (anchor `dkrt.fw.exc_hook_lit`).
-    static dkrt_exc_lit: u32;
     /// `src/cf/tramp.s`.
     fn dkrt_exc_hook();
 }
@@ -84,7 +82,8 @@ pub fn seen() -> &'static CrashSeen {
 
 /// The address of the hook word the anchor's literal holds, when it lies in DDR and is word aligned.
 unsafe fn hook_word() -> Option<*mut u32> {
-    let lit = core::hint::black_box(addr_of!(dkrt_exc_lit) as usize) as u32;
+    // `EXC_HOOK_LIT`: the 4-byte literal in the firmware's default exception handler whose value is the address of the hook word.
+    let lit = core::hint::black_box(addr_of!(dkfw::rtos::EXC_HOOK_LIT) as usize) as u32;
     if lit == 0 {
         return None;
     }

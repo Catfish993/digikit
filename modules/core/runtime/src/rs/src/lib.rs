@@ -118,10 +118,6 @@ extern "C" {
     /// INFO reply gives (`[digikit] name`: 3 characters and a NUL, as a big-endian word).
     static dkrt_device_id: u32;
     static dkrt_device_name: u32;
-    /// The 4-byte address literals of two firmware words (anchors `dkrt.fw.block_counter_lit`, `dkrt.fw.tx_inflight_lit`): the symbol's
-    /// address is that of the literal in the firmware's code, whose value is the address of the word.
-    static dkrt_block_counter_lit: u32;
-    static dkrt_tx_inflight_lit: u32;
     /// The interface of core/input (`input_key(u32 code, u32 down) -> int`, `input_turn(u32 encoder, int delta) -> int`), importable by name by a
     /// module; each resolves to 0 when core/input is not in the image (`[object] optional`), and the import is then not found.
     fn input_key();
@@ -130,28 +126,10 @@ extern "C" {
     fn remote_open();
     /// `cpushl` over a byte range (both caches), `src/cf/tramp.s`.
     fn dkrt_flush(start: u32, len: u32);
-    // Firmware functions: addresses are anchors resolved at patch time.
-    fn fw_block_read();
-    /// The firmware's eMMC block write (anchor `dkrt.fw.block_write`): `int f(u32 sector, u32 bytes, const void *buf)`, 0 = ok.
-    fn fw_block_write();
-    /// The firmware's MIDI send (anchor `dkrt.fw.midi_send`): `void f(u32 len, const u8 *msg, u32 port)`; port 2 is USB. Takes the
-    /// MIDI TX mutex itself; spins when the 4 KiB TX ring is full.
-    fn fw_midi_send();
     /// `src/cf/tramp.s`: mask interrupts (returns the old status register), restore it, and the soft reset.
     fn dkrt_irq_mask() -> u32;
     fn dkrt_irq_restore(sr: u32);
     fn dkrt_soft_reset() -> !;
-    fn fw_alloc();
-    fn fw_free();
-    /// The firmware's "serialize the live project into the persistent arena" (anchor `dkrt.fw.project_serialize`): `int f(void)`.
-    fn fw_project_serialize();
-    /// The firmware's normal writer of the boot record (anchor `dkrt.fw.boot_record_write`): `void f(void)`; one shot per boot.
-    fn fw_boot_record_write();
-    /// The firmware's accessors of a track's machine type (anchors `dkrt.fw.project`, `dkrt.fw.kit_of`, `dkrt.fw.track_type`):
-    /// `Project *f(void)`, `Kit *f(Project *)` (the active kit), `int f(Kit *, int track)` (-1: no such track). Read-only; `dlog` calls them.
-    pub fn fw_project();
-    pub fn fw_kit_of();
-    pub fn fw_track_type();
     // Helpers from compiler_builtins, linked into this object.
     fn memcpy(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
     fn memset(d: *mut u8, c: i32, n: usize) -> *mut u8;
@@ -198,26 +176,23 @@ unsafe fn word_at_literal(lit: *const u32) -> Option<u32> {
 }
 
 /// The firmware's DSP block counter (1500 per second, from boot; wraps), `None` when the anchor does not point at a DDR word.
+/// `BLOCK_COUNTER_LIT` is the 4-byte address literal in the firmware's code, whose value is the address of the word.
 pub unsafe fn fw_blocks() -> Option<u32> {
-    word_at_literal(addr_of!(dkrt_block_counter_lit))
+    word_at_literal(addr_of!(dkfw::storage::BLOCK_COUNTER_LIT) as *const u32)
 }
 
 /// Bytes the firmware has handed to the USB stack for MIDI and not yet sent (0 when the host reads), `None` as for `fw_blocks`.
 pub unsafe fn tx_in_flight() -> Option<u32> {
-    word_at_literal(addr_of!(dkrt_tx_inflight_lit))
+    word_at_literal(addr_of!(dkfw::midi::TX_INFLIGHT_LIT) as *const u32)
 }
 
 pub unsafe fn block_read(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
-    let f: unsafe extern "C" fn(u32, u32, *mut u8) -> i32 =
-        core::mem::transmute(fw_block_read as unsafe extern "C" fn());
-    f(sector, bytes, buf)
+    dkfw::storage::block_read(sector, bytes, buf)
 }
 
 /// The firmware's block write, ungated. Only `block_write` and `card::claim` call it.
 pub unsafe fn raw_block_write(sector: u32, bytes: u32, buf: *const u8) -> i32 {
-    let f: unsafe extern "C" fn(u32, u32, *const u8) -> i32 =
-        core::mem::transmute(fw_block_write as unsafe extern "C" fn());
-    f(sector, bytes, buf)
+    dkfw::storage::block_write(sector, bytes, buf)
 }
 
 /// The one function that writes the card. Write `bytes` (a multiple of 512) from `buf` (16-byte aligned) to `sector`: refused with `E_RANGE`
@@ -241,11 +216,10 @@ pub fn irq_restore(sr: u32) {
     unsafe { dkrt_irq_restore(sr) }
 }
 
-/// Send one complete MIDI message (F0 .. F7 for SysEx) to `port` (2 = USB).
+/// Send one complete MIDI message (F0 .. F7 for SysEx) to `port` (2 = USB). The firmware takes the MIDI TX mutex itself and spins
+/// when the 4 KiB TX ring is full.
 pub unsafe fn midi_send(len: u32, msg: *const u8, port: u32) {
-    let f: unsafe extern "C" fn(u32, *const u8, u32) =
-        core::mem::transmute(fw_midi_send as unsafe extern "C" fn());
-    f(len, msg, port)
+    dkfw::midi::send(len, msg, port)
 }
 
 pub unsafe fn rd32(p: *const u8) -> u32 {
@@ -306,20 +280,20 @@ const fn nm(s: &[u8]) -> [u8; 28] {
     o
 }
 
-/// The names a module may import. Firmware functions come from patch-time anchors (`dkrt.fw.*`); the helpers are this
+/// The names a module may import. Firmware functions come from patch-time anchors (`dkfw`); the helpers are this
 /// object's own copies, so a module need not carry them.
 pub static IMPORTS: Imports = Imports([
     Import {
         name: nm(b"fw_block_read"),
-        addr: fw_block_read as *const (),
+        addr: dkfw::storage::block_read as *const (),
     },
     Import {
         name: nm(b"fw_alloc"),
-        addr: fw_alloc as *const (),
+        addr: dkfw::mem::new as *const (),
     },
     Import {
         name: nm(b"fw_free"),
-        addr: fw_free as *const (),
+        addr: dkfw::mem::free as *const (),
     },
     Import {
         name: nm(b"memcpy"),
@@ -884,7 +858,7 @@ pub unsafe extern "C" fn dkrt_boot_info(out: *mut DkrtBootInfo) {
 }
 
 /// What `dkrt_restart` does to keep the working state (finding 40): bit 0 serializes the live project into the persistent arena
-/// (`fw_project_serialize`), bit 1 writes the arena to the next boot record (`fw_boot_record_write`, the firmware's own writer for
+/// (`dkfw::project::serialize`), bit 1 writes the arena to the next boot record (`dkfw::storage::boot_record_write`, the firmware's own writer for
 /// the OS-update path). The default is 0 (no save; the menu asks for a project save first): finding 40 has no edit that the save keeps,
 /// and the serialize may race the firmware's BgWorker. 3 runs both steps, for the experiments of finding 40 (a host poke).
 #[no_mangle]
@@ -899,14 +873,10 @@ pub struct Aligned4(pub u32);
 unsafe fn save_working_state() {
     let mode = read_volatile(addr_of!(DKRT_SAVE_MODE.0));
     if mode & 1 != 0 {
-        let f: unsafe extern "C" fn() -> i32 =
-            core::mem::transmute(fw_project_serialize as unsafe extern "C" fn());
-        f();
+        dkfw::project::serialize();
     }
     if mode & 2 != 0 {
-        let f: unsafe extern "C" fn() =
-            core::mem::transmute(fw_boot_record_write as unsafe extern "C" fn());
-        f();
+        dkfw::storage::boot_record_write();
     }
 }
 

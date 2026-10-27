@@ -18,7 +18,8 @@ conflicts = []
 
 # The runtime: Rust, built with rustc_codegen_gcc for -mcpu=54418 (finding 26). Its bss holds the module arena
 # (DKRT_ARENA, 512 KiB) and the staging buffer (64 KiB), so patchkit reserves both together with the code and no other
-# static object can overlap them. The firmware's functions it calls are anchors resolved at patch time.
+# static object can overlap them. The Rust object has no externs table: it calls the firmware through the generated crate `dkfw`
+# (modules/core/fw, from devices/fw/), whose symbols are the anchor names resolved at patch time.
 [[object]]
 path = "build/runtime.dko.json"
 sources = ["src/rs/Cargo.toml"]
@@ -26,22 +27,6 @@ place = "cf.expansion"
 # The run-time registry's table of addresses (core/dynreg), the DSP code channel (core/dsp-link: dl_send, dl_send_win, dl_poll) and
 # the table of DSP addresses (core/dyndsp) and the effect chain's table (core/dynfx) and the effect pages' (core/fxpages); each is 0 when its module is not in the image.
 optional = ["dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dl_diag", "dyndsp_info", "dynfx_info", "fxpages_info", "health_read", "health_heap", "input_key", "input_turn", "remote_open"]
-
-[object.externs]
-fw_block_read = "dkrt.fw.block_read"
-fw_block_write = "dkrt.fw.block_write"
-fw_midi_send = "dkrt.fw.midi_send"
-dkrt_ui_queue_lit = "dkrt.ui.queue_lit"
-dkrt_block_counter_lit = "dkrt.fw.block_counter_lit"
-dkrt_tx_inflight_lit = "dkrt.fw.tx_inflight_lit"
-dkrt_exc_lit = "dkrt.fw.exc_hook_lit"
-fw_alloc = "dkrt.fw.alloc"
-fw_free = "dkrt.fw.free"
-fw_project_serialize = "dkrt.fw.project_serialize"
-fw_boot_record_write = "dkrt.fw.boot_record_write"
-fw_project = "dkrt.fw.project"
-fw_kit_of = "dkrt.fw.kit_of"
-fw_track_type = "dkrt.fw.track_type"
 
 # Constants from the device files (devices/*.toml, core/machines types.toml), written by `patchkit gen`; docs/design/device-data.md.
 # The runtime is one image for all devices: `rust` and `gas-shared` hold what every device agrees on (gen refuses a difference), `gas`

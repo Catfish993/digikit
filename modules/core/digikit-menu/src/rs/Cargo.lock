@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "dkfw"
+version = "0.1.0"
+
+[[package]]
 name = "dkneeds"
 version = "0.1.0"
 
@@ -22,6 +26,7 @@ version = "0.1.0"
 name = "pk_digikit_menu"
 version = "0.1.0"
 dependencies = [
+ "dkfw",
  "dkneeds",
  "dkrt-fit",
  "dkrt-sdk",

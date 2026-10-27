@@ -52,7 +52,10 @@ pub mod machine {
 }
 
 pub mod mem {
-    // cf.mem.fn.free: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.mem.fn.free"]
+        pub fn free(p: *mut u8);
+    }
 
     unsafe extern "C" {
         #[link_name = "cf.mem.fn.new"]
@@ -108,7 +111,15 @@ pub mod menu {
 }
 
 pub mod midi {
-    // cf.midi.fn.send: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.midi.fn.send"]
+        pub fn send(len: u32, msg: *const u8, port: u32);
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.midi.site.tx_inflight_lit"]
+        pub static TX_INFLIGHT_LIT: u8;
+    }
 }
 
 pub mod page {
@@ -140,13 +151,25 @@ pub mod param {
 }
 
 pub mod project {
-    // cf.project.fn.get: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.project.fn.get"]
+        pub fn get() -> u32;
+    }
 
-    // cf.project.fn.kit_of: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.project.fn.kit_of"]
+        pub fn kit_of(project: u32) -> u32;
+    }
 
-    // cf.project.fn.serialize: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.project.fn.serialize"]
+        pub fn serialize() -> i32;
+    }
 
-    // cf.project.fn.track_type: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.project.fn.track_type"]
+        pub fn track_type(kit: u32, track: i32) -> i32;
+    }
 }
 
 pub mod rtos {
@@ -155,6 +178,11 @@ pub mod rtos {
     // cf.rtos.fn.queue_pop: no sig yet
 
     // cf.rtos.fn.reset_init_calls: no sig yet
+
+    unsafe extern "C" {
+        #[link_name = "cf.rtos.site.exc_hook_lit"]
+        pub static EXC_HOOK_LIT: u8;
+    }
 
     unsafe extern "C" {
         #[link_name = "cf.rtos.value.reset_clear_helper"]
@@ -168,11 +196,25 @@ pub mod rtos {
 }
 
 pub mod storage {
-    // cf.storage.fn.block_read: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.storage.fn.block_read"]
+        pub fn block_read(sector: u32, bytes: u32, buf: *mut u8) -> i32;
+    }
 
-    // cf.storage.fn.block_write: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.storage.fn.block_write"]
+        pub fn block_write(sector: u32, bytes: u32, buf: *const u8) -> i32;
+    }
 
-    // cf.storage.fn.boot_record_write: no sig yet
+    unsafe extern "C" {
+        #[link_name = "cf.storage.fn.boot_record_write"]
+        pub fn boot_record_write();
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.storage.site.block_counter_lit"]
+        pub static BLOCK_COUNTER_LIT: u8;
+    }
 }
 
 pub mod string {
@@ -266,6 +308,11 @@ pub mod view {
     unsafe extern "C" {
         #[link_name = "cf.view.fn.push_ctx"]
         pub fn push_ctx(menu: *mut u8, sp: *const crate::string::shared_ptr);
+    }
+
+    unsafe extern "C" {
+        #[link_name = "cf.view.site.ui_queue_lit"]
+        pub static UI_QUEUE_LIT: u8;
     }
 }
 

@@ -76,6 +76,7 @@ users = ["core/runtime"]
 [[site]]
 name = "cf.view.site.ui_queue_lit"
 aliases = ["dkrt.ui.queue_lit"]
+bind = "static"
 cpu = "cf"
 rule = { kind = "cf_words", as = "code", words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8], offset = 0x2, len = 4 }
 mark = "D"

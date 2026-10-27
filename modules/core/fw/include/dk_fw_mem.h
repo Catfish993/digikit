@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* cf.mem.fn.free: no sig yet */
+void dk_fw_mem_free(uint8_t *p) __asm__("cf.mem.fn.free");
 uint8_t * dk_fw_mem_new(uint32_t size) __asm__("cf.mem.fn.new");
 
 #endif

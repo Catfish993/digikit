@@ -3,9 +3,14 @@
 version = 4
 
 [[package]]
+name = "dkfw"
+version = "0.1.0"
+
+[[package]]
 name = "dkrt"
 version = "0.1.0"
 dependencies = [
+ "dkfw",
  "dkrt-sdk",
 ]
 

@@ -6,8 +6,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* cf.storage.fn.block_read: no sig yet */
-/* cf.storage.fn.block_write: no sig yet */
-/* cf.storage.fn.boot_record_write: no sig yet */
+int32_t dk_fw_storage_block_read(uint32_t sector, uint32_t bytes, uint8_t *buf) __asm__("cf.storage.fn.block_read");
+int32_t dk_fw_storage_block_write(uint32_t sector, uint32_t bytes, const uint8_t *buf) __asm__("cf.storage.fn.block_write");
+void dk_fw_storage_boot_record_write(void) __asm__("cf.storage.fn.boot_record_write");
+extern const uint8_t dk_fw_storage_block_counter_lit __asm__("cf.storage.site.block_counter_lit");
 
 #endif

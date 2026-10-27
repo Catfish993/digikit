@@ -47,6 +47,7 @@ users = ["core/runtime"]
 [[site]]
 name = "cf.rtos.site.exc_hook_lit"
 aliases = ["dkrt.fw.exc_hook_lit"]
+bind = "static"
 cpu = "cf"
 rule = { kind = "cf_words", as = "code", words = [0x270023cf, "*", 0x4feffff0, 0x48d70303, "*", "*", 0x670a2f39, "*", 0x4e90588f, 0x4cd70303, 0x4fef0010], offset = 0x12, len = 4 }
 mark = "D"

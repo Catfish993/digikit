@@ -22,5 +22,6 @@ void dk_fw_view_invalidate(uint8_t *view) __asm__("cf.view.fn.invalidate");
 uint8_t * dk_fw_view_mgr_of(uint8_t *brain) __asm__("cf.view.fn.mgr_of");
 uint32_t dk_fw_view_push(uint8_t *mgr, const shared_ptr *sp, uint32_t exclusive) __asm__("cf.view.fn.push");
 void dk_fw_view_push_ctx(uint8_t *menu, const shared_ptr *sp) __asm__("cf.view.fn.push_ctx");
+extern const uint8_t dk_fw_view_ui_queue_lit __asm__("cf.view.site.ui_queue_lit");
 
 #endif

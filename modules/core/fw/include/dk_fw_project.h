@@ -6,9 +6,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* cf.project.fn.get: no sig yet */
-/* cf.project.fn.kit_of: no sig yet */
-/* cf.project.fn.serialize: no sig yet */
-/* cf.project.fn.track_type: no sig yet */
+uint32_t dk_fw_project_get(void) __asm__("cf.project.fn.get");
+uint32_t dk_fw_project_kit_of(uint32_t project) __asm__("cf.project.fn.kit_of");
+int32_t dk_fw_project_serialize(void) __asm__("cf.project.fn.serialize");
+int32_t dk_fw_project_track_type(uint32_t kit, int32_t track) __asm__("cf.project.fn.track_type");
 
 #endif

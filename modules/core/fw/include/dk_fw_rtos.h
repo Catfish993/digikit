@@ -9,6 +9,7 @@
 /* cf.rtos.fn.create_main: no sig yet */
 /* cf.rtos.fn.queue_pop: no sig yet */
 /* cf.rtos.fn.reset_init_calls: no sig yet */
+extern const uint8_t dk_fw_rtos_exc_hook_lit __asm__("cf.rtos.site.exc_hook_lit");
 extern const uint8_t dk_fw_rtos_reset_clear_helper __asm__("cf.rtos.value.reset_clear_helper");
 extern const uint8_t dk_fw_rtos_reset_copy_helper __asm__("cf.rtos.value.reset_copy_helper");
 
