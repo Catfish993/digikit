@@ -1,0 +1,22 @@
+[module]
+id = "__ID__"
+version = "0.1.0"
+name = "__TITLE__"
+category = "tools"
+type = "service"
+author = "__AUTHOR__"
+status = "experimental"
+summary = "One short sentence for players, 120 characters at most, ending with a full stop."
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# A run-time module (`.dkm`, `patchkit pack __ID__ --device dt2`), built from C.
+[[object]]
+path = "build/__NAME__.dko.json"
+sources = ["src/c/__NAME__.c"]
+place = "cf.expansion"

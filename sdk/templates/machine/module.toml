@@ -1,0 +1,53 @@
+[module]
+id = "__ID__"
+version = "0.1.0"
+name = "__TITLE__"
+category = "machines"
+type = "machine"
+author = "__AUTHOR__"
+status = "experimental"
+summary = "One short sentence for players, 120 characters at most, ending with a full stop."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# `patchkit pack __ID__ --device dt2|dn2 -o __NAME__.dkm` makes the .dkm; the digikit runtime sends the DSP object to the DSP and
+# publishes the voice row and the machine row.
+[[object]]
+path = "build/__NAME__-dsp.dko.json"
+sources = ["src/dsp/__NAME__.s"]
+place = "dsp.l2"
+
+[[voice]]
+machine = "__NAME__"
+render = "___NAME___render"
+note_on = "___NAME___note_on"
+desc = "___NAME___desc"
+
+# `knobs` lists parameter names only: the device profile places them on the knobs.
+[[machine]]
+id = "__NAME__"
+name = "__TITLE__"
+short = "__SHORT__"
+clone_of = 0
+knobs = ["__NAME___level"]
+
+[[param]]
+id = "__NAME___level"
+name = "Level"
+short = "LEVEL"
+min = 0
+max = 0x7f00
+default = 0x7f00
+
+[[page]]
+id = "__NAME___syn"
+machine = "__NAME__"
+name = "__SHORT__"
+title = "__TITLE__"
+devices = ["dn2"]

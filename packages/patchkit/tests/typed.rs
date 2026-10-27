@@ -168,6 +168,22 @@ fn device_models_match_the_hard_coded_frame_layout_of_pluck() {
     }
 }
 
+/// `patchkit gen` loads a module whose object files do not exist yet (the generated headers are inputs of the build).
+#[test]
+fn generation_needs_no_object_files() {
+    let models = Models::from_dir(&root().join("devices")).unwrap();
+    let dir = root().join("tests/fixtures/modules/patched-pluck");
+    let text = std::fs::read_to_string(dir.join("module.toml")).unwrap();
+    let missing = |p: &str| Err(patchkit::Error(format!("{p}: no such file")));
+    assert!(patchkit::module::Module::from_parts(&text, &missing).is_err());
+    let m = patchkit::module::Module::from_parts_lenient(&text, &missing).unwrap();
+    assert!(m.objects.is_empty());
+    let mut lib = Library { modules: vec![m] };
+    lib.lower(&models).unwrap();
+    let files = modgen::generate(&lib, &models, "test/patched-pluck").unwrap();
+    assert!(files.iter().any(|f| f.0.ends_with("dt2.inc")));
+}
+
 /// The bundle path of the browser: the same lowering from texts (ports, manifests, objects, device files).
 #[test]
 fn bundle_lowering_matches_the_scan() {

@@ -1,0 +1,45 @@
+[module]
+id = "__ID__"
+version = "0.1.0"
+name = "__TITLE__"
+category = "fx"
+type = "fx"
+author = "__AUTHOR__"
+status = "experimental"
+summary = "One short sentence for players, 120 characters at most, ending with a full stop."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# `patchkit pack __ID__ --device dt2 -o __NAME__.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
+# publishes a free effect row of core/dynfx for the effect.
+[[object]]
+path = "build/__NAME__-dsp.dko.json"
+sources = ["src/dsp/__NAME__.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]
+
+# One effect: its process routine, `dk_fx_desc` (sdk/dk_fx.h) and its page in the FX view: the tab, the title, one knob and the MIX knob.
+# `patchkit gen` writes build/gen/module.inc with __UPPER___KNOBS and __UPPER___GAIN_WORD.
+[[fx]]
+id = "__NAME__"
+process = "___NAME___process"
+desc = "___NAME___desc"
+tab = "__TAB__"
+title = "__TITLE__"
+mix = 127
+devices = ["dt2", "dn2"]
+
+[[fx.knob]]
+name = "Gain"
+short = "GAIN"
+min = 0.0
+max = 1.27
+default = 0.5
+display = "percent"
+position = 0

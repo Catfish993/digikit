@@ -453,11 +453,32 @@ impl Module {
         manifest_text: &str,
         read: &dyn Fn(&str) -> Result<String>,
     ) -> Result<Module> {
+        Self::from_parts_with(manifest_text, read, false)
+    }
+
+    /// Like `from_parts`, but an object that cannot be read is left out of `objects` (only `patchkit gen` loads this way: the generated
+    /// headers are inputs of the build that makes the objects). Such a module must not be applied or packed.
+    pub fn from_parts_lenient(
+        manifest_text: &str,
+        read: &dyn Fn(&str) -> Result<String>,
+    ) -> Result<Module> {
+        Self::from_parts_with(manifest_text, read, true)
+    }
+
+    fn from_parts_with(
+        manifest_text: &str,
+        read: &dyn Fn(&str) -> Result<String>,
+        lenient: bool,
+    ) -> Result<Module> {
         let manifest: Manifest = toml::from_str(manifest_text)?;
         let mut objects = vec![];
         let mut all = manifest_text.to_string();
         for o in &manifest.object {
-            let t = read(&o.path)?;
+            let t = match read(&o.path) {
+                Ok(t) => t,
+                Err(_) if lenient => continue,
+                Err(e) => return Err(e),
+            };
             all.push_str(&t);
             objects.push(Dko::parse(&t).map_err(|e| err!("{}: {e}", o.path))?);
         }
@@ -506,7 +527,11 @@ impl Library {
     /// the state blocks of its voices (`reserve_voice_state`).
     pub fn lower(&mut self, models: &crate::typed::Models) -> Result<()> {
         for m in &mut self.modules {
-            if !m.manifest.module.dynamic && !m.manifest.lowered {
+            // a module loaded without its objects (`from_parts_lenient`) has no descriptors to read
+            if !m.manifest.module.dynamic
+                && !m.manifest.lowered
+                && m.objects.len() == m.manifest.object.len()
+            {
                 reserve_voice_state(m).map_err(|e| err!("{}: {e}", m.manifest.module.id))?;
             }
             crate::typed::lower(&mut m.manifest, models)
@@ -562,7 +587,7 @@ impl Library {
 #[cfg(not(target_arch = "wasm32"))]
 impl Library {
     /// Every `module.toml` under `root` (a module root), without lowering.
-    fn read_root(root: &std::path::Path) -> Result<Vec<Module>> {
+    fn read_root(root: &std::path::Path, lenient: bool) -> Result<Vec<Module>> {
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else {
                 return;
@@ -587,8 +612,8 @@ impl Library {
                 std::fs::read_to_string(dir.join(rel))
                     .map_err(|e| err!("{}: {e}", dir.join(rel).display()))
             };
-            let mut m =
-                Module::from_parts(&text, &read).map_err(|e| err!("{}: {e}", p.display()))?;
+            let mut m = Module::from_parts_with(&text, &read, lenient)
+                .map_err(|e| err!("{}: {e}", p.display()))?;
             m.dir = dir;
             modules.push(m);
         }
@@ -613,17 +638,30 @@ impl Library {
 
     /// The default module roots of a repository: `modules/` and `tests/fixtures/modules/`, lowered with `devices/`.
     pub fn scan_repo(root: &std::path::Path) -> Result<Library> {
+        Self::scan_repo_with(root, false)
+    }
+
+    /// `scan_repo`; with `lenient`, a missing object file is left out (see `Module::from_parts_lenient`).
+    pub fn scan_repo_with(root: &std::path::Path, lenient: bool) -> Result<Library> {
         let mut lib = Library::default();
-        lib.extend_unique(Self::read_root(&root.join("modules"))?)?;
-        lib.extend_unique(Self::read_root(&root.join("tests/fixtures/modules"))?)?;
+        lib.extend_unique(Self::read_root(&root.join("modules"), lenient)?)?;
+        lib.extend_unique(Self::read_root(
+            &root.join("tests/fixtures/modules"),
+            lenient,
+        )?)?;
         lib.lower(&crate::typed::Models::from_dir(&root.join("devices"))?)?;
         Ok(lib)
     }
 
     /// Every `module.toml` under `root` (a module root); lowered when `devices/` sits next to it.
     pub fn scan(root: &std::path::Path) -> Result<Library> {
+        Self::scan_with(root, false)
+    }
+
+    /// `scan`; with `lenient`, a missing object file is left out (see `Module::from_parts_lenient`).
+    pub fn scan_with(root: &std::path::Path, lenient: bool) -> Result<Library> {
         let mut lib = Library::default();
-        lib.extend_unique(Self::read_root(root)?)?;
+        lib.extend_unique(Self::read_root(root, lenient)?)?;
         // the device models sit next to `modules/` (`devices/*.toml`); an extra module root without them
         // is lowered by the caller
         let devices = root.parent().map(|p| p.join("devices"));

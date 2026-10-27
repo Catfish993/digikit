@@ -76,7 +76,12 @@ fn registry(root: &Path) -> Result<Registry> {
 /// `modules/` and `tests/fixtures/modules/` of the repository, then the extra roots of `--modules-dir DIR` and the PATCHKIT_MODULES
 /// environment variable (a path list), in that order. Generated modules (derived from a firmware) live there.
 fn library(root: &Path, rest: &[String]) -> Result<Library> {
-    let mut lib = Library::scan_repo(root)?;
+    library_with(root, rest, false)
+}
+
+/// `library`; with `lenient`, a module whose object files are missing still loads (for `gen`).
+fn library_with(root: &Path, rest: &[String], lenient: bool) -> Result<Library> {
+    let mut lib = Library::scan_repo_with(root, lenient)?;
     let mut extra: Vec<PathBuf> = flag(rest, "--modules-dir")
         .into_iter()
         .map(PathBuf::from)
@@ -86,7 +91,7 @@ fn library(root: &Path, rest: &[String]) -> Result<Library> {
     }
     for d in extra {
         if d.is_dir() {
-            lib.extend_unique(Library::scan(&d)?.modules)?;
+            lib.extend_unique(Library::scan_with(&d, lenient)?.modules)?;
         }
     }
     lib.lower(&patchkit::typed::Models::from_dir(&root.join("devices"))?)?;
@@ -248,7 +253,7 @@ fn run(a: Args) -> Result<()> {
             }
         }
         "gen" => {
-            let lib = library(&a.root, rest)?;
+            let lib = library_with(&a.root, rest, true)?;
             let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
             let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
             let only: Vec<String> = flag(rest, "--modules")

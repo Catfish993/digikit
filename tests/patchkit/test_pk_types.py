@@ -1,18 +1,17 @@
-"""The permanent machine type numbers (modules/core/machines/types.toml) and `pk_new.allocate`."""
+"""The permanent machine type numbers (modules/core/machines/types.toml)."""
 
 from __future__ import annotations
 
 import tomllib
-from pathlib import Path
 
-import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.patchkit import modroots, pk_new  # noqa: E402
+from tools.patchkit import modroots  # noqa: E402
 
 TYPES = ROOT / "modules" / "core" / "machines" / "types.toml"
+STOCK_TYPES = {"dt2": 7, "dn2": 5}  # the first number that is not a stock type
 
 
 def machine_entries() -> list[tuple[str, str, list[str]]]:
@@ -45,7 +44,7 @@ def test_every_machine_entry_has_a_number_per_device() -> None:
 
 def test_numbers_are_unique_in_range_and_never_stock() -> None:
     t = tomllib.loads(TYPES.read_text())
-    for dev, first in pk_new.STOCK_TYPES.items():
+    for dev, first in STOCK_TYPES.items():
         for table in ("alloc",):
             nums = list(t[dev].get(table, {}).values())
             assert len(nums) == len(set(nums)), f"{dev} {table}"
@@ -55,47 +54,3 @@ def test_numbers_are_unique_in_range_and_never_stock() -> None:
         for k, v in t[dev]["alloc"].items():
             assert dyn_first is None or v < dyn_first or k.startswith("core/dynreg:"), k
     assert t["dt2"]["last"] < 24  # the DSP selector table was read to entry 23
-
-
-# A table with free numbers below the run-time range (the real one can be full there).
-ROOMY = """\
-[dt2]
-last = 23
-dynamic_first = 16
-
-[dt2.alloc]
-"test/a:a" = 7
-"test/b:b" = 9
-"core/dynreg:dyn16" = 16
-
-[dn2]
-last = 23
-dynamic_first = 16
-
-[dn2.alloc]
-"test/c:c" = 5
-"core/dynreg:dyn16" = 16
-"""
-
-
-def test_allocate_takes_the_next_number_and_keeps_existing_ones(tmp_path: Path) -> None:
-    p = tmp_path / "types.toml"
-    p.write_text(ROOMY)
-    before = tomllib.loads(p.read_text())
-    got = pk_new.allocate("machines/foo:foo", ["dt2", "dn2"], p)
-    after = tomllib.loads(p.read_text())
-    for dev in ("dt2", "dn2"):
-        first_dyn = before[dev].get("dynamic_first", 1 << 30)
-        top = max(v for v in before[dev]["alloc"].values() if v < first_dyn)
-        assert got[dev] == top + 1
-        assert after[dev]["alloc"]["machines/foo:foo"] == top + 1
-        for k, v in before[dev]["alloc"].items():
-            assert after[dev]["alloc"][k] == v
-    assert pk_new.allocate("machines/foo:foo", ["dt2"], p) == {"dt2": got["dt2"]}
-
-
-def test_allocate_stops_below_the_run_time_range(tmp_path: Path) -> None:
-    p = tmp_path / "types.toml"
-    p.write_text(ROOMY.replace('"test/b:b" = 9', '"test/b:b" = 15'))
-    with pytest.raises(SystemExit, match=r"\[dt2\] is full"):
-        pk_new.allocate("machines/foo:foo", ["dt2"], p)

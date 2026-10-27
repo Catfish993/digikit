@@ -289,7 +289,7 @@ description = "Build or inspect a standalone +Drive image"
 
 [tasks."module:new"]
 run = "uv run python -m tools.patchkit.pk_new"
-description = "Create a module from a template: mise run module:new -- category/name [--cf] [--dsp] (stubs, tests/smoke.toml, README.md, gallery/icon.svg; builds it), or -- author/name --machine [--dir DIR] (a run-time machine of the SDK contract, a copy of test/sine; docs/MODULE-AUTHORING.md)"
+description = "Create a run-time module from a template in sdk/templates and build it: mise run module:new -- machine|fx|service AUTHOR/NAME [--dir DIR] (docs/MODULE-AUTHORING.md)"
 
 [tasks."module:build"]
 run = "uv run python -m tools.patchkit.pk_build"
