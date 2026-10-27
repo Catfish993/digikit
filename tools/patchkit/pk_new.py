@@ -143,10 +143,11 @@ def main(argv: list[str]) -> int:
             )
             return 1
     where = f"PATCHKIT_MODULES={base.parent} " if a.dir else ""
-    name = a.id.partition("/")[2]
     print(f"next: {where}mise run module:check -- {a.id}")
-    print(f"      {where}mise run module:pack -- {a.id}")
-    print(f"      mise run dk:run    # {name}")
+    print(f"      {where}mise run module:pack -- {a.id} --device dt2")
+    print(
+        f"      {where}mise run dk:run -- {a.id} --emu --seconds 10    # needs `mise run workbench` running"
+    )
     return 0
 
 

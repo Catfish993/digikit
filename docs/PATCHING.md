@@ -208,9 +208,9 @@ module family) are slower and are run before a merge, not in the loop.
 ### Create a module
 
 ```sh
-mise run module:new -- fx/my-effect            # ColdFire and SHARC+ stubs
-mise run module:new -- fx/my-effect --dsp      # SHARC+ master-bus hook that passes audio through
-mise run module:new -- test/my-demo --cf       # ColdFire only: code, data and bss in cf.expansion
+mise run module:new -- machine alice/drone     # a run-time machine
+mise run module:new -- fx alice/crunch         # a run-time effect
+mise run module:new -- service alice/hello     # a ColdFire service in C
 mise run module:build                         # rebuild all objects (`-- modules/fx/my-effect` for one, `-- --check` only checks)
 ```
 

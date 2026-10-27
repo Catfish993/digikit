@@ -29,7 +29,7 @@ Plan a machine for 16 voices at once: 16 x your `max_cycles_block` must fit with
 
 - The DSP receives up to 4 parameter words per voice today: the knobs in `param_slots` (`[1, 2, 4, 5]` on the Digitakt
   II, `[0, 1, 2, 3]` on the Digitone II, devices/*.toml). More knobs can be shown and stored, but only these reach
-  `params`. See references/params.md.
+  `params`. See docs/MODULE-AUTHORING.md, sections 5.3 and 5.7.
 - Words are 0 .. 0x7f00 (UI 0 .. 127), smoothed on the ColdFire before they are sent; the DSP sees them once per block.
 
 ## Memory
@@ -85,7 +85,7 @@ the pages from `core/fxpages`, which the Digitone II image needs in its module l
   Size `max_cycles_block` in your `dk_fx_desc` below it.
 - **Digitone II.** Its stock DSP load is higher, so the free time per block is smaller (see "Time and budget"); the effect hook costs the
   emulator about x2.4 DSP CPU there (finding 55). A send effect there gets the sum of the voice slots of the track as its send input (finding 67).
-- Send amounts, MIX and routes are framework-owned (`contract-fx.md`).
+- Send amounts, MIX and routes are framework-owned (docs/MODULE-AUTHORING.md, section 7.2).
 
 ## Stock patterns worth copying
 

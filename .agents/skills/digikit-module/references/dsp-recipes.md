@@ -1,7 +1,7 @@
 # DSP recipes: tested SHARC+ code to copy
 
 Every block below is copied from a source that passes its tests. Change constants and state words only; do not write new
-assembly when a recipe fits. Contract, registers and entry: `contract-voice.md`. Lines are `file:line`.
+assembly when a recipe fits. Contract, registers and entry: docs/MODULE-AUTHORING.md, section 7.1. Lines are `file:line`.
 P = `modules/machines/pluck/src/dsp/pluck.s` (conformance, `test_pluck*.py`, ran on the device). D = `modules/fx/master-drive/src/dsp/master_drive.s`.
 Cost numbers are the ones the sources state or a count of instruction lines in the quoted loop. No other numbers are measured.
 `#include "dk_machine.inc"` gives `DK_OK`, `DK_DONE`, `DK_BLOCK` (32), `DK_IN_W_PITCH`, `DK_IN_W_VELOCITY`, `DK_IN_W_OUT`, `DK_MAGIC`, `DK_MACHINE_V1`.
@@ -290,12 +290,12 @@ An effect hook reads a frame word directly, scales it to 0..1 (subtract the neut
     DM(_md_d) = R0;
 ```
 (Full text D:34-50; the quote leaves out the scale and the clamps.) `(SWSE)` sign-extends the 16-bit frame word. The slew limit is `_md_step = 0x3c000000` (1/128 per block). An effect that saves registers, as D:56-64 and D:135-142 do,
-keeps R5-R7 and R9-R13 in `.VAR` words; a machine does not need this (it may use all free registers, `contract-voice.md`).
+keeps R5-R7 and R9-R13 in `.VAR` words; a machine does not need this (it may use all free registers, docs/MODULE-AUTHORING.md, section 7.1).
 
 ## Traps (named in the source comments)
 
 - Unclamped pitch: `x` unbounded makes P outside the line. Keep the clamps `F10 = MIN(F10, 11.2)` and `MAX(F10, 0)` (P:58-61).
 - Clamp the loop period before it is split: `R1 = 0x40201062` (2.501) with `MAX`, `R1 = 0x457fb7d7` (4091.49) with `MIN` (P:100-106), and N to 2 .. 4090 (P:110-113). Without them R leaves [0.5, 1.5), the all-pass coefficient passes 1 and the line becomes Inf/NaN until the next note-on (finding 51).
 - Clamp the all-pass coefficient to `+-0x3f666666` (0.9) (P:151-154). The valid range is -0.2 .. 0.33; |a| < 1 is the stability limit.
-- The guard zeroes a block above 8.0 or not finite, ends the voice, and 8 faults in 1500 blocks switch the machine off (finding 51; `contract-voice.md`).
+- The guard zeroes a block above 8.0 or not finite, ends the voice, and 8 faults in 1500 blocks switch the machine off (finding 51; docs/MODULE-AUTHORING.md, section 7.1).
 - A NaN peak never counts as quiet, so a voice with NaN state never ends (finding 51).

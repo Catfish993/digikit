@@ -130,4 +130,4 @@ Ghidra under the Apache License 2.0.
 
 ## Writing modules
 
-A module adds a machine, an effect or interface code to a Digitakt II or Digitone II, and loads at boot from the card as a `.dkm`. Start with `mise run module:new -- AUTHOR/NAME --machine` and follow [docs/MODULE-AUTHORING.md](docs/MODULE-AUTHORING.md).
+A module adds a machine, an effect or interface code to a Digitakt II or Digitone II, and loads at boot from the card as a `.dkm`. Start with `mise run module:new -- machine AUTHOR/NAME` and follow [docs/MODULE-AUTHORING.md](docs/MODULE-AUTHORING.md).

@@ -9,6 +9,6 @@ __ID__: a ColdFire service module in C, loaded at run time. It logs "hello" when
 
 ```sh
 mise run module:check -- __ID__    # build and conformance check
-mise run module:pack -- __ID__     # make the .dkm
-mise run dk:run                    # run in the emulator
+mise run module:pack -- __ID__ --device dt2     # make the .dkm (or --device dn2)
+mise run dk:run -- __ID__ --emu --seconds 10    # run in the running emulator (mise run workbench)
 ```

@@ -157,7 +157,7 @@ All integers are big endian. Offsets are from the start of the section.
   `core/dsp-voice` (finding 51), two reserved words. The type is in the run-time range 16 to 23, not used by a loaded module. The routine's pc at placement `B` is `0xb80000 + (B - 0x20000000 + entry) / 2`.
   Version 3 voices are 64 bytes: 0 `type`, 4 render entry, 8 note_on entry (image byte offsets; note_on 0: none), 12 `state_bytes` (per voice),
   16 `clear_bytes` (zeroed at note-on), 20 to 51 the eight ranges, 52 `voices` (number of voice states to reserve), 56 to 63 reserved 0. The packer
-  takes them from `[[voice]] render, note_on, desc` (`desc`: a `dk_machine_desc` data symbol; `entry` still means render). The runtime reserves
+  takes them from `[[voice]] render, note_on, desc` (`desc`: a `dk_machine_desc` data symbol). The runtime reserves
   `align8(image + bss)` plus, per voice record, `voices * align8(state_bytes)` for state, in record order, in the module's range.
 - **Effects** (version 4): 64 bytes each, the effects of the FX contract (`sdk/dk_fx.h`) that the module brings, from the manifest's `[[fx]]` (`id`, `process`: the process
   routine's global symbol, `desc`: the `dk_fx_desc` data symbol, `defaults`: the words p0 ... of the row, at most `n_params`, the words the DSP reads as they are;

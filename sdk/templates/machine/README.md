@@ -8,6 +8,6 @@ level parameter. Replace the render loop in `src/dsp/__NAME__.s` with your own v
 
 ```sh
 mise run module:check -- __ID__    # build and conformance check on both devices
-mise run module:pack -- __ID__     # make the .dkm
-mise run dk:run                    # run in the emulator
+mise run module:pack -- __ID__ --device dt2     # make the .dkm (or --device dn2)
+mise run dk:run -- __ID__ --emu --seconds 10    # run in the running emulator (mise run workbench)
 ```

@@ -24,7 +24,7 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
       kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, id; tab[8]; title[24]; 7 x (u32 position, display; f32 min, max, default; name[24]; short[8])   (Digitakt II)
 
 - MACHINE `type` is the machine **key** (since sticky ids, 2026-10-20, docs/design/module-sdk.md 11.5 D7): `hash24 << 8 | hint`. The hash is the low 24 bits of FNV-1a 32 over the
-  UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is the machine's `type_hint` (manifest, per device, 16 to 23; the pack refuses another value), 0 when it has none: "assign a type at load", preferring the hint (finding 52). The runtime
+  UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is 0 ("assign a type at load"; there is no type hint in the manifest). The runtime
   gives the machine a number in `dynamic_first ..= last` (Digitakt II and Digitone II 16 to 23) and remembers it on the card (below), so a project that stores the number
   keeps its machine while the map holds the hash. A key with hash 0 and a low byte of 16 to 23 pins that number (hand-made files and tests; it is in no map and the loader
   refuses it when another machine of the boot has it). A PAGE's `type` and a DSP voice's type are the key of their machine (the DSP section's version is unchanged: the
