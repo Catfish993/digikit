@@ -191,7 +191,8 @@ image and the `rc.txt` exit codes (34 applies on DT2 1.17 and DN2 1.12); `pk_bui
 
 ### 6. Content-module SDK in C
 
-- [ ] C object cache key includes header dependencies (gcc `-MM`); rebuild the committed C objects once.
+- [x] C object cache key includes header dependencies (gcc `-MM`, gas `--MD`) and the toolchain; the committed
+      ColdFire objects were rebuilt once (only `source_sha256` changed).
 - [ ] Generated C header for the runtime `Api` table and `dkrt_*` exports.
 - [ ] Generated per-module header from `module.toml` (parameter ids, knob order) for C, assembly and Rust.
 - [ ] `module:new` templates: ColdFire C, SHARC assembly machine, effect.
@@ -286,7 +287,7 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27 (27 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
+2026-10-27 (28 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
 (findings 70-72), and step 5 (see the step 5 list). Next: step 6. Em's rules for this branch: stop before every commit and show the diff and
 message; no Rust build
 without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions

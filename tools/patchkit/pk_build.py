@@ -12,8 +12,7 @@ object's `path`. Every instruction is re-decoded by our own decoders (SHARC: too
 ColdFire: tools/patchkit/pk_link.py `check_isa`), so a toolchain encoding bug cannot reach an image.
 
 An object whose committed `source_sha256` equals the hash of its sources now is not compiled ("unchanged"); `--force` rebuilds it.
-The hash is the builders' own (`source_hash`): C headers and the compiler version are not in the ColdFire C hash, so a change of
-only those needs `--force`.
+The hash is the builders' own (`source_hash`): the ColdFire hash covers the headers and `.include` files and the toolchain version.
 
 `--check` writes nothing and fails when a committed object differs from a fresh build (objects are
 committed; the check keeps them current with `src/`).
@@ -255,7 +254,7 @@ def cf_object(sources: list[Path], include_dirs: list[Path] | None = None) -> di
             with_helpers = Path(d) / "helpers.o"
             if pk_link.resolve_helpers(merged, with_helpers):
                 merged = with_helpers  # __udivdi3 and friends, from the ColdFire libgcc
-            proto = pk_link.object_from_elf(merged.read_bytes(), sources)
+            proto = pk_link.object_from_elf(merged.read_bytes(), sources, include_dirs)
     undefined = [s["name"] for s in proto["symbols"] if s["section"] is None]
     symmap = {n: base + 0x100 + 8 * i for i, n in enumerate(undefined)}
     linked = pk_link.link(proto, base, symmap)
@@ -330,11 +329,16 @@ def cf_object(sources: list[Path], include_dirs: list[Path] | None = None) -> di
     }
 
 
+def cf_include_dirs(moddir: Path) -> list[Path]:
+    """The include directories of a ColdFire C or assembly object of the module, for the build and for the hash."""
+    return [moddir / "build" / "gen", ROOT / "modules" / "core" / "fw" / "inc"]
+
+
 def source_hash(moddir: Path, o: dict) -> str | None:
     """The `source_sha256` a build of the manifest object `o` would write, computed the same way as the builders do and without
-    compiling: SHARC hashes the text after `#include` expansion and `#ifdef` selection, ColdFire C the listed files, Rust the crate
-    (pk_rust.source_sha256). None: the object lists no sources. C headers and the compiler version are not in the C hash (and the
-    toolchain version is in no hash but the Rust one), so a change of only those is not seen here: `--force` rebuilds."""
+    compiling: SHARC hashes the text after `#include` expansion and `#ifdef` selection, ColdFire C and assembly the listed files, the
+    headers and `.include` files they read, and the gcc/as/ld versions (pk_link.source_digest), Rust the crate
+    (pk_rust.source_sha256). None: the object lists no sources."""
     srcs = o.get("sources")
     if not srcs:
         return None
@@ -349,7 +353,7 @@ def source_hash(moddir: Path, o: dict) -> str | None:
         return hashlib.sha256(text.encode()).hexdigest()
     if any(p.name == "Cargo.toml" for p in paths):
         return pk_rust.source_sha256(paths[0])
-    return hashlib.sha256(b"".join(p.read_bytes() for p in paths)).hexdigest()
+    return pk_link.source_digest(paths, cf_include_dirs(moddir))
 
 
 def object_unchanged(moddir: Path, o: dict) -> bool:
@@ -405,10 +409,7 @@ def build_module(
         else:
             if defines:
                 raise BuildError("--define applies to DSP sources only")
-            obj = cf_object(
-                paths,
-                [moddir / "build" / "gen", ROOT / "modules" / "core" / "fw" / "inc"],
-            )
+            obj = cf_object(paths, cf_include_dirs(moddir))
         text = canonical(obj)
         out = (out_root or moddir) / o["path"]
         if check:

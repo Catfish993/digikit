@@ -81,7 +81,8 @@ def test_decoder_rejects_a_68020_form():
         text=True,
     )
     assert r.returncode == 0, r.stderr
-    o = pk_link.object_from_elf(obj.read_bytes(), [asm])
+    # No sources: the file does not assemble for ColdFire, so its dependency listing would fail.
+    o = pk_link.object_from_elf(obj.read_bytes(), [])
     with pytest.raises(pk_link.PkLinkError, match="outside ISA_A/B/C"):
         pk_link.check_isa(pk_link.link(o, BASE))
 

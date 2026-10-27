@@ -22,9 +22,11 @@ Relocation types handled: R_68K_32/16/8 (absolute), R_68K_PC32/16/8 and R_68K_PL
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import importlib
 import json
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -96,6 +98,75 @@ def toolchain_version() -> dict[str, str]:
     return out
 
 
+@functools.cache
+def toolchain_id() -> str:
+    """The gcc/as/ld version text and CFLAGS that the object's `toolchain` field records, as one string."""
+    return "\n".join(f"{k}={v}" for k, v in toolchain_version().items())
+
+
+def _parse_make_deps(text: str) -> list[str]:
+    body = text.replace("\\\r\n", " ").replace("\\\n", " ")
+    _, _, rest = body.partition(": ")
+    return [t.replace("\\ ", " ") for t in re.split(r"(?<!\\)\s+", rest.strip()) if t]
+
+
+def deps(src: Path, include_dirs: list[Path] | None = None) -> list[Path]:
+    """The files a ColdFire source reads besides itself (headers, `.include` files), absolute and resolved, sorted by
+    repo-relative path."""
+    inc = [f"-I{d}" for d in include_dirs or []]
+    with tempfile.TemporaryDirectory(prefix="pk-deps-") as d:
+        if src.suffix in (".s", ".S"):
+            mf = Path(d) / "deps.d"
+            cmd = [
+                str(_tool("as")),
+                *ASFLAGS,
+                *inc,
+                "--MD",
+                str(mf),
+                "-o",
+                str(Path(d) / "x.o"),
+                str(src),
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            text = mf.read_text() if not r.returncode and mf.exists() else ""
+        else:
+            cmd = [str(_tool("gcc")), *CFLAGS, *inc, "-MM", "-MT", "x", str(src)]
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            text = r.stdout
+    if r.returncode:
+        raise PkLinkError(
+            f"{cmd[0]} failed listing dependencies of {src}:\n{r.stdout}{r.stderr}"
+        )
+    me = src.resolve()
+    found = {p for p in (Path(t).resolve() for t in _parse_make_deps(text)) if p != me}
+    return sorted(found, key=lambda p: _rel(p))
+
+
+def _rel(p: Path) -> str:
+    try:
+        return p.relative_to(ROOT).as_posix()
+    except ValueError:
+        return p.as_posix()
+
+
+def source_digest(sources: list[Path], include_dirs: list[Path] | None = None) -> str:
+    """The `source_sha256` of a ColdFire object: the sources, then every header / `.include` file they read (path and bytes),
+    then the toolchain. pk_build.source_hash computes the same."""
+    h = hashlib.sha256()
+    h.update(b"".join(p.read_bytes() for p in sources))
+    if any(p.suffix in (".c", ".s", ".S") for p in sources):
+        seen = {
+            d
+            for p in sources
+            if p.suffix in (".c", ".s", ".S")
+            for d in deps(p, include_dirs)
+        }
+        for d in sorted(seen, key=_rel):
+            h.update(_rel(d).encode() + b"\0" + d.read_bytes())
+        h.update(toolchain_id().encode())
+    return h.hexdigest()
+
+
 def compile_source(
     path: Path, out: Path, include_dirs: list[Path] | None = None
 ) -> None:
@@ -134,7 +205,9 @@ def _kind(sec: pk_elf.Section) -> str:
     return "rodata"
 
 
-def object_from_elf(blob: bytes, sources: list[Path]) -> dict[str, object]:
+def object_from_elf(
+    blob: bytes, sources: list[Path], include_dirs: list[Path] | None = None
+) -> dict[str, object]:
     elf = pk_elf.parse(blob)
     if elf.machine != EM_68K or elf.little:
         raise PkLinkError("not a big-endian m68k object")
@@ -200,7 +273,7 @@ def object_from_elf(blob: bytes, sources: list[Path]) -> dict[str, object]:
                 "addend": r.addend,
             }
         )
-    src_hash = hashlib.sha256(b"".join(p.read_bytes() for p in sources)).hexdigest()
+    src_hash = source_digest(sources, include_dirs)
     return {
         "arch": "cf-mcf54418",
         "format": "dko-prototype-1",
@@ -377,7 +450,7 @@ def build(
         with_helpers = Path(d) / "helpers.o"
         if resolve_helpers(merged, with_helpers):
             merged = with_helpers
-        obj = object_from_elf(merged.read_bytes(), sources)
+        obj = object_from_elf(merged.read_bytes(), sources, include_dirs)
     linked = link(obj, base, symmap)
     return obj, linked, check_isa(linked)
 
