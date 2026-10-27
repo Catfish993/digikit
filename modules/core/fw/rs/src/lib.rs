@@ -108,6 +108,62 @@ pub mod mem {
 }
 
 pub mod menu {
+    /// CompactVerticalMenuView, 0x1c0 bytes: Menu at +0 (items vector +4/+8, selected +0x10, scroll +0x14, cursor +0x18, rows +0x1c, checked vector +0x28 to +0x30, multi byte +0x34), View at +0x38, rectangle and pitch at +0x198 to +0x1a8, focus byte +0x1ac, page-move flag +0x1ad (set by the ctor; with a modifier bit in the key event the arrows move a page), title-bar flag +0x1b8, title COW string pointer +0x1bc.
+    #[repr(C)]
+    pub struct CompactVerticalMenuView {
+        pub _pad0: [u8; 4],
+        pub items_begin: u32,
+        pub items_end: u32,
+        pub _pad1: [u8; 4],
+        pub selected: u32,
+        pub scroll: u32,
+        pub cursor: u32,
+        pub rows: u32,
+        pub _pad2: [u8; 8],
+        pub checked_begin: u32,
+        pub checked_end: u32,
+        pub checked_cap: u32,
+        pub multi: u8,
+        pub _pad3: [u8; 3],
+        pub view: crate::view::View,
+        pub _pad4: [u8; 276],
+        pub x: i32,
+        pub y: i32,
+        pub width: u32,
+        pub height: u32,
+        pub pitch: u32,
+        pub focus: u8,
+        pub page_mode: u8,
+        pub _pad5: [u8; 10],
+        pub title_bar: u8,
+        pub _pad6: [u8; 3],
+        pub title: u32,
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<CompactVerticalMenuView>() == 0x1c0);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, items_begin) == 0x4);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, items_end) == 0x8);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, selected) == 0x10);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, scroll) == 0x14);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, cursor) == 0x18);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, rows) == 0x1c);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, checked_begin) == 0x28);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, checked_end) == 0x2c);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, checked_cap) == 0x30);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, multi) == 0x34);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, view) == 0x38);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, x) == 0x198);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, y) == 0x19c);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, width) == 0x1a0);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, height) == 0x1a4);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, pitch) == 0x1a8);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, focus) == 0x1ac);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, page_mode) == 0x1ad);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, title_bar) == 0x1b8);
+        assert!(core::mem::offset_of!(CompactVerticalMenuView, title) == 0x1bc);
+    };
+
     /// MenuItem, 0x54 bytes (finding 71 section 4, "MenuItem"). Fields as the ctor 0x40115a44 stores them: id +4, label `string f(MenuItem&)` +0xc, action `void f(MenuItem&)` +0x1c, draw `void f(MenuItem&, Canvas&, x, y)` +0x2c, adjust `void f(MenuItem&, int delta)` +0x3c, encoder divisor +0x4c. Stock items put a bitmap blit in draw; core/digikit-menu empties it (manager at +0x34, invoker at +0x38) for a row without a glyph.
     #[repr(C)]
     pub struct MenuItem {
@@ -130,6 +186,28 @@ pub mod menu {
         assert!(core::mem::offset_of!(MenuItem, draw) == 0x2c);
         assert!(core::mem::offset_of!(MenuItem, adjust) == 0x3c);
         assert!(core::mem::offset_of!(MenuItem, enc_div) == 0x4c);
+    };
+
+    /// MenuWithPopoutSideBarsView, 0x548 bytes: the main list at +0, the `leftPanel` list at +0x1c0, the `rightPanel` list at +0x380, the active part pointer at +0x540 (one of the three addresses), and the two panel-present bytes. SoundManager, KitManager and ProjectManager put their first member at +0x548 (reads of the three constructors), so the base size is 0x548.
+    #[repr(C)]
+    pub struct MenuWithPopoutSideBarsView {
+        pub main: crate::menu::CompactVerticalMenuView,
+        pub left: crate::menu::CompactVerticalMenuView,
+        pub right: crate::menu::CompactVerticalMenuView,
+        pub active: u32,
+        pub has_left: u8,
+        pub has_right: u8,
+        pub _pad0: [u8; 2],
+    }
+    #[cfg(target_arch = "m68k")]
+    const _: () = {
+        assert!(core::mem::size_of::<MenuWithPopoutSideBarsView>() == 0x548);
+        assert!(core::mem::offset_of!(MenuWithPopoutSideBarsView, main) == 0x0);
+        assert!(core::mem::offset_of!(MenuWithPopoutSideBarsView, left) == 0x1c0);
+        assert!(core::mem::offset_of!(MenuWithPopoutSideBarsView, right) == 0x380);
+        assert!(core::mem::offset_of!(MenuWithPopoutSideBarsView, active) == 0x540);
+        assert!(core::mem::offset_of!(MenuWithPopoutSideBarsView, has_left) == 0x544);
+        assert!(core::mem::offset_of!(MenuWithPopoutSideBarsView, has_right) == 0x545);
     };
 
     /// VerticalMenuView, 0x1ac bytes (finding 71 section 4, "VerticalMenuView"): the Menu base is at +0, the View sub-object at +0x38.
@@ -158,6 +236,54 @@ pub mod menu {
     }
 
     unsafe extern "C" {
+        /// Menu vtable slot 21: appends `index` to the check list (a vector push_back). It does not test the multi flag and does not look for a duplicate; use `is_checked` first or `toggle_check`.
+        #[link_name = "cf.menu.fn.check"]
+        pub fn check(menu: *mut u8, index: i32);
+    }
+
+    unsafe extern "C" {
+        /// Menu vtable slot 24: the number of entries in the check list ((end - begin) / 4).
+        #[link_name = "cf.menu.fn.checked_count"]
+        pub fn checked_count(menu: *mut u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Menu vtable slot 20: when multi-select is on (slot 27), empties the check list (end = begin).
+        #[link_name = "cf.menu.fn.clear_checks"]
+        pub fn clear_checks(menu: *mut u8);
+    }
+
+    unsafe extern "C" {
+        /// Menu vtable slot 5: destroys the items (the vector at +4/+8, the shared_ptr count is dropped), sets the end to the begin and clears the words at +0x10, +0x14 and +0x18 (selected row, scroll, cursor: 0, not -1). It does not clear the check list; call `clear_checks` first.
+        #[link_name = "cf.menu.fn.clear_items"]
+        pub fn clear_items(menu: *mut u8);
+    }
+
+    unsafe extern "C" {
+        /// `CompactVerticalMenuView(this, name cstr, reserve, x0, y0, x1, y1, pitch, sub_rows)` (mislabelled `Font::ctor_dtor` in the database): a Menu with `(abs(y1-y0)+1)/pitch - sub_rows` visible rows, the View sub-object at +0x38, the rectangle at +0x198, `pitch` at +0x1a8 and `sub_rows` stored at +0x1b8 (the title-bar flag). Sets the focus bytes +0x1ac and +0x1ad to 1. Object size 0x1c0.
+        #[link_name = "cf.menu.fn.compact_ctor"]
+        pub fn compact_ctor(this: *mut u8, name: *const u8, reserve: u32, x0: i32, y0: i32, x1: i32, y1: i32, pitch: i32, sub_rows: u8);
+    }
+
+    unsafe extern "C" {
+        /// Moves a CompactVerticalMenuView to the rectangle x0, y0, x1, y1 (the x and y pairs are ordered by min and max), stores the size (+0x198 to +0x1a4), sets the visible rows to `height / pitch` through Menu vtable slot 17 (it does not subtract the title row, so call it before `set_title_bar`) and invalidates the view. The hash is shared by two functions on the Digitakt II (ordinal 1) and unique on the Digitone II. Stock calls it on the right panel at +0x1c0 with (0, 0, 0x45, 0x3f).
+        #[link_name = "cf.menu.fn.compact_set_rect"]
+        pub fn compact_set_rect(view: *mut u8, x0: i32, y0: i32, x1: i32, y1: i32);
+    }
+
+    unsafe extern "C" {
+        /// Menu vtable slot 28: sets the multi-select byte at +0x34 to 1. The popout view constructor calls it, so its three lists are multi-select from the start. A multi-select list draws a check glyph for each checked row (see finding 71 section 8).
+        #[link_name = "cf.menu.fn.enable_multi"]
+        pub fn enable_multi(menu: *mut u8);
+    }
+
+    unsafe extern "C" {
+        /// Menu vtable slot 25: 1 when `index` is in the check list, else 0 (D0 is the 0 or 1 value; use the low byte).
+        #[link_name = "cf.menu.fn.is_checked"]
+        pub fn is_checked(menu: *mut u8, index: i32) -> u8;
+    }
+
+    unsafe extern "C" {
         /// Constructs a MenuItem in `item` from a label, an action function, an icon and a second function; copies both functions.
         #[link_name = "cf.menu.fn.item_builder"]
         pub fn item_builder(item: *mut u8, label: *const u8, action: *const crate::string::std_function, icon: *const u8, fn4: *const crate::string::std_function);
@@ -170,9 +296,75 @@ pub mod menu {
     }
 
     unsafe extern "C" {
+        /// As `panel_show` with the focus byte (+0x1ac) set to 0.
+        #[link_name = "cf.menu.fn.panel_hide"]
+        pub fn panel_hide(view: *mut u8);
+    }
+
+    unsafe extern "C" {
+        /// Sets the focus byte (+0x1ac) of a CompactVerticalMenuView to 1 and invalidates its View sub-object. The paint hook uses the byte to draw the selection bar; what else it gates is open.
+        #[link_name = "cf.menu.fn.panel_show"]
+        pub fn panel_show(view: *mut u8);
+    }
+
+    unsafe extern "C" {
+        /// `MenuWithPopoutSideBarsView(this, name cstr, reserve, has_left, has_right, sub_rows)`: the main list is a CompactVerticalMenuView at +0 with the rectangle x 0 (2 with a left panel) to 0x7f (0x7d with a right panel), y 0 to 0x3f, pitch 8; it builds the panels `leftPanel` (+0x1c0, x 0 to 0x2b) and `rightPanel` (+0x380, x 0x43 to 0x7f), both 0x28 reserve, pitch 8, no title row; sets the active part (+0x540) to the main list, stores has_left at +0x544 and has_right at +0x545, enables multi-select and calls `popout_set_active(this, this)`. Subclasses (SoundManager, KitManager, ProjectManager) start their own fields at +0x548.
+        #[link_name = "cf.menu.fn.popout_ctor"]
+        pub fn popout_ctor(this: *mut u8, name: *const u8, reserve: u32, has_left: u8, has_right: u8, sub_rows: u8);
+    }
+
+    unsafe extern "C" {
+        /// Clears the focus byte of the left panel, the main list and the right panel (`panel_hide`), sets it on `part` (`panel_show`; one of `this`, `this+0x1c0`, `this+0x380`) and invalidates the view. Returns 1. It does not store +0x540: the key handler (vtable slot 32) stores the active part before it calls this, so a caller that moves focus on its own also writes +0x540. The stock item actions in the subclasses call it as `(this, this)` to return the focus to the main list.
+        #[link_name = "cf.menu.fn.popout_set_active"]
+        pub fn popout_set_active(this: *mut u8, part: *mut u8) -> u32;
+    }
+
+    unsafe extern "C" {
+        /// Menu vtable slot 30: when multi-select is on, empties the check list, reserves room for the item count (slot 3) and calls `check` (slot 21) for every row index.
+        #[link_name = "cf.menu.fn.select_all"]
+        pub fn select_all(menu: *mut u8);
+    }
+
+    unsafe extern "C" {
+        /// Sets the title of a CompactVerticalMenuView (COW string at +0x1bc): `title` points at a COW `std::string`. A title wider than 0x78 pixels in the view font is replaced by ".." followed by the tail that fits.
+        #[link_name = "cf.menu.fn.set_title"]
+        pub fn set_title(view: *mut u8, title: *const u32);
+    }
+
+    unsafe extern "C" {
+        /// Sets the title-bar flag at +0x1b8 of a CompactVerticalMenuView. When the flag changes, the visible rows (Menu vtable slots 16 and 17) change by one: 0 to nonzero takes a row, nonzero to 0 gives it back. The constructor stores its `sub_rows` argument in the same byte after it already subtracted it from the rows. So a view needs a title row either from `sub_rows` 1 in the constructor or from `set_title_bar(view, 1)` after a constructor with `sub_rows` 0; the second call after the first changes nothing. The stock PRESET MANAGER code calls it with 1 after `set_title`.
+        #[link_name = "cf.menu.fn.set_title_bar"]
+        pub fn set_title_bar(view: *mut u8, on: u8);
+    }
+
+    unsafe extern "C" {
+        /// Menu vtable slot 26: calls `check` through slot 21 when `is_checked` (slot 25) says no, else `uncheck` through slot 22. A subclass that overrides those slots changes this.
+        #[link_name = "cf.menu.fn.toggle_check"]
+        pub fn toggle_check(menu: *mut u8, index: i32);
+    }
+
+    unsafe extern "C" {
+        /// Menu vtable slot 22: removes the first entry equal to `index` from the check list; does nothing when it is not there.
+        #[link_name = "cf.menu.fn.uncheck"]
+        pub fn uncheck(menu: *mut u8, index: i32);
+    }
+
+    unsafe extern "C" {
         /// `VerticalMenuView(this, name cstr, reserve, const std::string *title, icon)`; `title` points at the one-pointer COW string.
         #[link_name = "cf.menu.fn.vertical_menu_view_ctor"]
         pub fn vertical_menu_view_ctor(this: *mut u8, name: *const u8, reserve: u32, title: *const u32, icon: *const u8);
+    }
+
+    unsafe extern "C" {
+        /// The CompactVerticalMenuView vtable, slot 0 at the stored address (DT2 0x4021cbf0, DN2 0x402065bc), 39 slots (0 to 38) of 4 bytes. Slots 31 paint, 32 key, 33 encoder, 34 to 37 LED/activate hooks, 38 close hook; Menu slots 0 to 30 (see the check-mark entries). The other View sub-object vtables (offset -0x38) are not part of this array.
+        #[link_name = "cf.menu.data.compact_vtable"]
+        pub static COMPACT_VTABLE: u8;
+    }
+
+    unsafe extern "C" {
+        /// The MenuWithPopoutSideBarsView vtable, slot 0 at the stored address (DT2 0x4021d1b0, DN2 0x40206b7c), 43 slots (0 to 42) of 4 bytes. It copies slots 0 to 38 of the CompactVerticalMenuView table, overrides 31 paint, 32 key, 33 encoder, 38, and adds 39 main-list paint hook, 40 rebuild (empty stub 0x401d181a), 41 populate the right panel (empty stub 0x401d181c), 42 left-panel hook (DT2 0x401ba394). A subclass copies the table and overrides 39, 41 and 42.
+        #[link_name = "cf.menu.data.popout_vtable"]
+        pub static POPOUT_VTABLE: u8;
     }
 
     unsafe extern "C" {
@@ -438,9 +630,21 @@ pub mod view {
     }
 
     unsafe extern "C" {
+        /// Converting copy `shared_ptr<View>(const shared_ptr<Derived> &)` for a class with its View sub-object at +0x38 (the Menu views): out.ptr = src.ptr + 0x38 (0 stays 0), out.ctl = src.ctl, and the use count of the control block is incremented. It does not make a new control block; a raw pointer cannot be wrapped with it. The caller releases `out` afterwards.
+        #[link_name = "cf.view.fn.shared_ptr_as_view"]
+        pub fn shared_ptr_as_view(out: *mut crate::string::shared_ptr, src: *const crate::string::shared_ptr);
+    }
+
+    unsafe extern "C" {
         /// `ViewController::push(mgr, shared_ptr<View> *, exclusive)`.
         #[link_name = "cf.view.fn.view_controller_push"]
         pub fn view_controller_push(mgr: *mut u8, sp: *const crate::string::shared_ptr, exclusive: u32) -> u32;
+    }
+
+    unsafe extern "C" {
+        /// `View::push(view, shared_ptr<View> *, exclusive)`: pushes a view on the view stack through the ViewController of `view` (the manager pointer at View+0x2c; returns 0 when it is null). The call copies the shared_ptr (use count +1), so the caller releases its own. The stock PRESET MANAGER code calls it with exclusive 0 on the view that handled the key.
+        #[link_name = "cf.view.fn.view_push"]
+        pub fn view_push(view: *mut u8, sp: *const crate::string::shared_ptr, exclusive: u8) -> u8;
     }
 
     unsafe extern "C" {
@@ -506,7 +710,7 @@ pub mod window {
     };
 
     unsafe extern "C" {
-        /// `ConfirmWindow(this, title, text, cb, flag)`: `title` and `text` point at COW `std::string`s (each cut to 80 chars; an empty `text` gives one line), `cb` is a `std::function<void(bool)>` that the constructor clones into +0x5c, `flag` is stored at +0x6c (0: the TRIG keys 0x19 to 0x28 are swallowed). The key handler (0x401114f0) closes the window on press of key 10 (YES) and calls cb(true), on key 12 (NO) and calls cb(false); it sets +0x4c to 1 or 2, and every other key is handled (modal). Allocate 0x8c bytes as a make_shared block: 0x10 control block, then the object at +0x10; push with `cf.menu.fn.view_add` (replace = 0).
+        /// `ConfirmWindow(this, title, text, cb, flag)`: `title` and `text` point at COW `std::string`s (each cut to 80 chars; an empty `text` gives one line), `cb` is a `std::function<void(bool)>` that the constructor clones into +0x5c, `flag` is stored at +0x6c (0: the TRIG keys 0x19 to 0x28 are swallowed). The key handler (0x401114f0) closes the window on press of key 10 (YES) and calls cb(true), on key 12 (NO) and calls cb(false); it sets +0x4c to 1 or 2, and every other key is handled (modal). Allocate 0x8c bytes as a make_shared block: 0x10 control block, then the object at +0x10; push with `cf.view.fn.view_controller_push(brain view manager, &sp, 0)` (as the stock call sites that use 0x4011c08a do) or with `cf.view.fn.view_push` on a view that is on the stack. The shared_ptr is {object, control block}; release your own count after the push (`cf.string.fn.shared_ptr.release`). core/ui does the first.
         #[link_name = "cf.window.fn.confirm_ctor"]
         pub fn confirm_ctor(this: *mut u8, title: *const u32, text: *const u32, cb: *const crate::string::std_function, flag: u8);
     }

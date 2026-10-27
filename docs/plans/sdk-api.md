@@ -122,13 +122,26 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
       checked on DT2 1.17 and DN2 1.12.
 - [x] Trace the toggle menu item, value formatting and the key ids for YES and NO: 10 is YES, 12 is NO
       (finding 71). `fw.py dossier` and a faster `emit-rule` came out of this work.
-- [ ] `<dk/ui.h>`: menus, menu items (action, toggle, value, submenu), confirm, choice, toast,
-      `dk_ui_has(cap)`.
-- [ ] `core/ui` C adapter on `dk_fw_*.h`.
-- [ ] Host build of `<dk/ui.h>` with a fake adapter that records calls, for unit tests.
-- [ ] `core/digikit-menu` rewritten in C on `<dk/ui.h>`: a ConfirmWindow replaces the two-press
-      APPLY & RESTART row; toggle items for MODULES and REMOTE.
-- [ ] Proof: host tests; emulator screenshots on dt2 and dn2.
+- [x] List-view anchors (trace of the stock PRESET MANAGER): `MenuWithPopoutSideBarsView` (title bar,
+      side panel on RIGHT), `CompactVerticalMenuView`, the check marks of `Menu` (check, toggle, select
+      all, count), `setTitle`, `setTitleBar`, on DT2 1.17 and DN2 1.12.
+- [x] `<dk/ui.h>`: menus, text pages, lists (title bar, check column, side panel, empty text), rows
+      (action, submenu, text, toggle, value), confirm, choice, toast, `dk_ui_has(cap)`.
+- [x] `core/ui` C adapter on `dk_fw_*.h`. Menus are built once and kept; dialogs are freed by the
+      firmware after they close; `std::function` captures are two words, no heap.
+- [x] Host build of `<dk/ui.h>` with a fake adapter that records calls and drives callbacks, for unit tests.
+- [ ] `core/digikit-menu` rewritten in C on `<dk/ui.h>`, in the new design (no pixel-identical
+      intermediate step):
+  - SETTINGS > DIGIKIT stays a vertical menu: ABOUT, HEALTH, MEMORY, MODULES. Glyphs later.
+  - MODULES is a list like PRESET MANAGER: a title bar; rows of name, kind and size; a check mark
+    for "load at next restart" (YES toggles it); RIGHT opens a side panel with LOAD / UNLOAD,
+    ROUTE... (effects only: a choice of SEND or MASTER) and INFO (size, DSP %, CPU %, fit).
+    The empty text is "NO MODULES ON CARD".
+  - NO with changes pending asks "APPLY & RESTART?": YES applies, NO discards.
+  - A module that does not fit gives a toast "NO FIT: NAME".
+  - The FX ROUTES screen is removed; the fx-routes scenario uses ROUTE....
+- [ ] Proof: host tests; no firmware-heap growth after the menu, a list and a dialog open and close
+      50 times; new golden frames approved by Em from screenshots on dt2 and dn2.
 
 ### Phase 4: UI for content modules; remote
 
@@ -169,4 +182,6 @@ Syntakt adapter (S3, S4).
 ## Status at end of session
 
 2026-10-27: plan agreed. Phase 1 done in ae364ec3. Phase 2 done in 1eb92a86 and its follow-up. Phase 3 started: the ABI spec, the runtime exports and the UI firmware anchors are done; the
-menu is unchanged (goldens match). Next: trace the preset-manager list view, then core/ui in C.
+menu is unchanged (goldens match). Then the list-view anchors, `<dk/ui.h>`, core/ui (demo fixture
+`test/ui-demo`, screenshots and a flat heap on dt2 and dn2) and the host harness `dkui-host`.
+Next: the digikit menu in C on `<dk/ui.h>`.

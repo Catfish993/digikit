@@ -97,6 +97,8 @@ READS: list[tuple[str, list[str], bool]] = [
     # files, include! in src/lib.rs:106-121); packages/emulator/sharc/build.rs:26 reads the same
     # dir. out/native/*/gen is untracked; listed for local edits.
     (r"^out/native/[^/]+/gen/", ["sharc-gen", "sharc-native"], True),
+    # modules/core/ui/host/build.rs compiles its tests/c sources against sdk/include (rerun-if-changed on the dir).
+    (r"^sdk/include/", ["dkui-host"], False),
     # apps/desktop/src-tauri/tauri.conf.json frontendDist = ../ui/dist (embedded by tauri_build).
     (r"^apps/desktop/ui/dist/", ["digiemu-desktop"], True),
 ]

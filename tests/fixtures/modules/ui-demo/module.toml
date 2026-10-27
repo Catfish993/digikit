@@ -1,0 +1,33 @@
+[module]
+id = "test/ui-demo"
+version = "0.1.0"
+name = "UI demo"
+category = "test"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: SETTINGS > DIGIKIT opens a menu with one row of each kind, a text page, a list with check marks and a side panel, an empty list, and rows that open a confirm, a choice and a toast, all through core/ui"
+requires = ["core/ui"]
+conflicts = ["core/digikit-menu"]
+ports = ["dt2-1.17", "dn2-1.12"]
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# Hooks the SETTINGS rebuild like core/digikit-menu (it conflicts: one DIGIKIT row). The row opens the demo menu.
+[[object]]
+path = "build/ui-demo.dko.json"
+sources = ["src/ui_demo.c", "src/shim.s"]
+place = "cf.expansion"
+
+[object.externs]
+_dk_tail = "hook.cf.menu.site.settings_list.tail.tail"
+
+[[op]]
+op = "hook"
+hook = "cf.menu.hook.settings_list.tail"
+to = "dk_hook"
+
+[[claim]]
+resource = "cf.menu.site.settings_list.tail"

@@ -93,3 +93,21 @@ devices = ["dt2", "dn2"]
 mark = "D"
 users = ["core/runtime"]
 doc = "The jsr at the top of the UI task's event loop that pops the next event; the hook point for the runtime's per-pass tick."
+
+[[fn]]
+name = "cf.view.fn.view_push"
+cpu = "cf"
+sig = "u8 (u8 *view, const shared_ptr *sp, u8 exclusive)"
+rule = { kind = "cf_func", hash = "e7ecf3b65085ae4ac4be90a597e30a1b", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/ui"]
+doc = "`View::push(view, shared_ptr<View> *, exclusive)`: pushes a view on the view stack through the ViewController of `view` (the manager pointer at View+0x2c; returns 0 when it is null). The call copies the shared_ptr (use count +1), so the caller releases its own. The stock PRESET MANAGER code calls it with exclusive 0 on the view that handled the key."
+
+[[fn]]
+name = "cf.view.fn.shared_ptr_as_view"
+cpu = "cf"
+sig = "void (shared_ptr *out, const shared_ptr *src)"
+rule = { kind = "cf_func", hash = "b6b482b767aab226959365fd86205072", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/ui"]
+doc = "Converting copy `shared_ptr<View>(const shared_ptr<Derived> &)` for a class with its View sub-object at +0x38 (the Menu views): out.ptr = src.ptr + 0x38 (0 stays 0), out.ctl = src.ctl, and the use count of the control block is incremented. It does not make a new control block; a raw pointer cannot be wrapped with it. The caller releases `out` afterwards."

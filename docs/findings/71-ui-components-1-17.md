@@ -503,3 +503,91 @@ ctor are not read **[O]**.
   name: 21 of 60 have the same subsystem and 12 of 60 the same name. Anchor
   names need a fixed vocabulary; see step 3 of
   [firmware-decls-and-sdk](../plans/firmware-decls-and-sdk.md).
+
+## 8. List views with a side panel
+
+PRESET MANAGER is `SoundManager` over `MenuWithPopoutSideBarsView` (KitManager and ProjectManager are the same
+base). Addresses are DT2 1.17; the DN2 1.12 pairs are in `devices/fw/menu.toml` and `view.toml`. All were found by
+the hash rules and resolve on both devices.
+
+- **Classes [D].** `CompactVerticalMenuView` (ctor 0x40110624, mislabelled `Font::ctor_dtor`) is a Menu at +0 and a
+  View at +0x38, 0x1c0 bytes, vtable 0x4021cbe8 with 39 slots (slot 0 at 0x4021cbf0, the address the ctor stores).
+  `MenuWithPopoutSideBarsView` (ctor 0x40115f7a, vtable 0x4021d1a8, 43 slots) holds three of them: the main list at
+  +0, `leftPanel` at +0x1c0 (x 0 to 0x2b), `rightPanel` at +0x380 (x 0x43 to 0x7f), then the active-part pointer at
+  +0x540 and the bytes has_left +0x544, has_right +0x545. The main list takes x 0 or 2 to 0x7f or 0x7d. The base
+  size is 0x548: the first member of SoundManager, KitManager and ProjectManager is at +0x548.
+- **Vtable slots [D].** Menu slots 0 to 30; 31 paint, 32 key, 33 encoder, 34 to 38 hooks of the compact view. The
+  popout class overrides 31, 32, 33, 38 and adds 39 main-list paint hook, 40 rebuild, 41 populate the right panel,
+  42 left-panel hook. Slots 40 and 41 are empty stubs (0x401d181a, 0x401d181c) in the base; a subclass copies the
+  table and overrides 39, 41 and 42.
+- **Focus [D].** `popout_set_active(this, part)` (0x40115f30) clears the focus byte (+0x1ac) of the three lists, sets
+  it on `part` and invalidates the view. The key handler (slot 32) stores +0x540 itself. LEFT (13, press bit 0): from
+  the main list, call slot 42 and activate the left panel (only with has_left); from the right panel, go back to the
+  main list. RIGHT (15) is the mirror: with exactly one checked row, it calls Menu slot 7 (select) on the first
+  checked entry, then slot 41, then activates the right panel (only with has_right). NO (12, bit 4): from a panel,
+  activate the main list; from the main list, close the view (View slot 10). The item actions in the subclasses
+  (0x4008cae8, 0x4008dada, 0x4009005a and others) return the focus themselves: they call `popout_set_active(view,
+  view)`. Nothing else moves the focus back after an action.
+- **Check marks [D].** A Menu has a `vector<int>` of checked row indexes at +0x28, +0x2c, +0x30 and a multi-select
+  byte at +0x34 (it was open in section 4; this is it). Slots: 5 clear items (also zeroes selected, scroll, cursor),
+  20 clear checks, 21 check (push_back, no duplicate test), 22 uncheck, 24 checked count, 25 is checked, 26 toggle,
+  27 multi getter, 28 enable multi, 29 disable multi, 30 select all. The popout ctor enables multi. The compact paint
+  (0x40110970) draws the one-character string at 0x40229d55 with `cf.text.fn.draw` (maxw 1) 5 pixels left of the row
+  text, for each checked row, when multi is on. The string holds the single byte 0x1b; what that glyph looks like in
+  the UI font is **[O]**.
+- **Keys [D].** The key event has the code at +0xc and flags at +0x10. The compact handler (0x40110ec6) moves on 11
+  (UP) and 14 (DOWN) and calls the item adjust function on 13 and 15, all on flag bit 0; flag bit 1 with the byte
+  +0x1ad set moves a page. Key 10 (YES) and key 0x31 act on flag bit 4: they run the action of the selected row
+  (item +0x1c function). Key 12 acts on bit 4 too. The names of bits 0, 1 and 4 are **[O]**. **[C]** Section 3 calls
+  bit 1 "press".
+- **Title and rows [D].** `set_title(view, string*)` (0x4011083c) keeps the title at +0x1bc, cut to 0x78 pixels
+  ("..", then the tail). The byte at +0x1b8 is the title-bar flag: the ctor stores its `sub_rows` argument there
+  after subtracting it from the rows, and `set_title_bar(view, on)` (0x401108f0) takes or gives back one row when
+  the flag changes. `compact_set_rect` (0x40110798) sets the rectangle and rows = height / pitch; it ignores the
+  title row, so call it before `set_title_bar`. **[C]** The first research note said the ctor leaves +0x1b8 unset
+  and that `make_view_sp` wraps a raw pointer; the first is wrong, and 0x401b9170 is a converting copy from a
+  `shared_ptr<Derived>` (View at +0x38) to `shared_ptr<View>`.
+- **Recipe [D]** (read in 0x40091cae, the PRESET MANAGER opener): make a shared SoundManager (the stock make_shared
+  block, as for ConfirmWindow), `set_title(obj, "PRESET MANAGER")`, `set_title_bar(obj, 1)`, convert with
+  0x401b9170 into a `shared_ptr<View>`, `view_push(parent_view, &sp, 0)` (0x4011b22a), release both pointers, then
+  invalidate the parent. Items are added with `Menu::addItem` and `MenuItem` as in section 4; the check functions
+  above are called on the Menu part.
+
+Open **[O]**: the make_shared control block of a module-built popout view (each class has its own vtable literal, as
+for ConfirmWindow); the exact content of the stock slot 39 and 42 hooks; the meaning of focus byte +0x1ac beyond the
+selection bar; the glyph 0x1b.
+
+## 9. core/ui on the device (first run)
+
+Written while building `modules/core/ui` and checked in the emulator on DT2 1.17 and DN2 1.12 with `test/ui-demo`
+(`tools/patchkit/pk_uidemo.py`). Marks: **[D]** seen in the emulator or read once; none is **[V]**.
+
+- **View vtable, not the Menu vtable [C].** The key and paint of a Menu view are reached from the View manager through the View
+  sub-object's vtable (at +0x38). Its entries are thunks (`moveq #-0x38,d0; add.l d0,4(sp); bra <function>`) that branch to the
+  function directly. Overriding slot 32 or 31 of the primary (Menu) vtable changes nothing the manager calls. core/ui copies the
+  17-slot View vtable (plus the two words before it) and replaces slot 2 (key, a list) and slot 4 (paint). **[D]**
+- **Stock RIGHT needs one checked row [D].** The popout key handler (0x401160bc) opens the right panel on key 15 only with exactly one
+  checked entry; check marks are state of the list, so core/ui handles RIGHT itself: clear the right panel's items
+  (`clear_items`), call the descriptor's `panel`, then `popout_set_active(view, right panel)`. `popout_set_active` does store +0x540
+  (the note on `cf.menu.fn.popout_set_active` says it does not; 0x40115f56 stores it). **[C]**
+- **A panel row returns the focus itself [D].** The row's action calls `popout_set_active(view, view)` first, then the module's
+  callback, as the stock PRESET MANAGER rows do.
+- **Empty list [D].** A `MenuWithPopoutSideBarsView` with no items faults (access error) on the first frame after the push: the
+  stock paint, and the LED or key code after it, read the item at the selection. core/ui keeps one hidden item in an empty list,
+  paints the title and the empty text itself and swallows the keys except NO. A check of the selection at -1 did not help.
+- **Views built by us [D].** `cf.string.fn.shared_ptr.make` (`_Sp_counted_ptr<View*>`) takes any `View*`, here the View sub-object
+  of the popout view (+0x38), and registers a detach callback (View slot 16) that clears the `shared_ptr` at `parent+0x90`. A
+  zeroed heap block of 0xa0 bytes as the parent makes that clear a no-op. The module keeps the returned `shared_ptr`, so the
+  firmware never frees the view; the view stack pushes a copy with `view_controller_push(brain view manager, &sp, 0)`.
+- **Dialogs [D].** The make_shared block is `{control-block vptr, 1, 1, block+0x10}` then the window at +0x10; the vptrs are the
+  `cf.window.site.confirm_cb_vptr_lit` and `...multichoice_cb_vptr_lit` anchors (data anchors that the generated C header does not
+  declare: core/ui declares them with `__asm__`). The std::function callbacks take `(any_data*, int)`, the argument by value
+  (a `bool` arrives as a long). A View's detach callbacks (slot 16 adds one) run when the manager removes the view; core/ui uses one
+  to notice a choice cancelled with NO (no callback exists for it). After the push the stack holds the only count.
+- **Item draw and adjust [D].** The draw function of a MenuItem is called as `(any_data*, MenuItem*, canvas, x, y)` with `x`, `y`
+  by value; the stock value rows print the value right-aligned with `draw_box(canvas, font, x + 0x4e, y + 2, 2, 0, 0, "%03d", v)`
+  and core/ui does the same. The font of a VerticalMenuView is the pointer at +0xa8; of a compact view the font object is embedded at
+  +0x94. The adjust function is `(any_data*, MenuItem*, delta)`.
+- **Toast [D].** A toast is drawn by the main screen: with a menu open it is not visible. It shows on the main screen after the menus
+  closed.
+- **Compact paint [D].** The title is drawn with `draw_fmt(canvas, font, 0x40, 0x41 - [view+0x84], 2, title)`; `[view+0x84]` is 7.

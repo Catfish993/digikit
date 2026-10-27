@@ -552,12 +552,114 @@ mark = "D"
 rule = "fw/mem:cf_func"
 
 [[anchor]]
+name = "cf.menu.data.compact_vtable"
+cpu = "cf"
+kind = "data"
+addr = 0x402065bc
+src = 0x40112000
+len = 156
+sha256 = "535544b0f53e5a4531d2dac05f0d27db01b24247d572b2a11647a5481b64b948"
+mark = "D"
+rule = "fw/menu:cf_ptr"
+
+[[anchor]]
+name = "cf.menu.data.popout_vtable"
+cpu = "cf"
+kind = "data"
+addr = 0x40206b7c
+src = 0x40117946
+len = 172
+sha256 = "a2dc094d4151d9ef7c4d35675835c9aa2d61fdb4d8e453629f01d896bcad4fe3"
+mark = "D"
+rule = "fw/menu:cf_ptr"
+
+[[anchor]]
 name = "cf.menu.fn.add_item"
 cpu = "cf"
 kind = "code"
 addr = 0x40116bee
 len = 4
 sha256 = "7b530b25939fbe347fbdca9bc607e4240a2f48c532375707069ec848ec2b38ca"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.check"
+cpu = "cf"
+kind = "code"
+addr = 0x40116e94
+len = 4
+sha256 = "932bbddb03ada19536fa5af4c9a118f86b4a7731a45a3adc9ad1c578afc93bc7"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.checked_count"
+cpu = "cf"
+kind = "code"
+addr = 0x4011668e
+len = 4
+sha256 = "1f6b50a3616f922607a92f5ea30e249ecfae4035c48517445d22acbd059dd2ec"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.clear_checks"
+cpu = "cf"
+kind = "code"
+addr = 0x401166c0
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.clear_items"
+cpu = "cf"
+kind = "code"
+addr = 0x40116d10
+len = 4
+sha256 = "22fa7fb41970cac158504ca01c7a417ded71b60ff0d8466961d19ff2332567a7"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.compact_ctor"
+cpu = "cf"
+kind = "code"
+addr = 0x40111f98
+len = 4
+sha256 = "47349e43967fef733bd11d2eaa4d3353d9832dde883eec1c702245eca84d247e"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.compact_set_rect"
+cpu = "cf"
+kind = "code"
+addr = 0x4011210c
+len = 4
+sha256 = "932bbddb03ada19536fa5af4c9a118f86b4a7731a45a3adc9ad1c578afc93bc7"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.enable_multi"
+cpu = "cf"
+kind = "code"
+addr = 0x401166a8
+len = 4
+sha256 = "7e72eeee307b073446c9e47cfc17bb051f86ffb6b811f00a9e5f479eb90a360d"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.is_checked"
+cpu = "cf"
+kind = "code"
+addr = 0x401166e0
+len = 4
+sha256 = "4588d2f3db332715f3deb955e001dc741b54e633be8ffc3c2a4da9948cf6274d"
 mark = "D"
 rule = "fw/menu:cf_func"
 
@@ -578,6 +680,96 @@ kind = "code"
 addr = 0x401173b8
 len = 4
 sha256 = "4f9e319e2e3e4323fd538c347afb5f9d196e601c8e8a19886d025ce0c272db78"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.panel_hide"
+cpu = "cf"
+kind = "code"
+addr = 0x401120f0
+len = 4
+sha256 = "fca513771bc4f72f2195d862af6ad1778a2ca76cb1c9706e73e09ac3d172d03f"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.panel_show"
+cpu = "cf"
+kind = "code"
+addr = 0x401120d4
+len = 4
+sha256 = "379c3b5d92991cdc4ebacc4467fc172f3912a9162889e86c786908c756c716c6"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.popout_ctor"
+cpu = "cf"
+kind = "code"
+addr = 0x401178ee
+len = 4
+sha256 = "23201b350b902ad73d89ce6a89eee29dfa14dd42612057eede16e4b546dc6759"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.popout_set_active"
+cpu = "cf"
+kind = "code"
+addr = 0x401178a4
+len = 4
+sha256 = "e59cdca0d536f67a27bdb308b1683f2c5d97565cb4d2dfe566afb0c8f6dae402"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.select_all"
+cpu = "cf"
+kind = "code"
+addr = 0x40116df0
+len = 4
+sha256 = "932bbddb03ada19536fa5af4c9a118f86b4a7731a45a3adc9ad1c578afc93bc7"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.set_title"
+cpu = "cf"
+kind = "code"
+addr = 0x401121b0
+len = 4
+sha256 = "e6678488dd6c64d90aa925468b895962a1480da1c720524cd7e57d31d558af4c"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.set_title_bar"
+cpu = "cf"
+kind = "code"
+addr = 0x40112264
+len = 4
+sha256 = "e59cdca0d536f67a27bdb308b1683f2c5d97565cb4d2dfe566afb0c8f6dae402"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.toggle_check"
+cpu = "cf"
+kind = "code"
+addr = 0x4011676c
+len = 4
+sha256 = "22fa7fb41970cac158504ca01c7a417ded71b60ff0d8466961d19ff2332567a7"
+mark = "D"
+rule = "fw/menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.uncheck"
+cpu = "cf"
+kind = "code"
+addr = 0x40116d40
+len = 4
+sha256 = "e59cdca0d536f67a27bdb308b1683f2c5d97565cb4d2dfe566afb0c8f6dae402"
 mark = "D"
 rule = "fw/menu:cf_func"
 
@@ -2191,6 +2383,16 @@ mark = "D"
 rule = "fw/view:cf_func"
 
 [[anchor]]
+name = "cf.view.fn.shared_ptr_as_view"
+cpu = "cf"
+kind = "code"
+addr = 0x401a8d1c
+len = 4
+sha256 = "4a98b5a4b710f5c1e032381cff01f2147477d9e5509c5e3f9561a3cfcea0ed15"
+mark = "D"
+rule = "fw/view:cf_func"
+
+[[anchor]]
 name = "cf.view.fn.view_controller_push"
 cpu = "cf"
 kind = "data"
@@ -2200,6 +2402,16 @@ len = 4
 sha256 = "f467eea18c7c737d4ccb9cf58c66adb26f524f460267d95fe322a0cf1b687ccc"
 mark = "D"
 rule = "fw/view:cf_ptr"
+
+[[anchor]]
+name = "cf.view.fn.view_push"
+cpu = "cf"
+kind = "code"
+addr = 0x4011cb9e
+len = 4
+sha256 = "7b530b25939fbe347fbdca9bc607e4240a2f48c532375707069ec848ec2b38ca"
+mark = "D"
+rule = "fw/view:cf_func"
 
 [[anchor]]
 name = "cf.view.site.ui_loop"

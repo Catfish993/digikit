@@ -26,8 +26,12 @@ void dk_fw_view_brain_push(uint8_t *menu, const shared_ptr *sp) __asm__("cf.view
 uint8_t * dk_fw_view_brain_view_manager(uint8_t *brain) __asm__("cf.view.fn.brain.view_manager");
 /* `View::invalidate(View *)`: asks for a redraw of the view. */
 void dk_fw_view_invalidate(uint8_t *view) __asm__("cf.view.fn.invalidate");
+/* Converting copy `shared_ptr<View>(const shared_ptr<Derived> &)` for a class with its View sub-object at +0x38 (the Menu views): out.ptr = src.ptr + 0x38 (0 stays 0), out.ctl = src.ctl, and the use count of the control block is incremented. It does not make a new control block; a raw pointer cannot be wrapped with it. The caller releases `out` afterwards. */
+void dk_fw_view_shared_ptr_as_view(shared_ptr *out, const shared_ptr *src) __asm__("cf.view.fn.shared_ptr_as_view");
 /* `ViewController::push(mgr, shared_ptr<View> *, exclusive)`. */
 uint32_t dk_fw_view_view_controller_push(uint8_t *mgr, const shared_ptr *sp, uint32_t exclusive) __asm__("cf.view.fn.view_controller_push");
+/* `View::push(view, shared_ptr<View> *, exclusive)`: pushes a view on the view stack through the ViewController of `view` (the manager pointer at View+0x2c; returns 0 when it is null). The call copies the shared_ptr (use count +1), so the caller releases its own. The stock PRESET MANAGER code calls it with exclusive 0 on the view that handled the key. */
+uint8_t dk_fw_view_view_push(uint8_t *view, const shared_ptr *sp, uint8_t exclusive) __asm__("cf.view.fn.view_push");
 /* The literal queue address of the UI loop's `pea <queue>` (the boot hook peeks the queue for a held safe-mode key). */
 extern const uint8_t dk_fw_view_ui_loop_queue_lit __asm__("cf.view.site.ui_loop.queue_lit");
 /* The jsr at the top of the UI task's event loop that pops the next event; the hook point for the runtime's per-pass tick. */
