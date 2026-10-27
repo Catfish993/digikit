@@ -53,6 +53,10 @@
 //!   poke:ADDR:HEX        write guest memory
 //!   send:HEX             queue a --call-fn call with these bytes, and run until it
 //!                        returns (at most --max instructions)
+//!   midi:HEX[:PERIOD]    queue bytes on the MIDI DIN input (UART9), one every PERIOD
+//!                        instructions (default 42,240, the 31,250 baud wire rate)
+//!   midistatus           report the MIDI counters: bytes queued, received into the
+//!                        guest's ring, receive interrupts, bytes the guest sent on DIN
 //!
 //! Prints one JSON line: the outcome, every peek, the watched PCs and the
 //! wall time. Exit status 0 done, 1 fault, 2 no UI, 3 usage.
@@ -106,6 +110,9 @@ impl RandomAccessRead for Extents {
 }
 
 const CHUNK: u32 = 1_000_000;
+
+/// Instructions per MIDI DIN byte at 31,250 baud (finding 25).
+const MIDI_PERIOD: u64 = 42_240;
 
 fn number(text: &str) -> Option<u64> {
     let text = text.trim().replace('_', "");
@@ -492,6 +499,24 @@ fn main() -> ExitCode {
                         run.advance(u64::from(CHUNK))?;
                     }
                     results.push(json!({"sent": len, "returned_by": run.icount}));
+                    Ok(())
+                }
+                "midi" => {
+                    let bytes = parts.get(1).and_then(|p| hex_bytes(p)).ok_or_else(bad)?;
+                    let period = match parts.get(2) {
+                        Some(p) => number(p).ok_or_else(bad)?,
+                        None => MIDI_PERIOD,
+                    };
+                    let queued = run.emulator.midi_in(&bytes, period)?;
+                    results.push(json!({"midi": queued, "icount": run.icount}));
+                    Ok(())
+                }
+                "midistatus" => {
+                    let m = run.emulator.midi_status();
+                    results.push(
+                        json!({"midi_status": {"queued": m.queued, "rx_bytes": m.rx_bytes,
+                        "rx_irqs": m.rx_irqs, "tx_bytes": m.tx_bytes}, "icount": run.icount}),
+                    );
                     Ok(())
                 }
                 _ => Err(bad()),
