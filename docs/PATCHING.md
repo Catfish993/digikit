@@ -300,10 +300,10 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
 - **Writes.** `write` replaces bytes at an anchor plus an offset. It carries `expect_sha256` of the bytes it replaces
   (never the bytes), or a typed `value` with a width of 1, 2 or 4 bytes and a range check. `anchors = "PREFIX.*"`
   repeats one write over many anchors.
-- **Hooks.** `hook` overwrites a site with a jump (or, on ColdFire, a call) to a routine of the module. With
-  `displaced = "run"` patchkit copies the displaced instructions to a tail (`hook.<anchor>.tail`; PC-relative forms
-  are re-encoded or refused) so that the routine can run them and return (`hook.<anchor>.return`). `retarget`
-  rewrites the target of an existing call or jump.
+- **Hooks.** A hook is declared in `devices/fw/` (site, `mode`, register contract). A `hook` op names it
+  (`hook = "<hook name>"`, `to = "<symbol>"`). Mode `before` copies the displaced instructions to a tail
+  (`hook.<site>[.<offset>].tail`; PC-relative forms are re-encoded or refused) so that the routine can run them and
+  return (`.return`). Mode `replace` drops them. Mode `retarget` rewrites the target of an existing call.
 - **Sections copied from the image.** `[[section]]` copies bytes of the user's image at patch time (a stock table),
   may append one row per registry entry, and places the result. This is how a framework extends a firmware table
   without storing it.

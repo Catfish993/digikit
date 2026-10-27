@@ -37,8 +37,8 @@ TOP = {"fx", "machines", "test", "ui", "tools"}
 CF_C = """/* {id}: ColdFire code in the expansion region (cf.expansion).
  *
  * The core/expansion loader copies code, data and bss here before the reset clear; nothing calls this module yet.
- * Hook it with an `[[op]]` in module.toml (op = "retarget": rewrite a jsr/bsr/jmp at an anchor to a symbol of this
- * object). Anchors are declared in devices/fw/ (masked signatures, never addresses); build with
+ * Hook it with an `[[op]]` in module.toml (op = "hook", `hook` = the name of a hook declared in devices/fw/, `to` = a
+ * symbol of this object). Sites are declared there too (masked signatures, never addresses); build with
  * `mise run module:build -- modules/{id}`. */
 
 const unsigned {sym}_version = 1;
@@ -153,8 +153,8 @@ _fw_q31_convert = "dsp.master.fn.q31_converter"
 _fw_master_buf = "dsp.master.value.q31_converter.float_buf"
 
 [[op]]
-op = "retarget"
-anchor = "dsp.master.site.q31_converter.call"
+op = "hook"
+hook = "dsp.master.hook.q31_converter.call"
 to = "{sym}_hook"
 
 [[claim]]

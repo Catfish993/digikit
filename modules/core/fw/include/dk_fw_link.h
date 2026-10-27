@@ -9,5 +9,9 @@
 /* cf.link.fn.block_isr: no sig yet */
 /* cf.link.fn.frame: no sig yet */
 extern const uint8_t dk_fw_link_block_isr_counter_lit __asm__("cf.link.site.block_isr.counter_lit");
+/* Entry of the DSP block interrupt handler (vector 191); the hook point for per-block counting and reading the DSP's cycle count. */
+typedef void dk_fw_link_block_isr_hook(void);
+/* The jsr abs.l with which the block interrupt handler calls the stock frame driver (four arguments on the stack); the hook point for the DSP link's per-block sender. */
+typedef void dk_fw_link_block_isr_frame_call_hook(int32_t len, const uint16_t *src, int32_t reclen, const uint16_t *rec);
 
 #endif

@@ -291,7 +291,7 @@ pub struct ObjectRef {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Op {
-    /// `write`, `retarget` or `hook`
+    /// `write` or `hook`
     pub op: String,
     #[serde(default)]
     pub anchor: String,
@@ -304,9 +304,9 @@ pub struct Op {
     pub value: Option<ExprSrc>,
     #[serde(default)]
     pub width: Option<u32>,
-    /// hook: `jump` (default) or `call` (ColdFire `jsr.l`; the hook returns to the end of the site)
+    /// hook: the declared hook this op attaches to; its site, offset and mode come from the port file
     #[serde(default)]
-    pub kind: Option<String>,
+    pub hook: Option<String>,
     /// hook: `run` (default; the displaced instructions run in `hook.<anchor>.tail`) or `drop`
     #[serde(default)]
     pub displaced: Option<String>,

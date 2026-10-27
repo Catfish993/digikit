@@ -8,8 +8,8 @@ The browser patch page lists patched-in modules only; a `.dkm` goes to the devic
   offset, or SHARC `reloc_hash` plus offset) into `devices/ports/<dev>-<ver>.toml` by `mise run patch:port`. A rule that matches nothing or
   twice is an error: fix the rule, never type an address.
 - **Claims.** `[[claim]] resource = "..."` declares a scarce resource (for example `dsp.master.hook`); two modules claiming one conflict.
-- **Ops.** `retarget` (rewrite a jsr/bsr/jmp or a SHARC CALL at an anchor), `write` (`expect_sha256` of the bytes replaced, never the bytes),
-  `hook`. `[[section]]` copies a stock table from the user's image at patch time.
+- **Ops.** `write` (`expect_sha256` of the bytes replaced, never the bytes),
+  `hook` (names a hook declared in `devices/fw/`; the declaration gives site, mode and registers). `[[section]]` copies a stock table from the user's image at patch time.
 - Never patch sections 2, 4 or 8 (patchkit refuses). Always patch from the stock image.
 
 | step | command |

@@ -49,11 +49,8 @@ path = "build/gen/adapter-{dev}.inc"
 # The first instruction of the render entry becomes `JUMP _dv_entry`; the wrapper executes the displaced instruction.
 [[op]]
 op = "hook"
-cpu = "sharc"
-anchor = "dsp.voice.fn.render_entry"
-offset = 0
+hook = "dsp.voice.hook.render_entry"
 to = "_dv_entry"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 # Machine modules add rows {type, routine pc} with `[[entry]] registry = "voices"`:

@@ -18,6 +18,12 @@ pub mod link {
         #[link_name = "cf.link.site.block_isr.counter_lit"]
         pub static BLOCK_ISR_COUNTER_LIT: u8;
     }
+
+    /// Entry of the DSP block interrupt handler (vector 191); the hook point for per-block counting and reading the DSP's cycle count.
+    pub type BlockIsrHook = unsafe extern "C" fn();
+
+    /// The jsr abs.l with which the block interrupt handler calls the stock frame driver (four arguments on the stack); the hook point for the DSP link's per-block sender.
+    pub type BlockIsrFrameCallHook = unsafe extern "C" fn(len: i32, src: *const u16, reclen: i32, rec: *const u16);
 }
 
 pub mod machine {
@@ -113,6 +119,9 @@ pub mod menu {
         #[link_name = "cf.menu.site.settings_list.system_icon_ref"]
         pub static SETTINGS_LIST_SYSTEM_ICON_REF: u8;
     }
+
+    /// Last step of the SETTINGS item list rebuild, before the selection is restored (a2 = the settings menu); the hook point for adding an item.
+    pub type SettingsListTailHook = unsafe extern "C" fn(menu: *mut u8);
 }
 
 pub mod midi {
@@ -198,6 +207,9 @@ pub mod rtos {
         #[link_name = "cf.rtos.value.reset.copy_helper"]
         pub static RESET_COPY_HELPER: u8;
     }
+
+    /// Entry of the main-OS task, before the task builds its singletons; the hook point for boot-time module loading.
+    pub type MainOsTaskHook = unsafe extern "C" fn();
 }
 
 pub mod storage {
@@ -314,6 +326,9 @@ pub mod view {
         #[link_name = "cf.view.site.ui_loop.queue_lit"]
         pub static UI_LOOP_QUEUE_LIT: u8;
     }
+
+    /// The jsr at the top of the UI task's event loop that pops the next event; the hook point for the runtime's per-pass tick.
+    pub type UiLoopHook = unsafe extern "C" fn();
 }
 
 pub mod window {

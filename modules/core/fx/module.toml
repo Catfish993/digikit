@@ -59,19 +59,13 @@ _fxs_back = "hook.dsp.fx.fn.send.tail"
 
 [[op]]
 op = "hook"
-cpu = "sharc"
-anchor = "dsp.fx.fn.entry"
-offset = 0
+hook = "dsp.fx.hook.entry"
 to = "_fx_entry"
-displaced = "run"
 
 [[op]]
 op = "hook"
-cpu = "sharc"
-anchor = "dsp.fx.fn.send"
-offset = 0
+hook = "dsp.fx.hook.send"
 to = "_fxs_entry"
-displaced = "run"
 devices = ["dt2", "dn2"]
 
 # Effect modules add rows with `[[entry]] registry = "fx"`:

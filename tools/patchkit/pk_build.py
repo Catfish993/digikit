@@ -405,7 +405,10 @@ def build_module(
         else:
             if defines:
                 raise BuildError("--define applies to DSP sources only")
-            obj = cf_object(paths, [moddir / "build" / "gen"])
+            obj = cf_object(
+                paths,
+                [moddir / "build" / "gen", ROOT / "modules" / "core" / "fw" / "inc"],
+            )
         text = canonical(obj)
         out = (out_root or moddir) / o["path"]
         if check:

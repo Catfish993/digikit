@@ -2387,3 +2387,184 @@ len = 6
 sha256 = "aa85dee071b926c095ed94ee8bad29cc5add87caf86276bf2c85bd0e565feee4"
 mark = "D"
 rule = "fw/dsp/voice:sharc_literal"
+
+[[hook]]
+name = "cf.link.hook.block_isr"
+site = "cf.link.fn.block_isr"
+mode = "before"
+
+[[hook]]
+name = "cf.link.hook.block_isr.frame_call"
+site = "cf.link.site.block_isr.frame_call"
+mode = "retarget"
+
+[[hook]]
+name = "cf.machine.hook.clone.0"
+site = "cf.machine.site.clone.0"
+mode = "replace"
+
+[[hook]]
+name = "cf.machine.hook.clone.1"
+site = "cf.machine.site.clone.1"
+mode = "replace"
+
+[[hook]]
+name = "cf.machine.hook.clone.2"
+site = "cf.machine.site.clone.2"
+mode = "replace"
+
+[[hook]]
+name = "cf.machine.hook.clone.3"
+site = "cf.machine.site.clone.3"
+mode = "replace"
+
+[[hook]]
+name = "cf.machine.hook.clone.4"
+site = "cf.machine.site.clone.4"
+mode = "replace"
+
+[[hook]]
+name = "cf.machine.hook.clone.5"
+site = "cf.machine.site.clone.5"
+mode = "before"
+
+[[hook]]
+name = "cf.machine.hook.clone.6"
+site = "cf.machine.site.clone.6"
+mode = "replace"
+
+[[hook]]
+name = "cf.machine.hook.dispatch"
+site = "cf.machine.fn.dispatch"
+mode = "before"
+
+[[hook]]
+name = "cf.machine.hook.list.copy_target"
+site = "cf.machine.site.list.copy"
+mode = "retarget"
+
+[[hook]]
+name = "cf.machine.hook.list.entry"
+site = "cf.machine.fn.list.entry"
+mode = "before"
+
+[[hook]]
+name = "cf.machine.hook.list_rank_insert"
+site = "cf.machine.site.list_rank_insert"
+mode = "before"
+
+[[hook]]
+name = "cf.machine.hook.param_code.args"
+site = "cf.machine.site.param_code.args"
+mode = "before"
+
+[[hook]]
+name = "cf.machine.hook.srcpage"
+site = "cf.machine.site.srcpage"
+mode = "replace"
+
+[[hook]]
+name = "cf.menu.hook.settings_list.tail"
+site = "cf.menu.site.settings_list.tail"
+mode = "before"
+
+[[hook]]
+name = "cf.midi.hook.rx"
+site = "cf.midi.site.rx"
+mode = "before"
+
+[[hook]]
+name = "cf.page.hook.filter_graph_test"
+site = "cf.page.site.filter_graph_test"
+mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.fx_array.init_exit"
+site = "cf.page.site.fx_array.init_exit"
+mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.fx_array.load"
+site = "cf.page.site.fx_array.load"
+mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.fx_array.save"
+site = "cf.page.site.fx_array.save"
+mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.fx_key_list.load"
+site = "cf.page.site.fx_key_list.load"
+mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.fx_view_list.load"
+site = "cf.page.site.fx_view_list.load"
+mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.page_desc"
+site = "cf.page.fn.page_desc"
+mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.sound_load_exit"
+site = "cf.page.site.sound_load_exit"
+mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.tab_label_test"
+site = "cf.page.site.tab_label_test"
+mode = "replace"
+
+[[hook]]
+name = "cf.param.hook.value_class"
+site = "cf.param.fn.value_class"
+offset = 4
+mode = "before"
+
+[[hook]]
+name = "cf.rtos.hook.idle"
+site = "cf.rtos.site.idle"
+mode = "replace"
+
+[[hook]]
+name = "cf.rtos.hook.main_os_task"
+site = "cf.rtos.site.main_os_task"
+mode = "before"
+
+[[hook]]
+name = "cf.test.hook.kit_vfunc_12"
+site = "cf.test.fn.kit_vfunc_12"
+mode = "before"
+
+[[hook]]
+name = "cf.view.hook.ui_loop"
+site = "cf.view.site.ui_loop"
+mode = "retarget"
+
+[[hook]]
+name = "dsp.fx.hook.entry"
+site = "dsp.fx.fn.entry"
+mode = "before"
+
+[[hook]]
+name = "dsp.fx.hook.send"
+site = "dsp.fx.fn.send"
+mode = "before"
+
+[[hook]]
+name = "dsp.link.hook.block_tail"
+site = "dsp.link.site.block_tail"
+mode = "before"
+
+[[hook]]
+name = "dsp.master.hook.q31_converter.call"
+site = "dsp.master.site.q31_converter.call"
+mode = "retarget"
+
+[[hook]]
+name = "dsp.voice.hook.render_entry"
+site = "dsp.voice.fn.render_entry"
+mode = "replace"

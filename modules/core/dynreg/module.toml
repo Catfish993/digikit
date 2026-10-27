@@ -92,8 +92,8 @@ _dr_t_copy = "cf.machine.site.list.copy"
 
 # the copy at the end of the machine list getter: `jsr copy(begin, end, dest)`, result in d0 = the end of the copy
 [[op]]
-op = "retarget"
-anchor = "cf.machine.site.list.copy"
+op = "hook"
+hook = "cf.machine.hook.list.copy_target"
 to = "dynreg_copy"
 devices = ["dt2"]
 
@@ -101,11 +101,8 @@ devices = ["dt2"]
 # replaced by a jump to a routine that does both (the displaced bytes are not run)
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.list.copy"
-offset = 0
+hook = "cf.machine.hook.list.copy_call"
 to = "dynreg_list_hook"
-displaced = "drop"
 devices = ["dn2"]
 
 [[claim]]

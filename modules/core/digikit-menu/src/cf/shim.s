@@ -7,13 +7,11 @@
 |
 | dk_make_sp(out, parent, view): the firmware's shared_ptr<View> constructor takes `out` in a0 and (parent, view) on the
 |   stack; this adapts the cdecl call from Rust.
+    .include "dk_fw_menu.inc"
     .text
     .globl dk_hook
 dk_hook:
-    move.l  %a2,-(%sp)
-    jsr     dk_add_item
-    addq.l  #4,%sp
-    jmp     _dk_tail
+    dk_fw_menu_settings_list_tail_hook dk_add_item, _dk_tail
 
     .globl dk_make_sp
 dk_make_sp:

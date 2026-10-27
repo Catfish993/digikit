@@ -4,7 +4,7 @@
 use patchkit::apply::{self, Options};
 use patchkit::firmware::Firmware;
 use patchkit::module::{Library, Module};
-use patchkit::port::Registry;
+use patchkit::port::{Hook, Registry};
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -228,7 +228,7 @@ fn retarget_of_something_that_is_not_a_call_is_refused() {
     let m = module(
         "t/r",
         "",
-        "[[op]]\nop = \"retarget\"\nanchor = \"dsp.master.fn.q31_converter\"\nto = \"_x\"\n[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n",
+        "[[op]]\nop = \"hook\"\nhook = \"t.retarget.hook\"\nto = \"_x\"\n[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n",
         Some(json!({
             "format": 1, "arch": "sharc", "source_sha256": "0".repeat(64),
             "sections": [{"name": "seg_pmco", "kind": "text", "align": 8, "size": 6, "hex": "000000000000"}],
@@ -237,5 +237,15 @@ fn retarget_of_something_that_is_not_a_call_is_refused() {
         })),
     );
     let lib = library(vec![m]);
-    expect_err(run(&lib, &["t/r"]), "not a direct CALL");
+    let mut reg = registry();
+    let sha = Firmware::parse(&image(DT2).unwrap()).unwrap().syx_sha256;
+    for p in reg.ports.iter_mut().filter(|p| p.port.syx_sha256 == sha) {
+        p.hook.push(Hook {
+            name: "t.retarget.hook".into(),
+            site: "dsp.master.fn.q31_converter".into(),
+            offset: 0,
+            mode: "retarget".into(),
+        });
+    }
+    expect_err(run_with(&reg, &lib, &["t/r"]), "not a direct CALL");
 }

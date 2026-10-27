@@ -97,29 +97,32 @@ pub fn validate_manifest(m: &Manifest) -> Result<()> {
                 }
             }
             "retarget" => {
-                if op.to.is_none() {
-                    return Err(err!("{id}: {} needs to", op.op));
-                }
+                return Err(err!(
+                    "{id}: op retarget is gone: use op = \"hook\" with a retarget hook"
+                ));
             }
             "hook" => {
+                if op.hook.is_none() {
+                    return Err(err!("{id}: hook needs hook"));
+                }
                 let Some(to) = &op.to else {
                     return Err(err!("{id}: hook needs to"));
                 };
                 expr::parse(to).map_err(|e| err!("{id}: hook to: {e}"))?;
-                if op.anchor.is_empty() || op.anchors.is_some() {
-                    return Err(err!("{id}: hook needs one anchor"));
-                }
-                if !matches!(op.kind.as_deref(), None | Some("jump" | "call")) {
-                    return Err(err!("{id}: hook kind is jump or call"));
-                }
-                if !matches!(op.displaced.as_deref(), None | Some("run" | "drop")) {
-                    return Err(err!("{id}: hook displaced is run or drop"));
-                }
-                if !matches!(op.cpu.as_deref(), None | Some("cf" | "sharc")) {
-                    return Err(err!("{id}: hook cpu is cf or sharc"));
-                }
-                if op.value.is_some() || op.hex.is_some() {
-                    return Err(err!("{id}: hook takes no value or hex"));
+                let set = [
+                    ("anchor", !op.anchor.is_empty()),
+                    ("anchors", op.anchors.is_some()),
+                    ("offset", op.offset != 0),
+                    ("displaced", op.displaced.is_some()),
+                    ("cpu", op.cpu.is_some()),
+                    ("value", op.value.is_some()),
+                    ("hex", op.hex.is_some()),
+                    ("width", op.width.is_some()),
+                ];
+                if let Some((field, _)) = set.iter().find(|(_, s)| *s) {
+                    return Err(err!(
+                        "{id}: a hook op names its hook; {field} comes from the declaration"
+                    ));
                 }
             }
             o => return Err(err!("{id}: unknown op {o}")),
@@ -665,12 +668,13 @@ pub struct PlanSection {
 pub struct PlanHook {
     pub module: String,
     pub anchor: String,
+    /// the declared hook the manifest op names
+    pub hook: Option<String>,
     pub offset: i64,
     pub cpu: String,
     pub addr: u64,
     /// bytes of the site replaced
     pub site_len: u64,
-    pub kind: String,
     pub displaced: String,
     pub to: u64,
     /// `hook.<anchor>.tail` (displaced = run)
@@ -771,9 +775,8 @@ pub fn sharc_jump(target: u64) -> Result<Vec<u8>> {
 }
 
 pub const CF_JMP_L: u16 = 0x4ef9;
-pub const CF_JSR_L: u16 = 0x4eb9;
 pub const CF_NOP: u16 = 0x4e71;
-/// Bytes of `jmp.l abs32` and `jsr.l abs32`.
+/// Bytes of `jmp.l abs32`.
 pub const CF_JMP_LEN: usize = 6;
 
 #[derive(Clone, Debug)]
@@ -837,14 +840,12 @@ pub fn cf_site(main: &[u8], base: u64, start: u64, site: u64) -> Result<CfSite> 
     })
 }
 
-/// The bytes at the site: `jmp.l to` (or `jsr.l`), NOP padded to the whole instructions.
-pub fn cf_site_bytes(call: bool, s: &CfSite, to: u64) -> Result<Vec<u8>> {
+/// The bytes at the site: `jmp.l to`, NOP padded to the whole instructions.
+pub fn cf_site_bytes(s: &CfSite, to: u64) -> Result<Vec<u8>> {
     if to > u32::MAX as u64 {
         return Err(err!("hook target {to:#x} is not a 32-bit address"));
     }
-    let mut b = (if call { CF_JSR_L } else { CF_JMP_L })
-        .to_be_bytes()
-        .to_vec();
+    let mut b = CF_JMP_L.to_be_bytes().to_vec();
     b.extend_from_slice(&(to as u32).to_be_bytes());
     while b.len() < s.len {
         b.extend_from_slice(&CF_NOP.to_be_bytes());
@@ -936,10 +937,8 @@ mod tests {
         let s = site(&code, 0x4000_0000).unwrap();
         // moveq (2) + move.l #imm (6) = 8 >= 6
         assert_eq!((s.len, s.insns.len()), (8, 2));
-        let b = cf_site_bytes(false, &s, 0x47e8_b100).unwrap();
+        let b = cf_site_bytes(&s, 0x47e8_b100).unwrap();
         assert_eq!(b, [0x4e, 0xf9, 0x47, 0xe8, 0xb1, 0x00, 0x4e, 0x71]);
-        let c = cf_site_bytes(true, &s, 0x47e8_b100).unwrap();
-        assert_eq!(&c[..2], [0x4e, 0xb9]);
         // the tail runs the two instructions unchanged, then jumps back
         let t = cf_tail(&s, 0x47e8_c000, 0x4000_0008).unwrap();
         assert_eq!(&t[..8], &code[..8]);
@@ -948,7 +947,7 @@ mod tests {
         let code2 = [0x22, 0x3c, 0x00, 0x00, 0x00, 0x01, 0x4e, 0x75];
         let s2 = site(&code2, 0x4000_0000).unwrap();
         assert_eq!(s2.len, 6);
-        assert_eq!(cf_site_bytes(false, &s2, 0x4700_0000).unwrap().len(), 6);
+        assert_eq!(cf_site_bytes(&s2, 0x4700_0000).unwrap().len(), 6);
     }
 
     #[test]

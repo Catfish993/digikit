@@ -28,3 +28,14 @@ cpu = "sharc"
 rule = { kind = "sharc_literal", reloc_hash = "83fba5710c2b395cbd54e3cd583b1e205915fa6d1905d7285c3535203e52d05b", offset = 0xf }
 mark = "D"
 users = ["core/fx", "digikit/master-drive", "digikit/master-gain"]
+
+[[hook]]
+name = "dsp.master.hook.q31_converter.call"
+site = "dsp.master.site.q31_converter.call"
+cpu = "sharc"
+mode = "retarget"
+regs = { in = [], clobbers = ["r0-r3", "i4", "astat"], modes = { m5 = 0, m6 = 1, simd = false } }   # no DO loop is active
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["digikit/master-drive", "digikit/master-gain"]
+doc = "The master block handler's one CALL of the Q31 converter (64 planar floats in the master buffer; arguments in r4/r8); the hook point for processing the master block in place."

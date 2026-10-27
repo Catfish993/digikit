@@ -41,3 +41,14 @@ devices = ["dt2"]
 rule = { kind = "sharc_literal", reloc_hash = "d2c02a587786f9ee328897985095c271ff1c5b65f289224e435968ea4b5d3f00", offset = 0x1e5 }
 mark = "D"
 users = ["core/dsp-voice"]
+
+[[hook]]
+name = "dsp.voice.hook.render_entry"
+site = "dsp.voice.fn.render_entry"
+cpu = "sharc"
+mode = "replace"
+regs = { in = ["r4", "r8", "r12", "r14", "r15", "i4", "i6", "l4"], clobbers = ["r0-r2", "i4", "astat"] }   # union of the DT2 and DN2 stubs; DN2 restores all
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/dsp-voice"]
+doc = "First instruction (I7 = MODIFY) of the per-voice render function; the hook point for rendering registered machine types with their own DSP routine (it runs the dropped MODIFY itself)."

@@ -81,83 +81,56 @@ _fp_p_send = "params.fs0.index"
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.fn.page_desc"
-offset = 0
+hook = "cf.page.hook.page_desc"
 to = "fxp_acc"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.site.tab_label_test"
-offset = 0
+hook = "cf.page.hook.tab_label_test"
 to = "fxp_label"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.site.filter_graph_test"
-offset = 0
+hook = "cf.page.hook.filter_graph_test"
 to = "fxp_graph"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.site.fx_view_list.load"
-offset = 0
+hook = "cf.page.hook.fx_view_list.load"
 to = "fxp_list"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.site.fx_array.load"
-offset = 0
+hook = "cf.page.hook.fx_array.load"
 to = "fxp_load"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.site.fx_array.save"
-offset = 0
+hook = "cf.page.hook.fx_array.save"
 to = "fxp_save"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.site.fx_array.init_exit"
-offset = 0
+hook = "cf.page.hook.fx_array.init_exit"
 to = "fxp_init"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.site.fx_key_list.load"
-offset = 0
+hook = "cf.page.hook.fx_key_list.load"
 to = "fxp_keylist"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.page.site.sound_load_exit"
-offset = 0
+hook = "cf.page.hook.sound_load_exit"
 to = "fxp_sound"
-displaced = "drop"
 devices = ["dt2", "dn2"]
 
 [[claim]]

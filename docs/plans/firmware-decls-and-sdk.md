@@ -123,7 +123,7 @@ shared module moved out.
       `machineprofile.py` and `cf_names.py` as their consumers move to anchors.
 - [x] Add a vtable-slot rule kind (`cf_vtable_slot`) (about 63% of ColdFire candidates have no unique hash) and an ordinal for
       `sharc_func` (fixes most of the 182 shared DSP hashes on DT2).
-- [ ] (step 5, with the generated trampolines) Hooks declare their register contract: inputs, clobbered and preserved registers, and the DSP mode (modify
+- [x] (step 5, with the generated trampolines) Hooks declare their register contract: inputs, clobbered and preserved registers, and the DSP mode (modify
       registers, SIMD). Today this is prose in findings 45 and 53.
 - [x] One naming rule with a fixed subsystem vocabulary (`devices/fw/subsystems.toml`): `<cpu>.<subsystem>.<kind>.<name>`, named after the firmware, not after our module.
       `dkrt.*`, `dl.*`, `health.*` and `input.*` get firmware names; old names stay as aliases until the move is done.
@@ -178,8 +178,9 @@ per-worktree dirs in `out/cache/rust` are no longer used.
       reads `was`; `catalog declare` rejects a former name; fix the design-doc and `port_resolve.py` docstring examples
       (they still show pre-rename names on purpose). Proof: byte-identical patched images and no remaining old name
       in users (`out/firmware-decls/rename2.py ... leftovers`).
-- [ ] Hook declarations with register contracts (inputs, clobbers, preserves, DSP modes; today prose in findings 45
+- [x] Hook declarations with register contracts (inputs, clobbers, preserves, DSP modes; today prose in findings 45
       and 53), and generated trampolines where code enters at a patch site.
+      Done: declarations for all 47 hook ops, contracts from the stubs, macros for five stubs, ops name hooks.
 - [ ] Reference docs: one page per subsystem with each declared anchor (signature, devices, rule, mark), from the same
       generator as the step 1 review page.
 - Deferred (Em): a repo rename tool (`fwrename`). The working codemod is `out/firmware-decls/rename2.py`
@@ -286,9 +287,8 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27 (25 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
-(findings 70-72), and step 5 up to 4c (see the step 5 list). Next, in order: hook declarations with generated
-trampolines, reference docs, then step 6. Em's rules for this branch: stop before every commit and show the diff and
+2026-10-27 (26 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
+(findings 70-72), and step 5 up to the hook declarations (see the step 5 list). Next, in order: reference docs, then step 6. Em's rules for this branch: stop before every commit and show the diff and
 message; no Rust build
 without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions
 (https://claude.ai/artifact/HsY3xPsoDhyCMfVhmzrPBW, decisions stored with the page), why the `Value<T>` project-data

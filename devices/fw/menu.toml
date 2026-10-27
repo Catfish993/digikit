@@ -62,3 +62,15 @@ fields = [
 ]
 mark = "D"
 users = ["core/digikit-menu"]
+
+[[hook]]
+name = "cf.menu.hook.settings_list.tail"
+site = "cf.menu.site.settings_list.tail"
+cpu = "cf"
+mode = "before"
+regs = { in = ["a2"], clobbers = ["d0-d1", "a0-a1", "ccr"] }   # d4 = the saved selection is live
+handler = { sig = "void (u8 *menu)", args = ["a2"] }
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/digikit-menu"]
+doc = "Last step of the SETTINGS item list rebuild, before the selection is restored (a2 = the settings menu); the hook point for adding an item."

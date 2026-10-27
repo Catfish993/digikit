@@ -5,3 +5,11 @@
 .equ VerticalMenuView_cursor, 0x18
 .equ VerticalMenuView_view, 0x38
 .equ VerticalMenuView_icon, 0xa4
+
+/* cf.menu.hook.settings_list.tail: Last step of the SETTINGS item list rebuild, before the selection is restored (a2 = the settings menu); the hook point for adding an item. */
+.macro dk_fw_menu_settings_list_tail_hook handler, next
+    move.l  %a2,-(%sp)
+    jsr     \handler
+    addq.l  #4,%sp
+    jmp     \next
+.endm

@@ -23,5 +23,7 @@ uint8_t * dk_fw_view_brain_view_manager(uint8_t *brain) __asm__("cf.view.fn.brai
 void dk_fw_view_invalidate(uint8_t *view) __asm__("cf.view.fn.invalidate");
 uint32_t dk_fw_view_view_controller_push(uint8_t *mgr, const shared_ptr *sp, uint32_t exclusive) __asm__("cf.view.fn.view_controller_push");
 extern const uint8_t dk_fw_view_ui_loop_queue_lit __asm__("cf.view.site.ui_loop.queue_lit");
+/* The jsr at the top of the UI task's event loop that pops the next event; the hook point for the runtime's per-pass tick. */
+typedef void dk_fw_view_ui_loop_hook(void);
 
 #endif

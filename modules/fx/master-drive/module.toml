@@ -33,8 +33,8 @@ sources = ["src/cf/strings.c"]
 place = "cf.expansion"
 
 [[op]]
-op = "retarget"
-anchor = "dsp.master.site.q31_converter.call"
+op = "hook"
+hook = "dsp.master.hook.q31_converter.call"
 to = "_md_hook"
 
 # Descriptor row of the master compressor's Sidechain Filter: long and short names. The default stays 0x5000: the

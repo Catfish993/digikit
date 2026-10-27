@@ -2,3 +2,13 @@
 .equ View_size, 0x4c
 .equ View_vptr, 0x0
 .equ View_mgr, 0x2c
+
+/* cf.view.hook.ui_loop: The jsr at the top of the UI task's event loop that pops the next event; the hook point for the runtime's per-pass tick. */
+.macro dk_fw_view_ui_loop_hook handler, next
+    lea     -16(%sp),%sp
+    movem.l %d0-%d1/%a0-%a1,(%sp)
+    jsr     \handler
+    movem.l (%sp),%d0-%d1/%a0-%a1
+    lea     16(%sp),%sp
+    jmp     \next
+.endm

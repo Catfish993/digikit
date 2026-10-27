@@ -232,6 +232,13 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
         if !on(&op.devices, dev) {
             continue;
         }
+        let op = &match expand_op(m, port, op) {
+            Ok(x) => x,
+            Err(_) => {
+                missing.push(format!("hook {}", op.hook.as_deref().unwrap_or("?")));
+                continue;
+            }
+        };
         match &op.anchors {
             Some(g) => {
                 if glob_anchors(port, g).is_empty() {
@@ -245,9 +252,8 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
         }
         if op.op == "hook" {
             let place = hook_place(port, op);
-            let drops = op.displaced.as_deref() == Some("drop")
-                || (op.displaced.is_none() && op.kind.as_deref() == Some("call"));
-            if port.region(&place).is_none() && !drops {
+            let runs = op.displaced.as_deref() == Some("run");
+            if port.region(&place).is_none() && runs {
                 missing.push(format!("region {place}"));
             }
         }
@@ -294,6 +300,41 @@ fn glob_anchors<'a>(port: &'a Port, pattern: &str) -> Vec<&'a Anchor> {
         .collect();
     v.sort_by_key(|(n, _)| *n);
     v.into_iter().map(|(_, a)| a).collect()
+}
+
+/// A manifest `hook` op in the form the later steps read: the site anchor and offset of the declared hook,
+/// and `hook` (displaced code runs), `hook` with `displaced = drop` or `retarget` by its mode.
+fn expand_op(m: &Module, port: &Port, op: &Op) -> Result<Op> {
+    let Some(name) = op.hook.as_deref().filter(|_| op.op == "hook") else {
+        return Ok(op.clone());
+    };
+    let h = port.hook(name).ok_or_else(|| {
+        err!(
+            "{}: no hook {name} on {}",
+            m.id(),
+            port.port.device
+        )
+    })?;
+    let mut x = op.clone();
+    x.anchor = h.site.clone();
+    x.offset = h.offset;
+    match h.mode.as_str() {
+        "before" => x.displaced = Some("run".into()),
+        "replace" => x.displaced = Some("drop".into()),
+        "retarget" => x.op = "retarget".into(),
+        o => return Err(err!("{}: hook {name}: unknown mode {o}", m.id())),
+    }
+    Ok(x)
+}
+
+/// The ops of a module that are active on the port's device, hook ops expanded.
+fn device_ops(m: &Module, port: &Port) -> Result<Vec<Op>> {
+    m.manifest
+        .op
+        .iter()
+        .filter(|o| on(&o.devices, &port.port.device))
+        .map(|o| expand_op(m, port, o))
+        .collect()
 }
 
 /// Region of a hook's tail: `place`, else the CPU's code region.
@@ -387,12 +428,12 @@ fn uses_expansion(lib: &Library, ids: &[String], dev: &str, port: &Port) -> bool
                 .registry
                 .iter()
                 .any(|r| r.region == exp && on(&r.devices, dev))
-            || mf.op.iter().any(|o| {
-                o.op == "hook"
-                    && on(&o.devices, dev)
-                    && o.displaced.as_deref() != Some("drop")
-                    && !(o.displaced.is_none() && o.kind.as_deref() == Some("call"))
-                    && hook_place(port, o) == exp
+            || device_ops(m, port).is_ok_and(|ops| {
+                ops.iter().any(|o| {
+                    o.op == "hook"
+                        && o.displaced.as_deref() == Some("run")
+                        && hook_place(port, o) == exp
+                })
             })
     })
 }
@@ -465,14 +506,13 @@ struct SecStage {
 struct HookStage<'a> {
     module: &'a Module,
     op_idx: usize,
-    op: &'a Op,
+    op: Op,
     anchor: &'a Anchor,
     cpu: &'static str,
     site: u64,
     site_len: usize,
     old: Vec<u8>,
     cf: Option<prim::CfSite>,
-    call: bool,
     run: bool,
     tail_len: usize,
     place: String,
@@ -495,7 +535,7 @@ fn stage<'a>(
     port: &'a Port,
     lib: &'a Library,
     order: &[String],
-    dev: &str,
+    _dev: &str,
     active: &prim::Active,
 ) -> Result<Stage<'a>> {
     let anchor_fn = |n: &str| port.anchor(n).map(|a| anchor_value(a) as i64);
@@ -579,11 +619,15 @@ fn stage<'a>(
     }
     for id in order {
         let m = lib.get(id).unwrap();
-        for (oi, op) in m.manifest.op.iter().enumerate() {
-            if op.op != "hook" || !on(&op.devices, dev) {
+        for (oi, op) in device_ops(m, port)?.into_iter().enumerate() {
+            if op.op != "hook" {
                 continue;
             }
-            let who = format!("{}: hook {} {:+}", m.id(), op.anchor, op.offset);
+            let who = format!(
+                "{}: hook {}",
+                m.id(),
+                op.hook.as_deref().unwrap_or(&op.anchor)
+            );
             let a = port.anchor(&op.anchor).unwrap();
             let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
             if op.cpu.as_deref().is_some_and(|c| c != a.cpu) {
@@ -595,19 +639,7 @@ fn stage<'a>(
             if op.offset < 0 {
                 return Err(err!("{who}: negative offset"));
             }
-            let call = op.kind.as_deref() == Some("call");
-            let run = match op.displaced.as_deref() {
-                Some(d) => d == "run",
-                None => !call,
-            };
-            if cpu == SHARC && call {
-                return Err(err!("{who}: a SHARC hook is a jump, not a call"));
-            }
-            if call && run {
-                return Err(err!(
-                    "{who}: kind = call replaces the site and returns after it, so the displaced instructions cannot run: use displaced = \"drop\" (or kind = jump)"
-                ));
-            }
+            let run = op.displaced.as_deref() == Some("run");
             let site = a.addr + op.offset as u64;
             let (site_len, cf) = if cpu == SHARC {
                 if op.offset % 2 != 0 {
@@ -641,6 +673,12 @@ fn stage<'a>(
                     .len(),
                 (None, true) => 12,
             };
+            let place = hook_place(port, &op);
+            let base_name = if op.offset == 0 {
+                format!("hook.{}", a.name)
+            } else {
+                format!("hook.{}.{}", a.name, op.offset)
+            };
             st.hooks.push(HookStage {
                 module: m,
                 op_idx: oi,
@@ -651,15 +689,10 @@ fn stage<'a>(
                 site_len,
                 old,
                 cf,
-                call,
                 run,
                 tail_len,
-                place: hook_place(port, op),
-                base_name: if op.offset == 0 {
-                    format!("hook.{}", a.name)
-                } else {
-                    format!("hook.{}.{}", a.name, op.offset)
-                },
+                place,
+                base_name,
             });
         }
     }
@@ -780,7 +813,7 @@ pub fn apply_with(
                 }
             }
         }
-        for op in m.manifest.op.iter().filter(|o| on(&o.devices, &dev)) {
+        for op in &device_ops(m, port)? {
             match &op.anchors {
                 Some(g) => used.extend(glob_anchors(port, g).iter().map(|a| a.name.clone())),
                 None => {
@@ -798,7 +831,7 @@ pub fn apply_with(
         }
         for id in &order {
             let m = lib.get(id).unwrap();
-            for op in m.manifest.op.iter().filter(|o| on(&o.devices, &dev)) {
+            for op in &device_ops(m, port)? {
                 if let Some(v) = &op.value {
                     add(&mut names, &v.text())?;
                 }
@@ -1229,13 +1262,7 @@ pub fn apply_with(
         };
         for id in &order {
             let m = lib.get(id).unwrap();
-            for (oi, op) in m
-                .manifest
-                .op
-                .iter()
-                .enumerate()
-                .filter(|(_, o)| on(&o.devices, &dev))
-            {
+            for (oi, op) in device_ops(m, port)?.iter().enumerate() {
                 if op.op == "hook" {
                     let hi = stg
                         .hooks
@@ -1243,14 +1270,17 @@ pub fn apply_with(
                         .position(|h| h.module.id() == id && h.op_idx == oi)
                         .unwrap();
                     let h = &stg.hooks[hi];
-                    let who = format!("{id}: hook {} {:+}", h.anchor.name, op.offset);
+                    let who = format!(
+                        "{id}: hook {}",
+                        op.hook.as_deref().unwrap_or(&h.anchor.name)
+                    );
                     let to = crate::expr::eval_str(op.to.as_deref().unwrap(), &scope)
                         .map_err(|e| err!("{who}: to: {e}"))?;
                     let to =
                         u64::try_from(to).map_err(|_| err!("{who}: target {to} is negative"))?;
                     let new = match &h.cf {
                         Some(site) => {
-                            prim::cf_site_bytes(h.call, site, to).map_err(|e| err!("{who}: {e}"))?
+                            prim::cf_site_bytes(site, to).map_err(|e| err!("{who}: {e}"))?
                         }
                         None => prim::sharc_jump(to).map_err(|e| err!("{who}: {e}"))?,
                     };
@@ -1265,11 +1295,11 @@ pub fn apply_with(
                     plan_hooks.push(prim::PlanHook {
                         module: m.tag(),
                         anchor: h.anchor.name.clone(),
+                        hook: op.hook.clone(),
                         offset: op.offset,
                         cpu: h.anchor.cpu.clone(),
                         addr: h.site,
                         site_len: h.site_len as u64,
-                        kind: if h.call { "call" } else { "jump" }.into(),
                         displaced: if h.run { "run" } else { "drop" }.into(),
                         to,
                         tail: prim_syms.get(&format!("{}.tail", h.base_name)).copied(),

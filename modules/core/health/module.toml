@@ -42,10 +42,8 @@ health_block_next = "hook.cf.link.fn.block_isr.tail"
 # The last call of the boot thread (`jsr <create the main-OS task>`) is replaced by a jump to the idle hook. It does not return.
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.rtos.site.idle"
+hook = "cf.rtos.hook.idle"
 to = "health_idle_hook"
-displaced = "drop"
 
 [[claim]]
 resource = "cf.rtos.site.idle"
@@ -54,8 +52,7 @@ resource = "cf.rtos.site.idle"
 # count; the two displaced instructions run in the tail.
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.link.fn.block_isr"
+hook = "cf.link.hook.block_isr"
 to = "health_block_hook"
 
 [[claim]]

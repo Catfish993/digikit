@@ -6,6 +6,7 @@
  *
  * health_block_hook is a `hook` op at the entry of the block interrupt handler (the displaced `link.w; movem.l` run in the tail
  * health_block_next). The interrupt frame is on the stack; d0/d1/a0/a1 are saved, d2-d7/a2-a6 are the C function's to keep. */
+    .include "dk_fw_link.inc"
     .text
     .even
     .globl health_idle_hook
@@ -16,9 +17,4 @@ health_idle_hook:
 
     .globl health_block_hook
 health_block_hook:
-    lea     -16(%sp),%sp
-    movem.l %d0-%d1/%a0-%a1,(%sp)
-    jsr     health_block
-    movem.l (%sp),%d0-%d1/%a0-%a1
-    lea     16(%sp),%sp
-    jmp     health_block_next
+    dk_fw_link_block_isr_hook health_block, health_block_next

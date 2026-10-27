@@ -188,13 +188,16 @@ pub fn explain(base: &[u8], out: &Applied) -> Result<String> {
     for h in &plan.hooks {
         let _ = writeln!(
             s,
-            "  [{}] {} {:+} ({}) at {:#010x}: {} to {:#x}, {} site byte(s), displaced {}, return {:#x}{}",
+            "  [{}] {}{} {:+} ({}) at {:#010x}: jump to {:#x}, {} site byte(s), displaced {}, return {:#x}{}",
             h.module,
+            h.hook
+                .as_ref()
+                .map(|n| format!("{n} = "))
+                .unwrap_or_default(),
             h.anchor,
             h.offset,
             h.cpu,
             h.addr,
-            h.kind,
             h.to,
             h.site_len,
             h.displaced,

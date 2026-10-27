@@ -67,16 +67,14 @@ _dl_frows = "fx.rows"
 _dl_fcount = "fx.count"
 
 [[op]]
-op = "retarget"
-anchor = "cf.link.site.block_isr.frame_call"
+op = "hook"
+hook = "cf.link.hook.block_isr.frame_call"
 to = "dl_frame_hook"
 
 [[op]]
 op = "hook"
-cpu = "sharc"
-anchor = "dsp.link.site.block_tail"
+hook = "dsp.link.hook.block_tail"
 to = "_dl_hook"
-displaced = "run"
 
 [[claim]]
 resource = "dsp.link.site.block_tail"

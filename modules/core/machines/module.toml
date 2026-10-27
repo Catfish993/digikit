@@ -350,40 +350,28 @@ _mf_pgn = "pages.count"
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.fn.dispatch"
-offset = 0
+hook = "cf.machine.hook.dispatch"
 to = "mf_dispatch"
-displaced = "run"
 devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.fn.dispatch"
-offset = 0
+hook = "cf.machine.hook.dispatch"
 to = "mf_dispatch"
-displaced = "run"
 devices = ["dn2"]
 
 # list builder: the tables exist before it runs; it copies mf_list_buf (stock order plus the machines at their positions)
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.fn.list.entry"
-offset = 0
+hook = "cf.machine.hook.list.entry"
 to = "mf_list_entry"
-displaced = "run"
 devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.fn.list.entry"
-offset = 0
+hook = "cf.machine.hook.list.entry"
 to = "mf_list_entry"
-displaced = "run"
 devices = ["dn2"]
 
 [[op]]
@@ -422,11 +410,8 @@ devices = ["dt2", "dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.list_rank_insert"
-offset = 0
+hook = "cf.machine.hook.list_rank_insert"
 to = "mf_rank"
-displaced = "run"
 devices = ["dt2"]
 
 # group (Digitakt II): SLICE and its clones; (Digitone II: a hook, below). Bound = the last type, branch `bne` -> `bcs`
@@ -449,11 +434,8 @@ devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.group"
-offset = 0
+hook = "cf.machine.hook.group"
 to = "mf_group"
-displaced = "run"
 devices = ["dn2"]
 
 # names: three accessors (long, short, header hint), each bounded by `moveq #last,D1`, each reading a column of the table
@@ -636,87 +618,60 @@ devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.clone.0"
-offset = 0
+hook = "cf.machine.hook.clone.0"
 to = "mf_clone0"
-displaced = "drop"
 devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.clone.1"
-offset = 0
+hook = "cf.machine.hook.clone.1"
 to = "mf_clone1"
-displaced = "drop"
 devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.clone.2"
-offset = 0
+hook = "cf.machine.hook.clone.2"
 to = "mf_clone2"
-displaced = "drop"
 devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.clone.3"
-offset = 0
+hook = "cf.machine.hook.clone.3"
 to = "mf_clone3"
-displaced = "drop"
 devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.clone.4"
-offset = 0
+hook = "cf.machine.hook.clone.4"
 to = "mf_clone4"
-displaced = "drop"
 devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.clone.5"
-offset = 0
+hook = "cf.machine.hook.clone.5"
 to = "mf_clone5"
-displaced = "run"
 devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.clone.6"
-offset = 0
+hook = "cf.machine.hook.clone.6"
 to = "mf_clone6"
-displaced = "drop"
 devices = ["dt2"]
 
 # type argument of the parameter mapping (Digitakt II)
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.param_code.args"
-offset = 0
+hook = "cf.machine.hook.param_code.args"
 to = "mf_typearg"
-displaced = "run"
 devices = ["dt2"]
 
 # SRC page (Digitakt II): an added type has one page (the page vector is cut to it, page 0), see mf_srcpage in src/cf/dt2/machines.s
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.srcpage"
-offset = 0
+hook = "cf.machine.hook.srcpage"
 to = "mf_srcpage"
-displaced = "drop"
 devices = ["dt2"]
 
 # DSP (Digitakt II): the selector table moves to mf_selector; the literal that loads its address follows
@@ -741,56 +696,38 @@ devices = ["dt2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.fn.type_page.count"
-offset = 0
+hook = "cf.machine.hook.type_page.count"
 to = "mf_typemap0"
-displaced = "run"
 devices = ["dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.type_page.desc"
-offset = 0
+hook = "cf.machine.hook.type_page.desc"
 to = "mf_typemap1"
-displaced = "run"
 devices = ["dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.param_code.map"
-offset = 0
+hook = "cf.machine.hook.param_code.map"
 to = "mf_typemap2"
-displaced = "run"
 devices = ["dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.frametype"
-offset = 0
+hook = "cf.machine.hook.frametype"
 to = "mf_frametype"
-displaced = "drop"
 devices = ["dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.type_reader.load"
-offset = 0
+hook = "cf.machine.hook.type_reader.load"
 to = "mf_reader"
-displaced = "drop"
 devices = ["dn2"]
 
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.machine.site.owner_type_load"
-offset = 0
+hook = "cf.machine.hook.owner_type_load"
 to = "mf_owner"
-displaced = "drop"
 devices = ["dn2"]
 
 [[op]]

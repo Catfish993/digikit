@@ -69,8 +69,8 @@ devices = ["dn2"]
 # (`pea queue; jsr pop; addq.l #4,sp; moveq #0x29,d1; ...`) goes to the trampoline, which runs the runtime's tick and
 # continues in the stock pop.
 [[op]]
-op = "retarget"
-anchor = "cf.view.site.ui_loop"
+op = "hook"
+hook = "cf.view.hook.ui_loop"
 to = "dkrt_loop_hook"
 
 [[claim]]
@@ -82,9 +82,7 @@ resource = "cf.view.site.ui_loop"
 # built by one of them well before the call that the first design hooked (measured: the view existed at that call).
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.rtos.site.main_os_task"
-offset = 0
+hook = "cf.rtos.hook.main_os_task"
 to = "dkrt_boot_hook"
 
 [[claim]]
@@ -96,10 +94,7 @@ resource = "cf.rtos.site.main_os_task"
 # displaced router call unchanged (docs/findings/43-digikit-upload.md). The same 428-byte task function is on all four ports.
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.midi.site.rx"
-offset = 0
-displaced = "run"
+hook = "cf.midi.hook.rx"
 to = "dkrt_midi_hook"
 
 [[claim]]

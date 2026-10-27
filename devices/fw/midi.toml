@@ -31,3 +31,14 @@ cpu = "cf"
 rule = { kind = "cf_func", hash = "0d9c170d6f10a6083e1c92f69af07116", offset = 0x42, len = 4 }
 mark = "D"
 users = ["core/runtime"]
+
+[[hook]]
+name = "cf.midi.hook.rx"
+site = "cf.midi.site.rx"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["ccr"] }   # the stub continues at the tail or at hook.cf.midi.site.rx.return (after the call)
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/runtime"]
+doc = "The MIDI task's router call for a gathered USB SysEx message (`jsr (A0)`, arguments on the stack); the hook can consume the message and continue after the call."

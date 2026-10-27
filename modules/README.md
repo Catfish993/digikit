@@ -164,39 +164,27 @@ value = "image.u32(this + 2) + params.count"
 width = 4
 ```
 
-`op = "retarget"`: change the target of an existing call or jump at the anchor to a symbol of the module.
-ColdFire `jsr`/`bsr`/`jmp` and the SHARC+ direct `CALL`.
+`op = "hook"`: attach a routine of the module to a hook declared in `devices/fw/` (see
+[devices/fw/README.md](../devices/fw/README.md)). The declaration gives the site, the offset, the CPU, the `mode` and
+the register contract. `mode = "before"` runs the routine, then the displaced instructions (copied to
+`hook.<site>[.<offset>].tail`, which jumps back to `.return`). `replace` drops the displaced instructions.
+`retarget` changes the target of an existing call at the site.
 
 | Key | Meaning |
 |---|---|
-| `to` | the module symbol the call now goes to |
-
-```toml
-[[op]]
-op = "retarget"
-anchor = "dsp.master.site.q31_converter.call"
-to = "_mg_hook"
-```
-
-`op = "hook"`: overwrite a site with a jump (or a call) to a routine of the module and keep the displaced
-instructions.
-
-| Key | Meaning |
-|---|---|
+| `hook` | the hook name, for example `dsp.master.hook.q31_converter.call` |
 | `to` | the routine (symbol or expression) |
-| `kind` | `jump` (default) or `call` (ColdFire `jsr.l`; the routine returns to the end of the site; implies `displaced = "drop"`) |
-| `displaced` | `run` (default for a jump): the displaced instructions are copied to `hook.<anchor>.tail`, which jumps back to `hook.<anchor>.return`; `drop`: they are not kept |
-| `cpu` | `cf` or `sharc`; optional, must agree with the anchor |
-| `place` | region of the tail (default `cf.expansion` or `dsp.l2`) |
-| `expect_sha256` | needed when the site reaches past the anchor |
+| `place` | region of the tail (default `cf.expansion` or `dsp.l2`); optional |
+| `expect_sha256` | optional; needed when the site reaches past the anchor |
+
+`anchor`, `offset`, `displaced` and `cpu` are errors on a hook op. `op = "retarget"` and `kind = "call"` no longer
+exist.
 
 ```toml
 [[op]]
 op = "hook"
-cpu = "sharc"
-anchor = "dsp.voice.fn.render_entry"
-to = "_dv_entry"
-displaced = "drop"
+hook = "dsp.master.hook.q31_converter.call"
+to = "_mg_hook"
 ```
 
 On ColdFire a hook needs a site of whole instructions; `jmp.l` is 6 bytes and the rest is padded with NOPs. PC-relative
@@ -502,7 +490,7 @@ them to the 24-bit output.
 - **Object.** `src/dsp/master_gain.s` is placed in `dsp.l2`. It has two undefined symbols, the firmware's Q31 converter
   and the master float buffer. `[object.externs]` maps them to the anchors `dsp.master.fn.q31_converter` and
   `dsp.master.value.q31_converter.float_buf`.
-- **Hook.** One `retarget` op changes the converter's single `CALL` (anchor `dsp.master.site.q31_converter.call`) to `_mg_hook`. The
+- **Hook.** One `hook` op (`hook = "dsp.master.hook.q31_converter.call"`, mode `retarget`) changes the converter's single `CALL` to `_mg_hook`. The
   routine multiplies the block by the gain word and ends with a jump to the converter, so the converter's frame and
   arguments stay as the firmware expects. The header of the source lists the registers that are free at this site
   ([finding 06](../docs/findings/06-sharc-engine-and-startup.md), "Master hook").

@@ -26,9 +26,8 @@ rd_tail = "hook.cf.test.fn.kit_vfunc_12.tail"
 # re-encoded in the tail as a 32-bit branch) are displaced; rd_hook counts the call and jumps to the tail.
 [[op]]
 op = "hook"
-anchor = "cf.test.fn.kit_vfunc_12"
+hook = "cf.test.hook.kit_vfunc_12"
 to = "rd_hook"
-displaced = "run"
 devices = ["dt2"]
 
 # P2: a registry and its entries (a framework and a content module in one file, for the test)

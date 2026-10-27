@@ -36,9 +36,8 @@ struct Files {
     value: Vec<Entry>,
     #[serde(default)]
     sites: Vec<Entry>,
-    // Parsed so a malformed hook fails `gen`; the trampolines that use them come later (plan step 5).
+    // A hook with a `handler` makes a handler type and an assembly macro; any malformed hook fails `gen`.
     #[serde(default)]
-    #[allow(dead_code)]
     hook: Vec<Hook>,
     #[serde(default)]
     r#struct: Vec<StructEntry>,
@@ -65,15 +64,18 @@ struct Entry {
     doc: Option<String>,
 }
 
-/// A `hook` entry: parsed and ignored for now.
+/// A `hook` entry: a point in a declared `site` where a handler can run. Only a ColdFire hook with a `handler` makes output.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(dead_code)]
 struct Hook {
     name: String,
     site: String,
+    #[serde(default)]
+    offset: u32,
     mode: String,
-    regs: toml::Value,
+    regs: Regs,
+    handler: Option<Handler>,
     #[serde(default)]
     was: Vec<String>,
     cpu: Option<String>,
@@ -83,6 +85,26 @@ struct Hook {
     #[serde(default)]
     users: Vec<String>,
     doc: Option<String>,
+}
+
+/// The registers of a hook: the ones the stub reads and the ones it may change. A SHARC hook can also name the mode state.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Regs {
+    #[serde(default, rename = "in")]
+    inputs: Vec<String>,
+    #[serde(default)]
+    clobbers: Vec<String>,
+    #[serde(default)]
+    modes: Option<toml::Table>,
+}
+
+/// The C function a ColdFire hook calls: its `sig` and where each argument comes from (`d0`-`d7`, `a0`-`a6` or `sp+N`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Handler {
+    sig: String,
+    args: Vec<String>,
 }
 
 /// A `struct` entry. A per-device difference is not supported yet, so any other key is an error.
@@ -145,11 +167,30 @@ struct StaticDef {
     rust: String,
 }
 
+/// Where a handler argument comes from at the hook.
+enum ArgSrc {
+    Reg(String),
+    /// `sp+N` at the hook, N a multiple of 4 and at least 4.
+    Stack(u32),
+}
+
+/// A ColdFire hook with a `handler`.
+struct HookDef {
+    name: String,
+    rust: String,
+    doc: Option<String>,
+    sig: Sig,
+    /// The registers the macro saves around the call: d0, d1, a0, a1 without the `clobbers`.
+    save: Vec<&'static str>,
+    args: Vec<ArgSrc>,
+}
+
 #[derive(Default)]
 struct Sub {
     structs: Vec<StructDef>,
     fns: Vec<FnDef>,
     statics: Vec<StaticDef>,
+    hooks: Vec<HookDef>,
 }
 
 /// short name -> (subsystem, size) of every ColdFire struct.
@@ -462,6 +503,46 @@ fn rust_fn(f: &FnDef, sig: &Sig, info: &Info) -> String {
     )
 }
 
+/// `rust` in CamelCase: `settings_list_tail` -> `SettingsListTail`.
+fn camel(rust: &str) -> String {
+    rust.split('_')
+        .map(|p| {
+            let mut c = p.chars();
+            c.next().map(|f| f.to_ascii_uppercase().to_string() + c.as_str()).unwrap_or_default()
+        })
+        .collect()
+}
+
+/// A doc text that fits in a C comment.
+fn c_comment(doc: &str) -> String {
+    doc.replace("*/", "* /")
+}
+
+fn rust_hook(h: &HookDef, info: &Info) -> String {
+    let args: Vec<String> = h
+        .sig
+        .args
+        .iter()
+        .map(|(t, n)| format!("{n}: {}", rs_ty(t, info)))
+        .collect();
+    let ret = if h.sig.ret.base == "void" && h.sig.ret.ptr == 0 {
+        String::new()
+    } else {
+        format!(" -> {}", rs_ty(&h.sig.ret, info))
+    };
+    let mut o = String::new();
+    if let Some(d) = &h.doc {
+        let _ = writeln!(o, "    /// {d}");
+    }
+    let _ = writeln!(
+        o,
+        "    pub type {}Hook = unsafe extern \"C\" fn({}){ret};",
+        camel(&h.rust),
+        args.join(", ")
+    );
+    o
+}
+
 fn rust_struct(s: &StructDef, info: &Info) -> String {
     let mut o = format!("    #[repr(C)]\n    pub struct {} {{\n", s.short);
     for sl in &s.slots {
@@ -517,6 +598,9 @@ fn rust(subs: &BTreeMap<String, Sub>, info: &Info) -> String {
                 v.rust.to_uppercase()
             ));
         }
+        for h in &d.hooks {
+            items.push(rust_hook(h, info));
+        }
         s.push_str(&items.join("\n"));
         s.push_str("}\n");
     }
@@ -553,6 +637,12 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
             }
         }
     }
+    for h in &d.hooks {
+        note(&h.sig.ret.base);
+        for (t, _) in &h.sig.args {
+            note(&t.base);
+        }
+    }
     need.sort();
     for o in need {
         let _ = writeln!(s, "#include \"dk_fw_{o}.h\"");
@@ -585,7 +675,7 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
             }
         }
     }
-    if !d.fns.is_empty() || !d.statics.is_empty() {
+    if !d.fns.is_empty() || !d.statics.is_empty() || !d.hooks.is_empty() {
         s.push('\n');
     }
     for f in &d.fns {
@@ -623,11 +713,87 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
             v.rust, v.name
         );
     }
+    for h in &d.hooks {
+        let args: Vec<String> = h
+            .sig
+            .args
+            .iter()
+            .map(|(t, n)| c_decl(t, n, info))
+            .collect();
+        if let Some(doc) = &h.doc {
+            let _ = writeln!(s, "/* {} */", c_comment(doc));
+        }
+        let _ = writeln!(
+            s,
+            "typedef {} dk_fw_{sub}_{}_hook({});",
+            c_ty(&h.sig.ret, info),
+            h.rust,
+            if args.is_empty() { "void".to_string() } else { args.join(", ") }
+        );
+    }
     let _ = writeln!(s, "\n#endif");
     s
 }
 
-fn gas_inc(d: &Sub) -> String {
+/// One line of a macro body.
+fn gas_ins(s: &mut String, op: &str, operands: &str) {
+    let _ = writeln!(s, "    {op:<8}{operands}");
+}
+
+/// The register list of a `movem`: `%d0-%d1/%a0-%a1`, a pair as a range.
+fn gas_reglist(save: &[&str]) -> String {
+    let mut parts = Vec::new();
+    for pair in [["d0", "d1"], ["a0", "a1"]] {
+        let n = pair.iter().filter(|r| save.contains(*r)).count();
+        match n {
+            2 => parts.push(format!("%{}-%{}", pair[0], pair[1])),
+            1 => parts.push(format!("%{}", if save.contains(&pair[0]) { pair[0] } else { pair[1] })),
+            _ => {}
+        }
+    }
+    parts.join("/")
+}
+
+/// The macro of a hook: save the registers the stub may not clobber, call the handler with its arguments, restore, continue.
+fn gas_hook(sub: &str, h: &HookDef) -> String {
+    let mut s = match &h.doc {
+        Some(d) => format!("/* {}: {} */\n", h.name, c_comment(d)),
+        None => format!("/* {} */\n", h.name),
+    };
+    let _ = writeln!(s, ".macro dk_fw_{sub}_{}_hook handler, next", h.rust);
+    let size = 4 * h.save.len() as u32;
+    let list = gas_reglist(&h.save);
+    if !h.save.is_empty() {
+        gas_ins(&mut s, "lea", &format!("-{size}(%sp),%sp"));
+        gas_ins(&mut s, "movem.l", &format!("{list},(%sp)"));
+    }
+    for (k, a) in h.args.iter().rev().enumerate() {
+        match a {
+            ArgSrc::Reg(r) => gas_ins(&mut s, "move.l", &format!("%{r},-(%sp)")),
+            ArgSrc::Stack(n) => gas_ins(
+                &mut s,
+                "move.l",
+                &format!("{}(%sp),-(%sp)", n + size + 4 * k as u32),
+            ),
+        }
+    }
+    gas_ins(&mut s, "jsr", "\\handler");
+    let pop = 4 * h.args.len();
+    if pop > 8 {
+        gas_ins(&mut s, "lea", &format!("{pop}(%sp),%sp"));
+    } else if pop > 0 {
+        gas_ins(&mut s, "addq.l", &format!("#{pop},%sp"));
+    }
+    if !h.save.is_empty() {
+        gas_ins(&mut s, "movem.l", &format!("(%sp),{list}"));
+        gas_ins(&mut s, "lea", &format!("{size}(%sp),%sp"));
+    }
+    gas_ins(&mut s, "jmp", "\\next");
+    s.push_str(".endm\n");
+    s
+}
+
+fn gas_inc(sub: &str, d: &Sub) -> String {
     let mut s = format!("/* {HEADER} */\n");
     for st in &d.structs {
         let _ = writeln!(s, ".equ {}_size, {:#x}", st.short, st.size);
@@ -637,7 +803,167 @@ fn gas_inc(d: &Sub) -> String {
             }
         }
     }
+    for h in &d.hooks {
+        s.push('\n');
+        s.push_str(&gas_hook(sub, h));
+    }
     s
+}
+
+/// A register name split into its letters and its number: `r10` -> (`r`, 10). None without a plain number.
+fn split_reg(r: &str) -> Option<(&str, u32)> {
+    let at = r.find(|c: char| c.is_ascii_digit())?;
+    let (prefix, num) = r.split_at(at);
+    if !num.bytes().all(|b| b.is_ascii_digit()) || (num.len() > 1 && num.starts_with('0')) {
+        return None;
+    }
+    Some((prefix, num.parse().ok()?))
+}
+
+fn known_reg(cf: bool, r: &str) -> bool {
+    if cf {
+        return r == "ccr" || matches!(split_reg(r), Some(("d", 0..=7)) | Some(("a", 0..=6)));
+    }
+    matches!(r, "astat" | "mode1" | "px")
+        || matches!(
+            split_reg(r),
+            Some(("r" | "i" | "m" | "l" | "b", 0..=15)) | Some(("ustat", 1..=4))
+        )
+}
+
+/// The register names of a list, with ranges such as `d0-d3` expanded.
+fn expand_regs(name: &str, cf: bool, list: &[String]) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    for item in list {
+        let names: Vec<String> = match item.split_once('-') {
+            None => vec![item.clone()],
+            Some((a, b)) => match (split_reg(a), split_reg(b)) {
+                (Some((pa, na)), Some((pb, nb))) if pa == pb && na <= nb => {
+                    (na..=nb).map(|n| format!("{pa}{n}")).collect()
+                }
+                _ => return Err(err!("{name}: bad register range {item:?}")),
+            },
+        };
+        for n in names {
+            if !known_reg(cf, &n) {
+                return Err(err!("{name}: unknown register {n:?}"));
+            }
+            out.push(n);
+        }
+    }
+    Ok(out)
+}
+
+/// Checks a hook. A ColdFire hook with a `handler` gives its subsystem and definition.
+fn check_hook(
+    h: &Hook,
+    declared: &BTreeMap<&str, &str>,
+    sites: &BTreeMap<&str, &str>,
+    info: &Info,
+) -> Result<Option<(String, HookDef)>> {
+    let name = h.name.as_str();
+    let (sub, rust) = split_name(name, "hook")?;
+    let cpu = match &h.cpu {
+        Some(c) => c.as_str(),
+        None if name.starts_with("cf.") => "cf",
+        None => "sharc",
+    };
+    let cf = is_cf(name, cpu)?;
+    let site_cpu = declared.get(h.site.as_str()).copied().or_else(|| {
+        let (base, n) = h.site.rsplit_once('.')?;
+        if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        sites.get(base).copied()
+    });
+    let Some(site_cpu) = site_cpu else {
+        return Err(err!(
+            "{name}: site {:?} is not a declared fn, site or <sites>.<number>",
+            h.site
+        ));
+    };
+    if site_cpu != cpu {
+        return Err(err!("{name}: cpu {cpu:?} differs from the cpu {site_cpu:?} of site {}", h.site));
+    }
+    if h.site.split('.').nth(1) != name.split('.').nth(1) {
+        return Err(err!("{name}: the subsystem differs from the one of site {}", h.site));
+    }
+    if !matches!(h.mode.as_str(), "before" | "replace" | "retarget") {
+        return Err(err!(
+            "{name}: mode {:?} is not \"before\", \"replace\" or \"retarget\"",
+            h.mode
+        ));
+    }
+    let inputs = expand_regs(name, cf, &h.regs.inputs)?;
+    let clobbers = expand_regs(name, cf, &h.regs.clobbers)?;
+    if let Some(modes) = &h.regs.modes {
+        if cf {
+            return Err(err!("{name}: modes are only for a sharc hook"));
+        }
+        for (k, v) in modes {
+            let ok = match split_reg(k) {
+                Some(("m" | "l", 0..=15)) => v.is_integer(),
+                _ => k == "simd" && v.is_bool(),
+            };
+            if !ok {
+                return Err(err!("{name}: bad modes entry {k} = {v} (m0-m15, l0-l15: integer; simd: bool)"));
+            }
+        }
+    }
+    let Some(handler) = &h.handler else {
+        return Ok(None);
+    };
+    if !cf || !matches!(h.mode.as_str(), "before" | "retarget") {
+        return Err(err!(
+            "{name}: a handler is only for a cf hook with mode \"before\" or \"retarget\""
+        ));
+    }
+    let sig = parse_sig(name, &handler.sig, info)?;
+    if sig.varargs {
+        return Err(err!("{name}: the handler sig has varargs"));
+    }
+    if handler.args.len() != sig.args.len() {
+        return Err(err!(
+            "{name}: the handler has {} args for a sig with {}",
+            handler.args.len(),
+            sig.args.len()
+        ));
+    }
+    let mut args = Vec::new();
+    for a in &handler.args {
+        if let Some(n) = a.strip_prefix("sp+") {
+            let off = n
+                .bytes()
+                .all(|b| b.is_ascii_digit())
+                .then(|| n.parse::<u32>().ok())
+                .flatten()
+                .filter(|o| *o >= 4 && o % 4 == 0)
+                .ok_or_else(|| err!("{name}: handler arg {a:?}: expected sp+N with N a multiple of 4, at least 4"))?;
+            args.push(ArgSrc::Stack(off));
+        } else if known_reg(true, a) && a != "ccr" {
+            if !inputs.contains(a) {
+                return Err(err!("{name}: handler arg {a} is not in regs.in"));
+            }
+            args.push(ArgSrc::Reg(a.clone()));
+        } else {
+            return Err(err!("{name}: handler arg {a:?} is not a register or sp+N"));
+        }
+    }
+    let save = ["d0", "d1", "a0", "a1"]
+        .into_iter()
+        .filter(|r| !clobbers.iter().any(|c| c == r))
+        .collect();
+    Ok(Some((
+        sub,
+        HookDef {
+            name: h.name.clone(),
+            rust,
+            doc: h.doc.clone(),
+            sig,
+            save,
+            args,
+        },
+    )))
 }
 
 /// The outputs from declaration files given as (path relative to the repository root, text).
@@ -730,9 +1056,30 @@ pub fn render(decls: &[(&str, &str)]) -> Result<Vec<(String, String)>> {
             }
         }
     }
+    // the hooks check their `site` against every declared fn, site and sites entry
+    let mut declared: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut sites: BTreeMap<&str, &str> = BTreeMap::new();
+    for f in &files {
+        for e in f.r#fn.iter().chain(&f.site) {
+            declared.insert(&e.name, &e.cpu);
+        }
+        for e in &f.sites {
+            sites.insert(&e.name, &e.cpu);
+        }
+    }
+    for f in &files {
+        for h in &f.hook {
+            if let Some((sub, def)) = check_hook(h, &declared, &sites, &info)? {
+                subs.entry(sub).or_default().hooks.push(def);
+            }
+        }
+    }
     // a subsystem with only sites has no output
-    subs.retain(|_, d| !d.structs.is_empty() || !d.fns.is_empty() || !d.statics.is_empty());
+    subs.retain(|_, d| {
+        !d.structs.is_empty() || !d.fns.is_empty() || !d.statics.is_empty() || !d.hooks.is_empty()
+    });
     for (sub, d) in subs.iter_mut() {
+        d.hooks.sort_by(|a, b| a.name.cmp(&b.name));
         d.structs.sort_by(|a, b| a.name.cmp(&b.name));
         d.fns.sort_by(|a, b| a.name.cmp(&b.name));
         d.statics.sort_by(|a, b| a.name.cmp(&b.name));
@@ -754,8 +1101,8 @@ pub fn render(decls: &[(&str, &str)]) -> Result<Vec<(String, String)>> {
     let mut out = vec![(RUST_OUT.to_string(), rust(&subs, &info))];
     for (sub, d) in &subs {
         out.push((format!("{OUT_DIR}/include/dk_fw_{sub}.h"), c_header(sub, d, &info)));
-        if !d.structs.is_empty() {
-            out.push((format!("{OUT_DIR}/inc/dk_fw_{sub}.inc"), gas_inc(d)));
+        if !d.structs.is_empty() || !d.hooks.is_empty() {
+            out.push((format!("{OUT_DIR}/inc/dk_fw_{sub}.inc"), gas_inc(sub, d)));
         }
     }
     Ok(out)

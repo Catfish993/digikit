@@ -78,3 +78,26 @@ cpu = "cf"
 rule = { kind = "cf_reset_helper", which = "copy" }
 mark = "D"
 users = ["core/expansion"]
+
+[[hook]]
+name = "cf.rtos.hook.main_os_task"
+site = "cf.rtos.site.main_os_task"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["ccr"] }
+handler = { sig = "void ()", args = [] }
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/runtime"]
+doc = "Entry of the main-OS task, before the task builds its singletons; the hook point for boot-time module loading."
+
+[[hook]]
+name = "cf.rtos.hook.idle"
+site = "cf.rtos.site.idle"
+cpu = "cf"
+mode = "replace"
+regs = { in = [], clobbers = [] }   # never continues into firmware code
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/health"]
+doc = "The boot thread's last call (create the main-OS task), after which the thread idles; the hook makes that call itself and then counts idle iterations forever."

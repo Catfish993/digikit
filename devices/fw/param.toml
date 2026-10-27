@@ -50,3 +50,15 @@ devices = ["dt2", "dn2"]
 rule = { kind = "cf_params_refs" }
 mark = "D"
 users = ["core/params"]
+
+[[hook]]
+name = "cf.param.hook.value_class"
+site = "cf.param.fn.value_class"
+offset = 4
+cpu = "cf"
+mode = "before"
+regs = { in = ["d0"], clobbers = ["d0"] }   # d0 rewritten on purpose; the displaced cmpi.l sets the flags again
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/params"]
+doc = "Accessor of the second per-code table `move.l 4(sp),D0; cmpi.l #count,D0`; the hook sits on the compare and maps an added parameter code in d0 to its template's code."

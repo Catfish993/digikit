@@ -58,7 +58,7 @@ file per device.
 | `value` | `dsp.voice.value.frame_base` | `sharc_literal` | `value` |
 | `sites` | `cf.param.sites.descriptor_table.ref` | `cf_params_refs`, `cf_params_bounds` | `sites` |
 | `site` | `cf.menu.site.settings_list.tail` | `cf_func` / `cf_words` with an offset into a function | `code` |
-| `hook` | `cf.menu.hook.settings_list.tail` | (today `[[op]]` in the manifest) | none; describes a `site` |
+| `hook` | `cf.menu.hook.settings_list.tail` | none; declared here, a manifest `hook` op names it | `[[hook]]` record per device (name, site, offset, mode) |
 | `struct` | `cf.menu.struct.MenuItem` | none | none; generated types only |
 
 An `fn` may use a `cf_ptr` rule: a pointer literal to a function (the port anchor kind is then `data`).
@@ -107,8 +107,14 @@ mark = "D"
 [[hook]]
 name = "cf.menu.hook.settings_list.tail"
 site = "cf.menu.site.settings_list.tail"
-mode = "tail"                       # the displaced code runs, then the hook
-regs = { in = [], clobbers = ["d0", "d1", "a0", "a1"], preserves = ["d2-d7", "a2-a6"] }
+cpu = "cf"
+mode = "before"                     # the hook runs, then the displaced instructions
+regs = { in = ["a2"], clobbers = ["d0-d1", "a0-a1", "ccr"] }
+handler = { sig = "void (u8 *menu)", args = ["a2"] }
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/digikit-menu"]
+doc = "Last step of the SETTINGS item list rebuild, before the selection is restored (a2 = the settings menu); the hook point for adding an item."
 ```
 
 A SHARC hook carries its DSP mode as well:
@@ -117,9 +123,59 @@ A SHARC hook carries its DSP mode as well:
 [[hook]]
 name = "dsp.master.hook.q31_converter.call"
 site = "dsp.master.site.q31_converter.call"
+cpu = "sharc"
 mode = "retarget"
-regs = { in = ["r4", "r8", "r12"], preserves = ["i0-i7", "m0-m4"], modes = { m5 = 0, m6 = 1, m7 = -1, simd = false } }
+regs = { in = [], clobbers = ["r0-r3", "i4", "astat"], modes = { m5 = 0, m6 = 1, simd = false } }   # no DO loop is active
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["digikit/master-drive", "digikit/master-gain"]
+doc = "The master block handler's one CALL of the Q31 converter (64 planar floats in the master buffer; arguments in r4/r8); the hook point for processing the master block in place."
 ```
+
+## Hooks
+
+A `[[hook]]` declares a hook point. Its fields are `name`, `site`, `cpu`, `mode`, `regs`, and optional `offset`,
+`handler`, `devices`, `mark`, `users`, `doc` and `was`. The name is `<cpu>.<subsystem>.hook.<name>` and has the same cpu
+and subsystem as its site. `site` is a declared `fn` or `site`, or `<sites name>.<i>`.
+
+`mode`:
+
+- `before`: the hook runs, then the displaced instructions, then the rest of the function. Patchkit copies the displaced
+  instructions into a tail `hook.<site>[.<offset>].tail`.
+- `replace`: the displaced instructions are dropped. The stub decides where to continue.
+- `retarget`: the target of an existing call at the site is replaced.
+
+`regs`:
+
+- `in`: registers at the site that the hook reads.
+- `clobbers`: registers the hook may leave changed when it continues into firmware code (dead there, or changed on
+  purpose). Every other register must be kept.
+- `modes` (SHARC only): state on entry that the hook relies on (`m0`-`m15`, `l0`-`l15` as integers, `simd` as bool).
+
+Ranges like `d0-d1` are allowed. There is no `preserves` key.
+
+`handler = { sig, args }` is for ColdFire hooks in mode `before` or `retarget`. `sig` uses the sig grammar above. Each
+arg is a register from `regs.in` or `sp+N` (the entry stack; N is a multiple of 4 and at least 4). `patchkit gen` writes:
+
+- a GAS macro `dk_fw_<sub>_<name>_hook handler, next` in `modules/core/fw/inc/dk_fw_<sub>.inc`. It saves the
+  caller-saved d0-d1/a0-a1 that are not in `clobbers`, pushes the args, calls the handler, pops, restores and jumps to
+  `next`;
+- a C typedef `dk_fw_<sub>_<name>_hook` in the header;
+- a Rust type `<Name>Hook` in the `dkfw` crate.
+
+Five stubs use the macros: `dk_hook` (core/digikit-menu), `dkrt_loop_hook` and `dkrt_boot_hook` (core/runtime),
+`health_block_hook` (core/health) and `dl_frame_hook` (core/dsp-link). `pk_build` adds `modules/core/fw/inc` to the
+ColdFire include path.
+
+`port_resolve.py` writes a `[[hook]]` record (name, site, offset when non-zero, mode) into each port file for every
+hook whose site resolves on that device. A hook whose site does not resolve on a listed device is an error. `fwgen`
+checks the schema: names, site, mode, register names, modes and handler.
+
+A manifest op attaches to a hook by name: `[[op]] op = "hook"`, `hook = "<hook name>"`, `to = "<symbol>"`, with optional
+`devices`, `place` and `expect_sha256`. `anchor`, `offset`, `displaced` and `cpu` are errors on a hook op, because they
+come from the declaration. The tail and return symbols keep their names: `hook.<site>[.<offset>].tail` and `.return`.
+
+Contracts are mark D, read from the stubs. SHARC device values stay [O] (findings 45 and 53).
 
 ### A struct with one per-device difference
 

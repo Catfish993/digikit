@@ -10,3 +10,14 @@ devices = ["dt2"]
 rule = { kind = "cf_func", hash = "de5ffecfc0d23b984befde7b3cbb97be", ordinal = 0, offset = 0x0, len = 14 }
 mark = "D"
 users = ["test/registry-demo"]
+
+[[hook]]
+name = "cf.test.hook.kit_vfunc_12"
+site = "cf.test.fn.kit_vfunc_12"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["ccr"] }
+devices = ["dt2"]
+mark = "D"
+users = ["test/registry-demo"]
+doc = "First two instructions of Kit::vfunc_12, a stock setter; the test fixture hook counts calls."

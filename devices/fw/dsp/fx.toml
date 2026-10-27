@@ -92,3 +92,25 @@ rule.dt2 = { kind = "sharc_mem_addr", reloc_hash = "55a5d8458350a1b67249f5aca8d4
 rule.dn2 = { kind = "sharc_mem_addr", reloc_hash = "4cc8a46bca990a7bd883d1784307a9cd72aa828a1ae846977e337fbc5c54c010", offset = 0x87d }
 mark = "D"
 users = ["digikit/master-drive"]
+
+[[hook]]
+name = "dsp.fx.hook.entry"
+site = "dsp.fx.fn.entry"
+cpu = "sharc"
+mode = "before"
+regs = { in = [], clobbers = ["astat"] }   # the stub saves and restores r0, i4, l4 and the rest
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/fx"]
+doc = "First instruction of the post-master function the block orchestrator calls once per block before the USB pack; the hook point for the master effect chain."
+
+[[hook]]
+name = "dsp.fx.hook.send"
+site = "dsp.fx.fn.send"
+cpu = "sharc"
+mode = "before"
+regs = { in = [], clobbers = ["astat"] }
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/fx"]
+doc = "First instruction of the master function, before it reads the track/slot buses and the FX return bus; the hook point for the send-bus effect route."

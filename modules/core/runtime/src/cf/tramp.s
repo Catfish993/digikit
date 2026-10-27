@@ -11,6 +11,8 @@
  * fw_queue_pop is the stock function (anchor cf.rtos.fn.queue_pop).
  */
     .include "device.inc"
+    .include "dk_fw_view.inc"
+    .include "dk_fw_rtos.inc"
     .equ MCF5441X_UART_USR_OFF, 4       /* UART status register, offset from the UART base; bit 3 is TXEMP (transmitter empty) */
     .equ MCF5441X_RCM_RCR, 0xEC090000   /* reset controller: reset control register; 0x80 = software reset */
 
@@ -18,12 +20,7 @@
     .even
     .globl dkrt_loop_hook
 dkrt_loop_hook:
-    lea     -16(%sp),%sp
-    movem.l %d0-%d1/%a0-%a1,(%sp)
-    jsr     dkrt_tick
-    movem.l (%sp),%d0-%d1/%a0-%a1
-    lea     16(%sp),%sp
-    jmp     fw_queue_pop
+    dk_fw_view_ui_loop_hook dkrt_tick, fw_queue_pop
 
 /* void dkrt_flush(u32 start, u32 len): CPUSHL BC for every 16-byte line of [start, start+len): write back dirty data
  * lines and invalidate the line in the data and instruction caches. Needed after code or data that will be fetched as
@@ -52,12 +49,7 @@ dkrt_flush:
  * the stack as the task entry left it. d0/d1/a0/a1 are saved; d2-d7/a2-a6 are the C function's to keep. */
     .globl dkrt_boot_hook
 dkrt_boot_hook:
-    lea     -16(%sp),%sp
-    movem.l %d0-%d1/%a0-%a1,(%sp)
-    jsr     dkrt_boot
-    movem.l (%sp),%d0-%d1/%a0-%a1
-    lea     16(%sp),%sp
-    jmp     dkrt_boot_next
+    dk_fw_rtos_main_os_task_hook dkrt_boot, dkrt_boot_next
 
 /* u32 dkrt_irq_mask(void): status register to 0x2700, returns the old one. void dkrt_irq_restore(u32 sr). */
     .globl dkrt_irq_mask

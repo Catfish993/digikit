@@ -13,6 +13,8 @@ pub struct Port {
     pub region: Vec<Region>,
     #[serde(default)]
     pub anchor: Vec<Anchor>,
+    #[serde(default)]
+    pub hook: Vec<Hook>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -68,6 +70,17 @@ pub struct Anchor {
     pub rule: String,
 }
 
+/// A declared hook point: the site anchor, a byte offset from it and how the displaced code is handled.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Hook {
+    pub name: String,
+    pub site: String,
+    #[serde(default)]
+    pub offset: i64,
+    /// `before` (displaced instructions still run), `replace` (they are dropped) or `retarget`
+    pub mode: String,
+}
+
 impl Port {
     pub fn parse(text: &str) -> Result<Port> {
         let p: Port = toml::from_str(text)?;
@@ -83,6 +96,10 @@ impl Port {
 
     pub fn anchor(&self, name: &str) -> Option<&Anchor> {
         self.anchor.iter().find(|a| a.name == name)
+    }
+
+    pub fn hook(&self, name: &str) -> Option<&Hook> {
+        self.hook.iter().find(|h| h.name == name)
     }
 
     pub fn region(&self, name: &str) -> Option<&Region> {

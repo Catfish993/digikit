@@ -57,8 +57,14 @@ def test_module_toml_declares_what_the_object_needs():
         s["name"] for s in obj["symbols"] if s.get("section")
     }
     assert externs >= {u for u in undefined if u.startswith("health_")}
-    ops = {o["anchor"]: o for o in t["op"]}
-    assert ops["cf.rtos.site.idle"]["displaced"] == "drop"
+    assert {o["hook"] for o in t["op"]} == {
+        "cf.rtos.hook.idle",
+        "cf.link.hook.block_isr",
+    }
+    for image in IMAGES:
+        port = tomllib.loads((ROOT / "devices" / "ports" / f"{image}.toml").read_text())
+        modes = {h["name"]: h["mode"] for h in port["hook"]}
+        assert modes["cf.rtos.hook.idle"] == "replace"
     assert {c["resource"] for c in t["claim"]} == {
         "cf.rtos.site.idle",
         "cf.link.fn.block_isr",

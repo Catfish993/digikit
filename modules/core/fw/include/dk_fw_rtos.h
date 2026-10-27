@@ -12,5 +12,7 @@
 extern const uint8_t dk_fw_rtos_exc_hook_lit __asm__("cf.rtos.site.exc_hook_lit");
 extern const uint8_t dk_fw_rtos_reset_clear_helper __asm__("cf.rtos.value.reset.clear_helper");
 extern const uint8_t dk_fw_rtos_reset_copy_helper __asm__("cf.rtos.value.reset.copy_helper");
+/* Entry of the main-OS task, before the task builds its singletons; the hook point for boot-time module loading. */
+typedef void dk_fw_rtos_main_os_task_hook(void);
 
 #endif

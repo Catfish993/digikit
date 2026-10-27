@@ -33,5 +33,7 @@ _Static_assert(offsetof(VerticalMenuView, icon) == 0xa4, "VerticalMenuView.icon 
 void dk_fw_menu_item_builder(uint8_t *item, const char *label, const std_function *action, const uint8_t *icon, const std_function *fn4) __asm__("cf.menu.fn.item_builder");
 void dk_fw_menu_vertical_menu_view_ctor(uint8_t *this, const char *name, uint32_t reserve, const uint32_t *title, const uint8_t *icon) __asm__("cf.menu.fn.vertical_menu_view_ctor");
 extern const uint8_t dk_fw_menu_settings_list_system_icon_ref __asm__("cf.menu.site.settings_list.system_icon_ref");
+/* Last step of the SETTINGS item list rebuild, before the selection is restored (a2 = the settings menu); the hook point for adding an item. */
+typedef void dk_fw_menu_settings_list_tail_hook(uint8_t *menu);
 
 #endif

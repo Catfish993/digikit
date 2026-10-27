@@ -105,6 +105,85 @@ fn unknown_key_is_an_error() {
     assert!(render(&[("t.toml", t.as_str())]).is_err());
 }
 
+/// A site `cf.view.site.loop` and a hook `cf.view.hook.loop` on `site`; `regs` is a TOML inline table.
+fn hook_text(site: &str, mode: &str, regs: &str, extra: &str) -> String {
+    format!(
+        "[[site]]\nname = \"cf.view.site.loop\"\n{RULE}[[hook]]\nname = \"cf.view.hook.loop\"\nsite = \"{site}\"\ncpu = \"cf\"\nmode = \"{mode}\"\nregs = {regs}\n{extra}"
+    )
+}
+
+fn hook_error(site: &str, mode: &str, regs: &str, extra: &str) -> String {
+    let t = hook_text(site, mode, regs, extra);
+    let e = render(&[("t.toml", t.as_str())]).err().expect("error");
+    assert!(e.0.contains("cf.view.hook.loop"), "{}", e.0);
+    e.0
+}
+
+#[test]
+fn before_hook_with_a_register_arg() {
+    let t = hook_text(
+        "cf.view.site.loop",
+        "before",
+        "{ in = [\"a2\"], clobbers = [\"d0-d1\", \"a0-a1\", \"ccr\"] }",
+        "handler = { sig = \"void (u8 *menu)\", args = [\"a2\"] }\ndoc = \"Top of the loop.\"\n",
+    );
+    let inc = out(&t, "inc/dk_fw_view.inc");
+    assert!(inc.contains(
+        "/* cf.view.hook.loop: Top of the loop. */\n.macro dk_fw_view_loop_hook handler, next\n    move.l  %a2,-(%sp)\n    jsr     \\handler\n    addq.l  #4,%sp\n    jmp     \\next\n.endm\n"
+    ), "{inc}");
+    let c = out(&t, "include/dk_fw_view.h");
+    assert!(c.contains("/* Top of the loop. */\ntypedef void dk_fw_view_loop_hook(uint8_t *menu);"), "{c}");
+    let rs = out(&t, "rs/src/lib.rs");
+    assert!(rs.contains("/// Top of the loop.\n    pub type LoopHook = unsafe extern \"C\" fn(menu: *mut u8);"), "{rs}");
+}
+
+#[test]
+fn retarget_hook_with_stack_args_saves_registers() {
+    let t = hook_text(
+        "cf.view.site.loop",
+        "retarget",
+        "{ in = [], clobbers = [\"ccr\"] }",
+        "handler = { sig = \"i32 (i32 a, i32 b, i32 c, i32 d)\", args = [\"sp+4\", \"sp+8\", \"sp+12\", \"sp+16\"] }\n",
+    );
+    let inc = out(&t, "inc/dk_fw_view.inc");
+    let push = "    move.l  32(%sp),-(%sp)\n".repeat(4);
+    let want = format!(
+        ".macro dk_fw_view_loop_hook handler, next\n    lea     -16(%sp),%sp\n    movem.l %d0-%d1/%a0-%a1,(%sp)\n{push}    jsr     \\handler\n    lea     16(%sp),%sp\n    movem.l (%sp),%d0-%d1/%a0-%a1\n    lea     16(%sp),%sp\n    jmp     \\next\n.endm\n"
+    );
+    assert!(inc.contains(&want), "{inc}");
+    let rs = out(&t, "rs/src/lib.rs");
+    assert!(rs.contains("pub type LoopHook = unsafe extern \"C\" fn(a: i32, b: i32, c: i32, d: i32) -> i32;"), "{rs}");
+}
+
+#[test]
+fn bad_hooks_are_errors() {
+    let regs = "{ in = [\"a2\"], clobbers = [\"ccr\"] }";
+    let handler = |args: &str| format!("handler = {{ sig = \"void (u8 *menu)\", args = {args} }}\n");
+    assert!(hook_error("cf.view.site.loop", "after", regs, "").contains("mode"));
+    assert!(
+        hook_error("cf.view.site.loop", "before", "{ in = [], clobbers = [\"d9\"] }", "")
+            .contains("unknown register")
+    );
+    assert!(
+        hook_error("cf.view.site.loop", "replace", regs, &handler("[\"a2\"]")).contains("handler")
+    );
+    assert!(hook_error("cf.view.site.loop", "before", regs, &handler("[]")).contains("args"));
+    assert!(hook_error("cf.view.site.loop", "before", regs, &handler("[\"sp+2\"]")).contains("sp+N"));
+    assert!(
+        hook_error("cf.view.site.loop", "before", regs, &handler("[\"a3\"]")).contains("not in regs.in")
+    );
+    assert!(
+        hook_error(
+            "cf.view.site.loop",
+            "before",
+            "{ in = [], clobbers = [], modes = { simd = false } }",
+            ""
+        )
+        .contains("modes")
+    );
+    assert!(hook_error("cf.view.site.missing", "before", regs, "").contains("site"));
+}
+
 #[test]
 fn sharc_entries_make_no_output() {
     let t = "[[fn]]\nname = \"dsp.fx.fn.send\"\ncpu = \"sharc\"\nrule = { kind = \"sharc_func\" }\nsig = \"void ()\"\n";

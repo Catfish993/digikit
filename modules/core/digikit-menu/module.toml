@@ -39,11 +39,8 @@ _dk_tail = "hook.cf.menu.site.settings_list.tail.tail"
 # Hook before the last step of the rebuild (the selection restore); the displaced instructions run in the tail.
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.menu.site.settings_list.tail"
-offset = 0
+hook = "cf.menu.hook.settings_list.tail"
 to = "dk_hook"
-displaced = "run"
 
 [[claim]]
 resource = "cf.menu.site.settings_list.tail"

@@ -68,3 +68,27 @@ rule.dt2 = { kind = "cf_func", hash = "c7fa95828acc6073c8bac3dcd78b465f", offset
 rule.dn2 = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset = 0x92, len = 4 }
 mark = "D"
 users = ["core/dsp-link"]
+
+[[hook]]
+name = "cf.link.hook.block_isr"
+site = "cf.link.fn.block_isr"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["ccr"] }
+handler = { sig = "void ()", args = [] }
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/health"]
+doc = "Entry of the DSP block interrupt handler (vector 191); the hook point for per-block counting and reading the DSP's cycle count."
+
+[[hook]]
+name = "cf.link.hook.block_isr.frame_call"
+site = "cf.link.site.block_isr.frame_call"
+cpu = "cf"
+mode = "retarget"
+regs = { in = [], clobbers = ["ccr"] }
+handler = { sig = "void (i32 len, const u16 *src, i32 reclen, const u16 *rec)", args = ["sp+4", "sp+8", "sp+12", "sp+16"] }
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/dsp-link"]
+doc = "The jsr abs.l with which the block interrupt handler calls the stock frame driver (four arguments on the stack); the hook point for the DSP link's per-block sender."

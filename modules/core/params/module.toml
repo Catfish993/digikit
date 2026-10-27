@@ -178,11 +178,8 @@ _pf_t_t2 = "hook.cf.param.fn.value_class.4.tail"
 # the second per-code table's accessor: `move.l 4(sp),D0; cmpi.l #count,D0`; hook the compare
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.param.fn.value_class"
-offset = 4
+hook = "cf.param.hook.value_class"
 to = "pf_t2"
-displaced = "run"
 devices = ["dt2"]
 
 # every absolute reference into the stock table now points into the copy (same offset)
@@ -206,11 +203,8 @@ devices = ["dt2"]
 # (Digitone II) the second per-code table's accessor: `move.l 4(sp),D0; cmpi.l #count,D0`; hook the compare
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "cf.param.fn.value_class"
-offset = 4
+hook = "cf.param.hook.value_class"
 to = "pf_t2"
-displaced = "run"
 devices = ["dn2"]
 
 # every absolute reference into the stock table now points into the copy (same offset)

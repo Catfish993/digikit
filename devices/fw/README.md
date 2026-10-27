@@ -42,6 +42,13 @@ takes only its address); no other `bind` value exists. A `[[struct]]` has `name`
 `type` is a scalar, `ptr` or a struct short name. `patchkit gen` writes the `cf` bindings to `modules/core/fw/`:
 `rs/src/lib.rs` (crate `dkfw`), `include/dk_fw_<subsystem>.h` and `inc/dk_fw_<subsystem>.inc` (GAS).
 
+A `[[hook]]` declares a hook point at a `site` or `fn` (`name` is `<cpu>.<subsystem>.hook.<name>`). `mode` is `before`
+(hook, then the displaced instructions), `replace` (displaced instructions dropped) or `retarget` (an existing call is
+redirected). `regs` has `in`, `clobbers` and, for SHARC, `modes`; every other register must be kept. A ColdFire hook
+may have `handler = { sig, args }`: `patchkit gen` then writes a GAS macro `dk_fw_<sub>_<name>_hook`, a C typedef and a
+Rust type. `port_resolve.py` writes a `[[hook]]` record into each port file. A manifest `hook` op names the hook. See
+[firmware-decls.md](../../docs/design/firmware-decls.md).
+
 A renamed declaration lists its former names in `was`, for reading older docs and findings. A former name never
 resolves: the port file lists each anchor only under its current name. A former name must not be a current name, and
 `catalog declare` refuses one. Content modules never use these declarations; only `core/*` adapters do.
