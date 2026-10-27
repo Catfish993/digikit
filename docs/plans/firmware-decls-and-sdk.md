@@ -215,12 +215,34 @@ Proof: `module:check` for pluck and freqshift; a new C module built in under a s
       delay, reciprocal with Newton steps. Results in one findings file. We learn idioms only; no firmware code is
       copied into the repo.
 - [x] A short style guide for readable SHARC assembly (`docs/sharc/style.md`) (register naming, macros, block-loop layout).
-- [ ] SDK DSP kernels (filter, saturator, envelope, ramp, delay), written from those idioms and measured in the emulator.
-      Compare with calling the firmware's own kernel through a runtime import (byte-identical on DT2 and DN2): less DSP
-      memory, but tied to firmware behaviour.
-- [ ] C pilot (1 day): control code in C (note_on, parameter mapping) calling the block-level kernels. A call costs
-      about 25 instructions per 32-sample block, under one per sample. Pluck's string loop in C against the assembly,
-      cycles measured in the emulator.
+- [ ] SDK DSP kernels in `sdk/dsp/`, included into each module (no shared copy yet): step macros for a module's own
+      block loop (gain, mix, ramp, one-pole, soft saturator, reciprocal/divide/rsqrt) and block routines (biquad,
+      interpolated delay on hardware circular buffers, 2x half-band decimator) on the stock C convention (R4/R8/R12
+      in, R0 out, the callee-saved set of finding 53), so C glue can call them. Each kernel has a float32 reference
+      model (`tools/patchkit/dsp_ref.py`) and a test on the concrete SHARC core (output to the last bits, an
+      instruction ceiling). Then pluck's string loop is rebuilt from them (target about 10 instructions per sample,
+      from 23). Decision: no comparison with calling the firmware's own kernels (finding 72: own kernels win; a stock
+      import needs per-device DSP import rows).
+- [ ] C pilot as glue only (half a day): pluck's `note_on` and parameter mapping in C (`selcc`) behind a frame shim,
+      calling the kernels; measure instructions per note-on and code size; decide whether `module:new` offers C for
+      SHARC glue. No C sample loop (finding 20 measured 46 against 6-7 instructions per sample).
+- [ ] Own SHARC+ assembler (follow-up after the kernels): replace Selache `selas` with an assembler built from our
+      encoding table (`tools/sharc_dev/sharcspec/decode_table.json`, `compute_table.json`, from the manuals in
+      `out/refs`). Write it in Rust next to the generated decoder (a new Rust package, working name sharcasm), so a wasm
+      build stays possible. It parses text by our printer's templates and accepts the `selas` dialect that module
+      sources use; it encodes by inverting each form's fields, with fixed rules where several encodings print the same
+      text (short loops are 48-bit ISA). Proof: every instruction of the DT2 1.17 and DN2 1.12 images decodes, prints
+      and assembles back to the same bits (ambiguous forms listed), and every module and kernel source assembles to
+      the bytes `selas` produced. Then `pk_sharc` uses it and `selas` becomes a cross-check only. Payoff: no GPL
+      dependency, no `selas` mis-encodings, an assembler that can run in the browser. Cost about 2-3 days; confidence
+      high (the corpus test).
+
+Proof: kernel tests against the reference models and instruction ceilings on the concrete core; hardware cycles are not
+measured (the emulator counts instructions, not stalls).
+
+Rules (kernels, from the public manuals and the firmware, see docs/sharc/style.md): block loops of 4 or more
+instructions; B/L only on I0-I5 with L back to 0 on every exit, L6/L7/B6/B7 untouched, B3 saved if written; no DAG
+register load within 4 instructions of its use; data in DM only.
 
 Decision: offer `--lang c` for SHARC glue, or keep assembly only.
 
@@ -293,8 +315,8 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27 (34 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
-(findings 70-72), and steps 5 and 6. Next: step 7 (SHARC kernels and the C pilot). Em's rules for this branch: stop before every commit and show the diff and
+2026-10-27 (35 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
+(findings 70-72), and steps 5 and 6. Next: step 7: kernels, then the C glue pilot, then our own SHARC assembler. Em's rules for this branch: stop before every commit and show the diff and
 message; no Rust build
 without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions
 (https://claude.ai/artifact/HsY3xPsoDhyCMfVhmzrPBW, decisions stored with the page), why the `Value<T>` project-data

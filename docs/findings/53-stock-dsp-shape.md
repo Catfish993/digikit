@@ -116,7 +116,8 @@ which bars its AOT region:
 | H5 voice chain entry | `0x1cdd8b` / `0xb8251b` | one mono voice block before BR, overdrive, SRR and filter | 32 calls a block; DN2 hook already used by `core/dsp-voice` |
 
 At H2 and H3 SIMD is off and no DO loop is active; M5/M6/M7 hold their constants. The stock FX state lives in DDR, and its
-rings wrap by index arithmetic (the units never write B or L registers):
+rings wrap by index arithmetic (the FX units never write B or L registers). **[C]** The stock voice renderer does
+write them: it sets B3/L3 and B4/L4 and restores L = 0 and B3 on exit (DT2 1.17 around 0x1c508a-0x1c532b):
 - chorus at `0x80459388`, 512-entry lines;
 - delay at `0x8005912c`, rings of 524,288 floats, time clamped to 8 s;
 - reverb at `0x80000018`, about 0x59114 bytes.

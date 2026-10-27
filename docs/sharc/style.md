@@ -102,12 +102,30 @@ From `sdk/dk_machine.h`, `sdk/dk_fx.h` and finding 45 **[D]**:
     before return. Manual: "SIMD Mode"; the stock copy clears it before the return.
   - Do not clear RND32 (the float result rounding assumed by the rest of the DSP).
 - Circular buffers: set B and L of the DAG register you use, restore L = 0 at the end. L0-L7 are preserved by contract,
-  so save them if you change them **[O]** (the stock units never write B or L; finding 53).
+  so save them if you change them **[O]**. **[C]** Earlier text said the stock code never writes B or L. The stock voice
+  renderer sets B3/L3 and B4/L4 and restores L = 0 and B3 (DT2 1.17 around 0x1c508a-0x1c532b); only the FX units
+  avoid them (finding 53).
 - Hardware loops: no loop may be active at entry (H2/H3 hooks: no DO loop is active). Do not leave a loop with
   the loop stack unbalanced.
 - Level: output `|x| <= DK_LEVEL_BOUND` (8.0); more is a fault.
 - State: `state_bytes` per voice, the first `state_clear_bytes` zeroed at note-on. All state in the record; no
   hidden globals (pluck's shared RNG `_pk_rng` is an exception, noted in its header).
+
+## 5a. Rules from the manuals
+
+Read in the SHARC+ programming reference **[D]**. Items marked **[O]** are not measured in the emulator or on hardware.
+
+- Loops: a block loop has 4 or more instructions **[D]**. Shorter loops have extra restrictions; test them first **[O]**.
+- Circular buffers: set B/L only on I0-I5. Set L back to 0 on every exit. Do not touch L6, L7, B6, B7. Save B3 if the
+  module writes it **[D]**.
+- DAG load-to-use: do not use a DAG register within 4 instructions of loading it; each instruction short of that
+  costs a stall, up to 4 **[D]**.
+- Multiplier: if both inputs come from the previous instruction, 2 stalls; one input from one instruction back, 1
+  stall **[D]**.
+- A conditional store followed by a load costs 1 stall **[D]**.
+- PM data access in a loop may cost a cycle each. Keep data in DM only **[D]**, **[O]** for the exact cost.
+- MODE1 write then use: wait the pipeline gap before an instruction that depends on the new mode **[D]**.
+- Stall counts are not measured: the emulator counts instructions, not stalls **[O]**.
 
 ## 6. Examples (written fresh from the manual's instruction descriptions; not measured in the emulator yet)
 
