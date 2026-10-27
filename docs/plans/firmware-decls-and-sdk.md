@@ -215,7 +215,7 @@ Proof: `module:check` for pluck and freqshift; a new C module built in under a s
       delay, reciprocal with Newton steps. Results in one findings file. We learn idioms only; no firmware code is
       copied into the repo.
 - [x] A short style guide for readable SHARC assembly (`docs/sharc/style.md`) (register naming, macros, block-loop layout).
-- [ ] SDK DSP kernels in `sdk/dsp/`, included into each module (no shared copy yet): step macros for a module's own
+- [x] SDK DSP kernels in `sdk/dsp/`, included into each module (no shared copy yet): step macros for a module's own
       block loop (gain, mix, ramp, one-pole, soft saturator, reciprocal/divide/rsqrt) and block routines (biquad,
       interpolated delay on hardware circular buffers, 2x half-band decimator) on the stock C convention (R4/R8/R12
       in, R0 out, the callee-saved set of finding 53), so C glue can call them. Each kernel has a float32 reference
@@ -223,7 +223,12 @@ Proof: `module:check` for pluck and freqshift; a new C module built in under a s
       instruction ceiling). Then pluck's string loop is rebuilt from them (target about 10 instructions per sample,
       from 23). Decision: no comparison with calling the firmware's own kernels (finding 72: own kernels win; a stock
       import needs per-device DSP import rows).
-- [ ] C pilot as glue only (half a day): pluck's `note_on` and parameter mapping in C (`selcc`) behind a frame shim,
+      Done 2026-10-27: the eight step macros, `_dk_biquad` (5 per sample), `_dk_delay` (4 per sample) and
+      `_dk_halfband_down` (23 taps, -38 dB, 21.8 per output), bit-exact on the core. Open, proposed to Em: drop the
+      pluck rebuild (pluck uses an allpass fractional delay, so it would change its sound) and use the kernels in the
+      machine and fx templates instead.
+- [ ] (Open, proposed to Em: drop, since Em wants to replace Selache, `selcc` included; SHARC code stays
+      assembly.) C pilot as glue only (half a day): pluck's `note_on` and parameter mapping in C (`selcc`) behind a frame shim,
       calling the kernels; measure instructions per note-on and code size; decide whether `module:new` offers C for
       SHARC glue. No C sample loop (finding 20 measured 46 against 6-7 instructions per sample).
 - [ ] Emulator follow-ups found in step 7: `cargo test -p sharc-native --lib` aborts in
@@ -323,8 +328,11 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27 (38 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
-(findings 70-72), and steps 5 and 6. Next: step 7: kernels, then the C glue pilot, then our own SHARC assembler. Em's rules for this branch: stop before every commit and show the diff and
+2026-10-27 (39 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4,
+5 and 6, the step 7 study, style guide and kernels, S1/S2 (findings 70-72), and an emulator core fix (RFRAME and
+enhanced MODIFY for normal-word addresses, port of ElekLabs/digikit#61; cores regenerated r5). Next: Em's decisions on
+the rest of step 7 (drop the pluck rebuild and the C pilot; kernels into the templates; then our own SHARC assembler).
+The full gate has not run on this branch. Em's rules for this branch: stop before every commit and show the diff and
 message; no Rust build
 without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions
 (https://claude.ai/artifact/HsY3xPsoDhyCMfVhmzrPBW, decisions stored with the page), why the `Value<T>` project-data
