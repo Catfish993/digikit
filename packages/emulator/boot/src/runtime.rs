@@ -1105,6 +1105,44 @@ impl Emulator {
         Ok(())
     }
 
+    /// Write `bytes` at any byte address of SDRAM without bus side effects, as one range: the words around the ends keep their
+    /// other bytes, unmapped pages are mapped zeroed, and the decode cache is invalidated once for the whole range, so code written
+    /// here runs as new code.
+    pub fn write_ram(&mut self, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let end = addr
+            .checked_add(u32::try_from(bytes.len()).map_err(|_| "write_ram: range too long".to_string())?)
+            .ok_or("write_ram: range wraps")?;
+        if addr < 0x4000_0000 || end > 0x5000_0000 {
+            return Err(format!("write_ram {addr:#x}+{}: not in SDRAM or its +128 MiB alias", bytes.len()));
+        }
+        let first = addr & !3;
+        let last = (end + 3) & !3;
+        for page in (first & !0xf_ffff..last).step_by(0x10_0000) {
+            self.bus
+                .board
+                .map_zeroed_ram_page(page)
+                .map_err(|e| format!("write_ram map {page:#x}: {e:?}"))?;
+        }
+        for word in (first..last).step_by(4) {
+            let mut b = self.peek32(word).unwrap_or(0).to_be_bytes();
+            for (i, byte) in b.iter_mut().enumerate() {
+                let a = word + i as u32;
+                if a >= addr && a < end {
+                    *byte = bytes[(a - addr) as usize];
+                }
+            }
+            self.bus
+                .board
+                .write_guest(word, 4, u32::from_be_bytes(b))
+                .map_err(|e| format!("write_ram {word:#x}: {e:?}"))?;
+        }
+        self.cpu.invalidate_external_write(first, (last - first) as usize);
+        Ok(())
+    }
+
     /// Write a guest longword without bus side effects (headless diagnosis:
     /// canary fills). Unmapped SDRAM pages are mapped zeroed first.
     pub fn poke32(&mut self, addr: u32, value: u32) -> Result<(), String> {
@@ -3544,6 +3582,24 @@ fn resolve_fused_loops(main: &[u8]) -> Vec<(u32, Loop, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_ram_keeps_the_bytes_around_an_unaligned_range() {
+        let Ok(syx) = std::fs::read("../../../firmware/Digitone_II_OS1.12.syx") else {
+            return;
+        };
+        let mut runtime = Emulator::new(&syx, None).unwrap();
+        let base = 0x4400_0000; // an unmapped page: mapped zeroed on first write
+        runtime.write_ram(base, &[0xaa; 12]).unwrap();
+        runtime.write_ram(base + 3, &[1, 2, 3, 4, 5]).unwrap();
+        assert_eq!(
+            runtime.peek_ram(base, 12),
+            [0xaa, 0xaa, 0xaa, 1, 2, 3, 4, 5, 0xaa, 0xaa, 0xaa, 0xaa]
+        );
+        assert!(runtime.write_ram(0x1000, &[0]).is_err(), "outside SDRAM");
+        assert!(runtime.write_ram(0x4fff_fffe, &[0; 4]).is_err(), "past the end");
+        runtime.write_ram(base, &[]).unwrap();
+    }
 
     #[test]
     fn ssi_delivery_precedes_same_boundary_timer_and_is_recorded_without_fault() {

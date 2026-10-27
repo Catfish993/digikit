@@ -29,6 +29,7 @@ pub mod dsp;
 pub mod explain;
 pub mod expr;
 pub mod link;
+pub mod live;
 pub mod modgen;
 pub mod module;
 pub mod port;

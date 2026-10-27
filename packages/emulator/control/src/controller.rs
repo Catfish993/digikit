@@ -400,6 +400,18 @@ pub fn spawn(config: Config) -> (Handle, thread::JoinHandle<()>) {
 }
 
 /// What the controller knows about the firmware it is running.
+/// What a swap leaves behind: the image now running is the baseline with module code written over it, and the boot cache holds the
+/// baseline's ready state, not the running image's.
+struct ReloadState {
+    /// SHA-256 of the image running after the last `dev.reload`. The state is valid while `Loaded::current` still is that image.
+    running_sha: String,
+    /// The image whose ready pair is in the boot cache: the last image that was booted or restored from it.
+    baseline: Vec<u8>,
+}
+
+/// The modules `dev.reload` swaps without a boot, besides every module that requires `core/ui`.
+const SWAP_DEFAULT: &[&str] = &["core/ui", "core/digikit-menu"];
+
 struct Loaded {
     /// The .syx the DSP audio profile and the device profile belong to, when
     /// known (a first load of an already patched .syx has none).
@@ -605,6 +617,8 @@ struct Actor {
     repo_root: Option<PathBuf>,
     /// What `firmware.load {runtime}` did to the image now running (`status.firmware.runtime`): the patch report, or null.
     runtime_info: Option<Value>,
+    /// The ready state `dev.reload` restores before it writes module code (see `rpc_dev_reload`).
+    reload: Option<ReloadState>,
     quit: bool,
     /// Fault, DSP halt and main-loop stall detection (events `fault`, `halt`, `stall`).
     health: Health,
@@ -712,6 +726,7 @@ impl Actor {
             startup_card_folder: config.card_folder,
             repo_root: config.repo_root,
             runtime_info: None,
+            reload: None,
             quit: false,
             health: Health::new(
                 std::env::var("DIGI_STALL_MS")
@@ -1727,6 +1742,8 @@ impl Actor {
             "leds.get" => self.rpc_leds().map(Some),
             "mem.cf.peek" => self.rpc_mem_peek(&p).map(Some),
             "mem.cf.poke" => self.rpc_mem_poke(&p).map(Some),
+            "mem.cf.write" => self.rpc_mem_write(&p).map(Some),
+            "dev.reload" => self.rpc_dev_reload(&p, &reply),
             "guard.set" => self.rpc_guard_set(&p).map(Some),
             "guard.report" => self
                 .with_runtime(|r| Ok(serde_json::to_value(r.guard_report()).unwrap_or(Value::Null)))
@@ -2351,6 +2368,141 @@ impl Actor {
         Ok(json!({"addr": addr, "value": value}))
     }
 
+    /// `mem.cf.write {addr, hex}`: write a byte range of SDRAM (any alignment) in one call, with one decode-cache invalidation for
+    /// the range: code written here runs as new code. Not part of the replay record.
+    fn rpc_mem_write(&mut self, p: &Params) -> RpcResult {
+        let addr = u32::try_from(p.u64("addr")?)
+            .map_err(|_| RpcError::bad_params("addr is a 32-bit byte address"))?;
+        let bytes = decode_hex(p.str("hex")?).map_err(RpcError::bad_params)?;
+        self.with_runtime(|r| r.write_ram(addr, &bytes).map_err(RpcError::bad_params))?;
+        Ok(json!({"addr": addr, "len": bytes.len()}))
+    }
+
+    /// `dev.reload {modules_dir?, swap_modules?}`: bring the running session to the module objects as they are on disk now, by the
+    /// cheapest correct way. The session's module set is the patch record of the running image; the image is made again from the
+    /// stock image (the same patchkit apply as `firmware.load {runtime}`, nothing cached) and compared with the image whose ready
+    /// state the boot cache holds (the baseline: the running image, or after a swap the one it was swapped from).
+    ///
+    /// - Only ranges of swap modules differ (`swap_modules`; default `core/ui`, `core/digikit-menu` and every module that requires
+    ///   `core/ui`): restore the baseline's cached ready state, write the new bytes of every changed module over it (whole: code,
+    ///   data and zeroed bss) and reply `{path: "swap", ranges, bytes, ms, ...}`. This equals a fresh boot of the new image as long
+    ///   as nothing in the ready state holds a pointer into the swapped code: the firmware reaches UI code only through the SETTINGS
+    ///   hook and the views opened from it, and the ready state is the main screen, SETTINGS never opened. A hook site that changes
+    ///   is written too (it is a patch range of its module). The patch record is not compared or written.
+    /// - Any other ColdFire range differs, a section other than MAIN or DSP differs, or there is no ready state to restore: load the
+    ///   new image (`path: "boot"`, `reason`; a cold boot unless the new image was booted before). A DSP-only difference goes to the
+    ///   hot injection of `firmware.load` (`path: "dsp"`).
+    /// - Nothing differs: `{path: "none"}`.
+    ///
+    /// After a swap the boot cache has no entry for the new image: a plain `firmware.load` of it, or a `restart`, boots cold once.
+    fn rpc_dev_reload(&mut self, p: &Params, reply: &RpcReply) -> Result<Option<Value>, RpcError> {
+        let started = Instant::now();
+        let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, format!("dev.reload: {m}"));
+        if self.job.is_some() || self.patch_job.is_some() {
+            return Err(RpcError::new(code::BUSY, "a job is running; wait for it before dev.reload"));
+        }
+        let loaded = self.loaded.as_ref().ok_or_else(RpcError::no_firmware)?;
+        let current = loaded.current.clone();
+        let record = patchkit::verify::patch_record(&current)
+            .map_err(|e| rejected(e.to_string()))?
+            .ok_or_else(|| rejected("the running image has no patch record (load a patched image or `runtime: true`)".into()))?;
+        let root = runtime_patch::find_root(p.opt_str("modules_dir")?.map(Path::new).or(self.repo_root.as_deref()))
+            .map_err(&rejected)?;
+        let stock = loaded
+            .base
+            .clone()
+            .filter(|b| firmware::sha256_hex(b) == record.base_sha256)
+            .or_else(|| runtime_patch::find_stock(&root, &record.base_sha256))
+            .ok_or_else(|| rejected(format!("the stock image {} is not in firmware/", record.base_sha256)))?;
+        let card = {
+            let own = self.auto_card.as_ref().map(|(image, _)| image);
+            loaded.card.as_ref().filter(|c| Some(*c) != own).map(|c| c.display().to_string())
+        };
+        let stock_main_len = patchkit::firmware::Firmware::parse(&stock)
+            .map_err(|e| rejected(e.to_string()))?
+            .section(3)
+            .map(|s| s.data.len())
+            .ok_or_else(|| rejected("the stock image has no MAIN section".into()))?;
+        let ids: Vec<String> = record.modules.iter().map(|t| patchkit::live::owner_id(t).to_string()).collect();
+        let re = runtime_patch::reapply(&root, &stock, &ids, &["core/ui"]).map_err(&rejected)?;
+        let (new_syx, plan) = (re.applied.syx, re.applied.plan);
+        let baseline = match &self.reload {
+            Some(r) if r.running_sha == firmware::sha256_hex(&current) => r.baseline.clone(),
+            _ => current.clone(),
+        };
+        let diff_of = |from: &[u8]| patchkit::live::diff(from, &new_syx, stock_main_len, &plan).map_err(|e| rejected(e.to_string()));
+        // Nothing to do when the running image already is the new one; otherwise the writes are the baseline's difference (a state
+        // swapped back to its baseline's bytes is a swap with no ranges).
+        let from_current = diff_of(&current)?;
+        if from_current.is_empty() {
+            let ms = started.elapsed().as_secs_f64() * 1e3;
+            return Ok(Some(json!({"path": "none", "ms": ms, "apply_ms": ms})));
+        }
+        let diff = if baseline == current { from_current } else { diff_of(&baseline)? };
+        let apply_ms = started.elapsed().as_secs_f64() * 1e3;
+        let swap: Vec<String> = match p.get("swap_modules") {
+            Some(Value::Array(a)) => a
+                .iter()
+                .map(|v| v.as_str().map(str::to_string).ok_or_else(|| RpcError::bad_params("swap_modules is a list of module ids")))
+                .collect::<Result<_, _>>()?,
+            Some(_) => return Err(RpcError::bad_params("swap_modules is a list of module ids")),
+            None => SWAP_DEFAULT.iter().map(|s| s.to_string()).chain(re.requirers).collect(),
+        };
+        let differing: Vec<&patchkit::live::Change> = diff.changes.iter().filter(|c| c.differs).collect();
+        let blocker = if !diff.other_sections.is_empty() {
+            Some(format!("sections {:?} changed", diff.other_sections))
+        } else if let Some(c) = differing.iter().find(|c| !swap.contains(&c.owner)) {
+            let who = if c.owner.is_empty() { "unowned MAIN bytes" } else { c.owner.as_str() };
+            Some(format!("{who} changed at {:#x}", c.addr))
+        } else if diff.dsp_changed {
+            Some("the DSP section changed".to_string())
+        } else {
+            None
+        };
+        // Everything but a swap loads the new image: forced when the ColdFire side differs, a hot DSP injection when it does not.
+        let force = !differing.is_empty();
+        let load_new = |this: &mut Self, reason: String| {
+            let path = if force { "boot" } else { "dsp" };
+            let params = json!({
+                "bytes": true, "force": force, "start": "auto", "restart": true, "card": card,
+                "report_extra": {"path": path, "reason": reason, "apply_ms": apply_ms},
+            });
+            this.reload = Some(ReloadState { running_sha: firmware::sha256_hex(&new_syx), baseline: new_syx.clone() });
+            this.firmware_load(&Params(&params), new_syx.clone(), reply)
+        };
+        if let Some(reason) = blocker {
+            return load_new(self, reason);
+        }
+        // The swap: the baseline's ready state, then the new module bytes.
+        let restore_started = Instant::now();
+        let restore = json!({"bytes": true, "force": true, "start": "snapshot", "restart": true, "card": card});
+        let restored = match self.firmware_load(&Params(&restore), baseline.clone(), reply) {
+            Ok(Some(report)) => report,
+            Ok(None) => return Err(rejected("internal: restoring a ready state started a boot".into())),
+            Err(e) => return load_new(self, format!("no ready state to restore: {}", e.message)),
+        };
+        let restore_ms = restore_started.elapsed().as_secs_f64() * 1e3;
+        let write_started = Instant::now();
+        let mut bytes = 0;
+        for c in &diff.changes {
+            let addr = u32::try_from(c.addr).map_err(|_| rejected(format!("{:#x} is not a 32-bit address", c.addr)))?;
+            self.with_runtime(|r| r.write_ram(addr, &c.bytes).map_err(RpcError::bad_params))?;
+            bytes += c.bytes.len();
+        }
+        let write_ms = write_started.elapsed().as_secs_f64() * 1e3;
+        let analysis = Analysis::of(&new_syx).map_err(&rejected)?;
+        if let Some(l) = self.loaded.as_mut() {
+            l.current = new_syx.clone();
+            l.current_analysis = Some(analysis);
+        }
+        self.reload = Some(ReloadState { running_sha: firmware::sha256_hex(&new_syx), baseline });
+        Ok(Some(json!({
+            "path": "swap", "ranges": diff.changes.len(), "bytes": bytes, "owners": diff.owners(),
+            "ms": started.elapsed().as_secs_f64() * 1e3, "apply_ms": apply_ms, "restore_ms": restore_ms, "write_ms": write_ms,
+            "restore": restored["start_used"],
+        })))
+    }
+
     fn rpc_run_mode(&mut self, p: &Params) -> RpcResult {
         let mode = p.str("mode")?;
         let mode =
@@ -2742,6 +2894,12 @@ impl Actor {
         });
         if let Some(r) = runtime_report {
             report["runtime"] = r;
+        }
+        // Fields a caller that loads on behalf of another method (`dev.reload`) adds to the report, the cold boot's included.
+        if let Some(extra) = p.get("report_extra").and_then(Value::as_object) {
+            for (key, value) in extra {
+                report[key.as_str()] = value.clone();
+            }
         }
 
         // Running firmware to compare with.
@@ -3138,6 +3296,17 @@ impl Actor {
         }
         Ok(false)
     }
+}
+
+/// Bytes from a hex string (no separators; an even number of digits).
+fn decode_hex(text: &str) -> Result<Vec<u8>, String> {
+    if !text.len().is_multiple_of(2) || !text.is_ascii() {
+        return Err("hex is an even number of hex digits".into());
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).map_err(|_| format!("hex: bad digits at {i}")))
+        .collect()
 }
 
 // ----- patched MAIN with DSP audio: the coupled cold boot ---------------------
@@ -4158,5 +4327,19 @@ mod reset_tests {
             assert_ne!(runtime.peek_ram(base, size), ram, "failed reset RAM is not reused");
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod mem_write_tests {
+    use super::decode_hex;
+
+    #[test]
+    fn hex_decodes_bytes_and_refuses_bad_text() {
+        assert_eq!(decode_hex("").unwrap(), Vec::<u8>::new());
+        assert_eq!(decode_hex("00ff7A10").unwrap(), [0, 0xff, 0x7a, 0x10]);
+        assert!(decode_hex("abc").is_err(), "odd length");
+        assert!(decode_hex("zz").is_err(), "not hex");
+        assert!(decode_hex("é1").is_err(), "not ASCII");
     }
 }

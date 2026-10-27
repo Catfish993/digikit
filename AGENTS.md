@@ -59,6 +59,7 @@ Use the owner's command while iterating. Full command details, preparation and r
 | Python tools | Named pytest files under `tests/<owner>/` (never a directory) and `mise run lint:py`. Typed files are listed in pyproject `[tool.mypy] files`. |
 | Device suites | `mise run test:stock`, `test:runtime`, `test:modules`, `test:fx`, `test:fx:dt2`. Prerequisites (daemons, ready inputs, module artifacts) are in [testing](docs/TESTING.md); no implicit daemon builds. |
 | One module | `mise run module:check ID`: conformance and own tests; may build or emulate. This does not prove all-module loads. |
+| Module, UI or runtime iteration | `mise run dk:dev -- ID --device dn2 --keys 'tap:...,shot:NAME'`: builds, reloads a kept daemon (UI modules swap in about 4 s; any other change boots: DN2 5 s, DT2 10 s) and writes `out/runs/devreload/<dev>/sheet.png`. Iterate on DN2, check DT2 at the end. Not a proof: finish with the owner's check. |
 
 Test levels: unit tests run without a device. Device tests live in `tests/regression` (Vitest) and new device scenarios are TypeScript. Python tests test Python tools; the remaining Python device scenarios (`tests/digikit`, the smoke matrix) are pending migration. Tests must test our behaviour: no tests of third-party behaviour, of constants against themselves, or of exact command argv. Gate checks are commands, not test files.
 
@@ -70,7 +71,7 @@ The gate manages one CPU budget. Do not start another gate or Cargo build while 
 
 ## Development and analysis
 
-Prefer existing tooling and shared helpers over custom runners or wrappers. Use fast unit tests for logic and integration tests for real boundaries. New host/device scenarios use TypeScript/Vitest; analysis, decompilation and devtools use Python. Avoid unrelated refactors.
+Iterate with `dk:dev` ([testing](docs/TESTING.md) "Fast iteration"), not with harness runs or fresh boots; run the harness once for the proof. Prefer existing tooling and shared helpers over custom runners or wrappers. Use fast unit tests for logic and integration tests for real boundaries. New host/device scenarios use TypeScript/Vitest; analysis, decompilation and devtools use Python. Avoid unrelated refactors.
 
 Run Python tools from the repository root as `uv run python -m tools.<owner>.<module>`. Import through `tools`; never modify `sys.path`. Child tools use `[sys.executable, "-m", ...]` with `env=tools.python_env()`. Find tasks with `mise tasks` and options with `mise run TASK -- --help`.
 

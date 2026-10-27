@@ -84,6 +84,30 @@ Device tasks never build a daemon or the emulator themselves. Prerequisites are 
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.
 
+## Fast iteration: dk:dev and Reload
+
+For module code and the UI layer (`core/ui`, `core/digikit-menu`, `test/ui-demo`) one edit and one look should take seconds, not a
+boot. `mise run dk:dev -- test/ui-demo --device dn2[,dt2] --keys 'tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:menu'`
+(`tools/patchkit/pk_devreload.py`) builds the objects whose sources changed (`pk_build`), reloads a daemon it keeps alive per device and
+module set (`--stop` ends it), runs the key script from the main screen, and writes `out/runs/devreload/<device>/NAME.png` (4x) and
+`sheet.png` (2x, four per row, labelled). The target is a patch set of `devices/*.toml` or module ids; `--keys` is a JSON list of harness
+steps or inline text (`tap:KEY`, `wait:MS`, `turn:ENC A:BY`, `shot:NAME`, `*N` repeats). The workbench has the same call as the Reload
+modules button (⇧⌘R): it never builds, so build first (`dk:dev` or `module:check`).
+
+The daemon method is `dev.reload` (docs/CONTROL.md). It applies the modules again and compares the result with the running image:
+
+| Path | When | What runs | Measured (PGO daemon, warm) |
+| --- | --- | --- | --- |
+| `swap` | only UI layer modules differ | restore the cached main-screen state, write the module bytes | DN2 1.4 s, DT2 1.7 s (apply 1.2 s, restore 0.3 and 0.4 s, write under 1 ms) |
+| `boot` | the runtime, any other module, or a non-MAIN section differs | load the new image | cold boot DN2 5.3 s, DT2 10.2 s; image booted before: 0.3 s and 0.5 s |
+| `none` | nothing differs | nothing | apply only, 1.2 s |
+
+A `dk:dev` round for a UI change is about 3.6 s per device, with a two-key-step script of 1.8 s included. Build costs: Rust runtime 2.3 s,
+C object about 0.3 to 1 s. The first run of a module set starts the daemon and boots the patched image (DN2 9 s, DT2 10 s with warm caches).
+The harness stays the final proof: a swap shows what a change looks like and is not a substitute for `module:check`, the runtime suites or a
+boot of the real image. `tools/emulator/boot_phases.py` measures where a boot of the workbench's patched image spends its time (cold and
+warm `firmware.load`, `state.load`, first run of our runtime).
+
 ## Inputs
 
 Tests that lack an input skip with a reason; `pytest -rs` lists them.

@@ -19,6 +19,7 @@ import RemotePage from './RemotePage';
 import { emulatorSession, target } from './target';
 import TransferPage from './TransferPage';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
+import { reloadError, reloadLine } from '@web/runtime/reload';
 
 type Source = { path: string; name: string; bytes: number; modified_ms: number };
 type Status = RuntimeSnapshot['status'];
@@ -107,6 +108,7 @@ export default function Console() {
   const [opened, setOpened] = createSignal('');
   const [watching, setWatching] = createSignal(true);
   const [reloadNote, setReloadNote] = createSignal('');
+  const [modulesBusy, setModulesBusy] = createSignal(false);
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
   const [rate, setRate] = createSignal<number>();
   const [drawer, setDrawer] = createSignal(false);
@@ -186,6 +188,24 @@ export default function Console() {
       reloading = false;
     }
   };
+  /** `dev.reload`: the controller applies the modules again from the objects on disk (it never builds) and swaps module code into a
+   * restored main screen, or boots the new image; the result goes to the status area. */
+  const reloadModules = async () => {
+    const r = runtime();
+    if (!r?.reloadModules || modulesBusy()) return;
+    setModulesBusy(true);
+    setError('');
+    setReloadNote('Reloading modules…');
+    try {
+      setReloadNote(reloadLine(await r.reloadModules()));
+      setPaused(false);
+      await refreshInfo();
+    } catch (e) {
+      setReloadNote(reloadError(e));
+    } finally {
+      setModulesBusy(false);
+    }
+  };
   const pollSource = async () => {
     try {
       const file = await invoke<Source | null>('emu_source_info');
@@ -214,10 +234,11 @@ export default function Console() {
   };
 
   const onKey = (e: KeyboardEvent) => {
-    // ⌘R / Ctrl+R reloads the firmware file, not the page.
+    // ⌘R / Ctrl+R reloads the firmware file, not the page; with Shift it reloads the modules into the running session.
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'r') {
       e.preventDefault();
-      void reload('Reloaded at');
+      if (e.shiftKey) void reloadModules();
+      else void reload('Reloaded at');
     }
   };
   onMount(() => {
@@ -410,6 +431,16 @@ export default function Console() {
         >
           <Icon d={RELOAD} />
           Reload
+        </button>
+        <button
+          type="button"
+          class="tb"
+          disabled={!status() || modulesBusy()}
+          title="Apply the modules again from the objects on disk into the running session, without a boot when only UI modules changed (⇧⌘R). It does not build: run mise run dk:dev or module:check first."
+          onClick={() => void reloadModules()}
+        >
+          <Icon d={MODULES} />
+          Reload modules
         </button>
         <button type="button" class="tb" disabled={!status()} onClick={togglePause}>
           <Icon d={paused() ? PLAY : PAUSE} />

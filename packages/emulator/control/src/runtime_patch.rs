@@ -148,6 +148,39 @@ pub fn prepare(root: &Path, stock: &[u8], set: &str) -> Result<Outcome, String> 
     patched(out.syx, out.plan.modules, false)
 }
 
+/// The stock image with this SHA-256 in `<root>/firmware/`, for a session that loaded an already patched image (it knows the base's
+/// digest from the patch record and not the base).
+pub fn find_stock(root: &Path, sha256: &str) -> Option<Vec<u8>> {
+    std::fs::read_dir(root.join("firmware"))
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "syx"))
+        .filter_map(|p| std::fs::read(p).ok())
+        .find(|data| format!("{:x}", Sha256::digest(data)) == sha256)
+}
+
+/// What [`reapply`] made.
+pub struct Reapplied {
+    pub applied: apply::Applied,
+    /// The ids of the library's modules that require one of `needs` (the UI layer's users, which `dev.reload` swaps by default).
+    pub requirers: Vec<String>,
+}
+
+/// The image `ids` (a patch record's modules, in apply order) make from `stock` with the module objects as they are on disk now,
+/// and the plan that places them: what `dev.reload` compares with the running image. Nothing is cached or written.
+pub fn reapply(root: &Path, stock: &[u8], ids: &[String], needs: &[&str]) -> Result<Reapplied, String> {
+    let e = |x: patchkit::Error| x.to_string();
+    let lib = Library::scan_repo(root).map_err(e)?;
+    let reg = Registry::from_dir(&root.join("devices/ports")).map_err(e)?;
+    let requirers = lib
+        .modules
+        .iter()
+        .filter(|m| m.manifest.module.requires.iter().any(|r| needs.contains(&r.as_str())))
+        .map(|m| m.id().to_string())
+        .collect();
+    Ok(Reapplied { applied: apply::apply(stock, &reg, &lib, ids).map_err(e)?, requirers })
+}
+
 fn write_whole(file: &Path, data: &[u8]) -> Result<(), String> {
     let dir = file.parent().ok_or("runtime: bad cache path")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("runtime: {}: {e}", dir.display()))?;

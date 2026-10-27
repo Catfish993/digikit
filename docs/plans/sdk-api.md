@@ -174,6 +174,15 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
 - [ ] Remove the typed `module.toml` sections and the legacy Python build tools.
 - [ ] Proof: byte-identical patched images.
 
+### Dev loop
+
+- [x] `dk:dev` and the daemon method `dev.reload`: UI-layer modules are written into a running emulator
+      (about 4 s per edit); any other change boots (DN2 5 s, DT2 10 s). Reload modules button in the
+      workbench. `tools/emulator/boot_phases.py` measures the boot.
+- [ ] `mise run dk:watch`: rebuild on save and call `dev.reload` on the open workbench's control socket.
+- [ ] After phase 5: the workbench Reload modules button builds first (`patchkit build` in Rust).
+- [ ] Cache the module library scan in `dev.reload` (1.2 s of each reload).
+
 ### Later
 
 Own DSP work (`sdk/dsp`, the C-on-SHARC replacement), text entry, module-owned views and the

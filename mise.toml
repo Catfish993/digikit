@@ -319,6 +319,10 @@ description = "Export a module as a deterministic .dkmod: mise run module:export
 run = "uv run python -m tools.patchkit.pk_package import"
 description = "Import a .dkmod: mise run module:import -- FILE [--dir DIR] [--replace] (checks every sha256, refuses author core and type framework, refuses a known id without --replace; default target: the first PATCHKIT_MODULES folder)"
 
+[tasks."dk:dev"]
+run = "uv run python -m tools.patchkit.pk_devreload"
+description = "Fast edit loop for module code: mise run dk:dev -- test/ui-demo --device dn2[,dt2] [--keys FILE|tap:SETTINGS,wait:400,shot:menu] [--out DIR] [--stop]; builds changed objects, reloads a kept emulator daemon (module swap in about a second, or a boot), presses the keys, writes PNGs and a contact sheet"
+
 [tasks."module:dev"]
 run = "uv run python -m tools.patchkit.pk_dev"
 description = "Developer loop: mise run module:dev -- --modules a,b [--device dt2|dn2] [--once]; watches src/ and module.toml, rebuilds, patches, injects into a running emulator, runs the quick tests, one summary line per edit"
