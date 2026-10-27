@@ -39,41 +39,9 @@ pub use gen_sdk::load::*;
 /// still going is reported by `dkrt_module` with `state` `MOD_LOADING`.
 pub const LOADING: i32 = 1;
 
-/// The table `init` receives (also reachable as `dkrt_api`). Appended-to only; check `size`.
-#[repr(C)]
-pub struct Api {
-    pub version: u32,
-    /// `size_of::<Api>()` in the runtime that built it.
-    pub size: u32,
-    pub device: u32,
-    pub runtime: u32,
-    /// Address of a firmware function or runtime helper by name (NUL-terminated); 0 when the image has none.
-    pub import: unsafe extern "C" fn(name: *const u8) -> u32,
-    /// 16-byte aligned block from the module arena (zero is not guaranteed); null when full.
-    pub alloc: unsafe extern "C" fn(size: u32) -> *mut u8,
-    pub free: unsafe extern "C" fn(p: *mut u8),
-    /// Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code.
-    pub store_read: unsafe extern "C" fn(path: *const u8, dst: *mut u8, cap: u32) -> i32,
-    /// Append `msg` (NUL-terminated, 24 bytes kept) and `value` to the runtime's log ring.
-    pub log: unsafe extern "C" fn(msg: *const u8, value: u32),
-    pub memcpy: usize,
-    pub memset: usize,
-    pub memcmp: usize,
-    pub muldi3: usize,
-    pub udivdi3: usize,
-    pub umoddi3: usize,
-    /// Like `log`, with a level: 0 error, 1 warn, 2 info, 3 debug, 4 trace (above 4: 4).
-    pub log_lv: unsafe extern "C" fn(level: u32, msg: *const u8, value: u32),
-    /// (api 1.2) Register the SysEx commands `first .. first + count` with `handler` (docs/design/module-sdk.md, "Service commands"). The range must
-    /// lie inside one of the ranges sdk/sdk.toml `[protocol.ranges]` reserves and overlap no registered one; else it returns `proto::E_CMD_RANGE`.
-    /// Call it from `init`; the range is released when the module's `fini` has run. Returns 0.
-    pub register_cmds: unsafe extern "C" fn(first: u32, count: u32, handler: Option<ServiceCmd>) -> i32,
-}
-
-/// A service command handler (`Api::register_cmds`). It runs in the firmware's MIDI task: short, no waiting. `body` is the request body
-/// (`len` bytes, at most 160); the reply body goes to `out` (at most 879 bytes). Returns the number of reply bytes (0 or more: status ok), or a
-/// negative status (a `proto::E_*` code or its own: sent as the reply's status with no body).
-pub type ServiceCmd = unsafe extern "C" fn(cmd: u32, seq: u32, body: *const u8, len: u32, out: *mut u8) -> i32;
+// The `Api` table and `ServiceCmd` are written by `patchkit gen` from `[api]` and `[api.types]` of `sdk/sdk.toml` (`gen_sdk.rs`, module `api`).
+pub use gen_sdk::api;
+pub use gen_sdk::api::{Api, ServiceCmd};
 
 /// `dkrt_status` result. The caller owns the memory; the layout only grows at the end.
 #[repr(C)]

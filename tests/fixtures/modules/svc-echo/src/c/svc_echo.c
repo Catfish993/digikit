@@ -7,26 +7,14 @@
  *   0x3f  the refusals: three bytes, the low byte of each result of register_cmds (0xc0 is -64, E_CMD_RANGE)
  */
 
-typedef unsigned int u32;
-typedef unsigned char u8;
+#include "dk_api.h"
 
-typedef int (*svc_handler)(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out);
-
-struct api {
-    u32 version, size, device, runtime;
-    u32 (*import)(const char *name);
-    void *(*alloc)(u32 size);
-    void (*free)(void *p);
-    int (*store_read)(const char *path, void *dst, u32 cap);
-    void (*log)(const char *msg, u32 value);
-    u32 memcpy_, memset_, memcmp_, muldi3_, udivdi3_, umoddi3_;
-    void (*log_lv)(u32 level, const char *msg, u32 value);
-    int (*register_cmds)(u32 first, u32 count, svc_handler handler);
-};
+typedef uint32_t u32;
+typedef uint8_t u8;
 
 u8 svc_refused[3];
 
-static int echo(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
+static int32_t echo(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     u32 i;
     (void)cmd;
@@ -38,7 +26,7 @@ static int echo(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     return (int)len;
 }
 
-static int refusals(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
+static int32_t refusals(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     (void)cmd;
     (void)seq;
@@ -50,13 +38,13 @@ static int refusals(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     return 3;
 }
 
-int dkm_init(const struct api *api)
+int32_t dkm_init(const dk_api *api)
 {
     int ok = api->register_cmds(0x3e, 1, echo);
     api->register_cmds(0x3f, 1, refusals);
     svc_refused[0] = (u8)api->register_cmds(0x10, 1, echo);  /* outside every reserved range */
     svc_refused[1] = (u8)api->register_cmds(0x3e, 1, echo);  /* over a registered one */
     svc_refused[2] = (u8)api->register_cmds(0x38, 0, echo);  /* empty */
-    api->log("svc-echo registered", (u32)ok);
+    api->log((const u8 *)"svc-echo registered", (u32)ok);
     return 0;
 }

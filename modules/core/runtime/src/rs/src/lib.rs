@@ -120,8 +120,8 @@ extern "C" {
     static dkrt_device_name: u32;
     /// The interface of core/input (`input_key(u32 code, u32 down) -> int`, `input_turn(u32 encoder, int delta) -> int`), importable by name by a
     /// module; each resolves to 0 when core/input is not in the image (`[object] optional`), and the import is then not found.
-    fn input_key();
-    fn input_turn();
+    fn input_key(code: u32, down: u32) -> i32;
+    fn input_turn(encoder: u32, delta: i32) -> i32;
     /// core/remote-open: present in a patch set that starts with the REMOTE switch on (0 without it).
     fn remote_open();
     /// `cpushl` over a byte range (both caches), `src/cf/tramp.s`.
@@ -280,62 +280,107 @@ const fn nm(s: &[u8]) -> [u8; 28] {
     o
 }
 
+/// The names of `IMPORTS`, in its order; checked against `[[import]]` of `sdk/sdk.toml` below.
+const NAMES: [&[u8]; 13] = [
+    b"fw_block_read",
+    b"fw_alloc",
+    b"fw_free",
+    b"memcpy",
+    b"memset",
+    b"memcmp",
+    b"__muldi3",
+    b"__udivdi3",
+    b"__umoddi3",
+    b"input_key",
+    b"input_turn",
+    b"remote_enabled",
+    b"dkrt_blocks",
+];
+
+const fn names_match(ours: &[&[u8]], sdk: &[&str]) -> bool {
+    if ours.len() != sdk.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < ours.len() {
+        let (a, b) = (ours[i], sdk[i].as_bytes());
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut j = 0;
+        while j < a.len() {
+            if a[j] != b[j] {
+                return false;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    true
+}
+
+const _: () = assert!(names_match(&NAMES, &dkrt_sdk::api::IMPORT_NAMES), "IMPORTS names differ from [[import]] of sdk/sdk.toml");
+const _: dkrt_sdk::api::DkrtBlocksFn = dkrt_blocks;
+const _: dkrt_sdk::api::InputKeyFn = input_key;
+const _: dkrt_sdk::api::InputTurnFn = input_turn;
+const _: dkrt_sdk::api::RemoteEnabledFn = remote_enabled;
+
 /// The names a module may import. Firmware functions come from patch-time anchors (`dkfw`); the helpers are this
 /// object's own copies, so a module need not carry them.
 pub static IMPORTS: Imports = Imports([
     Import {
-        name: nm(b"fw_block_read"),
+        name: nm(NAMES[0]),
         addr: dkfw::storage::block_read as *const (),
     },
     Import {
-        name: nm(b"fw_alloc"),
+        name: nm(NAMES[1]),
         addr: dkfw::mem::new as *const (),
     },
     Import {
-        name: nm(b"fw_free"),
+        name: nm(NAMES[2]),
         addr: dkfw::mem::free as *const (),
     },
     Import {
-        name: nm(b"memcpy"),
+        name: nm(NAMES[3]),
         addr: memcpy as *const (),
     },
     Import {
-        name: nm(b"memset"),
+        name: nm(NAMES[4]),
         addr: memset as *const (),
     },
     Import {
-        name: nm(b"memcmp"),
+        name: nm(NAMES[5]),
         addr: memcmp as *const (),
     },
     Import {
-        name: nm(b"__muldi3"),
+        name: nm(NAMES[6]),
         addr: __muldi3 as *const (),
     },
     Import {
-        name: nm(b"__udivdi3"),
+        name: nm(NAMES[7]),
         addr: __udivdi3 as *const (),
     },
     Import {
-        name: nm(b"__umoddi3"),
+        name: nm(NAMES[8]),
         addr: __umoddi3 as *const (),
     },
     // core/input: press a key, turn an encoder (the address is 0 without the module)
     Import {
-        name: nm(b"input_key"),
+        name: nm(NAMES[9]),
         addr: input_key as *const (),
     },
     Import {
-        name: nm(b"input_turn"),
+        name: nm(NAMES[10]),
         addr: input_turn as *const (),
     },
     // the REMOTE switch (the guard of the panel commands)
     Import {
-        name: nm(b"remote_enabled"),
+        name: nm(NAMES[11]),
         addr: remote_enabled as *const (),
     },
     // the 1500 Hz block clock (`dkrt_blocks`), for a module that wants to measure time
     Import {
-        name: nm(b"dkrt_blocks"),
+        name: nm(NAMES[12]),
         addr: dkrt_blocks as *const (),
     },
 ]);
@@ -412,7 +457,7 @@ unsafe extern "C" fn api_log(msg: *const u8, value: u32) {
 unsafe extern "C" fn api_log_lv(level: u32, msg: *const u8, value: u32) {
     log_at(level, msg, value);
 }
-unsafe extern "C" fn api_register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::ServiceCmd>) -> i32 {
+unsafe extern "C" fn api_register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::api::ServiceCmd>) -> i32 {
     upload::register_cmds(first, count, handler)
 }
 

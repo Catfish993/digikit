@@ -8,7 +8,7 @@
 _Static_assert(sizeof(u32) == sizeof(uint32_t) && UINT_MAX == UINT32_MAX,
                "remote pacing requires 32-bit unsigned int");
 
-static svc_handler handlers[256];
+static dk_service_cmd *handlers[256];
 static uint32_t blocks;
 static unsigned calls, last_encoder;
 static int last_delta, callback_result;
@@ -24,13 +24,13 @@ int input_turn(u32 encoder, int delta)
     return callback_result;
 }
 
-static int register_cmds(u32 first, u32 count, svc_handler handler)
+static int32_t register_cmds(u32 first, u32 count, dk_service_cmd *handler)
 {
     assert(first < 256 && count == 1 && !handlers[first]);
     handlers[first] = handler;
     return 0;
 }
-static void log_message(const char *message, u32 value) { (void)message; assert(value == 0); }
+static void log_message(const u8 *message, u32 value) { (void)message; assert(value == 0); }
 
 static void accepted(u32 encoder, int delta, int expected)
 {
@@ -52,7 +52,7 @@ static void accepted(u32 encoder, int delta, int expected)
 
 int main(void)
 {
-    struct api api = {0};
+    dk_api api = {0};
     api.register_cmds = register_cmds;
     api.log = log_message;
     assert(dkm_init(&api) == 0);

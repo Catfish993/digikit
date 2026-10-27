@@ -21,6 +21,12 @@ pub const FX_INC_OUT: &str = "sdk/dk_fx.inc";
 pub const C_MACHINE_OUT: &str = "sdk/dk_machine_consts.h";
 /// The generated C header of the FX contract's numbers, relative to the repository root.
 pub const C_FX_OUT: &str = "sdk/dk_fx_consts.h";
+/// The generated C header of the machine contract's structs and entry points, relative to the repository root.
+pub const C_MACHINE_VIEW_OUT: &str = "sdk/dk_machine.h";
+/// The generated C header of the FX contract's structs and entry point, relative to the repository root.
+pub const C_FX_VIEW_OUT: &str = "sdk/dk_fx.h";
+/// The generated C header of the Api table, the imports and the `.dkm` entry points, relative to the repository root.
+pub const C_API_OUT: &str = "sdk/dk_api.h";
 /// The generated Python protocol numbers, relative to the repository root.
 pub const PROTO_PY_OUT: &str = "tools/device/dkproto.py";
 /// The generated Rust protocol numbers of the host client, relative to the repository root.
@@ -45,6 +51,83 @@ struct Sdk {
     capacity: Capacity,
     settings: Settings,
     load: Load,
+    api: Api,
+    import: Vec<Import>,
+    dkm: Dkm,
+}
+/// The table a `.dkm` module gets in `dkm_init`: `[api]` of `sdk/sdk.toml`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Api {
+    /// The fields in order; each is 4 bytes. A field is only appended.
+    fields: Vec<ApiField>,
+    /// Function types by name (`service_cmd`); as a parameter or field a typedef name is a nullable function pointer.
+    types: BTreeMap<String, String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApiField {
+    name: String,
+    /// `u32`, `addr` (a helper's address) or a function signature `<ret> (<type> <name>, ...)`.
+    r#type: String,
+    doc: String,
+    /// The api minor that appended the field.
+    since: Option<u8>,
+}
+/// A name a module may import: `[[import]]`, in the order of the runtime's table.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Import {
+    name: String,
+    /// Required unless `kind` is `helper`.
+    sig: Option<String>,
+    doc: String,
+    /// The module whose presence the import needs (it is 0 without it).
+    requires: Option<String>,
+    /// `helper`: a compiler helper (no prototype); `fw`: a firmware function.
+    kind: Option<String>,
+}
+/// The entry points of a `.dkm`: `[dkm]`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Dkm {
+    init: DkmEntry,
+    fini: DkmEntry,
+    slot: DkmSlot,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DkmEntry {
+    sig: String,
+    doc: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DkmSlot {
+    sig: String,
+    doc: String,
+    /// `dkm_slot_0` to `dkm_slot_<count - 1>`.
+    count: u32,
+}
+/// The typed C view of a contract: `[machine.c]`, `[fx.c]`. Entries are `"<type> <name> // doc"`; `fns` are `"<ret> <name>(<args>) // doc"`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CView {
+    /// The input struct's fields; the names equal the contract's name list in order.
+    #[serde(alias = "voice_in", alias = "fx_in")]
+    pub input: Vec<String>,
+    /// The descriptor struct's fields; the names equal the contract's name list in order.
+    pub desc: Vec<String>,
+    pub fns: Vec<String>,
+    /// A block comment after the banner of the header.
+    #[serde(default)]
+    pub intro: Option<String>,
+    /// A block comment before the entry points: register rules and calling convention.
+    #[serde(default)]
+    pub rules: Option<String>,
+    /// A block comment above the descriptor struct (replaces the short default).
+    #[serde(default)]
+    pub desc_doc: Option<String>,
 }
 /// The SysEx protocol's numbers: `[protocol]` of `sdk/sdk.toml`.
 #[derive(Deserialize)]
@@ -152,12 +235,17 @@ pub struct Machine {
     pub voice_in: Vec<String>,
     /// Field names of `struct dk_machine_desc` in order (each field is 4 bytes).
     pub desc: Vec<String>,
+    /// The typed view that `sdk/dk_machine.h` is written from.
+    pub c: CView,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineConst {
     pub name: String,
     pub value: u32,
+    /// Printed as a comment above the constant in the consts header.
+    #[serde(default)]
+    pub doc: Option<String>,
 }
 
 /// The FX contract's numbers: `[fx]` of `sdk/sdk.toml`.
@@ -169,6 +257,8 @@ pub struct Fx {
     pub fx_in: Vec<String>,
     /// Field names of `struct dk_fx_desc` in order (each field is 4 bytes).
     pub desc: Vec<String>,
+    /// The typed view that `sdk/dk_fx.h` is written from.
+    pub c: CView,
 }
 
 /// `[fx]` of a `sdk/sdk.toml` text (for the header test).
@@ -403,6 +493,7 @@ fn parse(text: &str) -> Result<Sdk> {
             }
         }
     }
+    check_views(&sdk)?;
     Ok(sdk)
 }
 
@@ -819,15 +910,17 @@ fn fx_inc(sdk: &Sdk) -> String {
 /// `.inc` file; a `_MAGIC` is printed in hex and `DK_LEVEL_BOUND_BITS` also as the float `DK_LEVEL_BOUND`.
 fn c_consts(
     guard: &str,
-    view: &str,
     consts: &[MachineConst],
     enums: &[(&str, fn(&str) -> bool)],
     prefix: &str,
     structs: [(&str, &[String]); 2],
 ) -> String {
-    let mut s = format!("/* {HEADER} */\n/* The hand-written view is sdk/{view}. */\n#ifndef {guard}\n#define {guard}\n\n");
+    let mut s = format!("/* {HEADER} */\n#ifndef {guard}\n#define {guard}\n\n");
     let in_enum = |n: &str| enums.iter().any(|(_, f)| f(n));
     for c in consts.iter().filter(|c| !in_enum(&c.name)) {
+        if let Some(d) = &c.doc {
+            let _ = writeln!(s, "/* {d} */");
+        }
         if c.name.ends_with("_MAGIC") {
             let _ = writeln!(s, "#define {} 0x{:08x}u", c.name, c.value);
         } else {
@@ -840,6 +933,9 @@ fn c_consts(
     for (ty, f) in enums {
         let _ = writeln!(s, "\ntypedef enum {{");
         for c in consts.iter().filter(|c| f(&c.name)) {
+            if let Some(d) = &c.doc {
+                let _ = writeln!(s, "    /* {d} */");
+            }
             let _ = writeln!(s, "    {} = {},", c.name, c.value);
         }
         let _ = writeln!(s, "}} {ty};");
@@ -864,7 +960,6 @@ fn machine_consts_h(sdk: &Sdk) -> String {
     let m = &sdk.machine;
     c_consts(
         "DK_MACHINE_CONSTS_H",
-        "dk_machine.h",
         &m.consts,
         &[
             ("dk_status", is_machine_status),
@@ -880,7 +975,6 @@ fn fx_consts_h(sdk: &Sdk) -> String {
     let m = &sdk.fx;
     c_consts(
         "DK_FX_CONSTS_H",
-        "dk_fx.h",
         &m.consts,
         &[("dk_fx_status", is_fx_status)],
         "DK_FX_",
@@ -900,11 +994,607 @@ fn is_fx_status(n: &str) -> bool {
     n == "DK_FX_OK"
 }
 
+// ---- the Api table, the imports and the typed C views -------------------------------------------------------------------
+
+const BASES: [&str; 11] = [
+    "u8", "u16", "u32", "i8", "i16", "i32", "bool", "void", "char", "float", "api",
+];
+/// The import name field of the runtime's table is 28 bytes, NUL-terminated.
+const IMPORT_NAME_MAX: usize = 27;
+
+/// A type of a signature: `const`, a base, the number of `*`; `td` marks a name of `[api.types]` (a function type).
+#[derive(Clone)]
+struct Ty {
+    is_const: bool,
+    base: String,
+    ptr: usize,
+    td: bool,
+}
+
+struct Sig {
+    ret: Ty,
+    args: Vec<(Ty, String)>,
+}
+
+enum FieldKind {
+    U32,
+    Addr,
+    Fn(Sig),
+}
+
+/// A field of a typed struct view: type, name, doc.
+struct CField(Ty, String, String);
+
+/// The typed view of a contract: the two structs and the entry points (name, signature, doc).
+struct View {
+    input: Vec<CField>,
+    desc: Vec<CField>,
+    fns: Vec<(String, Sig, String)>,
+}
+
+fn is_ident(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !s.starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// `u8 *out` -> (`u8 *`, `out`); the name is empty when the text ends in `*` or a space-free type.
+fn split_name(s: &str) -> (&str, &str) {
+    let s = s.trim();
+    let i = s
+        .char_indices()
+        .rev()
+        .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_'))
+        .map_or(0, |(i, c)| i + c.len_utf8());
+    (s[..i].trim(), &s[i..])
+}
+
+fn parse_ty(
+    what: &str,
+    s: &str,
+    types: &BTreeMap<String, String>,
+    extra: &[&str],
+) -> Result<Ty> {
+    let ptr = s.matches('*').count();
+    let words: Vec<&str> = s.split(|c: char| c == '*' || c.is_whitespace()).filter(|w| !w.is_empty()).collect();
+    let (is_const, base) = match words.as_slice() {
+        ["const", b] => (true, *b),
+        [b] => (false, *b),
+        _ => return Err(err!("{SOURCE}: {what}: bad type {s:?}")),
+    };
+    let td = types.contains_key(base);
+    if !(td || BASES.contains(&base) || extra.contains(&base)) {
+        return Err(err!("{SOURCE}: {what}: unknown type {base:?}"));
+    }
+    Ok(Ty {
+        is_const,
+        base: base.to_string(),
+        ptr,
+        td,
+    })
+}
+
+/// A signature `<ret> [name](<type> <name>, ...)`: the name of the function when there is one.
+fn parse_fn(
+    what: &str,
+    s: &str,
+    types: &BTreeMap<String, String>,
+    extra: &[&str],
+) -> Result<(Option<String>, Sig)> {
+    let (Some(open), true) = (s.find('('), s.trim_end().ends_with(')')) else {
+        return Err(err!("{SOURCE}: {what}: {s:?} is not a signature"));
+    };
+    let head = s[..open].trim();
+    let inner = s.trim_end();
+    let inner = &inner[open + 1..inner.len() - 1];
+    let (t, n) = split_name(head);
+    let type_word = |w: &str| {
+        w == "const" || BASES.contains(&w) || types.contains_key(w) || extra.contains(&w)
+    };
+    let (rt, name) = if !n.is_empty() && !type_word(n) {
+        (t, Some(n.to_string()))
+    } else {
+        (head, None)
+    };
+    let ret = parse_ty(what, rt, types, extra)?;
+    let mut args = Vec::new();
+    if !inner.trim().is_empty() {
+        for a in inner.split(',') {
+            let (t, n) = split_name(a);
+            if t.is_empty() || !is_ident(n) {
+                return Err(err!("{SOURCE}: {what}: argument {a:?} needs a type and a name"));
+            }
+            args.push((parse_ty(what, t, types, extra)?, n.to_string()));
+        }
+    }
+    Ok((name, Sig { ret, args }))
+}
+
+fn camel(s: &str) -> String {
+    s.split('_')
+        .filter(|p| !p.is_empty())
+        .map(|p| p[..1].to_uppercase() + &p[1..])
+        .collect()
+}
+
+fn rust_ty(t: &Ty) -> String {
+    let base = match t.base.as_str() {
+        "u8" | "char" => "u8".to_string(),
+        "void" if t.ptr > 0 => "u8".to_string(),
+        "void" => "()".to_string(),
+        "bool" => "bool".to_string(),
+        "float" => "f32".to_string(),
+        "api" => "Api".to_string(),
+        b if t.td => {
+            if t.ptr == 0 {
+                return format!("Option<{}>", camel(b));
+            }
+            camel(b)
+        }
+        b => b.to_string(),
+    };
+    let mut s = base;
+    for i in 0..t.ptr {
+        s = format!("*{} {s}", if i == 0 && t.is_const { "const" } else { "mut" });
+    }
+    s
+}
+
+/// `unsafe extern "C" fn(a: u32) -> i32` (the result is left out for `void`).
+fn rust_fn(sig: &Sig) -> String {
+    let args: Vec<String> = sig
+        .args
+        .iter()
+        .map(|(t, n)| format!("{n}: {}", rust_ty(t)))
+        .collect();
+    let ret = if sig.ret.base == "void" && sig.ret.ptr == 0 {
+        String::new()
+    } else {
+        format!(" -> {}", rust_ty(&sig.ret))
+    };
+    format!("unsafe extern \"C\" fn({}){ret}", args.join(", "))
+}
+
+fn c_ty(t: &Ty) -> String {
+    let base = match t.base.as_str() {
+        "u8" => "uint8_t".to_string(),
+        "u16" => "uint16_t".to_string(),
+        "u32" => "uint32_t".to_string(),
+        "i8" => "int8_t".to_string(),
+        "i16" => "int16_t".to_string(),
+        "i32" => "int32_t".to_string(),
+        "bool" => "_Bool".to_string(),
+        "api" => "dk_api".to_string(),
+        b if t.td => format!("dk_{b}"),
+        b => b.to_string(),
+    };
+    let ptr = t.ptr + usize::from(t.td);
+    let mut s = String::new();
+    if t.is_const {
+        s.push_str("const ");
+    }
+    s.push_str(&base);
+    if ptr > 0 {
+        s.push(' ');
+        s.push_str(&"*".repeat(ptr));
+    }
+    s
+}
+
+/// A C declaration of `name` with type `t` (the `*` binds to the name).
+fn c_decl(t: &Ty, name: &str) -> String {
+    let s = c_ty(t);
+    if s.ends_with('*') {
+        format!("{s}{name}")
+    } else {
+        format!("{s} {name}")
+    }
+}
+
+fn c_args(sig: &Sig) -> String {
+    if sig.args.is_empty() {
+        return "void".to_string();
+    }
+    let a: Vec<String> = sig.args.iter().map(|(t, n)| c_decl(t, n)).collect();
+    a.join(", ")
+}
+
+/// The `[api.types]`: (name, signature).
+fn api_types(sdk: &Sdk) -> Result<Vec<(&String, Sig)>> {
+    let none = BTreeMap::new();
+    let mut v = Vec::new();
+    for (n, s) in &sdk.api.types {
+        let what = format!("[api.types] {n}");
+        let (name, sig) = parse_fn(&what, s, &none, &[])?;
+        if name.is_some() || !is_ident(n) || BASES.contains(&n.as_str()) {
+            return Err(err!("{SOURCE}: {what}: bad name or signature"));
+        }
+        v.push((n, sig));
+    }
+    Ok(v)
+}
+
+/// The fields of the Api table with their kinds, checked.
+fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
+    api_types(sdk)?;
+    let fields = &sdk.api.fields;
+    let mut v = Vec::new();
+    for (i, f) in fields.iter().enumerate() {
+        let what = format!("[api] field {}", f.name);
+        if !is_ident(&f.name) || fields[..i].iter().any(|o| o.name == f.name) {
+            return Err(err!("{SOURCE}: {what}: bad name or name twice"));
+        }
+        if f.doc.is_empty() || f.doc.contains("*/") {
+            return Err(err!("{SOURCE}: {what}: needs a doc without a comment end"));
+        }
+        if let Some(s) = f.since {
+            if s == 0 || s > sdk.contract.api[1] {
+                return Err(err!("{SOURCE}: {what}: since {s} is not in 1..=[contract] api minor"));
+            }
+        }
+        let kind = match f.r#type.as_str() {
+            "u32" => FieldKind::U32,
+            "addr" => FieldKind::Addr,
+            t if t.contains('(') => {
+                let (name, sig) = parse_fn(&what, t, &sdk.api.types, &[])?;
+                if name.is_some() {
+                    return Err(err!("{SOURCE}: {what}: a field signature has no function name"));
+                }
+                FieldKind::Fn(sig)
+            }
+            t => return Err(err!("{SOURCE}: {what}: unknown type {t:?}")),
+        };
+        v.push((f, kind));
+    }
+    Ok(v)
+}
+
+/// The imports with their signatures, checked.
+fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
+    let mut v = Vec::new();
+    for (i, im) in sdk.import.iter().enumerate() {
+        let what = format!("[[import]] {}", im.name);
+        if !is_ident(&im.name)
+            || im.name.len() > IMPORT_NAME_MAX
+            || sdk.import[..i].iter().any(|o| o.name == im.name)
+        {
+            return Err(err!("{SOURCE}: {what}: bad name, over {IMPORT_NAME_MAX} bytes, or twice"));
+        }
+        if im.doc.is_empty() || im.doc.contains("*/") {
+            return Err(err!("{SOURCE}: {what}: needs a doc without a comment end"));
+        }
+        if !matches!(im.kind.as_deref(), None | Some("helper") | Some("fw")) {
+            return Err(err!("{SOURCE}: {what}: kind is helper or fw"));
+        }
+        let sig = match &im.sig {
+            Some(s) => {
+                let (name, sig) = parse_fn(&what, s, &sdk.api.types, &[])?;
+                if name.is_some() {
+                    return Err(err!("{SOURCE}: {what}: a signature has no function name"));
+                }
+                Some(sig)
+            }
+            None if im.kind.as_deref() == Some("helper") => None,
+            None => return Err(err!("{SOURCE}: {what}: needs a sig")),
+        };
+        v.push((im, sig));
+    }
+    Ok(v)
+}
+
+/// The signatures of `[dkm]`: init, fini, slot.
+fn dkm_sigs(sdk: &Sdk) -> Result<[Sig; 3]> {
+    let mut out = Vec::new();
+    for (n, s) in [
+        ("init", &sdk.dkm.init.sig),
+        ("fini", &sdk.dkm.fini.sig),
+        ("slot", &sdk.dkm.slot.sig),
+    ] {
+        let what = format!("[dkm] {n}");
+        let (name, sig) = parse_fn(&what, s, &sdk.api.types, &[])?;
+        if name.is_some() {
+            return Err(err!("{SOURCE}: {what}: a signature has no function name"));
+        }
+        out.push(sig);
+    }
+    let [a, b, c]: [Sig; 3] = out.try_into().map_err(|_| err!("{SOURCE}: [dkm]"))?;
+    Ok([a, b, c])
+}
+
+fn c_field(what: &str, entry: &str) -> Result<CField> {
+    let (decl, doc) = entry.split_once(" // ").unwrap_or((entry, ""));
+    let (t, n) = split_name(decl);
+    if t.is_empty() || !is_ident(n) {
+        return Err(err!("{SOURCE}: {what}: {entry:?} needs a type and a name"));
+    }
+    let ty = parse_ty(what, t, &BTreeMap::new(), &[])?;
+    if !(ty.ptr > 0 || ["u32", "i32", "float"].contains(&ty.base.as_str())) {
+        return Err(err!("{SOURCE}: {what}: {n} is not 4 bytes"));
+    }
+    Ok(CField(ty, n.to_string(), doc.to_string()))
+}
+
+/// A typed view `[machine.c]` / `[fx.c]`: the field names must equal the contract's name lists in order.
+fn c_view(
+    what: &str,
+    c: &CView,
+    input_names: &[String],
+    desc_names: &[String],
+    extra: &[&str],
+) -> Result<View> {
+    let fields = |kind: &str, list: &[String], names: &[String]| -> Result<Vec<CField>> {
+        let what = format!("{what} {kind}");
+        let v = list
+            .iter()
+            .map(|e| c_field(&what, e))
+            .collect::<Result<Vec<_>>>()?;
+        let got: Vec<&str> = v.iter().map(|f| f.1.as_str()).collect();
+        let want: Vec<&str> = names.iter().map(String::as_str).collect();
+        if got != want {
+            return Err(err!(
+                "{SOURCE}: {what}: the names {got:?} are not the name list {want:?}"
+            ));
+        }
+        Ok(v)
+    };
+    let input = fields("input", &c.input, input_names)?;
+    let desc = fields("desc", &c.desc, desc_names)?;
+    let mut fns = Vec::new();
+    for e in &c.fns {
+        let (decl, doc) = e.split_once(" // ").unwrap_or((e, ""));
+        let (name, sig) = parse_fn(&format!("{what} fns"), decl, &BTreeMap::new(), extra)?;
+        let name = name.ok_or_else(|| err!("{SOURCE}: {what} fns: {e:?} needs a function name"))?;
+        fns.push((name, sig, doc.to_string()));
+    }
+    Ok(View { input, desc, fns })
+}
+
+fn machine_view(sdk: &Sdk) -> Result<View> {
+    let m = &sdk.machine;
+    c_view("[machine.c]", &m.c, &m.voice_in, &m.desc, &["dk_voice_in"])
+}
+
+fn fx_view(sdk: &Sdk) -> Result<View> {
+    let m = &sdk.fx;
+    c_view("[fx.c]", &m.c, &m.fx_in, &m.desc, &["dk_fx_in"])
+}
+
+/// Everything that `render` reads from the tables of this part, checked once at the parse.
+fn check_views(sdk: &Sdk) -> Result<()> {
+    api_fields(sdk)?;
+    imports(sdk)?;
+    dkm_sigs(sdk)?;
+    if sdk.dkm.slot.count == 0 || sdk.dkm.slot.count > 32 {
+        return Err(err!("{SOURCE}: [dkm] slot count is 1 to 32"));
+    }
+    machine_view(sdk)?;
+    fx_view(sdk)?;
+    Ok(())
+}
+
+/// The `pub mod api` of `gen_sdk.rs`: the `Api` table, its function types and the import names.
+fn rust_api(sdk: &Sdk) -> Result<String> {
+    let major = sdk.contract.api[0];
+    let mut s = String::from(
+        "/// The table `init` receives (`[api]`; also reachable as `dkrt_api`). Appended-to only; check `size`.\npub mod api {\n",
+    );
+    for (n, sig) in api_types(sdk)? {
+        let _ = writeln!(s, "    /// The function type `{n}` of `[api.types]`.");
+        let _ = writeln!(s, "    pub type {} = {};\n", camel(n), rust_fn(&sig));
+    }
+    s.push_str("    #[repr(C)]\n    pub struct Api {\n");
+    for (f, kind) in api_fields(sdk)? {
+        match f.since {
+            Some(m) => {
+                let _ = writeln!(s, "        /// (api {major}.{m}) {}", f.doc);
+            }
+            None => {
+                let _ = writeln!(s, "        /// {}", f.doc);
+            }
+        }
+        let ty = match &kind {
+            FieldKind::U32 => "u32".to_string(),
+            FieldKind::Addr => "usize".to_string(),
+            FieldKind::Fn(sig) => rust_fn(sig),
+        };
+        let _ = writeln!(s, "        pub {}: {ty},", f.name);
+    }
+    s.push_str("    }\n\n");
+    let imps = imports(sdk)?;
+    s.push_str("    /// The names a module may import, in the order of the runtime's table (`[[import]]`).\n");
+    let _ = writeln!(s, "    pub const IMPORT_NAMES: [&str; {}] = [", imps.len());
+    for (im, _) in &imps {
+        let _ = writeln!(s, "        {:?},", im.name);
+    }
+    s.push_str("    ];\n");
+    for (im, sig) in &imps {
+        let (None, Some(sig)) = (&im.kind, sig) else {
+            continue;
+        };
+        let _ = writeln!(s, "\n    /// `{}`: {}", im.name, im.doc);
+        let _ = writeln!(s, "    pub type {}Fn = {};", camel(&im.name), rust_fn(sig));
+    }
+    s.push_str("}\n");
+    Ok(s)
+}
+
+/// `sdk/dk_api.h`: the Api table, the imports and the entry points of a `.dkm`.
+fn api_h(sdk: &Sdk) -> Result<String> {
+    let major = sdk.contract.api[0];
+    let fields = api_fields(sdk)?;
+    let mut s = format!(
+        "/* {HEADER} */\n/* sdk/dk_api.h -- the Api table a .dkm module gets in dkm_init, the names it may import and its entry points (docs/design/digikit-dkm.md).\n   ColdFire: pointers are 32 bits (the size checks are skipped on other targets). */\n#ifndef DK_API_H\n#define DK_API_H\n\n#include <stddef.h>\n#include <stdint.h>\n\n"
+    );
+    for (n, sig) in api_types(sdk)? {
+        let _ = writeln!(s, "/* The function type `{n}` of [api.types]. */");
+        let _ = writeln!(
+            s,
+            "typedef {};\n",
+            c_decl(&sig.ret, &format!("dk_{n}({})", c_args(&sig)))
+        );
+    }
+    s.push_str("/* The table `dkm_init` receives. Appended-to only; check `size`. */\ntypedef struct dk_api {\n");
+    let mut names = Vec::new();
+    for (f, kind) in &fields {
+        let (decl, cname) = match kind {
+            FieldKind::U32 => (format!("uint32_t {}", f.name), f.name.clone()),
+            FieldKind::Addr => (
+                format!("uint32_t {}_addr", f.name),
+                format!("{}_addr", f.name),
+            ),
+            FieldKind::Fn(sig) => (
+                c_decl(&sig.ret, &format!("(*{})({})", f.name, c_args(sig))),
+                f.name.clone(),
+            ),
+        };
+        let doc = match f.since {
+            Some(m) => format!("(api {major}.{m}) {}", f.doc),
+            None => f.doc.clone(),
+        };
+        let d = format!("    {decl};");
+        let _ = writeln!(s, "{d:<44} /* {doc} */");
+        names.push(cname);
+    }
+    s.push_str("} dk_api;\n\n#if UINTPTR_MAX == 0xffffffffu\n");
+    let _ = writeln!(
+        s,
+        "_Static_assert(sizeof(dk_api) == {}, \"dk_api size\");",
+        names.len() * 4
+    );
+    for (i, n) in names.iter().enumerate() {
+        let _ = writeln!(
+            s,
+            "_Static_assert(offsetof(dk_api, {n}) == {}, \"dk_api.{n}\");",
+            i * 4
+        );
+    }
+    s.push_str("#endif\n\n/* Imports: names the loader resolves in the runtime's table (Api.import gives the address at run time). */\n");
+    for (im, sig) in imports(sdk)? {
+        let Some(sig) = sig.filter(|_| im.kind.as_deref() != Some("helper")) else {
+            continue;
+        };
+        let need = match &im.requires {
+            Some(r) => format!(" Needs {r}: the import is not found without it."),
+            None => String::new(),
+        };
+        let _ = writeln!(s, "\n/* {}{need} */", im.doc);
+        let _ = writeln!(
+            s,
+            "{};",
+            c_decl(&sig.ret, &format!("{}({})", im.name, c_args(&sig)))
+        );
+    }
+    let [init, fini, slot] = dkm_sigs(sdk)?;
+    s.push_str("\n/* Entry points of a .dkm (symbols of its object). */\n");
+    let _ = writeln!(s, "\n/* {} */", sdk.dkm.init.doc);
+    let _ = writeln!(s, "{};", c_decl(&init.ret, &format!("dkm_init({})", c_args(&init))));
+    let _ = writeln!(s, "\n/* {} */", sdk.dkm.fini.doc);
+    let _ = writeln!(s, "{};", c_decl(&fini.ret, &format!("dkm_fini({})", c_args(&fini))));
+    let _ = writeln!(s, "\n/* {} */", sdk.dkm.slot.doc);
+    for i in 0..sdk.dkm.slot.count {
+        let _ = writeln!(
+            s,
+            "{};",
+            c_decl(&slot.ret, &format!("dkm_slot_{i}({})", c_args(&slot)))
+        );
+    }
+    let _ = writeln!(s, "\n#define DK_API_MINOR {}", sdk.contract.api[1]);
+    s.push_str("\n#endif /* DK_API_H */\n");
+    Ok(s)
+}
+
+/// A struct of a typed view as C text.
+fn c_struct(s: &mut String, name: &str, comment: &str, fields: &[CField]) {
+    let _ = writeln!(s, "/* {comment} */\ntypedef struct {name} {{");
+    for CField(t, n, doc) in fields {
+        let d = format!("    {};", c_decl(t, n));
+        let _ = writeln!(s, "{d:<39} /* {doc} */");
+    }
+    let _ = writeln!(s, "}} {name};\n");
+}
+
+/// A typed C view header: `purpose` line, the include of the consts header, the two structs, the entry points.
+fn view_h(
+    guard: &str,
+    file: &str,
+    purpose: &str,
+    consts_h: &str,
+    structs: [(&str, &str, &[CField]); 2],
+    fns: &[(String, Sig, String)],
+    c: &CView,
+) -> String {
+    let mut s = format!("/* {HEADER} */\n/* sdk/{file} -- {purpose} */\n");
+    if let Some(t) = &c.intro {
+        let _ = writeln!(s, "/* {} */", t.trim());
+    }
+    let _ = write!(
+        s,
+        "#ifndef {guard}\n#define {guard}\n\n#include <stdint.h>\n#include \"{consts_h}\"\n\n"
+    );
+    for (i, (name, comment, fields)) in structs.into_iter().enumerate() {
+        let comment = match (&c.desc_doc, i) {
+            (Some(d), 1) => d.trim(),
+            _ => comment,
+        };
+        c_struct(&mut s, name, comment, fields);
+    }
+    if let Some(t) = &c.rules {
+        let _ = writeln!(s, "/* {} */\n", t.trim());
+    }
+    for (name, sig, doc) in fns {
+        let _ = writeln!(s, "/* {doc} */");
+        let _ = writeln!(
+            s,
+            "{};\n",
+            c_decl(&sig.ret, &format!("{name}({})", c_args(sig)))
+        );
+    }
+    let _ = writeln!(s, "#endif /* {guard} */");
+    s
+}
+
+/// `sdk/dk_machine.h`: the structs and the entry points of the machine contract.
+fn machine_h(sdk: &Sdk) -> Result<String> {
+    let v = machine_view(sdk)?;
+    Ok(view_h(
+        "DK_MACHINE_H",
+        "dk_machine.h",
+        "the machine contract, version DK_MACHINE_V1 (docs/design/module-sdk.md 4.1): structs and SHARC+ entry points.",
+        "dk_machine_consts.h",
+        [
+            ("dk_voice_in", "per call, built by the adapter", &v.input),
+            ("dk_machine_desc", "one per module in read-only data, found by the manifest's symbol", &v.desc),
+        ],
+        &v.fns,
+        &sdk.machine.c,
+    ))
+}
+
+/// `sdk/dk_fx.h`: the structs and the entry point of the FX contract.
+fn fx_h(sdk: &Sdk) -> Result<String> {
+    let v = fx_view(sdk)?;
+    Ok(view_h(
+        "DK_FX_H",
+        "dk_fx.h",
+        "the FX contract, version DK_FX_V1 (docs/design/module-sdk.md 4.2): structs and the SHARC+ entry point.",
+        "dk_fx_consts.h",
+        [
+            ("dk_fx_in", "per call, built by the adapter", &v.input),
+            ("dk_fx_desc", "one per module in read-only data", &v.desc),
+        ],
+        &v.fns,
+        &sdk.fx.c,
+    ))
+}
+
 /// The outputs from the text of `sdk/sdk.toml`: (path relative to the repository root, text).
 pub fn render(text: &str) -> Result<Vec<(String, String)>> {
     let sdk = parse(text)?;
+    let mut gen_sdk = rust(&sdk);
+    gen_sdk.push('\n');
+    gen_sdk.push_str(&rust_api(&sdk)?);
     Ok(vec![
-        (RUST_OUT.to_string(), rust(&sdk)),
+        (RUST_OUT.to_string(), gen_sdk),
         (PY_OUT.to_string(), python(&sdk)?),
         (INC_OUT.to_string(), machine_inc(&sdk)),
         (FX_INC_OUT.to_string(), fx_inc(&sdk)),
@@ -913,6 +1603,9 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
         (PROTO_PY_OUT.to_string(), python_proto(&sdk)),
         (PROTO_RS_OUT.to_string(), rust_proto(&sdk)),
         (PROTO_TS_OUT.to_string(), ts_proto(&sdk)),
+        (C_MACHINE_VIEW_OUT.to_string(), machine_h(&sdk)?),
+        (C_FX_VIEW_OUT.to_string(), fx_h(&sdk)?),
+        (C_API_OUT.to_string(), api_h(&sdk)?),
     ])
 }
 

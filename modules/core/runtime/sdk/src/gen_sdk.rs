@@ -201,3 +201,76 @@ pub mod load {
     pub const E_CONTRACT: i32 = -48;
     pub const E_TABLE: i32 = -49;
 }
+
+/// The table `init` receives (`[api]`; also reachable as `dkrt_api`). Appended-to only; check `size`.
+pub mod api {
+    /// The function type `service_cmd` of `[api.types]`.
+    pub type ServiceCmd = unsafe extern "C" fn(cmd: u32, seq: u32, body: *const u8, len: u32, out: *mut u8) -> i32;
+
+    #[repr(C)]
+    pub struct Api {
+        /// Version of the `Api` table layout (`API_VERSION`).
+        pub version: u32,
+        /// `size_of::<Api>()` in the runtime that built it.
+        pub size: u32,
+        /// The device's `[digikit] id`.
+        pub device: u32,
+        /// The runtime version, packed major << 16 | minor << 8 | patch.
+        pub runtime: u32,
+        /// Address of a firmware function or runtime helper by name (NUL-terminated); 0 when the image has none.
+        pub import: unsafe extern "C" fn(name: *const u8) -> u32,
+        /// 16-byte aligned block from the module arena (zero is not guaranteed); null when full.
+        pub alloc: unsafe extern "C" fn(size: u32) -> *mut u8,
+        /// Give back a block of `alloc`.
+        pub free: unsafe extern "C" fn(p: *mut u8),
+        /// Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code.
+        pub store_read: unsafe extern "C" fn(path: *const u8, dst: *mut u8, cap: u32) -> i32,
+        /// Append `msg` (NUL-terminated, 24 bytes kept) and `value` to the runtime's log ring.
+        pub log: unsafe extern "C" fn(msg: *const u8, value: u32),
+        /// Address of the runtime's memcpy.
+        pub memcpy: usize,
+        /// Address of the runtime's memset.
+        pub memset: usize,
+        /// Address of the runtime's memcmp.
+        pub memcmp: usize,
+        /// Address of the runtime's __muldi3.
+        pub muldi3: usize,
+        /// Address of the runtime's __udivdi3.
+        pub udivdi3: usize,
+        /// Address of the runtime's __umoddi3.
+        pub umoddi3: usize,
+        /// (api 1.1) Like `log`, with a level: 0 error, 1 warn, 2 info, 3 debug, 4 trace (above 4: 4).
+        pub log_lv: unsafe extern "C" fn(level: u32, msg: *const u8, value: u32),
+        /// (api 1.2) Register the SysEx commands `first .. first + count` with `handler` (docs/design/module-sdk.md, "Service commands"). The range must lie inside one of the ranges sdk/sdk.toml `[protocol.ranges]` reserves and overlap no registered one; else it returns `proto::E_CMD_RANGE`. Call it from `init`; the range is released when the module's `fini` has run. Returns 0.
+        pub register_cmds: unsafe extern "C" fn(first: u32, count: u32, handler: Option<ServiceCmd>) -> i32,
+    }
+
+    /// The names a module may import, in the order of the runtime's table (`[[import]]`).
+    pub const IMPORT_NAMES: [&str; 13] = [
+        "fw_block_read",
+        "fw_alloc",
+        "fw_free",
+        "memcpy",
+        "memset",
+        "memcmp",
+        "__muldi3",
+        "__udivdi3",
+        "__umoddi3",
+        "input_key",
+        "input_turn",
+        "remote_enabled",
+        "dkrt_blocks",
+    ];
+
+    /// `input_key`: Press or release a panel key.
+    pub type InputKeyFn = unsafe extern "C" fn(code: u32, down: u32) -> i32;
+
+    /// `input_turn`: Turn an encoder by `delta`.
+    pub type InputTurnFn = unsafe extern "C" fn(encoder: u32, delta: i32) -> i32;
+
+    /// `remote_enabled`: 1 when the REMOTE switch of the DIGIKIT menu is on (the guard of the panel commands), else 0.
+    pub type RemoteEnabledFn = unsafe extern "C" fn() -> i32;
+
+    /// `dkrt_blocks`: The 1500 Hz block clock, for a module that wants to measure time.
+    pub type DkrtBlocksFn = unsafe extern "C" fn() -> u32;
+}

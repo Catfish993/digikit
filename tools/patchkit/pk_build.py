@@ -331,7 +331,11 @@ def cf_object(sources: list[Path], include_dirs: list[Path] | None = None) -> di
 
 def cf_include_dirs(moddir: Path) -> list[Path]:
     """The include directories of a ColdFire C or assembly object of the module, for the build and for the hash."""
-    return [moddir / "build" / "gen", ROOT / "modules" / "core" / "fw" / "inc"]
+    return [
+        moddir / "build" / "gen",
+        ROOT / "modules" / "core" / "fw" / "inc",
+        ROOT / "sdk",
+    ]
 
 
 def source_hash(moddir: Path, o: dict) -> str | None:

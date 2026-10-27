@@ -33,7 +33,7 @@ fn the_fx_chain_cap_is_the_registrys() {
 fn the_contract_files_are_current() {
     let text = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
     let files = sdkgen::render(&text).unwrap();
-    assert_eq!(files.len(), 9);
+    assert_eq!(files.len(), 12);
     for (rel, text) in files {
         let path = root().join(&rel);
         let have = std::fs::read_to_string(&path).unwrap_or_default();
@@ -44,6 +44,44 @@ fn the_contract_files_are_current() {
             path.display()
         );
     }
+}
+
+/// `text` with its `[api]` fields replaced by `fields` (the lines of the `fields = [...]` array).
+fn with_api(text: &str, fields: &str) -> String {
+    let a = text.find("[api]\n").unwrap();
+    let b = a + text[a..].find("\n[api.types]\n").unwrap() + 1;
+    format!("{}[api]\nfields = [\n{fields}]\n\n{}", &text[..a], &text[b..])
+}
+
+const TWO_FIELDS: &str = "    { name = \"version\", type = \"u32\", doc = \"v\" },\n    { name = \"hook\", type = \"void (u32 a, service_cmd handler)\", doc = \"h\" },\n";
+
+#[test]
+fn the_api_table_is_generated_for_c_and_rust() {
+    let text = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
+    let files = sdkgen::render(&with_api(&text, TWO_FIELDS)).unwrap();
+    let get = |p: &str| &files.iter().find(|f| f.0 == p).unwrap().1;
+    let c = get(sdkgen::C_API_OUT);
+    assert!(c.contains("typedef struct dk_api {"));
+    assert!(c.contains("_Static_assert(sizeof(dk_api) == 8,"));
+    assert!(c.contains("_Static_assert(offsetof(dk_api, hook) == 4,"));
+    // a function type name as a parameter is a nullable pointer
+    assert!(c.contains("void (*hook)(uint32_t a, dk_service_cmd *handler);"));
+    assert!(c.contains("typedef int32_t dk_service_cmd(uint32_t cmd, uint32_t seq,"));
+    let rs = get(sdkgen::RUST_OUT);
+    assert!(rs.contains("pub hook: unsafe extern \"C\" fn(a: u32, handler: Option<ServiceCmd>),"));
+    assert!(rs.contains("pub type ServiceCmd = unsafe extern \"C\" fn(cmd: u32,"));
+    assert!(rs.contains("pub type DkrtBlocksFn = unsafe extern \"C\" fn() -> u32;"));
+}
+
+#[test]
+fn a_bad_type_or_view_is_refused() {
+    let text = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
+    let bad = with_api(&text, &TWO_FIELDS.replace("u32 a", "u64 a"));
+    assert!(sdkgen::render(&bad).unwrap_err().0.contains("unknown type"));
+    // the names of a typed C view are the contract's name list, in order
+    let broken = text.replace("\"i32 pitch // ", "\"i32 pitchx // ");
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).unwrap_err().0.contains("name list"));
 }
 
 #[test]

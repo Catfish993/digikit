@@ -12,28 +12,11 @@
  * the pending count (it drains PACE_DRAIN per PACE_BLOCKS blocks of 1/1500 s, deliberately slower than the firmware) and takes only what fits below
  * the limit, so the firmware's clamp is never the thing that drops or delays a turn. */
 
-typedef unsigned int u32;
-typedef unsigned char u8;
-typedef signed char s8;
+#include "dk_api.h"
 
-typedef int (*svc_handler)(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out);
-
-struct api {
-    u32 version, size, device, runtime;
-    u32 (*import)(const char *name);
-    void *(*alloc)(u32 size);
-    void (*free)(void *p);
-    int (*store_read)(const char *path, void *dst, u32 cap);
-    void (*log)(const char *msg, u32 value);
-    u32 memcpy_, memset_, memcmp_, muldi3_, udivdi3_, umoddi3_;
-    void (*log_lv)(u32 level, const char *msg, u32 value);
-    int (*register_cmds)(u32 first, u32 count, svc_handler handler);
-};
-
-extern int input_key(u32 code, u32 down);
-extern int input_turn(u32 encoder, int delta);
-extern int remote_enabled(void);
-extern u32 dkrt_blocks(void);
+typedef uint32_t u32;
+typedef uint8_t u8;
+typedef int8_t s8;
 
 #define E_MSG (-50)
 
@@ -46,7 +29,7 @@ static u8 held[16]; /* a bit per key code 0..127 */
 static int pending[MAX_ENC];
 static u32 stamp[MAX_ENC];
 
-static int key(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
+static int32_t key(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     int r;
     (void)cmd;
@@ -66,7 +49,7 @@ static int key(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     return r;
 }
 
-static int turn(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
+static int32_t turn(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     u32 enc, now, steps;
     int d, room, take, r;
@@ -109,7 +92,7 @@ static int turn(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     return 1;
 }
 
-static int release(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
+static int32_t release(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     u32 c;
     int worst = 0;
@@ -130,7 +113,7 @@ static int release(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     return worst;
 }
 
-static int state(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
+static int32_t state(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     (void)cmd;
     (void)seq;
@@ -142,12 +125,12 @@ static int state(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     return 3;
 }
 
-int dkm_init(const struct api *api)
+int32_t dkm_init(const dk_api *api)
 {
     int a = api->register_cmds(0x38, 1, key);
     int b = api->register_cmds(0x39, 1, turn);
     int c = api->register_cmds(0x3a, 1, release);
     int d = api->register_cmds(0x3e, 1, state);
-    api->log("remote registered", (u32)(a | b | c | d));
+    api->log((const u8 *)"remote registered", (u32)(a | b | c | d));
     return (a | b | c | d) ? -1 : 0;
 }
