@@ -276,12 +276,19 @@ def _native_rows(
         offset += extent
     native = rows
     nat = dict(native)
+    # A Type 3a with a non-zero compute (a multifunction or multiplier with a register move, `F10 = F0 * F7, F0 = DM(I4, M6);`)
+    # is also listed as 4 bytes, but the compute's low 16 bits are not a zero row: seldump reads them as the start of the
+    # next row and its listing is out of step with ours from there. The 4-byte prefix is still compared; the rows that
+    # follow are ignored until one equals ours again.
+    in_step = True
     for parcel, raw in selache_rows:
         if parcel in nat:
             mine = nat[parcel]
-            if mine != raw and not (
-                mine.startswith(raw) and set(mine[len(raw) :]) <= {"0"}
-            ):
+            if mine == raw or (mine.startswith(raw) and set(mine[len(raw) :]) <= {"0"}):
+                in_step = True
+            elif in_step and len(raw) == 8 and len(mine) == 12 and mine.startswith(raw):
+                in_step = False
+            elif in_step:
                 raise PkSharcError(
                     f"parcel {parcel:#x}: Selache lists {raw}, our decoder {mine}"
                 )
@@ -771,6 +778,23 @@ class CallSession:
         peeks between calls are not logged. Uses the driver's write watchpoints (tools/sharc_dev/sharc_run.py), so a store
         has one semantics path."""
         wp = self._run.Watchpoint(0, 1 << 40, on_read=False, stop=False, label="store")
+        self.runner.attach_watchpoints([wp])
+        self.runner.set_watch_active(False)
+        self._recording = True
+
+    def record_reads(self, addr: int, count: int) -> None:
+        """Log every DM read of the normal-word range [addr, addr + count) of the following calls in ``stores`` (the same
+        watchpoint log as ``record_stores``; the two replace each other). A kernel test uses it to prove that a routine does
+        not read past the buffers it is given."""
+        wp = self._run.Watchpoint(
+            addr,
+            addr + count,
+            on_read=True,
+            on_write=False,
+            stop=False,
+            label="read",
+            normal_word=True,
+        )
         self.runner.attach_watchpoints([wp])
         self.runner.set_watch_active(False)
         self._recording = True

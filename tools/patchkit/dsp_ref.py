@@ -1,7 +1,7 @@
 """Float32 reference models of the SDK DSP step macros (sdk/dsp/*.inc) over one block of 32 samples.
 
 Each model does the macro's operations in its order, with one float32 rounding per SHARC+ operation and no fused
-multiply-add, so the kernel on the concrete core equals the model bit for bit: gain, mix, ramp, onepole, sat.
+multiply-add, so the kernel on the concrete core equals the model bit for bit: gain, mix, ramp, onepole, sat, biquad.
 
 recip, div and rsqrt start from the core's seed (RECIPS 8 bits, RSQRTS 4 bits; the seed table is not published and is not
 modelled). They return the exact value in float64; the kernel is compared within a relative bound:
@@ -66,6 +66,27 @@ def onepole(x, a, y0) -> np.ndarray:
         y = y + t
         out[i] = y
     return out
+
+
+def biquad(x, b0, b1, b2, a1, a2, s1, s2):
+    """_dk_biquad (sdk/dsp/biquad.inc), per sample: p0 = b0 x; p1 = b1 x; p2 = b2 x; y = p0 + s1; u = s2 + p1; q = a1 y;
+    s1 = u - q; q = a2 y; s2 = p2 - q. Returns (y, s1, s2) with the state after the last sample."""
+    x = _v(x)
+    b0, b1, b2, a1, a2 = (f32(c) for c in (b0, b1, b2, a1, a2))
+    s1, s2 = f32(s1), f32(s2)
+    out = np.empty(len(x), dtype=f32)
+    for i, xi in enumerate(x):
+        p0 = b0 * xi
+        p1 = b1 * xi
+        p2 = b2 * xi
+        y = p0 + s1
+        u = s2 + p1
+        q = a1 * y
+        s1 = u - q
+        q = a2 * y
+        s2 = p2 - q
+        out[i] = y
+    return out, s1, s2
 
 
 def sat(x) -> np.ndarray:

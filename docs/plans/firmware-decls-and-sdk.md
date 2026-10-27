@@ -226,6 +226,10 @@ Proof: `module:check` for pluck and freqshift; a new C module built in under a s
 - [ ] C pilot as glue only (half a day): pluck's `note_on` and parameter mapping in C (`selcc`) behind a frame shim,
       calling the kernels; measure instructions per note-on and code size; decide whether `module:new` offers C for
       SHARC glue. No C sample loop (finding 20 measured 46 against 6-7 instructions per sample).
+- [ ] Emulator follow-ups found in step 7: `cargo test -p sharc-native --lib` aborts in
+      `fast::lower::tests::flat_access_*` (a Cranelift "fill your block before switching" panic, also on the commit
+      before step 7); the fast-vs-core differential vectors never set `assume_nw32`, so the (nw) 19a guard is covered
+      by the Python tests only.
 - [ ] Own SHARC+ assembler (follow-up after the kernels): replace Selache `selas` with an assembler built from our
       encoding table (`tools/sharc_dev/sharcspec/decode_table.json`, `compute_table.json`, from the manuals in
       `out/refs`). Write it in Rust next to the generated decoder (a new Rust package, working name sharcasm), so a wasm
@@ -315,7 +319,7 @@ ColdFire side is out of scope.
 
 ## Status at end of session
 
-2026-10-27 (35 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
+2026-10-27 (37 commits on the branch named in docs/handovers/HANDOVER-2026-10-27-firmware-decls.md, not pushed). Done: steps 1, 1b, 2, 3, 4, the step 7 study, S1/S2
 (findings 70-72), and steps 5 and 6. Next: step 7: kernels, then the C glue pilot, then our own SHARC assembler. Em's rules for this branch: stop before every commit and show the diff and
 message; no Rust build
 without benchlock; byte-identical patched images as the proof for refactors. Open with Em: review page decisions
