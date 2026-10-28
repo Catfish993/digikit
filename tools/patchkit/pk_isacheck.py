@@ -4,8 +4,8 @@
     uv run python -m tools.patchkit.pk_isacheck IMAGE.syx
 
 A store through an index register (Types 3a, 3b, 3d, 15a, 15b) cannot take a source register of the same DAG: `DM(x, Ia) = Ureg` not a
-DAG1 register, `PM(x, Ic) = Ureg` not a DAG2 register (finding 49 section 10; the rule is `pk_sharc.ureg_class_problems`, the same one
-`patchkit build` fails a module build on). The stock images have none. `mise run patch:preflight` runs this scan after the Rust checks.
+DAG1 register, `PM(x, Ic) = Ureg` not a DAG2 register (finding 49 section 10; the rule is `ureg_class_problems` here, the same one
+`patchkit build` fails a module build on: packages/patchkit/src/build/sharc_obj.rs). The stock images have none. `mise run patch:preflight` runs this scan after the Rust checks.
 
 The scan decodes the code blocks of the boot stream with the aligned decoder that built the sharcdb databases (`sharcflow.aligned`):
 the stock code blocks (`sharcinv.CODE_BLOCKS`, the layout of the DT2 images; the Digitone II list of `sharcdb.schema.KNOWN_CODE_BLOCKS`)
@@ -16,16 +16,57 @@ Exit status 1 when a store is found.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 from tools.firmware.container import sections
 from tools.firmware.elz import depack_section
 from tools.firmware.extract import classify
-from tools.patchkit import pk_sharc
 from tools.sharc_dev import sharcinv, sharcldr
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _field(fields: dict[str, int], stem: str) -> int | None:
+    """Join the pieces ``stem[hi:lo]`` of a decoded form into one number."""
+    parts = []
+    for k, v in fields.items():
+        m = re.fullmatch(re.escape(stem) + r"\[(\d+):(\d+)\]", k)
+        if m:
+            parts.append((int(m.group(2)), v))
+    if not parts:
+        return fields.get(stem)
+    return sum(v << lo for lo, v in parts)
+
+
+# The forms that address memory through an index register (Ia/Ic, with an immediate or register modifier): the ISA encodes the source of
+# their stores as UREGXDAG1 / UREGXDAG2. Type 14a (`DM(<addr32>) = Ureg`) has no index register and takes the full UREG class.
+INDEXED_MEMORY_FORMS = frozenset({"3a", "3b", "3d", "15a", "15b"})
+
+
+def ureg_class_problems(fields: dict[str, int], where: str, form: str) -> list[str]:
+    """A store through DM with an index register cannot take a DAG1 register (I0-I7, M0-M7, L0-L7, B0-B7) and a store through PM cannot
+    take a DAG2 register: the ISA encodes the source of such a store as UREGXDAG1 / UREGXDAG2 (SHARC+ PRM 15-7, 15-10, 13-13: "the Ureg
+    may not be from the same DAG as Ia/Mb or Ic/Md"). `form` is the instruction form id (Types 3a, 3b, 3d, 15a, 15b are checked; Type 14a,
+    the direct-address store, is exempt, as is every other form). Loads take every register. The stock DSP image has not one store of the
+    excluded kind (finding 49 section 10). The assembler and the emulator accept them; the silicon does not run them as written."""
+    if form not in INDEXED_MEMORY_FORMS:
+        return []
+    d = _field(fields, "d")
+    u = _field(fields, "ureg")
+    if d != 1 or u is None or not 0x10 <= u <= 0x4F:
+        return []
+    g = _field(fields, "g")
+    if g is None:
+        return []  # a form with no DM/PM select (an instruction word with no memory-side choice)
+    dag = 1 if (u & 0xF) < 8 else 2
+    if (g == 0 and dag == 1) or (g == 1 and dag == 2):
+        name = "IMLB"[(u >> 4) - 1] + str(u & 0xF)
+        return [f"{where}: {'PM' if g else 'DM'} store of {name} (DAG{dag})"]
+    return []
+
+
 FINAL_BIT = 1 << 15
 # The stock code blocks, by the target address they load to (the indices differ between images, the targets do not). Left out: the DT2
 # block at 0x282d7158 (388 bytes; its one hit, PM store of B10 at pc 0x16b8fe, is inside a data table) and the DN2 block at 0x2001e888
@@ -83,7 +124,7 @@ def scan(blob: bytes) -> list[str]:
         if r is None:
             continue
         for off, ins in r["insns"]:
-            for msg in pk_sharc.ureg_class_problems(ins.fields, "", ins.type_name):
+            for msg in ureg_class_problems(ins.fields, "", ins.type_name):
                 sw = r["base_sw"] + off // 2
                 found.append(f"block {idx} pc {sw:#x}{msg}")
     return found

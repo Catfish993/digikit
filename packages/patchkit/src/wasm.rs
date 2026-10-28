@@ -114,6 +114,25 @@ pub fn check_bundle(fw: &[u8], bundle: &[u8]) -> Result<String> {
     .to_string())
 }
 
+/// What `pk_sharc_object` takes: the SHARC+ sources of one object as texts, the files their `#include "name"` lines name (the page has no
+/// directories: the keys are the names as written), and the build options (`#ifdef NAME`).
+#[derive(Deserialize)]
+struct SharcInput {
+    sources: Vec<String>,
+    #[serde(default)]
+    includes: BTreeMap<String, String>,
+    #[serde(default)]
+    defines: Vec<String>,
+}
+
+/// SHARC+ sources to the text of the `.dko.json` object `patchkit build` writes (the same bytes): the sources joined, `#include`s expanded,
+/// `#ifdef` alternatives selected, assembled with Selache as a library, guarded and re-decoded. For tests and the C ABI.
+pub fn sharc_object_json(input: &[u8]) -> Result<String> {
+    let i: SharcInput = serde_json::from_slice(input)?;
+    let text = crate::build::sharc::source_text_from(&i.sources, &i.includes, &i.defines)?;
+    crate::build::to_text(&crate::build::sharc::sharc_object(&text)?)
+}
+
 fn set(r: Result<(Vec<u8>, String)>) -> i32 {
     OUT.with(|o| {
         let mut o = o.borrow_mut();
@@ -226,6 +245,17 @@ pub unsafe extern "C" fn pk_check(
 pub unsafe extern "C" fn pk_needs(dkm: *const u8, dkm_len: usize) -> i32 {
     let dkm = unsafe { slice(dkm, dkm_len) };
     set(crate::dkm::needs_json(dkm).map(|j| (vec![], j.to_string())))
+}
+
+/// Build a SHARC+ object from source texts: JSON `{sources: [text], includes: {name: text}, defines: [name]}` in; the `.dko.json` text in
+/// `pk_plan_*`, or the reason in `pk_err_*` (1).
+///
+/// # Safety
+/// The range must be readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pk_sharc_object(input: *const u8, input_len: usize) -> i32 {
+    let input = unsafe { slice(input, input_len) };
+    set(sharc_object_json(input).map(|j| (vec![], j)))
 }
 
 /// Verify an image (and, if `base_len` is not 0, against that stock image); the report JSON is in `pk_plan_*`.

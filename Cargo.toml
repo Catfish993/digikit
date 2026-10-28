@@ -56,6 +56,17 @@ opt-level = 3
 debug = false
 incremental = false
 
+# The Selache assembler (patchkit's SHARC+ build) and the regex it shares with the guards run once per module build: size over speed, so the
+# browser's patchkit.wasm stays small. Nothing of the emulator core is listed.
+[profile.release.package.selas]
+opt-level = "z"
+[profile.release.package.selinstr]
+opt-level = "z"
+[profile.release.package.selelf]
+opt-level = "z"
+[profile.release.package.regex-lite]
+opt-level = "z"
+
 # No cheaper profile for correctness-only runs: measured on sharc-gen, an
 # opt-level 1 override costs ~2.5x the CPU of release (wall 5.5 min vs 2.9 on
 # the same loaded machine), and opt-level 0 compiles in ~1.4 min but runs the

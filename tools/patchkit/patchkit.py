@@ -449,7 +449,7 @@ def main(argv: list[str]) -> int:
 
             rc = pk_isacheck.main(files[:1]) or rc
         return rc
-    if cmd in ("build", "dko", "cf-link"):
+    if cmd in ("build", "dko", "cf-link", "sharc"):
         r = _build_cmd([cmd, *args])
         sys.stdout.write(r.stdout)
         sys.stderr.write(r.stderr)

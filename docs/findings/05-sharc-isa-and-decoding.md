@@ -1508,7 +1508,7 @@ stopped on the first call (ILOPI, raised by look-ahead), and passed every emulat
 was four `LSHIFT ... BY -n` without `dataex`; setting the six bytes to the stock form made it play. Not measured here: what the
 silicon does with opcode 0x20 **[O]** (undefined; our core raises "unsupported ShiftImm opcode").
 
-**The gate (`tools/patchkit/pk_sharc.py`).** `fix_shift_counts` sets `dataex` of every signed shift in an object after Selache
+**The gate (`packages/patchkit/src/build/sharc_obj.rs`; before phase 6a `tools/patchkit/pk_sharc.py`).** `fix_shift_counts` sets `dataex` of every signed shift in an object after Selache
 (assembly and selcc alike), so `LSHIFT ... BY -n` is allowed again. `ENCODE_HAZARDS` refuses the source forms Selache gets
 wrong (ASHIFT, OR LSHIFT and FDEP by an immediate, FEXT by an immediate with (SE)); selcc's assembly (`-S`) passes the same
 check. `verify` fails an object with an undefined ShiftImm opcode or a signed count without its sign extension. A shift count

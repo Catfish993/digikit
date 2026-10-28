@@ -553,3 +553,35 @@ fn defines_need_an_output_directory() {
         .unwrap();
     assert!(e.0.contains("--define needs --out"), "{e}");
 }
+
+#[test]
+fn sharc_sources_given_as_texts_make_the_object_of_the_files() {
+    // the browser has no directories: the includes are a map by the name the source uses
+    let includes = std::collections::BTreeMap::from([(
+        "k.inc".to_string(),
+        "#define N 8\n.PKBSS buf, N;\n".to_string(),
+    )]);
+    let src = ".SECTION/PM seg_pmco;\n#include \"k.inc\"\n.GLOBAL _f;\n_f:\n    R0 = DM(buf);\n#ifdef EXTRA\n    R1 = 1;\n#endif\n    RTS;\n"
+        .to_string();
+    let build = |defines: &[String]| {
+        let t = sharc::source_text_from(std::slice::from_ref(&src), &includes, defines).unwrap();
+        (sharc::source_hash(&t), build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap())
+    };
+    let (h0, plain) = build(&[]);
+    let (h1, extra) = build(&["EXTRA".into()]);
+    assert_ne!(h0, h1);
+    assert!(plain.contains("\"arch\": \"sharc\"") && plain.contains("pkbss_buf"));
+    assert_ne!(plain, extra);
+    // the same text from files: the same bytes
+    let d = std::env::temp_dir().join(format!("pk-build-test-sharc-{}", std::process::id()));
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("k.inc"), &includes["k.inc"]).unwrap();
+    std::fs::write(d.join("m.s"), &src).unwrap();
+    let t = sharc::source_text_in(vec![d.clone()], &[d.join("m.s")], &[]).unwrap();
+    assert_eq!(build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap(), plain);
+    std::fs::remove_dir_all(&d).unwrap();
+    // a missing include and a guard are errors, not panics
+    assert!(sharc::source_text_from(&["#include \"no.inc\"".into()], &includes, &[]).is_err());
+    let e = sharc::sharc_object(".SECTION/PM seg_pmco;\nR0 = FDEP R11 BY 4:8;\n").unwrap_err();
+    assert!(e.0.contains("known Selache encode bug"), "{e}");
+}

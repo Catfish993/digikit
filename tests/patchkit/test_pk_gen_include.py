@@ -1,35 +1,13 @@
 """The SHARC include that `patchkit gen` writes (modules/*/build/gen/<device>.inc) is usable from a DSP source.
 
 The adapter of core/dsp-voice includes `adapter-<device>.inc` (its committed objects are checked by `patchkit build --check`); this file
-tests the include expansion and the form of the generated defines. Skips when Selache is not built."""
+tests the form of the generated defines. (The include expansion is tested in packages/patchkit/tests/build.rs.)"""
 
 import re
-import tempfile
-from pathlib import Path
 
-import pytest
 from support.paths import REPO_ROOT
 
-from tools.patchkit import (
-    pk_sharc,
-    pk_toolchains,
-)
-
-pytestmark = pytest.mark.skipif(
-    pk_toolchains.selache_dir() is None,
-    reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
-)
-
 MOD = REPO_ROOT / "modules" / "core" / "adapters" / "dsp-voice"
-
-
-def test_include_expansion():
-    with tempfile.TemporaryDirectory() as d:
-        (Path(d) / "a.inc").write_text("#define A 1\n")
-        out = pk_sharc.expand_includes('x\n#include "a.inc"\ny', [Path(d)])
-        assert out == "x\n#define A 1\n\ny"
-        with pytest.raises(pk_sharc.PkSharcError):
-            pk_sharc.expand_includes('#include "missing.inc"', [Path(d)])
 
 
 def test_generated_include_has_no_hex_literals_after_a_plus():

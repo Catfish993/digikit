@@ -41,8 +41,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          every entry decoded); `store dump --record FILE` reads one settings record file (docs/design/digikit-store.md)
   build   [MODULE...] [--check] [--force] [--define NAME]... [--out DIR] [--status] [--tree DIR]
                                          module sources -> objects: build/*.dko.json for a core/* module (committed), else the cache
-                                         out/cache/dko/<module id>/<path> (ColdFire C, asm and Rust in this process; SHARC+ through
-                                         tools/patchkit/pk_sharc.py). MODULE is a directory or a module id; none: every module.
+                                         out/cache/dko/<module id>/<path> (ColdFire C, asm and Rust, and SHARC+ with Selache as a
+                                         library: all in this process). MODULE is a directory or a module id; none: every module.
                                          An object whose stored source_sha256 equals the hash of its sources is not compiled
                                          (--force compiles it). --check writes nothing and fails on a stale object.
                                          --define NAME[=V] selects an #ifdef of the DSP sources (needs --out; the stored objects
@@ -51,6 +51,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   dko show FILE.dko.json [--relocs]      arch, toolchain record, sections, symbols and relocations of an object
   dko isa-digest FILE.dko.json           the ISA check record the object's bytes need (toolchain.isa_check)
   dko isa-check FILE...                  ColdFire V4e ISA check of .dko.json (cf), ELF objects and ar archives
+  sharc text|asm|link|shift-check ...    the SHARC+ build for the Python test rigs: expanded source text, an assembled object as JSON, an
+                                         object placed at a short-word address and verified, the shift-immediate rule on hex words
   cf-link SRC... --base HEX [--sym NAME=HEX]... [-I DIR]... [--bin OUT] [--json OUT]
                                          compile, link at BASE against the symbols, ISA-check (unit tests of C routines)
   list                                   modules under modules/ and ports under devices/ports/
@@ -204,6 +206,8 @@ fn run(a: Args) -> Result<()> {
         "dko" => build_cli::dko(rest)?,
         #[cfg(not(target_arch = "wasm32"))]
         "cf-link" => build_cli::cf_link(&a.root, rest)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        "sharc" => build_cli::sharc(&a.root, rest)?,
         "list" => {
             let reg = registry(&a.root)?;
             for p in &reg.ports {

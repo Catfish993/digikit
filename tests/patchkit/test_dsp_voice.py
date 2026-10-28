@@ -540,9 +540,9 @@ def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_regi
 
 
 def test_the_ureg_class_rule_flags_index_register_stores_and_not_direct_stores():
-    from tools.patchkit import pk_sharc
+    from tools.patchkit import pk_isacheck
 
-    p = pk_sharc.ureg_class_problems
+    p = pk_isacheck.ureg_class_problems
     for form in ("3a", "3b", "3d", "15a", "15b"):
         assert p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", form), form  # DM store of I0
         assert p({"d": 1, "g": 0, "ureg": 0x37}, "x", form), (
@@ -558,27 +558,6 @@ def test_the_ureg_class_rule_flags_index_register_stores_and_not_direct_stores()
     assert not p({"d": 1, "g": 1, "ureg[6:0]": 0x18}, "x", "14a")
     for other in ("5b_move", "17a", "12a_ureg", ""):
         assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", other)
-
-
-def test_the_assembled_forms_are_checked_by_form(tmp_path):
-    """Through the whole assembler path: the index-register form (15a with a 32-bit modifier, 15b, 3 with a register modifier) is flagged,
-    the direct-address store is not."""
-
-    def check(src):
-        f = tmp_path / "t.s"
-        f.write_text(src)
-        pk_sharc.sharc_object([f], [], frozenset())
-
-    for ok in ("DM(0x20000000) = I0;", "PM(0x20000000) = I8;", "DM(15, I4) = R0;"):
-        check(f".SECTION/PM seg_pmco;\n    {ok}\n    RTS;\n")
-    for bad in (
-        "DM(15, I4) = I0;",
-        "DM(0x1000, I4) = I0;",
-        "DM(I4, M5) = M1;",
-        "PM(15, I12) = I8;",
-    ):
-        with pytest.raises(pk_sharc.PkSharcError, match="the ISA does not allow"):
-            check(f".SECTION/PM seg_pmco;\n    {bad}\n    RTS;\n")
 
 
 def test_the_c3_noirq_variant_masks_interrupts_inside_and_restores_mode1():

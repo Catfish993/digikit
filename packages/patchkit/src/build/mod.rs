@@ -1,9 +1,9 @@
 //! `patchkit build`: module sources -> `.dko.json` objects.
 //!
 //! For every `[[object]]` of a module's `module.toml` that lists `sources`, the sources are compiled by the pinned toolchain (ColdFire
-//! C and assembly: m68k-elf gcc/as; ColdFire Rust: a `Cargo.toml` as the only source; SHARC+: Selache through `pk_sharc`), turned into
+//! C and assembly: m68k-elf gcc/as; ColdFire Rust: a `Cargo.toml` as the only source; SHARC+: Selache as a library), turned into
 //! the canonical object JSON and written to the object's `path`. Every instruction is re-decoded by our own decoders, so a toolchain
-//! encoding bug cannot reach an image (ColdFire: [`cf::check_isa`], in this process; SHARC+: `pk_sharc`).
+//! encoding bug cannot reach an image (ColdFire: [`cf::check_isa`]; SHARC+: [`sharc_obj`]); both run in this process.
 //!
 //! Where an object is written: a `core/*` module (`category = "core"`) keeps its objects in the module (`build/x.dko.json`, committed: the
 //! workbench and the browser patch without a toolchain). Every other module (content modules, test fixtures, imported modules) is
@@ -19,6 +19,7 @@ pub mod cf;
 pub mod elf;
 pub mod rust;
 pub mod sharc;
+pub mod sharc_obj;
 pub mod show;
 pub mod toolchain;
 
@@ -42,8 +43,6 @@ pub struct BuildOptions {
     pub defines: Vec<String>,
     /// Write the objects under this directory (at their `path`) instead of into the module.
     pub out: Option<PathBuf>,
-    /// Do not build a stale SHARC+ object (it needs the Python step `pk_sharc`): report it as [`Status::StaleSharc`].
-    pub skip_sharc: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,8 +53,6 @@ pub enum Status {
     Unchanged,
     /// `--check`: the committed object equals a fresh build.
     Current,
-    /// A SHARC+ object whose sources changed, left alone because of [`BuildOptions::skip_sharc`].
-    StaleSharc,
 }
 
 #[derive(Clone, Debug)]
@@ -80,7 +77,6 @@ impl BuildReport {
             .map(|o| match o.status {
                 Status::Unchanged => format!("{}: unchanged", o.path.display()),
                 Status::Current => format!("{}: current", o.path.display()),
-                Status::StaleSharc => format!("{}: stale (SHARC+, not built)", o.path.display()),
                 Status::Built => format!(
                     "{}: {} instructions re-decoded OK",
                     o.path.display(),
@@ -258,7 +254,7 @@ fn build_object(env: &Env, moddir: &Path, o: &ObjectToml, defines: &[String]) ->
     match kind_of(&o.sources) {
         Kind::Sharc => {
             let text = sharc::source_text(&env.root, moddir, &paths, defines)?;
-            sharc::sharc_object(env, &text)
+            sharc::sharc_object(&text)
         }
         k => {
             if !defines.is_empty() {
@@ -339,14 +335,6 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
             report.objects.push(ObjectReport {
                 path: stored,
                 status: Status::Unchanged,
-                instructions: None,
-            });
-            continue;
-        }
-        if opts.skip_sharc && kind_of(&o.sources) == Kind::Sharc {
-            report.objects.push(ObjectReport {
-                path: stored,
-                status: Status::StaleSharc,
                 instructions: None,
             });
             continue;

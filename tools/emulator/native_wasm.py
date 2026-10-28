@@ -210,7 +210,9 @@ def build_small(name: str) -> None:
         )
     else:
         shutil.copyfile(built, dest)
-    if dest.stat().st_size > 2 * 1024 * 1024:
+    # patchkit.wasm carries the Selache assembler (the SHARC+ build, 0.4 MB); the others stay under 2 MiB
+    limit = (5 if name == "patchkit" else 4) * 512 * 1024
+    if dest.stat().st_size > limit:
         raise SystemExit(
             f"{dest} is {dest.stat().st_size} bytes: {name}.wasm must stay small and firmware-free"
         )

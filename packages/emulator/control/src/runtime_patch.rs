@@ -198,13 +198,11 @@ pub struct BuildSummary {
     pub built: Vec<BuiltModule>,
     /// Modules whose objects were current (or that have no sources).
     pub skipped: Vec<String>,
-    /// SHARC+ objects with changed sources: (module id, object file). They are not built here (`pk_sharc` is Python).
-    pub stale_sharc: Vec<(String, PathBuf)>,
 }
 
 /// Build the stale objects of the modules `ids` (a patch record's modules) in this process: `patchkit::build::build_module` for each,
 /// which writes a `core/*` module's objects into the module and a content module's into `out/cache/dko`. Compiler output of a
-/// failed build is in the error. A stale SHARC+ object is reported in the summary and left alone.
+/// failed build is in the error. SHARC+ objects are built in this process too (Selache as a library).
 pub fn build_modules(root: &Path, ids: &[String]) -> Result<BuildSummary, String> {
     let dirs = patchkit::build::module_dirs(root, ids).map_err(|e| e.to_string())?;
     build_dirs(root, &dirs)
@@ -212,21 +210,15 @@ pub fn build_modules(root: &Path, ids: &[String]) -> Result<BuildSummary, String
 
 fn build_dirs(root: &Path, dirs: &[(String, PathBuf)]) -> Result<BuildSummary, String> {
     use patchkit::build::{BuildOptions, Status};
-    let opts = BuildOptions { root: root.to_path_buf(), skip_sharc: true, ..Default::default() };
+    let opts = BuildOptions { root: root.to_path_buf(), ..Default::default() };
     let mut sum = BuildSummary::default();
     for (id, dir) in dirs {
         let started = std::time::Instant::now();
         let report = patchkit::build::build_module(dir, &opts).map_err(|e| format!("build of {id} failed:\n{e}"))?;
-        let before = sum.stale_sharc.len();
-        for o in report.objects.iter().filter(|o| o.status == Status::StaleSharc) {
-            sum.stale_sharc.push((id.clone(), o.path.clone()));
-        }
         let objects: Vec<PathBuf> =
             report.objects.iter().filter(|o| o.status == Status::Built).map(|o| o.path.clone()).collect();
         if objects.is_empty() {
-            if sum.stale_sharc.len() == before {
-                sum.skipped.push(id.clone());
-            }
+            sum.skipped.push(id.clone());
         } else {
             sum.built.push(BuiltModule { id: id.clone(), objects, ms: started.elapsed().as_secs_f64() * 1e3 });
         }
@@ -316,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stale_sharc_object_is_reported_not_built() {
+    fn a_stale_sharc_object_is_built_with_the_rest_and_a_bad_instruction_is_an_error() {
         let id = format!("test/reloadsharc-{}", std::process::id());
         let dir = std::env::temp_dir().join(format!("digikit-reloadsharc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -326,12 +318,22 @@ mod tests {
             format!("[module]\nid = \"{id}\"\ncategory = \"core\"\n\n[[object]]\npath = \"build/d.dko.json\"\nsources = [\"src/dsp/d.s\"]\n"),
         )
         .unwrap();
-        std::fs::write(dir.join("src/dsp/d.s"), "nop;\n").unwrap();
-        let sum = build_dirs(&root(), &[(id.clone(), dir.clone())]).unwrap();
-        assert!(sum.built.is_empty() && sum.skipped.is_empty());
-        assert_eq!(sum.stale_sharc.len(), 1);
-        assert_eq!(sum.stale_sharc[0].0, id);
-        assert!(!dir.join("build").exists());
+        let src = dir.join("src/dsp/d.s");
+        std::fs::write(&src, ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    R0 = 7;\n    RTS;\n").unwrap();
+        let dirs = [(id.clone(), dir.clone())];
+        let first = build_dirs(&root(), &dirs).unwrap();
+        assert_eq!(first.built.len(), 1);
+        assert_eq!(first.built[0].objects, [dir.join("build/d.dko.json")]);
+        let text = std::fs::read_to_string(dir.join("build/d.dko.json")).unwrap();
+        assert!(text.contains("\"arch\": \"sharc\"") && text.contains("selache_rev"), "{text}");
+        // current: skipped, not built again
+        let second = build_dirs(&root(), &dirs).unwrap();
+        assert!(second.built.is_empty() && second.skipped == [id.clone()]);
+        // a source Selache mis-encodes is refused with the guard's text; the old object stays
+        std::fs::write(&src, ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    R0 = ASHIFT R11 BY 3;\n    RTS;\n").unwrap();
+        let err = build_dirs(&root(), &dirs).unwrap_err();
+        assert!(err.starts_with(&format!("build of {id} failed:")) && err.contains("known Selache encode bug"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join("build/d.dko.json")).unwrap(), text);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

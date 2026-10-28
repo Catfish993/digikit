@@ -41,7 +41,7 @@ files and `types.toml`; `gen --check` fails when one is stale. The kinds (`packa
 - `gas`: `.equ` lines, one file per device (`path` contains `{dev}`), for the device objects: `.include "device-dt2.inc"`.
 - `sharc`: `#define` lines, one file per device, for DSP sources (`#include "device-dt2.inc"`). Each note is on its own line:
   the assembler's preprocessor keeps a trailing comment in a macro body, which swallows the rest of a line that uses the macro.
-  `.PKBSS name, MACRO;` takes a `#define`d number as its size (`pk_sharc.py`).
+  `.PKBSS name, MACRO;` takes a `#define`d number as its size (`packages/patchkit/src/build/sharc_obj.rs`).
 
 Because the runtime object is built once and used on every device, a constant it uses as an immediate must be the same on all
 devices. If a new device needs a different store, a different safe key and so on, that fact has to become a per-device value

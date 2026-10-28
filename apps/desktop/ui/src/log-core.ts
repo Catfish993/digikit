@@ -1,5 +1,5 @@
 // The pure logic of the workbench Log drawer (no DOM, no Tauri): the entries and their cap, the filter, the badge, the copy text, the
-// rule that opens the drawer by itself, and the one-line texts of the events the app logs. Host tests: tests/log.test.ts.
+// rule that opens the drawer by itself, and the one-line texts of the events the app logs. Host tests: apps/desktop/ui/tests/log.test.ts.
 import type { ReloadReport } from '../../../web/src/runtime/reload.ts';
 import type { CardFolder } from './card-core.ts';
 import { shortFolder } from './card-core.ts';

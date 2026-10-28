@@ -1,8 +1,10 @@
-//! SHARC+ objects. The source text (`#include` expansion and `#ifdef` selection) and its hash are made here, so that a freshness check
-//! needs no Python; the assembler, the fix-ups and the instruction re-decode stay in `tools/patchkit/pk_sharc.py` (a child process,
-//! `pk_sharc object`) until the own assembler of phase 6a replaces them.
+//! SHARC+ objects. The source text (`#include` expansion and `#ifdef` selection) and its hash are made here; [`sharc_obj`](super::sharc_obj)
+//! assembles it with Selache as a library, applies the encoding-bug guards and re-decodes every instruction. All of it runs in this
+//! process and builds for wasm32; nothing is a child process.
+//!
+//! The text of a native build is read from files ([`source_text`]); the browser passes the texts ([`source_text_from`]).
 
-use super::toolchain::{self as tc, Env, TempDir};
+use super::toolchain as tc;
 use crate::dko::Dko;
 use crate::error::*;
 use std::path::{Path, PathBuf};
@@ -17,12 +19,16 @@ pub fn include_dirs(root: &Path, moddir: &Path) -> Vec<PathBuf> {
 
 /// `Path.read_text()`: UTF-8, with `\r\n` and `\r` read as `\n`.
 fn read_text(p: &Path) -> Result<String> {
-    let t = tc::read_text(p)?;
-    Ok(if t.contains('\r') {
+    Ok(normalize(&tc::read_text(p)?))
+}
+
+/// Line ends as `\n` (`\r\n` and `\r` are read as `\n`).
+fn normalize(t: &str) -> String {
+    if t.contains('\r') {
         t.replace("\r\n", "\n").replace('\r', "\n")
     } else {
-        t
-    })
+        t.to_string()
+    }
 }
 
 /// `#include "name"` alone on a line (trailing blanks allowed): the name.
@@ -40,8 +46,35 @@ fn include_name(line: &str) -> Option<&str> {
     Some(&t[..end])
 }
 
+/// Where an `#include "name"` is found: its text, or None.
+pub type Finder<'a> = &'a dyn Fn(&str) -> Result<Option<String>>;
+
 /// Replace `#include "name"` lines by the file's text (searched in `dirs`).
 pub fn expand_includes(text: &str, dirs: &[PathBuf], depth: u32) -> Result<String> {
+    let find = |name: &str| -> Result<Option<String>> {
+        match dirs.iter().map(|d| d.join(name)).find(|f| f.is_file()) {
+            Some(f) => read_text(&f).map(Some),
+            None => Ok(None),
+        }
+    };
+    let places = || {
+        format!(
+            "{:?}",
+            dirs.iter()
+                .map(|d| d.display().to_string())
+                .collect::<Vec<_>>()
+        )
+    };
+    expand_with(text, &find, &places, depth)
+}
+
+/// [`expand_includes`] over any finder; `places` names where it looked, for the error.
+fn expand_with(
+    text: &str,
+    find: Finder,
+    places: &dyn Fn() -> String,
+    depth: u32,
+) -> Result<String> {
     if depth > 4 {
         return Err(err!("#include nests deeper than 4 levels"));
     }
@@ -52,16 +85,10 @@ pub fn expand_includes(text: &str, dirs: &[PathBuf], depth: u32) -> Result<Strin
         }
         match include_name(line) {
             Some(name) => {
-                let found = dirs.iter().map(|d| d.join(name)).find(|f| f.is_file());
-                let Some(f) = found else {
-                    return Err(err!(
-                        "#include \"{name}\" not found in {:?}",
-                        dirs.iter()
-                            .map(|d| d.display().to_string())
-                            .collect::<Vec<_>>()
-                    ));
+                let Some(t) = find(name)? else {
+                    return Err(err!("#include \"{name}\" not found in {}", places()));
                 };
-                out.push_str(&expand_includes(&read_text(&f)?, dirs, depth + 1)?);
+                out.push_str(&expand_with(&t, find, places, depth + 1)?);
             }
             None => out.push_str(line),
         }
@@ -134,7 +161,15 @@ pub fn source_text(
     sources: &[PathBuf],
     defines: &[String],
 ) -> Result<String> {
-    let mut dirs = include_dirs(root, moddir);
+    source_text_in(include_dirs(root, moddir), sources, defines)
+}
+
+/// [`source_text`] with the include directories given; the directories of the sources come after them.
+pub fn source_text_in(
+    mut dirs: Vec<PathBuf>,
+    sources: &[PathBuf],
+    defines: &[String],
+) -> Result<String> {
     for p in sources {
         let d = p.parent().unwrap_or(Path::new(".")).to_path_buf();
         if !dirs.contains(&d) {
@@ -153,29 +188,24 @@ pub fn source_hash(text: &str) -> String {
     sha256_hex(text.as_bytes())
 }
 
-/// Assemble and verify `text` (`pk_sharc object`).
-pub fn sharc_object(env: &Env, text: &str) -> Result<Dko> {
-    let tmp = TempDir::new("pk-sharc-text-")?;
-    let f = tmp.path().join("module.s");
-    std::fs::write(&f, text).map_err(|e| err!("{}: {e}", f.display()))?;
-    let o = std::process::Command::new("uv")
-        .args([
-            "run",
-            "python",
-            "-m",
-            "tools.patchkit.pk_sharc",
-            "object",
-            "--text",
-        ])
-        .arg(&f)
-        .current_dir(&env.root)
-        .output()
-        .map_err(|e| {
-            err!("uv: {e} (the SHARC+ assembler runs as a Python tool: tools/patchkit/pk_sharc.py)")
-        })?;
-    if !o.status.success() {
-        let msg = String::from_utf8_lossy(&o.stderr);
-        return Err(err!("{}", msg.trim_end()));
-    }
-    Ok(serde_json::from_slice(&o.stdout)?)
+/// The text of SHARC+ sources given as texts: the sources joined, `#include`s taken from `includes` (name -> text; the browser has no
+/// directories), the `#ifdef` alternatives selected.
+pub fn source_text_from(
+    sources: &[String],
+    includes: &std::collections::BTreeMap<String, String>,
+    defines: &[String],
+) -> Result<String> {
+    let find = |name: &str| -> Result<Option<String>> { Ok(includes.get(name).cloned()) };
+    let places = || format!("the {} include files given", includes.len());
+    let joined = sources
+        .iter()
+        .map(|t| normalize(t))
+        .collect::<Vec<_>>()
+        .join("\n");
+    apply_conditionals(&expand_with(&joined, &find, &places, 0)?, defines)
+}
+
+/// Assemble and verify `text`: the object (`sharc_obj::object_from_text`).
+pub fn sharc_object(text: &str) -> Result<Dko> {
+    super::sharc_obj::object_from_text(text)
 }

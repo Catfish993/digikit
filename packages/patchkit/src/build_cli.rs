@@ -85,7 +85,6 @@ pub fn build(root: &Path, rest: &[String]) -> Result<()> {
             .map(|d| d.split('=').next().unwrap_or("").to_string())
             .collect(),
         out: flag(rest, "--out").map(PathBuf::from),
-        skip_sharc: false,
     };
     for (_, d) in dirs {
         for line in build::build_module(&d, &opts)?.lines() {
@@ -224,5 +223,100 @@ pub fn cf_link(root: &Path, rest: &[String]) -> Result<()> {
         None => println!("{j}"),
     }
     let _ = cf::BASE;
+    Ok(())
+}
+
+/// `patchkit sharc`: the SHARC+ build for the Python test rigs (they place an object themselves and run it on the core).
+///
+/// * `text [--module DIR] [-I DIR]... [--define NAME]... SRC...`: the expanded source text (JSON-free, on stdout).
+/// * `cond [--define NAME]...`: stdin with the `#ifdef` alternatives selected, on stdout. `inc [-I DIR]...`: stdin with the `#include`s expanded.
+/// * `object INPUT`: the `.dko.json` object (what `patchkit build` writes).
+/// * `asm INPUT`: the assembled object as JSON (`build::sharc_obj::object_json`).
+/// * `link INPUT --base N [--extern NAME=ADDR]...`: the object placed at the short-word address, verified; JSON.
+/// * `shift-check FILE`: for each line of hex 48-bit instruction words, the shift-immediate problem or `ok`.
+///
+/// INPUT is `--text FILE` (an expanded source; `-` is stdin) or `--elf FILE.doj --source FILE [--asm FILE]` (an object another Selache
+/// tool wrote, with its source for the hash and the assembly it was made from for the encoding-bug guards).
+pub fn sharc(root: &Path, rest: &[String]) -> Result<()> {
+    use build::sharc as bs;
+    use build::sharc_obj as so;
+    const U: &str = "usage: patchkit sharc text [--module DIR] [-I DIR]... [--define NAME]... SRC... | cond [--define NAME]... | inc [-I DIR]... | object INPUT | asm INPUT | link INPUT --base N [--extern NAME=ADDR]... | shift-check FILE\n  INPUT: --text FILE | --elf FILE.doj --source FILE [--asm FILE]";
+    let cmd = rest.first().map(String::as_str).unwrap_or("");
+    let rest = rest.get(1..).unwrap_or(&[]);
+    let read = |p: &str| -> Result<String> {
+        if p == "-" {
+            let mut t = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut t)
+                .map_err(|e| Error(format!("stdin: {e}")))?;
+            Ok(t)
+        } else {
+            std::fs::read_to_string(p).map_err(|e| Error(format!("{p}: {e}")))
+        }
+    };
+    let num = |s: &str| -> Result<i64> {
+        match s.strip_prefix("0x") {
+            Some(h) => i64::from_str_radix(h, 16),
+            None => s.parse(),
+        }
+        .map_err(|_| Error(format!("bad number {s:?}")))
+    };
+    let object = || -> Result<so::Obj> {
+        if let Some(t) = flag(rest, "--text") {
+            return so::assemble(&read(&t)?);
+        }
+        let elf = flag(rest, "--elf").ok_or_else(|| Error(U.into()))?;
+        let src = read(&flag(rest, "--source").ok_or_else(|| Error(U.into()))?)?;
+        let asm = flag(rest, "--asm").map(|p| read(&p)).transpose()?;
+        let blob = std::fs::read(&elf).map_err(|e| Error(format!("{elf}: {e}")))?;
+        so::object_from_elf(&blob, &src, asm.as_deref())
+    };
+    match cmd {
+        "text" => {
+            let srcs: Vec<PathBuf> = positional(rest, &["--module", "-I", "--define"])
+                .into_iter()
+                .map(PathBuf::from)
+                .collect();
+            let mut dirs = match flag(rest, "--module") {
+                Some(m) => bs::include_dirs(&build::toolchain::canon(root), Path::new(&m)),
+                None => vec![],
+            };
+            dirs.extend(flags(rest, "-I").into_iter().map(PathBuf::from));
+            let defines = flags(rest, "--define");
+            print!("{}", bs::source_text_in(dirs, &srcs, &defines)?);
+        }
+        "cond" => print!("{}", bs::apply_conditionals(&read("-")?, &flags(rest, "--define"))?),
+        "inc" => {
+            let dirs: Vec<PathBuf> = flags(rest, "-I").into_iter().map(PathBuf::from).collect();
+            print!("{}", bs::expand_includes(&read("-")?, &dirs, 0)?);
+        }
+        "object" => {
+            let o = match flag(rest, "--text") {
+                Some(t) => so::object_from_text(&read(&t)?)?,
+                None => return Err(Error(U.into())),
+            };
+            print!("{}", build::to_text(&o)?);
+        }
+        "asm" => println!("{}", so::object_json(&object()?)),
+        "link" => {
+            let base = num(&flag(rest, "--base").ok_or_else(|| Error(U.into()))?)?;
+            let mut externs = HashMap::new();
+            for e in flags(rest, "--extern") {
+                let (n, v) = e
+                    .split_once('=')
+                    .ok_or_else(|| Error(format!("--extern NAME=ADDR, got {e:?}")))?;
+                externs.insert(n.to_string(), num(v)?);
+            }
+            println!("{}", so::link_json(&object()?, base, &externs)?);
+        }
+        "shift-check" => {
+            let text = read(rest.first().ok_or_else(|| Error(U.into()))?)?;
+            for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                let w = u64::from_str_radix(line.trim(), 16)
+                    .map_err(|_| Error(format!("bad hex word {line:?}")))?;
+                println!("{}", so::shift_problem_of_word(w).unwrap_or_else(|| "ok".into()));
+            }
+        }
+        _ => return Err(Error(U.into())),
+    }
     Ok(())
 }

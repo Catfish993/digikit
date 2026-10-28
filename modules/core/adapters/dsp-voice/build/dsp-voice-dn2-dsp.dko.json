@@ -1153,8 +1153,6 @@
  ],
  "toolchain": {
   "instructions_redecoded": "498",
-  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
-  "selas_sha256": "042aa5aa52ddfc9e687f627580e413b259b18a29874c28e2f2bf0251429514c0",
-  "seldump_sha256": "527162a78a7b94377c310e31b025ba51dafe8b6194d71ee09a575b6a9eb78916"
+  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187"
  }
 }

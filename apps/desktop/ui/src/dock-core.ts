@@ -1,5 +1,5 @@
 // The pure part of the bottom dock (the Log panel in Console.tsx): its height in px, kept between a minimum and a maximum that leaves room
-// for the page above it. Host tests: tests/dock.test.ts.
+// for the page above it. Host tests: apps/desktop/ui/tests/dock.test.ts.
 
 export const DOCK_MIN_PX = 120;
 /** The page above the dock keeps at least this much (not counting the top bar and the status bar). */

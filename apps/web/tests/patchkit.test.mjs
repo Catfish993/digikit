@@ -39,7 +39,7 @@ async function load() {
 test('patchkit.wasm is small and carries no firmware', () => {
   if (!existsSync(wasmPath)) return;
   const bytes = readFileSync(wasmPath);
-  assert.ok(statSync(wasmPath).size < 2 * 1024 * 1024);
+  assert.ok(statSync(wasmPath).size < 2.5 * 1024 * 1024); // carries the Selache assembler, the SHARC+ build
   // no stock-image hash and no port: those are passed in at run time
   for (const f of readdirSync(join(root, 'devices/ports'))) {
     const sha = /syx_sha256 = "([0-9a-f]{64})"/.exec(readFileSync(join(root, 'devices/ports', f), 'utf8'))[1];
@@ -110,7 +110,7 @@ test(
     assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
     const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
     const entries = (name) => report.registries.find((r) => r.name === name).entries.map((e) => [e.id, e.index]);
-    assert.deepEqual(entries('machines'), [['xclone', 8]]);    // Digitone II has core/machines, but XClone clones a Digitakt machine (MANUAL SLICE, type 6)
+    assert.deepEqual(entries('machines'), [['xclone', 8]]); // Digitone II has core/machines, but XClone clones a Digitakt machine (MANUAL SLICE, type 6)
     const [dp, dl] = put(readFileSync(images.dn2));
     const [mp, ml] = put(Buffer.from('core/machines,test/machine-clone'));
     assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
@@ -249,3 +249,49 @@ test('wasm refuses what the CLI refuses', { skip: !need }, async () => {
   assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 1);
   assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible/);
 });
+
+// The SHARC+ build runs in the page: the sources of a module as texts in, the `.dko.json` text out, the bytes `patchkit build` writes.
+test(
+  'wasm and CLI build byte-identical SHARC+ objects (freqshift, pluck)',
+  { skip: !existsSync(wasmPath) },
+  async () => {
+    const { x, put, text } = await load();
+    const work = mkdtempSync(join(tmpdir(), 'pk-wasm-sharc-'));
+    const modules = [
+      ['modules/fx/freqshift', 'build/freqshift-dsp.dko.json', 'src/dsp/freqshift.s'],
+      ['modules/machines/pluck', 'build/pluck-dsp.dko.json', 'src/dsp/pluck.s'],
+    ];
+    for (const [mod, object, source] of modules) {
+      py('tools.patchkit.patchkit', 'build', join(root, mod), '--force', '--out', work);
+      const expected = readFileSync(join(work, object), 'utf8');
+      // the page has no directories: it passes every file the sources include, by the name they use
+      const dirs = [
+        join(root, mod, 'build/gen'),
+        join(root, mod, 'src'),
+        join(root, 'sdk/asm'),
+        join(root, 'sdk'),
+        dirname(join(root, mod, source)),
+      ];
+      const includes = {};
+      const collect = (t) => {
+        for (const m of t.matchAll(/^#include\s+"([^"]+)"[ \t]*$/gm)) {
+          if (m[1] in includes) continue;
+          const f = dirs.map((d) => join(d, m[1])).find((f) => existsSync(f));
+          assert.ok(f, `${m[1]} not found`);
+          includes[m[1]] = readFileSync(f, 'utf8');
+          collect(includes[m[1]]);
+        }
+      };
+      const src = readFileSync(join(root, mod, source), 'utf8');
+      collect(src);
+      const [ip, il] = put(Buffer.from(JSON.stringify({ sources: [src], includes, defines: [] })));
+      assert.equal(x.pk_sharc_object(ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
+      assert.equal(text(x.pk_plan_ptr, x.pk_plan_len), expected, `${mod}: wasm and native objects differ`);
+      assert.equal(JSON.parse(expected).arch, 'sharc');
+    }
+    // a refusal is a message, not a trap
+    const [bp, bl] = put(Buffer.from(JSON.stringify({ sources: ['.SECTION/PM seg_pmco;\nR0 = ASHIFT R11 BY 3;\n'] })));
+    assert.equal(x.pk_sharc_object(bp, bl), 1);
+    assert.match(text(x.pk_err_ptr, x.pk_err_len), /known Selache encode bug/);
+  },
+);

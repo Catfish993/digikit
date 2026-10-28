@@ -2404,8 +2404,8 @@ impl Actor {
     ///
     /// With `build: true` the stale objects of the session's modules are built first, in this process (`runtime_patch::build_modules`):
     /// a `core/*` module's into the module, a content module's into `out/cache/dko`. The reply gets `build: {built: [{id, objects,
-    /// ms}], skipped: [id], ms}`. A compiler error is the error message (nothing is reloaded); a stale SHARC+ object is not built (it
-    /// needs `pk_sharc`, Python): the call stops with a message that names the module.
+    /// ms}], skipped: [id], ms}`. A compiler or assembler error is the error message (nothing is reloaded). SHARC+ objects are built too (Selache
+    /// as a library, in this process).
     ///
     /// After a swap the boot cache has no entry for the new image: a plain `firmware.load` of it, or a `restart`, boots cold once.
     fn rpc_dev_reload(&mut self, p: &Params, reply: &RpcReply) -> Result<Option<Value>, RpcError> {
@@ -2424,12 +2424,6 @@ impl Actor {
         let ids: Vec<String> = record.modules.iter().map(|t| patchkit::live::owner_id(t).to_string()).collect();
         let build = if p.opt_bool("build")?.unwrap_or(false) {
             let sum = runtime_patch::build_modules(&root, &ids).map_err(&rejected)?;
-            if let Some((id, object)) = sum.stale_sharc.first() {
-                let name = object.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                return Err(rejected(format!(
-                    "the SHARC+ object {name} of {id} is stale: run mise run dk:dev -- {id} (SHARC changes need the Python step until phase 6a)"
-                )));
-            }
             Some(json!({
                 "built": sum.built.iter().map(|b| json!({
                     "id": b.id,
