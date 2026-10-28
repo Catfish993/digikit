@@ -7,8 +7,15 @@
 //   2 RESO    feedback 0 .. 3.9 (self-oscillation sits at 4)
 //   4 ENVMOD  how far the filter envelope opens the cutoff: 0 .. 5 octaves
 //   5 DECAY   filter envelope time 0.15 s .. 2.4 s (the envelope falls to 1/e^3 in that time)
-// Accent comes from the trig velocity: 112 and above. It replaces DECAY with 0.2 s, adds 2.5 octaves of envelope sweep and
-// 60 % level, as the 303's accent does (there it also bypasses the decay pot).
+// Accent comes from the trig velocity: 112 and above. It replaces DECAY with 0.2 s and adds 60 % level, as the 303's accent does
+// (there it also bypasses the decay pot). Its filter sweep goes through the 303's "accent sweep" smoothing: a charge c follows
+// A x envelope with a 100 ms time constant and opens the cutoff by 5 c octaves. A single accent gives a rounded rise; accents in a
+// row do not let c discharge, so they ratchet the cutoff up. A trig clears the voice state (the adapter does, and so does the
+// engine on hardware), so c lives in _acid_tab, one entry per voice, keyed by the voice's state address.
+//
+// Slide: the Digitakt's own slide trig towards a trigless lock moves TUNE without a note-on, so the filter envelope keeps falling,
+// as on a 303 slide. The pitch here glides to the pitch word with a 15 ms time constant so the move is smooth; a note-on clears
+// the glide (word 7 = 0) and the new note starts on its pitch.
 //
 // Per block (control rate, 32 samples = 0.67 ms): the increment and its reciprocal from the pitch, the cutoff from the envelope
 // value at the block start, the one-pole coefficient g = 1 - exp(-2 pi fc / fs), then the envelope steps one block down.
@@ -18,8 +25,8 @@
 //   u   = clip(osc - k s4, 1.5);  u = u (1 - 4/27 u^2)      cubic soft clip, |u| <= 1: bounds the loop at any RESO
 //   s1 += g (u - s1); s2 += g (s1 - s2); s3 += g (s2 - s3); s4 += g (s3 - s4);  out = s4 level
 //
-// State (7 words = 28 bytes, all cleared at note-on): 0 phase, 1..4 the filter stages, 5 the filter envelope (note_on sets 1.0),
-// 6 W (the machine's waveform, written by its render entry every block).
+// State (8 words = 32 bytes, all cleared at note-on): 0 phase, 1..4 the filter stages, 5 the filter envelope (note_on sets 1.0),
+// 6 W (the machine's waveform, written by its render entry every block), 7 the gliding pitch in octaves (0 = not started).
 //
 // Registers through the sample loop: F13 phase, F4 increment, F5 1/increment, F6 g, F7 k, F8..F11 s1..s4, F12 level,
 // F14 1.0, F15 0.0, I4 the constant table, I0 the output; F0..F3 are scratch. _dv_exp2 clobbers R0..R3 only.
@@ -45,13 +52,54 @@ _acid_body:
     I2 = R8;                              // the voice input
     I1 = R12;                             // the parameter words
 
-    // ---- pitch -> increment (F4) and its reciprocal (F5) ----
+    // ---- this voice's accent memory: I5 = its tag slot in _acid_tab (words 0..15 tags, 16..31 charges, 32..47 the spare) ----
+    R0 = DM(_acid_tinit);
+    R1 = 0x41434944;                      // "ACID": the table has been cleared
+    COMP(R0, R1);
+    IF EQ JUMP _acid_tok;
+    I5 = _acid_tab;
+    R0 = 0;
+    LCNTR = 48, DO _acid_tclr UNTIL LCE;
+_acid_tclr: DM(I5, M6) = R0;
+    DM(_acid_tinit) = R1;
+_acid_tok:
+    I5 = _acid_tab;
+    R0 = R4;                              // the tag: this voice's state address (never 0)
+    R3 = 16;
+    R6 = 1;
+_acid_scan:
+    R1 = DM(0, I5);
+    COMP(R1, R0);
+    IF EQ JUMP _acid_found;
+    R1 = PASS R1;
+    IF EQ JUMP _acid_claim;               // tags fill from the front: the first empty one ends the search
+    R1 = DM(I5, M6);                      // next tag
+    R5 = R3 - R6;
+    R3 = PASS R5;
+    IF NE JUMP _acid_scan;
+    JUMP _acid_found;                     // more voices than tags (never on a Digitakt II): I5 is at word 16, its charge the spare
+_acid_claim:
+    DM(0, I5) = R0;
+    DM(16, I5) = R1;                      // R1 = 0: no charge
+_acid_found:
+
+    // ---- pitch -> increment (F4) and its reciprocal (F5), through the glide ----
     R0 = DM(DK_IN_W_PITCH, I2);
     F0 = FLOAT R0;
     R1 = 0x46fe0000;                      // 32512.0 = note 127
     F0 = MIN(F0, F1);
     R1 = 0x39aaaaab;                      // 1 / (256 * 12)
     F7 = F0 * F1;                         // x = octaves from note 0
+    R2 = DM(7, I3);                       // the gliding pitch
+    F2 = PASS F2;
+    IF NE JUMP _acid_glide;
+    F2 = PASS F7;                         // 0 after a note-on: start on the pitch
+_acid_glide:
+    F0 = F7 - F2;
+    R1 = 0x3d320eec;                      // 1 - exp(-block / 15 ms)
+    F0 = F0 * F1;
+    F7 = F2 + F0;
+    DM(7, I3) = R7;
     F0 = F7;
     CALL _dv_exp2;
     R1 = 0x39329a62;                      // 440 * 2^(-69/12) / 48000
@@ -88,14 +136,23 @@ _acid_body:
     F0 = FLOAT R0;
     F13 = F0 * F15;
 
-    // ---- cutoff: log2 fc = log2 40 + 7 CUTOFF + env (5 ENVMOD + 2.5 A), at most log2 12000 ----
+    // ---- the accent sweep charge: c += (A e - c) x (1 - exp(-block / 100 ms)) ----
     R8 = DM(5, I3);                       // F8 = the envelope at the block start
+    R3 = DM(16, I5);                      // c
+    F0 = F9 * F8;                         // A e
+    F0 = F0 - F3;
+    R1 = 0x3bd9ba0e;                      // 1 - exp(-block / 100 ms)
+    F0 = F0 * F1;
+    F3 = F3 + F0;
+    DM(16, I5) = R3;
+
+    // ---- cutoff: log2 fc = log2 40 + 7 CUTOFF + 5 ENVMOD e + 5 c, at most log2 12000 ----
     R1 = 0x40a00000;                      // 5.0
     F0 = F12 * F1;
-    R1 = 0x40200000;                      // 2.5
-    F1 = F9 * F1;
-    F0 = F0 + F1;
     F0 = F0 * F8;
+    R1 = 0x40a00000;                      // 5.0
+    F1 = F3 * F1;
+    F0 = F0 + F1;
     R1 = 0x40e00000;                      // 7.0
     F1 = F10 * F1;
     F0 = F0 + F1;
@@ -236,6 +293,11 @@ _acid_note_on:
 .VAR _acid_k1 = 0x3e17b426;               // 4/27
 .VAR _acid_k2 = 0x3f000000;               // 0.5: the square's second saw
 
+// the accent memory: 16 tags (state addresses), their 16 charges, 16 spare words; cleared on first use (bss is not
+// zero on the rig)
+.VAR _acid_tinit = 0;
+.PKBSS _acid_tab, 192;
+
 // dk_machine_desc: magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on,
 // max_call_depth, stack_bytes.
 .GLOBAL _acid_desc;
@@ -243,9 +305,9 @@ _acid_note_on:
 .VAR _acid_desc1 = DK_MACHINE_V1;
 .VAR _acid_desc2 = 4;
 .VAR _acid_desc3 = DK_MAX_VOICES;
-.VAR _acid_desc4 = 28;
-.VAR _acid_desc5 = 28;
-.VAR _acid_desc6 = 3000;                  // measured on the rig: 2239 per block before the square, about 2850 with it
-.VAR _acid_desc7 = 3100;
+.VAR _acid_desc4 = 32;
+.VAR _acid_desc5 = 32;
+.VAR _acid_desc6 = 3200;                  // measured on the rig: 2909 per block (saw, square, glide, accent sweep)
+.VAR _acid_desc7 = 3300;                  // measured: 2997 (the first block also clears the accent table)
 .VAR _acid_desc8 = 2;
 .VAR _acid_desc9 = 0;
