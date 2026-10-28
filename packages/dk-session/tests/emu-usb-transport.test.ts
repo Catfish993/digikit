@@ -64,3 +64,21 @@ test('an aborted receive avoids polling; RPC failures propagate', async () => {
   await assert.rejects(failed.send(Uint8Array.of(0xf0, 0xf7)), failure);
   await assert.rejects(failed.recv(100), failure);
 });
+
+test('a paused daemon is stepped on an empty poll instead of waited for', async () => {
+  const calls: { method: string; params?: Record<string, unknown> }[] = [];
+  const replies = [{}, {}, { hex: 'f007f7' }];
+  const call: EmuRpcCall = async <T>(method: string, params?: Record<string, unknown>) => {
+    calls.push({ method, params });
+    return (method === 'midi.usb.out' ? (replies.shift() ?? {}) : {}) as T;
+  };
+  const transport = new EmuUsbTransport(call, { stepInstructions: 400_000, pollMs: 60_000 });
+  const start = Date.now();
+  assert.deepEqual(await transport.recv(5_000), Uint8Array.of(0xf0, 7, 0xf7));
+  assert.ok(Date.now() - start < 1_000, 'no wall-clock wait between polls');
+  assert.deepEqual(
+    calls.map((c) => c.method),
+    ['midi.usb.out', 'step', 'midi.usb.out', 'step', 'midi.usb.out'],
+  );
+  assert.deepEqual(calls[1].params, { instructions: 400_000 });
+});
