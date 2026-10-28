@@ -409,6 +409,14 @@ struct ReloadState {
     baseline: Vec<u8>,
 }
 
+/// A `dev.reload` reply with the build report of `build: true` added.
+fn with_build(mut reply: Value, build: &Option<Value>) -> Value {
+    if let Some(b) = build {
+        reply["build"] = b.clone();
+    }
+    reply
+}
+
 /// The modules `dev.reload` swaps without a boot, besides every module that requires `core/ui`.
 const SWAP_DEFAULT: &[&str] = &["core/ui", "core/digikit-menu"];
 
@@ -2394,6 +2402,11 @@ impl Actor {
     ///   hot injection of `firmware.load` (`path: "dsp"`).
     /// - Nothing differs: `{path: "none"}`.
     ///
+    /// With `build: true` the stale objects of the session's modules are built first, in this process (`runtime_patch::build_modules`):
+    /// a `core/*` module's into the module, a content module's into `out/cache/dko`. The reply gets `build: {built: [{id, objects,
+    /// ms}], skipped: [id], ms}`. A compiler error is the error message (nothing is reloaded); a stale SHARC+ object is not built (it
+    /// needs `pk_sharc`, Python): the call stops with a message that names the module.
+    ///
     /// After a swap the boot cache has no entry for the new image: a plain `firmware.load` of it, or a `restart`, boots cold once.
     fn rpc_dev_reload(&mut self, p: &Params, reply: &RpcReply) -> Result<Option<Value>, RpcError> {
         let started = Instant::now();
@@ -2408,6 +2421,27 @@ impl Actor {
             .ok_or_else(|| rejected("the running image has no patch record (load a patched image or `runtime: true`)".into()))?;
         let root = runtime_patch::find_root(p.opt_str("modules_dir")?.map(Path::new).or(self.repo_root.as_deref()))
             .map_err(&rejected)?;
+        let ids: Vec<String> = record.modules.iter().map(|t| patchkit::live::owner_id(t).to_string()).collect();
+        let build = if p.opt_bool("build")?.unwrap_or(false) {
+            let sum = runtime_patch::build_modules(&root, &ids).map_err(&rejected)?;
+            if let Some((id, object)) = sum.stale_sharc.first() {
+                let name = object.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                return Err(rejected(format!(
+                    "the SHARC+ object {name} of {id} is stale: run mise run dk:dev -- {id} (SHARC changes need the Python step until phase 6a)"
+                )));
+            }
+            Some(json!({
+                "built": sum.built.iter().map(|b| json!({
+                    "id": b.id,
+                    "objects": b.objects.iter().map(|o| o.display().to_string()).collect::<Vec<_>>(),
+                    "ms": b.ms,
+                })).collect::<Vec<_>>(),
+                "skipped": sum.skipped,
+                "ms": started.elapsed().as_secs_f64() * 1e3,
+            }))
+        } else {
+            None
+        };
         let stock = loaded
             .base
             .clone()
@@ -2423,7 +2457,6 @@ impl Actor {
             .section(3)
             .map(|s| s.data.len())
             .ok_or_else(|| rejected("the stock image has no MAIN section".into()))?;
-        let ids: Vec<String> = record.modules.iter().map(|t| patchkit::live::owner_id(t).to_string()).collect();
         let re = runtime_patch::reapply(&root, &stock, &ids, &["core/ui"]).map_err(&rejected)?;
         let (new_syx, plan) = (re.applied.syx, re.applied.plan);
         let baseline = match &self.reload {
@@ -2436,7 +2469,7 @@ impl Actor {
         let from_current = diff_of(&current)?;
         if from_current.is_empty() {
             let ms = started.elapsed().as_secs_f64() * 1e3;
-            return Ok(Some(json!({"path": "none", "ms": ms, "apply_ms": ms})));
+            return Ok(Some(with_build(json!({"path": "none", "ms": ms, "apply_ms": ms}), &build)));
         }
         let diff = if baseline == current { from_current } else { diff_of(&baseline)? };
         let apply_ms = started.elapsed().as_secs_f64() * 1e3;
@@ -2465,7 +2498,7 @@ impl Actor {
             let path = if force { "boot" } else { "dsp" };
             let params = json!({
                 "bytes": true, "force": force, "start": "auto", "restart": true, "card": card,
-                "report_extra": {"path": path, "reason": reason, "apply_ms": apply_ms},
+                "report_extra": with_build(json!({"path": path, "reason": reason, "apply_ms": apply_ms}), &build),
             });
             this.reload = Some(ReloadState { running_sha: firmware::sha256_hex(&new_syx), baseline: new_syx.clone() });
             this.firmware_load(&Params(&params), new_syx.clone(), reply)
@@ -2496,11 +2529,14 @@ impl Actor {
             l.current_analysis = Some(analysis);
         }
         self.reload = Some(ReloadState { running_sha: firmware::sha256_hex(&new_syx), baseline });
-        Ok(Some(json!({
-            "path": "swap", "ranges": diff.changes.len(), "bytes": bytes, "owners": diff.owners(),
-            "ms": started.elapsed().as_secs_f64() * 1e3, "apply_ms": apply_ms, "restore_ms": restore_ms, "write_ms": write_ms,
-            "restore": restored["start_used"],
-        })))
+        Ok(Some(with_build(
+            json!({
+                "path": "swap", "ranges": diff.changes.len(), "bytes": bytes, "owners": diff.owners(),
+                "ms": started.elapsed().as_secs_f64() * 1e3, "apply_ms": apply_ms, "restore_ms": restore_ms, "write_ms": write_ms,
+                "restore": restored["start_used"],
+            }),
+            &build,
+        )))
     }
 
     fn rpc_run_mode(&mut self, p: &Params) -> RpcResult {

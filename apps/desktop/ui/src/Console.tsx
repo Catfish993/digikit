@@ -108,6 +108,8 @@ export default function Console() {
   const [opened, setOpened] = createSignal('');
   const [watching, setWatching] = createSignal(true);
   const [reloadNote, setReloadNote] = createSignal('');
+  // the compiler output of a failed build (`error` is reset by every display frame, so it cannot hold it)
+  const [reloadDetail, setReloadDetail] = createSignal('');
   const [modulesBusy, setModulesBusy] = createSignal(false);
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
   const [rate, setRate] = createSignal<number>();
@@ -188,20 +190,24 @@ export default function Console() {
       reloading = false;
     }
   };
-  /** `dev.reload`: the controller applies the modules again from the objects on disk (it never builds) and swaps module code into a
-   * restored main screen, or boots the new image; the result goes to the status area. */
+  /** `dev.reload {build: true}`: the controller builds the stale ColdFire objects, applies the modules again from the objects on disk
+   * and swaps module code into a restored main screen, or boots the new image; the result goes to the status area. A build error
+   * is one short line there and the compiler output in the alert above. */
   const reloadModules = async () => {
     const r = runtime();
     if (!r?.reloadModules || modulesBusy()) return;
     setModulesBusy(true);
     setError('');
     setReloadNote('Reloading modules…');
+    setReloadDetail('');
     try {
       setReloadNote(reloadLine(await r.reloadModules()));
       setPaused(false);
       await refreshInfo();
     } catch (e) {
-      setReloadNote(reloadError(e));
+      const failure = reloadError(e);
+      setReloadNote(failure.status);
+      setReloadDetail(failure.full);
     } finally {
       setModulesBusy(false);
     }
@@ -436,7 +442,7 @@ export default function Console() {
           type="button"
           class="tb"
           disabled={!status() || modulesBusy()}
-          title="Apply the modules again from the objects on disk into the running session, without a boot when only UI modules changed (⇧⌘R). It does not build: run mise run dk:dev or module:check first."
+          title="Build the stale module objects, then apply the modules into the running session, without a boot when only UI modules changed (⇧⌘R). A changed SHARC+ source still needs mise run dk:dev."
           onClick={() => void reloadModules()}
         >
           <Icon d={MODULES} />
@@ -471,6 +477,12 @@ export default function Console() {
       <Show when={error() || outsideApp()}>
         <p class="alert" role="alert">
           {outsideApp() ? 'This page is the desktop app’s console; start it with mise run workbench.' : error()}
+        </p>
+      </Show>
+
+      <Show when={reloadDetail()}>
+        <p class="alert" role="alert">
+          {reloadDetail()}
         </p>
       </Show>
 

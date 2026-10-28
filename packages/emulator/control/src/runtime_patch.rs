@@ -183,6 +183,57 @@ pub fn reapply(root: &Path, stock: &[u8], ids: &[String], needs: &[&str]) -> Res
     Ok(Reapplied { applied: apply::apply(stock, &reg, &lib, ids).map_err(e)?, requirers })
 }
 
+/// One module the build wrote objects for.
+#[derive(Debug)]
+pub struct BuiltModule {
+    pub id: String,
+    /// The object files written.
+    pub objects: Vec<PathBuf>,
+    pub ms: f64,
+}
+
+/// What [`build_modules`] did.
+#[derive(Debug, Default)]
+pub struct BuildSummary {
+    pub built: Vec<BuiltModule>,
+    /// Modules whose objects were current (or that have no sources).
+    pub skipped: Vec<String>,
+    /// SHARC+ objects with changed sources: (module id, object file). They are not built here (`pk_sharc` is Python).
+    pub stale_sharc: Vec<(String, PathBuf)>,
+}
+
+/// Build the stale objects of the modules `ids` (a patch record's modules) in this process: `patchkit::build::build_module` for each,
+/// which writes a `core/*` module's objects into the module and a content module's into `out/cache/dko`. Compiler output of a
+/// failed build is in the error. A stale SHARC+ object is reported in the summary and left alone.
+pub fn build_modules(root: &Path, ids: &[String]) -> Result<BuildSummary, String> {
+    let dirs = patchkit::build::module_dirs(root, ids).map_err(|e| e.to_string())?;
+    build_dirs(root, &dirs)
+}
+
+fn build_dirs(root: &Path, dirs: &[(String, PathBuf)]) -> Result<BuildSummary, String> {
+    use patchkit::build::{BuildOptions, Status};
+    let opts = BuildOptions { root: root.to_path_buf(), skip_sharc: true, ..Default::default() };
+    let mut sum = BuildSummary::default();
+    for (id, dir) in dirs {
+        let started = std::time::Instant::now();
+        let report = patchkit::build::build_module(dir, &opts).map_err(|e| format!("build of {id} failed:\n{e}"))?;
+        let before = sum.stale_sharc.len();
+        for o in report.objects.iter().filter(|o| o.status == Status::StaleSharc) {
+            sum.stale_sharc.push((id.clone(), o.path.clone()));
+        }
+        let objects: Vec<PathBuf> =
+            report.objects.iter().filter(|o| o.status == Status::Built).map(|o| o.path.clone()).collect();
+        if objects.is_empty() {
+            if sum.stale_sharc.len() == before {
+                sum.skipped.push(id.clone());
+            }
+        } else {
+            sum.built.push(BuiltModule { id: id.clone(), objects, ms: started.elapsed().as_secs_f64() * 1e3 });
+        }
+    }
+    Ok(sum)
+}
+
 fn write_whole(file: &Path, data: &[u8]) -> Result<(), String> {
     let dir = file.parent().ok_or("runtime: bad cache path")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("runtime: {}: {e}", dir.display()))?;
@@ -230,6 +281,58 @@ mod tests {
                 None => eprintln!("skipped: firmware/{file} is absent"),
             }
         }
+    }
+
+    #[test]
+    fn a_reload_build_writes_stale_objects_once_and_reports_c_errors() {
+        if patchkit::build::toolchain::Env::new(&root()).m68k("gcc").is_err() {
+            eprintln!("SKIP: the m68k-elf toolchain is not installed");
+            return;
+        }
+        let id = format!("test/reloadbuild-{}", std::process::id());
+        let dir = std::env::temp_dir().join(format!("digikit-reloadbuild-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("module.toml"),
+            format!("[module]\nid = \"{id}\"\ncategory = \"core\"\n\n[[object]]\npath = \"build/t.dko.json\"\nsources = [\"src/t.c\"]\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("src/t.c"), "extern int ext(int);\nint twice(int x) { return ext(x) + ext(x); }\n").unwrap();
+        let dirs = [(id.clone(), dir.clone())];
+        let first = build_dirs(&root(), &dirs).unwrap();
+        assert_eq!(first.built.len(), 1);
+        assert_eq!(first.built[0].objects, [dir.join("build/t.dko.json")]);
+        // current: skipped, not built again
+        let second = build_dirs(&root(), &dirs).unwrap();
+        assert!(second.built.is_empty() && second.skipped == [id.clone()]);
+        // a compile error names the module and carries the compiler's text; the old object stays
+        let good = std::fs::read_to_string(dir.join("build/t.dko.json")).unwrap();
+        std::fs::write(dir.join("src/t.c"), "int twice(int x) { return x +; }\n").unwrap();
+        let err = build_dirs(&root(), &dirs).unwrap_err();
+        assert!(err.starts_with(&format!("build of {id} failed:")) && err.contains("t.c"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join("build/t.dko.json")).unwrap(), good);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_stale_sharc_object_is_reported_not_built() {
+        let id = format!("test/reloadsharc-{}", std::process::id());
+        let dir = std::env::temp_dir().join(format!("digikit-reloadsharc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src/dsp")).unwrap();
+        std::fs::write(
+            dir.join("module.toml"),
+            format!("[module]\nid = \"{id}\"\ncategory = \"core\"\n\n[[object]]\npath = \"build/d.dko.json\"\nsources = [\"src/dsp/d.s\"]\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("src/dsp/d.s"), "nop;\n").unwrap();
+        let sum = build_dirs(&root(), &[(id.clone(), dir.clone())]).unwrap();
+        assert!(sum.built.is_empty() && sum.skipped.is_empty());
+        assert_eq!(sum.stale_sharc.len(), 1);
+        assert_eq!(sum.stale_sharc[0].0, id);
+        assert!(!dir.join("build").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

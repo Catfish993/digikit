@@ -73,7 +73,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `leds.get` | `leds` | `call` |
 | `mem.cf.peek`, `mem.cf.poke` | `peek32`, `poke32` | `call` |
 | `mem.cf.write {addr, hex}` | | `call` |
-| `dev.reload {modules_dir?, swap_modules?, auto_no?}` | | `call`; `mise run dk:dev` |
+| `dev.reload {modules_dir?, swap_modules?, auto_no?, build?}` | | `call`; `mise run dk:dev` |
 | `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel`, `card.folder`, `card.sync` | | `call` |
 | `midi.in`, `midi.out` | `midi_in`, `midi_out` | `call` |
 | `midi.usb.in`, `midi.usb.out` | `usb_in`, `usb_out` | `call` |
@@ -110,7 +110,14 @@ exact stock firmware (desktop only), else none; an image of another device never
 `mem.cf.write {addr, hex}` writes a byte range (any alignment, hex text) of SDRAM in one call, with one decode-cache invalidation for the range: code
 written this way runs as new code. Unmapped pages are mapped zeroed. Like `mem.cf.poke` it is a host write, not part of the replay record.
 
-`dev.reload {modules_dir?, swap_modules?, auto_no?}` brings the running session to the module objects as they are on disk now. It never builds.
+`dev.reload {modules_dir?, swap_modules?, auto_no?, build?}` brings the running session to the module objects as they are on disk now. Without
+`build` it never builds. With `build: true` (the workbench button sets it) it first builds the stale objects of the session's modules in
+the daemon's process (`patchkit::build::build_module`; ColdFire C, assembly and Rust crates; gcc, as, ld and cargo run as child processes):
+a `core/*` module writes its committed `build/` objects, a content module writes `out/cache/dko`. The reply gets
+`build: {built: [{id, objects, ms}], skipped: [id], ms}`. A compiler error is the error message (`dev.reload: build of ID failed:` and the
+compiler output) and nothing is reloaded. A stale SHARC+ object is not built (it needs the Python step `pk_sharc`): the call stops with
+`the SHARC+ object X of ID is stale: run mise run dk:dev -- ID (SHARC changes need the Python step until phase 6a)`. The build runs on
+the controller thread, so the session is blocked while it runs.
 The module set is the patch record of the running image; the image is made again from the stock image (`modules_dir`: the repository root,
 default as for `firmware.load {runtime}`; the stock image is the load's base or the file of `firmware/` with the record's digest) and compared
 with the image whose ready state the boot cache holds (the baseline: the running image, or after a swap the image the swap started from).

@@ -92,7 +92,8 @@ boot. `mise run dk:dev -- test/ui-demo --device dn2[,dt2] --keys 'tap:NO,tap:SET
 module set (`--stop` ends it), runs the key script from the main screen, and writes `out/runs/devreload/<device>/NAME.png` (4x) and
 `sheet.png` (2x, four per row, labelled). The target is a patch set of `devices/*.toml` or module ids; `--keys` is a JSON list of harness
 steps or inline text (`tap:KEY`, `wait:MS`, `turn:ENC A:BY`, `shot:NAME`, `*N` repeats). The workbench has the same call as the Reload
-modules button (⇧⌘R): it never builds, so build first (`dk:dev` or `module:check`).
+modules button (⇧⌘R), with `build: true`: it builds the stale ColdFire objects of the session's modules first (a SHARC+ change still needs
+`dk:dev`; docs/CONTROL.md). `dk:dev` builds in its own step and reloads without `build`.
 `--store ID,ID*,synth:NAME:BSS` boots the daemon on a card whose module store holds those modules (`*`: also in the saved selection; `synth:` needs BSS bytes of arena, so it never fits), which the MODULES list of `core/digikit-menu` needs; each list has its own kept daemon.
 
 The daemon method is `dev.reload` (docs/CONTROL.md). It applies the modules again and compares the result with the running image:

@@ -42,6 +42,8 @@ pub struct BuildOptions {
     pub defines: Vec<String>,
     /// Write the objects under this directory (at their `path`) instead of into the module.
     pub out: Option<PathBuf>,
+    /// Do not build a stale SHARC+ object (it needs the Python step `pk_sharc`): report it as [`Status::StaleSharc`].
+    pub skip_sharc: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +54,8 @@ pub enum Status {
     Unchanged,
     /// `--check`: the committed object equals a fresh build.
     Current,
+    /// A SHARC+ object whose sources changed, left alone because of [`BuildOptions::skip_sharc`].
+    StaleSharc,
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +80,7 @@ impl BuildReport {
             .map(|o| match o.status {
                 Status::Unchanged => format!("{}: unchanged", o.path.display()),
                 Status::Current => format!("{}: current", o.path.display()),
+                Status::StaleSharc => format!("{}: stale (SHARC+, not built)", o.path.display()),
                 Status::Built => format!(
                     "{}: {} instructions re-decoded OK",
                     o.path.display(),
@@ -338,6 +343,14 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
             });
             continue;
         }
+        if opts.skip_sharc && kind_of(&o.sources) == Kind::Sharc {
+            report.objects.push(ObjectReport {
+                path: stored,
+                status: Status::StaleSharc,
+                instructions: None,
+            });
+            continue;
+        }
         let obj = build_object(&env, moddir, o, &opts.defines)?;
         let out = match &opts.out {
             Some(d) => d.join(&o.path),
@@ -377,6 +390,27 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
         }
     }
     Ok(report)
+}
+
+/// The directories of the modules `ids` name, in the order of `ids`; an id no module root has is an error.
+pub fn module_dirs(root: &Path, ids: &[String]) -> Result<Vec<(String, PathBuf)>> {
+    let mut found: HashMap<String, PathBuf> = HashMap::new();
+    for d in all_modules(root, None) {
+        if let Ok(t) = std::fs::read_to_string(d.join("module.toml"))
+            && let Ok(m) = ModuleToml::parse(&t)
+            && ids.iter().any(|i| i == m.id())
+        {
+            found.insert(m.id().to_string(), d);
+        }
+    }
+    ids.iter()
+        .map(|i| {
+            found
+                .remove(i)
+                .map(|d| (i.clone(), d))
+                .ok_or_else(|| err!("unknown module {i:?}"))
+        })
+        .collect()
 }
 
 /// The module roots of a repository (`modules/`, `tests/fixtures/modules/`) and the extra roots of PATCHKIT_MODULES.

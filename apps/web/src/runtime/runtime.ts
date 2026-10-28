@@ -592,7 +592,7 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
         .catch(() => {})
         .then(async () => {
           try {
-            const report = await call<ReloadReport>('dev.reload', {}, session);
+            const report = await call<ReloadReport>('dev.reload', { build: true }, session);
             if (disposed || activeSession !== session) return report;
             onUpdate({ type: 'snapshot', snapshot: await api.invoke<RuntimeSnapshot>('emu_startup') });
             return report;

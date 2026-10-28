@@ -85,6 +85,7 @@ pub fn build(root: &Path, rest: &[String]) -> Result<()> {
             .map(|d| d.split('=').next().unwrap_or("").to_string())
             .collect(),
         out: flag(rest, "--out").map(PathBuf::from),
+        skip_sharc: false,
     };
     for (_, d) in dirs {
         for line in build::build_module(&d, &opts)?.lines() {

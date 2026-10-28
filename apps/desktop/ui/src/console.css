@@ -139,6 +139,10 @@ body {
   color: #ffc1bc;
   background: var(--bad-bg);
   border-bottom: 1px solid rgba(255, 139, 130, 0.3);
+  /* a build error carries the compiler output: keep its lines, scroll when long */
+  white-space: pre-wrap;
+  max-height: 30vh;
+  overflow: auto;
 }
 
 .stage {

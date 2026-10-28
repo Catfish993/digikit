@@ -181,7 +181,7 @@ child processes.
       Also: `serde_json`'s pretty printer replaces `canon.rs` (one reformat of committed objects if
       needed); `isacheck.py` calls patchkit instead of its own ISA allow-list.
       Proof: every packed `.dkm` and patched image is byte-identical.
-- [ ] 5c. The workbench Reload modules button builds first (ColdFire in-process; a SHARC change says
+- [x] 5c. The workbench Reload modules button builds first (ColdFire in-process; a SHARC change says
       to run `dk:dev`).
 
 ### Phase 6: build in the browser
@@ -208,7 +208,7 @@ child processes.
       (about 4 s per edit); any other change boots (DN2 5 s, DT2 10 s). Reload modules button in the
       workbench. `tools/emulator/boot_phases.py` measures the boot.
 - [ ] `mise run dk:watch`: rebuild on save and call `dev.reload` on the open workbench's control socket.
-- [ ] After phase 5: the workbench Reload modules button builds first (`patchkit build` in Rust).
+- [x] After phase 5: the workbench Reload modules button builds first (`patchkit build` in Rust).
 - [ ] Cache the module library scan in `dev.reload` (1.2 s of each reload).
 
 ### Later
@@ -224,4 +224,5 @@ menu is unchanged (goldens match). Then the list-view anchors, `<dk/ui.h>`, core
 Then the digikit menu in C on core/ui (the Rust menu crate is deleted; core/ui is in the
 runtime sets of both devices); Em approved the new goldens. Phase 3 done. Then core modules grouped by role
 (`adapters/`, `apps/`, `role` in module.toml), docs/ARCHITECTURE.md and `mise run check:layers`. Phase 4 done (module UI through runtime imports,
-`DK_MENU`, REMOTE switch removed). Next: phase 5 (`patchkit build` in Rust).
+`DK_MENU`, REMOTE switch removed). Phase 5 done (`patchkit build` in Rust, content objects only cached, Reload
+modules builds first). Next: phase 6 (build in the browser; 6a tries Selache in wasm first).
