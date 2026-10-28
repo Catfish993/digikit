@@ -112,6 +112,8 @@ def load_profiles(root: Path = ROOT) -> dict[str, dict]:
                 "filename": fw.get("filename"),
                 "port": bool(fw.get("port")),
                 "patch": d.get("patch") or {},
+                # RAM inside cf.expansion that another patcher's build uses at fixed addresses (`[[firmware]] cf_expansion_excludes`)
+                "cf_expansion_excludes": fw.get("cf_expansion_excludes", []),
             }
     return out
 
@@ -501,6 +503,17 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
     raise ResolveError(f"{rule['name']}: unknown rule kind {kind!r}")
 
 
+def expansion_excludes(excludes: list, start: int, end: int) -> list:
+    """The firmware entry's `cf_expansion_excludes`, checked: inside the region, each non-empty, in order, not overlapping."""
+    out = sorted([int(a), int(b)] for a, b in excludes)
+    for i, (a, b) in enumerate(out):
+        if not start <= a < b <= end:
+            raise ResolveError(f"cf_expansion_excludes [{a:#x}, {b:#x}] is not inside cf.expansion [{start:#x}, {end:#x}]")
+        if i and a < out[i - 1][1]:
+            raise ResolveError(f"cf_expansion_excludes [{a:#x}, {b:#x}] overlaps the range before it")
+    return out
+
+
 def dsp_l2_region(stream, patch: dict) -> dict:
     lo, hi = patch["dsp_l2_lo"], patch["dsp_l2_hi"]
     end = max(
@@ -651,7 +664,7 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
             "cpu": "cf",
             "start": exp["start"],
             "end": exp["end"],
-            "excludes": [],
+            "excludes": expansion_excludes(prof["cf_expansion_excludes"], exp["start"], exp["end"]),
             "mark": "D",
         },
         dsp_l2_region(dsp.stream, prof["patch"]),
