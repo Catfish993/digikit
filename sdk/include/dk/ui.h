@@ -6,7 +6,7 @@
 
      static void fill(dk_ui_menu *m, void *ctx) {
          dk_ui_action(m, "APPLY", apply, ctx, 0);
-         dk_ui_toggle(m, "REMOTE", &remote_on, remote_changed, ctx);
+         dk_ui_toggle(m, "LOUD", &loud, loud_changed, ctx);
      }
      static const dk_ui_menu_desc main_desc = {.name = "MyMenu", .title = "MY MODULE", .fill = fill};
      dk_ui_open(dk_ui_menu_new(&main_desc));
@@ -17,6 +17,20 @@
      It must point at static or module memory, never at the stack.
    - Callbacks run on the UI task. A dialog's callback runs after the dialog has closed.
    - Menus are never freed. Dialogs free themselves after they close.
+   - A content module (a .dkm) has no unload at run time, so no UI object of the module is freed. Every
+     ctx, callback and descriptor a module passes must still point at its own memory (static data or
+     code of the module), never at the stack or at a heap block that is freed later. Build a menu when
+     the user opens it (in the entry point below, or from a callback), after all modules are loaded.
+
+   A module with settings exports dkm_menu with DK_MENU(fill). The DIGIKIT menu shows SETTINGS... for
+   the loaded module and calls dkm_menu only when the user opens it; fill adds the rows of that menu:
+
+     static void settings(dk_ui_menu *m, void *ctx) { dk_ui_action(m, "RESET", reset, 0, 0); }
+     DK_MENU(settings)
+
+   The calls are imports of the module (sdk/sdk.toml, requires core/ui). When core/ui is not in the
+   image the module still loads and each call returns its failure value: dk_ui_menu_new 0, the
+   int calls -1, dk_ui_has, dk_ui_checked and dk_ui_is_open 0, the void calls nothing.
 
    Keys: YES runs a row's action, flips a toggle, or (in a list with a check function) toggles the
    row's check mark. The encoder changes a value row; changed is called only when the value moves.
@@ -107,5 +121,13 @@ int dk_ui_choice(const char *title, const char *const *items, int n, void (*done
                  void *ctx);
 /* A short message on the main screen that goes away by itself. */
 int dk_ui_toast(const char *text);
+
+/* The module settings entry point: defines dkm_menu (docs/design/digikit-dkm.md) with fill as its body. The DIGIKIT
+   menu passes the menu to fill and 0 as ctx. */
+#define DK_MENU(fill) \
+    void dkm_menu(dk_ui_menu *m, void *ctx) \
+    {                                       \
+        fill(m, ctx);                       \
+    }
 
 #endif

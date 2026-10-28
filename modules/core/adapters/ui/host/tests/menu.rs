@@ -10,6 +10,9 @@ extern "C" {
     fn fk_scan_result(r: c_int);
     fn fk_loaded(path: *const c_char, name: *const c_char);
     fn fk_fx(id: *const c_char, allowed: u32, saved: u32);
+    fn fk_loaded_menu(path: *const c_char, name: *const c_char);
+    fn fk_settings_runs() -> c_int;
+    fn fk_settings_acts() -> c_int;
     fn fk_send_slots(n: u32);
     fn fk_restart_result(r: c_int);
     fn fk_open_digikit() -> c_int;
@@ -46,6 +49,12 @@ fn select(path: &str) {
 fn loaded(path: &str, name: &str) {
     let (p, n) = (CString::new(path).unwrap(), CString::new(name).unwrap());
     unsafe { fk_loaded(p.as_ptr(), n.as_ptr()) }
+}
+
+/// A loaded module that exports dkm_menu.
+fn loaded_menu(path: &str, name: &str) {
+    let (p, n) = (CString::new(path).unwrap(), CString::new(name).unwrap());
+    unsafe { fk_loaded_menu(p.as_ptr(), n.as_ptr()) }
 }
 
 fn fx(id: &str, allowed: u32, saved: u32) {
@@ -94,8 +103,7 @@ fn digikit_menu_rows() {
             "HEALTH",
             "MEMORY",
             "MODULES",
-            "DEBUG OFF",
-            "REMOTE OFF"
+            "DEBUG OFF"
         ]
     );
     press_yes(4);
@@ -236,6 +244,43 @@ fn the_side_panel_has_load_route_and_info() {
     press_right(2);
     choose_panel_row(0);
     assert_eq!(dialog().unwrap().1, "HUGE DOES NOT FIT");
+}
+
+#[test]
+fn a_loaded_module_with_a_menu_gets_settings_in_the_side_panel() {
+    let _g = digikit();
+    store_of_three();
+    loaded_menu("modules/tool.dkm", "digikit/tool");
+    loaded("modules/gain-fx.dkm", "test/gain-fx");
+    fx("test/gain-fx", 3, 1);
+    select("modules/tool.dkm");
+    select("modules/gain-fx.dkm");
+    open_modules();
+    // only the module with a dkm_menu has the row; a loaded effect without one does not
+    press_right(0);
+    assert_eq!(render(), ["UNLOAD", "SETTINGS...", "INFO"]);
+    press_no();
+    press_right(1);
+    assert_eq!(render(), ["UNLOAD", "ROUTE...", "INFO"]);
+    press_no();
+    // a module that is in the store but not loaded has none
+    press_right(2);
+    assert_eq!(render(), ["LOAD", "INFO"]);
+    press_no();
+    // the module's dkm_menu runs only when the user opens SETTINGS..., and again at each open
+    assert_eq!(unsafe { fk_settings_runs() }, 0);
+    press_right(0);
+    choose_panel_row(1);
+    assert_eq!(title(), "TOOL"); // the module name without its author
+    assert_eq!(render(), ["HELD 0", "RELEASE"]);
+    assert_eq!(unsafe { fk_settings_runs() }, 1);
+    press_yes(1);
+    assert_eq!(unsafe { fk_settings_acts() }, 1);
+    press_no();
+    press_right(0);
+    choose_panel_row(1);
+    assert_eq!(unsafe { fk_settings_runs() }, 2);
+    assert_eq!(depth(), 3); // DIGIKIT, MODULES, the settings
 }
 
 #[test]

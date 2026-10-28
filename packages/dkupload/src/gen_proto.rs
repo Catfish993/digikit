@@ -41,7 +41,6 @@ pub const E_NOSTORE: i8 = -61;
 pub const E_INUSE: i8 = -62;
 pub const E_PEEK: i8 = -63;
 pub const E_CMD_RANGE: i8 = -64;
-pub const E_DISABLED: i8 = -65;
 pub const E_SET_KEY: i8 = -66;
 pub const E_SET_FULL: i8 = -67;
 pub const E_SET_NOKEY: i8 = -68;
@@ -73,11 +72,10 @@ pub const CAPK_MAP_ENTRIES: u8 = 11;
 pub const CAPK_STORE: u8 = 12;
 pub const CAPK_SETTINGS: u8 = 13;
 pub const CAPK_SEND_SLOTS: u8 = 14;
-/// The command ranges a module may register, as (first, last, guarded).
-/// The third field: the runtime refuses the range's commands while the REMOTE switch is off.
-pub const RANGES: [(u8, u8, bool); 2] = [
-    (0x38, 0x3d, true), // remote
-    (0x3e, 0x3f, false), // remote_state
+/// The command ranges a module may register, as (first, last).
+pub const RANGES: [(u8, u8); 2] = [
+    (0x38, 0x3d), // remote
+    (0x3e, 0x3f), // remote_state
 ];
 pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
 pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);

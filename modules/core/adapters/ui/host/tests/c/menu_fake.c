@@ -1,10 +1,16 @@
 /* Host test of core/digikit-menu: the menu's own C source, compiled here with fakes of the runtime's dkrt_* calls and of
    dk_ui_stock_row. The fake <dk/ui.h> (src/lib.rs) shows the screens, and modules/core/adapters/ui/host/tests/menu.rs presses the keys.
    The menu source is included, not linked, so that fk_reset can clear its statics between tests. */
+/* an address of a module's dkm_menu is 32 bits on the device; here the fake modules use 1 for fake_dkm_menu */
+#include <stdint.h>
+#include <dk/ui.h>
+static void fake_dkm_menu_call(uint32_t a, dk_ui_menu *m);
+#define DK_CALL_MENU(a, m) fake_dkm_menu_call((a), (m))
 #include "../../../../../apps/digikit-menu/src/menu.c"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 /* ---- the fake store and runtime ---------------------------------------------------------------------------------------- */
 
@@ -26,9 +32,10 @@ static struct {
     char put_key[2][48];
     uint8_t put_val[2];
     int flushes;
-    int debug, remote;
+    int debug;
     uint32_t blocks;
 } fk;
+static int settings_runs, settings_acts;
 
 static dk_ui_act_fn *stock_fn;
 
@@ -106,17 +113,6 @@ void dkrt_diag(DkrtDiag *out)
 int32_t dkrt_debug_set(uint32_t on)
 {
     fk.debug = (int)on;
-    return DKRT_OK;
-}
-
-int32_t dkrt_remote_get(void)
-{
-    return fk.remote;
-}
-
-int32_t dkrt_remote_set(uint32_t on)
-{
-    fk.remote = (int)on;
     return DKRT_OK;
 }
 
@@ -220,10 +216,11 @@ int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out)
 void fk_reset(void)
 {
     memset(&fk, 0, sizeof fk);
+    settings_runs = settings_acts = 0;
     fk.arena_free = 512 * 1024;
-    fk.remote = 0;
     stock_fn = 0;
     g_main = g_about = DK_HEALTH_MENU = g_mem = g_modules = g_info = 0;
+    memset(g_set, 0, sizeof g_set);
     g_safe_shown = 0;
     STORE = 0;
     NENT = 0;
@@ -263,6 +260,33 @@ void fk_loaded(const char *path, const char *name)
     memset(m, 0, sizeof *m);
     snprintf((char *)m->path, sizeof m->path, "%s", path);
     snprintf((char *)m->name, sizeof m->name, "%s", name);
+}
+
+/* A loaded module that has a dkm_menu: the menu gets the fake settings entry, which adds a text row and an action row. */
+static void settings_action(void *ctx, int arg)
+{
+    (void)ctx;
+    settings_acts += arg;
+}
+static void fake_dkm_menu(dk_ui_menu *m, void *ctx)
+{
+    settings_runs++;
+    assert(ctx == 0);
+    dk_ui_text(m, "HELD 0");
+    dk_ui_action(m, "RELEASE", settings_action, 0, 1);
+}
+void fk_loaded_menu(const char *path, const char *name)
+{
+    fk_loaded(path, name);
+    fk.mod[fk.mod_n - 1].menu = 1; /* an address on the host is a small number: DK_CALL_MENU maps it */
+}
+int fk_settings_runs(void) { return settings_runs; }
+int fk_settings_acts(void) { return settings_acts; }
+
+static void fake_dkm_menu_call(uint32_t a, dk_ui_menu *m)
+{
+    assert(a == 1);
+    fake_dkm_menu(m, 0);
 }
 
 void fk_fx(const char *id, uint32_t allowed, uint32_t saved)

@@ -692,12 +692,11 @@ queue is full), `-3` (the device profile names no backend `core/input` has). Cod
 firmware's own panel decoders (`docs/findings/58-panel-input-path.md`) and are for the MIDI task; the first user is `digikit/remote`, the proof is `test/input-probe` and the scenario `input-adapter`.
 A device that reaches its events another way adds a backend to `core/input` and names it in its profile; modules and hosts keep calling the same two functions.
 
-### 11.8 digikit/remote and the REMOTE switch
+### 11.8 digikit/remote
 
 `digikit/remote` (`modules/tools/remote`, a run-time `.dkm`, the same file for both devices) registers KEY 0x38 (`code`, `down`), TURN 0x39 (`encoder`, signed `delta`; the reply is the delta
-taken, at most 30 either way, and the host sends the rest again), RELEASE 0x3a (lets go of every key the module holds) in the guarded `remote` range, and STATE 0x3e (`enabled`, format, turn
-limit) in the `remote_state` range. The module knows no device: codes and encoders are the device file's `[panel]` (the host lays the keys out from them). The switch, the guard and its
-defaults are in `docs/design/digikit-upload.md` ("Service commands"). A module can read the switch with the runtime import `int remote_enabled(void)`. Proof: scenario `remote-control`.
+taken, at most 30 either way, and the host sends the rest again), RELEASE 0x3a (lets go of every key the module holds) in the `remote` range, and STATE 0x3e (`enabled`, always 1 while the module is loaded, format, turn
+limit) in the `remote_state` range. The module knows no device: codes and encoders are the device file's `[panel]` (the host lays the keys out from them). The module is on exactly when its check mark in DIGIKIT > MODULES is set (there is no REMOTE switch and no guarded range). Its settings page (`dkm_menu`, SETTINGS... of the MODULES row) shows the keys it holds, the last command and RELEASE ALL KEYS. Proof: scenario `remote-control`, the host tests `modules/core/adapters/ui/host/tests/remote.rs`.
 
 ## 12. Hot reload as a later goal
 

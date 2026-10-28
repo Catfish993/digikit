@@ -247,3 +247,31 @@ def test_listed_firmware_patch_modules_keep_their_anchors(tree: Path) -> None:
 
 def test_the_repository_itself_holds() -> None:
     assert [str(v) for v in layercheck.check()] == []
+
+
+def test_ui_functions_must_be_imports_the_runtime_links(tree: Path) -> None:
+    ui = "typedef void dk_ui_act_fn(void *ctx, int arg);\nint dk_ui_open(dk_ui_menu *m);\n"
+    write(tree, "sdk/include/dk/ui.h", ui)
+    imp = '[[import]]\nname = "dk_ui_open"\nsig = "i32 (u8 *menu)"\nrequires = "core/ui"\n'
+    write(tree, "sdk/sdk.toml", (tree / "sdk/sdk.toml").read_text() + imp)
+    runtime = (
+        '[[object]]\npath = "build/r.dko.json"\nplace = "cf.expansion"\n'
+        'optional = ["dk_ui_open"]\n'
+    )
+    module(tree, "modules/core/runtime", "core/runtime", "core", "runtime", runtime)
+    # a typedef is no function; the import, the header and the optional list agree
+    assert layercheck.check(tree) == []
+    # a function that is not an import
+    write(tree, "sdk/include/dk/ui.h", ui + "void dk_ui_close(dk_ui_menu *m);\n")
+    (v,) = layercheck.check(tree)
+    assert v.rule == "imports" and "dk_ui_close" in v.message
+    assert v.where == "sdk/include/dk/ui.h:3"
+    # an import that the header does not declare
+    write(tree, "sdk/include/dk/ui.h", "typedef int dk_ui_t;\n")
+    (v,) = layercheck.check(tree)
+    assert v.rule == "imports" and "dk_ui_open" in v.message
+    # an import the runtime does not link
+    write(tree, "sdk/include/dk/ui.h", ui)
+    module(tree, "modules/core/runtime", "core/runtime", "core", "runtime")
+    (v,) = layercheck.check(tree)
+    assert v.rule == "imports" and "optional list" in v.message

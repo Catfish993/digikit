@@ -69,9 +69,6 @@ int32_t input_key(uint32_t code, uint32_t down);
 /* Turn an encoder by `delta`. Needs core/input: the import is not found without it. */
 int32_t input_turn(uint32_t encoder, int32_t delta);
 
-/* 1 when the REMOTE switch of the DIGIKIT menu is on (the guard of the panel commands), else 0. */
-int32_t remote_enabled(void);
-
 /* The 1500 Hz block clock, for a module that wants to measure time. */
 uint32_t dkrt_blocks(void);
 
@@ -82,6 +79,8 @@ int32_t dkm_init(const dk_api *api);
 
 /* Runs when the module is unloaded. */
 void dkm_fini(const dk_api *api);
+
+/* Optional: the module's settings. Runs when the user opens the module's SETTINGS... in the DIGIKIT menu, and adds the rows of a menu (core/ui must be in the image). The prototype is in <dk/ui.h> (`DK_MENU(fill)` defines it): `void dkm_menu(dk_ui_menu *m, void *ctx)`. */
 
 /* Slots: function pointers the firmware hooks call. A module binds one by exporting dkm_slot_<n>. Slot 0 runs once per pass of the UI task's event loop (about 120 Hz). */
 void dkm_slot_0(const dk_api *api);

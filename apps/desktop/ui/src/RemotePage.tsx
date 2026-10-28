@@ -1,6 +1,6 @@
 // The Remote page (desktop): the front panel of the selected target with its real screen, the keys and the encoders working on the device.
 // The screen is the firmware's own Screenshot (stock MidiRpc 0x04), polled; keys and encoders are the commands of digikit/remote (KEY, TURN),
-// which work only while DIGIKIT > REMOTE is on at the device. The page speaks the protocol itself in TypeScript over the target of
+// which work while digikit/remote is loaded at the device. The page speaks the protocol itself in TypeScript over the target of
 // target.ts: the emulator's USB capture or a MIDI port. No process is started.
 import { Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import LivePanel, { type LivePanelApi } from '@web/components/LivePanel';

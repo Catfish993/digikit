@@ -11,7 +11,7 @@
     uv run python -m tools.device.dkupload --emu settings [-o FILE] [--json]   # the settings record (read only); FILE goes to `patchkit store dump --record FILE`
     uv run python -m tools.device.dkupload --emu --run-dir out/runs/patchkit/run-dev-DEVICE put build/m.dkm   # the daemon of `mise run patch:dev` (pk_dev), not the desktop app's
     uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info    # a real device (not exercised in CI)
-    uv run python -m tools.device.dkupload --emu remote state              # digikit/remote (docs/plans/remote-control.md): the REMOTE switch
+    uv run python -m tools.device.dkupload --emu remote state              # digikit/remote (docs/plans/remote-control.md): the module state
     uv run python -m tools.device.dkupload --emu remote key 10             # press and release a key (the device file's panel code); --hold S keeps it down
     uv run python -m tools.device.dkupload --emu remote turn 1 -5          # turn encoder 1 by -5 detents
 
@@ -467,13 +467,13 @@ class Uploader:
 
     # -- digikit/remote (docs/plans/remote-control.md): the commands of a run-time service module, `dkproto.SERVICE_CMD`
     def remote_state(self) -> dict[str, int]:
-        """REMOTE_STATE: `enabled` (the DIGIKIT > REMOTE switch), the state `format` and the `turn_limit` of one TURN. Answered while the switch is off, and
-        when digikit/remote is not loaded this raises `UploadError` with E_PROTO."""
+        """REMOTE_STATE: `enabled` (1 while the module is loaded), the state `format` and the `turn_limit` of one TURN. When digikit/remote
+        is not loaded this raises `UploadError` with E_PROTO."""
         b = self._ok(dkproto.SERVICE_CMD["REMOTE_STATE"], "remote state")
         return {"enabled": b[0], "format": b[1], "turn_limit": b[2]}
 
     def remote_key(self, code: int, down: bool) -> None:
-        """REMOTE_KEY: press (`down`) or release the key with the device file's panel code. `UploadError` E_DISABLED while the switch is off."""
+        """REMOTE_KEY: press (`down`) or release the key with the device file's panel code."""
         self._ok(
             dkproto.SERVICE_CMD["REMOTE_KEY"],
             "remote key",

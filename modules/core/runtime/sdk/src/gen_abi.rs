@@ -257,8 +257,10 @@ pub struct DkrtModule {
     pub state: u32,
     /// bytes of the module's range in the DSP area (0: none)
     pub dsp_size: u32,
+    /// address of the module's dkm_menu(dk_ui_menu *, void *) settings entry point (0: none)
+    pub menu: u32,
 }
-const _: () = assert!(size_of::<DkrtModule>() == 120, "DkrtModule size");
+const _: () = assert!(size_of::<DkrtModule>() == 124, "DkrtModule size");
 const _: () = assert!(offset_of!(DkrtModule, name) == 0, "DkrtModule.name");
 const _: () = assert!(offset_of!(DkrtModule, version) == 32, "DkrtModule.version");
 const _: () = assert!(offset_of!(DkrtModule, base) == 36, "DkrtModule.base");
@@ -267,6 +269,7 @@ const _: () = assert!(offset_of!(DkrtModule, slots) == 44, "DkrtModule.slots");
 const _: () = assert!(offset_of!(DkrtModule, path) == 48, "DkrtModule.path");
 const _: () = assert!(offset_of!(DkrtModule, state) == 112, "DkrtModule.state");
 const _: () = assert!(offset_of!(DkrtModule, dsp_size) == 116, "DkrtModule.dsp_size");
+const _: () = assert!(offset_of!(DkrtModule, menu) == 120, "DkrtModule.menu");
 
 /// dkrt_fx result: one effect with a page (FX routing, finding 62 to 65). Routes are bit masks: 1 master, 2 send.
 #[repr(C)]
@@ -542,12 +545,6 @@ pub mod sig {
 
     /// The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself.
     pub type dkrt_module_header = unsafe extern "C" fn(first: u32, out: *mut DkrtModuleHeader) -> i32;
-
-    /// The REMOTE switch (the commands of the remote range are answered only while it is on; not saved): 1 on, 0 off, -1 when the image has no input adapter (core/input) and so no remote control.
-    pub type dkrt_remote_get = unsafe extern "C" fn() -> i32;
-
-    /// Set the REMOTE switch until the next boot; -1 when there is no input adapter.
-    pub type dkrt_remote_set = unsafe extern "C" fn(on: u32) -> i32;
 
     /// The saved selection (what the next boot loads): count store paths. Always OK.
     pub type dkrt_selection_get = unsafe extern "C" fn(out: *mut DkrtSelection) -> i32;

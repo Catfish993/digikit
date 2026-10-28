@@ -134,12 +134,10 @@ fn the_capacity_kinds_are_generated_for_every_host() {
     assert!(get(sdkgen::PROTO_TS_OUT).contains("  ARENA: 3,"));
     // the command ranges a module may register: in every host's numbers, and a bad one is refused
     assert!(get(sdkgen::PROTO_TS_OUT).contains("  remote: [0x38, 0x3d],"));
-    assert!(get(sdkgen::PROTO_TS_OUT).contains("GUARDED: string[] = ['remote'];"));
     assert!(get(sdkgen::PROTO_PY_OUT).contains("\"remote\": (0x38, 0x3D),"));
-    assert!(get(sdkgen::PROTO_PY_OUT).contains("GUARDED: tuple[str, ...] = (\"remote\",)"));
     assert!(get(sdkgen::PROTO_RS_OUT).contains("pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);"));
-    assert!(get(sdkgen::PROTO_RS_OUT).contains("(0x38, 0x3d, true), // remote"));
-    assert!(get(sdkgen::PROTO_RS_OUT).contains("(0x3e, 0x3f, false), // remote_state"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("(0x38, 0x3d), // remote"));
+    assert!(get(sdkgen::PROTO_RS_OUT).contains("(0x3e, 0x3f), // remote_state"));
     for bad in [
         "remote = [0x38, 0x40]",
         "remote = [0x10, 0x18]",
@@ -158,10 +156,9 @@ fn the_capacity_kinds_are_generated_for_every_host() {
     let broken = text.replace("REMOTE_KEY = 0x38 ", "REMOTE_KEY = 0x10 ");
     assert_ne!(broken, text);
     assert!(sdkgen::render(&broken).is_err());
-    // a guarded range must exist
-    let broken = text.replace("guarded = [\"remote\"]", "guarded = [\"nope\"]");
-    assert_ne!(broken, text);
-    assert!(sdkgen::render(&broken).is_err());
+    // the REMOTE switch is gone: no guarded ranges and no E_DISABLED
+    assert!(!get(sdkgen::PROTO_TS_OUT).contains("GUARDED"));
+    assert!(!get(sdkgen::PROTO_RS_OUT).contains("E_DISABLED"));
     assert!(get(sdkgen::RUST_OUT).contains("pub const CAP_CAPACITY: u32 = 1 << 6;"));
     // two kinds with one number, or kind 0, are refused
     let dup = text.replace("ARENA = 3 ", "ARENA = 2 ");
@@ -172,4 +169,29 @@ fn the_capacity_kinds_are_generated_for_every_host() {
             .0
             .contains("capacity kind")
     );
+}
+
+#[test]
+fn imports_of_other_modules_get_stubs_from_absent() {
+    let text = std::fs::read_to_string(root().join("sdk/sdk.toml")).unwrap();
+    let files = sdkgen::render(&text).unwrap();
+    let rs = &files.iter().find(|f| f.0 == sdkgen::RUST_OUT).unwrap().1;
+    // the ui calls are linked by name and have the API's failure value as a stub; the table lists both addresses
+    assert!(rs.contains("pub fn dk_ui_open(menu: *mut u8) -> i32;"));
+    assert!(rs.contains("pub unsafe extern \"C\" fn dk_ui_open(_a0: *mut u8) -> i32 { -1 as _ }"));
+    assert!(rs.contains("pub unsafe extern \"C\" fn dk_ui_menu_new(_a0: *const u8) -> *mut u8 { 0 as _ }"));
+    assert!(rs.contains("pub unsafe extern \"C\" fn dk_ui_close(_a0: *mut u8) { }"));
+    assert!(rs.contains("(\"dk_ui_has\", core::hint::black_box(dk_ui_has as usize), absent::dk_ui_has as usize),"));
+    // core/input has no stub: the import is not found without the module
+    assert!(rs.contains("(\"input_key\", core::hint::black_box(input_key as usize), 0),"));
+    // the runtime's own table is the imports without `requires`
+    assert!(rs.contains("pub const BUILTIN_NAMES"));
+    assert!(!rs.contains("\"remote_enabled\""));
+    // an absent value that does not fit the return type, or without requires, is refused
+    let broken = text.replacen("absent = \"-1\"", "absent = \"void\"", 1);
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).is_err());
+    let broken = text.replacen("requires = \"core/ui\"\nabsent", "absent", 1);
+    assert_ne!(broken, text);
+    assert!(sdkgen::render(&broken).is_err());
 }

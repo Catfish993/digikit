@@ -11,7 +11,8 @@ export function remoteNotice(state: RemoteState | undefined, error?: unknown): s
   }
   if (error) return String(error);
   if (!state) return 'Reading the state of digikit/remote…';
-  if (!state.enabled) return 'REMOTE is off. Switch it on on the device: SETTINGS > DIGIKIT > REMOTE.';
+  if (!state.enabled)
+    return 'digikit/remote reports itself off. On the device, check it in SETTINGS > DIGIKIT > MODULES, apply and restart.';
   return '';
 }
 

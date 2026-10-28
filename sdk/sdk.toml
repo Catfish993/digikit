@@ -255,9 +255,11 @@ fields = [
     "dk_desc_page_knob knob[DK_PAGE_KNOBS] // the encoders, from entry 0, without gaps",
 ]
 
-# The names a module may import, in the order of the runtime's table (modules/core/runtime/src/rs/src/lib.rs `IMPORTS`). `kind` `helper`: a
-# compiler helper that gcc calls by itself (no prototype in <dk/api.h>); `fw`: a firmware function. `requires`: the module whose absence
-# makes the address 0 (the import is then not found).
+# The names a module may import. The runtime's table (modules/core/runtime/src/rs/src/lib.rs `IMPORTS`) holds those without `requires`, in this
+# order; those with `requires` are symbols of another module that the runtime links by name (`optional` in its module.toml). `kind` `helper`: a
+# compiler helper that gcc calls by itself, or a call whose prototype is in another header (<dk/ui.h>), so none in <dk/gen/api.h>; `fw`: a firmware
+# function. `requires`: the module whose absence makes the address 0 (the import is then not found). `absent`: with `requires`, the runtime hands
+# out a stub instead of 0 and the module loads: the stub returns this value ("0", "-1") or nothing ("void"), and the signature must agree.
 [[import]]
 name = "fw_block_read"
 sig = "i32 (u32 sector, u32 bytes, u8 *buf)"
@@ -322,9 +324,132 @@ doc = "Turn an encoder by `delta`."
 requires = "core/input"
 
 [[import]]
-name = "remote_enabled"
-sig = "i32 ()"
-doc = "1 when the REMOTE switch of the DIGIKIT menu is on (the guard of the panel commands), else 0."
+name = "dk_ui_has"
+sig = "i32 (i32 cap)"
+doc = "1 when this device has the UI capability `cap` (DK_UI_CAP_*), else 0. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "0"
+
+[[import]]
+name = "dk_ui_menu_new"
+sig = "u8 *(const u8 *desc)"
+doc = "Make a menu from a dk_ui_menu_desc; 0 when out of memory. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "0"
+
+[[import]]
+name = "dk_ui_open"
+sig = "i32 (u8 *menu)"
+doc = "Fill and show a menu on top of the current view; -1 when it cannot. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "-1"
+
+[[import]]
+name = "dk_ui_close"
+sig = "void (u8 *menu)"
+doc = "Close a menu. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
+name = "dk_ui_is_open"
+sig = "i32 (const u8 *menu)"
+doc = "1 when the menu is open. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "0"
+
+[[import]]
+name = "dk_ui_refresh"
+sig = "void (u8 *menu)"
+doc = "Fill an open menu again. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
+name = "dk_ui_action"
+sig = "void (u8 *menu, const char *text, u8 *run, u8 *ctx, i32 arg)"
+doc = "Add a row that runs `fn(ctx, arg)` on YES. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
+name = "dk_ui_submenu"
+sig = "void (u8 *menu, const char *text, u8 *sub)"
+doc = "Add a row that opens another menu. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
+name = "dk_ui_text"
+sig = "void (u8 *menu, const char *text)"
+doc = "Add a row of text without an action. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
+name = "dk_ui_toggle"
+sig = "void (u8 *menu, const char *text, i32 *value, u8 *changed, u8 *ctx)"
+doc = "Add an ON/OFF row. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
+name = "dk_ui_value"
+sig = "void (u8 *menu, const char *text, i32 *value, i32 min, i32 max, u8 *changed, u8 *ctx)"
+doc = "Add a number row changed by the encoder. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
+name = "dk_ui_check"
+sig = "void (u8 *list, i32 row, i32 on)"
+doc = "Set the check mark of a list row. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
+name = "dk_ui_checked"
+sig = "i32 (const u8 *list, i32 row)"
+doc = "1 when the list row is checked. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "0"
+
+[[import]]
+name = "dk_ui_confirm"
+sig = "i32 (const char *title, const char *text, u8 *done, u8 *ctx)"
+doc = "A YES/NO dialog; -1 when it cannot be shown. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "-1"
+
+[[import]]
+name = "dk_ui_choice"
+sig = "i32 (const char *title, u8 *items, i32 n, u8 *done, u8 *ctx)"
+doc = "A choice of n items; -1 when it cannot be shown. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "-1"
+
+[[import]]
+name = "dk_ui_toast"
+sig = "i32 (const char *text)"
+doc = "A short message on the main screen; -1 when it cannot be shown. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "-1"
 
 [[import]]
 name = "dkrt_blocks"
@@ -335,6 +460,7 @@ doc = "The 1500 Hz block clock, for a module that wants to measure time."
 [dkm]
 init = { sig = "i32 (const api *api)", doc = "Runs once after the copy, relocation and cache flush. Returns 0 = ok; the module is unloaded otherwise." }
 fini = { sig = "void (const api *api)", doc = "Runs when the module is unloaded." }
+menu = { doc = "Optional: the module's settings. Runs when the user opens the module's SETTINGS... in the DIGIKIT menu, and adds the rows of a menu (core/ui must be in the image)." }
 slot = { sig = "void (const api *api)", doc = "Slots: function pointers the firmware hooks call. A module binds one by exporting dkm_slot_<n>. Slot 0 runs once per pass of the UI task's event loop (about 120 Hz).", count = 8 }
 
 [log]
@@ -528,7 +654,6 @@ args = ["copy", "seq", "used", "result", "-"]
 
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO
-guarded = ["remote"]   # ranges ([protocol.ranges]) whose commands the runtime refuses with E_DISABLED while the REMOTE switch of the DIGIKIT menu is off
 
 [protocol.commands] # command numbers; never reuse or renumber (additive only)
 INFO = 0x01
@@ -552,14 +677,14 @@ SELECT = 0x30
 RESTART = 0x31
 
 [protocol.ranges]   # command numbers a run-time module may register with Api.register_cmds (a request number is 6 bits: bit 6 of the command byte marks a reply)
-remote = [0x38, 0x3d]   # digikit/remote: key and turn of the panel (docs/plans/remote-control.md); guarded: refused while DIGIKIT > REMOTE is off
-remote_state = [0x3e, 0x3f]   # digikit/remote: the state (enabled or not), always answered
+remote = [0x38, 0x3d]   # digikit/remote: key and turn of the panel (docs/plans/remote-control.md)
+remote_state = [0x3e, 0x3f]   # digikit/remote: the state
 
 [protocol.service]  # the commands of run-time service modules, by name; each lies in a range above (a module registers them with Api.register_cmds)
 REMOTE_KEY = 0x38      # digikit/remote: code (u8), down (u8)
 REMOTE_TURN = 0x39     # encoder (u8), delta (s8); the reply body is the delta taken (s8, at most 30 either way)
 REMOTE_RELEASE = 0x3a  # release every key the module holds
-REMOTE_STATE = 0x3e    # reply: enabled (u8), state format (u8), turn limit (u8)
+REMOTE_STATE = 0x3e    # reply: enabled (u8, always 1 while the module is loaded), state format (u8), turn limit (u8)
 
 [protocol.status]   # reply status codes of the upload commands (0 = ok); never renumber
 E_MSG = { code = -50, text = "body too short or malformed" }
@@ -577,7 +702,6 @@ E_NOSTORE = { code = -61, text = "the store header is unreadable (CLEAR still wo
 E_INUSE = { code = -62, text = "the card's store area is not ours and not blank" }
 E_PEEK = { code = -63, text = "PEEK range not allowed, or length 0 or over 512" }
 E_CMD_RANGE = { code = -64, text = "command range not reserved, taken, or empty" }
-E_DISABLED = { code = -65, text = "a guarded command range is switched off (DIGIKIT > REMOTE)" }
 E_SET_KEY = { code = -66, text = "a settings key breaks the rules (1 to 47 printable ASCII characters)" }
 E_SET_FULL = { code = -67, text = "the settings area is full" }
 E_SET_NOKEY = { code = -68, text = "no such settings key (or no settings record)" }

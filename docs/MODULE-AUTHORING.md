@@ -455,6 +455,7 @@ A service is C code for the ColdFire CPU. The runtime calls these symbols of you
 | --- | --- |
 | `int32_t dkm_init(const dk_api *api)` | Once after load. Return 0. Any other value unloads the module. |
 | `void dkm_fini(const dk_api *api)` | When the module is unloaded. |
+| `void dkm_menu(dk_ui_menu *m, void *ctx)` | Optional: the module's settings. `DK_MENU(fill)` of `<dk/ui.h>` defines it. The DIGIKIT menu shows SETTINGS... in the side panel of the loaded module and runs `dkm_menu` only when the user opens it; `fill` adds the rows (`dk_ui_text`, `dk_ui_action`, ...). The menu is built once and kept, and no module is unloaded at run time, so the `ctx` and callbacks of a menu must point at the module's own memory, never at the stack. |
 | `void dkm_slot_N(const dk_api *api)` | `N` is 0 to 7. You bind a slot by exporting its symbol. Slot 0 runs once per pass of the UI event loop, about 120 Hz. A taken slot gives `E_SLOT`. |
 
 Export at least one of them.
@@ -479,7 +480,7 @@ Names a module may import (from `[[import]]` in `sdk/sdk.toml`):
 | `fw_block_read`, `fw_alloc`, `fw_free` | The firmware's eMMC block read and allocator. |
 | `memcpy`, `memset`, `memcmp`, `__muldi3`, `__udivdi3`, `__umoddi3` | Runtime helpers. |
 | `input_key`, `input_turn` | Press a key or turn an encoder. They need `core/input`. Without it the import is not found. |
-| `remote_enabled` | 1 when the REMOTE switch of the DIGIKIT menu is on. |
+| `dk_ui_*` | The calls of `<dk/ui.h>`: menus, lists, rows and dialogs. They need `core/ui`. Without it the module still loads and each call returns its failure value (`dk_ui_menu_new` 0, the int calls -1, `dk_ui_has`, `dk_ui_is_open` and `dk_ui_checked` 0, the void calls nothing). |
 | `dkrt_blocks` | The 1500 Hz block clock. |
 
 A load fails with `E_IMPORT` when a name is not in the runtime's table.
@@ -489,7 +490,7 @@ A load fails with `E_IMPORT` when a name is not in the runtime's table.
 
 | Range | Numbers |
 | --- | --- |
-| `remote` | `0x38` to `0x3d` (guarded: refused while DIGIKIT > REMOTE is off) |
+| `remote` | `0x38` to `0x3d` |
 | `remote_state` | `0x3e` to `0x3f` |
 
 Another range is a change to `sdk/sdk.toml`. Run `mise run gen:modules` after it. A handler runs in the firmware's MIDI task. Keep it short and never

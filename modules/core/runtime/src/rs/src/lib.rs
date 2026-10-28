@@ -104,6 +104,9 @@ pub static mut DKRT_STATE: State = unsafe { core::mem::zeroed() };
 /// The store path each module record was loaded from (kept apart from `State`, whose layout the proof tools peek).
 #[no_mangle]
 pub static mut DKRT_PATHS: [[u8; 64]; MAX_MODULES] = [[0; 64]; MAX_MODULES];
+/// The address of each module record's `dkm_menu` (0: none), apart from `State` for the same reason.
+#[no_mangle]
+pub static mut DKRT_MENUS: [u32; MAX_MODULES] = [0; MAX_MODULES];
 /// The contract versions each module record declared: api, machine, fx, service as (major, minor) bytes (`MODULES` reports them).
 #[no_mangle]
 pub static mut DKRT_CONTRACTS: [[u8; 8]; MAX_MODULES] = [[0; 8]; MAX_MODULES];
@@ -120,12 +123,6 @@ extern "C" {
     /// INFO reply gives (`[digikit] name`: 3 characters and a NUL, as a big-endian word).
     static dkrt_device_id: u32;
     static dkrt_device_name: u32;
-    /// The interface of core/input (`input_key(u32 code, u32 down) -> int`, `input_turn(u32 encoder, int delta) -> int`), importable by name by a
-    /// module; each resolves to 0 when core/input is not in the image (`[object] optional`), and the import is then not found.
-    fn input_key(code: u32, down: u32) -> i32;
-    fn input_turn(encoder: u32, delta: i32) -> i32;
-    /// core/remote-open: present in a patch set that starts with the REMOTE switch on (0 without it).
-    fn remote_open();
     /// `cpushl` over a byte range (both caches), `src/cf/tramp.s`.
     fn dkrt_flush(start: u32, len: u32);
     /// `src/cf/tramp.s`: mask interrupts (returns the old status register), restore it, and the soft reset.
@@ -269,7 +266,7 @@ pub struct Import {
     pub name: [u8; 28],
     pub addr: *const (),
 }
-pub struct Imports(pub [Import; 13]);
+pub struct Imports(pub [Import; 10]);
 unsafe impl Sync for Imports {}
 
 const fn nm(s: &[u8]) -> [u8; 28] {
@@ -282,8 +279,8 @@ const fn nm(s: &[u8]) -> [u8; 28] {
     o
 }
 
-/// The names of `IMPORTS`, in its order; checked against `[[import]]` of `sdk/sdk.toml` below.
-const NAMES: [&[u8]; 13] = [
+/// The names of `IMPORTS`, in its order; checked against the `[[import]]` entries of `sdk/sdk.toml` without `requires` below.
+const NAMES: [&[u8]; 10] = [
     b"fw_block_read",
     b"fw_alloc",
     b"fw_free",
@@ -293,9 +290,6 @@ const NAMES: [&[u8]; 13] = [
     b"__muldi3",
     b"__udivdi3",
     b"__umoddi3",
-    b"input_key",
-    b"input_turn",
-    b"remote_enabled",
     b"dkrt_blocks",
 ];
 
@@ -321,11 +315,8 @@ const fn names_match(ours: &[&[u8]], sdk: &[&str]) -> bool {
     true
 }
 
-const _: () = assert!(names_match(&NAMES, &dkrt_sdk::api::IMPORT_NAMES), "IMPORTS names differ from [[import]] of sdk/sdk.toml");
+const _: () = assert!(names_match(&NAMES, &dkrt_sdk::api::BUILTIN_NAMES), "IMPORTS names differ from [[import]] of sdk/sdk.toml");
 const _: dkrt_sdk::api::DkrtBlocksFn = dkrt_blocks;
-const _: dkrt_sdk::api::InputKeyFn = input_key;
-const _: dkrt_sdk::api::InputTurnFn = input_turn;
-const _: dkrt_sdk::api::RemoteEnabledFn = remote_enabled;
 
 /// The names a module may import. Firmware functions come from patch-time anchors (`dkfw`); the helpers are this
 /// object's own copies, so a module need not carry them.
@@ -366,68 +357,21 @@ pub static IMPORTS: Imports = Imports([
         name: nm(NAMES[8]),
         addr: __umoddi3 as *const (),
     },
-    // core/input: press a key, turn an encoder (the address is 0 without the module)
-    Import {
-        name: nm(NAMES[9]),
-        addr: input_key as *const (),
-    },
-    Import {
-        name: nm(NAMES[10]),
-        addr: input_turn as *const (),
-    },
-    // the REMOTE switch (the guard of the panel commands)
-    Import {
-        name: nm(NAMES[11]),
-        addr: remote_enabled as *const (),
-    },
     // the 1500 Hz block clock (`dkrt_blocks`), for a module that wants to measure time
     Import {
-        name: nm(NAMES[12]),
+        name: nm(NAMES[9]),
         addr: dkrt_blocks as *const (),
     },
 ]);
 
-// ---- the REMOTE switch ---------------------------------------------------------------------------------------------------
+// ---- imports of other modules --------------------------------------------------------------------------------------------
 
-/// The REMOTE switch of the DIGIKIT menu: whether the guarded command ranges (`sdk/sdk.toml` `[protocol] guarded`: the panel's key and turn
-/// commands) are answered. 2: not set since the boot. It is not saved: every boot starts at the default, which is on exactly when `core/remote-open`
-/// is in the image (the emulator's patch set has it, the device's does not: the owner switches it on in the menu). Without `core/input` the switch
-/// does not exist (`-1`).
-static mut REMOTE: u8 = 2;
+// The imports another module provides (`[[import]] requires` of sdk/sdk.toml: core/input, core/ui). The symbols are in this object's `optional`
+// list (module.toml): patchkit links one to 0 when its module is not in the image.
+dkrt_sdk::optional_imports!();
 
-fn input_present() -> bool {
-    core::hint::black_box(input_key as usize) != 0
-}
-
-/// `dkrt_remote_get()`: 1 on, 0 off, -1 when there is no input adapter in the image (no REMOTE row in the menu then).
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_remote_get() -> i32 {
-    if !input_present() {
-        return -1;
-    }
-    if read_volatile(addr_of!(REMOTE)) == 2 {
-        let open = core::hint::black_box(remote_open as usize) != 0;
-        write_volatile(addr_of_mut!(REMOTE), open as u8);
-    }
-    read_volatile(addr_of!(REMOTE)) as i32
-}
-
-/// `dkrt_remote_set(on)`: the switch, until the next boot. -1 when there is no input adapter.
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_remote_set(on: u32) -> i32 {
-    if !input_present() {
-        return -1;
-    }
-    write_volatile(addr_of_mut!(REMOTE), (on != 0) as u8);
-    OK
-}
-
-/// The import `remote_enabled` of modules (`int remote_enabled(void)`): 1 when the REMOTE switch is on, else 0.
-unsafe extern "C" fn remote_enabled() -> i32 {
-    (dkrt_remote_get() == 1) as i32
-}
-
-/// Address of the import `name` (NUL-terminated), 0 when the table has none.
+/// Address of the import `name` (NUL-terminated), 0 when the table has none. An import of another module (`optional`) gives that module's
+/// function; when the module is not in the image it gives the stub of the import if sdk/sdk.toml declares `absent`, else 0.
 pub unsafe fn import_addr(name: *const u8) -> u32 {
     let mut i = 0;
     while i < IMPORTS.0.len() {
@@ -436,7 +380,28 @@ pub unsafe fn import_addr(name: *const u8) -> u32 {
         }
         i += 1;
     }
+    let t = optional::table();
+    i = 0;
+    while i < t.len() {
+        if cstr_eq_str(name, t[i].0) {
+            return (if t[i].1 != 0 { t[i].1 } else { t[i].2 }) as u32;
+        }
+        i += 1;
+    }
     0
+}
+
+/// Whether the NUL-terminated `a` equals `b`.
+unsafe fn cstr_eq_str(a: *const u8, b: &str) -> bool {
+    let b = b.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if *a.add(i) != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    *a.add(b.len()) == 0
 }
 
 // ---- the API table ---------------------------------------------------------------------------------------------------
@@ -865,6 +830,7 @@ pub unsafe extern "C" fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32 {
                 o.path = (*addr_of!(DKRT_PATHS))[i];
                 o.state = if m.used == 2 { MOD_LOADING } else { MOD_LOADED };
                 o.dsp_size = dsp::ds().mod_len[i];
+                o.menu = (*addr_of!(DKRT_MENUS))[i];
                 return OK;
             }
             seen += 1;

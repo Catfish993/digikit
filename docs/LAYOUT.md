@@ -31,7 +31,6 @@ This file says who owns which part of the repository and which moves are planned
 | `modules/core/fw` | none | Generated firmware bindings (a library, not a module) |
 | `modules/core/adapters/*` | `adapter` | One adapter per firmware plug-in point: ui, input, fx, fxpages, dsp-voice, dsp-link, dyndsp, dynfx, dynreg, machines, params, health |
 | `modules/core/apps/*` | `app` | Menus and screens on the adapters' API (digikit-menu) |
-| `modules/core/remote-open` | `adapter` | Stays here until it is deleted |
 | `modules/machines`, `modules/fx`, `modules/tools` | none | Content modules |
 
 Python tools live in `tools/<owner>/`, one package per owner above. The repository root is the only import root: run a tool with `uv run python -m tools.<owner>.<module>` and import it with `from tools.<owner> import <module>`. `tools/coldfire/ghidra/` and `tools/sharc_dev/sharcspec/ghidra/` hold Ghidra scripts and language files, not Python packages.

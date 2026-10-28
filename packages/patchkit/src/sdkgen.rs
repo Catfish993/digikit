@@ -106,8 +106,10 @@ struct Import {
     doc: String,
     /// The module whose presence the import needs (it is 0 without it).
     requires: Option<String>,
-    /// `helper`: a compiler helper (no prototype); `fw`: a firmware function.
+    /// `helper`: a compiler helper or a call declared in another header (no prototype in <dk/gen/api.h>); `fw`: a firmware function.
     kind: Option<String>,
+    /// With `requires`: the runtime hands out a stub when that module is absent. The stub returns this value (`"0"`, `"-1"`) or nothing (`"void"`).
+    absent: Option<String>,
 }
 /// The entry points of a `.dkm`: `[dkm]`.
 #[derive(Deserialize)]
@@ -116,6 +118,13 @@ struct Dkm {
     init: DkmEntry,
     fini: DkmEntry,
     slot: DkmSlot,
+    menu: DkmMenu,
+}
+/// The optional settings entry point of a `.dkm`: the loader finds it by name and the DIGIKIT menu calls it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DkmMenu {
+    doc: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -156,9 +165,6 @@ pub struct CView {
 #[serde(deny_unknown_fields)]
 struct Protocol {
     version: u8,
-    /// Ranges whose commands the runtime refuses (`E_DISABLED`) while the REMOTE switch of the DIGIKIT menu is off.
-    #[serde(default)]
-    guarded: Vec<String>,
     commands: BTreeMap<String, u8>,
     /// The commands of run-time service modules, by name (`REMOTE_KEY`): each lies in a range of `ranges`. A module registers them with `Api.register_cmds`.
     #[serde(default)]
@@ -451,13 +457,6 @@ fn parse(text: &str) -> Result<Sdk> {
             ));
         }
     }
-    for g in &p.guarded {
-        if !p.ranges.contains_key(g) {
-            return Err(err!(
-                "{SOURCE}: protocol guarded range {g} is not in [protocol.ranges]"
-            ));
-        }
-    }
     for (i, (n, v)) in p.caps.iter().enumerate() {
         if *v > 31 {
             return Err(err!("{SOURCE}: protocol cap {n}: bit {v} is not below 32"));
@@ -555,22 +554,17 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
     }
     let _ = writeln!(
         s,
-        "{indent}/// The command ranges a module may register, as (first, last, guarded)."
+        "{indent}/// The command ranges a module may register, as (first, last)."
     );
     let _ = writeln!(
         s,
-        "{indent}/// The third field: the runtime refuses the range's commands while the REMOTE switch is off."
-    );
-    let _ = writeln!(
-        s,
-        "{indent}pub const RANGES: [(u8, u8, bool); {}] = [",
+        "{indent}pub const RANGES: [(u8, u8); {}] = [",
         p.ranges.len()
     );
     for (n, [first, last]) in &p.ranges {
         let _ = writeln!(
             s,
-            "{indent}    ({first:#04x}, {last:#04x}, {}), // {n}",
-            p.guarded.contains(n)
+            "{indent}    ({first:#04x}, {last:#04x}), // {n}"
         );
     }
     let _ = writeln!(s, "{indent}];");
@@ -725,13 +719,7 @@ fn python_proto(sdk: &Sdk) -> String {
     for (n, [first, last]) in &p.ranges {
         let _ = writeln!(s, "    {n:?}: (0x{first:02X}, 0x{last:02X}),");
     }
-    let guarded: Vec<String> = p.guarded.iter().map(|g| format!("{g:?}")).collect();
-    let _ = write!(
-        s,
-        "}}\n\nGUARDED: tuple[str, ...] = ({}{})\n",
-        guarded.join(", "),
-        if guarded.len() == 1 { "," } else { "" }
-    );
+    s.push_str("}\n");
     s.push_str("\nCAPACITY_KINDS: dict[str, int] = {\n");
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "    {n:?}: {k},");
@@ -793,12 +781,7 @@ fn ts_proto(sdk: &Sdk) -> String {
     for (n, [first, last]) in &p.ranges {
         let _ = writeln!(s, "  {n}: [{first:#04x}, {last:#04x}],");
     }
-    let guarded: Vec<String> = p.guarded.iter().map(|g| format!("'{g}'")).collect();
-    let _ = write!(
-        s,
-        "}} as const;\n\n/** The ranges the runtime refuses while the REMOTE switch is off. */\nexport const GUARDED: string[] = [{}];\n\nexport const CAPACITY_KINDS = {{\n",
-        guarded.join(", ")
-    );
+    s.push_str("} as const;\n\nexport const CAPACITY_KINDS = {\n");
     for (n, k) in by_value(&sdk.capacity.kinds) {
         let _ = writeln!(s, "  {n}: {k},");
     }
@@ -1299,6 +1282,28 @@ fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
             None if im.kind.as_deref() == Some("helper") => None,
             None => return Err(err!("{SOURCE}: {what}: needs a sig")),
         };
+        if let Some(a) = &im.absent {
+            let Some(sig) = &sig else {
+                return Err(err!("{SOURCE}: {what}: absent needs a sig"));
+            };
+            if im.requires.is_none() {
+                return Err(err!("{SOURCE}: {what}: absent needs requires"));
+            }
+            let is_void = sig.ret.base == "void" && sig.ret.ptr == 0;
+            let ok = if is_void {
+                a == "void"
+            } else {
+                a.parse::<i32>().is_ok()
+            };
+            if !ok {
+                return Err(err!(
+                    "{SOURCE}: {what}: absent {a:?} does not fit the return type (\"void\" for void, else a number)"
+                ));
+            }
+        }
+        if im.requires.is_some() && im.kind.as_deref() == Some("fw") {
+            return Err(err!("{SOURCE}: {what}: a fw import has no requires"));
+        }
         v.push((im, sig));
     }
     Ok(v)
@@ -1430,6 +1435,13 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
         let _ = writeln!(s, "        {:?},", im.name);
     }
     s.push_str("    ];\n");
+    let own: Vec<_> = imps.iter().filter(|(im, _)| im.requires.is_none()).collect();
+    s.push_str("\n    /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`.\n");
+    let _ = writeln!(s, "    pub const BUILTIN_NAMES: [&str; {}] = [", own.len());
+    for (im, _) in &own {
+        let _ = writeln!(s, "        {:?},", im.name);
+    }
+    s.push_str("    ];\n");
     for (im, sig) in &imps {
         let (None, Some(sig)) = (&im.kind, sig) else {
             continue;
@@ -1438,7 +1450,84 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
         let _ = writeln!(s, "    pub type {}Fn = {};", camel(&im.name), rust_fn(sig));
     }
     s.push_str("}\n");
+    s.push_str(&rust_optional(&imps));
     Ok(s)
+}
+
+/// The macro `optional_imports!` for the runtime crate: the imports that another module provides (`requires`). It declares each as an external
+/// function (patchkit links an `[object] optional` symbol to 0 when its module is not in the image), the stub of each that has `absent`, and
+/// `optional::table()`: per import its name, the address the module gave (0 when absent) and the address of the stub (0 when it has none). It is
+/// a macro because the undefined symbols must belong to the runtime's own object, not to this crate.
+fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
+    let opt: Vec<_> = imps.iter().filter(|(im, _)| im.requires.is_some()).collect();
+    let mut s = String::from(
+        "\n/// The imports that another module provides (`[[import]] requires`): the external functions, the stubs for an absent module and\n/// the table of both. Expand it once in the runtime's object; its symbols must be in the `optional` list of the runtime's module.toml.\n#[macro_export]\nmacro_rules! optional_imports {\n    () => {\n        #[allow(dead_code, trivial_numeric_casts)]\n        pub mod optional {\n            extern \"C\" {\n",
+    );
+    let decl = |sig: &Sig, keep: bool| -> String {
+        sig.args
+            .iter()
+            .enumerate()
+            .map(|(i, (t, n))| {
+                if keep {
+                    format!("{n}: {}", rust_ty(t))
+                } else {
+                    format!("_a{i}: {}", rust_ty(t))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let ret = |sig: &Sig| -> String {
+        if sig.ret.base == "void" && sig.ret.ptr == 0 {
+            String::new()
+        } else {
+            format!(" -> {}", rust_ty(&sig.ret))
+        }
+    };
+    for (im, sig) in &opt {
+        let sig = sig.as_ref().expect("a requires import has a sig");
+        let _ = writeln!(
+            s,
+            "                pub fn {}({}){};",
+            im.name,
+            decl(sig, true),
+            ret(sig)
+        );
+    }
+    s.push_str("            }\n\n            /// What an absent module's import calls: the failure value of the API.\n            pub mod absent {\n");
+    for (im, sig) in &opt {
+        let (Some(a), Some(sig)) = (&im.absent, sig) else {
+            continue;
+        };
+        let body = if a == "void" { String::new() } else { format!(" {a} as _") };
+        let _ = writeln!(
+            s,
+            "                pub unsafe extern \"C\" fn {}({}){} {{{body} }}",
+            im.name,
+            decl(sig, false),
+            ret(sig)
+        );
+    }
+    s.push_str("            }\n\n");
+    let _ = writeln!(
+        s,
+        "            /// (name, address from the module or 0, address of the stub or 0)\n            pub fn table() -> [(&'static str, usize, usize); {}] {{\n                [",
+        opt.len()
+    );
+    for (im, _) in &opt {
+        let stub = if im.absent.is_some() {
+            format!("absent::{} as usize", im.name)
+        } else {
+            "0".to_string()
+        };
+        let _ = writeln!(
+            s,
+            "                    ({:?}, core::hint::black_box({} as usize), {stub}),",
+            im.name, im.name
+        );
+    }
+    s.push_str("                ]\n            }\n        }\n    };\n}\n");
+    s
 }
 
 /// `sdk/include/dk/gen/api.h`: the Api table, the imports and the entry points of a `.dkm`.
@@ -1513,6 +1602,11 @@ fn api_h(sdk: &Sdk) -> Result<String> {
     let _ = writeln!(s, "{};", c_decl(&init.ret, &format!("dkm_init({})", c_args(&init))));
     let _ = writeln!(s, "\n/* {} */", sdk.dkm.fini.doc);
     let _ = writeln!(s, "{};", c_decl(&fini.ret, &format!("dkm_fini({})", c_args(&fini))));
+    let _ = writeln!(
+        s,
+        "\n/* {} The prototype is in <dk/ui.h> (`DK_MENU(fill)` defines it): `void dkm_menu(dk_ui_menu *m, void *ctx)`. */",
+        sdk.dkm.menu.doc
+    );
     let _ = writeln!(s, "\n/* {} */", sdk.dkm.slot.doc);
     for i in 0..sdk.dkm.slot.count {
         let _ = writeln!(

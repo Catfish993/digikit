@@ -221,6 +221,7 @@ typedef struct DkrtModule {
     uint8_t path[64];                            /* store path the module was loaded from (NUL-terminated, at most 63 bytes kept), for example modules/dyn-demo.dkm */
     uint32_t state;                              /* MOD_LOADED or MOD_LOADING */
     uint32_t dsp_size;                           /* bytes of the module's range in the DSP area (0: none) */
+    uint32_t menu;                               /* address of the module's dkm_menu(dk_ui_menu *, void *) settings entry point (0: none) */
 } DkrtModule;
 
 /* dkrt_fx result: one effect with a page (FX routing, finding 62 to 65). Routes are bit masks: 1 master, 2 send. */
@@ -375,7 +376,7 @@ _Static_assert(sizeof(DkrtStoreEntry) == 72, "DkrtStoreEntry size");
 _Static_assert(offsetof(DkrtStoreEntry, path) == 0, "DkrtStoreEntry.path");
 _Static_assert(offsetof(DkrtStoreEntry, first) == 64, "DkrtStoreEntry.first");
 _Static_assert(offsetof(DkrtStoreEntry, size) == 68, "DkrtStoreEntry.size");
-_Static_assert(sizeof(DkrtModule) == 120, "DkrtModule size");
+_Static_assert(sizeof(DkrtModule) == 124, "DkrtModule size");
 _Static_assert(offsetof(DkrtModule, name) == 0, "DkrtModule.name");
 _Static_assert(offsetof(DkrtModule, version) == 32, "DkrtModule.version");
 _Static_assert(offsetof(DkrtModule, base) == 36, "DkrtModule.base");
@@ -384,6 +385,7 @@ _Static_assert(offsetof(DkrtModule, slots) == 44, "DkrtModule.slots");
 _Static_assert(offsetof(DkrtModule, path) == 48, "DkrtModule.path");
 _Static_assert(offsetof(DkrtModule, state) == 112, "DkrtModule.state");
 _Static_assert(offsetof(DkrtModule, dsp_size) == 116, "DkrtModule.dsp_size");
+_Static_assert(offsetof(DkrtModule, menu) == 120, "DkrtModule.menu");
 _Static_assert(sizeof(DkrtFx) == 60, "DkrtFx size");
 _Static_assert(offsetof(DkrtFx, row) == 0, "DkrtFx.row");
 _Static_assert(offsetof(DkrtFx, allowed) == 4, "DkrtFx.allowed");
@@ -496,12 +498,6 @@ int32_t dkrt_store_list(const uint8_t *prefix, DkrtStoreEntry *out, uint32_t max
 
 /* The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself. */
 int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out);
-
-/* The REMOTE switch (the commands of the remote range are answered only while it is on; not saved): 1 on, 0 off, -1 when the image has no input adapter (core/input) and so no remote control. */
-int32_t dkrt_remote_get(void);
-
-/* Set the REMOTE switch until the next boot; -1 when there is no input adapter. */
-int32_t dkrt_remote_set(uint32_t on);
 
 /* The saved selection (what the next boot loads): count store paths. Always OK. */
 int32_t dkrt_selection_get(DkrtSelection *out);

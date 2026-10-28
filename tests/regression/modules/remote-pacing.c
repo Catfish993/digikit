@@ -15,7 +15,13 @@ static int last_delta, callback_result;
 
 u32 dkrt_blocks(void) { return blocks; }
 int input_key(u32 code, u32 down) { (void)code; (void)down; return 0; }
-int remote_enabled(void) { return 1; }
+/* The settings page of the module is tested on the host UI model (modules/core/adapters/ui/host); here its calls do nothing. */
+void dk_ui_text(dk_ui_menu *m, const char *text) { (void)m; (void)text; }
+void dk_ui_action(dk_ui_menu *m, const char *text, dk_ui_act_fn *run, void *ctx, int arg)
+{
+    (void)m; (void)text; (void)run; (void)ctx; (void)arg;
+}
+void dk_ui_refresh(dk_ui_menu *m) { (void)m; }
 int input_turn(u32 encoder, int delta)
 {
     calls++;

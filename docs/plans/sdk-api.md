@@ -145,10 +145,22 @@ firmware: VerticalMenuView, MenuItem, ConfirmWindow, MultiChoiceWindow, Toast, p
 
 ### Phase 4: UI for content modules; remote
 
-- [ ] `<dk/ui.h>` calls from `.dkm` modules reach `core/ui` through runtime imports.
-- [ ] A module settings menu (`DK_MENU`) shown under SETTINGS > DIGIKIT.
-- [ ] Migrate `digikit/remote`.
-- [ ] Proof: host tests; emulator on dt2 and dn2.
+Layers (docs/ARCHITECTURE.md): a module writes to the SDK; the runtime links the call when the module
+loads and owns policy; the adapter (core/ui) carries it out. The runtime owns enable and disable (the
+MODULES check marks); a module owns only its own settings.
+
+- [x] `dk_ui_*` are `[[import]]` entries of `sdk/sdk.toml` provided by core/ui. When core/ui is absent the
+      runtime hands out stubs that return the API's failure value (0, -1 or null) and `dk_ui_has` is
+      false; the module still loads.
+- [x] A module settings menu: the module exports `void dkm_menu(dk_ui_menu *m, void *ctx)` (`DK_MENU(fill)`
+      is sugar). `DkrtModule` gets a `menu` field. The MODULES side panel shows SETTINGS... for a loaded
+      module with a menu. The DIGIKIT menu calls `dkm_menu` only when the user opens it.
+- [x] REMOTE: the check mark in MODULES is the only switch. Delete the REMOTE switch, the `E_DISABLED`
+      guard of the remote range, the REMOTE row and `core/remote-open` (and its layercheck entry); the
+      emulator's test card selects remote. `digikit/remote` gets its own settings (what it owns, e.g.
+      held keys, RELEASE ALL KEYS).
+- [x] Proof: host tests (remote's menu, the stubs); dk:dev screenshots on dt2 and dn2; a patch set
+      without core/ui still loads remote; the remote scenarios and the menu proof pass.
 
 ### Phase 5: `patchkit build` in Rust
 
@@ -195,4 +207,5 @@ menu is unchanged (goldens match). Then the list-view anchors, `<dk/ui.h>`, core
 `test/ui-demo`, screenshots and a flat heap on dt2 and dn2) and the host harness `dkui-host`.
 Then the digikit menu in C on core/ui (the Rust menu crate is deleted; core/ui is in the
 runtime sets of both devices); Em approved the new goldens. Phase 3 done. Then core modules grouped by role
-(`adapters/`, `apps/`, `role` in module.toml), docs/ARCHITECTURE.md and `mise run check:layers`. Next: phase 4.
+(`adapters/`, `apps/`, `role` in module.toml), docs/ARCHITECTURE.md and `mise run check:layers`. Phase 4 done (module UI through runtime imports,
+`DK_MENU`, REMOTE switch removed). Next: phase 5 (`patchkit build` in Rust).

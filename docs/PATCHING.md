@@ -157,8 +157,8 @@ The desktop app has a target selector in the Transfer and Remote pages: the emul
 midir; it starts no process). The Transfer page then lists, installs and deletes on the device. The Remote page shows the target's own screen (the
 firmware's Screenshot, polled) on the faceplate, and its keys and knobs press and turn on the target through `digikit/remote`, a run-time module:
 install it on the Transfer page (`out/modules/<device>/digikit/remote.dkm` after `mise run module:pack-all`), select it in MODULES on the device, apply and
-restart. The commands work while SETTINGS > DIGIKIT > REMOTE is on: it starts on in the emulator and off on a device, and is never saved
-(`docs/design/digikit-upload.md`, "Service commands"). From a terminal: `uv run python -m tools.device.dkupload --emu remote state|key CODE|turn ENC N`
+restart. The commands work while the module is loaded; its check mark in MODULES is the only switch, and its SETTINGS... page (in the MODULES side panel) shows the held keys and
+has RELEASE ALL KEYS (`modules/tools/remote/README.md`). From a terminal: `uv run python -m tools.device.dkupload --emu remote state|key CODE|turn ENC N`
 (`--port NAME` for a device).
 
 ### Developer loop

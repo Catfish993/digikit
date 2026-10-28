@@ -51,7 +51,7 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | -61 | E_NOSTORE | the device has no `[card.store]` or the store header is unreadable (CLEAR still works) |
 | -62 | E_INUSE | BEGIN, DELETE or CLEAR on a card whose store area is not ours and not blank: the runtime writes nothing there (see "Card safety") |
 | -63 | E_PEEK | PEEK of a range that the device file does not list, or a length of 0 or over 512 |
-| -65 | E_DISABLED | a command of a guarded range (the remote range) while DIGIKIT > REMOTE is off (runtime 0.2.5) |
+| -65 | (free) | was `E_DISABLED`, the guard of the remote range while DIGIKIT > REMOTE was off; the switch and the guard are gone |
 | -66 | E_SET_KEY | a settings key breaks the rules: 1 to 47 printable ASCII characters (runtime 0.5.1; also returned by `dkrt_settings_*`) |
 | -67 | E_SET_FULL | the settings area is full |
 | -68 | E_SET_NOKEY | no such settings key; for the SETTINGS command: no record on the card and none made |
@@ -114,10 +114,8 @@ flag marks a read-only command whose reply is not logged). A run-time module can
 A range that is empty, outside a reserved range or over a registered one is refused with `E_CMD_RANGE`; at most four ranges are registered; the module's ranges are released
 when it is taken down (`fini`). INFO's `caps` bit 9 (`CAP_SERVICE_CMDS`) says the runtime has them.
 
-A range in `[protocol] guarded` (today `remote`) is answered only while the REMOTE switch is on (SETTINGS > DIGIKIT > REMOTE, `dkrt_remote_set`): while it is off
-the runtime answers `E_DISABLED` (-65) before the module sees the command, so a module cannot forget the check. The switch is never saved: it starts on when the image has
-`core/remote-open` (the emulator's patch set) and off otherwise (a device's), and exists only when the image has `core/input` (no REMOTE row without it). The state range stays
-answered, so a host can show whether the switch is on.
+A service module is on exactly when it is loaded: the check mark of DIGIKIT > MODULES is the only switch, and no range is guarded (there is no REMOTE switch). A module with settings
+of its own shows them under SETTINGS... of its MODULES row (`dkm_menu`, `docs/design/digikit-dkm.md`).
 
 A service command is handled in the firmware's MIDI task, like the built-in ones. The handler gets the command, `seq`, the body (at most 160 bytes: the same limit as
 every command but DATA and SELECT) and a buffer for the reply body (at most 879 bytes); it returns the reply length (the status is 0), or a negative status (sent with

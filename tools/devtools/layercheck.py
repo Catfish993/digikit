@@ -18,6 +18,8 @@ Rules:
             dk_app_* or the SHARC externs the SDK documents. A symbol never names a firmware anchor, and `[object.externs]`
             never maps one to an anchor.
   apps      An app has no `[[op]]` and no `[[claim]]`: it never patches the firmware.
+  imports   Every function of <dk/ui.h> is an `[[import]]` of sdk/sdk.toml with `requires = "core/ui"`, and every import
+            with `requires` is in the runtime's `optional` list, so the runtime can link it by name (or hand out its stub).
 
 Exceptions are named below with their reason; a new one needs a reason in this file.
 """
@@ -49,8 +51,6 @@ FOLDER_ROLES = {
     "runtime": "runtime",
     "expansion": "installer",
 }
-# core/remote-open sits directly under modules/core until it is deleted; it is an adapter meanwhile.
-LEGACY_CORE = {"remote-open": "adapter"}
 # Content modules that patch the firmware themselves (they have [[op]] and anchor externs by design: patchkit's own
 # examples of a patched-in effect and a hook). They are exempt from the objects and apps rules.
 FIRMWARE_PATCH_MODULES = {
@@ -140,8 +140,6 @@ def check_roles(root: Path, mods: list[Module]) -> list[Violation]:
         r = rel(root, m.dir)
         parts = r.split("/")[2:]  # below modules/core
         want = FOLDER_ROLES.get(parts[0]) if parts else None
-        if want is None and parts and parts[0] in LEGACY_CORE and len(parts) == 1:
-            want = LEGACY_CORE[parts[0]]
         where = f"{r}/module.toml:{line_of(m.text, 'category', 1)}"
         have = m.mod.get("role")
         if want is None:
@@ -421,6 +419,61 @@ def check_apps(root: Path, mods: list[Module]) -> list[Violation]:
     return out
 
 
+UI_FN = re.compile(r"^(?!typedef)[A-Za-z_][A-Za-z0-9_ \*]*?\b(dk_ui_[a-z_]+)\(", re.M)
+
+
+def check_imports(root: Path) -> list[Violation]:
+    """The imports of other modules: <dk/ui.h> against sdk/sdk.toml against the runtime's `optional` list."""
+    sdk, ui = root / "sdk/sdk.toml", root / "sdk/include/dk/ui.h"
+    if not sdk.is_file():
+        return []
+    sdk_text = sdk.read_text(encoding="utf-8")
+    data = tomllib.loads(sdk_text)
+    out = []
+    ui_imports = {
+        i["name"] for i in data.get("import", []) if i.get("requires") == "core/ui"
+    }
+    if ui.is_file():
+        ui_text = ui.read_text(encoding="utf-8")
+        declared = set(UI_FN.findall(ui_text))
+        for n in sorted(declared - ui_imports):
+            out.append(
+                Violation(
+                    f"sdk/include/dk/ui.h:{line_of(ui_text, n + '(')}",
+                    "imports",
+                    f'{n} is declared in <dk/ui.h> but is no [[import]] of sdk/sdk.toml with requires = "core/ui"',
+                    "add the [[import]] (with sig and absent), so a content module can call it",
+                )
+            )
+        for n in sorted(ui_imports - declared):
+            name_line = 'name = "' + n + '"'
+            out.append(
+                Violation(
+                    f"sdk/sdk.toml:{line_of(sdk_text, name_line)}",
+                    "imports",
+                    f"{n} is an import of core/ui but <dk/ui.h> does not declare it",
+                    "declare it in <dk/ui.h> or remove the [[import]]",
+                )
+            )
+    runtime = root / CORE / "runtime/module.toml"
+    if runtime.is_file():
+        runtime_text = runtime.read_text(encoding="utf-8")
+        optional: set[str] = set()
+        for o in tomllib.loads(runtime_text).get("object", []):
+            optional |= set(o.get("optional", []))
+        needed = {i["name"] for i in data.get("import", []) if i.get("requires")}
+        for n in sorted(needed - optional):
+            out.append(
+                Violation(
+                    f"{CORE}/runtime/module.toml:{line_of(runtime_text, 'optional')}",
+                    "imports",
+                    f"{n} is an import of another module but is not in the runtime's optional list",
+                    "add it to `optional`, or patchkit cannot link the runtime when that module is missing",
+                )
+            )
+    return out
+
+
 def check(root: Path = ROOT) -> list[Violation]:
     mods = load_modules(root)
     return [
@@ -428,6 +481,7 @@ def check(root: Path = ROOT) -> list[Violation]:
         *check_sources(root, mods),
         *check_objects(root, mods),
         *check_apps(root, mods),
+        *check_imports(root),
     ]
 
 

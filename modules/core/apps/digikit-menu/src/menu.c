@@ -1,8 +1,9 @@
 /* core/digikit-menu: SETTINGS > DIGIKIT, written in C on <dk/ui.h> (core/ui draws it with the firmware's own views).
  *
- * DIGIKIT is a menu: ABOUT, HEALTH and MEMORY (text pages), MODULES (a list) and the DEBUG and REMOTE switches. MODULES has one
+ * DIGIKIT is a menu: ABOUT, HEALTH and MEMORY (text pages), MODULES (a list) and the DEBUG switch. MODULES has one
  * row per .dkm file of the store. The check mark of a row means "load at the next restart"; it starts from the saved selection.
- * RIGHT opens the side panel (LOAD or UNLOAD, ROUTE... for a loaded effect, INFO). Nothing is saved until NO leaves the list with
+ * RIGHT opens the side panel (LOAD or UNLOAD, ROUTE... for a loaded effect, SETTINGS... for a loaded module that has a dkm_menu, INFO).
+ * The check mark is the only on/off of a module. Nothing is saved until NO leaves the list with
  * changes pending and APPLY & RESTART? is answered with YES.
  *
  * The runtime does the work of the old menu: dkrt_scan (the files, their needs), dkrt_fit (what fits next to the checked ones)
@@ -81,12 +82,24 @@ static int8_t g_row_fx[MAX_ENT]; /* the first effect of a loaded row's module, -
 static uint8_t g_saved[MAX_ENT];
 static uint32_t g_saved_extra;
 static int g_info_row;
-static int g_debug, g_remote;
+static int g_debug;
 static int g_route_row;
 static uint32_t g_safe_shown, g_seen, g_last, g_calls;
 static char g_empty_text[24];
 
 static dk_ui_menu *g_main, *g_about, *g_mem, *g_modules, *g_info;
+
+/* The settings menu of each loaded module that has a dkm_menu, by the module's index in dkrt_module order. Each is built the first
+   time the user opens it and kept: no module is unloaded at run time, so the module's code and the ctx it passes stay valid. */
+#define MAX_SET 16
+#define NAME_ROW 24
+/* Calls the module's dkm_menu at address a (DkrtModule.menu) with the menu to fill. The host tests, where an address is wider than 32 bits, define their own. */
+#ifndef DK_CALL_MENU
+#define DK_CALL_MENU(a, m) ((void (*)(dk_ui_menu *, void *))(uintptr_t)(a))((m), 0)
+#endif
+static dk_ui_menu *g_set[MAX_SET];
+static char g_set_title[MAX_SET][NAME_ROW];
+static dk_ui_menu_desc g_set_desc[MAX_SET];
 
 /* ---- text ------------------------------------------------------------------------------------------------------------ */
 
@@ -488,12 +501,6 @@ static void debug_changed(void *ctx, int v)
         fail_text("NOT SAVED", r);
 }
 
-static void remote_changed(void *ctx, int v)
-{
-    (void)ctx;
-    dkrt_remote_set((uint32_t)v);
-}
-
 static void safe_notice(void *ctx, int arg)
 {
     (void)ctx;
@@ -525,12 +532,6 @@ static void fill_main(dk_ui_menu *m, void *ctx)
     dkrt_diag(&d);
     g_debug = d.debug_on != 0;
     dk_ui_toggle(m, "DEBUG", &g_debug, debug_changed, 0);
-    /* the row exists only in an image that can be remote controlled */
-    int32_t r = dkrt_remote_get();
-    if (r >= 0) {
-        g_remote = r == 1;
-        dk_ui_toggle(m, "REMOTE", &g_remote, remote_changed, 0);
-    }
 }
 
 /* ---- ABOUT ----------------------------------------------------------------------------------------------------------- */
@@ -1021,6 +1022,52 @@ static void panel_route(void *ctx, int row)
         dk_ui_choice("ROUTE", items, (int)DK_ROUTE_N, route_done, 0);
 }
 
+/* The loaded module of a store row that has a dkm_menu: its dkrt_module index, or -1. */
+static int settings_module(int row, DkrtModule *mod)
+{
+    if (row < 0 || row >= (int)NENT)
+        return -1;
+    for (uint32_t k = 0; k < MAX_SET && dkrt_module(k, mod) == DKRT_OK; k++)
+        if (same_text(g_ent[row].path, mod->path, 63))
+            return mod->menu && mod->state == DKRT_MOD_LOADED ? (int)k : -1;
+    return -1;
+}
+
+/* The fill of a module's settings menu: the module adds the rows. ctx is the module's index. */
+static void fill_settings(dk_ui_menu *m, void *ctx)
+{
+    static DkrtModule mod;
+    if (dkrt_module((uint32_t)(uintptr_t)ctx, &mod) == DKRT_OK && mod.menu)
+        DK_CALL_MENU(mod.menu, m);
+}
+
+static void panel_settings(void *ctx, int row)
+{
+    (void)ctx;
+    static DkrtModule mod;
+    int k = settings_module(row, &mod);
+    if (k < 0)
+        return;
+    if (!g_set[k]) {
+        /* the title is the module's name without its author (digikit/remote: REMOTE): the title area is short */
+        int from = 0;
+        for (int c = 0; c < 32 && mod.name[c]; c++)
+            if (mod.name[c] == '/')
+                from = c + 1;
+        copy_text((uint8_t *)g_set_title[k], NAME_ROW, "");
+        for (int c = 0; c < NAME_ROW - 1 && mod.name[from + c]; c++)
+            g_set_title[k][c] = upper((char)mod.name[from + c]);
+        g_set_desc[k].name = "DigikitModuleMenu";
+        g_set_desc[k].title = g_set_title[k];
+        g_set_desc[k].flags = 0;
+        g_set_desc[k].fill = fill_settings;
+        g_set_desc[k].ctx = (void *)(uintptr_t)k;
+        g_set[k] = dk_ui_menu_new(&g_set_desc[k]);
+    }
+    if (g_set[k])
+        dk_ui_open(g_set[k]);
+}
+
 static void panel_info(void *ctx, int row)
 {
     (void)ctx;
@@ -1044,6 +1091,9 @@ static void modules_panel(dk_ui_menu *p, int row, void *ctx)
     prow(p, TICK[row] ? "UNLOAD" : "LOAD", panel_load, row);
     if (g_row_fx[row] >= 0)
         prow(p, "ROUTE...", panel_route, row);
+    DkrtModule mod;
+    if (settings_module(row, &mod) >= 0)
+        prow(p, "SETTINGS...", panel_settings, row);
     prow(p, "INFO", panel_info, row);
 }
 

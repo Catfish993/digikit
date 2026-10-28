@@ -4,6 +4,7 @@ The device adapter behind `<dk/ui.h>` (`sdk/include/dk/ui.h`): menus, text pages
 (action, submenu, text, toggle, value), confirm and choice dialogs and toasts. C, one source for the Digitone II and the Digitakt II; every firmware
 call is a generated anchor (`modules/core/fw/include/dk_fw_*.h`). The host fake of the same API, with its tests, is in `host/`; it also compiles the menu of `core/digikit-menu` against a fake runtime (`host/tests/menu.rs`).
 
+- The `dk_ui_*` functions are plain global symbols. A content module calls them as imports (`[[import]]` of `sdk/sdk.toml`, `requires = "core/ui"`): the runtime's loader links them by name, and hands out a stub that returns the failure value when this module is not in the image (docs/ARCHITECTURE.md). `host/tests/remote.rs` runs `digikit/remote`'s settings page on the host fake.
 - A plain menu and a text page are the firmware's `VerticalMenuView`; a `DK_UI_LIST` is a `MenuWithPopoutSideBarsView` (the PRESET MANAGER's
   base) with the right panel as the side panel. Each is built once and kept for the session through a `shared_ptr` this module owns, so the
   firmware never frees it.

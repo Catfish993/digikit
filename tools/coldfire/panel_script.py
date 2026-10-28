@@ -251,7 +251,7 @@ def pattern_temp() -> Script:
 
 
 def _to_digikit(s: Script) -> Script:
-    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (ABOUT, HEALTH, MEMORY, MODULES, DEBUG, REMOTE)."""
+    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (ABOUT, HEALTH, MEMORY, MODULES, DEBUG)."""
     _settings(s)
     for _ in range(8):
         s.tap(DOWN, gap=15_000_000)

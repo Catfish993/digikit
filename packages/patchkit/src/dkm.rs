@@ -12,6 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const MAGIC: u32 = 0x444b_4d46; // "DKMF"
 pub const FORMAT: u32 = 1;
 pub const HEADER: usize = 0xa0;
+/// The header of a module that exports `dkm_menu`: the menu address (image offset) follows the 0xa0 bytes.
+pub const HEADER_MENU: usize = 0xa4;
 pub const NONE: u32 = 0xffff_ffff;
 pub const SLOTS: u32 = 8;
 pub const NAME_LEN: usize = 32;
@@ -72,6 +74,7 @@ pub const H_REG_OFF: usize = 0x90;
 pub const H_REG_SIZE: usize = 0x94;
 pub const H_DSP_OFF: usize = 0x98;
 pub const H_DSP_SIZE: usize = 0x9c;
+pub const H_MENU: usize = 0xa0; // only when the header size is HEADER_MENU
 /// The runtime version that loads a DSP section (`dkrt_sdk::RUNTIME_VERSION` is at least this).
 pub const RUNTIME_DSP: u32 = 5; // DSP sections of version 2 (voices with knob ranges, finding 51); a runtime 2 to 4 loads version 1 only
 
@@ -276,6 +279,7 @@ pub fn pack_full_max(
     };
     let init = sym("dkm_init")?;
     let fini = sym("dkm_fini")?;
+    let menu = sym("dkm_menu")?;
     let mut slots: Vec<(u32, u32)> = vec![];
     for n in 0..SLOTS {
         if let Some(v) = sym(&format!("dkm_slot_{n}"))? {
@@ -290,9 +294,9 @@ pub fn pack_full_max(
             return Err(err!("{}: slot numbers are 0 to {}", s.name, SLOTS - 1));
         }
     }
-    if init.is_none() && fini.is_none() && slots.is_empty() {
+    if init.is_none() && fini.is_none() && slots.is_empty() && menu.is_none() {
         return Err(err!(
-            "the object exports none of dkm_init, dkm_fini, dkm_slot_<n>"
+            "the object exports none of dkm_init, dkm_fini, dkm_slot_<n>, dkm_menu"
         ));
     }
     let align = obj
@@ -307,7 +311,8 @@ pub fn pack_full_max(
         return Err(err!("a section needs alignment over 16 (the arena's)"));
     }
 
-    let import_off = HEADER;
+    let header = if menu.is_some() { HEADER_MENU } else { HEADER };
+    let import_off = header;
     let reloc_off = import_off + imports.len() * IMPORT_LEN;
     let slot_off = reloc_off + relocs.len() * 8;
     let reg_off = slot_off + slots.len() * 8;
@@ -324,7 +329,10 @@ pub fn pack_full_max(
     put(&mut f, 0, MAGIC);
     put(&mut f, 4, FORMAT);
     put(&mut f, H_SIZE, total as u32);
-    put(&mut f, H_HDRSIZE, HEADER as u32);
+    put(&mut f, H_HDRSIZE, header as u32);
+    if let Some(m) = menu {
+        put(&mut f, H_MENU, m);
+    }
     put(
         &mut f,
         H_RUNTIME,
@@ -337,7 +345,7 @@ pub fn pack_full_max(
     put(&mut f, H_VERSION, o.version);
     // contracts: api always; machine with a DSP section (that is not only effects) or a machine record; fx with an effect record; service with slot functions or a real `dkm_init`/`dkm_fini` (not the stub)
     let sdk = crate::sdkgen::embedded();
-    let has_service = !slots.is_empty() || has_obj && (init.is_some() || fini.is_some());
+    let has_service = !slots.is_empty() || has_obj && (init.is_some() || fini.is_some() || menu.is_some());
     let none = (0, 0);
     // a DSP section of version 4 with effects and no voice implements the fx contract and not the machine contract (a machine needs a voice or a record)
     let word = |off: usize| {
@@ -413,6 +421,8 @@ pub struct Dkm {
     pub imports: Vec<String>,
     pub init: Option<u32>,
     pub fini: Option<u32>,
+    /// The image offset of `dkm_menu`.
+    pub menu: Option<u32>,
     pub slots: Vec<(u32, u32)>,
     pub register: Vec<u8>,
     /// The DSP section, as bytes (empty: none); parse it with [`crate::dkmdsp::DspSection::parse`].
@@ -445,7 +455,8 @@ impl Dkm {
         if get(f, 4) != FORMAT {
             return Err(err!("format {} is not supported", get(f, 4)));
         }
-        if get(f, H_SIZE) as usize != f.len() || get(f, H_HDRSIZE) as usize != HEADER {
+        let header = get(f, H_HDRSIZE) as usize;
+        if get(f, H_SIZE) as usize != f.len() || (header != HEADER && header != HEADER_MENU) || f.len() < header {
             return Err(err!("size fields do not match the file"));
         }
         if file_sha(f) != f[H_SHA..H_SHA + 32] {
@@ -511,6 +522,7 @@ impl Dkm {
             imports,
             init: opt(get(f, H_INIT)),
             fini: opt(get(f, H_FINI)),
+            menu: if header == HEADER_MENU { opt(get(f, H_MENU)) } else { None },
             slots,
             register: rng(get(f, H_REG_OFF) as usize, get(f, H_REG_SIZE) as usize)?.to_vec(),
             dsp: rng(get(f, H_DSP_OFF) as usize, get(f, H_DSP_SIZE) as usize)?.to_vec(),

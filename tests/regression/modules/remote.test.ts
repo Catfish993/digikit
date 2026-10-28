@@ -20,7 +20,7 @@ test('remote pacing unit uses the C handler with a controlled block clock', () =
         '-Wextra',
         '-Werror',
         '-I',
-        path.join(import.meta.dirname, '../../../sdk'),
+        path.join(import.meta.dirname, '../../../sdk/include'),
         path.join(import.meta.dirname, 'remote-pacing.c'),
         '-o',
         binary,

@@ -431,11 +431,8 @@ const RT021_MODULES: [&str; 10] = [
 fn the_patch_sets_are_the_rt021_flash_modules() {
     let lib = Library::scan_repo(&root()).unwrap();
     for dev in devdata::all() {
-        // the device set is the flash modules and core/input (the REMOTE switch of the DIGIKIT menu starts off); the emulator set adds core/remote-open (it starts on)
-        for (set, extra) in [
-            ("device", vec!["core/input"]),
-            ("emulator", vec!["core/input", "core/remote-open"]),
-        ] {
+        // both sets are the flash modules and core/input
+        for (set, extra) in [("device", vec!["core/input"]), ("emulator", vec!["core/input"])] {
             let roots = dev.patch_set(set).unwrap();
             let (mut all, _) = lib.with_requires(roots).unwrap();
             all.sort();
