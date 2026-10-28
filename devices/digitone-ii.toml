@@ -28,6 +28,10 @@ filename = "Digitone_II_OS1.10E.syx"
 version = "1.11"
 sha256 = "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0"
 filename = "Digitone_II_OS1.11.syx"
+# RAM that dn2_firmware_explore's mods use at fixed addresses inside cf.expansion (finding 73: `dnfw mods overlap`),
+# rounded out to 4 KiB. patchkit places nothing there, so those mods and digikit's runtime do not meet in RAM. The
+# shared machine and parameter sites of finding 73 still keep the two out of one image; this is only the RAM part.
+cf_expansion_excludes = [[0x46740000, 0x46742000], [0x46750000, 0x46751000], [0x46780000, 0x46781000], [0x467A0000, 0x467A1000], [0x467A8000, 0x467A9000], [0x467B0000, 0x467B1000], [0x467B8000, 0x467B9000], [0x467C0000, 0x467C5000], [0x467C8000, 0x467C9000], [0x467D0000, 0x467D1000], [0x467D8000, 0x467D9000], [0x467E0000, 0x467E1000], [0x467F0000, 0x467FB000], [0x46800000, 0x46803000], [0x46900000, 0x46905000], [0x46A00000, 0x46A61000], [0x46F00000, 0x46F01000]]
 # This identifies the existing explicit Oracle MAIN diagnostic contract. It
 # does not describe hardware topology; that needs separate evidence.
 main_sha256 = "57b06a7960b7c3dc9803bde6b31896b89a2fbdcc404a932ff503f3856d4d7a61"
