@@ -191,7 +191,7 @@ child processes.
       SHARC+ assembler in Rust. Proof: byte-identical against the native build on every module.
 - [x] 6b. Spike, at most one day: gcc `cc1` and `as` for `wasm32-wasi`. If it fails, plan an own
       C compiler for ColdFire in Rust. Result: gcc `cc1` and `as` build for wasm32-wasip1 and give
-      byte-identical output on 32 module sources (finding 73); ship them. `ld` for wasm is next (6c).
+      byte-identical output on 32 module sources (finding 74); ship them. `ld` for wasm is next (6c).
 - [ ] 6c. `pk_build` and `pk_pack` in `patchkit.wasm`. One Transfer flow for desktop and web:
       drop a `.dkmod`, compile, pack, send.
 - [ ] Optional: a `.dkmod` carries the expected `.dkm` hash per device so a receiver can
@@ -227,4 +227,4 @@ runtime sets of both devices); Em approved the new goldens. Phase 3 done. Then c
 (`adapters/`, `apps/`, `role` in module.toml), docs/ARCHITECTURE.md and `mise run check:layers`. Phase 4 done (module UI through runtime imports,
 `DK_MENU`, REMOTE switch removed). Phase 5 done (`patchkit build` in Rust, content objects only cached, Reload
 modules builds first). 6a done (SHARC built in Rust with Selache as a
-library, natively and in wasm); 6b done (gcc in wasm, finding 73). Next: 6c.
+library, natively and in wasm); 6b done (gcc in wasm, finding 74). Next: 6c.

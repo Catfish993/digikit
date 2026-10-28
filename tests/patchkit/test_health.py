@@ -14,7 +14,7 @@ from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import pk_toolchains  # noqa: E402
 
 MODULE = ROOT / "modules/core/adapters/health"
-IMAGES = ("dt2-1.17", "dn2-1.12")
+IMAGES = ("dt2-1.17", "dn2-1.11", "dn2-1.12")
 ANCHORS = {
     "cf.rtos.site.idle": 6,
     "cf.rtos.fn.create_main": 4,

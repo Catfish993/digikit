@@ -13,14 +13,26 @@ const bytesOf = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => pars
 /** The emulator's USB takes any size of MidiRpc write: 16 KiB a request makes a +Drive file about twice as fast as 2 KiB (the firmware's work per request, and the guest idle between requests). */
 export const EMU_RPC_CHUNK = 16384;
 
+/**
+ * `stepInstructions`: for a paused daemon (`Emu.spawn`, a boot rig), where time passes only when stepped. An empty poll
+ * then steps the emulator that many instructions instead of waiting `pollMs`, as `tools/device/dkupload.py`'s
+ * `EmuTransport` does. Leave it unset for a free-running daemon.
+ */
+export interface EmuUsbOptions {
+  pollMs?: number;
+  stepInstructions?: number;
+}
+
 export class EmuUsbTransport implements DkTransport {
-  constructor(privateCall: EmuRpcCall, options: { pollMs?: number } = {}) {
+  constructor(privateCall: EmuRpcCall, options: EmuUsbOptions = {}) {
     this.call = privateCall;
     this.pollMs = options.pollMs ?? POLL_MS;
+    this.stepInstructions = options.stepInstructions ?? 0;
   }
 
   private readonly call: EmuRpcCall;
   private readonly pollMs: number;
+  private readonly stepInstructions: number;
   readonly rpcChunk = EMU_RPC_CHUNK;
   private rx: Uint8Array = new Uint8Array();
   private ready: Uint8Array[] = [];
@@ -47,7 +59,8 @@ export class EmuUsbTransport implements DkTransport {
         continue;
       }
       if (Date.now() >= end || signal?.aborted) return null;
-      await new Promise((r) => setTimeout(r, this.pollMs));
+      if (this.stepInstructions > 0) await this.call('step', { instructions: this.stepInstructions });
+      else await new Promise((r) => setTimeout(r, this.pollMs));
     }
   }
 }

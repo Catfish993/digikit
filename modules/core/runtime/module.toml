@@ -13,6 +13,7 @@ conflicts = []
 
 [targets]
 "dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # The runtime: Rust, built with rustc_codegen_gcc for -mcpu=54418 (finding 26). Its bss holds the module arena

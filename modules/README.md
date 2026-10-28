@@ -100,7 +100,7 @@ conflicts = []
 
 ### `[targets]`
 
-Test status per port (`dt2-1.17`, `dn2-1.12`): `untested`, `experimental` or `stable`.
+Test status per port (`dt2-1.17`, `dn2-1.12`, and `dn2-1.11` for the few modules ported to it): `untested`, `experimental` or `stable`.
 
 ```toml
 [targets]

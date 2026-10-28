@@ -2,7 +2,7 @@
 """Resolve the anchors and regions of one firmware into its port lockfile.
 
     uv run python -m tools.patchkit.port_resolve resolve FIRMWARE.syx [--out devices/ports/NAME.toml]
-    uv run python -m tools.patchkit.port_resolve resolve-all [--root DIR]      # the two supported firmwares
+    uv run python -m tools.patchkit.port_resolve resolve-all [--root DIR]      # the supported firmwares: DT2 1.17, DN2 1.12, DN2 1.11
     uv run python -m tools.patchkit.port_resolve rule-sharc IMAGE PC [--len N] # print a devices/fw rule for a SHARC pc
     (for a rule of either CPU and a declaration entry, see tools/firmware/catalog.py: emit-rule, declare)
 
@@ -128,6 +128,8 @@ def load_profiles(root: Path = ROOT) -> dict[str, dict]:
                 "filename": fw.get("filename"),
                 "port": bool(fw.get("port")),
                 "patch": d.get("patch") or {},
+                # RAM inside cf.expansion that another patcher's build uses at fixed addresses (`[[firmware]] cf_expansion_excludes`)
+                "cf_expansion_excludes": fw.get("cf_expansion_excludes", []),
             }
     return out
 
@@ -738,6 +740,21 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
     raise ResolveError(f"{rule['name']}: unknown rule kind {kind!r}")
 
 
+def expansion_excludes(excludes: list, start: int, end: int) -> list:
+    """The firmware entry's `cf_expansion_excludes`, checked: inside the region, each non-empty, in order, not overlapping."""
+    out = sorted([int(a), int(b)] for a, b in excludes)
+    for i, (a, b) in enumerate(out):
+        if not start <= a < b <= end:
+            raise ResolveError(
+                f"cf_expansion_excludes [{a:#x}, {b:#x}] is not inside cf.expansion [{start:#x}, {end:#x}]"
+            )
+        if i and a < out[i - 1][1]:
+            raise ResolveError(
+                f"cf_expansion_excludes [{a:#x}, {b:#x}] overlaps the range before it"
+            )
+    return out
+
+
 def dsp_l2_region(stream, patch: dict) -> dict:
     lo, hi = patch["dsp_l2_lo"], patch["dsp_l2_hi"]
     end = max(
@@ -912,7 +929,9 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
             "cpu": "cf",
             "start": exp["start"],
             "end": exp["end"],
-            "excludes": [],
+            "excludes": expansion_excludes(
+                prof["cf_expansion_excludes"], exp["start"], exp["end"]
+            ),
             "mark": "D",
         },
         dsp_l2_region(dsp.stream, prof["patch"]),
@@ -1059,7 +1078,7 @@ def main() -> int:
     rs.add_argument("pc", type=lambda s: int(s, 0))
     rs.add_argument("--len", type=int)
     argv = sys.argv[1:]
-    # `mise run patch:port [-- X.syx]`: a firmware resolves that one, nothing resolves both
+    # `mise run patch:port [-- X.syx]`: a firmware resolves that one, nothing resolves them all
     if not argv:
         argv = ["resolve-all"]
     elif argv[0] not in ("resolve", "resolve-all", "rule-sharc") and not argv[

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the m68k-elf `as` and `cc1` (binutils 2.47, gcc 16.2.0 as in pk_toolchains.py) as wasm32-wasip1 modules.
-# Spike, finding 73. Needs: the sources from `pk_toolchains` in out/tools/src, curl, clang/clang++ (native, for the build
+# Spike, finding 74. Needs: the sources from `pk_toolchains` in out/tools/src, curl, clang/clang++ (native, for the build
 # side), python3, GNU make, and the native m68k-elf as/ld (only so gcc's configure probes the right assembler features:
 # without them the wasm cc1 writes different section names).
 #   usage: gcc_wasm_build.sh WORKDIR [NATIVE_M68K_BIN]      -> WORKDIR/out/{as,cc1}.wasm

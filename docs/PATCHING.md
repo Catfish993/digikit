@@ -10,7 +10,7 @@ Read [Safety and hardware](#safety-and-hardware) before you flash anything.
 New to modules? Start with [MODULE-AUTHORING.md](MODULE-AUTHORING.md): the short path from an empty module to a
 patched firmware running in the emulator.
 
-Supported firmware (a "port" exists for each): Digitakt II 1.17 and Digitone II 1.12. Use your own
+Supported firmware (a "port" exists for each): Digitakt II 1.17 and Digitone II 1.12, and Digitone II 1.11 as a secondary port (only the modules whose manifest lists `dn2-1.11` in `ports` and `[targets]`: `core/expansion`, `core/runtime`, `core/health`). Use your own
 copy of the `.syx` files; the repository never contains them.
 
 Other documents: [modules/README.md](../modules/README.md) (write a module),
@@ -222,7 +222,7 @@ the manifest reference.
 
 ```sh
 mise run patch:port -- firmware/Digitakt_II_OS1.17.syx   # one firmware -> devices/ports/dt2-1.17.toml
-mise run patch:port                             # the two supported firmwares
+mise run patch:port                             # the supported firmwares (DT2 1.17, DN2 1.12, DN2 1.11)
 ```
 
 A port records the anchors that modules need (address, length, SHA-256 of the bytes there) and the free regions of
