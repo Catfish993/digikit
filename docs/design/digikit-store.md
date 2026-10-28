@@ -155,7 +155,7 @@ that was written before the map existed has zeros there (an empty map). The boot
 the higher `seq` (equal: A). No valid copy is an empty selection with counter 0.
 
 **Writing** (`dkrt_selection_set`, the boot counter): the runtime writes with the firmware's block write (DT2 1.16 `FUN_4012e0c0`,
-DN2 1.11 `FUN_4012c780`; anchor `dkrt.fw.block_write`, hash-found on all four ports; it takes the eMMC mutex itself) and only to these two
+DN2 1.11 `FUN_4012c780`; anchor `cf.storage.fn.block.write`, hash-found on both ports; it takes the eMMC mutex itself) and only to these two
 sectors. A new selection writes both copies with `seq + 1`, A first, then B, so a power cut between the two writes leaves one valid
 copy (A new, B old: the higher seq wins; a torn A fails its CRC and B still holds the old record). **The boot counter** is raised at the
 start of a boot that has modules selected and cleared when the session has been stable: `stable_blocks` (default 45,000, 30 s) DSP blocks
@@ -191,7 +191,7 @@ The runtime reads the placement from the layout (`store::Layout::set_a`, `set_b`
 
 The bytes after `used` are not part of the record (a shorter record written over a longer one leaves old bytes there; the crc32 ignores them). A copy is **valid** when its magic, version, `used` (18 to 8192),
 crc32 and entries hold (every entry inside `used`, every key legal, no key twice). A reader takes the valid copy with the higher `seq` (equal: A); no valid copy is an empty record. The shared vectors
-`sdk/settings-vectors.json` (valid records with their decoded entries and a refused record for each rule, with the first rule it breaks) are checked by the Rust SDK tests, by `patchkit store dump` and by the Python reader.
+`sdk/vectors/settings-vectors.json` (valid records with their decoded entries and a refused record for each rule, with the first rule it breaks) are checked by the Rust SDK tests, by `patchkit store dump` and by the Python reader.
 
 **Keys by owner.** A key is `<owner prefix><module id>` or, later, `<module id>/...`. Now: `fx/route/<module id>` (1 byte: 0 master, 1 send; absent, or a route the effect's manifest does not allow: the manifest's default `route`; written by DIGIKIT > FX ROUTES) and `fx/send/<module id>` (16 bytes: the amount 0 to 127 of each track). The
 prefixes and how a reader prints their values are `[[settings.key]]` of `sdk/sdk.toml` (generated). A key of another shape is stored and printed as text or hex. **Reserved, not built:** a run-time module (a `.dkm`) will

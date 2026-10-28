@@ -1,9 +1,9 @@
-"""ColdFire patchkit toolchain: gcc (m68k-elf, -mcpu=54418) -> object prototype -> tools/patchkit/pk_link.py -> our decoder
--> the native ColdFire core runs the function on a DT2 1.17 ready state.
+"""ColdFire patchkit toolchain: gcc (m68k-elf, -mcpu=54418) -> `patchkit cf-link` (link at a base, our decoder) -> the native ColdFire
+core runs the function on a DT2 1.17 ready state. The link, the ISA check and the ELF conversion have Rust tests
+(packages/patchkit/tests/build.rs).
 
 Skips when the m68k toolchain (tools/patchkit/pk_toolchains.py m68k) or the 1.17 image is absent."""
 
-import json
 import zlib
 
 import pytest
@@ -12,10 +12,8 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.firmware import config  # noqa: E402
-from tools.patchkit import (  # noqa: E402
-    pk_link,  # noqa: E402
-    pk_toolchains,  # noqa: E402
-)
+from tools.patchkit import patchkit as front_end  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
 SYX = config.stock("Digitakt_II_OS1.17.syx")
 SRC = ROOT / "tests" / "patchkit" / "pk_src"
@@ -36,23 +34,8 @@ needs_gcc = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def module():
-    obj, linked, hist = pk_link.build([SRC / "cksum.c", SRC / "stub.s"], BASE, SYMS)
-    return obj, linked, hist
-
-
-@needs_gcc
-def test_object_prototype_is_self_contained_json(module):
-    obj, linked, _ = module
-    again = json.loads(json.dumps(obj))
-    relinked = pk_link.link(again, BASE, SYMS)
-    assert relinked.image == linked.image and relinked.symbols == linked.symbols
-    assert (
-        obj["toolchain"]["gcc"].startswith("m68k-elf-gcc")
-        and len(obj["source_sha256"]) == 64
-    )
-    # a different base moves only the relocated words
-    moved = pk_link.link(again, BASE + 0x1000, SYMS)
-    assert moved.image != linked.image and len(moved.image) == len(linked.image)
+    linked = front_end.cf_link([SRC / "cksum.c", SRC / "stub.s"], BASE, SYMS)
+    return None, linked, linked.histogram
 
 
 @needs_gcc
@@ -68,34 +51,8 @@ def test_relocations_seen_and_all_instructions_are_isa_a_b_c(module):
 
 
 @needs_gcc
-def test_decoder_rejects_a_68020_form():
-    asm = ROOT / "out" / "cache" / "pk_cfcall" / "bad020.s"
-    asm.parent.mkdir(parents=True, exist_ok=True)
-    asm.write_text(".text\n.globl f\nf:\n  bfextu (%a0){4:8},%d0\n  rts\n")
-    import subprocess
-
-    obj = asm.with_suffix(".o")
-    r = subprocess.run(
-        [str(pk_toolchains.m68k_bin("as")), "-m68020", "-o", str(obj), str(asm)],
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 0, r.stderr
-    o = pk_link.object_from_elf(obj.read_bytes(), [asm])
-    with pytest.raises(pk_link.PkLinkError, match="outside ISA_A/B/C"):
-        pk_link.check_isa(pk_link.link(o, BASE))
-
-
-@needs_gcc
-def test_unresolved_extern_is_an_error(module):
-    obj, _, _ = module
-    with pytest.raises(pk_link.PkLinkError, match="unresolved extern symbol"):
-        pk_link.link(obj, BASE, {})
-
-
-@needs_gcc
 def test_pc_relative_relocations():
-    obj, linked, _ = pk_link.build(
+    linked = front_end.cf_link(
         [SRC / "pcrel.s"], BASE, {**SYMS, "near_ext": BASE + 0x100}
     )
     assert linked.relocs_applied == {"PC32": 1, "PC16": 1}
@@ -105,8 +62,10 @@ def test_pc_relative_relocations():
     assert int.from_bytes(image[i : i + 4], "big", signed=True) == SYMS[
         "fw_field_0c"
     ] - (BASE + i)
-    with pytest.raises(pk_link.PkLinkError, match="out of range"):
-        pk_link.link(obj, BASE, {**SYMS, "near_ext": SYMS["fw_field_0c"]})
+    with pytest.raises(front_end.BuildError, match="out of range"):
+        front_end.cf_link(
+            [SRC / "pcrel.s"], BASE, {**SYMS, "near_ext": SYMS["fw_field_0c"]}
+        )
 
 
 @pytest.mark.skipif(
@@ -184,7 +143,7 @@ class TestOnTheCore:
         )
 
     def test_pc32_call_to_the_firmware(self, machine):
-        obj, linked, _ = pk_link.build(
+        linked = front_end.cf_link(
             [SRC / "pcrel.s"], BASE, {**SYMS, "near_ext": BASE + 0x100}
         )
         blob = b"\0" * 12 + (0xCAFE).to_bytes(4, "big")

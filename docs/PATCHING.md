@@ -10,7 +10,7 @@ Read [Safety and hardware](#safety-and-hardware) before you flash anything.
 New to modules? Start with [MODULE-AUTHORING.md](MODULE-AUTHORING.md): the short path from an empty module to a
 patched firmware running in the emulator.
 
-Supported firmware (a "port" exists for each): Digitakt II 1.16 and 1.17, Digitone II 1.11 and 1.12. Use your own
+Supported firmware (a "port" exists for each): Digitakt II 1.17 and Digitone II 1.12, and Digitone II 1.11 as a secondary port (only the modules whose manifest lists `dn2-1.11` in `ports` and `[targets]`: `core/expansion`, `core/runtime`, `core/health`). Use your own
 copy of the `.syx` files; the repository never contains them.
 
 Other documents: [modules/README.md](../modules/README.md) (write a module),
@@ -73,7 +73,7 @@ mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules d
 mise run patch:mem -- digikit/master-gain digikit/master-drive --device dt2 --firmware 1.17    # bytes used and free per region
 ```
 
-- `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.11, dn2-1.12").
+- `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.12").
 - `patch:mem` (`tools/patchkit/pk_mem.py`, `--json` for scripts) applies the modules with the placement's own first-fit
   allocator and prints, per region of the port (`cf.flash_cave`, `cf.expansion`, `dsp.l2`), the size, the bytes each
   module uses (modules pulled in by `requires` included), the free bytes and the percent used. It exits 1 with the
@@ -157,8 +157,8 @@ The desktop app has a target selector in the Transfer and Remote pages: the emul
 midir; it starts no process). The Transfer page then lists, installs and deletes on the device. The Remote page shows the target's own screen (the
 firmware's Screenshot, polled) on the faceplate, and its keys and knobs press and turn on the target through `digikit/remote`, a run-time module:
 install it on the Transfer page (`out/modules/<device>/digikit/remote.dkm` after `mise run module:pack-all`), select it in MODULES on the device, apply and
-restart. The commands work while SETTINGS > DIGIKIT > REMOTE is on: it starts on in the emulator and off on a device, and is never saved
-(`docs/design/digikit-upload.md`, "Service commands"). From a terminal: `uv run python -m tools.device.dkupload --emu remote state|key CODE|turn ENC N`
+restart. The commands work while the module is loaded; its check mark in MODULES is the only switch, and its SETTINGS... page (in the MODULES side panel) shows the held keys and
+has RELEASE ALL KEYS (`modules/tools/remote/README.md`). From a terminal: `uv run python -m tools.device.dkupload --emu remote state|key CODE|turn ENC N`
 (`--port NAME` for a device).
 
 ### Developer loop
@@ -201,16 +201,16 @@ and `diff.png` under `out/runs/patchkit/frames/<cell>/mismatch/` and prints the 
 from the last passing frame of that golden, kept locally in `out/cache/smoke-frames/` (filled by a passing run or `--update`,
 never committed). `run --goldens FILE` compares against a copy of the goldens. Our own screens are better checked by the state they
 are drawn from: `expect_text` (rows a module keeps in RAM) and `expect_mem` with `symbol` (a symbol of the image's plan), see
-`modules/core/digikit-menu/tests/menu.toml`. Details: the docstring of `tools/patchkit/pk_harness.py`
+`modules/core/apps/digikit-menu/tests/menu.toml`. Details: the docstring of `tools/patchkit/pk_harness.py`
 and [finding 17](findings/17-emulator-control.md). The proof tools `tools/patchkit/pk_proof_*.py` (PCM and behaviour proofs per
 module family) are slower and are run before a merge, not in the loop.
 
 ### Create a module
 
 ```sh
-mise run module:new -- fx/my-effect            # ColdFire and SHARC+ stubs
-mise run module:new -- fx/my-effect --dsp      # SHARC+ master-bus hook that passes audio through
-mise run module:new -- test/my-demo --cf       # ColdFire only: code, data and bss in cf.expansion
+mise run module:new -- machine alice/drone     # a run-time machine
+mise run module:new -- fx alice/crunch         # a run-time effect
+mise run module:new -- service alice/hello     # a ColdFire service in C
 mise run module:build                         # rebuild all objects (`-- modules/fx/my-effect` for one, `-- --check` only checks)
 ```
 
@@ -222,11 +222,11 @@ the manifest reference.
 
 ```sh
 mise run patch:port -- firmware/Digitakt_II_OS1.17.syx   # one firmware -> devices/ports/dt2-1.17.toml
-mise run patch:port                             # the four supported firmwares
+mise run patch:port                             # the supported firmwares (DT2 1.17, DN2 1.12, DN2 1.11)
 ```
 
 A port records the anchors that modules need (address, length, SHA-256 of the bytes there) and the free regions of
-one stock image. It is generated from the `[[anchor_rule]]` entries of the modules and is deterministic: resolving a
+one stock image. It is generated from the rules declared in `devices/fw/` and is deterministic: resolving a
 supported firmware again leaves `git status` clean. A rule that matches nothing, or more than one place, is an error;
 that is how a new firmware shows which rules need work. A firmware without a port file has no compatible modules.
 
@@ -254,15 +254,15 @@ first `mise run web` in a fresh tree compiles the browser cores and takes severa
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
 | Content module | Own code and declarative registry entries. No addresses. | `digikit/master-gain`, `digikit/master-drive` |
 
-Device, board and firmware facts are data (`devices/*.toml`, `devices/ports/*.toml`, `modules/core/machines/types.toml`); code that needs a constant gets it from `patchkit gen` (`[[gen]]` in a `module.toml`). Where each fact lives and what a new device needs: `docs/design/device-data.md`.
+Device, board and firmware facts are data (`devices/*.toml`, `devices/ports/*.toml`, `modules/core/adapters/machines/types.toml`); code that needs a constant gets it from `patchkit gen` (`[[gen]]` in a `module.toml`). Where each fact lives and what a new device needs: `docs/design/device-data.md`.
 
 patchkit itself (`packages/patchkit`, Rust) has no framework-specific code. It provides generic primitives, and the
 frameworks are modules built on them. One implementation serves the command line and `patchkit.wasm`.
 
 ### Ports and anchors
 
-Modules never contain addresses. A firmware site is a named **anchor** (`dsp.master.q31_call`,
-`cf.machines.dispatch`). The module that needs it declares how to find it with an `[[anchor_rule]]`, and
+Modules never contain addresses. A firmware site is a named **anchor** (`dsp.master.site.q31_converter.call`,
+`cf.machine.fn.dispatch`). A rule in `devices/fw/` ([design](design/firmware-decls.md)) declares how to find it, and
 `patch:port` turns the rules into the lockfile. Rule kinds:
 
 - SHARC+: `sharc_func` (a function found by its relocation-insensitive hash, plus an offset), `sharc_literal`,
@@ -283,13 +283,13 @@ modules/<category>/<name>/
   module.toml          manifest
   src/cf/*.c|*.s       ColdFire sources (m68k-elf gcc, -mcpu=54418, freestanding)
   src/dsp/*.s          SHARC+ sources (algebraic syntax)
-  build/*.dko.json     built objects, committed; `patch:build --check` keeps them current
+  build/*.dko.json     built objects: committed for core/* modules; any other module has them in out/cache/dko (build output)
   tests/*.toml         harness tests
   README.md            notes: what it does, devices, limits
   gallery/icon.svg     the gallery card's icon
 ```
 
-The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `[[anchor_rule]]`, `[[section]]`,
+The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `[[section]]`,
 `[[registry]]` (with `[[registry.field]]`) and `[[entry]]`. Every key is listed in
 [modules/README.md](../modules/README.md).
 
@@ -300,10 +300,10 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
 - **Writes.** `write` replaces bytes at an anchor plus an offset. It carries `expect_sha256` of the bytes it replaces
   (never the bytes), or a typed `value` with a width of 1, 2 or 4 bytes and a range check. `anchors = "PREFIX.*"`
   repeats one write over many anchors.
-- **Hooks.** `hook` overwrites a site with a jump (or, on ColdFire, a call) to a routine of the module. With
-  `displaced = "run"` patchkit copies the displaced instructions to a tail (`hook.<anchor>.tail`; PC-relative forms
-  are re-encoded or refused) so that the routine can run them and return (`hook.<anchor>.return`). `retarget`
-  rewrites the target of an existing call or jump.
+- **Hooks.** A hook is declared in `devices/fw/` (site, `mode`, register contract). A `hook` op names it
+  (`hook = "<hook name>"`, `to = "<symbol>"`). Mode `before` copies the displaced instructions to a tail
+  (`hook.<site>[.<offset>].tail`; PC-relative forms are re-encoded or refused) so that the routine can run them and
+  return (`.return`). Mode `replace` drops them. Mode `retarget` rewrites the target of an existing call.
 - **Sections copied from the image.** `[[section]]` copies bytes of the user's image at patch time (a stock table),
   may append one row per registry entry, and places the result. This is how a framework extends a firmware table
   without storing it.
@@ -340,7 +340,7 @@ stored size at most `0x100000`, decompressed size at most `0xfffff`; usable appe
 
 ### Linking and `.dko` objects
 
-`tools/patchkit/pk_build.py` compiles a module's sources with the pinned toolchain and writes a `.dko.json` object in
+`patchkit build` (`packages/patchkit/src/build/`) compiles a module's sources with the pinned toolchain and writes a `.dko.json` object in
 canonical JSON: sections as hex, symbols, relocations with explicit addends (`cf.32`, `cf.pc32`, `cf.pc16`,
 `cf.pc8`, `sharc.abs24`, `sharc.abs32`), the source hash and the toolchain version. Our own decoders re-decode every
 instruction at build time, so a toolchain encoding error cannot reach an image. At patch time patchkit links the
@@ -394,7 +394,7 @@ or `PATCHKIT_MODULES`. The web page builds its module data from committed files 
 The bootstrap (section 2) runs on the emulated ColdFire core. It tests [FUNC] before MAIN OS is touched, shows the
 STARTUP menu over a MAIN OS that faults at reset, accepts patchkit images, rejects corrupt ones, and does not rewrite
 itself for a 1.16 or 1.17 image (finding 01, spike 0.2). Patched images boot to the main screen with DSP audio
-(DT2 1.16 and 1.17, DN2 1.12), the smoke matrix passes, and the module proofs measure the sound. None of this is a
+(DT2 1.17, DN2 1.12), the smoke matrix passes, and the module proofs measure the sound. None of this is a
 hardware result.
 
 ### Recovery
@@ -820,9 +820,9 @@ Image: 1,887,392 bytes, sha256 `ced22f18eb8c1a955be440b3d6bffe8b776fd00d0ce1d200
 **4. Run the pluck with an LFO on TUNE** (`dk run` as for runtime 4, then the LFO on the TUNE knob of the SRC page, depth over the whole range, a note held on track 1):
 the sound follows the pitch to the limits of the string and stays; no track goes silent. Read the log (`uv run --with python-rtmidi python -m tools.device.dklog --port Digitakt`):
 there should be **no** `MACHINE_FAULT` (the clamp in the routine prevents the cause). A `MACHINE_FAULT` names the type, the track, the kind (`nonfinite`, `overlevel`) and the knob words of the call; a
-`MACHINE_DISABLED` says the guard switched that machine off (it plays silence until the next restart). ABOUT and the `DSP_DIAG` events carry the guard's words 17 to 23 (`modules/core/dsp-link/README.md`).
+`MACHINE_DISABLED` says the guard switched that machine off (it plays silence until the next restart). ABOUT and the `DSP_DIAG` events carry the guard's words 17 to 23 (`modules/core/adapters/dsp-link/README.md`).
 
 ### Status
 
 No patched image has been flashed to a device. Whether and when to flash is the maintainer's decision, every time.
-The device on the desk is a Digitakt II on 1.16, so a first hardware step would use the DT2 1.16 port.
+The device on the desk is a Digitakt II on 1.17, so a first hardware step would use the DT2 1.17 port.

@@ -8,34 +8,22 @@ author = "digikit"
 status = "experimental"
 summary = "Test fixture: a run-time machine whose DSP routine never returns after a few blocks, to see what the debug log shows when the SHARC stops."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.17"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
 # Like test/dyn-guard-nan, a machine of the SDK contract whose render hangs on the third block of a note (src/dsp/hang.s). `patchkit pack test/dyn-dsp-hang --device dt2` makes the .dkm.
 # Never select this module on a device you care about: the DSP stops until the next restart. It is the negative fixture of the machine conformance suite (tools/patchkit/pk_conform.py).
 [[object]]
+path = "build/dyn-dsp-hang-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+[[object]]
 path = "build/dyn-dsp-hang-dsp.dko.json"
 sources = ["src/dsp/hang.s"]
 place = "dsp.l2"
 devices = ["dt2"]
-
-[[voice]]
-machine = "hang"
-render = "_hg_render"
-note_on = "_hg_note_on"
-desc = "_hg_desc"
-
-[[machine]]
-id = "hang"
-name = "Hang"
-short = "HNG"
-clone_of = 0
-knobs = [0xca, 0, 0, 0, 0, 0, 0, 0xd1]
-
-[machine.dt2]
-type_hint = 19   # the number this machine had before sticky ids (finding 52)

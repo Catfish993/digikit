@@ -31,7 +31,7 @@ def test_patchkit_tool_selects_its_importer() -> None:
 
 
 def test_framework_module_selects_conformance_not_a_directory() -> None:
-    sel = changed_tests.select(["modules/core/dsp-voice/module.toml"])
+    sel = changed_tests.select(["modules/core/adapters/dsp-voice/module.toml"])
     assert verify_route.CONFORMANCE in sel.tests
     _no_directory(sel)
     assert any(line.startswith("tests/patchkit") for line in sel.gate_adds)
@@ -322,7 +322,7 @@ def test_explain_runs_nothing(
 
 def test_fast_plan_defers_module_and_native_work() -> None:
     files = [
-        "modules/core/dsp-voice/module.toml",
+        "modules/core/adapters/dsp-voice/module.toml",
         "packages/emulator/control/src/lib.rs",
         "tools/device/dkrun.py",
     ]
@@ -395,13 +395,13 @@ def test_deferred_output_names_python_crates_and_changed_files(
     monkeypatch.setattr(changed_tests.verify, "python_test_plan", lambda *args: [])
     monkeypatch.setattr(changed_tests.verify, "rust_scope", lambda _: ["digi-control"])
     changed_tests.print_deferred(
-        ["modules/core/dsp-voice/module.toml"],
+        ["modules/core/adapters/dsp-voice/module.toml"],
         changed_tests.Selection(tests={"tests/patchkit/test_pluck.py": "imports"}),
     )
     output = capsys.readouterr().out
     assert "Python: tests/patchkit/test_pluck.py" in output
     assert "Rust crates: digi-control" in output
-    assert "Full gate coverage: modules/core/dsp-voice/module.toml" in output
+    assert "Full gate coverage: modules/core/adapters/dsp-voice/module.toml" in output
 
 
 def test_unselected_audited_gate_units_are_still_deferred(

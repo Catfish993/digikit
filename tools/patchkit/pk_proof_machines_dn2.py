@@ -341,9 +341,11 @@ class Proof(K.Proof):
         )  # fmt: skip
         self.check("patch for the control", r.returncode == 0)
         port = tomllib.loads((ROOT / "devices" / "ports" / "dn2-1.12.toml").read_text())
-        site = next(a for a in port["anchor"] if a["name"] == "cf.machines.persist")[
-            "addr"
-        ]
+        site = next(
+            a
+            for a in port["anchor"]
+            if a["name"] == "cf.machine.site.sound_load_type_bound"
+        )["addr"]
         main = bytearray(pr.sections_of(src)[3])
         at = site + 1 - 0x40000400
         self.check(

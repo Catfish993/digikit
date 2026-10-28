@@ -55,8 +55,8 @@ def test_sector_ranges_and_project_slots():
 
 
 def test_expansion_regions_come_from_the_port_files():
-    assert a.expansion("dt2-1.16") == (0x47E8B000, 0x47FE0000)
-    assert a.expansion("dn2-1.11") == (0x46712000, 0x47FE0000)
+    assert a.expansion("dt2-1.17") == (0x47E8B000, 0x47FE0000)
+    assert a.expansion("dn2-1.12") == (0x4671A000, 0x47FE0000)
 
 
 def test_script_builds_probe_arguments_in_order(tmp_path):
@@ -146,7 +146,7 @@ def test_static_check_finds_absolute_references_in_both_views(monkeypatch):
     # move.l #$47e8b000,d0 (cached view) and move.l #$4fe8b010,d1 (uncached alias), then a sector immediate and an unrelated one
     code = bytes.fromhex("203c47e8b000223c4fe8b010243c02df1001263c00001234") + bytes(8)
     monkeypatch.setattr(regions, "load_main", lambda image: code)
-    r = a.static_check("dt2-1.16", with_cf=False)
+    r = a.static_check("dt2-1.17", with_cf=False)
     assert [h["target"] for h in r["views"]["cached"]["hits"]] == [0x47E8B000]
     assert [h["target"] for h in r["views"]["uncached"]["hits"]] == [0x4FE8B010]
     assert [h["target"] for h in r["store"]["store_sector"]["hits"]] == [0x2DF1001]

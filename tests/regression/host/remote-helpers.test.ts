@@ -291,8 +291,6 @@ test('menu navigation uses named SETTINGS and DIGIKIT checkpoints before ABOUT',
     ['SETTINGS', 3000],
     ...Array.from({ length: 8 }, () => ['DOWN']),
     ['YES', 3000],
-    ['DOWN'],
-    ['DOWN'],
     ['YES', 3000],
   ]);
   expect(checkpoint.mock.calls).toEqual([['settings-ninth-row'], ['digikit-main']]);

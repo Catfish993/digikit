@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
-"""Emulator proof of SETTINGS > DIGIKIT (modules/core/digikit-menu, docs/findings/28-digikit-menu.md).
+"""Emulator proof of SETTINGS > DIGIKIT (modules/core/apps/digikit-menu, docs/findings/28-digikit-menu.md).
 
     uv run python -m tools.coldfire.digikit_menu_proof run [--image dt2-1.16] [--update] [--jobs N] [--regress] [--only NAMES]
 
-Patches the stock firmware with core/digikit-menu (which requires core/runtime), builds a card from a `plus_drive`-style
+Patches the stock firmware with core/digikit-menu (which requires core/runtime and core/ui), builds a card from a `plus_drive`-style
 folder with `digikit/modules/dyn-demo.dkm` (packed by `patchkit pack`), `bad-sha.dkm` and `bad-import.dkm`, boots in the
-native emulator (regions_probe) and presses the panel keys of tools/coldfire/panel_script.py. The gate script ticks dyn-demo,
-LOADs it, reads its counter rising (`--peek-at`), shows ABOUT with one module loaded, comes back to the list (the row is marked
-loaded), unticks and LOADs again (unload), reads the counter stopped and the marker `fini` left, shows ABOUT with none. Judged
-per run:
+native emulator (regions_probe) and presses the panel keys of tools/coldfire/panel_script.py. The gate script checks dyn-demo in
+MODULES, answers APPLY & RESTART? with YES, and after the restart shows ABOUT with one module loaded and the list with the row checked and
+loaded. Judged per run:
 
   * the firmware's stores and DMA never touch the module RAM `cf.expansion`, except the module's own code (the
     write-watch with ALLOW_PC = the module; the module's read buffers come from the firmware heap), and no flush hit
     (DIGI_FLUSH_CHECK=1);
   * the OLED frames named by the script have the SHA-256 pinned in tests/golden/digikit_menu_frames.json
     (`--update` writes them after a look at the PNGs);
-  * the menu's state after the run, read back with `--peek`: the store was read (STORE=1, three entries), the ticks and the
-    loaded flags, the text of the last LOAD answer; the gate's counter samples;
+  * the menu's state after the run, read back with `--peek`: the store was read (STORE=1, three entries), the checked rows and the
+    loaded flags, the last dialog's text;
   * `--regress` also runs the stock menu scripts of finding 25 on the patched image against their pinned frames.
 
 PNGs of the DIGIKIT screens go to out/runs/lanes/r1-shots/ (a contact sheet per script).
@@ -152,9 +151,9 @@ class Plan:
         ]
 
     def addr(self, name: str) -> int:
-        """A module symbol by its exact name or, for a Rust static, by the end of its mangled name."""
+        """A module symbol by its name (`module@version:NAME`)."""
         for k, v in self.syms.items():
-            if k.endswith(":" + name) or re.search(r"\d%s$" % re.escape(name), k):
+            if k.endswith(":" + name):
                 return v
         raise KeyError(name)
 
@@ -411,21 +410,21 @@ class BootProof:
 
     # -- scenarios
     def apply_scenario(self) -> None:
-        """No selection: nothing offered; tick dyn-demo; APPLY & RESTART (two presses, a popup says the device restarts); the next
-        boot loads it; ABOUT shows it; the list shows it ticked and loaded and offers nothing."""
+        """No selection: NO on MODULES asks nothing; check dyn-demo; NO asks APPLY & RESTART? (nothing is saved), YES saves and restarts; the next
+        boot loads it; ABOUT shows it; the list shows it checked and loaded and NO asks nothing."""
         B, e = self.B, self.env
         with e.boot(self.img, e.card(None, tag="apply"), "apply", watch=True) as rig:
             self.to_digikit(rig)
             self.frame(rig, "digikit")
+            self.downs(rig, 3)  # ABOUT, HEALTH, MEMORY, MODULES
             self.tap(rig, "YES", 900)  # MODULES
             self.frame(rig, "list_empty")
             self.check("rows: bad-sha, dyn-demo, foreign", self.w(rig, "NENT") == 3)
-            self.check("foreign is greyed", self.bytes_of(rig, "NOK", 3) == [0, 0, 1])
             self.check(
-                "unchanged selection: APPLY not offered", self.w(rig, "DK_OFFER") == 0
+                "foreign is not compatible", self.bytes_of(rig, "NOK", 3) == [0, 0, 1]
             )
             self.downs(rig, 1)
-            self.tap(rig, "YES", 500)  # tick dyn-demo
+            self.tap(rig, "YES", 500)  # check dyn-demo
             self.check(
                 "pending selection: dyn-demo",
                 self.bytes_of(rig, "TICK", 3) == [0, 1, 0],
@@ -433,25 +432,20 @@ class BootProof:
             self.check(
                 "the card's selection is still empty", rig.sel_records() == [None, None]
             )
-            self.check("changed selection: APPLY offered", self.w(rig, "DK_OFFER") == 1)
-            self.downs(rig, 3)  # foreign, the load line, APPLY & RESTART
             self.frame(rig, "list_ticked")
             n0 = self.w(rig, "DK_POPUPS")
-            self.tap(rig, "YES", 700)  # first press
+            self.tap(rig, "NO", 700)  # changes pending: the list asks and stays
             self.check(
-                "first press: a popup, nothing saved",
+                "NO with a change pending asks APPLY & RESTART? and saves nothing",
                 self.w(rig, "DK_POPUPS") == n0 + 1
-                and rig.sel_records() == [None, None],
+                and rig.sel_records() == [None, None]
+                and self.text(rig, "DK_POPUP") == "APPLY & RESTART?"
+                and self.text(rig, "DK_POPUP_TEXT") == "1 CHANGE",
+                f"{self.text(rig, 'DK_POPUP')} / {self.text(rig, 'DK_POPUP_TEXT')}",
             )
-            self.check(
-                "the popup says unsaved changes are lost",
-                "UNSAVED" in self.text(rig, "DK_POPUP"),
-                self.text(rig, "DK_POPUP"),
-            )
-            self.frame(rig, "confirm_popup")
-            self.tap(rig, "NO", 500)  # dismiss
+            self.frame(rig, "confirm_apply")
             rig.emu.drain_events()
-            self.tap(rig, "YES", 300)  # second press: save and restart
+            self.tap(rig, "YES", 300)  # YES: save and restart
             self.check(
                 "dkrt_selection_set answered 0", self.w(rig, "DK_APPLY_SET") == 0
             )
@@ -473,27 +467,24 @@ class BootProof:
                 str(recs),
             )
             self.to_digikit(rig)
-            self.downs(rig, 2)  # FX ROUTES, ABOUT
-            self.tap(rig, "YES", 900)  # ABOUT
+            self.tap(rig, "YES", 900)  # ABOUT, the first row
             self.frame(rig, "about_after_boot")
             self.tap(rig, "NO", 500)
-            self.tap(rig, "UP", 300)
-            self.tap(rig, "UP", 300)
+            self.downs(rig, 3)
             self.tap(rig, "YES", 900)  # MODULES
             self.frame(rig, "list_after_boot")
             self.check(
-                "after the boot: ticked, marked loaded",
+                "after the boot: checked, marked loaded",
                 self.bytes_of(rig, "TICK", 3) == [0, 1, 0]
                 and self.bytes_of(rig, "LOADED", 3) == [0, 1, 0],
             )
-            self.check(
-                "after the boot: APPLY not offered", self.w(rig, "DK_OFFER") == 0
-            )
+            self.tap(rig, "NO", 500)
+            self.check("after the boot: NO asks nothing", self.w(rig, "DK_POPUPS") == 0)
             self.finish(rig)
 
     def safe_scenario(self) -> None:
-        """A card with a selection and a boot counter of 2: this boot is in safe mode and loaded nothing. The menu says so (a popup
-        when DIGIKIT opens, a row, the reason) and keeps the selection ticked; APPLY & RESTART is the way out."""
+        """A card with a selection and a boot counter of 2: this boot is in safe mode and loaded nothing. The menu says so (a dialog
+        when DIGIKIT opens, a row, the reason) and keeps the selection checked; NO on MODULES asks to restart, which is the way out."""
         e = self.env
         card = e.card(["modules/dyn-demo.dkm"], counter=2, tag="safe")
         with e.boot(self.img, card, "safe", watch=True) as rig:
@@ -505,26 +496,29 @@ class BootProof:
             )
             self.to_digikit(rig)
             self.check(
-                "a popup names safe mode and why",
+                "a dialog names safe mode and why",
                 self.w(rig, "DK_POPUPS") == 1
                 and "SAFE" in self.text(rig, "DK_POPUP")
-                and "BAD BOOTS" in self.text(rig, "DK_POPUP"),
-                self.text(rig, "DK_POPUP"),
+                and "BAD BOOTS" in self.text(rig, "DK_POPUP_TEXT"),
+                f"{self.text(rig, 'DK_POPUP')} / {self.text(rig, 'DK_POPUP_TEXT')}",
             )
             self.frame(rig, "safe_popup")
             self.tap(rig, "NO", 500)
             self.frame(rig, "safe_main")
-            self.tap(rig, "DOWN", 200)  # past the SAFE row to MODULES
+            self.downs(rig, 4)  # past the SAFE row, ABOUT, HEALTH and MEMORY to MODULES
             self.tap(rig, "YES", 900)
             self.frame(rig, "safe_list")
             self.check(
-                "the selection is kept ticked",
+                "the selection is kept checked",
                 self.bytes_of(rig, "TICK", 3) == [0, 1, 0],
             )
-            self.check("APPLY offered in safe mode", self.w(rig, "DK_OFFER") == 1)
-            self.downs(rig, 4)  # bad-sha, dyn-demo, foreign, the load line, APPLY
-            self.tap(rig, "YES", 700)  # first press: the popup
-            self.tap(rig, "NO", 500)
+            self.tap(rig, "NO", 700)  # a restart leaves safe mode: the list asks
+            self.check(
+                "NO in safe mode asks APPLY & RESTART? (LEAVES SAFE MODE)",
+                self.text(rig, "DK_POPUP") == "APPLY & RESTART?"
+                and self.text(rig, "DK_POPUP_TEXT") == "LEAVES SAFE MODE",
+                f"{self.text(rig, 'DK_POPUP')} / {self.text(rig, 'DK_POPUP_TEXT')}",
+            )
             rig.emu.drain_events()
             self.tap(rig, "YES", 300)
             _wait_restart(rig)
@@ -548,8 +542,7 @@ class BootProof:
                 str(b["results"]),
             )
             self.to_digikit(rig)
-            self.downs(rig, 2)  # FX ROUTES, ABOUT
-            self.tap(rig, "YES", 900)
+            self.tap(rig, "YES", 900)  # ABOUT, the first row
             self.frame(rig, "about_bad")
             self.finish(rig)
 

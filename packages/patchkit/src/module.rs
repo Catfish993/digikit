@@ -28,18 +28,27 @@ pub struct Manifest {
     /// ... and entries it adds to registries (a content module).
     #[serde(default)]
     pub entry: Vec<EntryDef>,
-    /// Typed sections (`crate::typed`); `typed::lower` turns them into `entry` rows per device.
-    #[serde(default)]
+    /// Typed sections (`crate::typed`), filled at load from the descriptor records of the objects (`crate::desc`);
+    /// `typed::lower` turns them into `entry` rows per device.
+    #[serde(skip)]
     pub machine: Vec<crate::typed::MachineDef>,
-    #[serde(default)]
+    #[serde(skip)]
     pub param: Vec<crate::typed::ParamDef>,
-    #[serde(default)]
+    #[serde(skip)]
     pub page: Vec<crate::typed::PageDef>,
-    #[serde(default)]
+    #[serde(skip)]
     pub voice: Vec<crate::typed::VoiceDef>,
-    /// Run-time effects (`[[fx]]`); read by `patchkit pack` only.
+    /// Removed forms (`[[fx]]`, `[[machine]]`, `[[param]]`, `[[page]]`, `[[voice]]`): kept only to refuse them with a clear error.
     #[serde(default)]
-    pub fx: Vec<crate::typed::FxDef>,
+    fx: Option<toml::Value>,
+    #[serde(default, rename = "machine")]
+    machine_old: Option<toml::Value>,
+    #[serde(default, rename = "param")]
+    param_old: Option<toml::Value>,
+    #[serde(default, rename = "page")]
+    page_old: Option<toml::Value>,
+    #[serde(default, rename = "voice")]
+    voice_old: Option<toml::Value>,
     /// `[[gen]]`: files `patchkit gen` writes from device data (`crate::devgen`).
     #[serde(default, rename = "gen")]
     pub gens: Vec<GenDef>,
@@ -247,6 +256,17 @@ pub enum ModuleKind {
     Framework,
 }
 
+/// What a `core/*` module is in the layering (docs/ARCHITECTURE.md): the loader and policy owner, the reset-time installer, an adapter to
+/// one firmware plug-in point, or an app that uses the adapters' APIs. Checked by `tools/devtools/layercheck.py`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModuleRole {
+    Runtime,
+    Installer,
+    Adapter,
+    App,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ModuleInfo {
     /// `category/name`; unique in a library (it need not equal the directory)
@@ -254,6 +274,9 @@ pub struct ModuleInfo {
     pub version: String,
     pub name: String,
     pub category: String,
+    /// The layer of a `core` module (required for `category = "core"`, see `ModuleRole`)
+    #[serde(default)]
+    pub role: Option<ModuleRole>,
     /// What the module is; `framework` is internal (core modules)
     #[serde(rename = "type")]
     pub kind: ModuleKind,
@@ -291,7 +314,7 @@ pub struct ObjectRef {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Op {
-    /// `write`, `retarget` or `hook`
+    /// `write` or `hook`
     pub op: String,
     #[serde(default)]
     pub anchor: String,
@@ -304,9 +327,9 @@ pub struct Op {
     pub value: Option<ExprSrc>,
     #[serde(default)]
     pub width: Option<u32>,
-    /// hook: `jump` (default) or `call` (ColdFire `jsr.l`; the hook returns to the end of the site)
+    /// hook: the declared hook this op attaches to; its site, offset and mode come from the port file
     #[serde(default)]
-    pub kind: Option<String>,
+    pub hook: Option<String>,
     /// hook: `run` (default; the displaced instructions run in `hook.<anchor>.tail`) or `drop`
     #[serde(default)]
     pub displaced: Option<String>,
@@ -369,7 +392,7 @@ fn reserve_voice_state(m: &mut Module) -> Result<()> {
         .manifest
         .voice
         .iter()
-        .filter_map(|v| v.desc.clone().map(|d| (v.machine.clone(), d)))
+        .map(|v| (v.machine.clone(), v.desc.clone()))
         .collect();
     for (machine, desc) in voices {
         if m.manifest.voice_state.contains_key(&machine) {
@@ -453,13 +476,89 @@ impl Module {
         manifest_text: &str,
         read: &dyn Fn(&str) -> Result<String>,
     ) -> Result<Module> {
-        let manifest: Manifest = toml::from_str(manifest_text)?;
+        Self::from_parts_with(manifest_text, read, false)
+    }
+
+    /// Like `from_parts`, but an object that cannot be read is left out of `objects` (only `patchkit gen` loads this way: the generated
+    /// headers are inputs of the build that makes the objects). Such a module must not be applied or packed.
+    pub fn from_parts_lenient(
+        manifest_text: &str,
+        read: &dyn Fn(&str) -> Result<String>,
+    ) -> Result<Module> {
+        Self::from_parts_with(manifest_text, read, true)
+    }
+
+    fn from_parts_with(
+        manifest_text: &str,
+        read: &dyn Fn(&str) -> Result<String>,
+        lenient: bool,
+    ) -> Result<Module> {
+        let mut manifest: Manifest = toml::from_str(manifest_text)?;
+        if manifest.module.category == "core" && manifest.module.role.is_none() {
+            return Err(err!(
+                "{}: a core module needs `role = \"runtime\" | \"installer\" | \"adapter\" | \"app\"` in [module]",
+                manifest.module.id
+            ));
+        }
+        if manifest.fx.is_some() {
+            return Err(err!(
+                "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"
+            ));
+        }
+        for (name, old) in [
+            ("machine", &manifest.machine_old),
+            ("param", &manifest.param_old),
+            ("page", &manifest.page_old),
+            ("voice", &manifest.voice_old),
+        ] {
+            if old.is_some() {
+                return Err(err!(
+                    "[[{name}]] is no longer read: declare machines with DK_MACHINE in C (sdk/include/dk/machine.h)"
+                ));
+            }
+        }
         let mut objects = vec![];
         let mut all = manifest_text.to_string();
         for o in &manifest.object {
-            let t = read(&o.path)?;
+            let t = match read(&o.path) {
+                Ok(t) => t,
+                Err(_) if lenient => continue,
+                Err(e) => return Err(e),
+            };
             all.push_str(&t);
             objects.push(Dko::parse(&t).map_err(|e| err!("{}: {e}", o.path))?);
+        }
+        // the descriptor records of the objects fill the typed sections; a module loaded without all its objects has none
+        if objects.len() == manifest.object.len() {
+            let d = crate::desc::read_objects(&objects)
+                .map_err(|e| err!("{}: {e}", manifest.module.id))?;
+            manifest.machine = d.machines;
+            manifest.param = d.params;
+            manifest.page = d.pages;
+            manifest.voice = d.voices;
+            // a patched-in module keeps the records out of the image: the objects lose their descriptor sections
+            if !manifest.module.dynamic {
+                // an object that held only records is removed with its manifest entry (the two lists stay aligned)
+                let section = crate::sdkgen::desc_spec().section;
+                let mut kept = vec![];
+                let mut kept_refs = vec![];
+                for (o, r) in objects.drain(..).zip(manifest.object.drain(..)) {
+                    if o.sections.iter().any(|s| s.name == section) {
+                        match crate::desc::strip(&o) {
+                            Some(s) => {
+                                kept.push(s);
+                                kept_refs.push(r);
+                            }
+                            None => {}
+                        }
+                    } else {
+                        kept.push(o);
+                        kept_refs.push(r);
+                    }
+                }
+                objects = kept;
+                manifest.object = kept_refs;
+            }
         }
         let mut alloc = BTreeMap::new();
         for r in &manifest.registry {
@@ -506,7 +605,11 @@ impl Library {
     /// the state blocks of its voices (`reserve_voice_state`).
     pub fn lower(&mut self, models: &crate::typed::Models) -> Result<()> {
         for m in &mut self.modules {
-            if !m.manifest.module.dynamic && !m.manifest.lowered {
+            // a module loaded without its objects (`from_parts_lenient`) has no descriptors to read
+            if !m.manifest.module.dynamic
+                && !m.manifest.lowered
+                && m.objects.len() == m.manifest.object.len()
+            {
                 reserve_voice_state(m).map_err(|e| err!("{}: {e}", m.manifest.module.id))?;
             }
             crate::typed::lower(&mut m.manifest, models)
@@ -559,10 +662,26 @@ impl Library {
     }
 }
 
+/// How a scan of the module roots gets the objects of content modules (`category` other than `core`): they are build output in the cache
+/// `out/cache/dko` (`crate::build`), not files of the module. A stale or missing object is built on demand with the toolchain.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy)]
+pub struct Build<'a> {
+    /// The repository root: the toolchain and the cache are there.
+    pub root: &'a std::path::Path,
+    /// Load the objects of the content modules with these ids only (built when stale); the other content modules load without objects
+    /// (as in `from_parts_lenient`), so nothing is hashed or built for them and no toolchain is needed. `None`: all content modules.
+    pub only: Option<&'a [String]>,
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl Library {
     /// Every `module.toml` under `root` (a module root), without lowering.
-    fn read_root(root: &std::path::Path) -> Result<Vec<Module>> {
+    fn read_root(
+        root: &std::path::Path,
+        lenient: bool,
+        build: Option<(&crate::build::toolchain::Env, Build)>,
+    ) -> Result<Vec<Module>> {
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else {
                 return;
@@ -583,12 +702,31 @@ impl Library {
         for p in found {
             let dir = p.parent().unwrap().to_path_buf();
             let text = std::fs::read_to_string(&p).map_err(|e| err!("{}: {e}", p.display()))?;
+            // a content module's objects come from the cache (built when stale); the others are files of the module
+            let built = match build {
+                Some((env, b)) => {
+                    let m = crate::build::ModuleToml::parse(&text)
+                        .map_err(|e| err!("{}: {e}", p.display()))?;
+                    let allow = b.only.is_none_or(|ids| ids.iter().any(|i| i == m.id()));
+                    Some((env, m, allow))
+                }
+                None => None,
+            };
             let read = |rel: &str| -> Result<String> {
+                if let Some((env, m, allow)) = &built
+                    && m.builds(rel)
+                {
+                    if !allow {
+                        return Err(err!("{rel}: not loaded"));
+                    }
+                    return crate::build::load_object(env, &dir, m, rel);
+                }
                 std::fs::read_to_string(dir.join(rel))
                     .map_err(|e| err!("{}: {e}", dir.join(rel).display()))
             };
-            let mut m =
-                Module::from_parts(&text, &read).map_err(|e| err!("{}: {e}", p.display()))?;
+            let skip_missing = lenient || built.as_ref().is_some_and(|(_, _, allow)| !allow);
+            let mut m = Module::from_parts_with(&text, &read, skip_missing)
+                .map_err(|e| err!("{}: {e}", p.display()))?;
             m.dir = dir;
             modules.push(m);
         }
@@ -611,19 +749,76 @@ impl Library {
         Ok(())
     }
 
-    /// The default module roots of a repository: `modules/` and `tests/fixtures/modules/`, lowered with `devices/`.
+    /// The default module roots of a repository: `modules/` and `tests/fixtures/modules/`, lowered with `devices/`. Content modules whose
+    /// object is stale in the cache are built (it needs the toolchain: `uv run python -m tools.patchkit.pk_toolchains m68k`).
     pub fn scan_repo(root: &std::path::Path) -> Result<Library> {
+        Self::scan_repo_with(root, false)
+    }
+
+    /// `scan_repo` for tests: building the content modules needs the m68k-elf toolchain (`uv run python -m tools.patchkit.pk_toolchains
+    /// m68k`). Without it the test cannot run: this prints why and returns `None`. Any other error panics.
+    pub fn scan_repo_or_skip(root: &std::path::Path) -> Option<Library> {
+        Self::scan_repo_for_or_skip(root, None)
+    }
+
+    /// [`Library::scan_repo_or_skip`] that loads (and builds) the objects of the content modules `only` names (see [`Build::only`]).
+    pub fn scan_repo_for_or_skip(root: &std::path::Path, only: Option<&[String]>) -> Option<Library> {
+        if crate::build::toolchain::Env::new(root).m68k("gcc").is_err() {
+            eprintln!(
+                "SKIP: the m68k-elf toolchain is not installed, so the content modules cannot be built (uv run python -m tools.patchkit.pk_toolchains m68k)"
+            );
+            return None;
+        }
+        Some(Self::scan_repo_for(root, false, only).unwrap_or_else(|e| panic!("{e}")))
+    }
+
+    /// `scan_repo`; with `lenient`, a missing object file is left out (see `Module::from_parts_lenient`).
+    pub fn scan_repo_with(root: &std::path::Path, lenient: bool) -> Result<Library> {
+        Self::scan_repo_for(root, lenient, None)
+    }
+
+    /// `scan_repo_with`; with `only`, the objects of these content modules only are loaded (see [`Build::only`]).
+    pub fn scan_repo_for(
+        root: &std::path::Path,
+        lenient: bool,
+        only: Option<&[String]>,
+    ) -> Result<Library> {
+        let env = crate::build::toolchain::Env::new(root);
+        let b = Build { root, only };
         let mut lib = Library::default();
-        lib.extend_unique(Self::read_root(&root.join("modules"))?)?;
-        lib.extend_unique(Self::read_root(&root.join("tests/fixtures/modules"))?)?;
+        lib.extend_unique(Self::read_root(
+            &root.join("modules"),
+            lenient,
+            Some((&env, b)),
+        )?)?;
+        lib.extend_unique(Self::read_root(
+            &root.join("tests/fixtures/modules"),
+            lenient,
+            Some((&env, b)),
+        )?)?;
         lib.lower(&crate::typed::Models::from_dir(&root.join("devices"))?)?;
         Ok(lib)
     }
 
-    /// Every `module.toml` under `root` (a module root); lowered when `devices/` sits next to it.
+    /// Every `module.toml` under `root` (a module root); lowered when `devices/` sits next to it. Objects are only read from files.
     pub fn scan(root: &std::path::Path) -> Result<Library> {
+        Self::scan_with(root, false)
+    }
+
+    /// `scan`; with `lenient`, a missing object file is left out (see `Module::from_parts_lenient`).
+    pub fn scan_with(root: &std::path::Path, lenient: bool) -> Result<Library> {
+        Self::scan_in(None, root, lenient)
+    }
+
+    /// `scan_with`; with `build`, the content modules of the root get their objects from the cache like in `scan_repo_for`.
+    pub fn scan_in(build: Option<Build>, root: &std::path::Path, lenient: bool) -> Result<Library> {
+        let env = build.map(|b| crate::build::toolchain::Env::new(b.root));
         let mut lib = Library::default();
-        lib.extend_unique(Self::read_root(root)?)?;
+        lib.extend_unique(Self::read_root(
+            root,
+            lenient,
+            env.as_ref().zip(build),
+        )?)?;
         // the device models sit next to `modules/` (`devices/*.toml`); an extra module root without them
         // is lowered by the caller
         let devices = root.parent().map(|p| p.join("devices"));

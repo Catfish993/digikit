@@ -4,7 +4,7 @@
     b = rig.block(master)                                # master: 64 floats (32 left, 32 right) before the hook
     b.master                                             # the 64 floats after the hook; b.instructions, b.returned, b.ctx_bad, b.regs_bad
 
-The adapter (modules/core/fx/src/dsp/fx.s) and the effect sources are assembled and linked the way the patch does: the table at TABLE, the master
+The adapter (modules/core/adapters/fx/src/dsp/fx.s) and the effect sources are assembled and linked the way the patch does: the table at TABLE, the master
 block at MASTER, the hook's tail (the stock function's second instruction) at STOCK_BP. Data symbols (`.PKDATA`, `.PKBSS`, `.VAR`) go to free L2;
 `.PKBSS` memory (the effects' states) starts poisoned, so an effect that reads a state the adapter did not zero shows. Every call draws a hostile
 context (M5 ... MODE1) and fills the registers the stock function expects back with markers; both must come back unchanged.
@@ -18,13 +18,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import support.dsp_voice_rig as dv
-from tools.patchkit import pk_build, pk_sharc
+from tools.patchkit import pk_sharc
 
 ROOT = dv.ROOT
-ADAPTER = ROOT / "modules/core/fx/src/dsp/fx.s"
-SEND = ROOT / "modules/core/fx/src/dsp/fxsend.s"  # the send route's hook (Digitakt II)
+ADAPTER = ROOT / "modules/core/adapters/fx/src/dsp/fx.s"
+SEND = (
+    ROOT / "modules/core/adapters/fx/src/dsp/fxsend.s"
+)  # the send route's hook (Digitakt II)
 SEND_DN2 = (
-    ROOT / "modules/core/fx/src/dsp/fxsend-dn2.s"
+    ROOT / "modules/core/adapters/fx/src/dsp/fxsend-dn2.s"
 )  # the same with the slot mix (Digitone II)
 EFFECTS = ROOT / "tests/support/fx_effects.s"
 CODE_BASE = 0xB90000
@@ -149,10 +151,12 @@ _BUILT: dict[tuple, _Built] = {}
 
 
 def _assemble(path: Path) -> pk_sharc.SharcObject:
-    """A DSP source the way tools/patchkit/pk_build.py reads it: `#include` from the SDK, the module's build/gen and the source's directory."""
-    gen = [p / "build" / "gen" for p in path.parents if (p / "module.toml").exists()]
-    dirs = [ROOT / "sdk", *gen, path.parent]
-    return pk_sharc.assemble(pk_build.expand_includes(path.read_text(), dirs))
+    """A DSP source the way tools/patchkit/pk_sharc.py reads it: `#include` from the module's directories, the SDK
+    and the source's directory (a source outside a module: the SDK and its directory)."""
+    mods = [p for p in path.parents if (p / "module.toml").exists()]
+    sdk = [ROOT / "sdk" / "asm", ROOT / "sdk"]
+    dirs = [*(pk_sharc.sharc_include_dirs(mods[0]) if mods else sdk), path.parent]
+    return pk_sharc.assemble(pk_sharc.expand_includes(path.read_text(), dirs))
 
 
 def build(sources: tuple[Path, ...] = (EFFECTS,), device: str = "dt2") -> _Built:
@@ -426,7 +430,7 @@ class FxRig:
         return tuple(w2f(self.sess.peek(at + k) or 0) for k in range(64))
 
     def allowed(self, stack_bytes: int) -> list[tuple[int, int, str]]:
-        """The DM that the module's code may store to in a call (docs/design/module-sdk.md 11.5 D6, sdk/dk_fx.h): the output block, its own data
+        """The DM that the module's code may store to in a call (docs/design/module-sdk.md 11.5 D6, <dk/fx.h>): the output block, its own data
         and bss (its state included) and `stack_bytes` of data stack below I7 (the adapter does not lower I7 before the call)."""
         out = [(self.built.data["_fx_scratch"], 4 * 64, "output block")]
         out += [(a, n, "module data") for a, n in self.built.module_data]

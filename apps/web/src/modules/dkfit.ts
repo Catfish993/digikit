@@ -1,5 +1,5 @@
 // The fit rule: does a module, from the needs inferred from its contents, fit the capacity of a device (docs/plans/what-fits.md)?
-// The rule (the compare, not the needs) is written three times and kept equal by one set of vectors (sdk/fit-vectors.json): `dkrt_fit` (Rust: the
+// The rule (the compare, not the needs) is written three times and kept equal by one set of vectors (sdk/vectors/fit-vectors.json): `dkrt_fit` (Rust: the
 // DIGIKIT menu), this file (the host app) and tools/device/dkfit.py (dev tools). The needs are computed once, in Rust (packages/dkneeds): the
 // DIGIKIT menu runs it on the card's files, patchkit.wasm and the patchkit command line run it on the host (dkneeds.ts). Written without TS-only
 // runtime syntax so node can import it.

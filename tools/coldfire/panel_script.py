@@ -245,13 +245,13 @@ def pattern_temp() -> Script:
     return s.chord(FUNC, YES, gap=20_000_000).frame("pattern_saved")
 
 
-# --- SETTINGS > DIGIKIT (modules/core/digikit-menu, finding 28) ---------------------------------------------------
+# --- SETTINGS > DIGIKIT (modules/core/apps/digikit-menu, finding 28) ---------------------------------------------------
 # Only meaningful on an image patched with core/digikit-menu: DIGIKIT is the 9th SETTINGS entry (8 DOWN from PROJECT;
 # DN2 and DT2 alike while OUTBOX 8 is hidden).
 
 
 def _to_digikit(s: Script) -> Script:
-    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (MODULES, FX ROUTES, ABOUT)."""
+    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (ABOUT, HEALTH, MEMORY, MODULES, DEBUG)."""
     _settings(s)
     for _ in range(8):
         s.tap(DOWN, gap=15_000_000)
@@ -267,7 +267,7 @@ RUNTIME_LOG_VALUE = (
 
 
 def _to_modules(s: Script) -> Script:
-    """From the DIGIKIT view with the cursor on MODULES: open the list (rescans the store)."""
+    """From the DIGIKIT view with the cursor on MODULES (3 x DOWN from the top): open the list (rescans the store)."""
     return s.tap(YES, gap=DG)
 
 
@@ -281,7 +281,7 @@ def digikit_about_script() -> Script:
     """DIGIKIT > ABOUT, then NO back to the DIGIKIT view."""
     s = boot()
     _to_digikit(s)
-    s.tap(DOWN, gap=KEY).tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("about")
+    s.tap(YES, gap=DG).frame("about")  # ABOUT is the first row
     return s.tap(NO, gap=G).frame("back_main")
 
 

@@ -54,7 +54,7 @@ Global options: `--socket PATH` (default: discover), `--run-dir DIR` (where to l
 ## Methods
 
 Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports an incomplete method list (it omits
-`mem.cf.peek`, `mem.cf.poke`, `card.*` and `watchdog.config`); use this table.
+`mem.cf.peek`, `mem.cf.poke`, `mem.cf.write`, `dev.reload`, `card.*` and `watchdog.config`); use this table.
 
 | Method | Wrapper | CLI |
 |---|---|---|
@@ -72,6 +72,8 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `framebuffer.get` | `frame`, `frame_png`, `frame_hash` | `frame` |
 | `leds.get` | `leds` | `call` |
 | `mem.cf.peek`, `mem.cf.poke` | `peek32`, `poke32` | `call` |
+| `mem.cf.write {addr, hex}` | | `call` |
+| `dev.reload {modules_dir?, swap_modules?, auto_no?, build?}` | | `call`; `mise run dk:dev` |
 | `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel`, `card.folder`, `card.sync` | | `call` |
 | `midi.in`, `midi.out` | `midi_in`, `midi_out` | `call` |
 | `midi.usb.in`, `midi.usb.out` | `usb_in`, `usb_out` | `call` |
@@ -104,6 +106,35 @@ its own `cache_hit` at the top level), or `{patched: false, reason}` for an inpu
 may be another device or version (without `replace` an image is a variant of the running one and is injected). The desktop console's Open
 and Reload use it. A load without `card` gets the running DT2's card when the image is a DT2 image, else the card remembered for that
 exact stock firmware (desktop only), else none; an image of another device never gets a card.
+
+`mem.cf.write {addr, hex}` writes a byte range (any alignment, hex text) of SDRAM in one call, with one decode-cache invalidation for the range: code
+written this way runs as new code. Unmapped pages are mapped zeroed. Like `mem.cf.poke` it is a host write, not part of the replay record.
+
+`dev.reload {modules_dir?, swap_modules?, auto_no?, build?}` brings the running session to the module objects as they are on disk now. Without
+`build` it never builds. With `build: true` (the workbench button sets it) it first builds the stale objects of the session's modules in
+the daemon's process (`patchkit::build::build_module`; ColdFire C, assembly and Rust crates, and SHARC+ sources; gcc, as, ld and cargo run as child processes, the SHARC+ assembler is the Selache library in the process):
+a `core/*` module writes its committed `build/` objects, a content module writes `out/cache/dko`. The reply gets
+`build: {built: [{id, objects, ms}], skipped: [id], ms}`. A compiler error is the error message (`dev.reload: build of ID failed:` and the
+compiler output; for a SHARC+ source the assembler's or a guard's message, e.g. `known Selache encode bug`) and nothing is reloaded.
+The build runs on the controller thread, so the session is blocked while it runs.
+The module set is the patch record of the running image; the image is made again from the stock image (`modules_dir`: the repository root,
+default as for `firmware.load {runtime}`; the stock image is the load's base or the file of `firmware/` with the record's digest) and compared
+with the image whose ready state the boot cache holds (the baseline: the running image, or after a swap the image the swap started from).
+The reply has `path`:
+
+- `swap`: only ranges of swap modules differ (`swap_modules`; default `core/ui`, `core/digikit-menu` and every module whose manifest requires
+  `core/ui`). The baseline's ready state is restored (the warm `firmware.load` path, `start: snapshot`), every changed module is written
+  over it whole (code, data, zeroed bss; a changed hook site too) and `loaded.current` becomes the new image. This equals a fresh boot of
+  the new image as long as nothing in the ready state holds a pointer into the swapped code: the firmware reaches UI code only through the
+  SETTINGS hook and the views opened from it, and the ready state is the main screen, SETTINGS never opened. The patch record is not
+  compared. Reply: `{ranges, bytes, owners, ms, apply_ms, restore_ms, write_ms, restore}`. `auto_no` presses NO after the restore (DT2).
+- `boot`: any other ColdFire range, a section other than MAIN and DSP, or no cached ready state to restore: the new image is loaded as by
+  `firmware.load` (a cold boot unless that image was booted before), with `reason` (`core/runtime changed at 0x4671a000`) and the load's report.
+- `dsp`: only the DSP section differs: the hot injection of `firmware.load`.
+- `none`: the running image already is the new one.
+
+After a swap the boot cache has no entry for the new image; a plain `firmware.load` or `restart` of it boots cold once. The next
+`dev.reload` restores the baseline's state again. Refused while a job runs. The desktop workbench's Reload modules button calls it.
 
 `session` (any method, an integer): the webview's session token (the desktop's `emu_call`). `firmware.load` and `restart` start the session
 they carry (it must be newer than the current one; it is taken when the call succeeds); every other method must carry the current one,

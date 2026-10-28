@@ -12,7 +12,7 @@ execution requirements, not levels. A successful boot proves only what the run a
 | Level | What | Command |
 | --- | --- | --- |
 | Static (JS/TS) | oxlint, Prettier check, host Vitest, `pnpm -r run typecheck` | `mise run verify:host` |
-| Static (Python) | ruff check and format over pyproject `[tool.ruff] include`; mypy over `[tool.mypy] files` | `mise run lint:py`; `uv run python -m tools.devtools.pathcheck` |
+| Static (Python) | ruff check and format over pyproject `[tool.ruff] include`; mypy over `[tool.mypy] files` | `mise run lint:py`; `uv run python -m tools.devtools.pathcheck`; `mise run check:layers` (module layering, docs/ARCHITECTURE.md) |
 | Fast preflight | Changed files only; no builds, no devices | `mise run test:changed` |
 | Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `mise run test:host` |
 | Unit (web) | Web app Node suites in `apps/web/tests` | `mise run web:test` |
@@ -84,6 +84,32 @@ Device tasks never build a daemon or the emulator themselves. Prerequisites are 
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.
 
+## Fast iteration: dk:dev and Reload
+
+For module code and the UI layer (`core/ui`, `core/digikit-menu`, `test/ui-demo`) one edit and one look should take seconds, not a
+boot. `mise run dk:dev -- test/ui-demo --device dn2[,dt2] --keys 'tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:menu'`
+(`tools/patchkit/pk_devreload.py`) builds the objects whose sources changed (`patchkit build`), reloads a daemon it keeps alive per device and
+module set (`--stop` ends it), runs the key script from the main screen, and writes `out/runs/devreload/<device>/NAME.png` (4x) and
+`sheet.png` (2x, four per row, labelled). The target is a patch set of `devices/*.toml` or module ids; `--keys` is a JSON list of harness
+steps or inline text (`tap:KEY`, `wait:MS`, `turn:ENC A:BY`, `shot:NAME`, `*N` repeats). The workbench has the same call as the Reload
+modules button (⇧⌘R), with `build: true`: it builds the stale objects of the session's modules first (ColdFire and SHARC+; docs/CONTROL.md). `dk:dev` builds in its own step
+and reloads without `build`.
+`--store ID,ID*,synth:NAME:BSS` boots the daemon on a card whose module store holds those modules (`*`: also in the saved selection; `synth:` needs BSS bytes of arena, so it never fits), which the MODULES list of `core/digikit-menu` needs; each list has its own kept daemon.
+
+The daemon method is `dev.reload` (docs/CONTROL.md). It applies the modules again and compares the result with the running image:
+
+| Path | When | What runs | Measured (PGO daemon, warm) |
+| --- | --- | --- | --- |
+| `swap` | only UI layer modules differ | restore the cached main-screen state, write the module bytes | DN2 1.4 s, DT2 1.7 s (apply 1.2 s, restore 0.3 and 0.4 s, write under 1 ms) |
+| `boot` | the runtime, any other module, or a non-MAIN section differs | load the new image | cold boot DN2 5.3 s, DT2 10.2 s; image booted before: 0.3 s and 0.5 s |
+| `none` | nothing differs | nothing | apply only, 1.2 s |
+
+A `dk:dev` round for a UI change is about 3.6 s per device, with a two-key-step script of 1.8 s included. Build costs: Rust runtime 2.3 s,
+C object about 0.3 to 1 s. The first run of a module set starts the daemon and boots the patched image (DN2 9 s, DT2 10 s with warm caches).
+The harness stays the final proof: a swap shows what a change looks like and is not a substitute for `module:check`, the runtime suites or a
+boot of the real image. `tools/emulator/boot_phases.py` measures where a boot of the workbench's patched image spends its time (cold and
+warm `firmware.load`, `state.load`, first run of our runtime).
+
 ## Inputs
 
 Tests that lack an input skip with a reason; `pytest -rs` lists them.
@@ -96,6 +122,7 @@ Tests that lack an input skip with a reason; `pytest -rs` lists them.
 | ColdFire dump `out/ghidra/<image>-emac` and cfdb | Needs Ghidra: `tools.coldfire.ghidradump`, then `tools.coldfire.cfdb build`. |
 | Native SHARC library, shared core | `mise run gen:native-lib` (firmware-free); `SHARC_NATIVE_LIB` overrides. `mise run gen:core` builds the generated core. |
 | Module toolchains in `out/tools` | `mise run patch:toolchains` (about 15 min); `uv run python -m tools.patchkit.pk_toolchains status`. |
+| Objects of content modules and fixtures in `out/cache/dko` | Not committed. The Rust tests that scan the repository (`Library::scan_repo`), `module:pack`, `module:pack-all`, `dk:run`, `dk:dev` and the web gallery build the stale ones on demand (`patchkit build` does it by hand). Without the m68k-elf toolchain the Rust tests that need them print `SKIP` and return. A checkout with an empty `out/` passes after the first build. |
 | Ready inputs | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min). |
 | Captures `out/captures/*.dt2cap` | Not reproducible from the repository; those tests stay skipped. |
 | Opt-in switches | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `--slow` runs long firmware runs. |
@@ -169,7 +196,7 @@ tier-quick, tier-sweep, python-tests, rust-tests, card, smoke, dt2-tone, dt2-che
 dt2-tier-sweep.
 
 - `host` runs `pnpm verify:host`. `web` depends on `host`.
-- `python-tests` runs ruff, ruff format, mypy and pathcheck as commands, then
+- `python-tests` runs ruff, ruff format, mypy, pathcheck and layercheck as commands, then
   `tests/patchkit/test_pk_current.py` (module and port staleness), then the selected test files, one
   process per file. Selected files are the tests that reach a changed module in the import graph
   (`changed_tests.gate_tests`), the files changed, and the `PY_SUITES` the change triggers.

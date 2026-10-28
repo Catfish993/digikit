@@ -16,9 +16,9 @@ DT2_117 = config.stock("Digitakt_II_OS1.17.syx")
 DN2_112 = config.stock("Digitone_II_OS1.12.syx")
 
 
-def test_pk_build_objects_are_current():
+def test_module_objects_are_current():
     r = subprocess.run(
-        [sys.executable, "-m", "tools.patchkit.pk_build", "build-all", "--check"],
+        [sys.executable, "-m", "tools.patchkit.patchkit", "build", "--check"],
         cwd=ROOT,
         env=python_env(),
         capture_output=True,

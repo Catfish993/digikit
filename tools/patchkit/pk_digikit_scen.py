@@ -33,7 +33,7 @@ Kinds:
   safe       a module whose init resets the machine, twice: the third boot is safe mode (no module, reported). With `[safe] part = "late"`: a
              module that hangs the UI task some time into a session, before (early) or after (late) the stable period that clears the boot
              counter: early leads to safe mode at the third boot, late never does (finding 37).
-  menu       a set ticked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with APPLY & RESTART (two presses) is
+  menu       a set checked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with NO and YES on APPLY & RESTART? is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
   cut        the card states a power cut leaves between the two copies of the selection record.
   card       card safety (finding 46): the one card-write function refuses writes outside the store range; a blank card works as before, a card
@@ -50,8 +50,8 @@ Kinds:
              one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
   fxsend     a run-time effect on the send route of `core/fx` (Digitakt II): the row's route and amount words are written with `dsp.patch`; no amount, or an amount on a silent track, leaves the PCM
              dry bit for bit; an amount on the playing track adds the effect's return (the amount squared, as the stock sends); the effect runs once a block; tools/patchkit/pk_digikit_fxsend.py.
-  fxroutes   SETTINGS > DIGIKIT > FX ROUTES and the manifest's route fields (`route`, `routes` of `[[fx]]`; Digitakt II): a send-default effect starts on the send route, the page lists each
-             effect as `<TAB>  SEND` or `<TAB>  MASTER`, YES switches the pending route (MASTER ONLY, SEND ONLY and NO SEND SLOT are messages), APPLY & RESTART writes the settings and restarts and the
+  fxroutes   SETTINGS > DIGIKIT > MODULES > the side panel's ROUTE... and the effect's route fields (`route`, `routes` of DK_FX; Digitakt II): a send-default effect starts on the send route, the
+             ROUTE... choice of the side panel offers the allowed routes and the free send slots, the pending route is a change that NO and YES on APPLY & RESTART? write (settings) and restart, and the
              route is in effect after it (row word, FX key page, PCM, `patchkit store dump`), the FX view lists send effects first; tools/patchkit/pk_digikit_fxroutes.py.
   settings   the settings store of the runtime (docs/design/digikit-store.md, "The settings record"): a key put through the mailbox is written 2 s after the last change to the copy that is not
              current (A, then B, then A), never to anything else in the store range; a soft restart reads it back; the SETTINGS command and CAPACITY kind SETTINGS report it; `patchkit store dump`
@@ -1156,7 +1156,7 @@ def run_transfer(
 
 
 def memory_rows(cap: dict[str, dict[str, int]]) -> list[str]:
-    """The rows the MEMORY page shows for a CAPACITY reply (modules/core/digikit-menu `fill_mem`): label, ten-character bar, percent or used/limit."""
+    """The rows the MEMORY page shows for a CAPACITY reply (modules/core/apps/digikit-menu `fill_mem`): label, ten-character bar, percent or used/limit."""
     out = []
     for kind, label, pct in (
         ("DSP_AREA", "DSP   ", True),
@@ -1188,12 +1188,12 @@ def check_memory_page(c: Ctx, rig: B.BootRig, plan: Any) -> None:
         rig.s.do_tap(key)
         rig.s.run_ms(gap_ms)
 
-    tap("NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MEMORY (the fifth row)
+    tap("NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MEMORY (the third row)
     tap("SETTINGS", 600)
     for _ in range(8):
         tap("DOWN", 200)
     tap("YES", 700)
-    for _ in range(4):
+    for _ in range(2):
         tap("DOWN", 200)
     tap("YES", 700)
     base, n = plan.addr("DK_MEM"), rig.w(plan.addr("DK_MEM_N"))
@@ -1228,9 +1228,9 @@ def check_memory_page(c: Ctx, rig: B.BootRig, plan: Any) -> None:
 
 
 def run_menu(c: Ctx) -> None:
-    """Through the menu: boot with an empty selection, SETTINGS > DIGIKIT > MODULES, tick the set, APPLY & RESTART (two presses), and
-    after the boot compare with the patched-in set as `equiv` does (rows, machine in the list, PCM of a note). The set may hold a
-    code-only module next to the machine."""
+    """Boot with an empty selection, install the set over USB (`dk run` or `dktransfer install`, by the table), and after the boot
+    compare with the patched-in set as `equiv` does (rows, machine in the list, PCM of a note). The set may hold a code-only module
+    next to the machine."""
     from tools.coldfire import digikit_menu_proof as D
 
     t = c.table()
@@ -1239,15 +1239,14 @@ def run_menu(c: Ctx) -> None:
     rows = sorted(names.values())  # the menu lists the store's files in name order
     dkrun = bool(
         t.get("dkrun")
-    )  # the selection and the restart come from `tools.device.dkrun` (SELECT, RESTART), not from the menu
+    )  # the selection and the restart come from `tools.device.dkrun` (SELECT, RESTART)
     transfer = bool(t.get("transfer"))  # dktransfer.install does what dkrun does
-    upload = bool(t.get("upload")) or dkrun or transfer
+    assert dkrun or transfer, "the menu kind needs dkrun or transfer in its table"
     blobs = {}
-    if upload:  # the store is filled over USB SysEx, not by the card build: take the packed files out of the folder
-        for path in files.values():
-            f = c.env.folder / "digikit" / path
-            blobs[path] = f.read_bytes()
-            f.unlink()
+    for path in files.values():  # the store is filled over USB SysEx, not by the card build: take the packed files out of the folder
+        f = c.env.folder / "digikit" / path
+        blobs[path] = f.read_bytes()
+        f.unlink()
     menu_img = c.image_for(f"{RT},core/digikit-menu", "menu")
     plan = D.Plan(menu_img.plan)
     empty = c.card(None)
@@ -1275,75 +1274,17 @@ def run_menu(c: Ctx) -> None:
         if not plain:
             c.done(rig)
 
-    def w(rig: B.BootRig, name: str, k: int = 0) -> int:
-        return rig.w(plan.addr(name) + 4 * k)
-
-    def tap(rig: B.BootRig, key: str, gap_ms: int = 350) -> None:
-        rig.s.do_tap(key)
-        rig.s.run_ms(gap_ms)
-
     with c.rig(menu_img, empty, "menu") as rig:
         b0 = rig.boot_info()
         c.check("the first boot has no module", b0["count"] == 0 and b0["loaded"] == 0)
-        if upload and not dkrun and not transfer:
-            from tools.device import dkupload as DK
-            from tools.patchkit import pk_digikit_upload as U
-
-            up = DK.Uploader(U.transport(rig))
-            for path, data in blobs.items():
-                up.put(path, data)
-            c.check(
-                "LIST after the uploads names the modules",
-                sorted(p for p, _, _ in up.ls()) == sorted(blobs),
-                str(up.ls()),
-            )
         if transfer:
             run_transfer(c, rig, D, blobs, files)
         elif dkrun:
             run_dkrun(c, rig, D, blobs, files)
-        else:
-            tap(rig, "NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES
-            tap(rig, "SETTINGS", 600)
-            for _ in range(8):
-                tap(rig, "DOWN", 200)
-            tap(rig, "YES", 700)
-            tap(rig, "YES", 900)
-            n = w(rig, "NENT")
-            c.check("the store lists the packed modules", n == len(rows), f"{n} rows")
-            c.check("APPLY not offered before a tick", w(rig, "DK_OFFER") == 0)
-            want = set(names.values())
-            for name in rows:  # tick the set, in list order
-                if name in want:
-                    tap(rig, "YES", 500)
-                tap(rig, "DOWN", 200)
-            tick = [
-                rig.w(plan.addr("TICK") + 0) >> (24 - 8 * k) & 0xFF
-                for k in range(len(rows))
-            ]
-            c.check(
-                "the pending selection is the whole set",
-                tick == [1] * len(rows),
-                str(tick),
-            )
-            c.check(
-                "the card's selection is still empty", rig.sel_records() == [None, None]
-            )
-            c.check("APPLY offered", w(rig, "DK_OFFER") == 1)
-            n0 = w(rig, "DK_POPUPS")
-            tap(rig, "YES", 700)  # first press: the popup, nothing saved
-            c.check(
-                "first press: one popup, nothing saved",
-                w(rig, "DK_POPUPS") == n0 + 1 and rig.sel_records() == [None, None],
-            )
-            tap(rig, "NO", 500)
-            rig.emu.drain_events()
-            tap(rig, "YES", 300)  # second press: save and restart
-            c.check("dkrt_selection_set answered 0", w(rig, "DK_APPLY_SET") == 0)
-            D._wait_restart(rig)
         info = rig.boot_info()
         k = len(rows)
         c.check(
-            "the boot after APPLY & RESTART loaded the whole set",
+            "the boot after the install loaded the whole set",
             info["count"] == k
             and info["loaded"] == k
             and info["results"] == [0] * k
@@ -1377,7 +1318,7 @@ def run_menu(c: Ctx) -> None:
         check_memory_page(c, rig, plan)
         c.checks += rig.checks
         c.done(rig)
-    c.common_checks_upload() if upload else c.common_checks()
+    c.common_checks_upload()
 
 
 def run_upload(c: Ctx) -> None:

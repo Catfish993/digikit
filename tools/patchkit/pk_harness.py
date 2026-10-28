@@ -12,7 +12,7 @@ empty), spawns a daemon on the stock firmware's ready inputs, loads the image (`
 a MAIN change by the cached coupled cold boot), and runs *tours*: `tests/patchkit/smoke/tours/smoke.toml` (boot to the
 readiness contract, track and pattern change, audition, play/stop with the sequencer running, machine menu open and
 close, save project and reload, a seeded random-input stress) and the tests of the modules in the set
-(`modules/*/*/tests/*.toml`). Every segment starts from `restart`, so segments do not depend on each other.
+(`modules/**/tests/*.toml`). Every segment starts from `restart`, so segments do not depend on each other.
 
 After every input and every segment the harness asserts: no `fault` (status.cf.error, GUEST_FAULT), no DSP halt, no
 main-loop stall (status.heartbeat, the controller's `stall` events), and its own checks: `expect_frame` against the
@@ -705,6 +705,9 @@ class Session:
         # wall seconds by kind (spawn_s, load_s, reset_s, run_s) and the emulated milliseconds run (emu_ms)
         self.timings: dict[str, float] = {}
         self.card: str | None = None
+        self.card_override: str | None = (
+            None  # a card image file used instead of the sample card (dk:dev --store)
+        )
         self.image: Path | None = None
 
     # -- lifecycle
@@ -740,7 +743,9 @@ class Session:
         if emu.status().get("audio") is None:
             raise HarnessError("this digi-emud has no coupled audio")
         emu.subscribe()
-        if cell.device == "dt2":
+        if self.card_override:
+            self.card = self.card_override
+        elif cell.device == "dt2":
             samples = OUT / "samples"
             card_check.make_samples(samples)
             with boot_lock(self.cache_dir, Path(f"card-{self.cell.device}")):

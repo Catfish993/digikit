@@ -110,6 +110,10 @@ description = "Find the DSP tier (fast region, cluster root, AOT) that changes a
 
 # --- verify ---
 
+[tasks."check:layers"]
+run = "uv run python -m tools.devtools.layercheck"
+description = "Check the module layering (docs/ARCHITECTURE.md): roles match folders, apps and content modules include only the SDK, no firmware anchors outside adapters, apps have no [[op]]/[[claim]]; no builds"
+
 [tasks."test:changed"]
 run = "uv run python -m tools.devtools.changed_tests"
 description = "Fast preflight: changed-Python lint/types, pathcheck, audited tooling units, related host tests and types; no builds or devices. --base/--head/--files/--deep/--explain"
@@ -254,6 +258,10 @@ description = "Generate a firmware block library (AOT core) and register it by D
 run = "uv run python -m tools.patchkit.patchkit gen"
 description = "Write the generated module sources from devices/*.toml and sdk/sdk.toml (runtime device.rs and .inc files, gen_sdk.rs, tools/device/dklog_kinds.py): mise run gen:modules [-- --check]"
 
+[tasks."fw:reference"]
+run = "uv run python -m tools.patchkit.patchkit reference"
+description = "Write the searchable firmware reference page out/reference/fw.html from modules/core/fw/reference.json"
+
 [tasks."gen:core"]
 run = "uv run python -m tools.sharc_dev.sharc_transpile --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
 description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
@@ -285,11 +293,11 @@ description = "Build or inspect a standalone +Drive image"
 
 [tasks."module:new"]
 run = "uv run python -m tools.patchkit.pk_new"
-description = "Create a module from a template: mise run module:new -- category/name [--cf] [--dsp] (stubs, tests/smoke.toml, README.md, gallery/icon.svg; builds it), or -- author/name --machine [--dir DIR] (a run-time machine of the SDK contract, a copy of test/sine; docs/MODULE-AUTHORING.md)"
+description = "Create a run-time module from a template in sdk/templates and build it: mise run module:new -- machine|fx|service AUTHOR/NAME [--dir DIR] (docs/MODULE-AUTHORING.md)"
 
 [tasks."module:build"]
-run = "uv run python -m tools.patchkit.pk_build"
-description = "Compile module sources to build/*.dko.json: mise run module:build [-- modules/fx/NAME] [--check]"
+run = "uv run python -m tools.patchkit.patchkit build"
+description = "Compile module sources to objects (core/* modules: build/*.dko.json, committed; every other module: the cache out/cache/dko): mise run module:build [-- modules/fx/NAME] [--check]. Pack, dk:run and the Rust tests build stale objects themselves"
 
 [tasks."module:check"]
 run = "uv run python -m tools.patchkit.pk_modcheck"
@@ -305,15 +313,19 @@ description = "Build and pack every run-time module for every device into out/mo
 
 [tasks."module:pack"]
 run = "uv run python -m tools.patchkit.patchkit pack"
-description = "Pack a run-time module as a .dkm: mise run module:pack -- digikit/pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"
+description = "Build the stale objects and pack a run-time module as a .dkm in one command: mise run module:pack -- digikit/pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"
 
 [tasks."module:export"]
 run = "uv run python -m tools.patchkit.pk_package export"
-description = "Export a module as a deterministic .dkmod: mise run module:export -- ID [-o FILE] [--previous OLD.dkmod] (no build/, package.toml with sha256 per file; --previous refuses a parameter that moved to another knob)"
+description = "Export a module as a deterministic .dkmod: mise run module:export -- ID [-o FILE] (no build/, package.toml with sha256 per file)"
 
 [tasks."module:import"]
 run = "uv run python -m tools.patchkit.pk_package import"
 description = "Import a .dkmod: mise run module:import -- FILE [--dir DIR] [--replace] (checks every sha256, refuses author core and type framework, refuses a known id without --replace; default target: the first PATCHKIT_MODULES folder)"
+
+[tasks."dk:dev"]
+run = "uv run python -m tools.patchkit.pk_devreload"
+description = "Fast edit loop for module code: mise run dk:dev -- test/ui-demo --device dn2[,dt2] [--keys FILE|tap:SETTINGS,wait:400,shot:menu] [--out DIR] [--stop]; builds changed objects, reloads a kept emulator daemon (module swap in about a second, or a boot), presses the keys, writes PNGs and a contact sheet"
 
 [tasks."module:dev"]
 run = "uv run python -m tools.patchkit.pk_dev"
@@ -362,7 +374,7 @@ description = "Every emulator proof on its quick tier, in sequence (DT2: gain, d
 
 [tasks."patch:port"]
 run = "uv run python -m tools.patchkit.port_resolve"
-description = "Resolve the anchors and regions of a firmware into devices/ports/*.toml: mise run patch:port [-- X.syx] (no argument: the four supported firmwares)"
+description = "Resolve the anchors and regions of a firmware into devices/ports/*.toml: mise run patch:port [-- X.syx] (no argument: the supported firmwares: DT2 1.17, DN2 1.12, DN2 1.11)"
 
 # --- dk: the digikit runtime on a device or the emulator ---
 

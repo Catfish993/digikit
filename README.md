@@ -36,7 +36,6 @@ before it goes near the device.
 | [Frequency shifter](modules/fx/freqshift/README.md) | Moves every frequency up or down by the same number of Hz (an FX page with SHIFT and MIX). A run-time module; a send effect by default, or a master insert | Digitakt II, Digitone II | not yet |
 | [Master gain](modules/fx/master-gain/README.md) | Scales the master output by a set gain | Digitakt II, Digitone II | not yet |
 | [Master drive](modules/fx/master-drive/README.md) | Soft-clip saturation on the master output | Digitakt II, Digitone II | not yet |
-| [XSLICE](tests/fixtures/modules/xslice/README.md) | A copy of MANUAL SLICE under its own name (a demonstration) | Digitakt II | not yet |
 
 Supported firmware: **Digitakt II OS 1.17** and **Digitone II OS 1.12**. Download them from Elektron's support site and
 put them in `firmware/` (`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`). Device work so far is on the Digitakt II.
@@ -103,10 +102,11 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 
 ## More
 
-- [Writing modules](docs/MODULE-AUTHORING.md), and the planned module SDK: [docs/design/module-sdk.md](docs/design/module-sdk.md)
+- [Writing modules](docs/MODULE-AUTHORING.md) and the [SDK](sdk/README.md); SDK plan: [docs/plans/sdk-api.md](docs/plans/sdk-api.md)
 - [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
-- [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, tests, analysis tools, repository layout
+- [Architecture](docs/ARCHITECTURE.md): the layers (module, SDK, runtime, adapters, firmware), what each may depend on, how a new device fits
+- [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules) (`dk:dev`, Reload modules), tests, analysis tools, repository layout
 - Run `mise run test:changed` before committing
 - [Testing](docs/TESTING.md): test levels and commands
 - [Results of the research](docs/FINDINGS.md)
@@ -130,4 +130,4 @@ Ghidra under the Apache License 2.0.
 
 ## Writing modules
 
-A module adds a machine, an effect or interface code to a Digitakt II or Digitone II, and loads at boot from the card as a `.dkm`. Start with `mise run module:new -- AUTHOR/NAME --machine` and follow [docs/MODULE-AUTHORING.md](docs/MODULE-AUTHORING.md).
+A module adds a machine, an effect or interface code to a Digitakt II or Digitone II, and loads at boot from the card as a `.dkm`. Start with `mise run module:new -- machine AUTHOR/NAME` and follow [docs/MODULE-AUTHORING.md](docs/MODULE-AUTHORING.md).

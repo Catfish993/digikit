@@ -24,26 +24,34 @@ def test_the_site_scan_finds_references_and_clamp_bounds_but_not_loop_ends():
 
 
 def test_rules_are_declared_for_the_three_anchors():
-    with open(
-        os.path.join(ROOT, "modules", "core", "params", "module.toml"), "rb"
-    ) as f:
-        m = tomllib.load(f)
+    params_rules = [
+        r
+        for r in pr.fw_rules(REPO_ROOT)
+        if r["name"].startswith("cf.param.")
+        and r["_source"] == "fw/param"
+        and r["name"] != "cf.param.data.descriptor_table.master_sidechain_filter"
+    ]
     for device in ("dt2", "dn2"):
-        rules = {r["name"]: r for r in m["anchor_rule"] if r["devices"] == [device]}
+        rules = {r["name"]: r for r in params_rules if device in r["devices"]}
         assert set(rules) == {
-            "cf.params.t1",
-            "cf.params.ref",
-            "cf.params.bound",
-            "cf.params.t2",
+            "cf.param.data.descriptor_table",
+            "cf.param.sites.descriptor_table.ref",
+            "cf.param.sites.descriptor_table.bound",
+            "cf.param.fn.value_class",
         }
-        assert rules["cf.params.t1"]["kind"] == "cf_params_t1"
-        assert rules["cf.params.ref"]["kind"] == "cf_params_refs"
-        assert rules["cf.params.bound"]["kind"] == "cf_params_bounds"
+        assert rules["cf.param.data.descriptor_table"]["kind"] == "cf_params_t1"
+        assert rules["cf.param.sites.descriptor_table.ref"]["kind"] == "cf_params_refs"
         assert (
-            len(rules["cf.params.t2"]["hash"]) == 32
-            and rules["cf.params.t2"]["len"] == 10
+            rules["cf.param.sites.descriptor_table.bound"]["kind"] == "cf_params_bounds"
         )
-    assert all(r["devices"] in (["dt2"], ["dn2"]) for r in m["anchor_rule"])
+        assert (
+            len(rules["cf.param.fn.value_class"]["hash"]) == 32
+            and rules["cf.param.fn.value_class"]["len"] == 10
+        )
+    # The table scans are DT2/DN2-specific: every rule must name its devices, so a new device never matches by accident.
+    assert all(
+        r.get("devices") and set(r["devices"]) <= {"dt2", "dn2"} for r in params_rules
+    )
 
 
 @pytest.mark.parametrize("version", ["1.17"])
@@ -55,11 +63,15 @@ def test_the_scan_reproduces_the_recorded_port(version):
     with open(port, "rb") as f:
         anchors = {a["name"]: a for a in tomllib.load(f)["anchor"]}
     main = pr.sections_of(type(pr.ROOT)(syx))[3]
-    t1 = anchors["cf.params.t1"]
+    t1 = anchors["cf.param.data.descriptor_table"]
     refs, bounds = pr.scan_param_sites(main, 0x40000400, t1["addr"], t1["len"] // 60)
-    ref_names = [n for n in anchors if n.startswith("cf.params.ref.")]
-    bound_names = [n for n in anchors if n.startswith("cf.params.bound.")]
-    # the accessor of the second table (cf.params.t2) holds one bound the module replaces
+    ref_names = [
+        n for n in anchors if n.startswith("cf.param.sites.descriptor_table.ref.")
+    ]
+    bound_names = [
+        n for n in anchors if n.startswith("cf.param.sites.descriptor_table.bound.")
+    ]
+    # the accessor of the second table (cf.param.fn.value_class) holds one bound the module replaces
     assert len(refs) == len(ref_names) == 56
     assert len(bounds) - 1 == len(bound_names) == 54
     assert sorted(anchors[n]["addr"] for n in ref_names) == refs

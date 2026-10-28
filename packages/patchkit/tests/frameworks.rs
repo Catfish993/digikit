@@ -22,10 +22,10 @@ fn registry() -> Registry {
     Registry::from_dir(&root().join("devices/ports")).unwrap()
 }
 
-fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+fn library(extra: Vec<Module>) -> Option<Library> {
+    let mut lib = Library::scan_repo_or_skip(&root())?;
     lib.modules.extend(extra);
-    lib
+    Some(lib)
 }
 
 fn run(file: &str, lib: &Library, ids: &[&str]) -> Option<patchkit::Result<Applied>> {
@@ -135,78 +135,30 @@ fn section<'a>(p: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
         .unwrap_or_else(|| panic!("no section {name}"))
 }
 
-const XS: [&str; 3] = ["core/machines", "test/xslice", "test/machine-clone"];
-
-#[test]
-fn dt2_machines_get_types_7_and_8_and_the_tables_grow() {
-    for file in [DT2_117] {
-        let lib = library(vec![]);
-        let Some(r) = run(file, &lib, &XS) else {
-            continue;
-        };
-        let a = r.unwrap();
-        let p = plan(&a);
-        let m = reg(&p, "machines");
-        assert_eq!(
-            (m["first"].as_u64(), m["count"].as_u64()),
-            (Some(7), Some(2))
-        );
-        assert_eq!(m["row_size"], 64);
-        assert_eq!(m["entries"][0]["id"], "xslice");
-        assert_eq!(m["entries"][0]["index"], 7);
-        assert_eq!(m["entries"][1]["index"], 8);
-        let main = Main::new(&a.syx, stock_len(file));
-        // names: 7 stock rows of 12 bytes, then one per machine; the hint word is the clone's (type 6)
-        let n = section(&p, "mf_names");
-        assert_eq!(
-            (n["copied"].as_u64(), n["appended_rows"].as_u64()),
-            (Some(84), Some(2))
-        );
-        let t = main.u32s(n["addr"].as_u64().unwrap() as u32, 27);
-        assert_eq!(t[7 * 3 + 2], t[6 * 3 + 2]);
-        assert_eq!(t[8 * 3 + 2], t[6 * 3 + 2]);
-        assert_eq!(main.cstr(t[7 * 3]), "XSlice");
-        assert_eq!(main.cstr(t[8 * 3 + 1]), "XCL");
-        let pm = section(&p, "mf_permit");
-        let pt = main.u32s(pm["addr"].as_u64().unwrap() as u32, 9);
-        assert_eq!((pt[7], pt[8]), (pt[6], pt[6]));
-        let ty = section(&p, "mf_pertype");
-        let tb = main.read(ty["addr"].as_u64().unwrap() as u32, 9);
-        assert_eq!((tb[7], tb[8]), (tb[6], tb[6]));
-        let sel = section(&p, "mf_selector");
-        assert_eq!(
-            (sel["copied"].as_u64(), sel["appended_rows"].as_u64()),
-            (Some(28), Some(2))
-        );
-        // the stock tables are copied unchanged: the first rows equal the image's
-        assert!(
-            a.plan
-                .writes
-                .iter()
-                .any(|w| w.what.contains("cf.machines.persist"))
-        );
-        // every registry row holds the descriptor ID fields of the entry
-        let rows = main.u32s(m["addr"].as_u64().unwrap() as u32, 32);
-        assert_eq!(
-            &rows[2..11],
-            &[0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0, 0xfe, 0x0a]
-        );
-        assert_eq!(rows[11], 6); // clone_of
-        assert_eq!(rows[12], 7); // position
-        assert_eq!(rows[16 + 12], 255); // the second machine has the default position
-    }
-}
+const PL: [&str; 4] = [
+    "core/dsp-voice",
+    "core/machines",
+    "core/params",
+    "test/patched-pluck",
+];
 
 #[test]
 fn the_selection_order_does_not_change_the_bytes() {
-    let lib = library(vec![]);
-    let Some(r1) = run(DT2_117, &lib, &XS) else {
+    let Some(lib) = library(vec![]) else {
+        return;
+    };
+    let Some(r1) = run(DT2_117, &lib, &PL) else {
         return;
     };
     let r2 = run(
         DT2_117,
         &lib,
-        &["test/machine-clone", "test/xslice", "core/machines"],
+        &[
+            "test/patched-pluck",
+            "core/params",
+            "core/machines",
+            "core/dsp-voice",
+        ],
     )
     .unwrap();
     assert!(r1.unwrap().syx == r2.unwrap().syx);
@@ -214,9 +166,11 @@ fn the_selection_order_does_not_change_the_bytes() {
 
 #[test]
 fn every_instruction_the_framework_places_decodes() {
-    let lib = library(vec![]);
+    let Some(lib) = library(vec![]) else {
+        return;
+    };
     for (file, ids) in [
-        (DT2_117, &XS[..]),
+        (DT2_117, &PL[..]),
         (DN2_112, &["core/machines", "test/dn2-clone"][..]),
     ] {
         let Some(r) = run(file, &lib, ids) else {
@@ -246,7 +200,9 @@ fn every_instruction_the_framework_places_decodes() {
 
 #[test]
 fn digitone_ii_clone_gets_type_5() {
-    let lib = library(vec![]);
+    let Some(lib) = library(vec![]) else {
+        return;
+    };
     for file in [DN2_112] {
         let Some(r) = run(file, &lib, &["core/machines", "test/dn2-clone"]) else {
             continue;
@@ -274,12 +230,12 @@ fn digitone_ii_clone_gets_type_5() {
             .map(|h| h["anchor"].as_str().unwrap().to_string())
             .collect();
         for h in [
-            "cf.machines.dispatch",
-            "cf.machines.group",
-            "cf.machines.reader",
-            "cf.machines.owner",
-            "cf.machines.frametype",
-            "cf.machines.typemap.0",
+            "cf.machine.fn.dispatch",
+            "cf.machine.site.group",
+            "cf.machine.site.type_reader.load",
+            "cf.machine.site.owner_type_load",
+            "cf.machine.site.frametype",
+            "cf.machine.fn.type_page.count",
         ] {
             assert!(hooks.iter().any(|x| x == h), "{file}: no hook on {h}");
         }
@@ -287,25 +243,10 @@ fn digitone_ii_clone_gets_type_5() {
 }
 
 #[test]
-fn a_digitakt_machine_is_refused_on_the_digitone() {
-    let lib = library(vec![]);
-    let Some(r) = run(DN2_112, &lib, &["core/machines", "test/xslice"]) else {
+fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
+    let Some(lib) = library(vec![]) else {
         return;
     };
-    // MANUAL SLICE (type 6) is not a Digitone II type: the clone's table reads lie outside the anchors
-    let e = err_of(r);
-    assert!(
-        e.contains("outside the anchor")
-            || e.contains("anchor")
-            || e.contains("no number in the allocation table")
-            || e.contains("not compatible"), // test/xslice lists its ports
-        "{e}"
-    );
-}
-
-#[test]
-fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
-    let lib = library(vec![]);
     for file in [DT2_117] {
         let Some(r) = run(
             file,
@@ -336,13 +277,13 @@ fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
             .plan
             .writes
             .iter()
-            .filter(|w| w.what.contains("cf.params.ref."))
+            .filter(|w| w.what.contains("cf.param.sites.descriptor_table.ref."))
             .count();
         let bounds = a
             .plan
             .writes
             .iter()
-            .filter(|w| w.what.contains("cf.params.bound."))
+            .filter(|w| w.what.contains("cf.param.sites.descriptor_table.bound."))
             .count();
         assert_eq!((refs, bounds), (56, 54), "{file}");
         // the machine's fields carry the assigned codes

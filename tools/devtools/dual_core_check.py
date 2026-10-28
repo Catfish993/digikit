@@ -181,14 +181,14 @@ def menu_path(
     emu: Emu, device: str, modules: list[str], shots: Path
 ) -> list[dict[str, Any]]:
     """The on-device path of plan item 11 on the device just opened with the runtime: upload the modules to the store, SETTINGS >
-    DIGIKIT > MODULES, tick them all (the list is sorted by name), APPLY & RESTART (two presses), wait for the boot, read the
+    DIGIKIT > MODULES, check them all (the list is sorted by name), NO and YES on APPLY & RESTART?, wait for the boot, read the
     boot's module results, play PLUCK on track 1 and look at the SEND FX pages. Screenshots go to SHOTS."""
     panel = Panel(emu, shots, f"{device}-menu")
     results: list[dict[str, Any]] = []
     emu.subscribe()
     up = D.Uploader(D.EmuTransport(emu))
     for module in modules:
-        dkm = dkrun.build_pack(module, device, build=False)
+        dkm = dkrun.build_pack(module, device)
         dkrun.upload_if_changed(up, dkrun.module_path(module), dkm.read_bytes())
     stored = [path for path, _, _ in up.ls() if path.startswith("modules/")]
     panel.tap("NO", 400)
@@ -198,23 +198,21 @@ def menu_path(
     panel.shot("1-settings-digikit-row")
     panel.tap("YES", 700)
     panel.shot("2-digikit")
+    for _ in range(3):  # ABOUT, HEALTH, MEMORY, MODULES
+        panel.tap("DOWN", 300)
     panel.tap("YES", 900)
     panel.shot("3-modules")
     for i in range(
         len(modules)
-    ):  # the list is sorted by name: tick each row, DOWN between
+    ):  # the list is sorted by name: check each row, DOWN between
         if i:
             panel.tap("DOWN", 300)
         panel.tap("YES", 500)
-    panel.shot("4-ticked")
-    panel.tap("DOWN", 300)  # the DSP load line
-    panel.tap("DOWN", 300)  # APPLY & RESTART
-    panel.shot("5-apply-row")
-    panel.tap("YES", 800)  # first press: a popup says the device restarts
-    panel.shot("6-confirm-popup")
-    panel.tap("NO", 500)
+    panel.shot("4-checked")
+    panel.tap("NO", 800)  # changes pending: the list asks APPLY & RESTART?
+    panel.shot("5-apply-question")
     emu.drain_events()
-    panel.tap("YES", 300)  # second press: save and restart
+    panel.tap("YES", 300)  # save and restart
     dkrun.emu_boot_waiter(emu, timeout_s=300.0)()
     emu.step(150_000_000)
     panel.shot("7-after-restart")

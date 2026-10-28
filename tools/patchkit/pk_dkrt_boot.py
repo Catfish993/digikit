@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Boot-time loading of run-time modules in the emulator (docs/findings/37-boot-load.md).
 
-    uv run python -m tools.patchkit.pk_dkrt_boot proof [--image dt2-1.17|dt2-1.16|dn2-1.12|dn2-1.11] [--quick] [--keep DIR] [--only a,b]
+    uv run python -m tools.patchkit.pk_dkrt_boot proof [--image dt2-1.17|dn2-1.12] [--quick] [--keep DIR] [--only a,b]
 
 The runtime loads the modules of the selection record (two sectors at the end of the card's store range) at boot, from a hook just
 before the MainScreenView constructor. `proof` builds the images and cards and boots them in the coupled emulator (cold boots of the
@@ -450,7 +450,7 @@ class BootRig(M.Rig):
 
     def assign_table(self) -> dict[str, Any]:
         """The boot's machine-type assignment (`DKRT_ASSIGN`, assign.rs): the sticky map and, per machine of the selection, its module's
-        selection index, machine key (`hash << 8 | type_hint`) and assigned type (0: none was free)."""
+        selection index, machine key (`hash << 8`) and assigned type (0: none was free)."""
         base = M.sym(self.plan, "core/runtime", "DKRT_ASSIGN")
         w = [self.w(base + 4 * i) for i in range(3 + 8 + 3 * 64)]
         n = w[1]
@@ -466,7 +466,6 @@ class BootRig(M.Rig):
 
     def dyn_type(self, module: str, machine: str) -> int:
         """The type number the runtime assigned to `<module>:<machine>` in this boot (read from `DKRT_ASSIGN`)."""
-        # the key's low byte is the machine's type_hint
         h = M.machine_hash(module, machine)
         for m in self.assign_table()["machines"]:
             if m["key"] >> 8 == h and m["type"]:

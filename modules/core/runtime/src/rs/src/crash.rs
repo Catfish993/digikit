@@ -1,6 +1,6 @@
 //! CPU exception capture (docs/findings/46-digikit-debug.md).
 //!
-//! The firmware's default exception handler loads a function pointer from a RAM word (anchor `dkrt.fw.exc_hook_lit` is the 4-byte literal of
+//! The firmware's default exception handler loads a function pointer from a RAM word (anchor `cf.rtos.site.exc_hook_lit` is the 4-byte literal of
 //! that load) and calls it with the stack pointer, which points at the hardware exception frame; the firmware's own function there prints
 //! `EXCEPTION ...` and executes `halt`, so a fault hangs the device until the power is cycled (finding 37). The runtime points the word at
 //! `dkrt_exc_hook` (src/cf/tramp.s: it saves d2-d7 and a2-a6, which are still the faulting code's, and calls `dkrt_exc`). `dkrt_exc` writes
@@ -48,8 +48,6 @@ const W_CRC: usize = W_TAIL + TAIL * 8;
 const REC_WORDS: usize = W_CRC + 1;
 
 extern "C" {
-    /// The 4-byte literal in the firmware's default exception handler whose value is the address of the hook word (anchor `dkrt.fw.exc_hook_lit`).
-    static dkrt_exc_lit: u32;
     /// `src/cf/tramp.s`.
     fn dkrt_exc_hook();
 }
@@ -84,7 +82,8 @@ pub fn seen() -> &'static CrashSeen {
 
 /// The address of the hook word the anchor's literal holds, when it lies in DDR and is word aligned.
 unsafe fn hook_word() -> Option<*mut u32> {
-    let lit = core::hint::black_box(addr_of!(dkrt_exc_lit) as usize) as u32;
+    // `EXC_HOOK_LIT`: the 4-byte literal in the firmware's default exception handler whose value is the address of the hook word.
+    let lit = core::hint::black_box(addr_of!(dkfw::rtos::EXC_HOOK_LIT) as usize) as u32;
     if lit == 0 {
         return None;
     }

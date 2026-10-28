@@ -3,6 +3,7 @@ id = "core/runtime"
 version = "0.1.0"
 name = "digikit runtime"
 category = "core"
+role = "runtime"
 type = "framework"
 author = "digikit"
 status = "experimental"
@@ -11,37 +12,22 @@ requires = ["core/expansion"]
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 "dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # The runtime: Rust, built with rustc_codegen_gcc for -mcpu=54418 (finding 26). Its bss holds the module arena
 # (DKRT_ARENA, 512 KiB) and the staging buffer (64 KiB), so patchkit reserves both together with the code and no other
-# static object can overlap them. The firmware's functions it calls are anchors resolved at patch time.
+# static object can overlap them. The Rust object has no externs table: it calls the firmware through the generated crate `dkfw`
+# (modules/core/fw, from devices/fw/), whose symbols are the anchor names resolved at patch time.
 [[object]]
 path = "build/runtime.dko.json"
 sources = ["src/rs/Cargo.toml"]
 place = "cf.expansion"
 # The run-time registry's table of addresses (core/dynreg), the DSP code channel (core/dsp-link: dl_send, dl_send_win, dl_poll) and
 # the table of DSP addresses (core/dyndsp) and the effect chain's table (core/dynfx) and the effect pages' (core/fxpages); each is 0 when its module is not in the image.
-optional = ["dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dl_diag", "dyndsp_info", "dynfx_info", "fxpages_info", "health_read", "health_heap", "input_key", "input_turn", "remote_open"]
-
-[object.externs]
-fw_block_read = "dkrt.fw.block_read"
-fw_block_write = "dkrt.fw.block_write"
-fw_midi_send = "dkrt.fw.midi_send"
-dkrt_ui_queue_lit = "dkrt.ui.queue_lit"
-dkrt_block_counter_lit = "dkrt.fw.block_counter_lit"
-dkrt_tx_inflight_lit = "dkrt.fw.tx_inflight_lit"
-dkrt_exc_lit = "dkrt.fw.exc_hook_lit"
-fw_alloc = "dkrt.fw.alloc"
-fw_free = "dkrt.fw.free"
-fw_project_serialize = "dkrt.fw.project_serialize"
-fw_boot_record_write = "dkrt.fw.boot_record_write"
-fw_project = "dkrt.fw.project"
-fw_kit_of = "dkrt.fw.kit_of"
-fw_track_type = "dkrt.fw.track_type"
+# `input_key`, `input_turn` and the `dk_ui_*` calls are the imports of sdk/sdk.toml with `requires` (the runtime links them to modules by name; `optional_imports!` in lib.rs).
+optional = ["dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dl_diag", "dyndsp_info", "dynfx_info", "fxpages_info", "health_read", "health_heap", "input_key", "input_turn", "dk_ui_has", "dk_ui_menu_new", "dk_ui_open", "dk_ui_close", "dk_ui_is_open", "dk_ui_refresh", "dk_ui_action", "dk_ui_submenu", "dk_ui_text", "dk_ui_toggle", "dk_ui_value", "dk_ui_check", "dk_ui_checked", "dk_ui_confirm", "dk_ui_choice", "dk_ui_toast"]
 
 # Constants from the device files (devices/*.toml, core/machines types.toml), written by `patchkit gen`; docs/design/device-data.md.
 # The runtime is one image for all devices: `rust` and `gas-shared` hold what every device agrees on (gen refuses a difference), `gas`
@@ -65,10 +51,10 @@ sources = ["src/cf/tramp.s"]
 place = "cf.expansion"
 
 [object.externs]
-fw_queue_pop = "dkrt.fw.queue_pop"
-dkrt_boot_next = "hook.dkrt.hook.boot.tail"
-dkrt_midi_next = "hook.dkrt.hook.midi_rx.tail"
-dkrt_midi_ret = "hook.dkrt.hook.midi_rx.return"
+fw_queue_pop = "cf.rtos.fn.queue_pop"
+dkrt_boot_next = "hook.cf.rtos.site.main_os_task.tail"
+dkrt_midi_next = "hook.cf.midi.site.rx.tail"
+dkrt_midi_ret = "hook.cf.midi.site.rx.return"
 
 [[object]]
 path = "build/device-dt2.dko.json"
@@ -86,12 +72,12 @@ devices = ["dn2"]
 # (`pea queue; jsr pop; addq.l #4,sp; moveq #0x29,d1; ...`) goes to the trampoline, which runs the runtime's tick and
 # continues in the stock pop.
 [[op]]
-op = "retarget"
-anchor = "dkrt.hook.ui_loop"
+op = "hook"
+hook = "cf.view.hook.ui_loop"
 to = "dkrt_loop_hook"
 
 [[claim]]
-resource = "dkrt.hook.ui_loop"
+resource = "cf.view.site.ui_loop"
 
 # Boot-time loading (finding 37): the entry of the main-OS task jumps to the boot hook, which reads the selection record and loads
 # the selected modules (src/cf/tramp.s dkrt_boot_hook), then runs the displaced prologue and continues in the task. That is before the
@@ -99,13 +85,11 @@ resource = "dkrt.hook.ui_loop"
 # built by one of them well before the call that the first design hooked (measured: the view existed at that call).
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "dkrt.hook.boot"
-offset = 0
+hook = "cf.rtos.hook.main_os_task"
 to = "dkrt_boot_hook"
 
 [[claim]]
-resource = "dkrt.hook.boot"
+resource = "cf.rtos.site.main_os_task"
 
 # Module upload (docs/design/digikit-upload.md): the MIDI task's dispatch of a gathered USB (cable 0) SysEx message. The two displaced
 # instructions `movea.l (0,A2,D1*4),A0; jsr (A0)` call the router with (msg, len, source) already pushed. The hook runs the runtime's
@@ -113,278 +97,8 @@ resource = "dkrt.hook.boot"
 # displaced router call unchanged (docs/findings/43-digikit-upload.md). The same 428-byte task function is on all four ports.
 [[op]]
 op = "hook"
-cpu = "cf"
-anchor = "dkrt.hook.midi_rx"
-offset = 0
-displaced = "run"
+hook = "cf.midi.hook.rx"
 to = "dkrt_midi_hook"
 
 [[claim]]
-resource = "dkrt.hook.midi_rx"
-
-[[anchor_rule]]
-name = "dkrt.hook.midi_rx"
-cpu = "cf"
-kind = "cf_words"
-as = "code"
-words = ["*", 0x1c004e90, 0x4fef000c, 0x2f052044, 0x4e90588f]
-offset = 2
-len = 6
-mark = "D"
-
-# The firmware's MIDI send `void f(u32 len, const u8 *msg, u32 port)` (DT2 1.16 FUN_401217fc): port 2 sends to USB through the TX
-# function with the TX mutex taken. Same hash on all four images.
-[[anchor_rule]]
-name = "dkrt.fw.midi_send"
-cpu = "cf"
-kind = "cf_func"
-hash = "2a29225a7abd75aa3be8d59d049af587"
-offset = 0
-len = 2
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.hook.ui_loop"
-cpu = "cf"
-kind = "cf_words"
-as = "code"
-words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8]
-offset = 6
-len = 6
-mark = "D"
-
-# The stock queue pop (blocking pend on the queue, returns the next item), the function the hook call goes to.
-[[anchor_rule]]
-name = "dkrt.fw.queue_pop"
-cpu = "cf"
-kind = "cf_func"
-hash = "5545f84fcc633b347034f629aa4858b9"
-offset = 0
-len = 2
-mark = "D"
-
-# The firmware's eMMC block read: int f(u32 sector, u32 bytes, void *buf), 0 = ok (finding 23 S6).
-[[anchor_rule]]
-name = "dkrt.fw.block_read"
-cpu = "cf"
-kind = "cf_func"
-hash = "dcf1d4873d4a4fb5ac903e8ada9c1a12"
-offset = 0
-len = 2
-mark = "D"
-
-# operator new and its free (the 32 MiB buddy allocator, finding 01): void *f(u32), void f(void *)
-[[anchor_rule]]
-name = "dkrt.fw.alloc"
-cpu = "cf"
-kind = "cf_func"
-hash = "0dcb1d56c454607ae1698e4eeff299e7"
-offset = 0
-len = 2
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.fw.free"
-cpu = "cf"
-kind = "cf_func"
-hash = "b591a5e50d0db4780b36812232691efa"
-offset = 0
-len = 2
-mark = "D"
-
-# The entry of the main-OS task (`link a6,#-0xa8; movem.l ...; ...; jsr (a4); jsr (a3); move.l d0,-0x80(a6); jsr <next singleton>`),
-# found by the words of its first 28 bytes: Digitakt II (the entry is 2 mod 4: the first word of the row is half of the previous
-# function) and Digitone II (4-aligned).
-[[anchor_rule]]
-name = "dkrt.hook.boot"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_words"
-as = "code"
-words = ["*", 0xff5848d7, 0x3cfc49f9, "*", "*", "*", "*", 0x4e944e93, 0x2d40ff80, 0x4eb9400d]
-offset = 2
-len = 8
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.hook.boot"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_words"
-as = "code"
-words = [0x4e56ff58, 0x48d73cfc, 0x45f94018, "*", "*", 0x4e924e93, 0x2d40ff80, 0x4eb9400d]
-offset = 0
-len = 8
-mark = "D"
-
-# The literal queue address of the UI loop's `pea <queue>` (the boot hook peeks the queue for a held safe-mode key).
-[[anchor_rule]]
-name = "dkrt.ui.queue_lit"
-cpu = "cf"
-kind = "cf_words"
-as = "code"
-words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8]
-offset = 2
-len = 4
-mark = "D"
-
-# The firmware's eMMC block write: int f(u32 sector, u32 bytes, const void *buf), 0 = ok; it takes the ESDHC mutex itself
-# (DT2 1.16 FUN_4012e0c0, DN2 1.11 FUN_4012c780). The runtime writes only the two sectors of the selection record with it.
-[[anchor_rule]]
-name = "dkrt.fw.block_write"
-cpu = "cf"
-kind = "cf_func"
-hash = "0dd5a176b94c6e30225068661b58a898"
-offset = 0
-len = 2
-mark = "D"
-
-# The firmware's "serialize the live project into the persistent arena" (FUN_40030c9c on DT2, FUN_4002c694 on DN2: `int f(void)`, returns 1).
-# The same hash on all four images.
-[[anchor_rule]]
-name = "dkrt.fw.project_serialize"
-cpu = "cf"
-kind = "cf_func"
-hash = "eeb589cf009de58dead8a8e15bbf8998"
-offset = 0
-len = 2
-mark = "D"
-
-# The firmware's normal writer of the boot record (finding 36 section 2; DT2 1.16 FUN_400f044a, 1.17 0x400f05ae; DN2 1.11 FUN_400f1e26,
-# 1.12 FUN_400f1f8a): writes the arena to the next of the two record slots, invalidates the other, one shot per boot. The arena size
-# and addresses differ per device, so the hash does.
-[[anchor_rule]]
-name = "dkrt.fw.boot_record_write"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "ce2fecf00cf4757d0252acc24f11436c"
-offset = 0
-len = 2
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.fw.boot_record_write"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "f2ab3c0214b6212848a6300a70dd6129"
-offset = 0
-len = 2
-mark = "D"
-
-# The firmware's own DSP block counter (finding 37, "Safe mode after the first UI pass"): the tail of the block interrupt handler (vector 191,
-# the function core/dsp-link and core/health find by these hashes) adds the block to its clocks with `addq.l #1,<counter>` and nothing else
-# touches the word, so it counts blocks (1500 per second) from boot. The anchor is the 4-byte address literal of that instruction
-# (`52b9 <lit>`): offset 0x1654 in the Digitakt II function, 0x1d4e in the Digitone II one, the same in both versions of each.
-[[anchor_rule]]
-name = "dkrt.fw.block_counter_lit"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "e17112316e2cef97a3ebdd4ec57cc849"
-offset = 0x1654
-len = 4
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.fw.block_counter_lit"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "f44b8037b4b199d47efc3899eb659b74"
-offset = 0x1d4e
-len = 4
-mark = "D"
-
-# The USB MIDI transmit function (DT2 1.16 FUN_40004734, `void f(u32 len, const u8 *msg)`, hash identical on the four images): the 4-byte address
-# literal of its `movea.l (<in flight>).l,a0`, the bytes handed to the USB stack and not yet sent (added by the submit function, taken off by
-# the completion). The function spins while this plus the bytes it queued exceed 0xffb; the upload checks it before it sends a reply.
-[[anchor_rule]]
-name = "dkrt.fw.tx_inflight_lit"
-cpu = "cf"
-kind = "cf_func"
-hash = "0d9c170d6f10a6083e1c92f69af07116"
-offset = 0x42
-len = 4
-mark = "D"
-
-# The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a
-# function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10;
-# move.l <save>,-(sp); jsr (a0); ...; rte`. The anchor is the 4-byte literal of `movea.l (<hook word>).l,a0` (finding 37: the word holds the function
-# that prints EXCEPTION and halts); the runtime points the word at its own hook, which records the fault and soft-resets (finding 46). The
-# words are the code with the two address operands (they differ per firmware) and the `jsr`'s displaced bytes left open.
-[[anchor_rule]]
-name = "dkrt.fw.exc_hook_lit"
-cpu = "cf"
-kind = "cf_words"
-as = "code"
-words = [0x270023cf, "*", 0x4feffff0, 0x48d70303, "*", "*", 0x670a2f39, "*", 0x4e90588f, 0x4cd70303, 0x4fef0010]
-offset = 18
-len = 4
-mark = "D"
-
-# The firmware's own per-track machine type, read through three accessors (the debug log's machine-change watch; they are the functions the hot-reload
-# runtime used for "is this machine in use", tag digikit-hot-reload-v1): the Project singleton `Project *f(void)` (DT2 1.16 0x401988a2, DN2 1.11
-# 0x4018a97a), the active kit of a project `Kit *f(Project *)`, and the machine type of a track of a kit `int f(Kit *, int track)` (-1: no such track).
-# The kit and track functions have the same hash on both devices' versions; the Project getters differ per image.
-
-[[anchor_rule]]
-name = "dkrt.fw.project"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "ec70a039cd46fc8071a7e84112decfb1"
-offset = 0
-len = 4
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.fw.kit_of"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "f29fb6421b637b6883ebb6d384a09179"
-offset = 0
-len = 4
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.fw.track_type"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "9a76292be32cf9c7a8fd2e7c031c41d9"
-offset = 0
-len = 4
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.fw.project"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "e722721313b9899418dac1e1d039205c"
-offset = 0
-len = 4
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.fw.kit_of"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "f29fb6421b637b6883ebb6d384a09179"
-offset = 0
-len = 4
-mark = "D"
-
-[[anchor_rule]]
-name = "dkrt.fw.track_type"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "7f68bc71629aaed41f2ffa075e03c222"
-offset = 0
-len = 4
-mark = "D"
+resource = "cf.midi.site.rx"

@@ -72,7 +72,8 @@ READS: list[tuple[str, list[str], bool]] = [
     (r"^devices/ports/", ["patchkit", "elektron-native-boot"], False),
     # packages/emulator/control/src/load.rs:18 include_str! devices/cycle-factors.json.
     (r"^devices/cycle-factors\.json$", ["digi-control"], True),
-    # Library::scan_repo (modules/, tests/fixtures/modules/) reads every module.toml and its build/*.dko.json:
+    # Library::scan_repo (modules/, tests/fixtures/modules/) reads every module.toml, the committed build/*.dko.json of core/* and builds
+    # the objects of content modules from their sources into out/cache/dko:
     # packages/patchkit/tests/devdata.rs:19, conflicts.rs:27, frameworks.rs:27, dynamic.rs:17,
     # typed.rs:186 (tests/fixtures/modules/patched-pluck); packages/emulator/boot/tests/patched_boot.rs:15.
     # Markdown under modules/ is documentation only.
@@ -97,6 +98,15 @@ READS: list[tuple[str, list[str], bool]] = [
     # files, include! in src/lib.rs:106-121); packages/emulator/sharc/build.rs:26 reads the same
     # dir. out/native/*/gen is untracked; listed for local edits.
     (r"^out/native/[^/]+/gen/", ["sharc-gen", "sharc-native"], True),
+    # modules/core/adapters/ui/host/build.rs compiles its modules/core/adapters/ui/host/tests/c sources against sdk/include (rerun-if-changed on the dir); modules/core/adapters/ui/host/tests/c/menu_fake.c includes the C source of
+    # core/digikit-menu and builds it with the runtime's header and core/ui's core-only header.
+    (r"^sdk/include/", ["dkui-host"], False),
+    (
+        r"^modules/core/(runtime/include/dkrt\.h|adapters/ui/include/)",
+        ["dkui-host"],
+        False,
+    ),
+    (r"^modules/core/apps/digikit-menu/src/", ["dkui-host"], False),
     # apps/desktop/src-tauri/tauri.conf.json frontendDist = ../ui/dist (embedded by tauri_build).
     (r"^apps/desktop/ui/dist/", ["digiemu-desktop"], True),
 ]

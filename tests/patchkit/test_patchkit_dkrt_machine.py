@@ -16,11 +16,11 @@ ROOT = REPO_ROOT
 from tools.device.dklog_kinds import RUNTIME_VERSION  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     modroots,
-    pk_build,
     pk_dkrt,
     pk_dkrt_machine,
     pk_toolchains,
 )
+from tools.patchkit import patchkit as front_end  # noqa: E402
 
 MODS = ROOT / "modules"
 needs_selache = pytest.mark.skipif(
@@ -34,28 +34,30 @@ needs_selache = pytest.mark.skipif(
     ["core/dsp-link", "core/dyndsp", "digikit/pluck", "test/sine"],
 )
 def test_committed_objects_are_current(mod):
-    pk_build.build_module(modroots.module_dir(mod), check=True)
+    front_end.build_module(modroots.module_dir(mod), check=True)
 
 
 def test_the_area_size_is_the_same_on_both_sides():
     # One source: `[digikit] dsp_area_bytes` of the device file, generated into both sides by `patchkit gen`.
     files = {"dt2": "digitakt-ii.toml", "dn2": "digitone-ii.toml"}
+    link_dir = modroots.module_dir("core/dsp-link")
+    dyn_dir = modroots.module_dir("core/dyndsp")
     for dev, name in files.items():
         want = tomllib.loads((ROOT / "devices" / name).read_text())["digikit"][
             "dsp_area_bytes"
         ]
-        inc = (MODS / f"core/dsp-link/build/gen/device-{dev}.inc").read_text()
+        inc = (link_dir / f"build/gen/device-{dev}.inc").read_text()
         words = int(re.search(r"#define DL_AREA_WORDS (\d+)", inc).group(1))
         nbytes = int(re.search(r"#define DL_AREA_BYTES (\d+)", inc).group(1))
         assert nbytes == want and words * 4 == nbytes, dev
-        link = (MODS / f"core/dsp-link/src/dsp/{dev}.s").read_text()
+        link = (link_dir / f"src/dsp/{dev}.s").read_text()
         assert re.search(r"\.PKBSS _dl_area, DL_AREA_BYTES;", link), dev
-        cf = (MODS / f"core/dyndsp/build/gen/device-{dev}.inc").read_text()
+        cf = (dyn_dir / f"build/gen/device-{dev}.inc").read_text()
         assert (
             int(re.search(r"\.equ DL_AREA_BYTES, (0x[0-9a-f]+)", cf).group(1), 16)
             == want
         ), dev
-        info = (MODS / f"core/dyndsp/src/cf/dyndsp-{dev}.s").read_text()
+        info = (dyn_dir / f"src/cf/dyndsp-{dev}.s").read_text()
         assert re.search(r"\.long\s+DL_AREA_BYTES\b", info), dev
         assert nbytes <= 4 << 17  # the 17-bit offset of a chunk reaches 512 KiB
 
@@ -67,10 +69,10 @@ def test_dsp_section_is_deterministic_and_relocates_like_the_reference(tmp_path)
         tools.patchkit_run("pack", "digikit/pluck", "--device", "dt2", "-o", out)
     assert a.read_bytes() == b.read_bytes()
     info = tools.patchkit_run("dkm-info", a)
-    # the voice names its machine by key: the 24-bit hash of "digikit/pluck:pluck" plus its type_hint (18 on the Digitakt)
+    # the voice names its machine by key: the 24-bit hash of "digikit/pluck:pluck" above a zero type byte
     h = pk_dkrt_machine.machine_hash("digikit/pluck", "pluck")
     assert (
-        f"voice type h{h:06x}+18 entry +0x3ce note_on +0x1fa state 16x16512 clear 16512"
+        f"voice type h{h:06x} entry +0x3ce note_on +0x1fa state 16x16512 clear 16512"
         in info
         and "imports _dv_exp2" in info
     )

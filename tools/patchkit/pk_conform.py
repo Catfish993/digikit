@@ -26,6 +26,7 @@ manifest does yet (the schema of module.toml does not know the table).
 from __future__ import annotations
 
 import dataclasses
+import json
 import random
 import struct
 import tomllib
@@ -146,10 +147,40 @@ def _manifest(moddir: Path) -> dict:
     return tomllib.loads((moddir / "module.toml").read_text(encoding="utf-8"))
 
 
-def _entry_row(man: dict) -> tuple[str, str | None] | None:
+@cache
+def desc_records(mid: str) -> dict:
+    """The records of module `mid` as `patchkit desc` prints them (from the `DK_*` records of its ColdFire object): keys fx, machines, params, pages, voices."""
+    from tools.patchkit import patchkit
+
+    r = patchkit.run(["desc", mid], capture=True)
+    if r.returncode:
+        raise RuntimeError(f"patchkit desc {mid} failed:\n{r.stderr}")
+    return json.loads(r.stdout)
+
+
+def fx_records(mid: str) -> list[dict]:
+    """The effects of module `mid` as `patchkit desc` prints them."""
+    return desc_records(mid)["fx"]
+
+
+def _fx_records(mid: str, man: dict) -> list[dict]:
+    """The effects of an effect module: the records `patchkit desc` finds. Only `type = "fx"` modules, so `desc` does not run for every module."""
+    if man.get("module", {}).get("type") == "fx":
+        return fx_records(mid)
+    return []
+
+
+def _voices(mid: str, man: dict) -> list[dict]:
+    """The voice records of a machine module (`patchkit desc`); only `type = "machine"` modules, so `desc` does not run for every module."""
+    if man.get("module", {}).get("type") == "machine":
+        return desc_records(mid)["voices"]
+    return []
+
+
+def _entry_row(mid: str, man: dict) -> tuple[str, str | None] | None:
     """(render symbol, literal type or None) of the module's voice."""
-    for v in man.get("voice", []):
-        return v.get("render") or v["entry"], None
+    for v in _voices(mid, man):
+        return v["render"], None
     for e in man.get("entry", []):
         if e.get("registry") == "voices" and isinstance(
             e.get("pc"), str
@@ -158,8 +189,8 @@ def _entry_row(man: dict) -> tuple[str, str | None] | None:
     return None
 
 
-def _contract(man: dict) -> tuple[str | None, str | None]:
-    for v in man.get("voice", []):
+def _contract(mid: str, man: dict) -> tuple[str | None, str | None]:
+    for v in _voices(mid, man):
         return v.get("note_on"), v.get("desc")
     return None, None
 
@@ -182,10 +213,11 @@ def _type_number(mid: str, man: dict, device: str, literal: str | None) -> int:
         and str(literal)[0].isdigit()
     ):
         return int(literal, 0)
-    types = tomllib.loads((ROOT / "modules/core/machines/types.toml").read_text())[
-        device
-    ]
-    mach = (man.get("machine") or [{}])[0].get("id") or (man.get("voice") or [{}])[
+    types = tomllib.loads(
+        (ROOT / "modules/core/adapters/machines/types.toml").read_text()
+    )[device]
+    recs = desc_records(mid) if man.get("module", {}).get("type") == "machine" else {}
+    mach = (recs.get("machines") or [{}])[0].get("id") or (recs.get("voices") or [{}])[
         0
     ].get("machine")
     if literal is not None:  # "machines.<name>.index": the type allocated to <name>
@@ -201,24 +233,31 @@ def _type_number(mid: str, man: dict, device: str, literal: str | None) -> int:
     )
 
 
-def _params(man: dict, device: str) -> tuple[Param, ...]:
-    machines = man.get("machine") or []
+def _params(moddir: Path, man: dict, device: str) -> tuple[Param, ...]:
+    mid = man.get("module", {}).get("id", moddir.name)
+    path = moddir / "build/gen/gallery.json"
+    if not path.is_file():
+        raise ConformError(f"{mid}: no build/gen/gallery.json: run `patchkit gen`")
+    gallery = json.loads(path.read_text(encoding="utf-8"))
+    machines = gallery.get("machines") or []
     if not machines:
         return ()
-    m = machines[0]
-    knobs = (
-        m.get(device, {}).get("knobs", m.get("knobs", []))
-        if device != "dt2"
-        else m.get("knobs", [])
-    )
-    decl = {p["id"]: p for p in man.get("param", [])}
+    dev = machines[0].get("devices", {}).get(device)
+    if dev is None:
+        return ()
+    listed = gallery.get("params", {}).get(device)
+    decl = {p["id"]: p for p in (listed or [])}
     out = []
-    for j, k in enumerate(knobs):
-        if isinstance(k, str) and k in decl:
-            p = decl[k]
-            out.append(Param(k, j, int(p["min"]), int(p["max"]), int(p["default"])))
-        elif isinstance(k, int) and k in STOCK_KNOBS:
-            name, lo, hi, dflt = STOCK_KNOBS[k]
+    for j, k in enumerate(dev.get("knobs", [])):
+        if not isinstance(k, dict):
+            continue
+        if "param" in k and k["param"] in decl:
+            p = decl[k["param"]]
+            out.append(
+                Param(k["param"], j, int(p["min"]), int(p["max"]), int(p["default"]))
+            )
+        elif k.get("stock") in STOCK_KNOBS:
+            name, lo, hi, dflt = STOCK_KNOBS[k["stock"]]
             out.append(Param(name, j, lo, hi, dflt, True))
     return tuple(out)
 
@@ -242,7 +281,10 @@ def spec(mid: str, device: str) -> MachineSpec | None:
         )
     moddir = modroots.module_dir(mid)
     man = _manifest(moddir)
-    row = _entry_row(man)
+    ports = man.get("module", {}).get("ports", [])
+    if ports and not any(p.split("-")[0] == device for p in ports):
+        return None
+    row = _entry_row(mid, man)
     if row is None:
         return None
     sources = _dsp_sources(man, moddir, device)
@@ -257,10 +299,10 @@ def spec(mid: str, device: str) -> MachineSpec | None:
         sources,
         row[0],
         _type_number(mid, man, device, row[1]),
-        _params(man, device),
+        _params(moddir, man, device),
         frame,
         dict(man.get("conformance", {})),
-        *_contract(man),
+        *_contract(mid, man),
     )
 
 
@@ -412,12 +454,12 @@ def cases(sp: MachineSpec) -> list[Case]:
     return out
 
 
-# ---- effects (the FX contract, sdk/dk_fx.h) -------------------------------------------------------------------------------
+# ---- effects (the FX contract, <dk/fx.h>) -------------------------------------------------------------------------------
 # An effect module is a DSP object behind an `[[entry]] registry = "fx"` row. It is run on the concrete core through core/fx
 # (tests/support/fx_rig.py) one block at a time; the cases and checks are those of tests/modules/test_fx_conformance.py.
 FX_MAX = max(
     pk_device.limits(d).fx_slots for d in pk_device.digikit_devices()
-)  # effects in the chain (devices/*.toml [limits] fx_slots, at most sdk/dk_fx.h DK_FX_MAX)
+)  # effects in the chain (devices/*.toml [limits] fx_slots, at most <dk/fx.h> DK_FX_MAX)
 # Instructions of core/fx around one process call at most (a fade block: copy, output check, crossfade; measured 855 with an effect of 210).
 # The budget below is the effect's own.
 FX_ADAPTER_MAX = 900
@@ -432,7 +474,7 @@ class FxSpec:
     sources: tuple[Path, ...]  # the DSP sources of the module
     process: str
     desc: str
-    state: str  # "": a run-time effect (`[[fx]]`), whose state the runtime reserves (the rig does the same)
+    state: str  # "": a run-time effect (`DK_FX`), whose state the runtime reserves (the rig does the same)
     knobs: tuple[
         tuple[float, float], ...
     ] = ()  # (min, max) of the page knob that feeds parameter word i (a run-time effect with a page)
@@ -457,7 +499,7 @@ def fx_word(spec: FxSpec, j: int, raw: int) -> int:
 
 
 def fx_spec(mid: str) -> FxSpec | None:
-    """The spec of effect module MID, or None when it has no `[[entry]] registry = "fx"` row (patched in) and no `[[fx]]` record (run time) with a DSP object."""
+    """The spec of effect module MID, or None when it has no `[[entry]] registry = "fx"` row (patched in) and no `DK_FX` record (run time) with a DSP object."""
     if mid.split("/")[0] == "core":
         return None
     moddir = modroots.module_dir(mid)
@@ -475,7 +517,7 @@ def fx_spec(mid: str) -> FxSpec | None:
                 e["desc"],
                 e["state"],
             )
-    for fx in man.get("fx", []):
+    for fx in _fx_records(mid, man):
         if isinstance(fx.get("process"), str) and isinstance(fx.get("desc"), str):
             sources = tuple(s for d in DEVICES for s in _dsp_sources(man, moddir, d))
             if not sources:

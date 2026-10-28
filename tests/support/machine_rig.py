@@ -27,12 +27,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import support.dsp_voice_rig as dv
-from tools.patchkit import pk_build, pk_conform, pk_sharc
+from tools.patchkit import pk_conform, pk_sharc
 
 ROOT = pk_conform.ROOT
 WRAPPER = {
-    "dt2": ROOT / "modules/core/dsp-voice/src/dsp/dsp-voice.s",
-    "dn2": ROOT / "modules/core/dsp-voice/src/dsp/dsp-voice-dn2.s",
+    "dt2": ROOT / "modules/core/adapters/dsp-voice/src/dsp/dsp-voice.s",
+    "dn2": ROOT / "modules/core/adapters/dsp-voice/src/dsp/dsp-voice-dn2.s",
 }
 CODE_BASE = 0xB90000
 CODE_END = dv.STOCK_BP  # code must end below the stand-ins at STOCK_BP / RETURN_SW
@@ -92,9 +92,9 @@ class _Built:
 
 
 def _assemble(path: Path, moddir: Path) -> pk_sharc.SharcObject:
-    """A DSP source the way tools/patchkit/pk_build.py reads it: `#include` from the module's build/gen, the SDK and the source's directory."""
-    dirs = [moddir / "build" / "gen", pk_conform.ROOT / "sdk", path.parent]
-    return pk_sharc.assemble(pk_build.expand_includes(path.read_text(), dirs))
+    """A DSP source the way tools/patchkit/pk_sharc.py reads it: `#include` from the module's build/gen, the SDK and the source's directory."""
+    dirs = [*pk_sharc.sharc_include_dirs(moddir), path.parent]
+    return pk_sharc.assemble(pk_sharc.expand_includes(path.read_text(), dirs))
 
 
 def _externs_fixed(device: str, spec: pk_conform.MachineSpec) -> dict[str, int]:
@@ -421,7 +421,7 @@ class MachineRig:
 
     # -- the write set -----------------------------------------------------------------------------------------------------
     def _allowed(self, out_addr: int) -> list[tuple[int, int, str]]:
-        """The DM a routine of the module may store to in a call of the current voice (docs/design/module-sdk.md 11.5 D6, sdk/dk_machine.h):
+        """The DM a routine of the module may store to in a call of the current voice (docs/design/module-sdk.md 11.5 D6, <dk/machine.h>):
         the output block, the voice's own state block (base + stride * track, `state_bytes`), its data stack and its own data and bss (shared by all voices) (`stack_bytes` words' worth, below the adapter's frame: the adapter lowers I7 by its frame before it calls the
         module). A routine without a description (the raw form) has no state; it gets DEFAULT_STACK_BYTES of stack."""
         b = self.built

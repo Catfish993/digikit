@@ -148,7 +148,7 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
     obj.stamp_isa();
 
     let device = register::device_id(dev)?;
-    let key = |m: &str| register::machine_key(&spec.name, m, 0);
+    let key = |m: &str| register::machine_key(&spec.name, m);
     let mut reg = Register {
         device,
         ..Default::default()
@@ -316,7 +316,7 @@ mod tests {
             // a machine's key is the hashed key of "<module>:m<i>"
             assert_eq!(
                 r.machines[3].type_no,
-                register::machine_key("cap/r", "m3", 0)
+                register::machine_key("cap/r", "m3")
             );
             r.check().unwrap();
         }
@@ -342,7 +342,7 @@ mod tests {
         assert_eq!(s.device, register::device_id("dn2").unwrap());
         assert_eq!(s.voices.len(), 2);
         assert_eq!(s.voices[0].type_no, 17);
-        assert_eq!(s.voices[1].type_no, register::machine_key("cap/d", "m0", 0));
+        assert_eq!(s.voices[1].type_no, register::machine_key("cap/d", "m0"));
         assert_eq!((s.voices[1].state_bytes, s.voices[1].voices), (32, 2));
         // the contract bytes say machine (a DSP section is a machine module)
         assert_ne!(d.runtime_min, 0);

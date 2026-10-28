@@ -1,0 +1,32 @@
+[module]
+id = "__ID__"
+version = "0.1.0"
+name = "__TITLE__"
+category = "fx"
+type = "fx"
+author = "__AUTHOR__"
+status = "experimental"
+summary = "One short sentence for players, 120 characters at most, ending with a full stop."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# `patchkit pack __ID__ --device dt2 -o __NAME__.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
+# publishes a free effect row of core/dynfx for the effect.
+# The effect declaration (DK_FX, DK_FX_PARAM and DK_PAGE in src/module.c): its process routine, `dk_fx_desc` (<dk/fx.h>) and its page in the FX view
+# (the tab, the title, one knob and the MIX knob). It holds only .dk.desc records; patchkit pack reads them and leaves them out of the .dkm.
+[[object]]
+path = "build/__NAME__-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+[[object]]
+path = "build/__NAME__-dsp.dko.json"
+sources = ["src/dsp/__NAME__.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]

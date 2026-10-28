@@ -2,7 +2,7 @@
 
 Goal: compile patchkit modules ahead of time into relocatable objects, link them into the firmware at patch
 time with our own code, and unit-test them on the emulated cores. Plan: `docs/plans/patchkit.md`, item 0.5.
-Tools: `tools/patchkit/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.py`, `pk_sharc.py`; tests
+Tools: `tools/patchkit/pk_toolchains.py`, `pk_link.py`, `pk_cfcall.py`, `pk_sharc.py` (since phase 6a the SHARC+ build is `packages/patchkit/src/build/sharc_obj.rs`, Selache as a library; `pk_sharc.py` keeps wrappers for the test rigs and the core runner; `pk_elf.py` is deleted); tests
 `tests/patchkit/test_pk_cf.py`, `tests/patchkit/test_pk_sharc.py` (sources in `tests/pk_src/`). Both tool chains install under
 `out/tools/` (gitignored; `mise run toolchains`); the tests skip when a toolchain or the 1.17 image is absent.
 

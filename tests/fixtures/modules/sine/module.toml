@@ -8,57 +8,23 @@ author = "digikit"
 status = "experimental"
 summary = "Test machine and template: a pitched sine of the SDK contract with one level parameter, one DSP body for both devices, loaded at run time."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
 # `patchkit pack test/sine --device dt2|dn2 -o sine.dkm` makes the .dkm; the digikit runtime sends the DSP object to the DSP and
 # publishes the voice row and the machine row.
+# The machine declaration (DK_MACHINE, DK_PARAM and DK_PAGE in src/module.c). It holds only .dk.desc records.
+[[object]]
+path = "build/sine-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
 [[object]]
 path = "build/sine-dsp.dko.json"
 sources = ["src/dsp/sine.s"]
 place = "dsp.l2"
-
-[[voice]]
-machine = "sine"
-render = "_sn_render"
-note_on = "_sn_note_on"
-desc = "_sn_desc"
-
-# Digitakt II: SAMPLE's TUNE (0xca) and LEV (0xd1) rows and the level parameter on knob 1. Digitone II: a machine of its own type (own_dsp)
-# with a SYN page of one knob.
-[[machine]]
-id = "sine"
-name = "Sine"
-short = "SIN"
-clone_of = 0
-knobs = [0xca, "sine_level", 0, 0, 0, 0, 0, 0xd1]
-
-[machine.dn2]
-own_dsp = true
-knobs = ["sine_level"]
-
-[[param]]
-id = "sine_level"
-name = "Level"
-short = "LEVEL"
-template = 0xd1
-min = 0
-max = 0x7f00
-default = 0x7f00
-
-[param.dn2]
-template = 0xd5
-
-[[page]]
-id = "sine_syn"
-machine = "sine"
-name = "SINE"
-title = "Sine"
-devices = ["dn2"]

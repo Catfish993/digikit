@@ -12,9 +12,7 @@ conflicts = ["digikit/master-gain"]
 
 # Test status per firmware; patchkit does not read it.
 [targets]
-"dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "untested"
 "dn2-1.12" = "experimental"
 
 # DSP: the master hook (the Q31 converter's one call) and the routine.
@@ -24,9 +22,9 @@ sources = ["src/dsp/master_drive.s"]
 place = "dsp.l2"
 
 [object.externs]
-_fw_q31_convert = "dsp.master.q31_converter"
-_fw_master_buf = "dsp.master.float_buf"
-_fw_drive_word = "dsp.fx.sidechain_filter_word"
+_fw_q31_convert = "dsp.master.fn.q31_converter"
+_fw_master_buf = "dsp.master.value.q31_converter.float_buf"
+_fw_drive_word = "dsp.fx.value.sidechain_filter_word"
 
 # ColdFire: the new knob label.
 [[object]]
@@ -35,22 +33,22 @@ sources = ["src/cf/strings.c"]
 place = "cf.expansion"
 
 [[op]]
-op = "retarget"
-anchor = "dsp.master.q31_call"
+op = "hook"
+hook = "dsp.master.hook.q31_converter.call"
 to = "_md_hook"
 
 # Descriptor row of the master compressor's Sidechain Filter: long and short names. The default stays 0x5000: the
 # factory kits hold it, so it is the neutral value of the drive (finding 22).
 [[op]]
 op = "write"
-anchor = "cf.param.master_sidechain_filter"
+anchor = "cf.param.data.descriptor_table.master_sidechain_filter"
 offset = 0x28
 hex = "00000000"
 reloc = [{ offset = 0, type = "cf.32", symbol = "md_name_long" }]
 
 [[op]]
 op = "write"
-anchor = "cf.param.master_sidechain_filter"
+anchor = "cf.param.data.descriptor_table.master_sidechain_filter"
 offset = 0x30
 hex = "00000000"
 reloc = [{ offset = 0, type = "cf.32", symbol = "md_name_short" }]
@@ -63,59 +61,4 @@ resource = "dsp.master.hook"
 resource = "frame.fx66"
 
 [[claim]]
-resource = "cf.param.master_sidechain_filter"
-
-# Anchors. The hook anchors are the ones of digikit/master-gain (same rules, same device-independent hashes).
-[[anchor_rule]]
-name = "dsp.master.q31_call"
-cpu = "sharc"
-kind = "sharc_func"
-reloc_hash = "65c7ebdfe23c9a760bc6077a912e16c0474c182ee9849925cb0c10af0689f984"
-offset = 0x15c
-len = 6
-mark = "D"
-
-[[anchor_rule]]
-name = "dsp.master.q31_converter"
-cpu = "sharc"
-kind = "sharc_func"
-reloc_hash = "83fba5710c2b395cbd54e3cd583b1e205915fa6d1905d7285c3535203e52d05b"
-offset = 0x0
-len = 6
-mark = "D"
-
-[[anchor_rule]]
-name = "dsp.master.float_buf"
-cpu = "sharc"
-kind = "sharc_literal"
-reloc_hash = "83fba5710c2b395cbd54e3cd583b1e205915fa6d1905d7285c3535203e52d05b"
-offset = 0xf
-mark = "D"
-
-# The Sidechain Filter word (fx[66]) in the DSP's copy of the frame: the address in the stock reader's short-word load
-# (DT2 0x256008, DN2 0x25ced8; finding 04). The reading function differs per device.
-[[anchor_rule]]
-name = "dsp.fx.sidechain_filter_word"
-devices = ["dt2"]
-cpu = "sharc"
-kind = "sharc_mem_addr"
-reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780"
-offset = 0x459
-mark = "D"
-
-[[anchor_rule]]
-name = "dsp.fx.sidechain_filter_word"
-devices = ["dn2"]
-cpu = "sharc"
-kind = "sharc_mem_addr"
-reloc_hash = "4cc8a46bca990a7bd883d1784307a9cd72aa828a1ae846977e337fbc5c54c010"
-offset = 0x87d
-mark = "D"
-
-# The descriptor row (60 bytes) of that parameter: mirror index 66, range 0..0x7f00, default 0x5000.
-[[anchor_rule]]
-name = "cf.param.master_sidechain_filter"
-cpu = "cf"
-kind = "cf_words"
-words = ["*", 66, 0, 0x7f00, 0x5000, 0, 0x75ffff, 0x116, "*", 0, "*", "*", "*", "*", "*"]
-mark = "D"
+resource = "cf.param.data.descriptor_table.master_sidechain_filter"

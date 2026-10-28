@@ -55,6 +55,46 @@ def test_role_rules():
     assert atlas.role_of("Zzz") == "other"
 
 
+def test_dossier_call_setup_and_anchors():
+    text = "\n".join(
+        [
+            "; FUN_40003c02 @ 0x40003c02, 54 bytes",
+            "FUN_40003c02:",
+            "40003c02  4878 0007                 pea (0x7).w",
+            "40003c06  41f9 4096 56a0            movea.l (DAT_409656a0).l,A0",
+            "40003c0c  2f08                      move.l A0,-(SP)",
+            "40003c12  4eb9 4000 5a56            jsr FUN_40005a56.l",
+            "40003c18  588f                      addq.l 0x4,SP",
+        ]
+    )
+    insns = fw.parse_disasm(text)
+    assert [a for a, _ in insns][:2] == [0x40003C02, 0x40003C06]
+    lines = fw.call_setup(insns, 0x40003C12, 2)
+    assert len(lines) == 3
+    assert lines[0].strip().startswith("40003c06")  # only the last 2 before the call
+    lines = fw.call_setup(insns, 0x40003C12, 8)
+    assert "hidden return ptr" in lines[1] and "hidden" not in lines[2]
+    assert lines[-1].startswith("  > 40003c12")
+    assert fw.hidden_return_ptr("lea (0x4,A1),A0")
+    assert not fw.hidden_return_ptr("move.l A0,-(SP)")
+    refs = [
+        {
+            "cpu": "cf",
+            "name": "cf.x.fn.a",
+            "mark": "D",
+            "at": {"dt2-1.17": [{"addr": "0x40001004"}]},
+        },
+        {
+            "cpu": "cf",
+            "name": "cf.x.fn.b",
+            "at": {"dt2-1.17": [{"addr": "0x40002000"}]},
+        },
+    ]
+    assert fw.anchors_for(refs, "dt2-1.17", 0x40001000, 0x40001010) == [
+        "cf.x.fn.a [D]+0x4"
+    ]
+
+
 def run(*argv: str) -> str:
     return fw.run_line(fw.Session(), list(argv), "dt2-1.17", 60)
 

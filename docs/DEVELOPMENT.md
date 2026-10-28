@@ -93,6 +93,8 @@ disabled ("desktop only for now"). Headless: the control socket's `card.load {di
 `card.status`; `uv run python -m tools.emulator.card_check` checks that trigs 1-3 play a 220 Hz sine, an
 880 Hz sine and noise from three generated files.
 
+**Log panel (desktop app).** The "Log" button in the status bar, or ⌘J (Ctrl+J on other systems), opens a panel with the events of this window: module reloads and builds, firmware loads, card changes, Transfer runs, emulator resets, and guest faults, stalls and DSP halts. Each entry has a time, a source, one line, and for long output (a compiler log) a ▸ button that shows it in full. The panel has a source filter, "Errors only", "Copy" (the entries shown, with details) and "Clear". It keeps the last 500 entries in memory. It opens by itself for a failed reload or build and for a guest fault, stall or DSP halt; other errors add to the badge on the Log button. The Log is a panel docked along the bottom of the window, full width: the page above it gets smaller, nothing is covered. Drag its top edge to change the height (double click resets it; the height is remembered). Metrics stays a small popover above the status bar. The app polls the controller for stalls and halts once a second, so they can show up to a second late.
+
 ## Web panel
 
 ```sh
@@ -178,16 +180,38 @@ mise run web                            # the gallery at /patch: patch in the br
 
 ## Module loop
 
-1. Create the module: `mise run module:new -- AUTHOR/NAME --machine [--dir DIR]` (a run-time machine), or `mise run module:new -- fx/NAME` (`--cf` for ColdFire code only, `--dsp` for a SHARC+ stub only). Guide: docs/MODULE-AUTHORING.md.
-2. Check it without an emulator: `mise run module:check -- NAME [--device dt2|dn2]` (NAME is `fx/NAME` or `NAME`; machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
-3. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
-4. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
+1. Create the module: `mise run module:new -- KIND AUTHOR/NAME [--dir DIR]` (`KIND` is `machine`, `fx` or `service`). Guide: docs/MODULE-AUTHORING.md.
+2. Build it: `mise run module:build -- AUTHOR/NAME [--check]` (`patchkit build`: ColdFire C, assembly and Rust, and SHARC+ with Selache as a library, all in the `patchkit` binary; an object whose sources did not change is skipped). The objects of a content module are build output in the cache `out/cache/dko/<module id>/` (not committed; `core/*` objects stay in their module); `mise run module:pack` and `dk:run` build what is stale themselves, so a module goes from source to `.dkm` in one command. `patchkit dko show FILE` prints what an object holds. `module:check` fails on a stale object.
+3. Check it without an emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
+4. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
+5. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
 
 Log levels: `mise run dk:log -- --port Digitakt level` prints them, `level debug` sets the default, `level --module NAME=trace` sets one module (`NAME=default` clears it), `follow --level L --module NAME` filters the display. Levels are not stored on the card.
 
 After a change to `devices/*.toml` or `sdk/sdk.toml`, run `mise run gen:modules` (`-- --check` lists stale generated files).
 
 Each task takes `-- --help`.
+
+## Fast iteration: runtime, UI and modules
+
+One edit and one look take seconds, not a boot. Iterate on the Digitone II (its boot is about half as long), check the Digitakt II at the end, and finish with the owner's check (`module:check`, the scenarios, the harness).
+
+```sh
+mise run dk:dev -- test/ui-demo --device dn2 --keys 'tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:menu'
+mise run dk:dev -- emulator --device dn2,dt2 --keys FILE.json   # the workbench's module set of devices/*.toml
+mise run dk:dev -- core/digikit-menu --store 'test/dyn-demo*,synth:HUGE:8000000'  # a card with these modules (* = selected)
+mise run dk:dev -- test/ui-demo --stop                          # end the kept daemon
+cargo test --offline -p dkui-host                               # menu and UI logic on the host, about 1 s
+```
+
+`dk:dev` builds what changed, reloads a daemon it keeps per device and module set, runs the keys from the main screen and writes `out/runs/devreload/<device>/sheet.png`. The reload (daemon method `dev.reload`) compares the new patched image with the running one:
+
+- Only UI-layer modules changed (`core/ui`, `core/digikit-menu`, modules that require `core/ui`): it restores the main screen and writes the new code. About 1.5 s, or 4 s for a `dk:dev` round with a short key script.
+- Anything else changed (the Rust runtime, another module, the DSP image): it boots the new image. Cold: DN2 5 s, DT2 10 s; an image booted before: under 1 s.
+
+In the workbench (`mise run wb`) the **Reload modules** button (⇧⌘R) builds and reloads the open session: it calls `dev.reload {build: true}`, which builds the stale objects (ColdFire C, assembly, Rust; SHARC+ assembly) of the session's modules in the app, then does the reload above. A C edit takes about 0.25 s to build and 2.5 s to reload (DN2). A compiler error shows in the status line (short) and in full in the red box under the top bar; nothing is swapped. A SHARC+ source builds there too (Selache as a library, about 5 ms for an object); an assembler error or a refused encoding shows the same way. `dk:dev` keeps its own build call (`patchkit build`) and reloads without `build`. A watch task that rebuilds on save is still possible ([docs/plans/sdk-api.md](plans/sdk-api.md), "Dev loop").
+
+Build times: the Rust runtime 2.3 s, a C object under 1 s. `uv run python -m tools.emulator.boot_phases --device dn2 --cold` measures where a boot spends its time. Details and timings: [TESTING.md, "Fast iteration"](TESTING.md#fast-iteration-dkdev-and-reload); the daemon methods: [CONTROL.md](CONTROL.md).
 
 **Hardware warning**
 

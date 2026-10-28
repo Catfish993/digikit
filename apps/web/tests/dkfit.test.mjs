@@ -1,10 +1,10 @@
-// The fit rule (src/modules/dkfit.ts) on the shared vectors of sdk/fit-vectors.json: dkrt_fit (Rust) and tools/device/dkfit.py read the same file. The compare only: the needs are inferred in Rust (dkneeds.test.mjs).
+// The fit rule (src/modules/dkfit.ts) on the shared vectors of sdk/vectors/fit-vectors.json: dkrt_fit (Rust) and tools/device/dkfit.py read the same file. The compare only: the needs are inferred in Rust (dkneeds.test.mjs).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { describeShort, describeShortBy, emptyCaps, fitsNow, fitsSet, take } from '../src/modules/dkfit.ts';
 
-const V = JSON.parse(readFileSync(new URL('../../../sdk/fit-vectors.json', import.meta.url), 'utf8'));
+const V = JSON.parse(readFileSync(new URL('../../../sdk/vectors/fit-vectors.json', import.meta.url), 'utf8'));
 
 const capsOf = (over) => {
   const merged = { ...V.caps_base, ...over };

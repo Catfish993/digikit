@@ -10,7 +10,7 @@ emulator; nothing ran on a device. What no emulator can tell is listed under "Op
 |---|---|---|
 | One card-write function with a hard range check; read-only on a card that is not ours and not blank | `modules/core/runtime/src/rs/src/card.rs`, `block_write` in `lib.rs`; range test in `dkrt_sdk` (`store::write_allowed`, unit test) | scenario `card-safety` (dt2) |
 | The card check: ours (valid header A or B, or valid selection copy) / blank (whole range all 0x00 or all 0xFF) / foreign / unreadable; claim of a blank range before an upload stages data | `card.rs` | `card-safety` |
-| RAM log ring (512 events of 32 bytes), DEBUG switch (ON/OFF, selection flags bit 1, zero means ON), health snapshot, DSP diagnostics and heartbeat watch | `dlog.rs`, `boot.rs`, `lib.rs`; menu row in `modules/core/digikit-menu` | `debug-log` (quick and full) |
+| RAM log ring (512 events of 32 bytes), DEBUG switch (ON/OFF, selection flags bit 1, zero means ON), health snapshot, DSP diagnostics and heartbeat watch | `dlog.rs`, `boot.rs`, `lib.rs`; menu row in `modules/core/apps/digikit-menu` | `debug-log` (quick and full) |
 | SysEx LOG (0x20) and PEEK (0x21), INFO gains the log range and flags | `upload.rs`; spec in `digikit-upload.md` | `debug-log` |
 | CPU exception capture across a soft reset, next-boot report, bad-boot counting | `crash.rs`, `src/cf/tramp.s` (`dkrt_exc_hook`), anchor `dkrt.fw.exc_hook_lit` | `crash-capture` (dt2, full tier) |
 | Mac tool `tools/device/dklog.py` (`follow`, `crash`, `peek`, `info`) | `tools/device/dklog.py`, `Uploader.log_page` / `peek` in `dkupload.py` | `tests/digikit/test_dklog.py`; used by `debug-log` and `crash-capture` against the emulator |

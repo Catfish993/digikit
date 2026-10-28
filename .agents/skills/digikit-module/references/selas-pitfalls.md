@@ -1,7 +1,7 @@
 # Selache (selas) pitfalls for SHARC+ module code
 
 selas is the public SHARC+ assembler that `module:build` runs. Some forms assemble to bytes that decode to a valid-looking
-instruction but are wrong on the silicon. The build repairs or refuses the known ones (`tools/patchkit/pk_sharc.py`); this
+instruction but are wrong on the silicon. The build repairs or refuses the known ones (`packages/patchkit/src/build/sharc_obj.rs`); this
 page says what to write instead. Evidence: docs/findings/05-sharc-isa-and-decoding.md ("Selache shift-immediate encodings"),
 docs/findings/45-dsp-voice-context.md, docs/findings/49-dt2-type-sites-and-uninit-model.md (section 10.7).
 
@@ -48,3 +48,8 @@ Write it as you mean it.
 "It decodes" is not proof. When you use a form with an immediate that no module uses yet, compare its bytes with the same
 form in the stock image (`tools/sharc_dev/sharc.py`, `img.sql("select raw from insn where ...")`) and add what you learn
 here and to the cookbook finding.
+
+- `MODIFY(Ix, My)` with a register modifier: our decoder reads `selas`'s encoding as a 48-bit Type 7a and the
+  emulator stops. Move a circular pointer with a dummy load `Fx = DM(Ix, My);` instead (open item in the plan).
+- Short loads and stores with M0-M3 outside a DO loop: Selache's listing shows them as 4-byte rows and the verify step
+  rejects the build. Use M4 for such a modifier.

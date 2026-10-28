@@ -38,7 +38,7 @@ One firmware site: the call at the top of the UI task's event loop that pops the
 
 A `retarget` op changes the `jsr` target to `dkrt_loop_hook`, which saves d0/d1/a0/a1, calls `dkrt_tick` (C ABI, so d2-d7 and
 a2-a6 are kept) and jumps to the stock pop with the stack as the caller left it. The site is found by a masked signature of the
-six words around it (`cf_words` with `as = "code"`), the same rule on all four images. Why here: it runs in task context (the UI
+six words around it (`cf_words` with `as = "code"`), the same rule on both images. Why here: it runs in task context (the UI
 task, which also calls the card filesystem and block read, finding 23 S3), once per event (key, timer tick, ...; about 0.2 passes
 per million instructions in an idle emulator, **[D]** finding 29), before the task blocks, and nothing live is in d0/d1/a0/a1 there.
 It is not an interrupt, so the loader may block in the card read.
@@ -169,7 +169,7 @@ instructions per chunk, none when idle).
 The module set is fixed for a session. The selection is a record in two sectors at the end of the store range
 (`docs/design/digikit-store.md`: layout, write order, +Drive round trip); the runtime loads it at boot and never writes anywhere else.
 
-**Hook.** `dkrt_boot_hook` (`src/cf/tramp.s`) is a `hook` op at the entry of the main-OS task (anchor `dkrt.hook.boot`, found by the words
+**Hook.** `dkrt_boot_hook` (`src/cf/tramp.s`) is a `hook` op at the entry of the main-OS task (anchor `cf.rtos.site.main_os_task`, found by the words
 of the prologue; the displaced `link`/`movem` run in the tail). Why there: the block read exists and nothing of the UI does. The MainScreenView, and with it the machine selection view that reads the machine list **once**, is made by one of
 the singletons the task builds first: the first design hooked the call that uses the MainScreenView (finding 36) and measured the view
 already built there, so the registry had to rebuild its list. At the task entry the view does not exist yet: the stock builder reads the
@@ -199,7 +199,7 @@ sequence: wait (bounded) for the console UART8 to empty, clear DDR word 0 throug
 (`0xEC090000`). A restart loses the unsaved edits that the firmware itself would lose at that point; finding 40 measured it: panel pattern and sound edits do not reach the arena, so the menu asks the player to save the project first.
 
 **Safe mode.** A boot counter in the record: raised before the loads, cleared after the stable period (`STABLE_BLOCKS`, 45,000 DSP blocks = 30 s
-after the first UI-loop pass; the clock is the firmware's own block counter, anchor `dkrt.fw.block_counter_lit`; finding 37). After `SAFE_AFTER` (2) boots in a row
+after the first UI-loop pass; the clock is the firmware's own block counter, anchor `cf.link.site.block_isr.counter_lit`; finding 37). After `SAFE_AFTER` (2) boots in a row
 that did not stay up that long (a fault halts the CPU and the device needs a power cycle; a hang stops the UI loop), a boot loads nothing (`reason` counter). The record's flag bit 0 asks for one safe boot (cleared by the boot that
 honours it). The key `SAFE_KEY_CODE` (RECORD, button 19) held at power-on is looked for in the UI queue's waiting key events: **[O]**
 untested on a device, and the emulator delivers no key before the main OS runs.

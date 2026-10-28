@@ -1,0 +1,31 @@
+[module]
+id = "__ID__"
+version = "0.1.0"
+name = "__TITLE__"
+category = "machines"
+type = "machine"
+author = "__AUTHOR__"
+status = "experimental"
+summary = "One short sentence for players, 120 characters at most, ending with a full stop."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# `patchkit pack __ID__ --device dt2|dn2 -o __NAME__.dkm` makes the .dkm; the digikit runtime sends the DSP object to the DSP and
+# publishes the voice row and the machine row.
+# The machine declaration (DK_MACHINE, DK_PARAM and DK_PAGE in src/module.c). It holds only .dk.desc records; patchkit pack reads them
+# and leaves them out of the .dkm.
+[[object]]
+path = "build/__NAME__-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+[[object]]
+path = "build/__NAME__-dsp.dko.json"
+sources = ["src/dsp/__NAME__.s"]
+place = "dsp.l2"

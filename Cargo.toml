@@ -32,6 +32,9 @@ members = [
     # the digikit runtime's SDK (no_std): its tests run on the host
     "modules/core/runtime/sdk",
     "modules/core/runtime/fit",
+    # host test harness for <dk/ui.h> (fake dk_ui_* calls, driver, C sample)
+    "modules/core/adapters/ui/host",
+    "modules/core/fw/rs",
     "packages/patchkit",
     "apps/desktop/src-tauri",
 ]
@@ -52,6 +55,17 @@ repository = "https://github.com/ElekLabs/digikit"
 opt-level = 3
 debug = false
 incremental = false
+
+# The Selache assembler (patchkit's SHARC+ build) and the regex it shares with the guards run once per module build: size over speed, so the
+# browser's patchkit.wasm stays small. Nothing of the emulator core is listed.
+[profile.release.package.selas]
+opt-level = "z"
+[profile.release.package.selinstr]
+opt-level = "z"
+[profile.release.package.selelf]
+opt-level = "z"
+[profile.release.package.regex-lite]
+opt-level = "z"
 
 # No cheaper profile for correctness-only runs: measured on sharc-gen, an
 # opt-level 1 override costs ~2.5x the CPU of release (wall 5.5 min vs 2.9 on

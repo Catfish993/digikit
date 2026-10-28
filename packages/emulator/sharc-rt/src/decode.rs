@@ -140,14 +140,14 @@ enum Selection {
     Ambiguous,
 }
 
-fn select(words: &[u16], isa: bool) -> Selection {
+fn select(words: &[u16], isa: bool, max_width_bytes: u8) -> Selection {
     let frame = frame(words);
     let mut leading = 0;
     let mut fixed = 0;
     let mut winner = None;
     let mut tied = false;
     for form in FORMS {
-        if isa && form.width_bytes != 6 {
+        if (isa && form.width_bytes != 6) || form.width_bytes > max_width_bytes {
             continue;
         }
         if frame & form.mask != form.value {
@@ -175,16 +175,23 @@ fn select(words: &[u16], isa: bool) -> Selection {
 }
 
 fn decode_words(words: &[u16]) -> Decoded {
-    decode_words_mode(words, false)
+    decode_words_mode(words, false, 6)
+}
+
+/// Decode the first instruction of `words` (up to three parcels, in the order of the boot stream) among the forms of at most
+/// `max_width_bytes`: the width an assembler already chose decides a tie between a short form and the longer form that shares its
+/// leading bits. There is no lookahead; this is the free-running decode of the Python `InstructionSet.decode_words`.
+pub fn decode_parcels(words: &[u16], max_width_bytes: u8) -> Decoded {
+    decode_words_mode(&words[..words.len().min(3)], false, max_width_bytes)
 }
 
 /// A supported fixed-width ISA instruction in little-endian 48-bit storage.
 pub fn decode_isa(raw: u64) -> Decoded {
-    decode_words_mode(&[(raw >> 32) as u16, (raw >> 16) as u16, raw as u16], true)
+    decode_words_mode(&[(raw >> 32) as u16, (raw >> 16) as u16, raw as u16], true, 6)
 }
 
-fn decode_words_mode(words: &[u16], isa: bool) -> Decoded {
-    let form = match select(words, isa) {
+fn decode_words_mode(words: &[u16], isa: bool, max_width_bytes: u8) -> Decoded {
+    let form = match select(words, isa, max_width_bytes) {
         Selection::Form(form) => form,
         Selection::NoForm => return Decoded::unknown(),
         Selection::Ambiguous => {

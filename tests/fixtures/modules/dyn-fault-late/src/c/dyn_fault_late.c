@@ -5,38 +5,28 @@
  * The delay and the kind of failure come from the store file `cfg/fault-after.bin` (5 bytes: u32 big endian blocks, then 0 = reset the
  * machine, as the firmware's exception path ends, 1 = hang in the UI task with the other tasks running); no file: never fails. */
 
-typedef unsigned int u32;
+#include <dk/api.h>
 
-struct api {
-    u32 version, size, device, runtime;
-    u32 (*import)(const char *name);
-    void *(*alloc)(u32 size);
-    void (*free)(void *p);
-    int (*store_read)(const char *path, void *dst, u32 cap);
-    void (*log)(const char *msg, u32 value);
-};
-
-/* the runtime's 1500 Hz block clock, an import of the module table */
-extern u32 dkrt_blocks(void);
+typedef uint32_t u32;
 
 static u32 after = 0xffffffffu;
 static u32 mode;
 static u32 start;
 static u32 started;
 
-int dkm_init(const struct api *api)
+int32_t dkm_init(const dk_api *api)
 {
     unsigned char cfg[16];
-    int n = api->store_read("cfg/fault-after.bin", cfg, sizeof cfg);
+    int n = api->store_read((const uint8_t *)"cfg/fault-after.bin", cfg, sizeof cfg);
     if (n >= 5) {
         after = ((u32)cfg[0] << 24) | ((u32)cfg[1] << 16) | ((u32)cfg[2] << 8) | cfg[3];
         mode = cfg[4];
     }
-    api->log("fault-late after", after);
+    api->log((const uint8_t *)"fault-late after", after);
     return 0;
 }
 
-void dkm_slot_0(const struct api *api)
+void dkm_slot_0(const dk_api *api)
 {
     u32 now = dkrt_blocks();
     (void)api;

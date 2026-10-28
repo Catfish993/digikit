@@ -6,93 +6,23 @@ category = "test"
 type = "machine"
 author = "digikit"
 status = "experimental"
-summary = "A run-time machine with seven parameters, one per knob but knob 3, to check the parameter rows the registry writes."
+summary = "A run-time machine with four parameters of different ranges, to check the parameter rows the registry writes."
 dynamic = true
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.17"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
-# Test fixture (docs/design/digikit-registry.md): a clone of SAMPLE (type 0) whose knobs but knob 3 (the sample slot) are parameters of its own,
-# so that every slot's row formula is exercised.
-[[machine]]
-id = "dynp"
-type_hint = 17   # the number this machine had before sticky ids (finding 52)
-name = "DynP"
-short = "DYP"
-clone_of = 0
-knobs = ["p0", "p1", "p2", 0, "p4", "p5", "p6", "p7"]   # knob 3 of a SAMPLE clone is the sample slot: no parameter there
-devices = ["dt2"]
+# Test fixture (docs/design/digikit-registry.md). The declaration is in src/module.c (DK_MACHINE, DK_PARAM). The DSP is test/sine's, read
+# from its folder (a machine needs DSP routines).
+[[object]]
+path = "build/dyn-params-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
 
-[[param]]
-id = "p0"
-name = "Param 0"
-short = "P0"
-template = 0xd1
-min = 0
-max = 32512
-default = 4096
-devices = ["dt2"]
-
-[[param]]
-id = "p1"
-name = "Param 1"
-short = "P1"
-template = 0xd1
-min = 1
-max = 32256
-default = 4369
-devices = ["dt2"]
-
-[[param]]
-id = "p2"
-name = "Param 2"
-short = "P2"
-template = 0xd1
-min = 2
-max = 32000
-default = 4642
-devices = ["dt2"]
-
-[[param]]
-id = "p4"
-name = "Param 4"
-short = "P4"
-template = 0xd1
-min = 4
-max = 31488
-default = 5188
-devices = ["dt2"]
-
-[[param]]
-id = "p5"
-name = "Param 5"
-short = "P5"
-template = 0xd1
-min = 5
-max = 31232
-default = 5461
-devices = ["dt2"]
-
-[[param]]
-id = "p6"
-name = "Param 6"
-short = "P6"
-template = 0xd1
-min = 6
-max = 30976
-default = 5734
-devices = ["dt2"]
-
-[[param]]
-id = "p7"
-name = "Param 7"
-short = "P7"
-template = 0xd1
-min = 7
-max = 30720
-default = 6007
-devices = ["dt2"]
+[[object]]
+path = "build/dyn-params-dsp.dko.json"
+sources = ["../sine/src/dsp/sine.s"]
+place = "dsp.l2"

@@ -6,7 +6,7 @@ that site, and leaves through a tail or an exit of the stock code. This harness 
 
     unit = CfUnit(
         "Digitakt_II_OS1.17.syx",
-        sources=[Path("modules/core/machines/src/cf/dt2/machines.s")],
+        sources=[Path("modules/core/adapters/machines/src/cf/dt2/machines.s")],
         stubs=["_mf_t_dispatch", ("_mf_site", 6)],  # undefined symbols the routine jumps to: each ends the call
         symbols={"_mf_first": 7, "_mf_rows": ROWS},  # every other undefined symbol: an absolute value
         routines=["mf_dispatch", ...],
@@ -30,7 +30,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-from tools.patchkit import pk_link  # noqa: E402
+from tools.patchkit import patchkit  # noqa: E402
 from tools.patchkit.pk_cfcall import CfMachine  # noqa: E402
 
 BASE = 0x47E8B000
@@ -150,9 +150,8 @@ class CfUnit:
         gpath = Path(self.tmp.name) / "glue.s"
         gpath.write_text("".join(glue))
         syms = dict(symbols)
-        _obj, self.linked, self.hist = pk_link.build(
-            [*[Path(s) for s in sources], gpath], base, syms
-        )
+        self.linked = patchkit.cf_link([*[Path(s) for s in sources], gpath], base, syms)
+        self.hist = self.linked.histogram
         self.image = self.linked.image + b"\0" * self.linked.bss_size
         self.sym = self.linked.symbols
         self.rts = self.sym["u_rts"]

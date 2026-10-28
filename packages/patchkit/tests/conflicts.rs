@@ -4,7 +4,7 @@
 use patchkit::apply::{self, Options};
 use patchkit::firmware::Firmware;
 use patchkit::module::{Library, Module};
-use patchkit::port::Registry;
+use patchkit::port::{Hook, Registry};
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -18,13 +18,28 @@ fn image(name: &str) -> Option<Vec<u8>> {
 
 const DT2: &str = "Digitakt_II_OS1.17.syx";
 
+/// The content modules are built on demand (`Library::scan_repo`): a test that needs one skips without the toolchain.
+macro_rules! need_toolchain {
+    () => {
+        if patchkit::build::toolchain::Env::new(&root())
+            .m68k("gcc")
+            .is_err()
+        {
+            eprintln!("SKIP: the m68k-elf toolchain is not installed");
+            return;
+        }
+    };
+}
+
 fn registry() -> Registry {
     Registry::from_dir(&root().join("devices/ports")).unwrap()
 }
 
 /// The real library (core/expansion, digikit/master-gain, ...) plus synthetic modules.
 fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    // without the toolchain the content modules are left out; the tests that need one start with `need_toolchain!()`
+    let mut lib = Library::scan_repo_or_skip(&root())
+        .unwrap_or_else(|| Library::scan_repo_for(&root(), true, Some(&[])).unwrap());
     lib.modules.extend(extra);
     lib
 }
@@ -40,7 +55,7 @@ fn module(id: &str, header_extra: &str, body: &str, dko: Option<serde_json::Valu
 
 fn write_op(offset: i64, hex: &str) -> String {
     format!(
-        "[[op]]\nop = \"write\"\nanchor = \"dsp.master.q31_converter\"\noffset = {offset}\nhex = \"{hex}\"\n"
+        "[[op]]\nop = \"write\"\nanchor = \"dsp.master.fn.q31_converter\"\noffset = {offset}\nhex = \"{hex}\"\n"
     )
 }
 
@@ -157,6 +172,7 @@ fn a_region_over_capacity_is_refused() {
 #[test]
 fn an_anchor_hash_mismatch_is_refused() {
     need_image!();
+    need_toolchain!();
     let mut reg = registry();
     for p in reg
         .ports
@@ -166,7 +182,7 @@ fn an_anchor_hash_mismatch_is_refused() {
         for a in p
             .anchor
             .iter_mut()
-            .filter(|a| a.name == "dsp.master.q31_call")
+            .filter(|a| a.name == "dsp.master.site.q31_converter.call")
         {
             a.sha256 = "ab".repeat(32);
         }
@@ -178,7 +194,7 @@ fn an_anchor_hash_mismatch_is_refused() {
 #[test]
 fn a_module_for_another_firmware_is_refused() {
     need_image!();
-    let m = module("t/pinned", "ports = [\"dt2-1.16\"]", "", None);
+    let m = module("t/pinned", "ports = [\"dn2-1.12\"]", "", None);
     let lib = library(vec![m]);
     expect_err(run(&lib, &["t/pinned"]), "not compatible");
 }
@@ -186,6 +202,7 @@ fn a_module_for_another_firmware_is_refused() {
 #[test]
 fn the_container_cap_is_enforced() {
     need_image!();
+    need_toolchain!();
     let mut reg = registry();
     for p in reg
         .ports
@@ -211,6 +228,7 @@ fn sections_2_4_and_8_can_never_change() {
 #[test]
 fn a_patched_image_has_no_port() {
     need_image!();
+    need_toolchain!();
     let out = run(&library(vec![]), &["digikit/master-gain"]).unwrap();
     let lib = library(vec![]);
     let again = apply::apply(
@@ -228,7 +246,7 @@ fn retarget_of_something_that_is_not_a_call_is_refused() {
     let m = module(
         "t/r",
         "",
-        "[[op]]\nop = \"retarget\"\nanchor = \"dsp.master.q31_converter\"\nto = \"_x\"\n[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n",
+        "[[op]]\nop = \"hook\"\nhook = \"t.retarget.hook\"\nto = \"_x\"\n[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n",
         Some(json!({
             "format": 1, "arch": "sharc", "source_sha256": "0".repeat(64),
             "sections": [{"name": "seg_pmco", "kind": "text", "align": 8, "size": 6, "hex": "000000000000"}],
@@ -237,5 +255,15 @@ fn retarget_of_something_that_is_not_a_call_is_refused() {
         })),
     );
     let lib = library(vec![m]);
-    expect_err(run(&lib, &["t/r"]), "not a direct CALL");
+    let mut reg = registry();
+    let sha = Firmware::parse(&image(DT2).unwrap()).unwrap().syx_sha256;
+    for p in reg.ports.iter_mut().filter(|p| p.port.syx_sha256 == sha) {
+        p.hook.push(Hook {
+            name: "t.retarget.hook".into(),
+            site: "dsp.master.fn.q31_converter".into(),
+            offset: 0,
+            mode: "retarget".into(),
+        });
+    }
+    expect_err(run_with(&reg, &lib, &["t/r"]), "not a direct CALL");
 }

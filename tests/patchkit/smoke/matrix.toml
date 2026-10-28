@@ -24,11 +24,6 @@ modules = ["digikit/master-gain", "test/cf-demo"]
 [[cell]]
 device = "dt2"
 firmware = "1.17"
-modules = ["core/machines", "test/xslice"]
-
-[[cell]]
-device = "dt2"
-firmware = "1.17"
 modules = ["core/machines", "test/machine-clone"]
 
 [[cell]]

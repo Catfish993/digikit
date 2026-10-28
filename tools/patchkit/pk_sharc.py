@@ -1,46 +1,37 @@
 #!/usr/bin/env python3
-"""SHARC+ patchkit modules: assemble with Selache, link ourselves, re-decode every word, run on the core.
+"""SHARC+ test support: the Rust build (packages/patchkit/src/build/sharc_obj.rs) for rigs that place an object themselves, and the
+runner of the concrete SHARC+ core.
 
-Selache (public, pinned; tools/patchkit/pk_toolchains.py selache) assembles VISA source to a relocatable ELF whose
-parcels are big-endian. This module
+`patchkit build` makes the SHARC+ objects of the modules: Selache as a library assembles, the encoding-bug guards and fix-ups apply, and
+every instruction is re-decoded with the decoder of the runtime. This module calls the same code through `patchkit sharc` for tests that
+link an object at a base of their own and run it on the core:
 
-  1. assembles a source file (``assemble``) and reads sections, symbols and relocations (tools/patchkit/pk_elf.py),
-  2. places the section at a chosen short-word (PC) address and resolves the relocations (``link``),
-  3. swaps every 16-bit parcel to the boot-stream order and re-decodes every instruction with our own
-     decoder (tools/sharc_dev/sharc_isa.py): Selache's instruction extents must equal ours, no instruction may be
-     uncertain, and every relocated field must read back as the intended value (``verify``),
-  4. optionally runs the linked code on the concrete SHARC+ core (``run_call``, tools/sharc_dev/sharc_run.py).
+  1. ``assemble`` / ``compile_c``: the source (or the object of Selache's C compiler) as a ``SharcObject`` (section, symbols,
+     relocations, instruction rows, data sections);
+  2. ``link``: the object placed at a short-word (PC) address with externs, verified (every instruction re-decoded, every relocated
+     field read back); a ``Linked`` with the code in the order of the boot stream;
+  3. ``run_call`` / ``CallSession``: run the linked code on the concrete core (tools/sharc_dev/sharc_run.py).
 
-Relocations Selache emits (offsets and symbol values are in 16-bit parcels, the PC unit):
-  type 11  absolute 24-bit target of a 48-bit jump/call/cjump (low 24 bits of the instruction)
-  type 12  absolute 32-bit immediate/address of a 48-bit instruction (low 32 bits)
-Both carry the symbol's short-word address; the addend is encoded in the symbol name ("sym + 4").
-
-    uv run python -m tools.patchkit.pk_sharc module.s --base 0xB90000 [--extern name=0xADDR ...] [--json OUT]
+Source text: ``expand_includes``, ``apply_conditionals`` and ``sharc_object`` (the `.dko.json` object of sources) are `patchkit sharc`
+too.
 """
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
-import re
 import subprocess
 import tempfile
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent
 
-from tools.patchkit import (  # noqa: E402
-    pk_elf,  # noqa: E402
-    pk_toolchains,  # noqa: E402
-)
-from tools.sharc_dev import sharc_selache as sel  # noqa: E402
+from tools.patchkit import patchkit, pk_toolchains  # noqa: E402
 
-SECTION = "seg_pmco"
 PROCESSOR = "ADSP-21569"
-R_ABS24, R_ABS32 = 11, 12
 SW_ALIAS_BASE = (
     0x28000000  # loader byte address of short-word 0 (tools/sharc_dev/sharcldr.py)
 )
@@ -66,24 +57,13 @@ class SharcObject:
         str, tuple[int, bool]
     ]  # name -> (parcel offset, global); defined symbols only
     relocs: list[SharcReloc]
-    rows: list[tuple[int, str]]  # Selache instruction extents: (parcel offset, raw hex)
+    rows: list[tuple[int, str]]  # instruction extents: (parcel offset, raw hex)
     toolchain: dict[str, str] = field(default_factory=dict)
     # Data sections (DM): name -> (bytes in memory order, alignment, is_bss); data symbols: name -> (section, byte offset, global)
     data: dict[str, tuple[bytes, int, bool]] = field(default_factory=dict)
     data_symbols: dict[str, tuple[str, int, bool]] = field(default_factory=dict)
-
-    def to_json(self) -> dict[str, object]:
-        return {
-            "arch": "sharc+",
-            "parcel_order": "selache-be",
-            "source_sha256": self.source_sha256,
-            "toolchain": self.toolchain,
-            "section": self.section.hex(),
-            "symbols": {
-                k: {"parcel": v[0], "global": v[1]} for k, v in self.symbols.items()
-            },
-            "relocs": [r.__dict__ for r in self.relocs],
-        }
+    # what `link` hands to `patchkit sharc link`: ("text", source) or ("elf", object bytes, source, assembly)
+    origin: tuple = ()
 
 
 @dataclass
@@ -98,517 +78,102 @@ class Linked:
     )  # stores whose source register the instruction class excludes
 
 
-def _tool(name: str) -> Path:
-    d = pk_toolchains.selache_dir()
-    if d is None:
+def _sharc(args: list[str], stdin: str | None = None) -> str:
+    """`patchkit sharc ARGS` (stdout); a failure is a PkSharcError with the binary's message."""
+    r = subprocess.run(
+        [str(patchkit.binary()), "--root", str(ROOT), "sharc", *args],
+        cwd=ROOT,
+        input=stdin,
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode:
+        raise PkSharcError((r.stderr or r.stdout).strip().removeprefix("patchkit: "))
+    return r.stdout
+
+
+def _input_args(origin: tuple, tmp: Path) -> list[str]:
+    if origin[0] == "text":
+        (tmp / "m.s").write_text(origin[1])
+        return ["--text", str(tmp / "m.s")]
+    _, elf, source, asm = origin
+    (tmp / "m.doj").write_bytes(elf)
+    (tmp / "m.src").write_text(source)
+    (tmp / "m.asm").write_text(asm)
+    return [
+        "--elf",
+        str(tmp / "m.doj"),
+        "--source",
+        str(tmp / "m.src"),
+        "--asm",
+        str(tmp / "m.asm"),
+    ]
+
+
+def _object(origin: tuple) -> SharcObject:
+    with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
+        j = json.loads(_sharc(["asm", *_input_args(origin, Path(d))]))
+    return SharcObject(
+        j["source_sha256"],
+        bytes.fromhex(j["section"]),
+        {n: (p, g) for n, (p, g) in j["symbols"].items()},
+        [
+            SharcReloc(r["parcel"], r["rtype"], r["symbol"], r["addend"])
+            for r in j["relocs"]
+        ],
+        [(p, h) for p, h in j["rows"]],
+        j["toolchain"],
+        {n: (bytes.fromhex(h), a, b) for n, (h, a, b) in j["data"].items()},
+        {n: (s, o, g) for n, (s, o, g) in j["data_symbols"].items()},
+        origin,
+    )
+
+
+def assemble(source: str) -> SharcObject:
+    """Selache assembles `source` (an expanded text); the guards, the fix-ups and the instruction check of the build apply."""
+    return _object(("text", source))
+
+
+def compile_c(source: str) -> SharcObject:
+    """Selache's C compiler (selcc); evaluated in docs/findings/20-patch-toolchains.md. Its assembly passes the same source check as
+    hand-written assembly."""
+    sel = pk_toolchains.selache_dir()
+    if sel is None:
         raise PkSharcError(
             "selache is not built (uv run python -m tools.patchkit.pk_toolchains selache)"
         )
-    return d / "target" / "release" / name
-
-
-def split_symbol(name: str) -> tuple[str, int]:
-    m = re.fullmatch(r"\s*([A-Za-z_.$][\w.$]*)\s*(?:([+-])\s*(\w+))?\s*", name)
-    if not m:
-        raise PkSharcError(f"cannot parse relocation symbol {name!r}")
-    add = int(m.group(3), 0) * (-1 if m.group(2) == "-" else 1) if m.group(2) else 0
-    return m.group(1), add
-
-
-def _object(obj: Path, source_sha: str, section: str | None) -> SharcObject:
-    elf = pk_elf.parse(obj.read_bytes())
-    if section is None:
-        section = next(
-            (x.name for x in elf.sections if x.name in (SECTION, "seg_swco")), SECTION
-        )
-    listing = subprocess.run(
-        [str(_tool("seldump")), "-ns", section, str(obj)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    sec = elf.section(section)
-    if sec is None:
-        raise PkSharcError(
-            f"no section {section} (a .SECTION/PM {section}; directive is required)"
-        )
-    rows = sel.parse_listing(listing)
-    if b"".join(r.raw for r in rows) != sec.data:
-        raise PkSharcError("Selache listing bytes do not equal the section bytes")
-    symbols = {
-        s.name: (s.value, s.bind != "local")
-        for s in elf.symbols
-        if s.name and 0 < s.shndx < 0xFF00 and elf.sections[s.shndx].name == section
-    }
-    relocs = []
-    for r in elf.relocs:
-        if r.section != section:
-            raise PkSharcError(f"relocation in unexpected section {r.section}")
-        if r.symbol.name == "":
-            raise PkSharcError("section-relative relocation not supported")
-        name, add = split_symbol(r.symbol.name)
-        relocs.append(SharcReloc(r.offset, r.rtype, name, add + r.addend))
-    tc = {"selache_rev": sel.PINNED_REVISION}
-    for n in ("selas", "seldump"):
-        tc[n + "_sha256"] = hashlib.sha256(_tool(n).read_bytes()).hexdigest()
-    data: dict[str, tuple[bytes, int, bool]] = {}
-    for x in elf.sections:
-        if (
-            x.flags & pk_elf.SHF_ALLOC
-            and not x.flags & pk_elf.SHF_EXECINSTR
-            and x.name != section
-            and x.size
-        ):
-            data[x.name] = (
-                b"" if x.type == pk_elf.SHT_NOBITS else x.data,
-                max(x.align, 4),
-                x.type == pk_elf.SHT_NOBITS,
-            )
-    data_symbols = {
-        s.name: (elf.sections[s.shndx].name, s.value, s.bind != "local")
-        for s in elf.symbols
-        if s.name and 0 < s.shndx < 0xFF00 and elf.sections[s.shndx].name in data
-    }
-    native = _native_rows(
-        [(r.parcel_address, r.raw.hex()) for r in rows], relocs, sec.data
-    )
-    code, native = fix_shift_counts(sec.data, native)
-    return SharcObject(
-        source_sha,
-        code,
-        symbols,
-        relocs,
-        native,
-        tc,
-        data,
-        data_symbols,
-    )
-
-
-# Shift-immediate (Type 6) forms. shiftimm[22:16] is the ShiftImm opcode, PRM Table 17-9 (bits 21-16); these are the defined values.
-SHIFT_IMM_FORMS = frozenset({"6a_mem", "6a_nomem", "6b_shiftimm"})
-SHIFT_IMM_OPCODES = frozenset(
-    {0x00, 0x01, 0x02, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x19, 0x1B, 0x1D, 0x1F}
-    | {0x30, 0x31, 0x32, 0x33}
-)
-# LSHIFT, ASHIFT, OR LSHIFT, OR ASHIFT take a signed 8-bit count in shiftimm[15:8]; dataex[3:0] holds its sign extension (0xF for a
-# negative count, else 0) in every such instruction of the stock images (finding 05, "Selache shift-immediate encodings"). Selache
-# writes 0, and the silicon raises ILOPI on a negative count without it.
-SIGNED_SHIFT_OPCODES = frozenset({0x00, 0x01, 0x08, 0x09})
-
-
-def shift_imm_problem(fields: dict[str, int], form: str) -> str | None:
-    """Why a decoded shift-immediate instruction is wrong for the silicon, or None."""
-    if form not in SHIFT_IMM_FORMS:
-        return None
-    op = fields.get("shiftimm[22:16]")
-    if op not in SHIFT_IMM_OPCODES:
-        return f"undefined ShiftImm opcode {op} (PRM Table 17-9)"
-    if op in SIGNED_SHIFT_OPCODES:
-        negative = (fields.get("shiftimm[15:0]", 0) >> 8) & 0x80
-        if fields.get("dataex[3:0]") != (0xF if negative else 0):
-            return "shift count without its sign extension (dataex)"
-    return None
-
-
-def fix_shift_counts(
-    code: bytes, rows: list[tuple[int, str]]
-) -> tuple[bytes, list[tuple[int, str]]]:
-    """Set dataex of each signed shift count to its sign extension (the one Selache shift encoding that is repaired; the others are
-    refused, ENCODE_HAZARDS). CODE and ROWS are in Selache parcel order; dataex is bits 6-3 of byte 2 of the 48-bit word."""
-    out = bytearray(code)
-    fixed = list(rows)
-    items = sel.compare_rows(
-        [sel.ExternalInstruction(p, bytes.fromhex(h), "") for p, h in rows]
-    ).instructions
-    for k, item in enumerate(items):
-        fields = dict(item.native_fields)
-        form = item.native_form_id or ""
-        if form not in SHIFT_IMM_FORMS:
-            continue
-        if fields.get("shiftimm[22:16]") not in SIGNED_SHIFT_OPCODES:
-            continue
-        negative = (fields.get("shiftimm[15:0]", 0) >> 8) & 0x80
-        at = item.external.parcel_address * 2 + 2
-        out[at] = (out[at] & ~0x78) | (0x78 if negative else 0)
-        p, h = rows[k]
-        fixed[k] = (p, out[p * 2 : p * 2 + len(h) // 2].hex())
-    return bytes(out), fixed
-
-
-def _native_rows(
-    selache_rows: list[tuple[int, str]], relocs: list[SharcReloc], section: bytes
-) -> list[tuple[int, str]]:
-    """The instruction rows of the section by our decoder's extents, cross-checked against Selache's listing.
-
-    seldump lists the unrelocated object and splits some 48-bit forms early (Type 3a `DM(I,M) = Ureg` is
-    listed as 4 bytes plus a separate `0000` row), so Selache's rows cannot be the extents. Ours are; the
-    check against Selache is that every row it lists either starts where ours does with the same length, or
-    is a shorter listing of ours whose missing parcels are zero, and that each relocation Selache emitted
-    sits on the start of one of our instructions."""
-    # Width ties: a 16-bit short compute (Type 2c) and a 32-bit Type 2b share their leading bits, so a free-running decode
-    # of the object reads `R0 = R0 + R1;` (0xc001) plus the next word as one 2b. The emulator breaks the tie with a lookahead
-    # over the successors (packages/emulator/sharc-rt/src/decode.rs, `decode_width_resolved`); here the assembler, which
-    # chose the form, decides: its shorter extent is taken when that extent itself decodes to a form (finding 45).
-    selache_len = {parcel: len(raw) // 2 for parcel, raw in selache_rows}
-    isa = sel.load_instruction_set()
-    boot = sel.swap_parcels(section)
-    rows = []
-    offset = 0
-    while offset < len(boot):
-        result = isa.decode_bytes(boot[offset : offset + 6])
-        extent = (
-            min(2, len(boot) - offset)
-            if result.instruction is None
-            else result.instruction.extent_bytes
-        )
-        short = selache_len.get(offset // 2)
-        if short and short < extent and short in (2, 4):
-            narrow = isa.decode_bytes(boot[offset : offset + short], 8 * short)
-            if (
-                narrow.instruction is not None
-                and narrow.instruction.extent_bytes == short
-            ):
-                extent = short
-        rows.append(
-            (offset // 2, sel.swap_parcels(boot[offset : offset + extent]).hex())
-        )
-        offset += extent
-    native = rows
-    nat = dict(native)
-    for parcel, raw in selache_rows:
-        if parcel in nat:
-            mine = nat[parcel]
-            if mine != raw and not (
-                mine.startswith(raw) and set(mine[len(raw) :]) <= {"0"}
-            ):
-                raise PkSharcError(
-                    f"parcel {parcel:#x}: Selache lists {raw}, our decoder {mine}"
-                )
-    for r in relocs:
-        if r.parcel not in nat:
-            raise PkSharcError(
-                f"relocation at parcel {r.parcel:#x} is not on one of our instruction starts"
-            )
-    return native
-
-
-# Selache encode bugs found against the firmware image and PRM Table 17-9 (docs/findings/05-sharc-isa-and-decoding.md, "Selache
-# shift-immediate encodings"): each form assembles to another instruction or to an undefined opcode, and the bytes still decode to a
-# valid-looking form, so the source form is refused. A shift count in a register (`R0 = ASHIFT R1 BY R2;`) assembles correctly.
-# LSHIFT by a negative count is repaired instead (fix_shift_counts).
-_IMM = r"\bby\s+[-+]?\s*\d"
-ENCODE_HAZARDS = [
-    (
-        re.compile(r"\bashift\b[^;]*" + _IMM, re.I),
-        "ASHIFT ... BY <count> gets an undefined ShiftImm opcode (100000, PRM: 000001)",
-    ),
-    (
-        re.compile(r"\bor\s+lshift\b[^;]*" + _IMM, re.I),
-        "Rn = Rn OR LSHIFT ... BY <count> assembles as a plain LSHIFT",
-    ),
-    (
-        re.compile(r"\bfdep\b[^;]*" + _IMM, re.I),
-        "FDEP ... BY <pos:len> gets the (SE) or the plain FDEP opcode",
-    ),
-    (
-        re.compile(r"\bfext\b[^;]*" + _IMM + r"[^;]*\(\s*se\s*\)", re.I),
-        "FEXT ... BY <pos:len> (SE) assembles to an unrelated word",
-    ),
-]
-
-
-def _hazards(source: str) -> None:
-    code = re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.S)
-    for pat, why in ENCODE_HAZARDS:
-        m = pat.search(code)
-        if m:
-            raise PkSharcError(f"known Selache encode bug ({why}): {m.group(0)!r}")
-
-
-# Selache ignores the (SW)/(SWSE) suffix of a direct load (it emits the normal-word form), so
-# `Rn = DM(symbol) (SW|SWSE);` is assembled as the normal-word load and rewritten here to the short-word Type 14d
-# word (opcode 0x1a, bit 38 short word, bit 36 sign extension; the form tools/sharc_dev/sharc_asm.py `load_sw_abs` emits).
-# The re-decode in `verify` then sees the short-word form and its relocated address.
-_SW_LOAD = re.compile(
-    r"^(\s*)R(\d{1,2})\s*=\s*DM\(\s*([A-Za-z_.$][\w.$]*)\s*\)\s*\((SWSE|SW)\)\s*;",
-    re.I | re.M,
-)
-
-
-def _sw_prepare(source: str) -> tuple[str, list[tuple[str, bool]]]:
-    marks: list[tuple[str, bool]] = []
-
-    def sub(m: re.Match) -> str:
-        label = f"_pk_sw{len(marks)}"
-        marks.append((label, m.group(4).upper() == "SWSE"))
-        return f"{m.group(1)}.GLOBAL {label};\n{m.group(1)}{label}:\n{m.group(1)}R{m.group(2)} = DM({m.group(3)});"
-
-    return _SW_LOAD.sub(sub, source), marks
-
-
-def _sw_apply(obj: SharcObject, marks: list[tuple[str, bool]]) -> None:
-    if not marks:
-        return
-    code = bytearray(obj.section)
-    at_reloc = {r.parcel: r for r in obj.relocs}
-    for label, signed in marks:
-        parcel = obj.symbols.pop(label)[0]
-        at = parcel * 2
-        if parcel not in at_reloc or at_reloc[parcel].rtype != R_ABS32:
-            raise PkSharcError(f"{label}: expected a 32-bit relocated load")
-        if code[at] != 0x10 or code[at + 1] & 0xF0:
-            raise PkSharcError(
-                f"{label}: not a normal-word direct load ({code[at : at + 2].hex()})"
-            )
-        code[at] = 0x1A
-        code[at + 1] |= 0x40 | (0x10 if signed else 0)
-    obj.section = bytes(code)
-
-
-# Selache drops `.VAR name[N];` and cannot emit a multi-value `.VAR`, so a zero-filled array is declared with
-# `.PKDATA name, bytes;` (loaded zeros, part of the boot-stream block) or `.PKBSS name, bytes;` (reserved memory the
-# stream does not load: the program must write it before it reads it) instead: the line is removed before
-# assembly, `name` becomes an extern of the source and the object gets a data or bss section of that size with a
-# global data symbol `name` (the linker allocates it).
-_PKBSS = re.compile(
-    r"^[ \t]*\.PK(BSS|DATA)[ \t]+([A-Za-z_.$][\w.$]*)[ \t]*,[ \t]*(0x[0-9a-fA-F]+|\d+|[A-Za-z_]\w*)[ \t]*;[^\n]*$",
-    re.M,
-)
-_DEFINE = re.compile(
-    r"^[ \t]*#define[ \t]+([A-Za-z_]\w*)[ \t]+(0x[0-9a-fA-F]+|\d+)[ \t]*(?://[^\n]*)?$",
-    re.M,
-)
-
-
-def _bss_prepare(source: str) -> tuple[str, list[tuple[str, int, bool]]]:
-    found: list[tuple[str, int, bool]] = []
-    # the size may be a macro defined as a plain number in the same source (the generated device includes of `patchkit gen`)
-    defines = {m.group(1): int(m.group(2), 0) for m in _DEFINE.finditer(source)}
-
-    def sub(m: re.Match) -> str:
-        size = m.group(3)
-        if size not in defines and not size[0].isdigit():
-            raise PkSharcError(
-                f".PK{m.group(1)} {m.group(2)}: size {size} is not a number or a #define of one"
-            )
-        found.append(
-            (
-                m.group(2),
-                defines[size] if size in defines else int(size, 0),
-                m.group(1) == "BSS",
-            )
-        )
-        return f".EXTERN {m.group(2)};"
-
-    return _PKBSS.sub(sub, source), found
-
-
-def assemble(source: str, section: str | None = None) -> SharcObject:
-    _hazards(source)
-    original = source
-    source, bss_decls = _bss_prepare(source)
-    source, sw_marks = _sw_prepare(source)
-    with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
-        src, obj = Path(d) / "m.s", Path(d) / "m.doj"
-        src.write_text(source)
-        r = subprocess.run(
-            [str(_tool("selas")), "-proc", PROCESSOR, "-o", str(obj), str(src)],
-            capture_output=True,
-            text=True,
-        )
-        if r.returncode:
-            raise PkSharcError(f"selas failed:\n{r.stdout}{r.stderr}")
-        result = _object(obj, hashlib.sha256(original.encode()).hexdigest(), section)
-        _sw_apply(result, sw_marks)
-        for name, size, is_bss in bss_decls:
-            if size <= 0 or size % 4:
-                raise PkSharcError(
-                    f".PKBSS/.PKDATA {name}: size {size} is not a positive multiple of 4"
-                )
-            sec = f"pkbss_{name}" if is_bss else f"pkdata_{name}"
-            result.data[sec] = (bytes(size), 4, is_bss)
-            result.data_symbols[name] = (sec, 0, True)
-        return result
-
-
-def compile_c(source: str, section: str | None = None) -> SharcObject:
-    """Selache's C compiler (selcc); evaluated in docs/findings/20-patch-toolchains.md."""
+    selcc = str(sel / "target" / "release" / "selcc")
     with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
         src, obj, asm = Path(d) / "m.c", Path(d) / "m.doj", Path(d) / "m.s"
         src.write_text(source)
-        # the compiler's assembly passes the same source check as hand-written assembly
-        s = subprocess.run(
-            [str(_tool("selcc")), "-proc", PROCESSOR, "-S", "-o", str(asm), str(src)],
-            capture_output=True,
-            text=True,
-        )
-        if s.returncode:
-            raise PkSharcError(f"selcc failed:\n{s.stdout}{s.stderr}")
-        _hazards(asm.read_text())
-        r = subprocess.run(
-            [str(_tool("selcc")), "-proc", PROCESSOR, "-c", "-o", str(obj), str(src)],
-            capture_output=True,
-            text=True,
-        )
-        if r.returncode:
-            raise PkSharcError(f"selcc failed:\n{r.stdout}{r.stderr}")
-        return _object(obj, hashlib.sha256(source.encode()).hexdigest(), section)
-
-
-def self_check(code: bytearray, at: int, size: int, r: SharcReloc) -> None:
-    """Selache leaves the field zero or holding the addend; anything else means we misread the relocation."""
-    mask = (1 << (8 * size)) - 1
-    have = int.from_bytes(code[at : at + size], "big")
-    if have not in (0, r.addend & mask):
-        raise PkSharcError(
-            f"parcel {r.parcel:#x}: field {have:#x} is neither 0 nor the addend {r.addend} before relocation"
-        )
+        for flag, out in (("-S", asm), ("-c", obj)):
+            r = subprocess.run(
+                [selcc, "-proc", PROCESSOR, flag, "-o", str(out), str(src)],
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode:
+                raise PkSharcError(f"selcc failed:\n{r.stdout}{r.stderr}")
+        return _object(("elf", obj.read_bytes(), source, asm.read_text()))
 
 
 def link(
     obj: SharcObject, base_sw: int, externs: dict[str, int] | None = None
 ) -> Linked:
-    externs = externs or {}
-    code = bytearray(obj.section)
-    syms = {n: base_sw + off for n, (off, _g) in obj.symbols.items()}
-    extents = dict(obj.rows)
-    for r in obj.relocs:
-        if r.symbol in syms:
-            target = syms[r.symbol]
-        elif r.symbol in externs:
-            target = externs[r.symbol]
-        else:
-            raise PkSharcError(f"unresolved symbol {r.symbol}")
-        target += r.addend
-        row = bytes.fromhex(extents.get(r.parcel, ""))
-        if len(row) != 6:
-            raise PkSharcError(
-                f"relocation at parcel {r.parcel:#x}: not a 48-bit instruction"
-            )
-        at = r.parcel * 2
-        if r.rtype == R_ABS24:
-            if not 0 <= target < 1 << 24:
-                raise PkSharcError(
-                    f"{r.symbol}: {target:#x} does not fit a 24-bit target"
-                )
-            self_check(code, at + 3, 3, r)
-            code[at + 3 : at + 6] = target.to_bytes(3, "big")
-        elif r.rtype == R_ABS32:
-            self_check(code, at + 2, 4, r)
-            code[at + 2 : at + 6] = (target & 0xFFFFFFFF).to_bytes(4, "big")
-        else:
-            raise PkSharcError(f"relocation type {r.rtype} not supported")
-    out = Linked(base_sw, bytes(code), sel.swap_parcels(bytes(code)), syms)
-    verify(obj, out, externs)
-    return out
-
-
-def _field(fields: dict[str, int], stem: str) -> int | None:
-    """Join the pieces ``stem[hi:lo]`` of a decoded form into one number."""
-    parts = []
-    for k, v in fields.items():
-        m = re.fullmatch(re.escape(stem) + r"\[(\d+):(\d+)\]", k)
-        if m:
-            parts.append((int(m.group(2)), v))
-    if not parts:
-        return fields.get(stem)
-    return sum(v << lo for lo, v in parts)
-
-
-# The forms that address memory through an index register (Ia/Ic, with an immediate or register modifier): the ISA encodes the source of
-# their stores as UREGXDAG1 / UREGXDAG2. Type 14a (`DM(<addr32>) = Ureg`) has no index register and takes the full UREG class.
-INDEXED_MEMORY_FORMS = frozenset({"3a", "3b", "3d", "15a", "15b"})
-
-
-def ureg_class_problems(fields: dict[str, int], where: str, form: str) -> list[str]:
-    """A store through DM with an index register cannot take a DAG1 register (I0-I7, M0-M7, L0-L7, B0-B7) and a store through PM cannot
-    take a DAG2 register: the ISA encodes the source of such a store as UREGXDAG1 / UREGXDAG2 (SHARC+ PRM 15-7, 15-10, 13-13: "the Ureg
-    may not be from the same DAG as Ia/Mb or Ic/Md"). `form` is the instruction form id (Types 3a, 3b, 3d, 15a, 15b are checked; Type 14a,
-    the direct-address store, is exempt, as is every other form). Loads take every register. The stock DSP image has not one store of the
-    excluded kind (finding 49 section 10). The assembler and the emulator accept them; the silicon does not run them as written."""
-    if form not in INDEXED_MEMORY_FORMS:
-        return []
-    d = _field(fields, "d")
-    u = _field(fields, "ureg")
-    if d != 1 or u is None or not 0x10 <= u <= 0x4F:
-        return []
-    g = _field(fields, "g")
-    if g is None:
-        return []  # a form with no DM/PM select (an instruction word with no memory-side choice)
-    dag = 1 if (u & 0xF) < 8 else 2
-    if (g == 0 and dag == 1) or (g == 1 and dag == 2):
-        name = "IMLB"[(u >> 4) - 1] + str(u & 0xF)
-        return [f"{where}: {'PM' if g else 'DM'} store of {name} (DAG{dag})"]
-    return []
-
-
-def verify(obj: SharcObject, linked: Linked, externs: dict[str, int]) -> None:
-    """Every instruction decodes natively with the extent Selache chose; relocated fields read back."""
-    rows = []
-    for parcel, raw_hex in obj.rows:
-        at = parcel * 2
-        raw = linked.code_selache[at : at + len(raw_hex) // 2]
-        rows.append(sel.ExternalInstruction(parcel, raw, ""))
-    cmp = sel.compare_rows(rows)
-    problems = []
-    by_parcel = {}
-    isa = sel.load_instruction_set()
-    for item in cmp.instructions:
-        by_parcel[item.external.parcel_address] = item
-        linked.ureg_class += ureg_class_problems(
-            dict(item.native_fields),
-            f"parcel {item.external.parcel_address:#x}",
-            item.native_form_id or "",
-        )
-        shift = shift_imm_problem(dict(item.native_fields), item.native_form_id or "")
-        if shift:
-            problems.append(
-                f"parcel {item.external.parcel_address:#x} {item.external.raw.hex()}: {shift}"
-            )
-        if item.native_form_id is None or not item.extent_agrees:
-            # a width tie (Type 2c against Type 2b): the assembler's extent decides when a form of that width matches
-            n = item.external.extent_bytes
-            if n in (2, 4):
-                tie = isa.decode_bytes(item.boot_bytes, 8 * n)
-                if tie.instruction is not None and tie.instruction.extent_bytes == n:
-                    continue
-            problems.append(
-                f"parcel {item.external.parcel_address:#x} {item.external.raw.hex()}: "
-                f"native {item.native_form_id or item.native_candidates} extent_agrees={item.extent_agrees}"
-            )
-    # The emulator breaks the 2b / 2c width tie with a lookahead over the successors; the silicon has no such choice. An
-    # instruction the emulator would read with another extent than the assembler's runs differently there (finding 45).
-    from tools.sharc_dev import sharc_disasm
-
-    for parcel, raw_hex in obj.rows:
-        mine = len(raw_hex) // 2
-        seen = sharc_disasm.decode_confident(linked.code_boot, parcel * 2)
-        if seen.length_bytes is not None and seen.length_bytes != mine:
-            problems.append(
-                f"parcel {parcel:#x} {raw_hex}: the emulator's width resolution reads {seen.type_name} of "
-                f"{seen.length_bytes} bytes, the assembler wrote {mine} (a 16-bit `Rn = Rn op Rx`: the emulator would run "
-                f"another instruction than the silicon; use distinct registers, e.g. `R0 = R1 + R2`; finding 45)"
-            )
-    for r in obj.relocs:
-        item = by_parcel[r.parcel]
-        fields = dict(item.native_fields)
-        want = (linked.symbols.get(r.symbol, externs.get(r.symbol)) or 0) + r.addend
-        got = None
-        for stem in ("addr", "data", "reladdr"):
-            got = _field(fields, stem)
-            if got is not None:
-                break
-        mask = 0xFFFFFF if r.rtype == R_ABS24 else 0xFFFFFFFF
-        if got != want & mask:
-            problems.append(
-                f"parcel {r.parcel:#x} ({item.native_form_id}): relocated field reads {got} want {want & mask:#x}"
-            )
-    if problems:
-        raise PkSharcError(
-            "Selache output disagrees with our decoder:\n  " + "\n  ".join(problems)
-        )
-    linked.checked = len(cmp.instructions)
+    """Place `obj` at the short-word address `base_sw`, resolve its relocations against its own symbols and `externs`, and verify it."""
+    with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
+        args = ["link", *_input_args(obj.origin, Path(d)), "--base", hex(base_sw)]
+        for n, v in (externs or {}).items():
+            args += ["--extern", f"{n}={v:#x}"]
+        j = json.loads(_sharc(args))
+    return Linked(
+        j["base_sw"],
+        bytes.fromhex(j["code_selache"]),
+        bytes.fromhex(j["code_boot"]),
+        j["symbols"],
+        j["checked"],
+        j["ureg_class"],
+    )
 
 
 def build(
@@ -616,6 +181,44 @@ def build(
 ) -> tuple[SharcObject, Linked]:
     obj = assemble(source)
     return obj, link(obj, base_sw, externs)
+
+
+def sharc_include_dirs(moddir: Path) -> list[Path]:
+    """The include directories of a SHARC+ object of the module: its generated and own sources, then the shared ones listed in
+    tools/patchkit/toolchain/pins.toml (the file `patchkit build` reads). The directories of the sources come after these."""
+    pins = tomllib.loads((HERE / "toolchain" / "pins.toml").read_text())
+    return [
+        moddir / "build" / "gen",
+        moddir / "src",
+        *(ROOT / d for d in pins["include"]["sharc"]),
+    ]
+
+
+def expand_includes(text: str, dirs: list[Path], depth: int = 0) -> str:
+    """Replace `#include "name"` lines by the file's text (searched in `dirs`); `patchkit sharc inc`."""
+    args = [x for d in dirs for x in ("-I", str(d))]
+    return _sharc(["inc", *args], stdin=text)
+
+
+def apply_conditionals(text: str, defines: frozenset[str] = frozenset()) -> str:
+    """Build options: `#ifdef NAME` / `#ifndef NAME` / `#else` / `#endif` lines; `patchkit sharc cond`."""
+    args = [x for d in sorted(defines) for x in ("--define", d)]
+    return _sharc(["cond", *args], stdin=text)
+
+
+def sharc_object(
+    sources: list[Path],
+    include_dirs: list[Path] | None = None,
+    defines: frozenset[str] = frozenset(),
+) -> dict:
+    """One or more `.s` files, concatenated into one translation unit, to the `.dko.json` object `patchkit build` writes."""
+    args = [str(p) for p in sources]
+    for d in include_dirs or []:
+        args += ["-I", str(d)]
+    for d in sorted(defines):
+        args += ["--define", d]
+    text = _sharc(["text", *args])
+    return json.loads(_sharc(["object", "--text", "-"], stdin=text))
 
 
 # ---------------------------------------------------------------- running on the concrete core
@@ -775,6 +378,23 @@ class CallSession:
         self.runner.set_watch_active(False)
         self._recording = True
 
+    def record_reads(self, addr: int, count: int) -> None:
+        """Log every DM read of the normal-word range [addr, addr + count) of the following calls in ``stores`` (the same
+        watchpoint log as ``record_stores``; the two replace each other). A kernel test uses it to prove that a routine does
+        not read past the buffers it is given."""
+        wp = self._run.Watchpoint(
+            addr,
+            addr + count,
+            on_read=True,
+            on_write=False,
+            stop=False,
+            label="read",
+            normal_word=True,
+        )
+        self.runner.attach_watchpoints([wp])
+        self.runner.set_watch_active(False)
+        self._recording = True
+
     stores: tuple = ()
     _recording = False
 
@@ -866,30 +486,3 @@ class CallSession:
                 for n in names
             },
         }
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    ap.add_argument("source")
-    ap.add_argument(
-        "--base",
-        type=lambda x: int(x, 0),
-        required=True,
-        help="short-word (PC) address of the section",
-    )
-    ap.add_argument("--extern", action="append", default=[], metavar="NAME=ADDR")
-    ap.add_argument("--json", help="write the object prototype here")
-    a = ap.parse_args()
-    externs = {k: int(v, 0) for k, v in (e.split("=") for e in a.extern)}
-    obj, linked = build(Path(a.source).read_text(), a.base, externs)
-    print(
-        f"linked {len(linked.code_boot)} bytes at sw {a.base:#x}; {linked.checked} instructions re-decoded OK"
-    )
-    for n, v in sorted(linked.symbols.items(), key=lambda kv: kv[1]):
-        print(f"  {v:#08x} {n}")
-    if a.json:
-        Path(a.json).write_text(json.dumps(obj.to_json(), indent=1))
-
-
-if __name__ == "__main__":
-    main()

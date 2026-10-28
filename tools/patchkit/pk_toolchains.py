@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 # The main tree holds out/ (lanes link to it); resolve through the symlink.
@@ -50,15 +51,14 @@ SELACHE_DIR = TOOLS / "selache"
 # Rust through GCC (finding 23 S1b, finding 26). Every revision is pinned.
 CG_DIR = TOOLS / "codegen-gcc"
 CG_PATCHES = pathlib.Path(__file__).resolve().parent / "toolchain"
-RUST_NIGHTLY = (
-    "nightly-2026-10-11"  # the channel of the backend's rust-toolchain.toml at CG_REV
-)
+_PINS = tomllib.loads(
+    (CG_PATCHES / "pins.toml").read_text()
+)  # also read by packages/patchkit/src/build/
+RUST_NIGHTLY = _PINS["rust_nightly"]
 CG_URL = "https://github.com/rust-lang/rustc_codegen_gcc"
-CG_REV = "a7d8a5227b520187e3d93c1f7fc01dd1ba8659cf"
+CG_REV = _PINS["cg_rev"]
 GCC_JIT_URL = "https://github.com/rust-lang/gcc"
-GCC_JIT_REV = (
-    "37ea7cd851f04ee6a313c5067c9fde9328f876aa"  # = libgccjit.version at CG_REV
-)
+GCC_JIT_REV = _PINS["gcc_jit_rev"]
 LIBGCC_CF_NAME = "libgcc-cf54418.a"
 RUST_TARGET = CG_PATCHES / "m68k-cf-none-elf-a2.json"
 

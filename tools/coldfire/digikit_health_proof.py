@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emulator proof of SETTINGS > DIGIKIT > HEALTH (modules/core/health, finding 41-digikit-health.md).
+"""Emulator proof of SETTINGS > DIGIKIT > HEALTH (modules/core/adapters/health, finding 41-digikit-health.md).
 
     uv run python -m tools.coldfire.digikit_health_proof run [--image dt2-1.16] [--quick] [--no-cost]
 
@@ -208,9 +208,7 @@ class HealthProof:
         for _ in range(8):
             self.tap("DOWN", 200)
         self.tap("YES", 700)  # DIGIKIT
-        self.tap("DOWN", 200)
-        self.tap("DOWN", 200)
-        self.tap("DOWN", 200)  # MODULES, FX ROUTES, ABOUT, HEALTH
+        self.tap("DOWN", 200)  # ABOUT, HEALTH
         self.tap("YES", 700)
 
     def frame(self, name: str) -> str:
@@ -292,9 +290,9 @@ class HealthProof:
             (ROOT / "devices" / "ports" / f"{self.image}.toml").read_text()
         )
         for a in port["anchor"]:
-            if a["name"] == "health.heap.desc_lit":
+            if a["name"] == "cf.mem.site.heap.desc_lit":
                 return self.w(a["addr"])
-        raise KeyError("health.heap.desc_lit")
+        raise KeyError("cf.mem.site.heap.desc_lit")
 
     # ---- scenarios
     def setup(self) -> None:
@@ -315,7 +313,7 @@ class HealthProof:
     def sites_check(self) -> None:
         """An image patched without core/health leaves the boot thread's last call and the block handler's entry as the firmware has them
         (no write of the patch plan touches them); the image with it patches exactly those two sites, for core/health."""
-        sites = {"health.hook.idle": 6, "health.hook.block": 8}
+        sites = {"cf.rtos.site.idle": 6, "cf.link.fn.block_isr": 8}
         without = self.env.build_image(f"{RT},core/digikit-menu", "nohealth")
         plan0, plan1 = without.plan, self.img.plan
 
@@ -430,7 +428,9 @@ class HealthProof:
             (ROOT / "devices" / "ports" / f"{self.image}.toml").read_text()
         )
         rec_lit = next(
-            a["addr"] for a in port["anchor"] if a["name"] == "health.rec_lit"
+            a["addr"]
+            for a in port["anchor"]
+            if a["name"] == "cf.link.site.reply_copy_lit"
         )
         rec = self.w(rec_lit)
         direct = [self.w(rec) for _ in range(4)]
@@ -553,7 +553,8 @@ class HealthProof:
             poll != 0 and r0 >= 1,
             f"poll {poll:#x} redraws {r0}",
         )
-        view = self.w(self.sym("HEALTHV"))
+        # DK_HEALTH_MENU is the core/ui menu object (dk_ui_menu, modules/core/adapters/ui/src/ui.c): the firmware's view is the pointer at +4
+        view = self.w(self.w(self.sym("DK_HEALTH_MENU")) + 4)
         dirty_off, parent_off = 0x38 + 0x14, 0x38 + 0x2C
         p0, i0 = self.w(self.sym("DK_POLLS")), self.icount()
         self.rig.s.run_ms(2000)  # no key press
@@ -566,12 +567,18 @@ class HealthProof:
             3 <= r1 - r0 <= 6,
             f"{r0} -> {r1} in 2 s",
         )
-        self.rig.s.run_ms(300)
-        d = self.w(view + dirty_off - dirty_off % 4)
+        # the refresh sets the view's dirty flag and the next frame consumes it: sample it every 50 ms for a second (the refresh is every half
+        # second, so a single read depends on where in that period it falls) and see it set, then cleared
+        states = []
+        for _ in range(20):
+            self.rig.s.run_ms(50)
+            d = self.w(view + dirty_off - dirty_off % 4)
+            states.append(((d >> (8 * (3 - dirty_off % 4))) & 0xFF) != 0)
+        consumed = any(a and not b for a, b in zip(states, states[1:], strict=False))
         self.check(
-            "the firmware redrew the view (its dirty flag is consumed)",
-            ((d >> (8 * (3 - dirty_off % 4))) & 0xFF) == 0,
-            f"flag word {d:#x}",
+            "the firmware redrew the view (its dirty flag is set by a refresh and consumed)",
+            consumed,
+            "".join("1" if x else "0" for x in states),
         )
         self.check(
             "the view is on the stack (parent pointer set)",

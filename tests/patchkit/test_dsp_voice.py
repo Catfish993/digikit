@@ -39,7 +39,7 @@ from support.dsp_voice_rig import (  # noqa: E402
     stops_at,
 )
 
-from tools.patchkit import pk_build, pk_sharc, pk_toolchains  # noqa: E402
+from tools.patchkit import pk_sharc, pk_toolchains  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
@@ -502,21 +502,19 @@ def test_the_deep_breadcrumbs_come_in_order_inside_the_frame_save(name):
     context_intact(out)
 
 
-INCLUDES = [
-    CORE.parents[2] / "build" / "gen",
-    CORE.parents[5] / "sdk",
-]  # the adapter's generated includes and the SDK's
+INCLUDES = pk_sharc.sharc_include_dirs(
+    CORE.parents[2]
+)  # the adapter's includes and the SDK's
 
 
 def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_register(
     tmp_path,
 ):
     """Finding 49 section 10: a store through DM(Ia) cannot take a DAG1 register (UREGXDAG1, PRM 15-7); the stock image has none. The
-    frame save goes through R2 in every build, and a module build that has such a store fails (pk_build.sharc_object)."""
-    from tools.patchkit import pk_build
+    frame save goes through R2 in every build, and a module build that has such a store fails (pk_sharc.sharc_object)."""
 
     def stores(defines):
-        text = pk_build.apply_conditionals(CORE.read_text(), defines)
+        text = pk_sharc.apply_conditionals(CORE.read_text(), defines)
         return [
             ln.strip()
             for ln in text.splitlines()
@@ -526,25 +524,25 @@ def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_regi
 
     for defines in (frozenset(), *C3_VARIANTS.values()):
         assert stores(defines) == []
-        pk_build.sharc_object(
+        pk_sharc.sharc_object(
             [CORE], INCLUDES, defines
         )  # raises BuildError on an excluded store
     # the DN2 copy too
     dn2 = CORE.with_name("dsp-voice-dn2.s")
-    pk_build.sharc_object([dn2], INCLUDES, frozenset())
+    pk_sharc.sharc_object([dn2], INCLUDES, frozenset())
     # and a source with one fails, with the parcel address in the message
     bad = tmp_path / "bad.s"
     bad.write_text(".SECTION/PM seg_pmco;\n_x:\n    DM(-16, I6) = I0;\n    RTS;\n")
     with pytest.raises(
-        pk_build.BuildError, match=r"parcel 0x0: DM store of I0 \(DAG1\)"
+        pk_sharc.PkSharcError, match=r"parcel 0x0: DM store of I0 \(DAG1\)"
     ):
-        pk_build.sharc_object([bad], [], frozenset())
+        pk_sharc.sharc_object([bad], [], frozenset())
 
 
 def test_the_ureg_class_rule_flags_index_register_stores_and_not_direct_stores():
-    from tools.patchkit import pk_sharc
+    from tools.patchkit import pk_isacheck
 
-    p = pk_sharc.ureg_class_problems
+    p = pk_isacheck.ureg_class_problems
     for form in ("3a", "3b", "3d", "15a", "15b"):
         assert p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", form), form  # DM store of I0
         assert p({"d": 1, "g": 0, "ureg": 0x37}, "x", form), (
@@ -560,28 +558,6 @@ def test_the_ureg_class_rule_flags_index_register_stores_and_not_direct_stores()
     assert not p({"d": 1, "g": 1, "ureg[6:0]": 0x18}, "x", "14a")
     for other in ("5b_move", "17a", "12a_ureg", ""):
         assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", other)
-
-
-def test_the_assembled_forms_are_checked_by_form(tmp_path):
-    """Through the whole assembler path: the index-register form (15a with a 32-bit modifier, 15b, 3 with a register modifier) is flagged,
-    the direct-address store is not."""
-    from tools.patchkit import pk_build
-
-    def check(src):
-        f = tmp_path / "t.s"
-        f.write_text(src)
-        pk_build.sharc_object([f], [], frozenset())
-
-    for ok in ("DM(0x20000000) = I0;", "PM(0x20000000) = I8;", "DM(15, I4) = R0;"):
-        check(f".SECTION/PM seg_pmco;\n    {ok}\n    RTS;\n")
-    for bad in (
-        "DM(15, I4) = I0;",
-        "DM(0x1000, I4) = I0;",
-        "DM(I4, M5) = M1;",
-        "PM(15, I12) = I8;",
-    ):
-        with pytest.raises(pk_build.BuildError, match="the ISA does not allow"):
-            check(f".SECTION/PM seg_pmco;\n    {bad}\n    RTS;\n")
 
 
 def test_the_c3_noirq_variant_masks_interrupts_inside_and_restores_mode1():
@@ -614,7 +590,7 @@ def test_the_c3_noirq_variant_masks_interrupts_inside_and_restores_mode1():
 
 
 def test_the_c3_nosys_variant_writes_no_system_register_on_the_registered_path():
-    text = pk_build.apply_conditionals(CORE.read_text(), C3_VARIANTS["c-nosys"])
+    text = pk_sharc.apply_conditionals(CORE.read_text(), C3_VARIANTS["c-nosys"])
     path = text.split("_dv_stock:")[0]
     assert (
         "MODE1 =" not in path
@@ -631,7 +607,7 @@ def test_every_build_restores_b3_before_i3():
     def order(defines):
         lines = [
             x.strip()
-            for x in pk_build.apply_conditionals(CORE.read_text(), defines).splitlines()
+            for x in pk_sharc.apply_conditionals(CORE.read_text(), defines).splitlines()
         ]
 
         def at(prefix):

@@ -1,4 +1,4 @@
-"""core/fx, the send route (modules/core/fx/src/dsp/fxsend.s, finding 62): the send hook and the master hook on the concrete SHARC+ core.
+"""core/fx, the send route (modules/core/adapters/fx/src/dsp/fxsend.s, finding 62): the send hook and the master hook on the concrete SHARC+ core.
 
 The first group needs only the assembler (tests/support/fx_rig.py); the last one patches the stock Digitakt II image (skipped when it is not in the repository).
 The model of the send bus is the routine's own float32 arithmetic: gain (byte / 127) squared, ramped by adding the step per sample, tracks summed in order."""
@@ -570,7 +570,7 @@ def test_the_send_hook_takes_the_first_instruction_of_the_master_function(
         plan_path,
     )
     plan = json.loads(plan_path.read_text())
-    (hook,) = [h for h in plan["hooks"] if h["anchor"] == "dsp.fx.send"]
+    (hook,) = [h for h in plan["hooks"] if h["anchor"] == "dsp.fx.fn.send"]
     assert (
         hook["cpu"] == "sharc" and hook["displaced"] == "run" and hook["site_len"] == 6
     )
@@ -584,7 +584,10 @@ def test_the_send_hook_takes_the_first_instruction_of_the_master_function(
 @needs_image
 def test_the_anchors_of_the_send_route_hold_the_track_bus_and_the_return_bus():
     port = (ROOT / "devices/ports/dt2-1.17.toml").read_text()
-    for name, value in (("dsp.fx.trackbus", 0x252DF8), ("dsp.fx.return", 0x254778)):
+    for name, value in (
+        ("dsp.fx.value.send.track_bus", 0x252DF8),
+        ("dsp.fx.value.send.return_bus", 0x254778),
+    ):
         i = port.index(f'name = "{name}"')
         block = port[i : i + 400]
         assert f"addr = {value:#x}" in block, name

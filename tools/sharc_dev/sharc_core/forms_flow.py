@@ -347,7 +347,7 @@ def _type_25c_rframe(
     frame = _ureg(state.uregs, UREG_CODES["I6"])
     state.uregs[UREG_CODES["I7"]] = frame
     if isinstance(frame, Const):
-        restored = _dm_read(state, frame.value, 4)
+        restored = _dm_read(state, frame.value, 4, normal_word=True)
         if restored is None:
             state.uregs[UREG_CODES["I6"]] = Unknown(
                 "RFRAME load from unavailable memory"

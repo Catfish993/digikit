@@ -57,11 +57,6 @@ static mut REC: Record = Record::empty();
 static mut REC_VALID: bool = false;
 static mut REC_COPY: u32 = 0;
 
-extern "C" {
-    /// The address of the 4-byte literal `pea <ui queue>` of the UI loop (anchor `dkrt.ui.queue_lit`).
-    static dkrt_ui_queue_lit: u32;
-}
-
 /// Paths of the selection this boot loaded (for CAPACITY).
 pub fn selected() -> u32 {
     info().count
@@ -237,7 +232,8 @@ unsafe fn update(mut r: Record, current_copy: u32, valid: bool) -> i32 {
 /// Is the safe-mode key down among the events waiting in the UI queue? (The panel's held keys arrive as key-down events
 /// shortly after reset; whether they are queued yet at this point is untested on a device **[O]**.)
 unsafe fn key_held() -> bool {
-    let lit = core::hint::black_box(&raw const dkrt_ui_queue_lit as usize) as u32;
+    // `UI_QUEUE_LIT`: the 4-byte literal `pea <ui queue>` of the UI loop.
+    let lit = core::hint::black_box(&raw const dkfw::view::UI_LOOP_QUEUE_LIT as usize) as u32;
     if lit == 0 {
         return false;
     }

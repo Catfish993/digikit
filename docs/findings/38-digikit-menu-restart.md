@@ -6,7 +6,7 @@ to 11 and Phase 6; the runtime side is finding 37. Earlier menu: findings 28 and
 
 ## What the menu does now
 
-`modules/core/digikit-menu` no longer calls `dkrt_load` or `dkrt_unload`. It calls `dkrt_selection_get`, `dkrt_selection_set`,
+`modules/core/apps/digikit-menu` no longer calls `dkrt_load` or `dkrt_unload`. It calls `dkrt_selection_get`, `dkrt_selection_set`,
 `dkrt_restart`, `dkrt_boot_info` (the C ABI of finding 37), `dkrt_status` and `dkrt_module`.
 
 - **MODULES** lists the store's `.dkm` files. A row is `[X]` when it is in the pending selection, `[ ]` when not, `[-]` (greyed, cannot be

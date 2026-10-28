@@ -11,12 +11,10 @@ requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
-# C, built by pk_build with the helpers a 32-bit ColdFire lacks (`__udivdi3`, `__divdi3`, `__moddi3`, `__muldi3`, `__ashldi3`,
+# C, built by `patchkit build` with the helpers a 32-bit ColdFire lacks (`__udivdi3`, `__divdi3`, `__moddi3`, `__muldi3`, `__ashldi3`,
 # `__lshrdi3`, `__ashrdi3`) linked from the libgcc built for -mcpu=54418 (tools/patchkit/pk_toolchains.py libgcc-cf). The module
 # is loaded by the digikit runtime (`patchkit pack test/c-demo`), like test/dyn-demo; `dynamic = true` is only for modules that register machines.
 [[object]]

@@ -162,6 +162,41 @@ def test_compiler_cjump_and_computed_return_leave_hardware_stack_alone(native):
     assert machine.state.uregs[101] == depth and machine.state.uregs[100] == top
 
 
+@pytest.mark.parametrize("stack", [0x08020300, 0x26F7EE])
+def test_rframe_restores_caller_i6_from_frame_pushed_through_i7(stack):
+    # 0x08020300 is in a normal-word view (L2); 0x26F7EE is the stock DSP stack
+    # (finding 06), where the raw and normal-word addresses agree.
+    machine = Machine(False)
+    code = st.UREG_CODES
+    caller_i6 = 0x08021000 if stack >= 0x08000000 else 0x26F900
+    machine.state.uregs[code["I6"]] = st.Const(caller_i6)
+    machine.state.uregs[code["I7"]] = st.Const(stack)
+    machine.state.uregs[code["M7"]] = st.Const(0xFFFFFFFF)
+    machine.state.uregs[code["PC"]] = st.Const(0x1234)
+    machine.step("25a_direct", {"addr[23:16]": 0, "addr[15:0]": 0x40})
+    machine.step("21a", {})
+    machine.step("21a", {})
+    assert machine.state.uregs[code["I6"]] == st.Const(stack)
+    for ureg in (code["R2"], code["PC"]):  # DM(I7,M7)=R2; DM(I7,M7)=PC
+        machine.step(
+            "3a",
+            {
+                "u": 1,
+                "i": 7,
+                "m": 7,
+                "cond": 31,
+                "g": 0,
+                "d": 1,
+                "l": 0,
+                "ureg": ureg,
+                "compute": 0,
+            },
+        )
+    machine.step("25c_rframe", {}, 2)
+    assert machine.state.uregs[code["I6"]] == st.Const(caller_i6)
+    assert machine.state.uregs[code["I7"]] == st.Const(stack)
+
+
 @pytest.mark.parametrize("native", [False, True])
 def test_delayed_call_reserves_entry_before_explicit_push_in_first_slot(native):
     machine = Machine(native, encoded("20a", dict(STACK, ppu=1)) + bytes(6))

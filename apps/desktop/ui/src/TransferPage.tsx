@@ -9,6 +9,8 @@ import { isCancelled, isTimeout } from '@web/modules/backend';
 import { noteActivity } from './activity';
 import AutoRefresh from './AutoRefresh';
 import { bumpCardRefresh } from './card-state';
+import { logInput } from './log-state';
+import { transferEntry } from './log-core';
 import ModulesMode from './ModulesMode';
 import SamplesMode from './SamplesMode';
 import { deviceStorage, readLocal, readSamples } from './samples-backend';
@@ -75,11 +77,29 @@ export default function TransferPage(): JSX.Element {
     setError('');
     // after a cancel or a "no reply" the device is not asked again at once (that would wait the whole time a second time)
     let skipRead = false;
+    // a read is not logged (the page reads by itself); every other run is, with its result
+    const logRun = (failure?: unknown) => {
+      if (what === 'Reading') return;
+      const modules = mode() === 'modules';
+      logInput(
+        transferEntry({
+          what,
+          target: targetLabel(target()),
+          lines: modules ? log() : [],
+          message: modules ? progress()?.message : undefined,
+          ...(failure === undefined
+            ? {}
+            : { error: failureLine(failure, targetLabel(target())), cancelled: isCancelled(failure) }),
+        }),
+      );
+    };
     try {
       await f();
+      logRun();
     } catch (e) {
       skipRead = isCancelled(e) || isTimeout(e);
       setError(failureLine(e, targetLabel(target())));
+      logRun(e);
     } finally {
       if (!skipRead)
         try {

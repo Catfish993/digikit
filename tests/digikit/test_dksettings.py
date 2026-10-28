@@ -1,5 +1,5 @@
 """The settings record on the host (tools/device/dksettings.py) and the SETTINGS command of tools/device/dkupload.py, on the shared vectors
-(sdk/settings-vectors.json); `dkrt_sdk::settings` and `patchkit store dump` read the same file."""
+(sdk/vectors/settings-vectors.json); `dkrt_sdk::settings` and `patchkit store dump` read the same file."""
 
 import json
 import struct
@@ -12,7 +12,12 @@ from tools.device import dksettings as S
 from tools.device import dkupload as D
 
 VECTORS = json.loads(
-    (Path(__file__).resolve().parents[2] / "sdk" / "settings-vectors.json").read_text()
+    (
+        Path(__file__).resolve().parents[2]
+        / "sdk"
+        / "vectors"
+        / "settings-vectors.json"
+    ).read_text()
 )
 
 

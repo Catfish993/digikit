@@ -41,7 +41,7 @@ from tools.patchkit import hook_ab, pk_device  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 
 FW = {"dt2": "1.17", "dn2": "1.12"}
-# DlLink field offsets (modules/core/dsp-link/src/cf/dsp-link.c, struct DlLink)
+# DlLink field offsets (modules/core/adapters/dsp-link/src/cf/dsp-link.c, struct DlLink)
 L_STATE, L_ERR, L_BUF, L_DST, L_NWORDS, L_XID, L_CAP, L_NCHUNKS = (
     0,
     4,
@@ -224,7 +224,7 @@ def peek_link(emu: Any, link: int) -> dict[str, int]:
 
 
 def start_request(emu: Any, link: int, buf: int, dst_off: int, nwords: int) -> None:
-    """What dl_send stores (modules/core/dsp-link/src/cf/dsp-link.c), written from the host; the state last."""
+    """What dl_send stores (modules/core/adapters/dsp-link/src/cf/dsp-link.c), written from the host; the state last."""
     emu.poke32(link + L_ERR, 0)
     emu.poke32(link + L_WIN, 0)
     emu.poke32(link + L_BUF, buf)
@@ -267,7 +267,7 @@ def proof(a: argparse.Namespace) -> dict[str, Any]:
         next(
             a["addr"]
             for a in plan_anchors(device, fw)
-            if a["name"] == "dl.dsp.block_tail"
+            if a["name"] == "dsp.link.site.block_tail"
         )
     )
     with Rig(device, fw, ["test/cf-demo"], f"{device}-ref") as stock:

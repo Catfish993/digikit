@@ -5,12 +5,10 @@
     uv run python -m tools.device.dkrun digikit/pluck --emu            # the running emulator (desktop app or `mise run emu:serve`)
     mise run dk:run -- digikit/pluck --port Digitakt --seconds 30
 
-Steps, one line each: INFO (the runtime must be 4 or newer; its device id picks the pack target), build (`pk_build`) and pack
-(`patchkit pack`), upload to `modules/<name>.dkm` (skipped when LIST shows the same sha256), SELECT (the selection becomes this module
+Steps, one line each: INFO (the runtime must be 4 or newer; its device id picks the pack target), build and pack (`patchkit pack` builds the objects that are stale, in memory), upload to `modules/<name>.dkm` (skipped when LIST shows the same sha256), SELECT (the selection becomes this module
 only), RESTART, wait for the new boot, then the boot's MOD_LOAD / MOD_DSP results, then the log for `--seconds`.
 
-It changes only the module store and the selection record (the menu's own code writes it). `--no-build` packs the committed objects as they
-are; `--no-restart` stops after SELECT. Time on the emulator is stepped, not real: `--seconds` is emulated time, approximately.
+It changes only the module store and the selection record (the menu's own code writes it). `--no-restart` stops after SELECT. Time on the emulator is stepped, not real: `--seconds` is emulated time, approximately.
 """
 
 from __future__ import annotations
@@ -46,12 +44,13 @@ def say(msg: str) -> None:
 
 
 def build_objects(module: str) -> None:
-    """Compile the module's objects (`pk_build` skips an object whose source hash is unchanged)."""
+    """Compile the module's objects (`patchkit build` skips an object whose source hash is unchanged)."""
     r = subprocess.run(
         [
             sys.executable,
             "-m",
-            "tools.patchkit.pk_build",
+            "tools.patchkit.patchkit",
+            "build",
             str(modroots.module_dir(module)),
         ],
         cwd=ROOT,
@@ -92,10 +91,9 @@ def pack_module(module: str, device: str, out: Path | None = None) -> Path:
     return out
 
 
-def build_pack(module: str, device: str, build: bool = True) -> Path:
-    """Compile the module's objects (unless `build` is off) and pack the .dkm for DEVICE; returns its path."""
-    if build:
-        build_objects(module)
+def build_pack(module: str, device: str) -> Path:
+    """Pack the .dkm of MODULE for DEVICE; returns its path. `patchkit pack` builds the objects that are stale (they are cached in
+    out/cache/dko) and packs them as they are in memory."""
     return pack_module(module, device)
 
 
@@ -265,7 +263,6 @@ def run(
     now: Callable[[], float] = time.monotonic,
     seconds: float = 10.0,
     device: str | None = None,
-    build: bool = True,
     restart: bool = True,
     emit: Callable[[str, dict[str, Any] | None], None] | None = None,
     dkm: Path | None = None,
@@ -284,7 +281,7 @@ def run(
     dev = device or info["port"]
     if dkm is None:
         t0 = time.monotonic()
-        dkm = build_pack(module, dev, build)
+        dkm = build_pack(module, dev)
         say(f"packed {dkm.name} ({time.monotonic() - t0:.1f} s)")
     data = dkm.read_bytes()
     why = check_fit(up, info, data)
@@ -380,11 +377,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--device", help="pack target (default: the device id INFO reports)"
     )
-    ap.add_argument(
-        "--no-build",
-        action="store_true",
-        help="pack the committed objects without building",
-    )
     ap.add_argument("--no-restart", action="store_true", help="stop after SELECT")
     ap.add_argument(
         "--force",
@@ -446,7 +438,6 @@ def main(argv: list[str] | None = None) -> int:
             now,
             args.seconds,
             args.device,
-            not args.no_build,
             not args.no_restart,
             emit,
             force=args.force,

@@ -29,7 +29,7 @@ F0 7D 64 6B 01 <cmd | 0x40> <seq> <body, 8-in-7 packed> F7   device -> host, one
   separated, no empty, `.` or `..` part; docs/design/digikit-store.md).
 - A request is at most 40 KiB on the wire (the firmware drops a SysEx message over 128 KiB and holds about 150 KiB in its pool).
   A reply is at most 1 KiB on the wire (the firmware's TX ring is 4 KiB and spins when full), and **a reply is sent only when the ring has room**:
-the runtime reads the firmware's count of bytes handed to the USB stack and not yet sent (anchor `dkrt.fw.tx_inflight_lit`) and drops the
+the runtime reads the firmware's count of bytes handed to the USB stack and not yet sent (anchor `cf.midi.site.tx_inflight_lit`) and drops the
 reply when it is above 256 or when the reply would not fit below 0xff0 with it; a host that does not read its input cannot hang the MIDI task.
 The host's retry asks again (`docs/findings/43-digikit-upload.md`, "No unbounded spin on a reply").
 
@@ -51,7 +51,7 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | -61 | E_NOSTORE | the device has no `[card.store]` or the store header is unreadable (CLEAR still works) |
 | -62 | E_INUSE | BEGIN, DELETE or CLEAR on a card whose store area is not ours and not blank: the runtime writes nothing there (see "Card safety") |
 | -63 | E_PEEK | PEEK of a range that the device file does not list, or a length of 0 or over 512 |
-| -65 | E_DISABLED | a command of a guarded range (the remote range) while DIGIKIT > REMOTE is off (runtime 0.2.5) |
+| -65 | (free) | was `E_DISABLED`, the guard of the remote range while DIGIKIT > REMOTE was off; the switch and the guard are gone |
 | -66 | E_SET_KEY | a settings key breaks the rules: 1 to 47 printable ASCII characters (runtime 0.5.1; also returned by `dkrt_settings_*`) |
 | -67 | E_SET_FULL | the settings area is full |
 | -68 | E_SET_NOKEY | no such settings key; for the SETTINGS command: no record on the card and none made |
@@ -114,10 +114,8 @@ flag marks a read-only command whose reply is not logged). A run-time module can
 A range that is empty, outside a reserved range or over a registered one is refused with `E_CMD_RANGE`; at most four ranges are registered; the module's ranges are released
 when it is taken down (`fini`). INFO's `caps` bit 9 (`CAP_SERVICE_CMDS`) says the runtime has them.
 
-A range in `[protocol] guarded` (today `remote`) is answered only while the REMOTE switch is on (SETTINGS > DIGIKIT > REMOTE, `dkrt_remote_set`): while it is off
-the runtime answers `E_DISABLED` (-65) before the module sees the command, so a module cannot forget the check. The switch is never saved: it starts on when the image has
-`core/remote-open` (the emulator's patch set) and off otherwise (a device's), and exists only when the image has `core/input` (no REMOTE row without it). The state range stays
-answered, so a host can show whether the switch is on.
+A service module is on exactly when it is loaded: the check mark of DIGIKIT > MODULES is the only switch, and no range is guarded (there is no REMOTE switch). A module with settings
+of its own shows them under SETTINGS... of its MODULES row (`dkm_menu`, `docs/design/digikit-dkm.md`).
 
 A service command is handled in the firmware's MIDI task, like the built-in ones. The handler gets the command, `seq`, the body (at most 160 bytes: the same limit as
 every command but DATA and SELECT) and a buffer for the reply body (at most 879 bytes); it returns the reply length (the status is 0), or a negative status (sent with
@@ -225,14 +223,14 @@ selection_sectors - 1`; recorded in `devices/<device>.toml` `[card.store]`, not 
   with `seq + 1`. A power cut before B leaves the old store; between B and A the next reader takes B. Space freed by a delete or a replace is reused by the next BEGIN; BEGIN, DELETE and CLEAR first
   make the two header copies agree.
 - **Full:** BEGIN answers E_FULL with the free bytes. The host's way out is to delete files (the space is reused), or CLEAR and an upload of the files it wants; a module missing at boot is skipped and reported, as today.
-- Every card access goes through the firmware's block read and block write (`dkrt.fw.block_read`, `dkrt.fw.block_write`; the
+- Every card access goes through the firmware's block read and block write (`cf.storage.fn.block.read`, `cf.storage.fn.block.write`; the
   write takes the eMMC mutex), from the MIDI task, one request at a time.
 
 ## Where the device handles it
 
 In the firmware's MIDI task, after the SysEx gather (finding 42 section 2, stage 4), before the router: a message that
 starts `F0 7D 64 6B` goes to the runtime; every other message takes the stock route unchanged. The exact hook is a ported
-anchor on all four ports (`dkrt.fw.*`). The runtime's upload buffer is a static 16-byte aligned object of 36,896 bytes (see "Behaviour the first draft left open").
+anchor on both ports (`dkrt.fw.*`). The runtime's upload buffer is a static 16-byte aligned object of 36,896 bytes (see "Behaviour the first draft left open").
 
 ## Tests
 

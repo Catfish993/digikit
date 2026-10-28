@@ -1,7 +1,7 @@
 //! Sticky machine type numbers (docs/design/module-sdk.md 11.5 D7, docs/design/digikit-registry.md "Machine keys").
 //!
-//! A run-time machine has no fixed type number. Its `.dkm` carries a machine key, `hash24 << 8 | hint` (the hash is the low 24 bits of FNV-1a 32 of
-//! `<module id>:<machine id>`, the hint is the manifest's `type_hint`, 0 = none), and the runtime gives it a number in the run-time range when it
+//! A run-time machine has no fixed type number. Its `.dkm` carries a machine key, `hash24 << 8` (the hash is the low 24 bits of FNV-1a 32 of
+//! `<module id>:<machine id>`, the low byte is 0), and the runtime gives it a number in the run-time range when it
 //! loads the module. A key with hash 0 is a pinned number (the low byte). The card remembers the
 //! numbers in a map of up to 8 entries in the selection record's reserved bytes (`sel::Record::map`, entry = `hash24 << 8 | type`, 0 = empty), so
 //! a machine keeps its number while it stays in the map, and a project that names the number keeps playing that machine.
@@ -13,11 +13,9 @@
 //!
 //! Rules of the assignment, per machine in load order:
 //! 1. the map has an entry for its hash and that number is not taken in this boot: use it (sticky; logged as rule 1);
-//! 2. else its hint, when it is nonzero, in range, not given out in this boot and not referenced by another machine's map entry: use it and
-//!    record the entry (rule 2). The hint is the number that projects saved before the map name (docs/findings/52-sticky-machine-ids.md);
-//! 3. else the lowest number that no map entry references and this boot has not given out; record the entry (rule 0);
-//! 4. else drop the lowest-index entry whose hash is not among this boot's machines (logged), take its number, record the entry (rule 0);
-//! 5. two machines with the same key in one boot: the second takes a fresh number and is not recorded.
+//! 2. else the lowest number that no map entry references and this boot has not given out; record the entry (rule 0);
+//! 3. else drop the lowest-index entry whose hash is not among this boot's machines (logged), take its number, record the entry (rule 0);
+//! 4. two machines with the same key in one boot: the second takes a fresh number and is not recorded.
 use crate::{dlog, loader};
 use core::ptr::addr_of_mut;
 use dkrt_sdk::device::{DYN_TYPE_FIRST, DYN_TYPE_LAST};
@@ -163,7 +161,6 @@ pub unsafe fn plan(rec: &Record) {
             e += 1;
             continue; // a pinned number (key = type) or nothing to assign
         }
-        let hint = key & 0xff;
         let mut first = true;
         let mut j = 0;
         while j < e {
@@ -172,7 +169,7 @@ pub unsafe fn plan(rec: &Record) {
         }
         let mut t = 0;
         let mut sticky = 0;
-        let mut rule = 0; // 0 lowest free number, 1 the map, 2 the hint
+        let mut rule = 0; // 0 lowest free number, 1 the map
         if first {
             let at = find_hash(&a.map, h);
             if let Some(i) = at {
@@ -184,12 +181,7 @@ pub unsafe fn plan(rec: &Record) {
                 }
             }
             if t == 0 {
-                if hint != 0 && in_range(hint) && (used | referenced_but(&a.map, h)) & bit(hint) == 0 {
-                    t = hint;
-                    rule = 2;
-                } else {
-                    t = lowest_free(used | referenced(&a.map));
-                }
+                t = lowest_free(used | referenced(&a.map));
                 if t == 0 {
                     // no number is unreferenced: drop the lowest entry of a machine that is not in this boot
                     let mut victim = NONE;

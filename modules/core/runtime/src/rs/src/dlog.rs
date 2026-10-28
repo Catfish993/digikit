@@ -6,7 +6,7 @@
 //! ever sent by itself: the host asks (LOG), and the runtime answers; with nobody asking the log costs the appends and one poll per second.
 //!
 //! Appends mask interrupts for a few instructions: the UI task, the MIDI task and the crash handler all append.
-use crate::{arena, fw_blocks, fw_kit_of, fw_project, fw_track_type, irq_mask, irq_restore, st};
+use crate::{arena, fw_blocks, irq_mask, irq_restore, st};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
@@ -352,9 +352,10 @@ pub unsafe fn tick() {
 /// Read each track's machine type from the firmware (project, active kit, type of track) and log a change. The first read is the baseline.
 /// Nothing is written; with the debug log off the reads still happen but no event is kept.
 unsafe fn watch_tracks(w: &mut Watch) {
-    let project: unsafe extern "C" fn() -> u32 = core::mem::transmute(fw_project as unsafe extern "C" fn());
-    let kit_of: unsafe extern "C" fn(u32) -> u32 = core::mem::transmute(fw_kit_of as unsafe extern "C" fn());
-    let track_type: unsafe extern "C" fn(u32, i32) -> i32 = core::mem::transmute(fw_track_type as unsafe extern "C" fn());
+    // `Project *f(void)`, `Kit *f(Project *)` (the active kit), `int f(Kit *, int track)` (-1: no such track); read-only.
+    let project = dkfw::project::singleton;
+    let kit_of = dkfw::project::active_kit;
+    let track_type = dkfw::project::track_type;
     if !debug_on() {
         return;
     }

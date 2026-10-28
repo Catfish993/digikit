@@ -1,4 +1,4 @@
-"""core/fx (modules/core/fx): the effects adapter, on the concrete SHARC+ core (tests/support/fx_rig.py) and through patchkit.
+"""core/fx (modules/core/adapters/fx): the effects adapter, on the concrete SHARC+ core (tests/support/fx_rig.py) and through patchkit.
 
 The first group needs only the assembler; the last one patches the stock images (skipped when they are not in the repository)."""
 
@@ -442,7 +442,7 @@ def test_the_hook_takes_the_first_instruction_of_a_function_between_master_and_p
         plan_path,
     )
     plan = json.loads(plan_path.read_text())
-    (hook,) = [h for h in plan["hooks"] if h["anchor"] == "dsp.fx.entry"]
+    (hook,) = [h for h in plan["hooks"] if h["anchor"] == "dsp.fx.fn.entry"]
     assert (
         hook["cpu"] == "sharc" and hook["displaced"] == "run" and hook["site_len"] == 6
     )

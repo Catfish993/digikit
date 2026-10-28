@@ -29,6 +29,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import tomllib
 import zlib
 from pathlib import Path
 
@@ -68,9 +69,7 @@ MODULE_SIZE = 88
 STATE_BYTES = 1256
 MB_CMD, MB_SEQ, MB_RESULT, MB_ARG = 0, 4, 8, 12
 DEVICE_SYX = {
-    "dt2-1.16": "Digitakt_II_OS1.16.syx",
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
-    "dn2-1.11": "Digitone_II_OS1.11.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
 }
 RUN = 25_000_000  # instructions between samples: the UI task's event loop passes about every 4 million
@@ -158,7 +157,12 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
         for ln in man.splitlines()
         if ln.startswith("path =")
     )
-    obj = json.loads((modroots.module_dir(module) / obj_path).read_text())
+    # the object is build output (`pack` of the good file built it); the edited copy is a module without sources
+    parsed = tomllib.loads(man)
+    built = modroots.object_path(
+        parsed, modroots.module_dir(module), parsed["object"][0]
+    )
+    obj = json.loads(built.read_text())
     good = folder / "modules" / "dyn-demo.dkm"
     bad = bytearray(good.read_bytes())
     bad[-1] ^= (
@@ -181,19 +185,20 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
     )
     # the edited object carries the build's ISA check record for its new bytes: the instructions are the checked ones, only a relocation is
     # added (`patchkit pack` refuses an object whose record does not match its bytes)
-    from tools.patchkit import pk_build
+    from tools.patchkit import patchkit
 
-    imp["toolchain"][pk_build.ISA_CHECK_KEY] = pk_build.isa_digest(
-        imp["sections"], imp["symbols"], imp["relocs"]
-    )
+    imp["toolchain"][patchkit.ISA_CHECK_KEY] = patchkit.isa_digest(imp)
     # the dyn-demo object has a .rodata string section of 14+ bytes: reuse it as the place of the new reloc
     tmp = work / "mods" / "test" / "dyn-demo-import"
     (tmp / "build").mkdir(parents=True, exist_ok=True)
     (tmp / "build" / "o.dko.json").write_text(json.dumps(imp))
+    no_sources = "".join(
+        ln for ln in man.splitlines(keepends=True) if not ln.startswith("sources =")
+    )
     (tmp / "module.toml").write_text(
-        man.replace('id = "test/dyn-demo"', 'id = "test/dyn-demo-import"').replace(
-            obj_path, "build/o.dko.json"
-        )
+        no_sources.replace(
+            'id = "test/dyn-demo"', 'id = "test/dyn-demo-import"'
+        ).replace(obj_path, "build/o.dko.json")
     )
     r = tools.run(tools.patchkit, "--root", ROOT, "pack", "test/dyn-demo-import", "--modules-dir", work / "mods",
                   "-o", folder / "modules" / "bad-import.dkm", "--name", "bad-import")  # fmt: skip

@@ -434,43 +434,31 @@ def run_inferred_needs(c: Any) -> None:
 # ---- the MODULES page: size and a mark for a module that will not fit ---------------------------------------------------------
 
 
-def fit_rows(
-    names: list[str], files: list[bytes], ticked: set[int], cap: dict
-) -> list[str]:
-    """The module rows of SETTINGS > DIGIKIT > MODULES for a store (`fill_load`, `refit` of modules/core/digikit-menu): the tick, `x` for a module that does
-    not fit next to the ticked ones (the next boot loads them into an empty runtime), the name (without `.dkm`, the first 8 characters, upper case) and the memory it
-    takes in K. CAP is the CAPACITY reply."""
-    from tools.device import dkfit as F
+def fit_rows(names: list[str], files: list[bytes], cap: dict) -> list[str]:
+    """The module rows of SETTINGS > DIGIKIT > MODULES for a store (`module_row` of modules/core/apps/digikit-menu): the name (without `.dkm`, upper case, at most 12
+    characters), the kind (FX, MACH or TOOL, from the needs) and the memory the module takes in K, right aligned to 23 characters. CAP is the CAPACITY reply."""
     from tools.device import dkneeds as N
 
     needs = [n for n in N.needs_many(files) if n is not None]
     assert len(needs) == len(files), "a synthetic module has no needs"
-    left = F.empty_caps(cap)
-    wont: set[int] = set()
-    for i in sorted(ticked):  # the ticked ones in list order, then the others
-        if F.fits_now(needs[i], left):
-            wont.add(i)
-        else:
-            left = F.take(needs[i], left)
-    for i in range(len(files)):
-        if i not in ticked and F.fits_now(needs[i], left):
-            wont.add(i)
     rows = []
-    for i, (name, n) in enumerate(zip(names, needs, strict=True)):
+    for name, n in zip(names, needs, strict=True):
         total = n["ARENA"] + n["DSP_AREA"]
         k = -(-total // 1024)
         size = "<1K" if total < 1024 else f"{k}K"
-        row = ("[X]" if i in ticked else "[ ]") + ("x" if i in wont else " ")
-        row += name.removesuffix(".dkm").upper()[:8]
-        rows.append(row.ljust(13) + size.rjust(4))
+        kind = (
+            "FX" if n.get("FX_SLOTS") else "MACH" if n.get("MACHINE_ROWS") else "TOOL"
+        )
+        row = name.removesuffix(".dkm").upper()[:12].ljust(13) + kind
+        rows.append(row.ljust(23 - len(size)) + size)
     return rows
 
 
 def run_fits(c: Any) -> None:
-    """The MODULES page tells before a selection whether a module will load: a store of four modules, one small, two that each take a little over
-    half of the DSP area, one larger than the area. Opened with nothing ticked: only the largest has the `x` mark. With the first half-size one ticked:
-    the second one has it too, and selecting it ticks nothing, shows a popup `NO FIT: DSP 164K > 155K FREE` and the short form in the RESULT row. The rows
-    (DK_LOAD) equal `fit_rows`, which uses the Python rule on the CAPACITY reply and the needs `patchkit needs` infers from the packed files."""
+    """The MODULES list tells when a module will not load: a store of four modules, one small, two that each take a little over half of the DSP area, one
+    larger than the area. The rows (DK_LOAD) equal `fit_rows`, which uses the Python rule on the CAPACITY reply and the needs `patchkit needs` infers from the
+    packed files. YES on the largest checks nothing and opens a confirm `HUGE DOES NOT FIT` with the reason. With the first half-size one checked, the second
+    one is refused the same way (`DSP 164K > 155K FREE`); unchecking the first makes room."""
     from tools.coldfire import digikit_menu_proof as DP
     from tools.device import dkfit as F
     from tools.device import dkneeds as N
@@ -502,9 +490,10 @@ def run_fits(c: Any) -> None:
     def w(rig: Any, name: str, k: int = 0) -> int:
         return rig.w(plan.addr(name) + 4 * k)
 
-    def text(rig: Any, name: str, i: int) -> str:
+    def text(rig: Any, name: str, i: int = 0, stride: int = 24) -> str:
         raw = b"".join(
-            rig.w(plan.addr(name) + 24 * i + 4 * k).to_bytes(4, "big") for k in range(6)
+            rig.w(plan.addr(name) + stride * i + 4 * k).to_bytes(4, "big")
+            for k in range(stride // 4)
         )
         return raw.split(b"\0")[0].decode("latin-1")
 
@@ -513,12 +502,15 @@ def run_fits(c: Any) -> None:
         rig.s.run_ms(gap_ms)
 
     def rows(rig: Any) -> list[str]:
-        return [text(rig, "DK_LOAD", i) for i in range(w(rig, "DK_LOAD_N"))][
-            : len(names)
-        ]
+        return [text(rig, "DK_LOAD", i) for i in range(w(rig, "DK_LOAD_N"))]
 
-    def need_file(k: int) -> dict[str, int]:
-        return N.needs_of(files[k])
+    def checked(rig: Any) -> list[int]:
+        """TICK: 1 for each row that is checked."""
+        v = w(rig, "TICK")
+        return [(v >> (24 - 8 * k)) & 0xFF for k in range(len(names))]
+
+    def dialog(rig: Any) -> tuple[str, str]:
+        return text(rig, "DK_POPUP", 0, 48), text(rig, "DK_POPUP_TEXT", 0, 48)
 
     def shot(rig: Any, name: str) -> None:
         """The OLED as a PNG in the scenario's work folder (`--keep`): to look at the rows."""
@@ -529,104 +521,85 @@ def run_fits(c: Any) -> None:
     with c.rig(img, card, "fits") as rig:
         up = D.uploader(rig)
         cap = up.capacity()
-        tap(rig, "NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES
+        tap(
+            rig, "NO", 400
+        )  # SETTINGS > DIGIKIT (the ninth row) > MODULES (the fourth row)
         tap(rig, "SETTINGS", 600)
         for _ in range(8):
             tap(rig, "DOWN", 200)
         tap(rig, "YES", 700)
+        for _ in range(3):
+            tap(rig, "DOWN", 200)
         tap(rig, "YES", 900)
         shot(rig, "open")
-        want = fit_rows(names, files, set(), cap)
+        want = fit_rows(names, files, cap)
         got = rows(rig)
         c.check(
-            "MODULES, nothing ticked: size and the mark for the module larger than the DSP area only",
-            got == want
-            and [r[3] for r in got].count("x") == 1
-            and got[names.index("huge.dkm")][3] == "x",
+            "MODULES: a row for each file with its name, kind and the memory it takes; nothing is checked",
+            got == want and checked(rig) == [0] * len(names),
             f"{got} vs {want}",
         )
-        c.check(
-            "MODULES, nothing ticked: no load line (the list holds the module rows only)",
-            w(rig, "DK_LOAD_N") == len(names),
-            f"{w(rig, 'DK_LOAD_N')} rows",
-        )
+        huge = names.index("huge.dkm")
         first = names.index("half-a.dkm")
         second = names.index("half-b.dkm")
+        n0 = w(rig, "DK_POPUPS")
+        for _ in range(huge):
+            tap(rig, "DOWN", 200)
+        tap(rig, "YES", 700)  # the module larger than the DSP area: refused
+        shot(rig, "huge-refused")
+        short = F.fits_now(N.needs_of(files[huge]), F.empty_caps(cap))
+        c.check(
+            "YES on the module larger than the DSP area checks nothing and opens a confirm with the reason",
+            w(rig, "DK_POPUPS") == n0 + 1
+            and checked(rig) == [0] * len(names)
+            and dialog(rig)
+            == ("HUGE DOES NOT FIT", F.menu_line(short) if short else "?"),
+            f"{dialog(rig)} {checked(rig)}",
+        )
+        tap(rig, "YES", 500)  # the confirm is a notice
+        for _ in range(huge):
+            tap(rig, "UP", 200)
         for _ in range(first):
             tap(rig, "DOWN", 200)
-        tap(rig, "YES", 500)  # tick half-a
-        shot(rig, "ticked")
-        got = rows(rig)
-        want = fit_rows(names, files, {first}, cap)
+        tap(rig, "YES", 500)  # check half-a
+        shot(rig, "checked")
+        want_checked = [int(i == first) for i in range(len(names))]
         c.check(
-            "MODULES, one half-size module ticked: the other one has the mark",
-            got == want and got[first][:4] == "[X] " and got[second][:4] == "[ ]x",
-            f"{got} vs {want}",
+            "one half-size module checked: it is fine, and nothing else changed",
+            checked(rig) == want_checked and rows(rig) == fit_rows(names, files, cap),
+            f"{checked(rig)} {rows(rig)}",
         )
-        # the load line: the DSP and CPU memory of the limits with the ticked modules taken out, directly above APPLY & RESTART
-        want_line = F.load_line(F.take(need_file(first), F.empty_caps(cap)))
-        n_rows = w(rig, "DK_LOAD_N")
-        below = [text(rig, "DK_LOAD", i) for i in range(len(names), n_rows)]
-        c.check(
-            "MODULES, one half-size module ticked: the load line (DSP and CPU) is directly above APPLY & RESTART",
-            below[:2] == [want_line, "APPLY & RESTART"]
-            and want_line.startswith("DSP ")
-            and " CPU " in want_line
-            and len(want_line) <= 18,
-            f"{below} vs line {want_line!r}",
-        )
-        # the list scrolled to the bottom: the load line over APPLY & RESTART (the cursor goes down over the rows and back)
-        for _ in range(n_rows - 1 - first):
-            tap(rig, "DOWN", 200)
-        shot(rig, "ticked-apply")
-        for _ in range(n_rows - 1 - first):
-            tap(rig, "UP", 200)
         for _ in range(second - first):
             tap(rig, "DOWN", 200)
-        shots = w(rig, "DK_POPUPS")
-        tap(rig, "YES", 700)  # select half-b: refused
+        n1 = w(rig, "DK_POPUPS")
+        tap(rig, "YES", 700)  # half-b next to half-a: refused
         shot(rig, "refused")
-
-        def need_of(k: int) -> dict[str, int]:
-            return N.needs_of(files[k])
-
-        short = F.fits_now(need_of(second), F.take(need_of(first), F.empty_caps(cap)))
-        line = F.menu_line(short, compact=True) if short else ""
-        full = f"NO FIT: {F.menu_line(short)}" if short else ""
-        got_rows = [text(rig, "DK_LOAD", i) for i in range(w(rig, "DK_LOAD_N"))]
-        popup = (
-            bytes(
-                b
-                for k in range(12)
-                for b in rig.w(plan.addr("DK_POPUP") + 4 * k).to_bytes(4, "big")
-            )
-            .split(b"\0")[0]
-            .decode("latin-1")
+        short = F.fits_now(
+            N.needs_of(files[second]),
+            F.take(N.needs_of(files[first]), F.empty_caps(cap)),
         )
         c.check(
-            "selecting it ticks nothing, shows a popup and the RESULT row says which resource is short",
-            w(rig, "DK_POPUPS") == shots + 1
-            and popup == full
-            and got_rows[-1] == line
-            and rows(rig) == fit_rows(names, files, {first}, cap),
-            f"popup {popup!r}, last row {got_rows[-1]!r}, want {line!r}",
+            "the other half-size module is refused: the mark stays off and the confirm says which resource is short",
+            w(rig, "DK_POPUPS") == n1 + 1
+            and checked(rig) == want_checked
+            and dialog(rig)
+            == ("HALF-B DOES NOT FIT", F.menu_line(short) if short else "?"),
+            f"{dialog(rig)} {checked(rig)}",
         )
-        c.check(
-            "the refused selection leaves the load line as it was",
-            got_rows[len(names)] == want_line
-            and got_rows[len(names) + 1] == "APPLY & RESTART",
-            f"{got_rows[len(names) :]} vs {want_line!r}",
-        )
-        # untick it: the line goes with the last tick
+        tap(rig, "YES", 500)
+        # uncheck the first: there is room for the second again
         for _ in range(second - first):
             tap(rig, "UP", 200)
         tap(rig, "YES", 500)
-        after = [text(rig, "DK_LOAD", i) for i in range(w(rig, "DK_LOAD_N"))]
+        for _ in range(second - first):
+            tap(rig, "DOWN", 200)
+        n2 = w(rig, "DK_POPUPS")
+        tap(rig, "YES", 500)
         c.check(
-            "unticking the last module takes the load line away again",
-            after[: len(names)] == fit_rows(names, files, set(), cap)
-            and len(after) == len(names),
-            f"{after}",
+            "unchecking the first module makes room: the second can be checked",
+            checked(rig) == [int(i == second) for i in range(len(names))]
+            and w(rig, "DK_POPUPS") == n2,
+            f"{checked(rig)}",
         )
         c.checks += rig.checks
         c.done(rig)
@@ -638,7 +611,7 @@ def run_fits(c: Any) -> None:
 
 def run_menu_open(c: Any) -> None:
     """Opening SETTINGS > DIGIKIT > MODULES reads the needs of each file of the store by sector reads (`dkneeds`, `read_needs` of
-    modules/core/digikit-menu), once per open. A store of `[debug] modules` (default 12) synthetic modules, a third with DSP code and records, the rest
+    modules/core/apps/digikit-menu), once per open. A store of `[debug] modules` (default 12) synthetic modules, a third with DSP code and records, the rest
     ColdFire-only, is opened; the same names with files that are not `.dkm` (the same sizes: the scan reads only their first sector) are opened as the
     baseline. Measured from the press that opens the page to the moment its last row is written (`DK_LOAD_N`): emulated milliseconds and busy ColdFire
     instructions, and the extra the needs cost, and the sector reads the needs reader made (`DK_NEEDS_READS`; the emulated card answers at once, so
@@ -698,11 +671,15 @@ def run_menu_open(c: Any) -> None:
     def open_cost(card: Path, tag: str) -> tuple[float, int, list[str], dict, int]:
         with c.rig(img, card, tag) as rig:
             cap = D.uploader(rig).capacity()
-            tap(rig, "NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES
+            tap(
+                rig, "NO", 400
+            )  # SETTINGS > DIGIKIT (the ninth row) > MODULES (the fourth row)
             tap(rig, "SETTINGS", 600)
             for _ in range(8):
                 tap(rig, "DOWN", 200)
             tap(rig, "YES", 700)
+            for _ in range(3):
+                tap(rig, "DOWN", 200)
             t0, i0 = stat(rig)
             rig.s.emu.tap(H.button("YES"), hold=20 * H.MS)  # opens MODULES
             for _ in range(
@@ -724,7 +701,7 @@ def run_menu_open(c: Any) -> None:
     c.check(
         f"{count} modules: every file has needs, and the rows equal the Python rule on them",
         all(n is not None for n in N.needs_many(files))
-        and rows == fit_rows(names, files, set(), cap),
+        and rows == fit_rows(names, files, cap),
         f"{rows}",
     )
     extra_ms, extra_busy = ms_real - ms_junk, busy_real - busy_junk

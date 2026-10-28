@@ -6,7 +6,7 @@ use patchkit::apply::{self, Applied, Options};
 use patchkit::dsp::Stream;
 use patchkit::firmware::Firmware;
 use patchkit::module::{Library, Module};
-use patchkit::port::{Anchor, Registry};
+use patchkit::port::{Anchor, Hook, Registry};
 use patchkit::verify::read_segments;
 use serde_json::json;
 use std::path::PathBuf;
@@ -30,12 +30,27 @@ macro_rules! need_image {
     };
 }
 
+/// The content modules are built on demand (`Library::scan_repo`): a test that needs one skips without the toolchain.
+macro_rules! need_toolchain {
+    () => {
+        if patchkit::build::toolchain::Env::new(&root())
+            .m68k("gcc")
+            .is_err()
+        {
+            eprintln!("SKIP: the m68k-elf toolchain is not installed");
+            return;
+        }
+    };
+}
+
 fn registry() -> Registry {
     Registry::from_dir(&root().join("devices/ports")).unwrap()
 }
 
 fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    // without the toolchain the content modules are left out; the tests that need one start with `need_toolchain!()`
+    let mut lib = Library::scan_repo_or_skip(&root())
+        .unwrap_or_else(|| Library::scan_repo_for(&root(), true, Some(&[])).unwrap());
     lib.modules.extend(extra);
     lib
 }
@@ -128,6 +143,23 @@ fn add_anchor(reg: &mut Registry, img: &str, name: &str, kind: &str, addr: u64, 
     }
 }
 
+/// A declared hook on the port of `img`.
+fn add_hook(reg: &mut Registry, img: &str, name: &str, site: &str, offset: i64, mode: &str) {
+    let fw = Firmware::parse(&image(img).unwrap()).unwrap();
+    for p in reg
+        .ports
+        .iter_mut()
+        .filter(|p| p.port.syx_sha256 == fw.syx_sha256)
+    {
+        p.hook.push(Hook {
+            name: name.into(),
+            site: site.into(),
+            offset,
+            mode: mode.into(),
+        });
+    }
+}
+
 /// `n` bytes at `addr` of the patched MAIN OS: in the image, or in a segment of the expansion chain.
 fn read_cf(out: &Applied, addr: u64, n: usize) -> Vec<u8> {
     let fw = Firmware::parse(&out.syx).unwrap();
@@ -190,9 +222,9 @@ fn a_typed_write_evaluates_an_expression_with_image_reads() {
 #[test]
 fn a_typed_write_to_a_value_anchor_lands_in_its_instruction() {
     need_image!(DT2);
-    // `dsp.machines.selector_table` is a SHARC literal: addr = the number the instruction loads, src = the instruction
-    let body = "[[op]]\nop = \"write\"\nanchor = \"dsp.machines.selector_table\"\noffset = 2\nvalue = \"0x1234\"\nwidth = 2\n\
-                [[op]]\nop = \"write\"\nanchor = \"dsp.machines.selector_table\"\noffset = 4\nvalue = \"0x5678\"\nwidth = 2\n";
+    // `dsp.machine.value.selector.table_ref` is a SHARC literal: addr = the number the instruction loads, src = the instruction
+    let body = "[[op]]\nop = \"write\"\nanchor = \"dsp.machine.value.selector.table_ref\"\noffset = 2\nvalue = \"0x1234\"\nwidth = 2\n\
+                [[op]]\nop = \"write\"\nanchor = \"dsp.machine.value.selector.table_ref\"\noffset = 4\nvalue = \"0x5678\"\nwidth = 2\n";
     let lib = library(vec![module("t/v", "", body, None)]);
     let out = run(&lib, &["t/v"]).unwrap();
     let base = Firmware::parse(&image(DT2).unwrap()).unwrap();
@@ -202,7 +234,7 @@ fn a_typed_write_to_a_value_anchor_lands_in_its_instruction() {
         .iter()
         .find(|p| p.port.syx_sha256 == base.syx_sha256)
         .unwrap()
-        .anchor("dsp.machines.selector_table")
+        .anchor("dsp.machine.value.selector.table_ref")
         .unwrap()
         .clone();
     let src = a.src.unwrap() as u32;
@@ -272,7 +304,7 @@ fn typed_writes_check_width_range_and_symbols() {
     let lib = library(vec![module(
         "t/a",
         "",
-        &write_val(0x100, "image.u32(dsp.master.q31_call + 4)", 4),
+        &write_val(0x100, "image.u32(dsp.master.site.q31_converter.call + 4)", 4),
         None,
     )]);
     expect_err(run(&lib, &["t/a"]), "lies outside the anchor");
@@ -280,7 +312,7 @@ fn typed_writes_check_width_range_and_symbols() {
     let lib = library(vec![module(
         "t/a",
         "",
-        &write_val(0x100, "1", 1).replace("cf.main", "dsp.master.q31_call"),
+        &write_val(0x100, "1", 1).replace("cf.main", "dsp.master.site.q31_converter.call"),
         None,
     )]);
     expect_err(run(&lib, &["t/a"]), "no expect_sha256");
@@ -741,7 +773,7 @@ kind = "u16"
 [[section]]
 name = "dsptbl"
 region = "dsp.l2"
-from = { anchor = "dsp.master.q31_converter" }
+from = { anchor = "dsp.master.fn.q31_converter" }
 append = { registry = "toys", row = ["u16:$v", "$index"] }
 "#;
     let lib = library(vec![
@@ -763,7 +795,7 @@ append = { registry = "toys", row = ["u16:$v", "$index"] }
         .iter()
         .find(|p| p.port.syx_sha256 == base.syx_sha256)
         .unwrap()
-        .anchor("dsp.master.q31_converter")
+        .anchor("dsp.master.fn.q31_converter")
         .unwrap()
         .clone();
     let sec = sym(&out, "t/fw", "dsptbl") as u32;
@@ -778,9 +810,9 @@ append = { registry = "toys", row = ["u16:$v", "$index"] }
 
 // ---- P4: hooks -------------------------------------------------------------------------------------------------
 
-fn hook_body(anchor: &str, extra: &str) -> String {
+fn hook_body(hook: &str, extra: &str) -> String {
     format!(
-        "[[object]]\npath = \"x.json\"\nplace = \"cf.expansion\"\n[[op]]\nop = \"hook\"\nanchor = \"{anchor}\"\nto = \"_f\"\n{extra}\n"
+        "[[object]]\npath = \"x.json\"\nplace = \"cf.expansion\"\n[[op]]\nop = \"hook\"\nhook = \"{hook}\"\nto = \"_f\"\n{extra}\n"
     )
 }
 
@@ -796,6 +828,12 @@ fn hook_reg() -> Registry {
     add_anchor(&mut reg, DT2, "t.jsrpc", "code", JSR_PC_FN, 16);
     add_anchor(&mut reg, DT2, "t.bra", "code", BRA_FN, 16);
     add_anchor(&mut reg, DT2, "t.plain", "code", PLAIN_FN, 16);
+    add_hook(&mut reg, DT2, "t.jsrpc.hook", "t.jsrpc", 0, "before");
+    add_hook(&mut reg, DT2, "t.bra.hook", "t.bra", 0, "before");
+    add_hook(&mut reg, DT2, "t.plain.hook", "t.plain", 0, "before");
+    add_hook(&mut reg, DT2, "t.plain.drop", "t.plain", 0, "replace");
+    add_hook(&mut reg, DT2, "t.plain.at2", "t.plain", 2, "before");
+    add_hook(&mut reg, DT2, "t.plain.at4", "t.plain", 4, "before");
     reg
 }
 
@@ -806,7 +844,7 @@ fn a_coldfire_hook_jumps_and_the_tail_runs_the_displaced_instructions() {
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.plain", ""),
+        &hook_body("t.plain.hook", ""),
         Some(cf_obj()),
     )]);
     let out = run_on(DT2, &hook_reg(), &lib, &["t/h"]).unwrap();
@@ -832,7 +870,7 @@ fn a_coldfire_hook_jumps_and_the_tail_runs_the_displaced_instructions() {
     let j = serde_json::to_value(&out.plan).unwrap();
     let h = &j["hooks"][0];
     assert_eq!(h["anchor"], "t.plain");
-    assert_eq!(h["kind"], "jump");
+    assert_eq!(h["hook"], "t.plain.hook");
     assert_eq!(h["displaced"], "run");
     assert_eq!(h["site_len"], 8);
     assert_eq!(h["tail"], tail);
@@ -848,17 +886,15 @@ fn a_coldfire_hook_jumps_and_the_tail_runs_the_displaced_instructions() {
 }
 
 #[test]
-fn a_call_hook_and_drop_leave_no_tail() {
+fn a_replace_hook_leaves_no_tail() {
     need_image!(DT2);
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.plain", "kind = \"call\""),
+        &hook_body("t.plain.drop", ""),
         Some(cf_obj()),
     )]);
     let out = run_on(DT2, &hook_reg(), &lib, &["t/h"]).unwrap();
-    let site = read_cf(&out, PLAIN_FN, 8);
-    assert_eq!(&site[..2], &[0x4e, 0xb9], "jsr.l");
     assert!(out.plan.symbols.keys().all(|k| !k.contains(".tail")));
     assert!(
         out.plan
@@ -866,40 +902,48 @@ fn a_call_hook_and_drop_leave_no_tail() {
             .keys()
             .any(|k| k.ends_with("hook.t.plain.return"))
     );
-    // displaced = "run" with a call cannot work: refused
-    let lib = library(vec![module(
-        "t/h",
-        "",
-        &hook_body("t.plain", "kind = \"call\"\ndisplaced = \"run\""),
-        Some(cf_obj()),
-    )]);
-    expect_err(run_on(DT2, &hook_reg(), &lib, &["t/h"]), "cannot run");
-    let lib = library(vec![module(
-        "t/h",
-        "",
-        &hook_body("t.plain", "displaced = \"drop\""),
-        Some(cf_obj()),
-    )]);
-    let out = run_on(DT2, &hook_reg(), &lib, &["t/h"]).unwrap();
-    assert!(out.plan.symbols.keys().all(|k| !k.contains(".tail")));
-    // bad words in the manifest
+}
+
+#[test]
+fn a_hook_op_takes_everything_but_the_target_from_its_declaration() {
+    need_image!(DT2);
     expect_err(
         try_module(
             "t/h",
             "",
-            &hook_body("t.plain", "kind = \"leap\""),
+            &hook_body("t.plain.hook", "anchor = \"t.plain\""),
             Some(cf_obj()),
         ),
-        "jump or call",
+        "anchor comes from the declaration",
     );
     expect_err(
         try_module(
             "t/h",
             "",
-            &hook_body("t.plain", "displaced = \"maybe\""),
+            &hook_body("t.plain.hook", "displaced = \"drop\""),
             Some(cf_obj()),
         ),
-        "run or drop",
+        "displaced comes from the declaration",
+    );
+    expect_err(
+        try_module(
+            "t/h",
+            "",
+            "[[op]]\nop = \"retarget\"\nanchor = \"t.plain\"\nto = \"_f\"\n",
+            None,
+        ),
+        "op retarget is gone",
+    );
+    // a hook the port does not declare
+    let lib = library(vec![module(
+        "t/h",
+        "",
+        &hook_body("t.nope", ""),
+        Some(cf_obj()),
+    )]);
+    expect_err(
+        run_on(DT2, &hook_reg(), &lib, &["t/h"]),
+        "no hook t.nope",
     );
 }
 
@@ -910,7 +954,7 @@ fn a_hook_on_a_non_boundary_or_with_a_bad_target_is_refused() {
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.plain", "offset = 2"),
+        &hook_body("t.plain.at2", ""),
         Some(cf_obj()),
     )]);
     expect_err(
@@ -921,7 +965,7 @@ fn a_hook_on_a_non_boundary_or_with_a_bad_target_is_refused() {
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.plain", "offset = 4"),
+        &hook_body("t.plain.at4", ""),
         Some(cf_obj()),
     )]);
     assert!(run_on(DT2, &hook_reg(), &lib, &["t/h"]).is_ok());
@@ -929,7 +973,7 @@ fn a_hook_on_a_non_boundary_or_with_a_bad_target_is_refused() {
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.plain", "").replace("to = \"_f\"", "to = \"_nope\""),
+        &hook_body("t.plain.hook", "").replace("to = \"_f\"", "to = \"_nope\""),
         Some(cf_obj()),
     )]);
     expect_err(
@@ -939,30 +983,32 @@ fn a_hook_on_a_non_boundary_or_with_a_bad_target_is_refused() {
     // a site that reaches past the anchor needs the hash: a 6-byte anchor, 8-byte site
     let mut reg = registry();
     add_anchor(&mut reg, DT2, "t.short", "code", PLAIN_FN, 6);
+    add_hook(&mut reg, DT2, "t.short.hook", "t.short", 0, "before");
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.short", ""),
+        &hook_body("t.short.hook", ""),
         Some(cf_obj()),
     )]);
     expect_err(run_on(DT2, &reg, &lib, &["t/h"]), "has no expect_sha256");
     // a data anchor is not a code site
     let mut reg = registry();
     add_anchor(&mut reg, DT2, "t.data", "data", PLAIN_FN, 16);
+    add_hook(&mut reg, DT2, "t.data.hook", "t.data", 0, "before");
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.data", ""),
+        &hook_body("t.data.hook", ""),
         Some(cf_obj()),
     )]);
     expect_err(run_on(DT2, &reg, &lib, &["t/h"]), "needs a code anchor");
     // two hooks at the same place overlap
     let lib = library(vec![
-        module("t/h", "", &hook_body("t.plain", ""), Some(cf_obj())),
+        module("t/h", "", &hook_body("t.plain.hook", ""), Some(cf_obj())),
         module(
             "t/i",
             "",
-            &hook_body("t.plain", "").replace("_f", "_h"),
+            &hook_body("t.plain.hook", "").replace("_f", "_h"),
             Some(
                 cf_obj()
                     .to_string()
@@ -979,11 +1025,11 @@ fn a_hook_on_a_non_boundary_or_with_a_bad_target_is_refused() {
     );
     // hooks at overlapping sites of one anchor
     let lib = library(vec![
-        module("t/h", "", &hook_body("t.plain", ""), Some(cf_obj())),
+        module("t/h", "", &hook_body("t.plain.hook", ""), Some(cf_obj())),
         module(
             "t/i",
             "",
-            &hook_body("t.plain", "offset = 4").replace("_f", "_h"),
+            &hook_body("t.plain.at4", "").replace("_f", "_h"),
             Some(
                 cf_obj()
                     .to_string()
@@ -1008,7 +1054,7 @@ fn displaced_pc_relative_instructions_are_re_encoded() {
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.jsrpc", ""),
+        &hook_body("t.jsrpc.hook", ""),
         Some(cf_obj()),
     )]);
     let out = run_on(DT2, &hook_reg(), &lib, &["t/h"]).unwrap();
@@ -1026,7 +1072,7 @@ fn displaced_pc_relative_instructions_are_re_encoded() {
     let lib = library(vec![module(
         "t/h",
         "",
-        &hook_body("t.bra", ""),
+        &hook_body("t.bra.hook", ""),
         Some(cf_obj()),
     )]);
     let out = run_on(DT2, &hook_reg(), &lib, &["t/h"]).unwrap();
@@ -1050,9 +1096,17 @@ fn a_sharc_hook_replaces_the_instruction_by_a_jump_and_the_tail_executes_it() {
         "symbols": [{"name": "_f", "section": "seg_pmco", "value": 0, "global": true}],
         "relocs": []
     });
-    let body = "[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n[[op]]\nop = \"hook\"\nanchor = \"dsp.master.q31_call\"\nto = \"_f\"\n";
+    let body = "[[object]]\npath = \"x.json\"\nplace = \"dsp.l2\"\n[[op]]\nop = \"hook\"\nhook = \"t.q31.hook\"\nto = \"_f\"\n";
     let lib = library(vec![module("t/h", "", body, Some(dsp_obj))]);
-    let reg = registry();
+    let mut reg = registry();
+    add_hook(
+        &mut reg,
+        DT2,
+        "t.q31.hook",
+        "dsp.master.site.q31_converter.call",
+        0,
+        "before",
+    );
     let out = run_on(DT2, &reg, &lib, &["t/h"]).unwrap();
     let base = Firmware::parse(&image(DT2).unwrap()).unwrap();
     let a = reg
@@ -1060,7 +1114,7 @@ fn a_sharc_hook_replaces_the_instruction_by_a_jump_and_the_tail_executes_it() {
         .iter()
         .find(|p| p.port.syx_sha256 == base.syx_sha256)
         .unwrap()
-        .anchor("dsp.master.q31_call")
+        .anchor("dsp.master.site.q31_converter.call")
         .unwrap()
         .clone();
     let sb = Stream::parse(base.section(7).unwrap().data.clone()).unwrap();
@@ -1078,8 +1132,8 @@ fn a_sharc_hook_replaces_the_instruction_by_a_jump_and_the_tail_executes_it() {
     assert_eq!(&site[..2], &0x063eu16.to_le_bytes());
     assert_eq!(site[2] as u64, (f >> 16) & 0xff);
     assert_eq!(&site[4..6], &((f & 0xffff) as u16).to_le_bytes());
-    let tail_pc = sym(&out, "t/h", "hook.dsp.master.q31_call.tail");
-    let ret = sym(&out, "t/h", "hook.dsp.master.q31_call.return");
+    let tail_pc = sym(&out, "t/h", "hook.dsp.master.site.q31_converter.call.tail");
+    let ret = sym(&out, "t/h", "hook.dsp.master.site.q31_converter.call.return");
     assert_eq!(ret, a.pm.unwrap() + 3);
     let tail_byte = 0x2000_0000 + (tail_pc as u32 - 0xB8_0000) * 2;
     let t = so.read(tail_byte, 12).unwrap();
@@ -1091,19 +1145,6 @@ fn a_sharc_hook_replaces_the_instruction_by_a_jump_and_the_tail_executes_it() {
     assert_eq!(&t[6..8], &0x063eu16.to_le_bytes());
     assert_eq!(t[8] as u64, (ret >> 16) & 0xff);
     assert_eq!(&t[10..12], &((ret & 0xffff) as u16).to_le_bytes());
-    // a call is not available on SHARC
-    let lib = library(vec![module(
-        "t/h",
-        "",
-        &format!("{body}kind = \"call\"\n"),
-        Some(json!({
-            "format": 1, "arch": "sharc", "source_sha256": "0".repeat(64),
-            "sections": [{"name": "seg_pmco", "kind": "text", "align": 8, "size": 6, "hex": "000000000000"}],
-            "symbols": [{"name": "_f", "section": "seg_pmco", "value": 0, "global": true}],
-            "relocs": []
-        })),
-    )]);
-    expect_err(run_on(DT2, &reg, &lib, &["t/h"]), "a jump, not a call");
 }
 
 // ---- P5: device filters ----------------------------------------------------------------------------------------
@@ -1207,7 +1248,7 @@ fn explain_lists_registries_sections_and_hooks() {
             &entry("one", "kind = 3"),
             None,
         ),
-        module("t/h", "", &hook_body("t.jsrpc", ""), Some(cf_obj())),
+        module("t/h", "", &hook_body("t.jsrpc.hook", ""), Some(cf_obj())),
     ]);
     let raw = image(DT2).unwrap();
     let ids: Vec<String> = ["t/a", "t/fw", "t/h"]
@@ -1225,7 +1266,7 @@ fn explain_lists_registries_sections_and_hooks() {
         "copied from t.tbl",
         "1 appended row(s)",
         "hooks:",
-        "[t/h@1.0.0] t.jsrpc +0 (cf)",
+        "[t/h@1.0.0] t.jsrpc.hook = t.jsrpc +0 (cf)",
         "displaced run",
         "jsr",
         "hook tail hook.t.jsrpc",
@@ -1243,6 +1284,7 @@ fn explain_lists_registries_sections_and_hooks() {
 #[test]
 fn old_plans_do_not_grow_new_keys() {
     need_image!(DT2);
+    need_toolchain!();
     let out = run(&library(vec![]), &["digikit/master-gain"]).unwrap();
     let j = serde_json::to_value(&out.plan).unwrap();
     for k in ["registries", "sections", "hooks"] {

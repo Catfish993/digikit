@@ -42,8 +42,6 @@ softfloat_abi = true
 # function hashes of 0xb88a49/0xb88aa6 match 0xb8636d/0xb863ca). sample_link:
 # how card samples reach the DSP (findings 15): ColdFire FlexBus writes to link
 # port 0, so the peer must be fed them.
-# Has a port lockfile (devices/ports/): tools/patchkit/port_resolve.py resolves every firmware with `port = true`.
-port = true
 dsp = { image = "dt2-1.16", idle_start = 0xb8636d, idle_end = 0xb863df, idle_head = 0xb863cf, sample_link = "lp0" }
 
 [[firmware]]
@@ -119,7 +117,7 @@ page_rows = 0
 [fx]
 # The firmware's pointer to the live kit object (an SRAM global; the same table holds the 16 track sound pointers at +8, tools/patchkit/pk_harness.py
 # SOUND_PTRS), and the offset of the kit's array of s16 effect values (the firmware's own "Fx" object, 71 halfwords) in that object. The firmware's kit
-# accessor (anchors dkrt.fw.project and dkrt.fw.kit_of) returns another object, the project's: the encoders edit this one.
+# accessor (anchors cf.project.fn.singleton and cf.project.fn.active_kit) returns another object, the project's: the encoders edit this one.
 kit_ptr = 0x80004704
 array_off = 0x4534
 # The number of stock pages: page numbers 0 .. 32 are in the firmware's page table, the effect pages are 33 and up (core/fxpages answers the
@@ -172,11 +170,11 @@ dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 
 # Named module sets, as roots (the modules they require are added). `patchkit apply` without --modules applies `device`
 # (`--set NAME` picks another); `firmware.load {runtime: true}` patches the stock image with `emulator` (`patch_set` picks
-# another). Both are the flash-image roots of the rt021 images for now; `emulator` adds `core/remote-open`: the REMOTE
-# switch of the DIGIKIT menu starts on in the emulator and off on a device (core/input is in both; the commands of digikit/remote need the switch).
+# another). Both are the flash-image roots of the rt021 images for now. The two sets are the same
+# today (core/input is in both); a module such as digikit/remote is on exactly when its check mark in DIGIKIT > MODULES is set.
 [patch_sets]
-emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/digikit-menu", "core/health", "core/input", "core/remote-open"]
-device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/digikit-menu", "core/health", "core/input"]
+emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
+device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
 
 # The input backend core/input uses to press keys and turn encoders from software (docs/plans/remote-control.md). The profile chooses; `panel-uart`: the panel
 # MCU's UART packets are decoded by the firmware's own key and encoder decoders, which core/input calls (anchors by hash in the port files).
@@ -366,9 +364,18 @@ header_b_sector = 0x2e19fdd  # store header copy B: the sector before the settin
 count = 8
 slot_base = 0
 to = "machine"
+clone_of = 0                # every run-time machine is a clone of SAMPLE (machine 0)
 knob_field = "f"
 level_field = "f8"
 level_default = 10          # 0x0a: the track level code
+# Stock parameter codes a machine row carries: TUNE on knob `tune_slot` of [adapter.machine] and LEV on knob `level_knob`.
+tune = 0xca
+level = 0xd1
+level_knob = 7
+
+# Stock parameter rows a module parameter can copy by name: `plain` shows a plain 0..127 value.
+[modules.templates]
+plain = 0xd1
 
 # A clone of SAMPLE (machine 0) keeps knob 3: it is the sample slot, the firmware's own sample number field. The DSP gets only the sample
 # number bits of its value (`value & 0x3ff`), the module default replaces the track's sample number, so no module parameter goes there.
@@ -396,7 +403,7 @@ voices          = 16                      # tracks; each track is rendered on it
 voice_unit      = "track"                 # "track": voice record, voices in pairs; "slot": trig edge
 pitch_hw        = 1                       # frame halfword 1 + t: note << 8
 velocity_hw     = 0x1a                    # frame halfword 0x1a + t: velocity << 8
-type_source     = "cache"                 # the DSP's per-track type cache (anchor dsp.voice.type_cache); DN2: "frame"
+type_source     = "cache"                 # the DSP's per-track type cache (anchor dsp.voice.value.type_cache); DN2: "frame"
 record_active   = 0x1b8                   # byte +0x1b8 of the voice record: ACTIVE
 record_mark     = 0x1b9                   # byte +0x1b9: the note-on mark
 note_on         = "record"                # ACTIVE != 0 and mark == 0; DN2: "trig-edge"

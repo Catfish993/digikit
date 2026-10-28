@@ -31,7 +31,7 @@ Module types that load at run time today: machine (DSP), machine (data only) and
 | machine types, machine rows, voice rows | 8 | 8 | `[limits] machine_rows`, tied to types.toml by an assert (dsp.rs ~50) | none |
 | parameter rows, page rows | 16, 8 (DN2 only) | same | count of reserved `[[entry]]` rows in modules/core/dynreg/module.toml; read by the runtime from the device object (`P_DYN_N`, `PG_DYN_N`, registry.rs ~388-407) | none; not in `[limits]` |
 | DSP run-time area | 512 KiB | 320 KiB | `[digikit] dsp_area_bytes` (PerDevice in devgen.rs) | `0x80000` and `0x20000` in modules/core/dsp-link/src/cf/dsp-link.c:37,135 |
-| effects in the chain | 4 | 4 | `DK_FX_MAX` | sdk/sdk.toml:47, sdk/dk_fx.h:11, sdk/dk_fx.inc, `max = 4` in modules/core/fx/module.toml:55, `FX_MAX` in tools/patchkit/pk_conform.py:417 |
+| effects in the chain | 4 | 4 | `DK_FX_MAX` | sdk/sdk.toml:47, sdk/include/dk/gen/fx.h:11, sdk/asm/dk_fx.inc, `max = 4` in modules/core/fx/module.toml:55, `FX_MAX` in tools/patchkit/pk_conform.py:417 |
 
 All `[limits]` are `Shared` in packages/patchkit/src/devgen.rs: the runtime is one image for both devices, so `gen` refuses a value that differs (docs/design/device-data.md). Only `dsp_area_bytes` is `PerDevice` (the runtime reads it from the `core/dyndsp` info table, dsp.rs `iw(I_AREA_BYTES)`).
 

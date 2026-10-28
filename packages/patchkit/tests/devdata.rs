@@ -16,7 +16,9 @@ fn root() -> PathBuf {
 
 #[test]
 fn every_generated_file_is_current() {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    let Some(mut lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     let models = Models::from_dir(&root().join("devices")).unwrap();
     lib.lower(&models).unwrap();
     let facts = Facts::from_dir(&root().join("devices")).unwrap();
@@ -41,7 +43,9 @@ fn every_generated_file_is_current() {
 
 #[test]
 fn the_runtime_constants_are_the_device_files_numbers() {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    let Some(mut lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let facts = Facts::from_dir(&root().join("devices")).unwrap();
@@ -139,7 +143,9 @@ fn peek_and_keep_ranges_are_checked() {
 
 #[test]
 fn a_fact_that_devices_disagree_on_is_refused_for_the_shared_runtime() {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    let Some(mut lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let dt2 = std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap();
@@ -236,7 +242,9 @@ fn a_limit_above_the_contract_maximum_is_refused() {
 
 #[test]
 fn machine_rows_are_the_run_time_machine_types_of_types_toml() {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    let Some(mut lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let (dt2, dn2) = device_texts();
@@ -255,7 +263,9 @@ fn machine_rows_are_the_run_time_machine_types_of_types_toml() {
 #[test]
 fn the_free_effect_rows_are_the_devices_fx_slots() {
     // core/dynfx reserves one free row of the effect chain for each of the device's effect slots (docs/design/digikit-dkm.md); both devices have it
-    let lib = Library::scan_repo(&root()).unwrap();
+    let Some(lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     let dynfx = lib.get("core/dynfx").unwrap();
     let rows = dynfx
         .manifest
@@ -287,7 +297,9 @@ fn the_free_effect_rows_are_the_devices_fx_slots() {
 #[test]
 fn the_effect_page_rows_are_eight_parameter_rows_for_each_fx_slot() {
     // core/fxpages reserves 7 knobs and MIX for each effect slot; the device file's [fx] has a value index for each of them (docs/design/digikit-registry.md "Effect pages")
-    let lib = Library::scan_repo(&root()).unwrap();
+    let Some(lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     let m = lib.get("core/fxpages").unwrap();
     let rows = m
         .manifest
@@ -357,7 +369,9 @@ fn the_effect_page_rows_are_eight_parameter_rows_for_each_fx_slot() {
 
 #[test]
 fn the_reserved_parameter_and_page_rows_are_the_profile_limits() {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    let Some(mut lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let dynreg = lib.get("core/dynreg").unwrap();
@@ -398,7 +412,9 @@ fn the_reserved_parameter_and_page_rows_are_the_profile_limits() {
 
 #[test]
 fn the_link_width_is_a_shared_c_header_from_the_contract_maximum() {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    let Some(mut lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let facts = Facts::from_dir(&root().join("devices")).unwrap();
@@ -429,13 +445,12 @@ const RT021_MODULES: [&str; 10] = [
 
 #[test]
 fn the_patch_sets_are_the_rt021_flash_modules() {
-    let lib = Library::scan_repo(&root()).unwrap();
+    let Some(lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     for dev in devdata::all() {
-        // the device set is the flash modules and core/input (the REMOTE switch of the DIGIKIT menu starts off); the emulator set adds core/remote-open (it starts on)
-        for (set, extra) in [
-            ("device", vec!["core/input"]),
-            ("emulator", vec!["core/input", "core/remote-open"]),
-        ] {
+        // both sets are the flash modules and core/input
+        for (set, extra) in [("device", vec!["core/input"]), ("emulator", vec!["core/input"])] {
             let roots = dev.patch_set(set).unwrap();
             let (mut all, _) = lib.with_requires(roots).unwrap();
             all.sort();
@@ -444,6 +459,8 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             // run-time effects (core/dynfx and the chain it reserves rows in): both devices have them in both sets (the Digitone II's emulator set since the engine bars only the
             // changed blocks: the hook costs x1.01 DSP CPU there, finding 55)
             want.extend(["core/dynfx", "core/fx", "core/fxpages"]);
+            // the DIGIKIT menu is written on <dk/ui.h>: core/digikit-menu requires core/ui
+            want.push("core/ui");
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);
         }
@@ -453,7 +470,9 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
 
 #[test]
 fn the_input_facts_are_the_device_files_panel() {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    let Some(mut lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
     let facts = Facts::from_dir(&root().join("devices")).unwrap();

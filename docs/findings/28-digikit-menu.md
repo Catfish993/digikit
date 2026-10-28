@@ -8,7 +8,7 @@ asynchronous loads, and greyed `[-]` rows for modules built for the other device
 a loaded module no longer starts ticked [C]. The stack question of "Still open" is answered: the UI task has 160 KiB and a load used 3.3 KiB (finding 34).**
 
 Plan: `docs/plans/digikit-runtime.md` Phase 4. Lane r1, 2026-10-16, native emulator (`regions_probe`), module
-`modules/core/digikit-menu` (Rust through rustc_codegen_gcc, finding 26). Everything here is **[D]**: measured or read once; no
+`modules/core/apps/digikit-menu` (Rust through rustc_codegen_gcc, finding 26). Everything here is **[D]**: measured or read once; no
 second agent has checked the addresses against the image bytes. Nothing ran on a device. Addresses are DT2 1.16 unless stated;
 the same functions are found by hash on DT2 1.17, DN2 1.11 and DN2 1.12 (table at the end).
 
@@ -30,8 +30,8 @@ same card writes on the patched and the stock image (`--regress`; not run on 1.1
   `dk_add_item(this)` (a2 = this, d4 = selection, both kept: our Rust code is callee-saved) and `jmp`s to the tail where the two
   displaced instructions run, then back into the rebuild. Reason: the restore sees the DIGIKIT row, so a rebuild with DIGIKIT
   selected (the Project observer rebuilds) keeps the cursor on it. All four images have the same instruction stream in this function
-  (identical masked hash), so one rule serves them.
-- Anchors (`tools/patchkit/pk_menu_rules.py`, `cf_func` rules by function hash; unique and equal on all four images): the hook site,
+  (identical masked hash), so one rule serves them. **[C]** The shim and the hook now belong to `core/ui` (`dk_hook`), which calls the app's `dk_app_settings_rows`; `core/digikit-menu` has no hook (docs/ARCHITECTURE.md).
+- Anchors (`c4d86e4e:tools/patchkit/pk_menu_rules.py`, `cf_func` rules by function hash; unique and equal on all four images): the hook site,
   operator new `FUN_4011e674`, item builder `FUN_401158b0`, `VerticalMenuView` constructor `0x40119c8c`, the shared_ptr helper
   `0x40119dda`, push `0x4011a2b2`, string constructor and destructor `0x401e7a64`/`0x401e5fb4`, block read `0x4012deda`,
   `View::invalidate` `0x4011ae46`, and the `pea (icon).l` instruction of the SYSTEM row (`cf.menu.icon_ref`).

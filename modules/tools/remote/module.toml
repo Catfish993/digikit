@@ -6,7 +6,7 @@ category = "tools"
 type = "service"
 author = "digikit"
 status = "experimental"
-summary = "Presses keys and turns encoders from a computer over USB MIDI; the DIGIKIT menu REMOTE switch must be on."
+summary = "Presses keys and turns encoders from a computer over USB MIDI."
 ports = ["dt2-1.17", "dn2-1.12"]
 requires = ["core/input"]
 conflicts = []
@@ -16,7 +16,8 @@ conflicts = []
 "dn2-1.12" = "experimental"
 
 # A run-time module (`.dkm`, `patchkit pack digikit/remote --device dt2`): its dkm_init registers the remote range of sdk/sdk.toml with Api.register_cmds
-# and calls core/input's `input_key` and `input_turn` (runtime imports). The runtime refuses the guarded range with E_DISABLED while DIGIKIT > REMOTE is off.
+# and calls core/input's `input_key` and `input_turn` (runtime imports). It is on exactly when it is loaded. Its `dkm_menu` (DK_MENU) gives the SETTINGS...
+# page of DIGIKIT > MODULES: the keys it holds, the last command and RELEASE ALL KEYS; the `dk_ui_*` calls are imports that are stubs when core/ui is not in the image.
 [[object]]
 path = "build/remote.dko.json"
 sources = ["src/c/remote.c"]

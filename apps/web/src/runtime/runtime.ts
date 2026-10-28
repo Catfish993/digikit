@@ -5,6 +5,7 @@ import type { DspStats, FastDefault, FastRegions } from '../split-session.ts';
 import fastRegionTable from '../../../../tools/emulator/fast_regions.json';
 import { sha256Hex } from './local-inputs';
 import type { CardBridge, CardStatus } from './cards';
+import type { ReloadReport } from './reload';
 
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 
@@ -160,6 +161,11 @@ export interface RuntimePatch {
 export interface FirmwareInfo {
   runtime: RuntimePatch | null;
 }
+/** The controller's heartbeat (`status.heartbeat`): whether the guest's main loop has stopped, and the stall threshold in emulated ms. */
+export interface RuntimeHealth {
+  stalled: boolean;
+  stall_ms: number;
+}
 export interface EmulatorRuntime {
   /** Browser worker only, and only with a core built with the `sharc` feature. */
   loadCoupled?(files: CoupledFiles, audioPort: MessagePort): Promise<RuntimeSnapshot>;
@@ -179,8 +185,13 @@ export interface EmulatorRuntime {
   loadPath?(path: string, options?: LoadOptions): Promise<RuntimeSnapshot>;
   /** Native desktop only: what the running image got from the digikit runtime patch (`status.firmware.runtime`). */
   firmwareInfo?(): Promise<FirmwareInfo | undefined>;
+  /** Native desktop only: the heartbeat of the running image (`status.heartbeat`), or undefined while a job runs. */
+  health?(): Promise<RuntimeHealth | undefined>;
   /** The emulator's own reset of the running firmware (the browser worker boots the file again). Not the device RESTART command. */
   restart(): Promise<RuntimeSnapshot>;
+  /** Native desktop only: `dev.reload`. The controller applies the modules again from the objects on disk and brings the running
+   * session to them (a module swap into a restored main screen, or a boot of the new image). It never builds. */
+  reloadModules?(): Promise<ReloadReport>;
   pause(): void;
   resume(): void;
   press(code: number): Promise<void>;
@@ -571,11 +582,40 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
       const status = await call<{ firmware: { runtime?: RuntimePatch | null } | null }>('status');
       return { runtime: status.firmware?.runtime ?? null };
     },
+    async health() {
+      const status = await call<{ heartbeat?: RuntimeHealth }>('status');
+      return status.heartbeat;
+    },
     async restart() {
       if (!loaded || activeSession === undefined) throw new Error('No firmware selected');
       return newSession(async (token) => {
         await call('restart', {}, token);
       });
+    },
+    // The session stays the same (the call carries its token); the pump stops while the controller loads or restores, a cold boot
+    // is a job that refuses steps.
+    async reloadModules() {
+      const session = activeSession;
+      if (!loaded || session === undefined) throw new Error('No firmware selected');
+      const resume = !paused;
+      clearPump();
+      const work = lifecycle
+        .catch(() => {})
+        .then(async () => {
+          try {
+            const report = await call<ReloadReport>('dev.reload', { build: true }, session);
+            if (disposed || activeSession !== session) return report;
+            onUpdate({ type: 'snapshot', snapshot: await api.invoke<RuntimeSnapshot>('emu_startup') });
+            return report;
+          } finally {
+            if (!disposed && activeSession === session && resume) start(session);
+          }
+        });
+      lifecycle = work.then(
+        () => {},
+        () => {},
+      );
+      return work;
     },
     pause() {
       clearPump();

@@ -1,23 +1,19 @@
 //! Typed module sections and their lowering.
 //!
-//! A machine module declares what it adds in four small sections instead of hand-written registry rows:
+//! A machine module declares what it adds in C, not in the manifest: `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` records
+//! (sdk/include/dk/machine.h), read by `desc` when the module loads. The values here (`MachineDef`, `ParamDef`, `PageDef`,
+//! `VoiceDef`) are what `desc` makes of them; `Manifest` holds them in its `machine`, `param`, `page` and `voice` lists.
 //!
-//! ```toml
-//! [[param]]    id, name, short, template, min, max, default      (one per parameter; [param.dn2] overrides)
-//! [[machine]]  id, name, short, clone_of, knobs = [...], level   (up to the device's knob count; [machine.dn2] overrides)
-//! [[page]]     id, machine, name, title                           (only on devices whose knobs live in a page)
-//! [[voice]]    machine, entry | render [, note_on, desc]          (machine id -> DSP entry symbols; desc: `dk_machine_desc`)
-//! [[fx]]       id, process, desc [, defaults]                      (a run-time effect: DSP symbols; desc: `dk_fx_desc`; `.dkm` only)
-//! ```
+//! A run-time effect (`FxDef`) is a `DK_FX` record in C (sdk/include/dk/fx.h), read by `desc`.
 //!
 //! `lower` turns them, per device, into the `[[entry]]` rows the frameworks (`core/machines`, `core/params`,
 //! `core/dsp-voice`) take. What a knob means on a device is device data: `[modules.knobs]` and `[modules.frame]` in
 //! `devices/<device>.toml` ([`DeviceModel`]). Nothing here names a device. The same resolved view feeds the
-//! generators (`gen.rs`: Rust constants, a SHARC include, gallery JSON).
+//! generator (`modgen.rs`: gallery JSON).
 
 use crate::error::*;
 use crate::module::{EntryDef, Manifest};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 // ---- device data ---------------------------------------------------------------------------------------------
@@ -32,6 +28,11 @@ pub struct KnobModel {
     pub slot_base: i64,
     /// `machine`: the knobs are fields of the machine row. `page`: they are fields of a page row (`[[page]]`).
     pub to: String,
+    /// The machine type every run-time machine of the device clones.
+    pub clone_of: i64,
+    /// List position of a patched-in machine row (none: the device lists a row without one).
+    #[serde(default)]
+    pub list_position: Option<i64>,
     /// Field prefix of knob `i` (`f` gives `f0`, `f1` ...).
     pub knob_field: String,
     /// `page` only: field prefix of the slot of knob `i`.
@@ -43,9 +44,30 @@ pub struct KnobModel {
     /// May a machine render with its own DSP routine (`own_dsp`)?
     #[serde(default)]
     pub own_dsp: bool,
+    /// `machine` devices: stock code of the tune row, written to knob `tune_slot` of `[adapter.machine]` (none: no tune knob).
+    #[serde(default)]
+    pub tune: Option<i64>,
+    /// `machine` devices: stock code of the level row, written to knob `level_knob` (none: no level knob).
+    #[serde(default)]
+    pub level: Option<i64>,
+    #[serde(default)]
+    pub level_knob: Option<usize>,
     /// Knobs the firmware keeps for itself on a clone of a base machine (`[[modules.knobs.reserved]]`).
     #[serde(default)]
     pub reserved: Vec<ReservedKnobs>,
+}
+
+/// The slots of `[adapter.machine]` that place a machine's parameters (the rest of that section is read by `devgen`).
+#[derive(Clone, Debug, Default, Deserialize)]
+struct AdapterSlots {
+    tune_slot: Option<usize>,
+    #[serde(default)]
+    param_slots: Vec<usize>,
+}
+
+#[derive(Deserialize)]
+struct AdapterDoc {
+    machine: Option<AdapterSlots>,
 }
 
 /// Knobs of a base machine that a module parameter must not use: a clone of machine `clone_of` (named `name` in messages) keeps them.
@@ -81,6 +103,9 @@ pub struct FrameModel {
 pub struct ModulesSection {
     pub knobs: KnobModel,
     pub frame: FrameModel,
+    /// `[modules.templates]`: stock parameter rows a module parameter copies by name.
+    #[serde(default)]
+    pub templates: BTreeMap<String, i64>,
 }
 
 #[derive(Clone, Debug)]
@@ -88,6 +113,11 @@ pub struct DeviceModel {
     pub short: String,
     pub knobs: KnobModel,
     pub frame: FrameModel,
+    pub templates: BTreeMap<String, i64>,
+    /// Knob position of the stock tune (`[adapter.machine] tune_slot`).
+    pub tune_slot: Option<usize>,
+    /// Knob positions of a machine's module parameters, in order (`[adapter.machine] param_slots`).
+    pub param_slots: Vec<usize>,
 }
 
 impl DeviceModel {
@@ -107,6 +137,7 @@ impl DeviceModel {
 struct DeviceFile {
     device: Option<DeviceHead>,
     modules: Option<ModulesSection>,
+    adapter: Option<AdapterDoc>,
 }
 #[derive(Deserialize)]
 struct DeviceHead {
@@ -127,6 +158,7 @@ impl Models {
             let (Some(d), Some(m)) = (f.device, f.modules) else {
                 continue;
             };
+            let slots = f.adapter.and_then(|a| a.machine).unwrap_or_default();
             if by_device
                 .insert(
                     d.short.clone(),
@@ -134,6 +166,9 @@ impl Models {
                         short: d.short.clone(),
                         knobs: m.knobs,
                         frame: m.frame,
+                        templates: m.templates,
+                        tune_slot: slots.tune_slot,
+                        param_slots: slots.param_slots,
                     },
                 )
                 .is_some()
@@ -164,116 +199,74 @@ impl Models {
 
 // ---- the typed sections --------------------------------------------------------------------------------------
 
-/// One knob of a machine: a stock parameter code (`0` = none) or a parameter of this module (its id).
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
+/// One knob of a machine on a device: a stock parameter code (`0` = none) or a parameter of this module (its id).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Knob {
     Code(i64),
     Param(String),
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct ParamDef {
-    pub id: String,
-    pub name: Option<String>,
-    pub short: Option<String>,
-    /// Stock code whose row is copied (owner, flag, kind, formatter).
-    pub template: Option<i64>,
-    pub min: Option<i64>,
-    pub max: Option<i64>,
-    pub default: Option<i64>,
-    #[serde(default)]
-    pub devices: Vec<String>,
-    /// `[param.<device>]` overrides.
-    #[serde(flatten)]
-    pub per_device: BTreeMap<String, toml::Value>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ParamOver {
-    name: Option<String>,
-    short: Option<String>,
-    template: Option<i64>,
-    min: Option<i64>,
-    max: Option<i64>,
-    default: Option<i64>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
+/// A machine (a `DK_MACHINE` record).
+#[derive(Clone, Debug, Serialize)]
 pub struct MachineDef {
     pub id: String,
-    pub name: Option<String>,
-    pub short: Option<String>,
-    pub clone_of: Option<i64>,
-    pub position: Option<i64>,
-    pub own_dsp: Option<bool>,
-    pub knobs: Option<Vec<Knob>>,
-    pub level: Option<i64>,
-    /// Run-time machine: the type number it prefers on this device (`[machine.<device>] type_hint`); 0 or absent: none.
-    pub type_hint: Option<i64>,
-    #[serde(default)]
-    pub devices: Vec<String>,
-    /// `[machine.<device>]` overrides.
-    #[serde(flatten)]
-    pub per_device: BTreeMap<String, toml::Value>,
+    pub name: String,
+    pub short: String,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MachineOver {
-    name: Option<String>,
-    short: Option<String>,
-    clone_of: Option<i64>,
-    position: Option<i64>,
-    own_dsp: Option<bool>,
-    knobs: Option<Vec<Knob>>,
-    level: Option<i64>,
-    type_hint: Option<i64>,
+/// A parameter of a machine (a `DK_PARAM` record). `min`, `max` and `default` are raw: the knob unit times 256.
+#[derive(Clone, Debug, Serialize)]
+pub struct ParamDef {
+    pub id: String,
+    /// The id of the machine.
+    pub machine: String,
+    /// The place in the machine's parameters, from 0 without gaps.
+    pub word: u32,
+    pub name: String,
+    pub short: String,
+    pub min: i64,
+    pub max: i64,
+    pub default: i64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// One encoder of a machine page (a `DK_KNOB` or `DK_KNOB_AT` entry of a `DK_PAGE` record).
+#[derive(Clone, Debug, Serialize)]
+pub struct PageKnob {
+    /// The parameter word of the machine.
+    pub word: u32,
+    /// The encoder 0 to 7; `None`: the lowest free one.
+    pub position: Option<u32>,
+}
+
+/// A page of a machine (a `DK_PAGE` record). `id` is made up from the machine id and the place among its pages.
+#[derive(Clone, Debug, Serialize)]
 pub struct PageDef {
     pub id: String,
     pub machine: String,
     pub name: String,
     pub title: String,
-    /// Default: the machine's knobs on that device.
-    pub knobs: Option<Vec<Knob>>,
-    #[serde(default)]
-    pub devices: Vec<String>,
+    pub knobs: Vec<PageKnob>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The DSP routines of a machine (from its `DK_MACHINE` record): `render` and `note_on` are the symbols of the routines, `desc` the
+/// `dk_machine_desc` data symbol: voices, state and clear bytes come from it.
+#[derive(Clone, Debug, Serialize)]
 pub struct VoiceDef {
     pub machine: String,
-    /// The render routine's symbol in the module's DSP object (old form; `render` is the same).
-    #[serde(default)]
-    pub entry: String,
-    /// The render routine's symbol (replaces `entry`).
-    #[serde(default)]
-    pub render: Option<String>,
-    /// The note_on routine's symbol (contract voices).
-    #[serde(default)]
-    pub note_on: Option<String>,
-    /// The `dk_machine_desc` data symbol (contract voices): voices, state and clear bytes come from it.
-    #[serde(default)]
-    pub desc: Option<String>,
-    #[serde(default)]
-    pub devices: Vec<String>,
+    pub render: String,
+    pub note_on: String,
+    pub desc: String,
 }
 
-/// A run-time effect (`[[fx]]`, DSP section version 4 of a `.dkm`; docs/design/digikit-dkm.md): `process` is the global text symbol of its process routine
-/// (sdk/dk_fx.h), `desc` the data symbol of its `dk_fx_desc` (n_params and state_bytes come from it), `defaults` the words p0 ... of its row (at most
+/// A run-time effect (a `DK_FX` record, DSP section version 4 of a `.dkm`; docs/design/digikit-dkm.md): `process` is the global text symbol of its process routine
+/// (<dk/fx.h>), `desc` the data symbol of its `dk_fx_desc` (n_params and state_bytes come from it), `defaults` the words p0 ... of its row (at most
 /// `n_params`, the words the DSP reads as they are; none: all 0). Only the packer reads it: a patched-in effect is an `[[entry]]` row of the registry `fx`.
 ///
 /// An effect with a `tab` has a page of its own in the FX view (docs/design/digikit-registry.md "Effect pages"): `tab` is the label of the page's tab
 /// (1 to 3 characters), `title` the page title (up to 23), `mix` the default of the MIX knob on the level slot (0 to 127; the adapter blends dry and wet, the
 /// effect writes only the wet signal), `route` and `routes` the default route and the allowed ones (`"master"`, `"send"`) and `knob` the knobs, up to 7: knob i is parameter word p_i, shown at `position` of the 8 knob positions of the page
 /// (default: i). A knob's value reaches the effect as a float in [`min`, `max`]; its default fills p_i of the row (so `defaults` names no word a knob has).
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FxDef {
     pub id: String,
@@ -305,8 +298,8 @@ fn default_mix() -> i64 {
     127
 }
 
-/// One knob of an effect page (`[[fx.knob]]`).
-#[derive(Clone, Debug, Deserialize)]
+/// One knob of an effect page (a `DK_FX_PARAM` record of a `DK_FX`).
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FxKnob {
     /// The long name shown while the knob is turned (1 to 23 characters).
@@ -336,12 +329,11 @@ pub struct RMachine {
     pub name: String,
     pub short: String,
     pub clone_of: i64,
+    /// List position of a patched-in row (`[modules.knobs] list_position`).
     pub position: Option<i64>,
     pub own_dsp: bool,
     pub knobs: Vec<Knob>,
     pub level: i64,
-    /// Preferred run-time type number (1 ..= 255; the pack checks the device's range); 0: none.
-    pub type_hint: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -401,270 +393,223 @@ pub struct DevResolved {
     pub voices: Vec<RVoice>,
 }
 
-fn on(devices: &[String], dev: &str) -> bool {
-    devices.is_empty() || devices.iter().any(|d| d == dev)
+/// Where the parameters of one machine sit on a device: `pos[i]` is the knob position of parameter `i` (of the machine's list);
+/// `pages` (page devices only) are the pages with their (parameter, position) entries.
+struct Placed {
+    pos: Vec<usize>,
+    pages: Vec<(String, String, Vec<(usize, usize)>)>,
 }
 
-/// Split the flattened per-device tables: the base keys that are device names, decoded as `T`.
-fn over<T: Default + for<'de> Deserialize<'de>>(
+/// Place the parameters of a machine on a device: word w sits at knob position `param_slots[w]`, where the DSP adapter reads it. For now a
+/// machine has at most `param_slots.len()` parameters, one page that lists the words in order, and no explicit positions. A page device
+/// puts the same positions on its page.
+fn place(
     who: &str,
     what: &str,
-    map: &BTreeMap<String, toml::Value>,
     dev: &str,
-) -> Result<T> {
-    match map.get(dev) {
-        None => Ok(T::default()),
-        Some(v) => v
-            .clone()
-            .try_into()
-            .map_err(|e| err!("{who}: {what} [{dev}]: {e}")),
+    model: &DeviceModel,
+    machine: &MachineDef,
+    mine: &[&ParamDef],
+    pages: &[&PageDef],
+) -> Result<Placed> {
+    let kn = &model.knobs;
+    // the entries of each page as (parameter index, position)
+    let mut entries: Vec<Vec<(usize, Option<usize>)>> = vec![];    let mut on_page = vec![false; mine.len()];
+    for pg in pages {
+        let mut list = vec![];
+        for e in &pg.knobs {
+            let Some(i) = mine.iter().position(|p| p.word == e.word) else {
+                return Err(err!(
+                    "{who}: {what}: page {}: knob names word {}, but the machine has no such parameter",
+                    pg.name,
+                    e.word
+                ));
+            };
+            if on_page[i] {
+                return Err(err!(
+                    "{who}: {what}: parameter word {} is on a page twice",
+                    e.word
+                ));
+            }
+            on_page[i] = true;
+            list.push((i, e.position.map(|p| p as usize)));
+        }
+        entries.push(list);
     }
-}
-
-fn check_keys(
-    who: &str,
-    what: &str,
-    map: &BTreeMap<String, toml::Value>,
-    models: &Models,
-) -> Result<()> {
-    for k in map.keys() {
-        if !models.by_device.contains_key(k) {
+    // the DSP adapter passes word w from knob position `param_slots[w]`, and the runtime of a page device writes page knob j to slot
+    // `slot_base + j` for every page: until the adapter has per-machine maps, a machine has one page and its words sit at the adapter positions
+    let free = &model.param_slots;
+    if let Some(&s) = free.iter().find(|&&s| s >= kn.count) {
+        return Err(err!(
+            "{who}: {what}: param_slots of {dev} has knob {s}, but {dev} has {}",
+            kn.count
+        ));
+    }
+    if mine.len() > free.len() {
+        return Err(err!(
+            "{who}: {what}: {} parameters, but {dev} has only {} free knob positions {free:?} (param_slots)",
+            mine.len(),
+            free.len()
+        ));
+    }
+    if pages.len() > 1 {
+        return Err(err!("{who}: {what}: a machine has one page for now"));
+    }
+    for (k, (i, p)) in entries.iter().flatten().enumerate() {
+        if p.is_some() {
             return Err(err!(
-                "{who}: {what}: unknown key {k:?} (a device table needs a [modules] section in devices/{k}.toml)"
+                "{who}: {what}: a machine knob has its adapter position for now (DK_KNOB_AT)"
+            ));
+        }
+        if *i != k {
+            return Err(err!(
+                "{who}: {what}: machine knobs follow the DSP word order for now"
             ));
         }
     }
-    Ok(())
-}
-
-fn need<T: Clone>(who: &str, what: &str, key: &str, v: &Option<T>) -> Result<T> {
-    v.clone()
-        .ok_or_else(|| err!("{who}: {what}: no {key} (on this device)"))
+    if mine.iter().enumerate().any(|(i, q)| q.word as usize != i) {
+        return Err(err!(
+            "{who}: {what}: machine knobs follow the DSP word order for now (words must be 0 to {})",
+            mine.len().saturating_sub(1)
+        ));
+    }
+    let pos: Vec<usize> = free[..mine.len()].to_vec();
+    if kn.to == "machine" {
+        return Ok(Placed { pos, pages: vec![] });
+    }
+    // a page device: a machine without a page gets one named after it
+    let (name, title) = match pages.first() {
+        Some(p) => (p.name.clone(), p.title.clone()),
+        None => (machine.name.to_ascii_uppercase(), machine.name.clone()),
+    };
+    let mut placed: Vec<(usize, usize)> = pos.iter().copied().enumerate().collect();
+    placed.sort_by_key(|&(_, p)| p);
+    Ok(Placed {
+        pos,
+        pages: vec![(name, title, placed)],
+    })
 }
 
 /// Resolve the typed sections against the device models: one [`DevResolved`] per device that has something.
 pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
     let who = m.module.id.as_str();
-    for d in m
-        .machine
-        .iter()
-        .map(|x| &x.devices)
-        .chain(m.param.iter().map(|x| &x.devices))
-    {
-        for x in d {
-            if !models.by_device.contains_key(x) {
-                return Err(err!(
-                    "{who}: device {x:?} has no [modules] section in devices/"
-                ));
-            }
-        }
-    }
-    for p in &m.param {
-        check_keys(who, &format!("param {}", p.id), &p.per_device, models)?;
-    }
-    for x in &m.machine {
-        check_keys(who, &format!("machine {}", x.id), &x.per_device, models)?;
-    }
     let mut out = vec![];
+    if m.machine.is_empty() {
+        return Ok(out);
+    }
     for (dev, model) in &models.by_device {
         let kn = &model.knobs;
-        // machines
-        let mut machines = vec![];
-        for d in m.machine.iter().filter(|d| on(&d.devices, dev)) {
-            let what = format!("machine {}", d.id);
-            let o: MachineOver = over(who, &what, &d.per_device, dev)?;
-            let name = need(who, &what, "name", &o.name.or(d.name.clone()))?;
-            let short = need(who, &what, "short", &o.short.or(d.short.clone()))?;
-            let clone_of = need(who, &what, "clone_of", &o.clone_of.or(d.clone_of))?;
-            let knobs = o.knobs.or(d.knobs.clone()).unwrap_or_default();
-            if knobs.len() > kn.count {
-                return Err(err!(
-                    "{who}: {what}: {} knobs, but {dev} has {}",
-                    knobs.len(),
-                    kn.count
-                ));
-            }
-            let own_dsp = o.own_dsp.or(d.own_dsp).unwrap_or(false);
-            if own_dsp && !kn.own_dsp {
-                return Err(err!("{who}: {what}: {dev} has no own_dsp machines"));
-            }
-            let type_hint = o.type_hint.or(d.type_hint).unwrap_or(0);
-            if !(0..=255).contains(&type_hint) {
-                return Err(err!(
-                    "{who}: {what}: type_hint {type_hint} is not a type number"
-                ));
-            }
-            machines.push(RMachine {
-                id: d.id.clone(),
-                type_hint: type_hint as u32,
-                name,
-                short,
-                clone_of,
-                position: o.position.or(d.position),
-                own_dsp,
-                knobs,
-                level: o.level.or(d.level).unwrap_or(kn.level_default),
-            });
-        }
-        // knobs the firmware keeps on a clone of the base machine: no module parameter there
-        for x in &machines {
-            for r in kn.reserved.iter().filter(|r| r.clone_of == x.clone_of) {
-                for &j in &r.knobs {
-                    if let Some(Knob::Param(p)) = x.knobs.get(j) {
-                        return Err(err!(
-                            "{who}: machine {}: param {p:?} sits at knob {j}, but knob {j} of a {} clone is {} \
-                             (docs/findings/02-machines-and-parameters.md)",
-                            x.id,
-                            r.name,
-                            r.why
-                        ));
-                    }
-                }
-            }
-        }
-        // slots of the module's parameters: the knob position in the machines that use them
-        let mut slot_of: BTreeMap<String, usize> = BTreeMap::new();
-        let mut knob_lists: Vec<(&str, &Vec<Knob>)> =
-            machines.iter().map(|x| (x.id.as_str(), &x.knobs)).collect();
-        let page_knobs: Vec<(String, Vec<Knob>)> = m
-            .page
-            .iter()
-            .filter(|p| on(&p.devices, dev))
-            .filter_map(|p| p.knobs.clone().map(|k| (p.id.clone(), k)))
-            .collect();
-        for (id, k) in &page_knobs {
-            knob_lists.push((id.as_str(), k));
-        }
-        for (owner, ks) in &knob_lists {
-            let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
-            for (j, k) in ks.iter().enumerate() {
-                let Knob::Param(p) = k else { continue };
-                if !m.param.iter().any(|d| &d.id == p) {
-                    return Err(err!(
-                        "{who}: {owner}: knob {j} names {p:?}, which is not a [[param]] of this module"
-                    ));
-                }
-                if !m.param.iter().any(|d| &d.id == p && on(&d.devices, dev)) {
-                    return Err(err!(
-                        "{who}: {owner}: knob {j} names {p:?}, which is not a param of {dev}"
-                    ));
-                }
-                if let Some(first) = seen.insert(p.as_str(), j) {
-                    return Err(err!(
-                        "{who}: {owner}: knob {j} names {p:?}, which knob {first} already names; a param appears once in knobs"
-                    ));
-                }
-                if let Some(prev) = slot_of.insert(p.clone(), j)
-                    && prev != j
-                {
-                    return Err(err!(
-                        "{who}: param {p} sits at knob {prev} and knob {j} ({owner}); one param has one slot"
-                    ));
-                }
-            }
-        }
-        // params
-        let mut params = vec![];
-        for d in m.param.iter().filter(|d| on(&d.devices, dev)) {
-            let what = format!("param {}", d.id);
-            let Some(&knob) = slot_of.get(&d.id) else {
-                if d.devices.iter().any(|x| x == dev) {
-                    return Err(err!("{who}: {what}: no machine of {dev} uses it"));
-                }
-                continue;
-            };
-            let o: ParamOver = over(who, &what, &d.per_device, dev)?;
-            params.push(RParam {
-                id: d.id.clone(),
-                name: need(who, &what, "name", &o.name.or(d.name.clone()))?,
-                short: need(who, &what, "short", &o.short.or(d.short.clone()))?,
-                template: need(who, &what, "template", &o.template.or(d.template))?,
-                min: need(who, &what, "min", &o.min.or(d.min))?,
-                max: need(who, &what, "max", &o.max.or(d.max))?,
-                default: need(who, &what, "default", &o.default.or(d.default))?,
-                knob,
-                slot: kn.slot_base + knob as i64,
-                frame_off: model.frame_offset(knob),
-                mirror: model.frame.mirror_base + model.frame_offset(knob),
-            });
-        }
-        // pages
-        let mut pages = vec![];
-        for p in m.page.iter().filter(|p| on(&p.devices, dev)) {
-            let what = format!("page {}", p.id);
-            if kn.to != "page" {
-                return Err(err!(
-                    "{who}: {what}: {dev} keeps its knobs in the machine row, not in a page \
-                     (a second SRC page for a Digitakt II machine is not supported yet: an added machine has one SRC page, \
-                     the engine has ten parameter slots and the page reads eight; docs/findings/50)"
-                ));
-            }
-            let Some(mach) = machines.iter().find(|x| x.id == p.machine) else {
-                return Err(err!("{who}: {what}: no machine {:?} on {dev}", p.machine));
-            };
-            let knobs = p.knobs.clone().unwrap_or_else(|| mach.knobs.clone());
-            for (j, k) in knobs.iter().enumerate() {
-                if matches!(k, Knob::Code(c) if *c != 0) {
-                    return Err(err!(
-                        "{who}: {what}: knob {j}: a stock code on a page is not supported yet (name a param)"
-                    ));
-                }
-            }
-            if knobs.len() > kn.count {
-                return Err(err!(
-                    "{who}: {what}: {} knobs, but {dev} has {}",
-                    knobs.len(),
-                    kn.count
-                ));
-            }
-            pages.push(RPage {
-                id: p.id.clone(),
-                machine: p.machine.clone(),
-                name: p.name.clone(),
-                title: p.title.clone(),
-                knobs,
-                level: mach.level,
-            });
-        }
-        // voices
-        let mut voices = vec![];
-        for v in m.voice.iter().filter(|v| on(&v.devices, dev)) {
-            if !machines.iter().any(|x| x.id == v.machine) {
-                if v.devices.iter().any(|x| x == dev) {
-                    return Err(err!(
-                        "{who}: voice {}: no machine of that id on {dev}",
-                        v.machine
-                    ));
-                }
-                continue;
-            }
-            let entry = match (&v.render, v.entry.is_empty()) {
-                (Some(r), true) => r.clone(),
-                (None, false) => v.entry.clone(),
-                _ => {
-                    return Err(err!(
-                        "{who}: voice {}: give exactly one of render and entry",
-                        v.machine
-                    ));
-                }
-            };
-            voices.push(RVoice {
-                machine: v.machine.clone(),
-                entry,
-                note_on: v.note_on.clone(),
-                desc: v.desc.clone(),
-                state: m.voice_state.get(&v.machine).cloned(),
-            });
-        }
-        if machines.is_empty() && params.is_empty() && pages.is_empty() && voices.is_empty() {
-            continue;
-        }
         if kn.to != "machine" && kn.to != "page" {
             return Err(err!(
                 "devices/{dev}.toml: [modules.knobs] to = {:?} is neither machine nor page",
                 kn.to
             ));
         }
+        let plain = *model
+            .templates
+            .get("plain")
+            .ok_or_else(|| err!("{who}: devices/{dev}.toml has no `plain` template"))?;
+        let mut machines = vec![];
+        let mut params = vec![];
+        let mut pages = vec![];
+        for d in &m.machine {
+            let what = format!("machine {}", d.id);
+            let mine: Vec<&ParamDef> = m.param.iter().filter(|p| p.machine == d.id).collect();
+            let mpages: Vec<&PageDef> = m.page.iter().filter(|p| p.machine == d.id).collect();
+            let placed = place(who, &what, dev, model, d, &mine, &mpages)?;
+            // the machine's knob list: positions to parameters, plus the stock rows of a machine-row device
+            let mut knobs = vec![Knob::Code(0); kn.count];
+            if kn.to == "machine" {
+                if let (Some(code), Some(slot)) = (kn.tune, model.tune_slot)
+                    && let Some(k) = knobs.get_mut(slot)
+                {
+                    *k = Knob::Code(code);
+                }
+                if let (Some(code), Some(j)) = (kn.level, kn.level_knob)
+                    && let Some(k) = knobs.get_mut(j)
+                {
+                    *k = Knob::Code(code);
+                }
+            }
+            for (p, &at) in mine.iter().zip(&placed.pos) {
+                knobs[at] = Knob::Param(p.id.clone());
+            }
+            if kn.to == "page" {
+                while matches!(knobs.last(), Some(Knob::Code(0))) {
+                    knobs.pop();
+                }
+            }
+            // knobs the firmware keeps on a clone of the base machine: no module parameter there
+            for r in kn.reserved.iter().filter(|r| r.clone_of == kn.clone_of) {
+                for &j in &r.knobs {
+                    if let Some(Knob::Param(p)) = knobs.get(j) {
+                        return Err(err!(
+                            "{who}: machine {}: param {p:?} sits at knob {j}, but knob {j} of a {} clone is {} \
+                             (docs/findings/02-machines-and-parameters.md)",
+                            d.id,
+                            r.name,
+                            r.why
+                        ));
+                    }
+                }
+            }
+            let own_dsp = kn.own_dsp && m.voice.iter().any(|v| v.machine == d.id);
+            machines.push(RMachine {
+                id: d.id.clone(),
+                name: d.name.clone(),
+                short: d.short.clone(),
+                clone_of: kn.clone_of,
+                position: kn.list_position,
+                own_dsp,
+                knobs,
+                level: kn.level_default,
+            });
+            for (p, &at) in mine.iter().zip(&placed.pos) {
+                params.push(RParam {
+                    id: p.id.clone(),
+                    name: p.name.clone(),
+                    short: p.short.clone(),
+                    template: plain,
+                    min: p.min,
+                    max: p.max,
+                    default: p.default,
+                    knob: at,
+                    slot: kn.slot_base + at as i64,
+                    frame_off: model.frame_offset(at),
+                    mirror: model.frame.mirror_base + model.frame_offset(at),
+                });
+            }
+            for (k, (name, title, list)) in placed.pages.iter().enumerate() {
+                let mut pk = vec![Knob::Code(0); kn.count];
+                for &(i, at) in list {
+                    pk[at] = Knob::Param(mine[i].id.clone());
+                }
+                while matches!(pk.last(), Some(Knob::Code(0))) {
+                    pk.pop();
+                }
+                pages.push(RPage {
+                    id: mpages
+                        .get(k)
+                        .map_or_else(|| format!("{}_p0", d.id), |p| p.id.clone()),
+                    machine: d.id.clone(),
+                    name: name.clone(),
+                    title: title.clone(),
+                    knobs: pk,
+                    level: kn.level_default,
+                });
+            }
+        }
+        let voices = m
+            .voice
+            .iter()
+            .map(|v| RVoice {
+                machine: v.machine.clone(),
+                entry: v.render.clone(),
+                note_on: Some(v.note_on.clone()),
+                desc: Some(v.desc.clone()),
+                state: m.voice_state.get(&v.machine).cloned(),
+            })
+            .collect();
         out.push(DevResolved {
             dev: dev.clone(),
             model: model.clone(),
@@ -834,7 +779,7 @@ pub fn lower(m: &mut Manifest, models: &Models) -> Result<()> {
     }
     if models.by_device.is_empty() {
         return Err(err!(
-            "{}: has [[machine]]/[[param]] sections, but no device file with [modules] is available",
+            "{}: has machine records, but no device file with [modules] is available",
             m.module.id
         ));
     }
@@ -855,9 +800,15 @@ short = "dt2"
 count = 8
 slot_base = 0
 to = "machine"
+clone_of = 0
 knob_field = "f"
 level_field = "f8"
 level_default = 10
+tune = 0xca
+level = 0xd1
+level_knob = 7
+[modules.templates]
+plain = 0xd1
 [[modules.knobs.reserved]]
 clone_of = 0
 name = "SAMPLE"
@@ -869,6 +820,9 @@ stride = 48
 group = 4
 gap = 2
 mirror_base = 25
+[adapter.machine]
+tune_slot = 0
+param_slots = [1, 2, 4, 5]
 "#;
     pub const DN2: &str = r#"
 [device]
@@ -877,17 +831,23 @@ short = "dn2"
 count = 8
 slot_base = 25
 to = "page"
+clone_of = 0
+list_position = 4
 knob_field = "c"
 slot_field = "s"
 level_field = "c8"
 level_default = 10
 own_dsp = true
+[modules.templates]
+plain = 0xd5
 [modules.frame]
 base = 0x6d
 stride = 0x49
 mirror_base = 25
+[adapter.machine]
+param_slots = [0, 1, 2, 3]
 "#;
-    const MOD: &str = r#"
+    const HEAD: &str = r#"
 [module]
 id = "machines/t"
 version = "0.1.0"
@@ -897,63 +857,70 @@ type = "machine"
 author = "digikit"
 status = "experimental"
 summary = "t."
-
-[[param]]
-id = "t_a"
-name = "A"
-short = "A"
-template = 0xd1
-min = 0
-max = 100
-default = 50
-[param.dn2]
-template = 0xd5
-
-[[param]]
-id = "t_b"
-name = "B"
-short = "B"
-template = 0xd1
-min = 0
-max = 100
-default = 1
-
-[[machine]]
-id = "t"
-name = "T"
-short = "T"
-clone_of = 0
-knobs = [0xca, "t_a", 0, 0, "t_b"]
-[machine.dn2]
-position = 4
-own_dsp = true
-knobs = ["t_a", "t_b"]
-
-[[page]]
-id = "t_syn"
-machine = "t"
-name = "T"
-title = "T"
-devices = ["dn2"]
-
-[[voice]]
-machine = "t"
-entry = "_t_render"
 "#;
 
     fn models() -> Models {
         Models::from_texts([DT2, DN2]).unwrap()
     }
-    fn manifest(t: &str) -> Manifest {
-        toml::from_str(t).unwrap()
+    /// A module with machine `t` of `n` parameters (t_0 ..; range 0 .. 100) and the given pages (entries are (word, position)).
+    fn manifest(n: u32, pages: &[&[(u32, Option<u32>)]]) -> Manifest {
+        let mut m: Manifest = toml::from_str(HEAD).unwrap();
+        m.machine = vec![MachineDef {
+            id: "t".into(),
+            name: "Tee".into(),
+            short: "T".into(),
+        }];
+        m.param = (0..n)
+            .map(|w| ParamDef {
+                id: format!("t_{w}"),
+                machine: "t".into(),
+                word: w,
+                name: format!("P{w}"),
+                short: format!("P{w}"),
+                min: 0,
+                max: 100,
+                default: 50,
+            })
+            .collect();
+        m.page = pages
+            .iter()
+            .enumerate()
+            .map(|(k, es)| PageDef {
+                id: format!("t_p{k}"),
+                machine: "t".into(),
+                name: format!("PG{k}"),
+                title: format!("Page {k}"),
+                knobs: es
+                    .iter()
+                    .map(|&(word, position)| PageKnob { word, position })
+                    .collect(),
+            })
+            .collect();
+        m.voice = vec![VoiceDef {
+            machine: "t".into(),
+            render: "_t_render".into(),
+            note_on: "_t_note_on".into(),
+            desc: "_t_desc".into(),
+        }];
+        m
     }
     fn field<'a>(e: &'a EntryDef, k: &str) -> Option<&'a toml::Value> {
         e.fields.get(k)
     }
+    fn p(n: &str) -> Knob {
+        Knob::Param(n.into())
+    }
+    fn knobs_of(m: &Manifest, dev: &str) -> Vec<Knob> {
+        let r = resolve(m, &models()).unwrap();
+        r.iter().find(|x| x.dev == dev).unwrap().machines[0].knobs.clone()
+    }
+    fn bad(m: &Manifest) -> String {
+        resolve(m, &models()).unwrap_err().0
+    }
 
     #[test]
     fn dt2_lowering_puts_knobs_in_the_machine_row() {
-        let mut m = manifest(MOD);
+        let mut m = manifest(2, &[&[(0, None), (1, None)]]);
         lower(&mut m, &models()).unwrap();
         let on = |dev: &str, reg: &str| -> Vec<&EntryDef> {
             m.entry
@@ -961,52 +928,37 @@ entry = "_t_render"
                 .filter(|e| e.devices == [dev] && e.registry == reg)
                 .collect()
         };
-        let mach = on("dt2", "machines");
-        assert_eq!(mach.len(), 1);
-        let e = mach[0];
+        let e = on("dt2", "machines")[0];
         assert_eq!(field(e, "f0"), Some(&int(0xca)));
-        assert_eq!(field(e, "f1"), Some(&s("params.t_a.index")));
+        assert_eq!(field(e, "f1"), Some(&s("params.t_0.index")));
+        assert_eq!(field(e, "f2"), Some(&s("params.t_1.index")));
         assert_eq!(field(e, "f3"), Some(&int(0)));
-        assert_eq!(field(e, "f4"), Some(&s("params.t_b.index")));
+        assert_eq!(field(e, "f7"), Some(&int(0xd1)));
         assert_eq!(field(e, "f8"), Some(&int(10)));
+        assert_eq!(field(e, "clone_of"), Some(&int(0)));
         assert!(field(e, "position").is_none() && field(e, "own_dsp").is_none());
-        // slots are the knob positions; the dt2 frame skips two halfwords after every four knobs
-        let p = on("dt2", "params");
-        assert_eq!(field(p[0], "slot"), Some(&int(1)));
-        assert_eq!(field(p[0], "template"), Some(&int(0xd1)));
-        assert_eq!(field(p[1], "slot"), Some(&int(4)));
+        // slots are the knob positions
+        let q = on("dt2", "params");
+        assert_eq!(field(q[0], "slot"), Some(&int(1)));
+        assert_eq!(field(q[0], "template"), Some(&int(0xd1)));
+        assert_eq!(field(q[1], "slot"), Some(&int(2)));
         assert!(on("dt2", "pages").is_empty());
-        let v = on("dt2", "voices");
-        assert_eq!(field(v[0], "type"), Some(&s("machines.t.index")));
-        assert_eq!(field(v[0], "pc"), Some(&s("_t_render")));
-        // the runtime guard's ranges: knob 1 and knob 4 are params (0 .. 100 = 100 << 16), a stock code and an empty knob stay undeclared
-        assert_eq!(field(v[0], "rng1"), Some(&int(100 << 16)));
-        assert_eq!(field(v[0], "rng4"), Some(&int(100 << 16)));
-        assert!(
-            ["rng0", "rng2", "rng3", "rng5", "rng6", "rng7"]
-                .iter()
-                .all(|k| field(v[0], k).is_none())
-        );
-        // the Digitone II's knobs live in a page, and the adapter clamps the parameter in knob position j to the range of knob j: t_a and t_b are knobs 0 and 1
-        let v2 = m
-            .entry
-            .iter()
-            .find(|e| e.devices == ["dn2"] && e.registry == "voices")
-            .unwrap();
-        assert_eq!(field(v2, "rng0"), Some(&int(100 << 16)));
-        assert_eq!(field(v2, "rng1"), Some(&int(100 << 16)));
-        assert!((2..8).all(|j| field(v2, &format!("rng{j}")).is_none()));
-        let r = resolve(&manifest(MOD), &models()).unwrap();
+        // the runtime guard's ranges: knobs 1 and 2 are params (0 .. 100 = 100 << 16)
+        let v = on("dt2", "voices")[0];
+        assert_eq!(field(v, "pc"), Some(&s("_t_render")));
+        assert_eq!(field(v, "rng1"), Some(&int(100 << 16)));
+        assert!(field(v, "rng0").is_none() && field(v, "rng3").is_none());
+        let r = resolve(&m, &models()).unwrap();
         let dt2 = r.iter().find(|x| x.dev == "dt2").unwrap();
         assert_eq!(
             voice_ranges(dt2, "t"),
-            [0, 100 << 16, 0, 0, 100 << 16, 0, 0, 0]
+            [0, 100 << 16, 100 << 16, 0, 0, 0, 0, 0]
         );
     }
 
     #[test]
     fn dn2_lowering_puts_knobs_in_a_page_and_slots_after_25() {
-        let mut m = manifest(MOD);
+        let mut m = manifest(2, &[&[(0, None), (1, None)]]);
         lower(&mut m, &models()).unwrap();
         let on = |reg: &str| -> Vec<&EntryDef> {
             m.entry
@@ -1017,17 +969,75 @@ entry = "_t_render"
         let mach = on("machines");
         assert_eq!(field(mach[0], "own_dsp"), Some(&int(1)));
         assert_eq!(field(mach[0], "position"), Some(&int(4)));
-        assert!(field(mach[0], "f0").is_none());
-        let p = on("params");
-        assert_eq!(field(p[0], "slot"), Some(&int(25)));
-        assert_eq!(field(p[0], "template"), Some(&int(0xd5)));
-        assert_eq!(field(p[1], "template"), Some(&int(0xd1)));
-        assert_eq!(field(p[1], "slot"), Some(&int(26)));
+        assert!(field(mach[0], "c0").is_none());
+        let q = on("params");
+        assert_eq!(field(q[0], "slot"), Some(&int(25)));
+        assert_eq!(field(q[1], "template"), Some(&int(0xd5)));
+        assert_eq!(field(q[1], "slot"), Some(&int(26)));
         let g = on("pages");
         assert_eq!(field(g[0], "machine"), Some(&s("machines.t.index")));
-        assert_eq!(field(g[0], "c0"), Some(&s("params.t_a.index")));
+        assert_eq!(field(g[0], "name"), Some(&s("PG0")));
+        assert_eq!(field(g[0], "c0"), Some(&s("params.t_0.index")));
         assert_eq!(field(g[0], "s1"), Some(&int(26)));
         assert_eq!(field(g[0], "c8"), Some(&int(10)));
+    }
+
+    #[test]
+    fn a_machine_without_a_page_gets_one_named_after_it_on_the_digitone() {
+        let m = manifest(2, &[]);
+        let r = resolve(&m, &models()).unwrap();
+        assert!(r.iter().find(|x| x.dev == "dt2").unwrap().pages.is_empty());
+        let dn2 = r.iter().find(|x| x.dev == "dn2").unwrap();
+        assert_eq!(dn2.pages.len(), 1);
+        assert_eq!((dn2.pages[0].name.as_str(), dn2.pages[0].title.as_str()), ("TEE", "Tee"));
+        assert_eq!(dn2.pages[0].knobs, [p("t_0"), p("t_1")]);
+    }
+
+    #[test]
+    fn placement_follows_the_device_profile() {
+        let m = manifest(4, &[&[(0, None), (1, None), (2, None), (3, None)]]);
+        let x = Knob::Code(0);
+        assert_eq!(
+            knobs_of(&m, "dt2"),
+            [Knob::Code(0xca), p("t_0"), p("t_1"), x.clone(), p("t_2"), p("t_3"), x, Knob::Code(0xd1)]
+        );
+        assert_eq!(knobs_of(&m, "dn2"), [p("t_0"), p("t_1"), p("t_2"), p("t_3")]);
+    }
+
+    #[test]
+    fn a_machine_knob_has_its_adapter_position_on_both_devices() {
+        let m = manifest(3, &[&[(0, None), (1, None), (2, None)]]);
+        let r = resolve(&m, &models()).unwrap();
+        let dt2 = r.iter().find(|x| x.dev == "dt2").unwrap();
+        assert_eq!(dt2.params.iter().map(|q| q.knob).collect::<Vec<_>>(), [1, 2, 4]);
+        let dn2 = r.iter().find(|x| x.dev == "dn2").unwrap();
+        assert_eq!(dn2.params.iter().map(|q| q.knob).collect::<Vec<_>>(), [0, 1, 2]);
+    }
+
+    #[test]
+    fn machine_page_rules_are_refused() {
+        // an explicit position
+        let e = bad(&manifest(2, &[&[(0, Some(5)), (1, None)]]));
+        assert!(e.contains("adapter position"), "{e}");
+        // words out of order
+        let e = bad(&manifest(2, &[&[(1, None), (0, None)]]));
+        assert!(e.contains("DSP word order"), "{e}");
+        // two pages
+        let e = bad(&manifest(2, &[&[(0, None)], &[(1, None)]]));
+        assert!(e.contains("one page for now"), "{e}");
+    }
+
+    #[test]
+    fn placement_mistakes_are_refused() {
+        // more parameters than a device has free positions
+        let e = bad(&manifest(5, &[]));
+        assert!(e.contains("5 parameters") && e.contains("free knob positions"), "{e}");
+        // a page entry names a word the machine does not have
+        let e = bad(&manifest(2, &[&[(0, None), (7, None)]]));
+        assert!(e.contains("word 7"), "{e}");
+        // a parameter on two pages
+        let e = bad(&manifest(2, &[&[(0, None)], &[(0, None), (1, None)]]));
+        assert!(e.contains("on a page twice"), "{e}");
     }
 
     #[test]
@@ -1036,118 +1046,38 @@ entry = "_t_render"
         let dt2 = &ms.by_device["dt2"];
         let off: Vec<i64> = (0..8).map(|j| dt2.frame_offset(j)).collect();
         assert_eq!(off, [0, 1, 2, 3, 6, 7, 8, 9]);
-        let dn2 = &ms.by_device["dn2"];
-        assert_eq!(dn2.frame_offset(3), 3);
-        let r = resolve(&manifest(MOD), &ms).unwrap();
-        let p = |dev: &str, id: &str| {
+        let r = resolve(&manifest(4, &[]), &ms).unwrap();
+        let q = |dev: &str, id: &str| {
             r.iter()
                 .find(|x| x.dev == dev)
                 .unwrap()
                 .params
                 .iter()
-                .find(|p| p.id == id)
+                .find(|q| q.id == id)
                 .unwrap()
                 .clone()
         };
-        assert_eq!((p("dt2", "t_b").frame_off, p("dt2", "t_b").mirror), (6, 31));
-        assert_eq!((p("dn2", "t_b").frame_off, p("dn2", "t_b").mirror), (1, 26));
+        assert_eq!((q("dt2", "t_2").frame_off, q("dt2", "t_2").mirror), (6, 31));
+        assert_eq!((q("dn2", "t_2").frame_off, q("dn2", "t_2").mirror), (2, 27));
     }
 
     #[test]
-    fn mistakes_are_refused() {
-        let ms = models();
-        let bad = |t: String| -> String {
-            let mut m = manifest(&t);
-            match lower(&mut m, &ms) {
-                Err(e) => e.0,
-                Ok(()) => panic!("accepted:\n{t}"),
-            }
+    fn own_dsp_follows_the_voice_routine() {
+        let own = |m: &Manifest, dev: &str| {
+            let r = resolve(m, &models()).unwrap();
+            r.iter().find(|x| x.dev == dev).unwrap().machines[0].own_dsp
         };
-        // too many knobs
-        let e = bad(MOD.replace("[0xca, \"t_a\", 0, 0, \"t_b\"]", "[0,0,0,0,0,0,0,0,0]"));
-        assert!(e.contains("9 knobs"), "{e}");
-        // a typo in a device table
-        let e = bad(MOD.replace("[machine.dn2]", "[machine.dm2]"));
-        assert!(e.contains("unknown key \"dm2\""), "{e}");
-        // an unknown field of an override
-        let e = bad(MOD.replace("position = 4", "postion = 4"));
-        assert!(e.contains("postion"), "{e}");
-        // one param at two knob positions (a page that orders the knobs differently from its machine)
-        let e = bad(MOD.replace(
-            "devices = [\"dn2\"]\n\n[[voice]]",
-            "knobs = [\"t_b\", \"t_a\"]\ndevices = [\"dn2\"]\n\n[[voice]]",
-        ));
-        assert!(e.contains("one param has one slot"), "{e}");
-        // a page on a device whose knobs live in the machine row
-        let e = bad(MOD.replace("devices = [\"dn2\"]", "devices = [\"dt2\"]"));
-        assert!(
-            e.contains("not in a page") && e.contains("second SRC page"),
-            "{e}"
-        );
-        // own_dsp where the device has none
-        let e = bad(MOD.replace("clone_of = 0\nknobs", "clone_of = 0\nown_dsp = true\nknobs"));
-        assert!(e.contains("no own_dsp"), "{e}");
-        // a param pinned to a device where no machine uses it
-        let e = bad(MOD
-            .replace("default = 1", "default = 1\ndevices = [\"dt2\"]")
-            .replace(
-                "knobs = [0xca, \"t_a\", 0, 0, \"t_b\"]",
-                "knobs = [0xca, \"t_a\"]",
-            )
-            .replace("knobs = [\"t_a\", \"t_b\"]", "knobs = [\"t_a\"]"));
-        assert!(e.contains("no machine of dt2 uses it"), "{e}");
-    }
-
-    #[test]
-    fn knob_layout_checks() {
-        let ms = models();
-        let bad = |t: String| -> String {
-            let mut m = manifest(&t);
-            match lower(&mut m, &ms) {
-                Err(e) => e.0,
-                Ok(()) => panic!("accepted:\n{t}"),
-            }
-        };
-        let ok = |t: String| lower(&mut manifest(&t), &ms).unwrap();
-        // a param on knob 3 of a SAMPLE clone: the sample slot
-        let e = bad(MOD.replace(
-            "[0xca, \"t_a\", 0, 0, \"t_b\"]",
-            "[0xca, \"t_a\", 0, \"t_b\"]",
-        ));
-        assert!(
-            e.contains(
-                "knob 3 of a SAMPLE clone is the sample slot: only the sample number bits reach the DSP (docs/findings/02-machines-and-parameters.md)"
-            ),
-            "{e}"
-        );
-        // a stock code on knob 3 and a param on knob 3 of a machine that is not a SAMPLE clone are fine
-        ok(MOD.replace(
-            "[0xca, \"t_a\", 0, 0, \"t_b\"]",
-            "[0xca, \"t_a\", 0, 0xcc, \"t_b\"]",
-        ));
-        ok(MOD.replace("clone_of = 0", "clone_of = 1").replace(
-            "[0xca, \"t_a\", 0, 0, \"t_b\"]",
-            "[0xca, \"t_a\", 0, \"t_b\"]",
-        ));
-        // a name that is no [[param]] of the module
-        let e = bad(MOD.replace("\"t_a\", 0, 0, \"t_b\"]", "\"t_zz\", 0, 0, \"t_b\"]"));
-        assert!(
-            e.contains("knob 1 names \"t_zz\", which is not a [[param]] of this module"),
-            "{e}"
-        );
-        // a param twice in one list
-        let e = bad(MOD.replace("\"t_a\", 0, 0, \"t_b\"]", "\"t_a\", \"t_a\", 0, \"t_b\"]"));
-        assert!(
-            e.contains("knob 2 names \"t_a\", which knob 1 already names"),
-            "{e}"
-        );
-        // the Digitone II has no reserved knob: knob 3 of a page is free
-        ok(MOD.replace("knobs = [\"t_a\", \"t_b\"]", "knobs = [\"t_a\", \"t_b\"]"));
+        let m = manifest(1, &[]);
+        assert!(own(&m, "dn2"));
+        assert!(!own(&m, "dt2"));
+        let mut novoice = m.clone();
+        novoice.voice.clear();
+        assert!(!own(&novoice, "dn2"));
     }
 
     #[test]
     fn lowering_runs_once_and_needs_models() {
-        let mut m = manifest(MOD);
+        let mut m = manifest(2, &[]);
         assert!(lower(&mut m, &Models::default()).is_err());
         lower(&mut m, &models()).unwrap();
         let n = m.entry.len();

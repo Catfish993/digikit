@@ -2,7 +2,7 @@
 
 Reverse engineering and emulation of the Elektron Digitakt II and Digitone II, with a ColdFire MCF5441x CPU and SHARC+ DSP, for desktop and browser (Wasm).
 
-Use **DT2 OS 1.17** and **DN2 OS 1.12** for analysis, patches, tests and reported addresses. Older 1.16/1.11 images are references only: resolve their addresses on the current image before use. Patchkit anchors resolve by hash through `devices/ports/`.
+Use **DT2 OS 1.17** and **DN2 OS 1.12** for analysis, patches, tests and reported addresses. DN2 1.11 is a secondary patch port (the health proof and its tests run on it); analysis and reported addresses stay on 1.17/1.12. DT2 1.16 and older images are references only: resolve their addresses on the current image before use. Patchkit anchors resolve by hash through `devices/ports/`.
 
 Start with [README.md](README.md) for setup and the newest `docs/handovers/HANDOVER-*.md` for current work. Detailed guides: [layout](docs/LAYOUT.md), [testing](docs/TESTING.md), [regression acceptance](tests/regression/README.md), [instrumentation](docs/INSTRUMENTATION.md), and [findings index](docs/FINDINGS.md).
 
@@ -22,7 +22,7 @@ packages/
   dksample/         WAV, native sample format and hashing
   dkneeds/          Module resource requirements
 modules/
-  core/             Shared module runtime and framework
+  core/             Layers: runtime/, expansion/, adapters/, apps/, fw/ (docs/ARCHITECTURE.md)
   machines/         Instrument modules
   fx/               Effect modules
   tools/            Device utility modules
@@ -59,6 +59,7 @@ Use the owner's command while iterating. Full command details, preparation and r
 | Python tools | Named pytest files under `tests/<owner>/` (never a directory) and `mise run lint:py`. Typed files are listed in pyproject `[tool.mypy] files`. |
 | Device suites | `mise run test:stock`, `test:runtime`, `test:modules`, `test:fx`, `test:fx:dt2`. Prerequisites (daemons, ready inputs, module artifacts) are in [testing](docs/TESTING.md); no implicit daemon builds. |
 | One module | `mise run module:check ID`: conformance and own tests; may build or emulate. This does not prove all-module loads. |
+| Module, UI or runtime iteration | `mise run dk:dev -- ID --device dn2 --keys 'tap:...,shot:NAME'`: builds, reloads a kept daemon (UI modules swap in about 4 s; any other change boots: DN2 5 s, DT2 10 s) and writes `out/runs/devreload/<dev>/sheet.png`. Iterate on DN2, check DT2 at the end. Not a proof: finish with the owner's check. |
 
 Test levels: unit tests run without a device. Device tests live in `tests/regression` (Vitest) and new device scenarios are TypeScript. Python tests test Python tools; the remaining Python device scenarios (`tests/digikit`, the smoke matrix) are pending migration. Tests must test our behaviour: no tests of third-party behaviour, of constants against themselves, or of exact command argv. Gate checks are commands, not test files.
 
@@ -70,7 +71,7 @@ The gate manages one CPU budget. Do not start another gate or Cargo build while 
 
 ## Development and analysis
 
-Prefer existing tooling and shared helpers over custom runners or wrappers. Use fast unit tests for logic and integration tests for real boundaries. New host/device scenarios use TypeScript/Vitest; analysis, decompilation and devtools use Python. Avoid unrelated refactors.
+Iterate with `dk:dev` ([testing](docs/TESTING.md) "Fast iteration"), not with harness runs or fresh boots; run the harness once for the proof. Respect the layers in docs/ARCHITECTURE.md; `mise run check:layers`. Prefer existing tooling and shared helpers over custom runners or wrappers. Use fast unit tests for logic and integration tests for real boundaries. New host/device scenarios use TypeScript/Vitest; analysis, decompilation and devtools use Python. Avoid unrelated refactors.
 
 Run Python tools from the repository root as `uv run python -m tools.<owner>.<module>`. Import through `tools`; never modify `sys.path`. Child tools use `[sys.executable, "-m", ...]` with `env=tools.python_env()`. Find tasks with `mise tasks` and options with `mise run TASK -- --help`.
 
@@ -78,7 +79,7 @@ Use existing database helpers before one-off queries: `tools/coldfire/cf.py` and
 
 SHARC instruction semantics belong only in `tools/sharc_dev/sharc_core/`; trace/run tools are drivers. Changes there or in `tools/sharc_dev/sharc_transpile/`, `tools/sharc_dev/sharc_transpile_infer.py`, or `tools/sharc_dev/sharc_rsgen.py` change `CORE_FINGERPRINT` and require costly regeneration. Back up each generated directory, regenerate DN2 and DT2 using `out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt`, and regenerate the shared core with `mise run gen:core`.
 
-Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `native_pgo.py` and `sharc_regionbench.py` already take the lock; do not wrap them again. Launcher outputs in `out/native/target/*/pgo-use` are reserved; experiments use another `DIGI_EMU_PGO_VARIANT`.
+Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `native_pgo.py`, `sharc_regionbench.py`, `pk_modcheck` and the scenario runner already take the lock; do not wrap them again (it deadlocks). Launcher outputs in `out/native/target/*/pgo-use` are reserved; experiments use another `DIGI_EMU_PGO_VARIANT`.
 
 ## Delegation
 

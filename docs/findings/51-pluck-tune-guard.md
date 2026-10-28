@@ -56,7 +56,7 @@ note-on path rebuilds every state word, the line included), and counts the fault
 (the stock path would play the cloned sample machine, which is worse than silence). The disable lasts until the next start. **[D]** `test_dsp_guard.py`: NaN and 100.0 fixtures are zeroed, ACTIVE/mark clear, kind 1/2, count 1; ten faults 1600 blocks
 apart leave the type enabled, then 7 in a second disable it; a disabled type is not called (ACTIVE untouched, no new fault); the clean fixture is untouched.
 
-**(c) Report.** `dl_diag` grew from 17 to 24 words (`modules/core/dsp-link/README.md`): 17 = faults (16 bits) | kind << 16 | types disabled << 24, 18 = type | voice << 16, 19 to 22 the eight words of the call (as the routine
+**(c) Report.** `dl_diag` grew from 17 to 24 words (`modules/core/adapters/dsp-link/README.md`): 17 = faults (16 bits) | kind << 16 | types disabled << 24, 18 = type | voice << 16, 19 to 22 the eight words of the call (as the routine
 saw them, clamped), 23 = the type disabled last. The words live in rows 1 to 12 of the reply record, entries 11 and 12 as words 0 to 16 do (finding 31; the ColdFire reads those entries only for parameters 36 to 39, **[O]** unchanged:
 rows 10 to 12 are new, and nothing in the scenarios or the rig reads them). The ColdFire runtime (`dlog.rs`) logs a new fault count as `MACHINE_FAULT` (kind 27: type | voice << 16, kind | faults << 8, knobs 0 to 5) and a new disabled type as
 `MACHINE_DISABLED` (kind 28: type, types disabled, faults), both error events; the poll is a second apart, so a burst is one event whose count says how many. `tools/device/dklog.py` names the fields. `RUNTIME_VERSION` is 5.

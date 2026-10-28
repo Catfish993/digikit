@@ -1,0 +1,912 @@
+<title>Anchor Review</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+/>
+<style>
+  /* Layout: a work surface — group index on the left, the selected group's candidates on the right, decisions inline. */
+  :root {
+    --bg: #f3f5f2;
+    --surface: #ffffff;
+    --sunk: #e9ece8;
+    --ink: #1b2220;
+    --muted: #5a6762;
+    --line: #d5dbd6;
+    --accent: #2b6b5a;
+    --accent-ink: #ffffff;
+    --keep: #2c7a4b;
+    --later: #9a6a12;
+    --skip: #9b3a3a;
+    --chip: #e2ebe6;
+    --f-display: 'IBM Plex Sans Condensed', 'Arial Narrow', system-ui, sans-serif;
+    --f-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --f-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #111513;
+      --surface: #181e1b;
+      --sunk: #0d110f;
+      --ink: #e3e9e5;
+      --muted: #93a29b;
+      --line: #29322e;
+      --accent: #62bfa0;
+      --accent-ink: #0d1a15;
+      --keep: #5cc489;
+      --later: #d9a648;
+      --skip: #e07a7a;
+      --chip: #213029;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #111513;
+    --surface: #181e1b;
+    --sunk: #0d110f;
+    --ink: #e3e9e5;
+    --muted: #93a29b;
+    --line: #29322e;
+    --accent: #62bfa0;
+    --accent-ink: #0d1a15;
+    --keep: #5cc489;
+    --later: #d9a648;
+    --skip: #e07a7a;
+    --chip: #213029;
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 14px;
+    line-height: 1.45;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 16px 40px;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px);
+    z-index: 10;
+    background: var(--bg);
+  }
+  h1,
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 {
+    font-size: 1.6rem;
+    letter-spacing: 0.01em;
+  }
+  h2 {
+    font-size: 1.25rem;
+  }
+  .mono {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .wrap {
+    max-width: 1320px;
+    margin: 0 auto;
+    display: grid;
+    gap: 14px;
+  }
+  header.top {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    align-items: end;
+    justify-content: space-between;
+  }
+  .sub {
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .progress {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--chip);
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .pill i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot-keep {
+    background: var(--keep);
+  }
+  .dot-later {
+    background: var(--later);
+  }
+  .dot-skip {
+    background: var(--skip);
+  }
+  .dot-none {
+    background: var(--line);
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .controls input[type='search'] {
+    flex: 1 1 220px;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  .controls label {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .controls select {
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  .banner {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--chip);
+    color: var(--ink);
+  }
+  .banner[hidden] {
+    display: none;
+  }
+  .main {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+  }
+  nav.groups {
+    position: sticky;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  nav.groups button {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 8px;
+    width: 100%;
+    text-align: left;
+    padding: 9px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    cursor: pointer;
+  }
+  nav.groups button:hover {
+    background: var(--sunk);
+  }
+  nav.groups button[aria-current='true'] {
+    background: var(--chip);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  nav.groups .gl {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  nav.groups .gm {
+    grid-column: 1 / -1;
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  nav.groups .gc {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  section.detail {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+  .ghead {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: grid;
+    gap: 8px;
+  }
+  .ghead .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .lab {
+    border-left: 3px solid var(--accent);
+    padding-left: 10px;
+  }
+  .lab + .lab {
+    border-left-color: var(--later);
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 3px 12px;
+    font-size: 0.88rem;
+  }
+  .kv dt {
+    color: var(--muted);
+  }
+  .kv dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .rows {
+    display: grid;
+    gap: 10px;
+  }
+  article.row {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 8px;
+    scroll-margin-top: 16px;
+  }
+  article.row[data-status='keep'] {
+    border-color: var(--keep);
+  }
+  article.row[data-status='skip'] {
+    opacity: 0.7;
+  }
+  article.row[data-status='later'] {
+    border-color: var(--later);
+  }
+  article.row.flash {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .rtop {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    align-items: baseline;
+  }
+  .rname {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .chip {
+    font-size: 0.75rem;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: var(--chip);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .chip.grade {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .chip.conf-high {
+    box-shadow: inset 0 0 0 1px var(--keep);
+  }
+  .chip.conf-low {
+    box-shadow: inset 0 0 0 1px var(--skip);
+  }
+  .role {
+    font-size: 1rem;
+  }
+  .edit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .edit input {
+    width: 100%;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  .edit input.mono {
+    font-family: var(--f-mono);
+  }
+  .decide {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .decide button {
+    border: 0;
+    padding: 6px 12px;
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    cursor: pointer;
+    border-right: 1px solid var(--line);
+  }
+  .decide button:last-child {
+    border-right: 0;
+  }
+  .decide button:hover {
+    background: var(--sunk);
+  }
+  .decide button[aria-pressed='true'][data-s='keep'] {
+    background: var(--keep);
+    color: var(--accent-ink);
+  }
+  .decide button[aria-pressed='true'][data-s='later'] {
+    background: var(--later);
+    color: var(--accent-ink);
+  }
+  .decide button[aria-pressed='true'][data-s='skip'] {
+    background: var(--skip);
+    color: var(--accent-ink);
+  }
+  .decide button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  details summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .nb {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .nb button {
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: var(--f-mono);
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .nb button.out {
+    color: var(--muted);
+    border-style: dashed;
+    cursor: default;
+  }
+  .saved {
+    font-size: 0.8rem;
+    color: var(--muted);
+    min-height: 1em;
+  }
+  .empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+  }
+  footer {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  @media (max-width: 760px) {
+    .main {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    nav.groups {
+      position: static;
+      max-height: 38vh;
+    }
+    .edit {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    article.row {
+      transition:
+        border-color 0.2s,
+        opacity 0.2s;
+    }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Anchor Review</h1>
+      <div class="sub">__SUBTITLE__ Labels are agent guesses [O] until checked against image bytes.</div>
+    </div>
+    <div class="progress" id="progress" aria-live="polite"></div>
+  </header>
+
+  <div class="controls" role="search">
+    <input
+      type="search"
+      id="q"
+      placeholder="Search name, role, proposed anchor, class, string"
+      aria-label="Search candidates"
+    />
+    <label><input type="checkbox" id="f-lab" checked /> Labelled only</label>
+    <label><input type="checkbox" id="f-open" /> Undecided only</label>
+    <label><input type="checkbox" id="f-grade" /> Anchor-grade only</label>
+    <select id="f-rel" aria-label="SDK relevance">
+      <option value="">Any SDK service</option>
+    </select>
+  </div>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <div class="main">
+    <nav class="groups" id="groups" aria-label="Groups"></nav>
+    <section class="detail" id="detail" aria-live="polite"></section>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+  const DATA = __DATA__;
+  const state = { group: null, decisions: {}, db: null, canWrite: false, pending: {}, drafts: {} };
+  const $ = (id) => document.getElementById(id);
+  const rowsByGroup = new Map();
+  for (const r of DATA.rows) {
+    if (!rowsByGroup.has(r.g)) rowsByGroup.set(r.g, []);
+    rowsByGroup.get(r.g).push(r);
+  }
+  const rowByAddr = new Map(DATA.rows.map((r) => [r.a, r]));
+  const docId = (a) => DATA.image + '-' + a;
+
+  function el(tag, attrs, ...kids) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === 'class') e.className = v;
+      else if (k === 'text') e.textContent = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+    return e;
+  }
+
+  function rels() {
+    const s = new Set();
+    for (const g of DATA.groups) for (const l of g.labels) if (l.rel) s.add(l.rel);
+    return [...s].sort();
+  }
+
+  function statusOf(a) {
+    return state.decisions[docId(a)]?.status || '';
+  }
+
+  function rowVisible(r) {
+    const q = $('q').value.trim().toLowerCase();
+    if ($('f-lab').checked && !r.lab.length) return false;
+    if ($('f-open').checked && statusOf(r.a)) return false;
+    if ($('f-grade').checked && !r.gr) return false;
+    if (q) {
+      const hay = [
+        r.a,
+        r.n,
+        r.wn,
+        r.cls,
+        r.hint,
+        r.by,
+        r.ck,
+        r.tags,
+        ...r.lab.flatMap((l) => [l.role, l.anchor, l.sig, l.ev]),
+      ]
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }
+
+  function groupVisible(g) {
+    const rel = $('f-rel').value;
+    if (rel && !g.labels.some((l) => l.rel === rel)) return false;
+    return (rowsByGroup.get(g.id) || []).some(rowVisible);
+  }
+
+  function groupTitle(g) {
+    return g.labels[0]?.label || 'Group ' + g.id + ' (no label)';
+  }
+
+  function renderProgress() {
+    const c = { keep: 0, later: 0, skip: 0 };
+    for (const d of Object.values(state.decisions)) if (c[d.status] != null) c[d.status]++;
+    const labelled = DATA.rows.filter((r) => r.lab.length).length;
+    const p = $('progress');
+    p.replaceChildren(
+      el('span', { class: 'pill' }, el('i', { class: 'dot-keep' }), 'Keep ' + c.keep),
+      el('span', { class: 'pill' }, el('i', { class: 'dot-later' }), 'Later ' + c.later),
+      el('span', { class: 'pill' }, el('i', { class: 'dot-skip' }), 'Skip ' + c.skip),
+      el(
+        'span',
+        { class: 'pill' },
+        el('i', { class: 'dot-none' }),
+        labelled + ' labelled · ' + DATA.rows.length + ' shown',
+      ),
+    );
+  }
+
+  function renderGroups() {
+    const nav = $('groups');
+    const vis = DATA.groups.filter(groupVisible);
+    if (state.group == null || !vis.some((g) => g.id === state.group)) state.group = vis[0]?.id ?? null;
+    nav.replaceChildren(
+      ...vis.map((g) => {
+        const rs = rowsByGroup.get(g.id) || [];
+        const done = rs.filter((r) => statusOf(r.a)).length;
+        return el(
+          'button',
+          { type: 'button', 'aria-current': g.id === state.group ? 'true' : 'false', onclick: () => selectGroup(g.id) },
+          el('span', { class: 'gl', text: groupTitle(g) }),
+          el('span', { class: 'gc', text: done + '/' + rs.length }),
+          el('span', {
+            class: 'gm',
+            text:
+              '#' +
+              g.id +
+              ' · ' +
+              g.size +
+              ' functions · ' +
+              g.grade +
+              ' anchor-grade' +
+              (g.labels[0]?.rel && g.labels[0].rel !== 'none' ? ' · ' + g.labels[0].rel : ''),
+          }),
+        );
+      }),
+    );
+    if (!vis.length) nav.replaceChildren(el('div', { class: 'empty', text: 'No group matches these filters.' }));
+  }
+
+  function renderDetail() {
+    const d = $('detail');
+    const g = DATA.groups.find((x) => x.id === state.group);
+    if (!g) {
+      d.replaceChildren(el('div', { class: 'empty', text: 'Pick a group on the left.' }));
+      return;
+    }
+    const head = el(
+      'div',
+      { class: 'ghead' },
+      el('h2', { text: groupTitle(g) }),
+      ...g.labels.map((l, i) =>
+        el(
+          'div',
+          { class: 'lab' },
+          el('div', {}, l.summary),
+          el(
+            'div',
+            { class: 'muted' },
+            (i ? 'Second labeller: ' + l.label + ' · ' : '') +
+              'subsystem ' +
+              (l.sub || '?') +
+              ' · SDK ' +
+              (l.rel || '?'),
+          ),
+        ),
+      ),
+      el(
+        'dl',
+        { class: 'kv' },
+        el('dt', { text: 'Group' }),
+        el('dd', {
+          class: 'mono',
+          text:
+            '#' + g.id + ' · ' + g.size + ' functions · ' + g.grade + ' anchor-grade · ' + g.anch + ' already anchored',
+        }),
+        el('dt', { text: 'Classes' }),
+        el('dd', {}, g.classes || 'none'),
+        el('dt', { text: 'Strings' }),
+        el('dd', {}, g.strings || 'none'),
+        el('dt', { text: 'Tags' }),
+        el('dd', { class: 'mono', text: g.tags || '' }),
+      ),
+    );
+    const rs = (rowsByGroup.get(g.id) || []).filter(rowVisible);
+    const list = el(
+      'div',
+      { class: 'rows' },
+      rs.length
+        ? rs.map(renderRow)
+        : el('div', { class: 'empty', text: 'No candidate in this group matches the filters.' }),
+    );
+    d.replaceChildren(head, list);
+  }
+
+  function renderRow(r) {
+    const dec = state.decisions[docId(r.a)] || {};
+    const lab = r.lab[0] || {};
+    const anchorIn = el('input', {
+      id: 'an-' + r.a,
+      class: 'mono',
+      value: state.drafts['an-' + r.a] ?? dec.anchor ?? lab.anchor ?? '',
+      placeholder: 'cf.<subsystem>.fn.<name>',
+      'aria-label': 'Anchor name for ' + r.a,
+    });
+    const noteIn = el('input', {
+      id: 'no-' + r.a,
+      value: state.drafts['no-' + r.a] ?? dec.note ?? '',
+      placeholder: 'Note (optional)',
+      'aria-label': 'Note for ' + r.a,
+    });
+    const saved = el('div', { class: 'saved' });
+    const decide = el(
+      'div',
+      { class: 'decide', role: 'group', 'aria-label': 'Decision' },
+      ...['keep', 'later', 'skip'].map((s) =>
+        el('button', {
+          type: 'button',
+          'data-s': s,
+          'aria-pressed': dec.status === s ? 'true' : 'false',
+          disabled: !state.canWrite,
+          onclick: () => save(r, s === dec.status ? '' : s, anchorIn.value, noteIn.value, saved),
+          text: s === 'keep' ? 'Keep' : s === 'later' ? 'Later' : 'Skip',
+        }),
+      ),
+    );
+    const commit = () => {
+      if (dec.status) save(r, dec.status, anchorIn.value, noteIn.value, saved);
+    };
+    anchorIn.addEventListener('change', commit);
+    noteIn.addEventListener('change', commit);
+    for (const inp of [anchorIn, noteIn])
+      inp.addEventListener('input', () => {
+        state.drafts[inp.id] = inp.value;
+      });
+    const nb = el(
+      'div',
+      { class: 'nb' },
+      r.nb.map(([a, name, inc, w]) =>
+        inc
+          ? el('button', {
+              type: 'button',
+              title: 'Linked by ' + w + ' call site(s)',
+              onclick: () => jump(a),
+              text: name,
+            })
+          : el('button', {
+              type: 'button',
+              class: 'out',
+              title: 'Not in this review set; query with fw.py catalog',
+              text: name,
+            }),
+      ),
+    );
+    return el(
+      'article',
+      { class: 'row', id: 'r-' + r.a, 'data-status': dec.status || '' },
+      el(
+        'div',
+        { class: 'rtop' },
+        el('span', { class: 'mono', text: r.a }),
+        el('span', { class: 'rname', text: r.n }),
+        r.wn ? el('span', { class: 'muted mono', text: r.wn }) : null,
+        r.cls ? el('span', { class: 'chip', text: r.cls }) : null,
+        r.gr ? el('span', { class: 'chip grade', text: 'anchor-grade' }) : null,
+        lab.conf ? el('span', { class: 'chip conf-' + lab.conf, text: 'confidence ' + lab.conf }) : null,
+        el('span', { class: 'muted mono', text: 'score ' + r.sc.toFixed(2) }),
+      ),
+      lab.role
+        ? el('div', { class: 'role', text: lab.role })
+        : el('div', { class: 'muted', text: 'Not labelled yet.' }),
+      el(
+        'dl',
+        { class: 'kv' },
+        lab.sig ? [el('dt', { text: 'Signature' }), el('dd', { class: 'mono', text: lab.sig })] : null,
+        lab.ev ? [el('dt', { text: 'Evidence' }), el('dd', { text: lab.ev })] : null,
+        r.lab[1]
+          ? [el('dt', { text: 'Second label' }), el('dd', { text: r.lab[1].role + ' → ' + r.lab[1].anchor })]
+          : null,
+        r.by ? [el('dt', { text: 'Called by' }), el('dd', { text: r.by })] : null,
+        r.ck ? [el('dt', { text: 'Calls' }), el('dd', { class: 'mono', text: r.ck })] : null,
+        r.hint ? [el('dt', { text: 'UI string' }), el('dd', { text: '“' + r.hint + '”' })] : null,
+        el('dt', { text: 'Rule' }),
+        el('dd', { class: 'mono', text: r.rule + ' · ' + r.size + ' bytes · ' + r.uic + ' UI callers' }),
+        el('dt', { text: 'DN2 pair' }),
+        el('dd', { class: 'mono', text: r.pair ? r.pair + ' (' + r.pm + ')' : 'none' }),
+      ),
+      el('div', { class: 'edit' }, anchorIn, decide),
+      noteIn,
+      saved,
+      r.nb.length ? el('details', {}, el('summary', { text: 'Linked candidates (' + r.nb.length + ')' }), nb) : null,
+    );
+  }
+
+  function jump(a) {
+    const r = rowByAddr.get(a);
+    if (!r) return;
+    if (state.group !== r.g) {
+      state.group = r.g;
+      render();
+    }
+    const e = document.getElementById('r-' + a);
+    if (!e) {
+      $('q').value = '';
+      $('f-lab').checked = false;
+      $('f-open').checked = false;
+      $('f-grade').checked = false;
+      render();
+    }
+    const t = document.getElementById('r-' + a);
+    if (!t) return;
+    t.scrollIntoView({
+      block: 'start',
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+    t.classList.add('flash');
+    setTimeout(() => t.classList.remove('flash'), 1400);
+  }
+
+  async function save(r, status, anchor, note, saved) {
+    if (!state.db || !state.canWrite) return;
+    const id = docId(r.a);
+    const body = {
+      status,
+      anchor: anchor.trim(),
+      note: note.trim(),
+      image: DATA.image,
+      addr: r.a,
+      name: r.n,
+      group: r.g,
+      pair: r.pair || '',
+      proposed: r.lab[0]?.anchor || '',
+      updated: new Date().toISOString(),
+    };
+    saved.textContent = 'Saving…';
+    const prev = state.pending[id] || Promise.resolve();
+    const p = prev.then(() =>
+      status ? state.db.doc('decisions/' + id).set(body) : state.db.doc('decisions/' + id).delete(),
+    );
+    state.pending[id] = p.catch(() => {});
+    try {
+      await p;
+      saved.textContent = status ? 'Saved' : 'Cleared';
+    } catch (e) {
+      saved.textContent =
+        e?.code === 'invalid_argument'
+          ? "You can't save decisions on this page."
+          : 'Not saved: ' + (e?.message || 'error') + '. Try again.';
+      if (e?.code === 'invalid_argument') {
+        state.canWrite = false;
+        render();
+      }
+    }
+  }
+
+  function render() {
+    renderProgress();
+    renderGroups();
+    renderDetail();
+  }
+
+  function selectGroup(id) {
+    state.group = id;
+    renderGroups();
+    renderDetail();
+    try {
+      history.replaceState(null, '', '#g' + id);
+    } catch (e) {}
+    $('detail').scrollIntoView({ block: 'start' });
+  }
+
+  for (const r of rels()) $('f-rel').append(el('option', { value: r, text: r }));
+  for (const id of ['q', 'f-lab', 'f-open', 'f-grade', 'f-rel'])
+    $(id).addEventListener('input', () => {
+      renderGroups();
+      renderDetail();
+    });
+  const m = /^#g(\d+)$/.exec(location.hash);
+  if (m) state.group = Number(m[1]);
+  $('foot').textContent =
+    DATA.groups.length +
+    ' of ' +
+    DATA.total_groups +
+    ' groups (10+ functions) and ' +
+    DATA.rows.length +
+    ' of ' +
+    DATA.total_rows +
+    ' candidates shown. The full catalogue: uv run python -m tools.coldfire.fw catalog -i ' +
+    DATA.image +
+    '.';
+  render();
+
+  (async () => {
+    const banner = $('banner');
+    const db = await window.claude?.use?.('db');
+    if (!db) {
+      banner.hidden = false;
+      banner.textContent =
+        "Decisions can't be saved in this view. Open the page on claude.ai while signed in to record them.";
+      return;
+    }
+    state.db = db;
+    const user = await window.claude.use('user');
+    const can = user ? await user.can('data.write') : null;
+    state.canWrite = can !== false;
+    if (!state.canWrite) {
+      banner.hidden = false;
+      banner.textContent = 'You can read this review but not record decisions.';
+    }
+    db.collection('decisions')
+      .limit(1000)
+      .onSnapshot(
+        (snap) => {
+          const next = {};
+          for (const d of snap.docs) next[d.id] = d.data();
+          state.decisions = next;
+          const ae = document.activeElement;
+          const keep = ae && ae.id;
+          render();
+          if (keep && document.getElementById(keep)) document.getElementById(keep).focus();
+        },
+        (e) => {
+          banner.hidden = false;
+          banner.textContent = 'Saved decisions stopped updating (' + e.code + '). Reload the page.';
+        },
+      );
+    render();
+  })();
+</script>

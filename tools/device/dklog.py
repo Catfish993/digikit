@@ -72,7 +72,7 @@ CRUMB_STAGES = {
     21: "D_AFTER_L4_L5_STORES",
     22: "D_AFTER_MODE1_READ",
 }
-# The 24 words of dl_diag (modules/core/dsp-link/README.md), in order.
+# The 24 words of dl_diag (modules/core/adapters/dsp-link/README.md), in order.
 DIAG_NAMES = (
     "magic_count",
     "link_beat",

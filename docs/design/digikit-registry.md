@@ -2,8 +2,12 @@
 
 Status: built for Digitakt II 1.16 and 1.17 (2026-10-16) and Digitone II 1.11 and 1.12 (2026-10-17; pages, `own_dsp`, finding 33), ColdFire side only, emulator only. Plan: `docs/plans/digikit-runtime.md`
 (Phase 5, ColdFire side). **Since the Phase 6 archive commit the rows are filled by the boot-time load only**: the unload, the in-use refusal and the machine-view hook and rebuild described for hot reload below are archived (docs/plans/digikit-hot-reload.md, tag `digikit-hot-reload-v1`); the paragraphs that describe them are marked. Results and evidence: `docs/findings/30-runtime-machines.md` (Digitakt II) and `docs/findings/33-runtime-machines-dn2.md` (Digitone II, unload refusal). File: `docs/design/digikit-dkm.md`. Runtime:
-`docs/design/digikit-runtime.md`. Code: `modules/core/dynreg` (patch time), `modules/core/runtime/src/rs/src/registry.rs` (run time),
+`docs/design/digikit-runtime.md`. Code: `modules/core/adapters/dynreg` (patch time), `modules/core/runtime/src/rs/src/registry.rs` (run time),
 `packages/patchkit/src/register.rs` (records, packer).
+
+Note (2026-10-27): the typed manifest sections named below (`[[machine]]`, `[[param]]`, `[[voice]]`, `[[page]]`) are replaced by `DK_MACHINE`,
+`DK_PARAM` and `DK_PAGE` in C (`sdk/include/dk/machine.h`). The registry records and rows are unchanged. `clone_of` is fixed by the device
+profile and not written by authors.
 
 ## What it does
 
@@ -24,7 +28,7 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
       kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, id; tab[8]; title[24]; 7 x (u32 position, display; f32 min, max, default; name[24]; short[8])   (Digitakt II)
 
 - MACHINE `type` is the machine **key** (since sticky ids, 2026-10-20, docs/design/module-sdk.md 11.5 D7): `hash24 << 8 | hint`. The hash is the low 24 bits of FNV-1a 32 over the
-  UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is the machine's `type_hint` (manifest, per device, 16 to 23; the pack refuses another value), 0 when it has none: "assign a type at load", preferring the hint (finding 52). The runtime
+  UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is 0 ("assign a type at load"; there is no type hint in the manifest). The runtime
   gives the machine a number in `dynamic_first ..= last` (Digitakt II and Digitone II 16 to 23) and remembers it on the card (below), so a project that stores the number
   keeps its machine while the map holds the hash. A key with hash 0 and a low byte of 16 to 23 pins that number (hand-made files and tests; it is in no map and the loader
   refuses it when another machine of the boot has it). A PAGE's `type` and a DSP voice's type are the key of their machine (the DSP section's version is unchanged: the
@@ -45,7 +49,7 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
   knob (0 to 127), `id` the effect's 16-bit ID (1 to 0xffff; the packer's `register::effect_id` of module id and effect id; the kit stores it with the values), `tab` the page's tab label (1 to 3 characters), `title` the page title (1 to 23), then 7 knob entries of which the first `n_knobs` are used: knob i is parameter word p_i
   of the effect's row, shown at `position` (0 to 7, distinct) with `display` 0 (0 .. 127) or 1 (-64 .. +63), `min`, `max` and `default` are IEEE single floats (`min < max`, the default
   inside), `name` the long name shown while the knob turns (1 to 23 characters), `short` the label under the knob (1 to 6). At most 4 per file, one for each effect; a file with one
-  needs `core/fxpages` (`E_NO_REGISTRY` otherwise). The packer writes it from `[[fx]]` with `tab` (`docs/design/module-sdk.md`, "Define an effect with its own page").
+  needs `core/fxpages` (`E_NO_REGISTRY` otherwise). The packer writes it from a `DK_FX` record with `tab` (`sdk/include/dk/fx.h`; formerly `[[fx]]`) (`docs/design/module-sdk.md`, "Define an effect with its own page").
 - Not carried yet: DSP code and `[[voice]]` records. The packer refuses a voice; the runtime refuses any record it does not know (`E_FORMAT`).
 - `patchkit pack` of a module without code writes a four-byte image (`moveq #0,d0; rts` as `dkm_init`) so that the loader's rules stay as they are.
 

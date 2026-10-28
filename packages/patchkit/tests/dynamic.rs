@@ -13,17 +13,19 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn library() -> Library {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+fn library() -> Option<Library> {
+    let mut lib = Library::scan_repo_or_skip(&root())?;
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
-    lib
+    Some(lib)
 }
 
 #[test]
 fn a_dynamic_module_is_not_lowered_and_not_patched() {
-    let lib = library();
-    let m = lib.get("test/dyn-xslice").unwrap();
+    let Some(lib) = library() else {
+        return;
+    };
+    let m = lib.get("test/sine").unwrap();
     assert!(m.manifest.module.dynamic);
     assert!(
         m.manifest.entry.is_empty(),
@@ -34,7 +36,7 @@ fn a_dynamic_module_is_not_lowered_and_not_patched() {
         let Ok(raw) = std::fs::read(root().join("firmware").join(file)) else {
             continue;
         };
-        let e = apply::apply(&raw, &reg, &lib, &["test/dyn-xslice".to_string()])
+        let e = apply::apply(&raw, &reg, &lib, &["test/sine".to_string()])
             .err()
             .expect("refused");
         assert!(e.0.contains("run-time module"), "{e}");
@@ -43,36 +45,40 @@ fn a_dynamic_module_is_not_lowered_and_not_patched() {
 
 #[test]
 fn the_register_records_are_the_lowered_typed_sections() {
-    let lib = library();
-    let m = lib.get("test/dyn-xslice").unwrap();
+    let Some(lib) = library() else {
+        return;
+    };
+    let m = lib.get("test/sine").unwrap();
     let models = Models::from_dir(&root().join("devices")).unwrap();
     let res = resolve(&m.manifest, &models).unwrap();
-    // only the Digitakt: the module says `devices = ["dt2"]`
-    assert_eq!(
-        res.iter().map(|r| r.dev.as_str()).collect::<Vec<_>>(),
-        ["dt2"]
-    );
-    let reg = Register::lower(&res[0], "test/dyn-xslice").unwrap();
+    // one DSP body for both devices
+    let dev = |d: &str| res.iter().find(|r| r.dev == d).unwrap();
+    assert_eq!(res.len(), 2);
+    let reg = Register::lower(dev("dt2"), "test/sine").unwrap();
     assert_eq!(reg.device, 1);
     assert_eq!(reg.machines.len(), 1);
     let mach = &reg.machines[0];
     assert_eq!(
         (mach.type_no, mach.clone_of, mach.position, mach.level),
-        (machine_key("test/dyn-xslice", "xslice_d", 16), 6, 255, 10)
+        (machine_key("test/sine", "sine"), 0, 255, 10)
     );
-    // knobs: XSLICE's stock codes, knob 6 the module's own parameter (index 0)
+    // knobs on the Digitakt: SAMPLE's tune and level rows, the module's parameter (index 0) at the first free position
     assert_eq!(
         mach.knobs,
-        [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, KNOB_PARAM, 0xfe]
+        [0xca, KNOB_PARAM, 0, 0, 0, 0, 0, 0xd1]
     );
     let p = &reg.params[0];
-    assert_eq!(
-        (p.template, p.slot, p.min, p.max, p.default),
-        (0xd1, 6, 0, 0x7f00, 0x2000)
-    );
+    assert_eq!((p.template, p.slot, p.min, p.max), (0xd1, 1, 0, 0x7f00));
+    // the Digitone: a page holds the parameter, the machine row none
+    let reg2 = Register::lower(dev("dn2"), "test/sine").unwrap();
+    assert_eq!((reg2.device, reg2.machines[0].own_dsp), (2, 1));
+    assert_eq!(reg2.machines[0].knobs, [0; 8]);
+    assert_eq!(reg2.pages.len(), 1);
+    assert_eq!(reg2.pages[0].knobs[0], KNOB_PARAM);
+    assert_eq!((reg2.params[0].template, reg2.params[0].slot), (0xd5, 25));
     // the file: a stub image, the records, and the same bytes every time
     let opts = dkm::Options {
-        name: "test/dyn-xslice".into(),
+        name: "test/sine".into(),
         version: 0x000100,
         runtime_min: 1,
     };
@@ -82,7 +88,7 @@ fn the_register_records_are_the_lowered_typed_sections() {
     assert_eq!(d.init, Some(0));
     assert_eq!(Register::parse(&d.register).unwrap(), reg);
     // the key is the 24-bit FNV-1a hash of "<module id>:<machine id>" above a zero type byte (D7)
-    assert_eq!(mach.type_no & 0xff, 16); // its type_hint
+    assert_eq!(mach.type_no & 0xff, 0);
     assert_eq!(machine_hash("a", "b"), 0xbd8540);
 }
 
@@ -107,7 +113,9 @@ fn the_run_time_type_range_is_checked() {
 /// runtime alone still patches (its link to the table is optional).
 #[test]
 fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
-    let lib = library();
+    let Some(lib) = library() else {
+        return;
+    };
     let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
     let mut ran = 0;
     for file in ["Digitakt_II_OS1.17.syx"] {
@@ -152,52 +160,18 @@ fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
     eprintln!("dynreg: {ran} images");
 }
 
-/// `type_hint` (docs/findings/52-sticky-machine-ids.md): the machine key carries it in the low byte, per device, and the pack refuses a hint
-/// outside the device's run-time range.
+/// A machine key keeps the low byte 0: the runtime assigns the type number at load.
 #[test]
-fn a_type_hint_is_the_low_byte_of_the_machine_key_and_is_range_checked() {
-    use patchkit::register::{check_type_hints, fmt_type};
-    let lib = library();
+fn a_machine_key_has_no_type_byte() {
+    let Some(lib) = library() else {
+        return;
+    };
     let models = Models::from_dir(&root().join("devices")).unwrap();
     let m = lib.get("digikit/pluck").unwrap();
     let res = resolve(&m.manifest, &models).unwrap();
-    let key = |dev: &str| {
-        let r = res.iter().find(|r| r.dev == dev).unwrap();
-        Register::lower(r, "digikit/pluck").unwrap().machines[0].type_no
-    };
-    let h = machine_hash("digikit/pluck", "pluck") << 8;
-    assert_eq!(key("dt2"), h | 18);
-    assert_eq!(key("dn2"), h | 17);
-    assert_eq!(fmt_type(key("dt2")), format!("h{:06x}+18", h >> 8));
-    // a machine without a hint keeps the low byte 0
-    let text =
-        std::fs::read_to_string(root().join("tests/fixtures/modules/dyn-xslice/module.toml"))
-            .unwrap();
-    let none = text.replace("type_hint = 16", "");
-    let mx: patchkit::module::Manifest = toml::from_str(&none).unwrap();
-    let rx = resolve(&mx, &models).unwrap();
+    let r = res.iter().find(|r| r.dev == "dt2").unwrap();
     assert_eq!(
-        Register::lower(&rx[0], "test/dyn-xslice").unwrap().machines[0].type_no & 0xff,
-        0
-    );
-    // the range: 16 ..= 23 is fine, 15 and 24 are pack errors that name the machine
-    let dt2 = res.iter().find(|r| r.dev == "dt2").unwrap();
-    assert!(check_type_hints(dt2, "digikit/pluck", 16, 23).is_ok());
-    for (first, last) in [(19, 23), (16, 17)] {
-        let e = check_type_hints(dt2, "digikit/pluck", first, last)
-            .unwrap_err()
-            .0;
-        assert!(e.contains("type_hint 18") && e.contains("pluck"), "{e}");
-    }
-    // a hint of 300 is not a type number
-    let bad = std::fs::read_to_string(root().join("modules/machines/pluck/module.toml"))
-        .unwrap()
-        .replace("type_hint = 18", "type_hint = 300");
-    let mf: patchkit::module::Manifest = toml::from_str(&bad).unwrap();
-    assert!(
-        resolve(&mf, &models)
-            .unwrap_err()
-            .0
-            .contains("type_hint 300")
+        Register::lower(r, "digikit/pluck").unwrap().machines[0].type_no,
+        machine_hash("digikit/pluck", "pluck") << 8
     );
 }

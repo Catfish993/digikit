@@ -8,69 +8,21 @@ author = "fadedlimes"
 status = "experimental"
 summary = "One continuous slider warps the phase a sine is read through: saw, pulse, or a resonant formant."
 dynamic = false
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.17"]
 requires = []
 conflicts = []
 
 [targets]
-"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
-"dn2-1.11" = "unsupported"
 "dn2-1.12" = "unsupported"
+
+# The machine declaration (DK_MACHINE and DK_PARAM in src/module.c). It holds only .dk.desc records.
+[[object]]
+path = "build/pd-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
 
 [[object]]
 path = "build/pd-dsp.dko.json"
 sources = ["src/dsp/pd.s"]
 place = "dsp.l2"
-
-[[voice]]
-machine = "pd"
-render = "_pd_render"
-note_on = "_pd_note_on"
-desc = "_pd_desc"
-
-# SAMPLE's TUNE (0xca) and LEV (0xd1) at the ends. The DSP reads params[i] from the knob at param_slots[i]
-# (Digitakt II 1.17: 1, 2, 4, 5). The positions in knobs below also set the UI slot, the p-lock slot, the frame
-# offsets and the generated files, so they must equal param_slots.
-[[machine]]
-id = "pd"
-name = "Phase Dist"
-short = "PD"
-clone_of = 0
-knobs = [0xca, "pd_amount", "pd_curve", 0, "pd_detune", "pd_fold", 0, 0xd1]
-
-[[param]]
-id = "pd_amount"
-name = "Distortion"
-short = "PD"
-template = 0xd1
-min = 0
-max = 0x7f00
-default = 0x0000
-
-[[param]]
-id = "pd_curve"
-name = "Curve"
-short = "CURVE"
-template = 0xd1
-min = 0
-max = 0x7f00
-default = 0x0000
-
-[[param]]
-id = "pd_detune"
-name = "Detune"
-short = "DET"
-template = 0xd1
-min = 0
-max = 0x7f00
-default = 0x2800
-
-[[param]]
-id = "pd_fold"
-name = "Fold"
-short = "FOLD"
-template = 0xd1
-min = 0
-max = 0x7f00
-default = 0x0000

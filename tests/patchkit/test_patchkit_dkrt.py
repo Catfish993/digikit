@@ -15,25 +15,31 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.firmware import config  # noqa: E402
-from tools.patchkit import pk_build, pk_dkrt, pk_toolchains  # noqa: E402
+from tools.patchkit import modroots, pk_dkrt, pk_toolchains  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
 
 RUNTIME = ROOT / "modules/core/runtime"
 DEMO = ROOT / "tests/fixtures/modules/dyn-demo"
 
 
-def test_committed_objects_are_current_and_plain_coldfire():
+def test_objects_are_current_and_plain_coldfire():
+    # core/runtime's objects are committed; the demo's is built into out/cache/dko
     for path in (
         RUNTIME / "build/runtime.dko.json",
         RUNTIME / "build/tramp.dko.json",
-        DEMO / "build/dyn-demo.dko.json",
     ):
         obj = json.loads(path.read_text())
         assert {r["type"] for r in obj["relocs"]} == {"cf.32"}, path
         assert int(obj["toolchain"]["instructions_redecoded"]) > 10, path
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
-    pk_build.build_module(RUNTIME, check=True)
-    pk_build.build_module(DEMO, check=True)
+    front_end.build_module(DEMO)
+    built = modroots.OBJECT_CACHE / "test/dyn-demo/build/dyn-demo.dko.json"
+    obj = json.loads(built.read_text())
+    assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
+    assert int(obj["toolchain"]["instructions_redecoded"]) > 10
+    front_end.build_module(RUNTIME, check=True)
+    front_end.build_module(DEMO, check=True)
 
 
 def test_pack_is_deterministic_and_the_file_checks_itself(tmp_path):

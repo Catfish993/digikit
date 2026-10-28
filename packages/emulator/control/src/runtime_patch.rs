@@ -122,7 +122,8 @@ pub fn prepare(root: &Path, stock: &[u8], set: &str) -> Result<Outcome, String> 
     let device = devdata::by_short(fw.device.short())
         .ok_or_else(|| format!("runtime: no device file for {}", fw.device.short()))?;
     let roots = device.patch_set(set).map_err(e)?;
-    let lib = Library::scan_repo(root).map_err(e)?;
+    // the patch set is `core/*` modules: their objects are committed, and no content module is built (no toolchain needed)
+    let lib = Library::scan_repo_for(root, false, Some(roots)).map_err(e)?;
     let (modules, _) = lib.with_requires(roots).map_err(e)?;
     let key = cache_key(root, &lib, &modules, &fw.syx_sha256, set)?;
     let file = cache_file(root, &fw.syx_sha256, set, &key);
@@ -148,6 +149,83 @@ pub fn prepare(root: &Path, stock: &[u8], set: &str) -> Result<Outcome, String> 
     patched(out.syx, out.plan.modules, false)
 }
 
+/// The stock image with this SHA-256 in `<root>/firmware/`, for a session that loaded an already patched image (it knows the base's
+/// digest from the patch record and not the base).
+pub fn find_stock(root: &Path, sha256: &str) -> Option<Vec<u8>> {
+    std::fs::read_dir(root.join("firmware"))
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "syx"))
+        .filter_map(|p| std::fs::read(p).ok())
+        .find(|data| format!("{:x}", Sha256::digest(data)) == sha256)
+}
+
+/// What [`reapply`] made.
+pub struct Reapplied {
+    pub applied: apply::Applied,
+    /// The ids of the library's modules that require one of `needs` (the UI layer's users, which `dev.reload` swaps by default).
+    pub requirers: Vec<String>,
+}
+
+/// The image `ids` (a patch record's modules, in apply order) make from `stock` with the module objects as they are on disk now,
+/// and the plan that places them: what `dev.reload` compares with the running image. Nothing is cached or written.
+pub fn reapply(root: &Path, stock: &[u8], ids: &[String], needs: &[&str]) -> Result<Reapplied, String> {
+    let e = |x: patchkit::Error| x.to_string();
+    // objects are loaded for the modules of the record only; a content module of it is built when stale
+    let lib = Library::scan_repo_for(root, false, Some(ids)).map_err(e)?;
+    let reg = Registry::from_dir(&root.join("devices/ports")).map_err(e)?;
+    let requirers = lib
+        .modules
+        .iter()
+        .filter(|m| m.manifest.module.requires.iter().any(|r| needs.contains(&r.as_str())))
+        .map(|m| m.id().to_string())
+        .collect();
+    Ok(Reapplied { applied: apply::apply(stock, &reg, &lib, ids).map_err(e)?, requirers })
+}
+
+/// One module the build wrote objects for.
+#[derive(Debug)]
+pub struct BuiltModule {
+    pub id: String,
+    /// The object files written.
+    pub objects: Vec<PathBuf>,
+    pub ms: f64,
+}
+
+/// What [`build_modules`] did.
+#[derive(Debug, Default)]
+pub struct BuildSummary {
+    pub built: Vec<BuiltModule>,
+    /// Modules whose objects were current (or that have no sources).
+    pub skipped: Vec<String>,
+}
+
+/// Build the stale objects of the modules `ids` (a patch record's modules) in this process: `patchkit::build::build_module` for each,
+/// which writes a `core/*` module's objects into the module and a content module's into `out/cache/dko`. Compiler output of a
+/// failed build is in the error. SHARC+ objects are built in this process too (Selache as a library).
+pub fn build_modules(root: &Path, ids: &[String]) -> Result<BuildSummary, String> {
+    let dirs = patchkit::build::module_dirs(root, ids).map_err(|e| e.to_string())?;
+    build_dirs(root, &dirs)
+}
+
+fn build_dirs(root: &Path, dirs: &[(String, PathBuf)]) -> Result<BuildSummary, String> {
+    use patchkit::build::{BuildOptions, Status};
+    let opts = BuildOptions { root: root.to_path_buf(), ..Default::default() };
+    let mut sum = BuildSummary::default();
+    for (id, dir) in dirs {
+        let started = std::time::Instant::now();
+        let report = patchkit::build::build_module(dir, &opts).map_err(|e| format!("build of {id} failed:\n{e}"))?;
+        let objects: Vec<PathBuf> =
+            report.objects.iter().filter(|o| o.status == Status::Built).map(|o| o.path.clone()).collect();
+        if objects.is_empty() {
+            sum.skipped.push(id.clone());
+        } else {
+            sum.built.push(BuiltModule { id: id.clone(), objects, ms: started.elapsed().as_secs_f64() * 1e3 });
+        }
+    }
+    Ok(sum)
+}
+
 fn write_whole(file: &Path, data: &[u8]) -> Result<(), String> {
     let dir = file.parent().ok_or("runtime: bad cache path")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("runtime: {}: {e}", dir.display()))?;
@@ -165,8 +243,8 @@ mod tests {
     }
 
     fn lib_and_modules() -> (Library, Vec<String>) {
-        let lib = Library::scan_repo(&root()).unwrap();
         let roots = devdata::by_short("dt2").unwrap().patch_set("emulator").unwrap();
+        let lib = Library::scan_repo_for(&root(), false, Some(roots)).unwrap();
         let (modules, _) = lib.with_requires(roots).unwrap();
         (lib, modules)
     }
@@ -195,6 +273,68 @@ mod tests {
                 None => eprintln!("skipped: firmware/{file} is absent"),
             }
         }
+    }
+
+    #[test]
+    fn a_reload_build_writes_stale_objects_once_and_reports_c_errors() {
+        if patchkit::build::toolchain::Env::new(&root()).m68k("gcc").is_err() {
+            eprintln!("SKIP: the m68k-elf toolchain is not installed");
+            return;
+        }
+        let id = format!("test/reloadbuild-{}", std::process::id());
+        let dir = std::env::temp_dir().join(format!("digikit-reloadbuild-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("module.toml"),
+            format!("[module]\nid = \"{id}\"\ncategory = \"core\"\n\n[[object]]\npath = \"build/t.dko.json\"\nsources = [\"src/t.c\"]\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("src/t.c"), "extern int ext(int);\nint twice(int x) { return ext(x) + ext(x); }\n").unwrap();
+        let dirs = [(id.clone(), dir.clone())];
+        let first = build_dirs(&root(), &dirs).unwrap();
+        assert_eq!(first.built.len(), 1);
+        assert_eq!(first.built[0].objects, [dir.join("build/t.dko.json")]);
+        // current: skipped, not built again
+        let second = build_dirs(&root(), &dirs).unwrap();
+        assert!(second.built.is_empty() && second.skipped == [id.clone()]);
+        // a compile error names the module and carries the compiler's text; the old object stays
+        let good = std::fs::read_to_string(dir.join("build/t.dko.json")).unwrap();
+        std::fs::write(dir.join("src/t.c"), "int twice(int x) { return x +; }\n").unwrap();
+        let err = build_dirs(&root(), &dirs).unwrap_err();
+        assert!(err.starts_with(&format!("build of {id} failed:")) && err.contains("t.c"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join("build/t.dko.json")).unwrap(), good);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_stale_sharc_object_is_built_with_the_rest_and_a_bad_instruction_is_an_error() {
+        let id = format!("test/reloadsharc-{}", std::process::id());
+        let dir = std::env::temp_dir().join(format!("digikit-reloadsharc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src/dsp")).unwrap();
+        std::fs::write(
+            dir.join("module.toml"),
+            format!("[module]\nid = \"{id}\"\ncategory = \"core\"\n\n[[object]]\npath = \"build/d.dko.json\"\nsources = [\"src/dsp/d.s\"]\n"),
+        )
+        .unwrap();
+        let src = dir.join("src/dsp/d.s");
+        std::fs::write(&src, ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    R0 = 7;\n    RTS;\n").unwrap();
+        let dirs = [(id.clone(), dir.clone())];
+        let first = build_dirs(&root(), &dirs).unwrap();
+        assert_eq!(first.built.len(), 1);
+        assert_eq!(first.built[0].objects, [dir.join("build/d.dko.json")]);
+        let text = std::fs::read_to_string(dir.join("build/d.dko.json")).unwrap();
+        assert!(text.contains("\"arch\": \"sharc\"") && text.contains("selache_rev"), "{text}");
+        // current: skipped, not built again
+        let second = build_dirs(&root(), &dirs).unwrap();
+        assert!(second.built.is_empty() && second.skipped == [id.clone()]);
+        // a source Selache mis-encodes is refused with the guard's text; the old object stays
+        std::fs::write(&src, ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    R0 = ASHIFT R11 BY 3;\n    RTS;\n").unwrap();
+        let err = build_dirs(&root(), &dirs).unwrap_err();
+        assert!(err.starts_with(&format!("build of {id} failed:")) && err.contains("known Selache encode bug"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join("build/d.dko.json")).unwrap(), text);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

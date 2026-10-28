@@ -3,7 +3,7 @@
 
     uv run python -m tools.firmware.aplib_check [IMAGE ...] [--no-native] [--sections 2,3,7,8]
 
-For each image (dt2-1.16, dt2-1.17, dn2-1.11, dn2-1.12) and each packed
+For each image (dt2-1.17, dn2-1.12) and each packed
 section, from out/sections/IMAGE/: pack it, read it back with tools/firmware/elz.py, and
 run the same bytes through the bootstrap's own depacker (section 2, found by
 its prologue) on the native ColdFire core (packages/emulator/boot example depack_check,
@@ -31,9 +31,7 @@ from tools.firmware import aplibpack, config, elz  # noqa: E402
 from tools.firmware.container import sections  # noqa: E402
 
 IMAGES = {
-    "dt2-1.16": "Digitakt_II_OS1.16.syx",
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
-    "dn2-1.11": "Digitone_II_OS1.11.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
 }
 NAMES = {2: "DSP", 3: "MAIN_OS", 7: "BLOB", 8: "SECTION"}

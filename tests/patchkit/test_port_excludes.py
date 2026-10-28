@@ -11,7 +11,9 @@ LO, HI = 0x46712000, 0x47FE0000
 
 
 def test_excludes_come_back_sorted():
-    assert expansion_excludes([[0x46800000, 0x46801000], [0x46740000, 0x46742000]], LO, HI) == [
+    assert expansion_excludes(
+        [[0x46800000, 0x46801000], [0x46740000, 0x46742000]], LO, HI
+    ) == [
         [0x46740000, 0x46742000],
         [0x46800000, 0x46801000],
     ]

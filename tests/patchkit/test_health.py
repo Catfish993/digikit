@@ -10,19 +10,20 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.coldfire import digikit_health_proof as hp  # noqa: E402
-from tools.patchkit import pk_build, pk_toolchains  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
-MODULE = ROOT / "modules/core/health"
-IMAGES = ("dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12")
+MODULE = ROOT / "modules/core/adapters/health"
+IMAGES = ("dt2-1.17", "dn2-1.11", "dn2-1.12")
 ANCHORS = {
-    "health.hook.idle": 6,
-    "health.fw.create_main": 4,
-    "health.hook.block": 8,
-    "health.rec_lit": 4,
-    "health.heap.desc_lit": 4,
-    "health.heap.mutex_lit": 4,
-    "health.heap.lock_lit": 4,
-    "health.heap.unlock_lit": 4,
+    "cf.rtos.site.idle": 6,
+    "cf.rtos.fn.create_main": 4,
+    "cf.link.fn.block_isr": 8,
+    "cf.link.site.reply_copy_lit": 4,
+    "cf.mem.site.heap.desc_lit": 4,
+    "cf.mem.site.heap.mutex_lit": 4,
+    "cf.mem.site.heap.lock_lit": 4,
+    "cf.mem.site.heap.unlock_lit": 4,
 }
 
 
@@ -31,7 +32,7 @@ def test_committed_object_is_current_and_plain_coldfire():
     assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
     if not pk_toolchains.m68k_bin("gcc") is not None:
         pytest.skip("m68k toolchain not installed")
-    pk_build.build_module(MODULE, check=True)
+    front_end.build_module(MODULE, check=True)
 
 
 @pytest.mark.parametrize("image", IMAGES)
@@ -42,7 +43,10 @@ def test_every_anchor_resolves_on_every_port(image):
         assert name in have, (image, name)
         assert have[name]["len"] == n, (image, name)
     # the hook sites: a 6-byte call (the boot thread's last jsr) and 8 bytes (link.w + movem.l) at the entry of the block handler
-    assert have["health.hook.block"]["addr"] == have["health.rec_lit"]["addr"] - 0x56
+    assert (
+        have["cf.link.fn.block_isr"]["addr"]
+        == have["cf.link.site.reply_copy_lit"]["addr"] - 0x56
+    )
 
 
 def test_module_toml_declares_what_the_object_needs():
@@ -54,11 +58,17 @@ def test_module_toml_declares_what_the_object_needs():
         s["name"] for s in obj["symbols"] if s.get("section")
     }
     assert externs >= {u for u in undefined if u.startswith("health_")}
-    ops = {o["anchor"]: o for o in t["op"]}
-    assert ops["health.hook.idle"]["displaced"] == "drop"
+    assert {o["hook"] for o in t["op"]} == {
+        "cf.rtos.hook.idle",
+        "cf.link.hook.block_isr",
+    }
+    for image in IMAGES:
+        port = tomllib.loads((ROOT / "devices" / "ports" / f"{image}.toml").read_text())
+        modes = {h["name"]: h["mode"] for h in port["hook"]}
+        assert modes["cf.rtos.hook.idle"] == "replace"
     assert {c["resource"] for c in t["claim"]} == {
-        "health.hook.idle",
-        "health.hook.block",
+        "cf.rtos.site.idle",
+        "cf.link.fn.block_isr",
     }
 
 

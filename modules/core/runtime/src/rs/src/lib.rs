@@ -21,10 +21,12 @@ pub mod card;
 pub mod crash;
 pub mod dlog;
 mod dsp;
+mod gen_abi_check;
 pub mod fxpage;
 mod fxsend;
 mod loader;
 pub mod registry;
+pub mod scan;
 pub mod settings;
 mod sha256;
 pub mod store;
@@ -102,6 +104,9 @@ pub static mut DKRT_STATE: State = unsafe { core::mem::zeroed() };
 /// The store path each module record was loaded from (kept apart from `State`, whose layout the proof tools peek).
 #[no_mangle]
 pub static mut DKRT_PATHS: [[u8; 64]; MAX_MODULES] = [[0; 64]; MAX_MODULES];
+/// The address of each module record's `dkm_menu` (0: none), apart from `State` for the same reason.
+#[no_mangle]
+pub static mut DKRT_MENUS: [u32; MAX_MODULES] = [0; MAX_MODULES];
 /// The contract versions each module record declared: api, machine, fx, service as (major, minor) bytes (`MODULES` reports them).
 #[no_mangle]
 pub static mut DKRT_CONTRACTS: [[u8; 8]; MAX_MODULES] = [[0; 8]; MAX_MODULES];
@@ -118,40 +123,12 @@ extern "C" {
     /// INFO reply gives (`[digikit] name`: 3 characters and a NUL, as a big-endian word).
     static dkrt_device_id: u32;
     static dkrt_device_name: u32;
-    /// The 4-byte address literals of two firmware words (anchors `dkrt.fw.block_counter_lit`, `dkrt.fw.tx_inflight_lit`): the symbol's
-    /// address is that of the literal in the firmware's code, whose value is the address of the word.
-    static dkrt_block_counter_lit: u32;
-    static dkrt_tx_inflight_lit: u32;
-    /// The interface of core/input (`input_key(u32 code, u32 down) -> int`, `input_turn(u32 encoder, int delta) -> int`), importable by name by a
-    /// module; each resolves to 0 when core/input is not in the image (`[object] optional`), and the import is then not found.
-    fn input_key();
-    fn input_turn();
-    /// core/remote-open: present in a patch set that starts with the REMOTE switch on (0 without it).
-    fn remote_open();
     /// `cpushl` over a byte range (both caches), `src/cf/tramp.s`.
     fn dkrt_flush(start: u32, len: u32);
-    // Firmware functions: addresses are anchors resolved at patch time.
-    fn fw_block_read();
-    /// The firmware's eMMC block write (anchor `dkrt.fw.block_write`): `int f(u32 sector, u32 bytes, const void *buf)`, 0 = ok.
-    fn fw_block_write();
-    /// The firmware's MIDI send (anchor `dkrt.fw.midi_send`): `void f(u32 len, const u8 *msg, u32 port)`; port 2 is USB. Takes the
-    /// MIDI TX mutex itself; spins when the 4 KiB TX ring is full.
-    fn fw_midi_send();
     /// `src/cf/tramp.s`: mask interrupts (returns the old status register), restore it, and the soft reset.
     fn dkrt_irq_mask() -> u32;
     fn dkrt_irq_restore(sr: u32);
     fn dkrt_soft_reset() -> !;
-    fn fw_alloc();
-    fn fw_free();
-    /// The firmware's "serialize the live project into the persistent arena" (anchor `dkrt.fw.project_serialize`): `int f(void)`.
-    fn fw_project_serialize();
-    /// The firmware's normal writer of the boot record (anchor `dkrt.fw.boot_record_write`): `void f(void)`; one shot per boot.
-    fn fw_boot_record_write();
-    /// The firmware's accessors of a track's machine type (anchors `dkrt.fw.project`, `dkrt.fw.kit_of`, `dkrt.fw.track_type`):
-    /// `Project *f(void)`, `Kit *f(Project *)` (the active kit), `int f(Kit *, int track)` (-1: no such track). Read-only; `dlog` calls them.
-    pub fn fw_project();
-    pub fn fw_kit_of();
-    pub fn fw_track_type();
     // Helpers from compiler_builtins, linked into this object.
     fn memcpy(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
     fn memset(d: *mut u8, c: i32, n: usize) -> *mut u8;
@@ -198,26 +175,23 @@ unsafe fn word_at_literal(lit: *const u32) -> Option<u32> {
 }
 
 /// The firmware's DSP block counter (1500 per second, from boot; wraps), `None` when the anchor does not point at a DDR word.
+/// `BLOCK_COUNTER_LIT` is the 4-byte address literal in the firmware's code, whose value is the address of the word.
 pub unsafe fn fw_blocks() -> Option<u32> {
-    word_at_literal(addr_of!(dkrt_block_counter_lit))
+    word_at_literal(addr_of!(dkfw::link::BLOCK_ISR_COUNTER_LIT) as *const u32)
 }
 
 /// Bytes the firmware has handed to the USB stack for MIDI and not yet sent (0 when the host reads), `None` as for `fw_blocks`.
 pub unsafe fn tx_in_flight() -> Option<u32> {
-    word_at_literal(addr_of!(dkrt_tx_inflight_lit))
+    word_at_literal(addr_of!(dkfw::midi::TX_INFLIGHT_LIT) as *const u32)
 }
 
 pub unsafe fn block_read(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
-    let f: unsafe extern "C" fn(u32, u32, *mut u8) -> i32 =
-        core::mem::transmute(fw_block_read as unsafe extern "C" fn());
-    f(sector, bytes, buf)
+    dkfw::storage::block_read(sector, bytes, buf)
 }
 
 /// The firmware's block write, ungated. Only `block_write` and `card::claim` call it.
 pub unsafe fn raw_block_write(sector: u32, bytes: u32, buf: *const u8) -> i32 {
-    let f: unsafe extern "C" fn(u32, u32, *const u8) -> i32 =
-        core::mem::transmute(fw_block_write as unsafe extern "C" fn());
-    f(sector, bytes, buf)
+    dkfw::storage::block_write(sector, bytes, buf)
 }
 
 /// The one function that writes the card. Write `bytes` (a multiple of 512) from `buf` (16-byte aligned) to `sector`: refused with `E_RANGE`
@@ -241,11 +215,10 @@ pub fn irq_restore(sr: u32) {
     unsafe { dkrt_irq_restore(sr) }
 }
 
-/// Send one complete MIDI message (F0 .. F7 for SysEx) to `port` (2 = USB).
+/// Send one complete MIDI message (F0 .. F7 for SysEx) to `port` (2 = USB). The firmware takes the MIDI TX mutex itself and spins
+/// when the 4 KiB TX ring is full.
 pub unsafe fn midi_send(len: u32, msg: *const u8, port: u32) {
-    let f: unsafe extern "C" fn(u32, *const u8, u32) =
-        core::mem::transmute(fw_midi_send as unsafe extern "C" fn());
-    f(len, msg, port)
+    dkfw::midi::send(len, msg, port)
 }
 
 pub unsafe fn rd32(p: *const u8) -> u32 {
@@ -293,7 +266,7 @@ pub struct Import {
     pub name: [u8; 28],
     pub addr: *const (),
 }
-pub struct Imports(pub [Import; 13]);
+pub struct Imports(pub [Import; 10]);
 unsafe impl Sync for Imports {}
 
 const fn nm(s: &[u8]) -> [u8; 28] {
@@ -306,107 +279,99 @@ const fn nm(s: &[u8]) -> [u8; 28] {
     o
 }
 
-/// The names a module may import. Firmware functions come from patch-time anchors (`dkrt.fw.*`); the helpers are this
+/// The names of `IMPORTS`, in its order; checked against the `[[import]]` entries of `sdk/sdk.toml` without `requires` below.
+const NAMES: [&[u8]; 10] = [
+    b"fw_block_read",
+    b"fw_alloc",
+    b"fw_free",
+    b"memcpy",
+    b"memset",
+    b"memcmp",
+    b"__muldi3",
+    b"__udivdi3",
+    b"__umoddi3",
+    b"dkrt_blocks",
+];
+
+const fn names_match(ours: &[&[u8]], sdk: &[&str]) -> bool {
+    if ours.len() != sdk.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < ours.len() {
+        let (a, b) = (ours[i], sdk[i].as_bytes());
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut j = 0;
+        while j < a.len() {
+            if a[j] != b[j] {
+                return false;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    true
+}
+
+const _: () = assert!(names_match(&NAMES, &dkrt_sdk::api::BUILTIN_NAMES), "IMPORTS names differ from [[import]] of sdk/sdk.toml");
+const _: dkrt_sdk::api::DkrtBlocksFn = dkrt_blocks;
+
+/// The names a module may import. Firmware functions come from patch-time anchors (`dkfw`); the helpers are this
 /// object's own copies, so a module need not carry them.
 pub static IMPORTS: Imports = Imports([
     Import {
-        name: nm(b"fw_block_read"),
-        addr: fw_block_read as *const (),
+        name: nm(NAMES[0]),
+        addr: dkfw::storage::block_read as *const (),
     },
     Import {
-        name: nm(b"fw_alloc"),
-        addr: fw_alloc as *const (),
+        name: nm(NAMES[1]),
+        addr: dkfw::mem::new as *const (),
     },
     Import {
-        name: nm(b"fw_free"),
-        addr: fw_free as *const (),
+        name: nm(NAMES[2]),
+        addr: dkfw::mem::free as *const (),
     },
     Import {
-        name: nm(b"memcpy"),
+        name: nm(NAMES[3]),
         addr: memcpy as *const (),
     },
     Import {
-        name: nm(b"memset"),
+        name: nm(NAMES[4]),
         addr: memset as *const (),
     },
     Import {
-        name: nm(b"memcmp"),
+        name: nm(NAMES[5]),
         addr: memcmp as *const (),
     },
     Import {
-        name: nm(b"__muldi3"),
+        name: nm(NAMES[6]),
         addr: __muldi3 as *const (),
     },
     Import {
-        name: nm(b"__udivdi3"),
+        name: nm(NAMES[7]),
         addr: __udivdi3 as *const (),
     },
     Import {
-        name: nm(b"__umoddi3"),
+        name: nm(NAMES[8]),
         addr: __umoddi3 as *const (),
-    },
-    // core/input: press a key, turn an encoder (the address is 0 without the module)
-    Import {
-        name: nm(b"input_key"),
-        addr: input_key as *const (),
-    },
-    Import {
-        name: nm(b"input_turn"),
-        addr: input_turn as *const (),
-    },
-    // the REMOTE switch (the guard of the panel commands)
-    Import {
-        name: nm(b"remote_enabled"),
-        addr: remote_enabled as *const (),
     },
     // the 1500 Hz block clock (`dkrt_blocks`), for a module that wants to measure time
     Import {
-        name: nm(b"dkrt_blocks"),
+        name: nm(NAMES[9]),
         addr: dkrt_blocks as *const (),
     },
 ]);
 
-// ---- the REMOTE switch ---------------------------------------------------------------------------------------------------
+// ---- imports of other modules --------------------------------------------------------------------------------------------
 
-/// The REMOTE switch of the DIGIKIT menu: whether the guarded command ranges (`sdk/sdk.toml` `[protocol] guarded`: the panel's key and turn
-/// commands) are answered. 2: not set since the boot. It is not saved: every boot starts at the default, which is on exactly when `core/remote-open`
-/// is in the image (the emulator's patch set has it, the device's does not: the owner switches it on in the menu). Without `core/input` the switch
-/// does not exist (`-1`).
-static mut REMOTE: u8 = 2;
+// The imports another module provides (`[[import]] requires` of sdk/sdk.toml: core/input, core/ui). The symbols are in this object's `optional`
+// list (module.toml): patchkit links one to 0 when its module is not in the image.
+dkrt_sdk::optional_imports!();
 
-fn input_present() -> bool {
-    core::hint::black_box(input_key as usize) != 0
-}
-
-/// `dkrt_remote_get()`: 1 on, 0 off, -1 when there is no input adapter in the image (no REMOTE row in the menu then).
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_remote_get() -> i32 {
-    if !input_present() {
-        return -1;
-    }
-    if read_volatile(addr_of!(REMOTE)) == 2 {
-        let open = core::hint::black_box(remote_open as usize) != 0;
-        write_volatile(addr_of_mut!(REMOTE), open as u8);
-    }
-    read_volatile(addr_of!(REMOTE)) as i32
-}
-
-/// `dkrt_remote_set(on)`: the switch, until the next boot. -1 when there is no input adapter.
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_remote_set(on: u32) -> i32 {
-    if !input_present() {
-        return -1;
-    }
-    write_volatile(addr_of_mut!(REMOTE), (on != 0) as u8);
-    OK
-}
-
-/// The import `remote_enabled` of modules (`int remote_enabled(void)`): 1 when the REMOTE switch is on, else 0.
-unsafe extern "C" fn remote_enabled() -> i32 {
-    (dkrt_remote_get() == 1) as i32
-}
-
-/// Address of the import `name` (NUL-terminated), 0 when the table has none.
+/// Address of the import `name` (NUL-terminated), 0 when the table has none. An import of another module (`optional`) gives that module's
+/// function; when the module is not in the image it gives the stub of the import if sdk/sdk.toml declares `absent`, else 0.
 pub unsafe fn import_addr(name: *const u8) -> u32 {
     let mut i = 0;
     while i < IMPORTS.0.len() {
@@ -415,7 +380,28 @@ pub unsafe fn import_addr(name: *const u8) -> u32 {
         }
         i += 1;
     }
+    let t = optional::table();
+    i = 0;
+    while i < t.len() {
+        if cstr_eq_str(name, t[i].0) {
+            return (if t[i].1 != 0 { t[i].1 } else { t[i].2 }) as u32;
+        }
+        i += 1;
+    }
     0
+}
+
+/// Whether the NUL-terminated `a` equals `b`.
+unsafe fn cstr_eq_str(a: *const u8, b: &str) -> bool {
+    let b = b.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if *a.add(i) != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    *a.add(b.len()) == 0
 }
 
 // ---- the API table ---------------------------------------------------------------------------------------------------
@@ -438,7 +424,7 @@ unsafe extern "C" fn api_log(msg: *const u8, value: u32) {
 unsafe extern "C" fn api_log_lv(level: u32, msg: *const u8, value: u32) {
     log_at(level, msg, value);
 }
-unsafe extern "C" fn api_register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::ServiceCmd>) -> i32 {
+unsafe extern "C" fn api_register_cmds(first: u32, count: u32, handler: Option<dkrt_sdk::api::ServiceCmd>) -> i32 {
     upload::register_cmds(first, count, handler)
 }
 
@@ -532,7 +518,7 @@ extern "C" {
     fn health_heap();
 }
 
-/// What core/health fills (`HealthRaw` of modules/core/health/src/cf/health.c): 20 words.
+/// What core/health fills (`HealthRaw` of modules/core/adapters/health/src/cf/health.c): 20 words.
 #[repr(C)]
 struct HealthRaw {
     magic: u32,
@@ -569,7 +555,7 @@ pub static mut DKRT_HEALTH: DkrtHealth = unsafe { core::mem::zeroed() };
 #[no_mangle]
 pub static mut DKRT_POLL: usize = 0;
 
-/// DSP blocks counted since boot (1500 per second; wraps): the firmware's own counter (anchor `dkrt.fw.block_counter_lit`), so a clock for
+/// DSP blocks counted since boot (1500 per second; wraps): the firmware's own counter (anchor `cf.link.site.block_isr.counter_lit`), so a clock for
 /// a UI that refreshes at a bounded rate and for the stable period of safe mode. 0 when the anchor does not point at a counter and the
 /// image has no `core/health` (whose own count is the fallback). Any task; reads one word.
 #[no_mangle]
@@ -623,11 +609,12 @@ pub unsafe extern "C" fn dkrt_store_list(prefix: *const u8, out: *mut DkrtStoreE
     store::list(prefix, out, max)
 }
 
-/// One sector of the store (`rel` sectors from its start) into `out` (512 bytes, 16-byte aligned): 0 or a negative code.
+/// The header fields of the `.dkm` at store sector `first` (`DkrtScan.first`) into `out`, for the INFO page of the DIGIKIT menu: 0, `E_FORMAT` when
+/// the file is not a `.dkm`, or the read error. The runtime reads the sector into its own DMA-safe buffer. Task context.
 #[no_mangle]
-pub unsafe extern "C" fn dkrt_store_read_sector(rel: u32, out: *mut u8) -> i32 {
+pub unsafe extern "C" fn dkrt_module_header(first: u32, out: *mut DkrtModuleHeader) -> i32 {
     init_once();
-    store::read_sector(rel, out)
+    scan::module_header(first, out)
 }
 
 /// `dkrt_health` without the store figures (which can read the card) and, when `walk_heap` is false, without the heap walk: what the log's
@@ -843,6 +830,7 @@ pub unsafe extern "C" fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32 {
                 o.path = (*addr_of!(DKRT_PATHS))[i];
                 o.state = if m.used == 2 { MOD_LOADING } else { MOD_LOADED };
                 o.dsp_size = dsp::ds().mod_len[i];
+                o.menu = (*addr_of!(DKRT_MENUS))[i];
                 return OK;
             }
             seen += 1;
@@ -884,7 +872,7 @@ pub unsafe extern "C" fn dkrt_boot_info(out: *mut DkrtBootInfo) {
 }
 
 /// What `dkrt_restart` does to keep the working state (finding 40): bit 0 serializes the live project into the persistent arena
-/// (`fw_project_serialize`), bit 1 writes the arena to the next boot record (`fw_boot_record_write`, the firmware's own writer for
+/// (`dkfw::project::serialize`), bit 1 writes the arena to the next boot record (`dkfw::storage::boot_record_write`, the firmware's own writer for
 /// the OS-update path). The default is 0 (no save; the menu asks for a project save first): finding 40 has no edit that the save keeps,
 /// and the serialize may race the firmware's BgWorker. 3 runs both steps, for the experiments of finding 40 (a host poke).
 #[no_mangle]
@@ -899,14 +887,10 @@ pub struct Aligned4(pub u32);
 unsafe fn save_working_state() {
     let mode = read_volatile(addr_of!(DKRT_SAVE_MODE.0));
     if mode & 1 != 0 {
-        let f: unsafe extern "C" fn() -> i32 =
-            core::mem::transmute(fw_project_serialize as unsafe extern "C" fn());
-        f();
+        dkfw::project::serialize();
     }
     if mode & 2 != 0 {
-        let f: unsafe extern "C" fn() =
-            core::mem::transmute(fw_boot_record_write as unsafe extern "C" fn());
-        f();
+        dkfw::storage::boot_record_write();
     }
 }
 

@@ -77,7 +77,7 @@ Helpers in `support.ts`:
 
 - `withSession`: one stock daemon per file, restarted before each test.
 - `withPatchedSession`, `startPatchedSession`: coupled daemon with `firmware.load {runtime:true,
-  start:"auto"}` and the `emulator` patch set (the `device` patch set for the remote-control cases).
+  start:"auto"}` and the `emulator` patch set.
 - `expectRuntimeBoot`: checks patch identity, ready/free status and health.
 - `freeRegions`, `armFreeRegionGuard`, `expectNoGuardHits`: the free-region guard.
 

@@ -70,7 +70,7 @@ const FXW_WCOUNT: u32 = 16;
 pub const FXW_ROUTE: u32 = 18;
 pub const FXW_AMT0: u32 = 19;
 const FX_STEP_ROUTE: u32 = 12;
-/// `dk_fx_desc` (sdk/dk_fx.h): magic "DKFX", contract, and its size in bytes.
+/// `dk_fx_desc` (<dk/fx.h>): magic "DKFX", contract, and its size in bytes.
 const FX_DESC_MAGIC: u32 = 0x444b_4658;
 const FX_DESC_BYTES: u32 = 28;
 const FX_MAX_PARAMS: u32 = 8;
@@ -80,7 +80,7 @@ const WIN_FX: u32 = 2;
 const FX_INFO_MAGIC: u32 = 0x4446_5849; // "DFXI"
 const L2_BYTE_BASE: u32 = 0x2000_0000;
 const L2_SW_BASE: u32 = 0x00B8_0000;
-/// The run-time machine types (`dynamic_first ..= last` of modules/core/machines/types.toml, through `patchkit gen`).
+/// The run-time machine types (`dynamic_first ..= last` of modules/core/adapters/machines/types.toml, through `patchkit gen`).
 const TYPE_FIRST: u32 = device::DYN_TYPE_FIRST;
 const TYPE_LAST: u32 = device::DYN_TYPE_LAST;
 const DYN_TYPES: u32 = device::DYN_TYPES;

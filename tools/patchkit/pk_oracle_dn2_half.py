@@ -16,7 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PATCH = ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.12-master-half.patch"
 OUT = ROOT / "out" / "modules" / "oracle" / "dn2-master-half" / "module.toml"
-CONVERTER_PC = 0x1C9D3F  # entry of the Q31 converter (anchor dsp.master.q31_converter)
+CONVERTER_PC = (
+    0x1C9D3F  # entry of the Q31 converter (anchor dsp.master.fn.q31_converter)
+)
 
 
 def stream_hex(words: str) -> str:
@@ -49,7 +51,7 @@ ports = ["dn2-1.12"]
 
 [[op]]
 op = "write"
-anchor = "dsp.master.q31_converter"
+anchor = "dsp.master.fn.q31_converter"
 offset = {offset}
 hex = "{stream_hex(new)}"
 expect_sha256 = "{hashlib.sha256(bytes.fromhex(stream_hex(old))).hexdigest()}"

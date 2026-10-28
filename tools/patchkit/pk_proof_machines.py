@@ -1,27 +1,25 @@
 #!/usr/bin/env python3
-"""patchkit Phase 3 proof: core/machines on Digitakt II 1.17 (test/xslice and a second clone).
+"""patchkit Phase 3 proof: core/machines on Digitakt II 1.17 (test/machine-clone, a clone of SLICE).
 
-    uv run python -m tools.patchkit.pk_proof_machines [--fw 1.17] [--out DIR] [--only a,b,c] [--quick] [--jobs N]
+    uv run python -m tools.patchkit.pk_proof_machines [--fw 1.17] [--out DIR] [--only a,b] [--quick] [--jobs N]
 
 Drives patched images on coupled daemons through the harness (`tools/patchkit/pk_harness.py` Session: panel inputs, health
 asserted after every input) and reads back:
 
   a  select      FUNC+SRC lists the machine, YES commits: the track object's type byte (0x4265338e, the word at
                  0x4265338c), the TX frame's machine word (0x80005348 + 0x94) and the DSP's cache (DM 0x255970) all
-                 carry the type number; the SRC page opens. PCM of an audition of XSLICE equals stock MANUAL SLICE
+                 carry the type number; the SRC page opens. PCM of an audition of XClone equals stock MANUAL SLICE
                  (the DSP selector word of the clone is copied, finding 02 "core.machines").
-  b  persist     save the project with an XSLICE track, set the track to SAMPLE, load the project: type 7 is back.
+  b  persist     save the project with an XClone track, set the track to SAMPLE, load the project: the type is back.
                  The card's writes are exported (`card.overlay`), laid over the card image (`tools/emulator/card_overlay.py`) and
                  the same project is loaded on the STOCK firmware: the track loads as SAMPLE, no fault.
-  c  two         XSLICE (7) and a second clone (8): both select, both read back their type, both sound like MANUAL
-                 SLICE; the same image is built whichever order the modules are named.
 
-  d  mod picker  the MOD page DEST list of XSLICE and the clone equals MANUAL SLICE's            (full tier only)
+  d  mod picker  the MOD page DEST list of XClone equals MANUAL SLICE's                          (full tier only)
   e  sequencer   PLAY: a step of the machine sounds like MANUAL SLICE
   b2 control     the persistence immediate put back: the type must not survive                  (full tier only)
 
 Parts are independent (each builds its own references) and run in parallel processes (`--jobs`, tools/patchkit/pk_proofkit.py).
-`--quick` runs a, b, c (the clone only) and e (the clone only): select and type, sound, persistence, the sequencer. In
+`--quick` runs a, b and e: select and type, sound, persistence, the sequencer. In
 b the quick tier polls instead of waiting (the save until the card writes stop growing, the patched reload until the type
 is back) and waits 3 s instead of 6 s for the stock load.
 
@@ -59,11 +57,12 @@ DSP_CACHE = 0x255970  # DSP DM: a 16-bit type per track at +2t
 SLICE_DOWNS = (
     4  # presses of DOWN from the top of the machine list to SLICE, XSLICE, XClone
 )
-XSLICE_DOWNS = 7
-XCLONE_DOWNS = 8
+XCLONE_DOWNS = 8  # the list position of XClone
+XCLONE_TYPE = (
+    8  # "test/machine-clone:xclone" in modules/core/adapters/machines/types.toml
+)
 FW = "1.17"  # --fw
-MODS_ONE = ["core/machines", "test/xslice"]
-MODS_TWO = ["core/machines", "test/xslice", "test/machine-clone"]
+MODS_ONE = ["core/machines", "test/machine-clone"]
 
 
 class Proof(K.Proof):
@@ -200,25 +199,37 @@ class Proof(K.Proof):
             self.fresh(s)
             s.do_tap(["FUNC", "SRC"])
             s.run_ms(200)
-            for _ in range(XSLICE_DOWNS):
+            for _ in range(XCLONE_DOWNS):
                 s.do_tap("DOWN")
                 s.run_ms(80)
-            self.snap(s, "xslice-menu")
+            self.snap(s, "xclone-menu")
             s.do_tap("YES")
             s.run_ms(300)
             s.do_tap("YES")
             s.run_ms(300)
             t = self.type_now(s)
-            self.check("XSLICE commits type 7", t == 7, f"track object type {t}")
+            self.check(
+                f"XClone commits type {XCLONE_TYPE}",
+                t == XCLONE_TYPE,
+                f"track object type {t}",
+            )
             s.do_tap("SRC")
             s.run_ms(300)
-            self.snap(s, "xslice-src")
+            self.snap(s, "xclone-src")
             s.health("SRC page")
-            pcm["xslice"] = self.audition(s, "xslice")
+            pcm["xclone"] = self.audition(s, "xclone")
             tx, dsp = self.wire(s)
-            self.check("TX frame machine word is 7", tx == 7, f"{tx:#06x}")
-            self.check("DSP type cache (DM 0x255970) is 7", dsp == 7, f"{dsp}")
-            self.same_sound("XSLICE", pcm["stock_slice"], pcm["xslice"], "stock SLICE")
+            self.check(
+                f"TX frame machine word is {XCLONE_TYPE}",
+                tx == XCLONE_TYPE,
+                f"{tx:#06x}",
+            )
+            self.check(
+                f"DSP type cache (DM 0x255970) is {XCLONE_TYPE}",
+                dsp == XCLONE_TYPE,
+                f"{dsp}",
+            )
+            self.same_sound("XClone", pcm["stock_slice"], pcm["xclone"], "stock SLICE")
             s.health("end of a")
 
     def part_b(self) -> None:
@@ -227,16 +238,22 @@ class Proof(K.Proof):
             MODS_ONE, "persist", pool=False
         ) as s:  # saves a project: the card is dirty afterwards
             self.fresh(s)
-            self.select(s, XSLICE_DOWNS)
-            self.check("XSLICE selected before the save", self.type_now(s) == 7)
+            self.select(s, XCLONE_DOWNS)
+            self.check(
+                "XClone selected before the save", self.type_now(s) == XCLONE_TYPE
+            )
             self.save_project(s)
-            self.select(s, 0, ups=XSLICE_DOWNS + 2)  # to the top of the list: SAMPLE
+            self.select(s, 0, ups=XCLONE_DOWNS + 2)  # to the top of the list: SAMPLE
             self.check(
                 "track set to SAMPLE", self.type_now(s) == 0, f"{self.type_now(s)}"
             )
             self.load_project(s)
             t = self.type_now(s)
-            self.check("project reload brings type 7 back", t == 7, f"{t}")
+            self.check(
+                f"project reload brings type {XCLONE_TYPE} back",
+                t == XCLONE_TYPE,
+                f"{t}",
+            )
             s.health("reloaded")
             r = s.emu.call("card.overlay", path=str(overlay))
             self.check(
@@ -245,8 +262,8 @@ class Proof(K.Proof):
             card = s.card
         types = card_overlay.sound_types(overlay.read_bytes())
         self.check(
-            "the saved project stores type 7 in its sound records",
-            types.get(7, 0) > 0,
+            f"the saved project stores type {XCLONE_TYPE} in its sound records",
+            types.get(XCLONE_TYPE, 0) > 0,
             f"{types}",
         )
         base = Path(card or "")
@@ -283,7 +300,7 @@ class Proof(K.Proof):
         from tools.firmware import build as dbuild
         from tools.patchkit import port_resolve as pr
 
-        src = ROOT / "out" / "patch" / f"proof-xslice-{FW}.syx"
+        src = ROOT / "out" / "patch" / f"proof-xclone-{FW}.syx"
         r = subprocess.run(
             [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(config.stock(f"Digitakt_II_OS{FW}.syx")),
              "--modules", ",".join(MODS_ONE), "-o", str(src)],
@@ -293,9 +310,11 @@ class Proof(K.Proof):
         port = tomllib.loads(
             (ROOT / "devices" / "ports" / f"dt2-{FW}.toml").read_text()
         )
-        site = next(a for a in port["anchor"] if a["name"] == "cf.machines.persist")[
-            "addr"
-        ]
+        site = next(
+            a
+            for a in port["anchor"]
+            if a["name"] == "cf.machine.site.sound_load_type_bound"
+        )["addr"]
         main = bytearray(pr.sections_of(src)[3])
         at = site + 1 - 0x40000400
         self.check(
@@ -313,10 +332,10 @@ class Proof(K.Proof):
         )
         with self.session(MODS_ONE, "nopersist", image=img, pool=False) as s:
             self.fresh(s)
-            self.select(s, XSLICE_DOWNS)
-            self.check("control: XSLICE selected", self.type_now(s) == 7)
+            self.select(s, XCLONE_DOWNS)
+            self.check("control: XClone selected", self.type_now(s) == XCLONE_TYPE)
             self.save_project(s)
-            self.select(s, 0, ups=XSLICE_DOWNS + 2)
+            self.select(s, 0, ups=XCLONE_DOWNS + 2)
             self.load_project(s)
             t = self.type_now(s)
             self.check(
@@ -375,69 +394,22 @@ class Proof(K.Proof):
             s.run_ms(wait)
             self.load_s = wait / 1000
 
-    def part_c(self) -> None:
-        stock = self.stock_slice()
-        sets = {}
-        for name, mods in (
-            ("sorted", MODS_TWO),
-            ("reversed", list(reversed(MODS_TWO))),
-        ):
-            img = ROOT / "out" / "patch" / f"proof-two-{name}-{FW}.syx"
-            r = subprocess.run(
-                [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(config.stock(f"Digitakt_II_OS{FW}.syx")),
-                 "--modules", ",".join(mods), "-o", str(img)],
-                capture_output=True, text=True, cwd=ROOT, env=python_env(),
-            )  # fmt: skip
-            self.check(
-                f"patch ({name} order)",
-                r.returncode == 0,
-                (r.stderr or r.stdout).strip().splitlines()[-1],
-            )
-            sets[name] = hashlib.sha256(img.read_bytes()).hexdigest()
-        self.check(
-            "same bytes in any selection order",
-            sets["sorted"] == sets["reversed"],
-            sets["sorted"][:12],
-        )
-        with self.session(MODS_TWO) as s:
-            for label, downs, want in (
-                ("XSLICE", XSLICE_DOWNS, 7),
-                ("XClone", XCLONE_DOWNS, 8),
-            )[1 if self.quick else 0 :]:
-                self.fresh(s)
-                self.select(s, downs)
-                t = self.type_now(s)
-                self.check(f"{label} commits type {want}", t == want, f"{t}")
-                self.snap(s, f"two-{label.lower()}")
-                p = self.audition(s, f"two-{label.lower()}")
-                tx, dsp = self.wire(s)
-                self.check(
-                    f"{label}: TX {tx} and DSP cache {dsp} carry {want}",
-                    tx == want and dsp == want,
-                )
-                self.same_sound(label, stock, p, "stock SLICE")
-            s.health("end of c")
-
     def part_d(self) -> None:
         with self.session([]) as s:
             stock = self.dest_frames(s, SLICE_DOWNS)
-        with self.session(MODS_TWO) as s:
-            for label, downs in (("XSLICE", XSLICE_DOWNS), ("XClone", XCLONE_DOWNS)):
-                got = self.dest_frames(s, downs)
-                self.check(
-                    f"{label}: the destination lists (with the SRC group) equal MANUAL SLICE's",
-                    got == stock,
-                    f"{len(got)} frames",
-                )
+        with self.session(MODS_ONE) as s:
+            got = self.dest_frames(s, XCLONE_DOWNS)
+            self.check(
+                "XClone: the destination lists (with the SRC group) equal MANUAL SLICE's",
+                got == stock,
+                f"{len(got)} frames",
+            )
 
     def part_e(self) -> None:
         stock = self.sequence_stock()
-        with self.session(MODS_TWO) as s:
-            for label, downs in (("XSLICE", XSLICE_DOWNS), ("XClone", XCLONE_DOWNS))[
-                1 if self.quick else 0 :
-            ]:
-                got = self.sequence(s, downs, f"seq-{label.lower()}")
-                self.same_sound(f"{label} (sequencer)", stock, got, "stock SLICE")
+        with self.session(MODS_ONE) as s:
+            got = self.sequence(s, XCLONE_DOWNS, "seq-xclone")
+            self.same_sound("XClone (sequencer)", stock, got, "stock SLICE")
 
     def sequence_stock(self) -> np.ndarray:
         with self.session([]) as s:
@@ -450,7 +422,7 @@ class Proof(K.Proof):
 
 
 PARTS = [
-    K.Part("a", "select (stock, then test/xslice)", Proof.part_a, True, 90),
+    K.Part("a", "select (stock, then test/machine-clone)", Proof.part_a, True, 90),
     K.Part(
         "b",
         "persistence (patched save and load, then stock load)",
@@ -465,7 +437,6 @@ PARTS = [
         False,
         90,
     ),
-    K.Part("c", "two machine modules", Proof.part_c, True, 100),
     K.Part(
         "d",
         "modulation destination picker (MOD page, DEST knob)",

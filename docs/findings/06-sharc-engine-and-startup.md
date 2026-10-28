@@ -5571,7 +5571,7 @@ registered type costs +1,120 DSP instructions per block (+0.5 %) and its PCM is 
   (it is silent without the send); with the filter Frequency lowered from the filter page the sine at 2093 Hz falls
   by 48.6 dB. So the voice goes through the engine's level stage, the track filter and the send FX.
 
-**The routine ABI and what core/dsp-voice does** (`modules/core/dsp-voice`, 138 instructions). The wrapper reads
+**The routine ABI and what core/dsp-voice does** (`modules/core/adapters/dsp-voice`, 138 instructions). The wrapper reads
 the track's type, scans `_dv_table` (16 rows `{type, pc}` and an empty row; filled by the machine modules'
 `register` ops, no addresses in modules) and for a registered type of an even voice saves the registers the stock
 function preserves (`R3 R5 R6 R7 R9 R10 R11 R13 R14 R15 I0 I1 I2 I3 I5 M1 M2 M3 B3 I13`), enters the routine
@@ -5672,7 +5672,7 @@ saves everything it touches in a DM area (the function's callers keep live regis
 for the slot's type and continues in the stock helper at its second instruction. A patched image with no registered type
 is **bit-identical** to stock (FM TONE, 62,176 active samples; the boot lands a DSP block away as on every patched
 image). Cost: 16 calls per block, about 70 instructions each when no type is registered, by count.
-Anchors (rules in `modules/core/dsp-voice/module.toml`): `dsp.voice.render_entry` / `render_next` (`reloc_hash` of
+Anchors (rules in `modules/core/adapters/dsp-voice/module.toml`): `dsp.voice.render_entry` / `render_next` (`reloc_hash` of
 `FUN_b8251b`, offsets 0 and 3), `dsp.voice.frame_base` (the literal `I5 = 0x25c48c` at `0x1c2877` of `FUN_1c2712`, offset `0x165`; the second literal, at `0x1c301a`, is `I4` **[C]**).
 
 **Routine ABI on the Digitone II** (the registration contract is the Digitakt's: a `register` row `{type, routine}` in

@@ -188,7 +188,7 @@ non-bank bits, and the checks on delay-slot contents. Every rule of 8.2 that is 
 
 - **Option, not fork.** `core/dsp-voice/src/dsp/dsp-voice.s` has two `#ifdef DV_BISECT_C2` blocks; `tools/patchkit/pk_build.py` gained `#ifdef`/`#ifndef`/`#else`/`#endif`
   (`apply_conditionals`; `--define NAME --out DIR` writes the objects of a variant to DIR and never over the committed ones). With the option off the text the
-  assembler sees is the old text, so the committed objects are byte-identical: `pk_build build modules/core/dsp-voice --check` says current for both devices
+  assembler sees is the old text, so the committed objects are byte-identical: `pk_build build modules/core/adapters/dsp-voice --check` says current for both devices
   (the DN2 object is unchanged and does not use the option).
 - **What the variant does.** For a registered type: `JUMP _dv_stock` right after the scan (no registered path at all). For a type of 7 or more: the stage 3 breadcrumb is
   written inline (the body of `_dv_crumb` without its `RTS`, two conditional jumps, no `CALL`), and the dispatch counter (`_dv_diag + 52`) counts the stage 3 passes so
@@ -376,7 +376,7 @@ patched code runs in the interpreter, so every boundary is visited. Scenario key
 
 ### 9.4 Build options of `core/dsp-voice` for rung C3 **[D]**
 
-All in the one source file (`#ifdef`, as `DV_BISECT_C2`); with no option the preprocessed text is byte-identical to the old (`pk_build build modules/core/dsp-voice --check` says current for both devices).
+All in the one source file (`#ifdef`, as `DV_BISECT_C2`); with no option the preprocessed text is byte-identical to the old (`pk_build build modules/core/adapters/dsp-voice --check` says current for both devices).
 
 | option | what it does |
 | --- | --- |

@@ -14,7 +14,17 @@ test('remote pacing unit uses the C handler with a controlled block clock', () =
     const binary = path.join(directory, 'remote-pacing');
     execFileSync(
       'cc',
-      ['-std=c11', '-Wall', '-Wextra', '-Werror', path.join(import.meta.dirname, 'remote-pacing.c'), '-o', binary],
+      [
+        '-std=c11',
+        '-Wall',
+        '-Wextra',
+        '-Werror',
+        '-I',
+        path.join(import.meta.dirname, '../../../sdk/include'),
+        path.join(import.meta.dirname, 'remote-pacing.c'),
+        '-o',
+        binary,
+      ],
       { timeout: 10_000 },
     );
     execFileSync(binary, { timeout: 2000 });

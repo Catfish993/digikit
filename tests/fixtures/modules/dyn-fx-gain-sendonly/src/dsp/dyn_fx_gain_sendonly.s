@@ -1,6 +1,6 @@
-// test/dyn-fx-gain-sendonly: the FX contract's smallest run-time effect (sdk/dk_fx.h): out = in * p0, and one state word that counts the calls. The effect is
+// test/dyn-fx-gain-sendonly: the FX contract's smallest run-time effect (<dk/fx.h>): out = in * p0, and one state word that counts the calls. The effect is
 // loaded at run time (a .dkm with a DSP section of version 4): the runtime places and relocates this object, reserves the state behind it and
-// publishes a free row of the chain with p0 = 0.5 (the record's default, `[[fx]] defaults`).
+// publishes a free row of the chain with p0 = 0.5 (the DK_FX knob default).
 
 #include "dk_fx.inc"
 

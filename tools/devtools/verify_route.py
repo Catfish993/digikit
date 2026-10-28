@@ -185,10 +185,9 @@ def acceptance_python(step: str) -> set[str]:
     from tools.devtools import changed_tests
 
     # The graph omits function-local imports. These consumed call paths need stablebin from
-    # patchkit.binary and sharc_disasm from pk_sharc.verify.
+    # patchkit.binary and sharc_disasm (imported inside the functions of the SHARC runner pk_sharc.run_call).
     roots = {
         "tools",
-        "tools.patchkit.pk_build",
         "tools.patchkit.patchkit",
         "tools.devtools.stablebin",
         "tools.sharc_dev.sharc_disasm",

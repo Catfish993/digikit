@@ -1,0 +1,17 @@
+# The pinned Rust-for-ColdFire toolchain. Read by tools/patchkit/pk_toolchains.py (installs it) and by
+# packages/patchkit/src/build/ (the object's toolchain record, the source hash and the cargo target dir).
+rust_nightly = "nightly-2026-10-11"  # the channel of the backend's rust-toolchain.toml at cg_rev
+cg_rev = "a7d8a5227b520187e3d93c1f7fc01dd1ba8659cf"  # rustc_codegen_gcc
+gcc_jit_rev = "37ea7cd851f04ee6a313c5067c9fde9328f876aa"  # = libgccjit.version at cg_rev
+
+# Include directories of module builds, relative to the repository root (packages/patchkit/src/build/mod.rs adds the module's own
+# `build/gen` and `src` in front). `patchkit build --print-include-dirs` and tools/devtools/layercheck.py read these lists.
+[include]
+cf = [
+  "modules/core/fw/inc",
+  "modules/core/fw/include",
+  "modules/core/runtime/include",
+  "modules/core/adapters/ui/include",
+  "sdk/include",
+]
+sharc = ["sdk/asm", "sdk"]

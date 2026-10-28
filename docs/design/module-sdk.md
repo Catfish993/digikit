@@ -5,6 +5,11 @@ tree at `f02cf0ac`. Marks as in AGENTS.md: **[D]** read once here, **[O]** open.
 Related: `docs/plans/digikit-runtime.md` (Phase 11), `docs/design/digikit-dkm.md`, `digikit-runtime.md`, `digikit-registry.md`,
 `digikit-store.md`, `digikit-upload.md`, `device-data.md`, finding 27 (typed schema), finding 51 (guard).
 
+Note (2026-10-27): this document is history for the manifest sections. Machines are now declared in C with `DK_MACHINE`, `DK_PARAM` and
+`DK_PAGE` (`sdk/include/dk/machine.h`), and effects with `DK_FX`, `DK_FX_PARAM` and `DK_PAGE`. The manifest sections `[[voice]]`, `[[machine]]`,
+`[[param]]` and `[[page]]` are refused, and `build/gen/consts.rs`, `dt2.inc`, `dn2.inc` and `module.h` are gone. Current rules:
+`docs/MODULE-AUTHORING.md`, section 5.
+
 ## 1. Today
 
 ### 1.1 Module kinds
@@ -45,14 +50,14 @@ The two files differ in the engine ABI, not in the algorithm.
 
 ### 1.4 The two device ABIs of the routine
 
-Both wrappers are in `modules/core/dsp-voice/src/dsp/`. A routine is entered with `JUMP (M13, I12)` and returns with `JUMP (M13, I13)`
+Both wrappers are in `modules/core/adapters/dsp-voice/src/dsp/`. A routine is entered with `JUMP (M13, I12)` and returns with `JUMP (M13, I13)`
 (`dsp-voice.s:18`, `dsp-voice-dn2.s:19`). Both pin M5=0, M6=1, M7=-1, M13=0, M14=1, M15=-1, L0-L5=0, MODE1 = SIMD off, ALUSAT and TRUNCATE clear, RND32 set
 (`dsp-voice.s:26-33`, `dsp-voice-dn2.s:24-32`) and save the firmware's values. Both: the routine may clobber R0-R15, I0-I5, I13, M1-M4 (DT2 also B3; DN2 also I12)
 and must keep I6-I12/I14/I15, M0, M5-M15, the L registers and MODE1 (`dsp-voice.s:23-25`, `dsp-voice-dn2.s:20-23`).
 
 | Item | Digitakt II (`dsp-voice.s`) | Digitone II (`dsp-voice-dn2.s`) |
 | --- | --- | --- |
-| hook | first instruction of the voice renderer, `anchor dsp.voice.render_entry` (`module.toml` of dsp-voice :141-149) | first instruction of a helper the engine calls once per voice buffer after the FM synthesis (:181-192) |
+| hook | first instruction of the voice renderer, `anchor dsp.voice.fn.render_entry` (`module.toml` of dsp-voice :141-149) | first instruction of a helper the engine calls once per voice buffer after the FM synthesis (:181-192) |
 | call unit | 32 voices, two per track (2t, 2t+1); routine runs on the even voice only (`dsp-voice.s:14-16`) | 16 voice slots v, one call each (`dsp-voice-dn2.s:11-13`) |
 | odd voice | adapter copies the even block (`dsp-voice.s:831-845`) | none |
 | registers in | R4 = voice record (0x1d8 bytes), R8 = output block (32 floats), R12 = 32, R0 = type, R1 = voice index (even), R2 = track t (`:21-22`) | R4 = voice buffer (32 floats, 48 kHz), R0 = type, R2 = slot v, R12 = 32 (`:21`) |
@@ -164,7 +169,7 @@ Rules in words, then the header.
 (`machine_rig.py:11-13`), so a violation shows as a non-finite sample. Pluck's delay line fits this: the line is filled at note-on before the loop reads it.
 
 ```c
-/* sdk/dk_machine.h  --  contract version DK_MACHINE_V1.  Assembly and C implement it; tools generate dk_machine.inc and dk_machine.rs from it. */
+/* sdk/include/dk/gen/machine.h  --  contract version DK_MACHINE_V1.  Assembly and C implement it; tools generate dk_machine.inc and dk_machine.rs from it. */
 #include <stdint.h>
 
 #define DK_MACHINE_V1      1
@@ -243,6 +248,8 @@ Notes on the header:
 | Sample / data | no code; a `.dkm` with a data section | store layout (`digikit-store.md`) |
 
 #### 4.2.1 An effect with a page of its own (Digitakt II, F4 step 2)
+
+Note: effects are now declared with `DK_FX` in C (`sdk/include/dk/fx.h`); the `[[fx]]` and `[[fx.knob]]` names below are the fields of that record.
 
 An `[[fx]]` with a `tab` has a page in the FX view; the runtime builds the page and its knob rows from the module's records, with no effect-specific code (finding 61,
 `docs/design/digikit-registry.md` "Effect pages"; the cookbook is `.agents/skills/digikit-module/references/contract-fx.md`, "Define an effect with its own page").
@@ -420,7 +427,7 @@ dsp range, state bytes, voices, health state, faults) and the free/largest figur
 
 A module does not say what a load takes: the needs are inferred from the file's contents by one function (`dkneeds::needs_of`, docs/design/digikit-dkm.md, "Needs are inferred from the contents"), so a contributed or hand-built `.dkm` cannot misreport them;
 the runtime checks the same limits at load anyway. The menu runs it on the card's files, patchkit and its wasm on the host (`patchkit needs`, `pk_needs`). One rule, `fits_now(needs, capacity)`, compares them with the device's CAPACITY and names the first short resource
-(`dkrt_fit` for the menu, `dkfit.ts` for the host app, `dkfit.py` for the tools; `sdk/fit-vectors.json` keeps the three equal). The DIGIKIT menu's MODULES rows show the memory a module takes and `x` when it will not fit
+(`dkrt_fit` for the menu, `dkfit.ts` for the host app, `dkfit.py` for the tools; `sdk/vectors/fit-vectors.json` keeps the three equal). The DIGIKIT menu's MODULES rows show the memory a module takes and `x` when it will not fit
 next to the ticked ones; the line above APPLY & RESTART gives the DSP and the CPU memory of the ticked set (`DSP 85% CPU 1%`); the Transfer page tags each library module `fits` or `won't fit` and says whether the ticked set fits together; the Memory panel of the desktop app (Emulator and Remote pages) shows what each loaded module takes of each resource the device limits; `dk run` refuses a module that does not fit unless `--force`; `module:check` prints the needs
 and whether the module fits an empty device. Because the module set is fixed per session, a selection is checked against the limits with the other ticked modules taken out, not against what is loaded now.
 
@@ -523,11 +530,11 @@ mise run module:emu NAME              the same through the emulator Target (Phas
 | `module:check` | exists for machines (`pk_modcheck.py`, `mise.toml:98-100`) | add the static checks of section 8; non-machine modules get their type's checks |
 | emulator run | `tests/digikit` scenarios; `menu-dkrun-pluck` drives `dk run` in the emulator | the Target abstraction (Phase 11 item 6, `plans/digikit-runtime.md:455`): emulator and device backends behind one API, so one system scenario runs on both |
 | device run | `tools/device/dkrun.py`, INFO, PUT, SELECT, RESTART, LOG (`digikit-upload.md:165-166`) | unchanged; the guard's `MACHINE_FAULT` events become a pass/fail line in the report |
-| guide | `docs/MODULE-AUTHORING.md` (Phase 11 item 5) | one page: the contract header, the manifest, four commands, a worked example (pluck), the failure messages and what they mean. It is generated in part from `sdk/dk_machine.h` and the schema, so it cannot drift. Plain, short, with tables: written for a human and for a model reading it cold |
+| guide | `docs/MODULE-AUTHORING.md` (Phase 11 item 5) | one page: the contract header, the manifest, four commands, a worked example (pluck), the failure messages and what they mean. It is generated in part from `<dk/machine.h>` and the schema, so it cannot drift. Plain, short, with tables: written for a human and for a model reading it cold |
 | C modules | not supported on SHARC (finding 20 recommends assembly for the hot path) | allowed by the contract; `module:new machine NAME --lang c` is offered only after the measurement in section 11 |
 | ColdFire side | Rust (`rust-demo`) and C (`c-demo`) | the `dkrt-sdk` crate stays the SDK of the service type |
 
-The SDK a module author sees: `sdk/dk_machine.h` (or `.inc`), the template, the four commands, the guide. No firmware knowledge, no hook, no frame offset.
+The SDK a module author sees: `<dk/machine.h>` (or `sdk/asm/dk_machine.inc`), the template, the four commands, the guide. No firmware knowledge, no hook, no frame offset.
 
 ## 10. Migration
 
@@ -685,12 +692,11 @@ queue is full), `-3` (the device profile names no backend `core/input` has). Cod
 firmware's own panel decoders (`docs/findings/58-panel-input-path.md`) and are for the MIDI task; the first user is `digikit/remote`, the proof is `test/input-probe` and the scenario `input-adapter`.
 A device that reaches its events another way adds a backend to `core/input` and names it in its profile; modules and hosts keep calling the same two functions.
 
-### 11.8 digikit/remote and the REMOTE switch
+### 11.8 digikit/remote
 
 `digikit/remote` (`modules/tools/remote`, a run-time `.dkm`, the same file for both devices) registers KEY 0x38 (`code`, `down`), TURN 0x39 (`encoder`, signed `delta`; the reply is the delta
-taken, at most 30 either way, and the host sends the rest again), RELEASE 0x3a (lets go of every key the module holds) in the guarded `remote` range, and STATE 0x3e (`enabled`, format, turn
-limit) in the `remote_state` range. The module knows no device: codes and encoders are the device file's `[panel]` (the host lays the keys out from them). The switch, the guard and its
-defaults are in `docs/design/digikit-upload.md` ("Service commands"). A module can read the switch with the runtime import `int remote_enabled(void)`. Proof: scenario `remote-control`.
+taken, at most 30 either way, and the host sends the rest again), RELEASE 0x3a (lets go of every key the module holds) in the `remote` range, and STATE 0x3e (`enabled`, always 1 while the module is loaded, format, turn
+limit) in the `remote_state` range. The module knows no device: codes and encoders are the device file's `[panel]` (the host lays the keys out from them). The module is on exactly when its check mark in DIGIKIT > MODULES is set (there is no REMOTE switch and no guarded range). Its settings page (`dkm_menu`, SETTINGS... of the MODULES row) shows the keys it holds, the last command and RELEASE ALL KEYS. Proof: scenario `remote-control`, the host tests `modules/core/adapters/ui/host/tests/remote.rs`.
 
 ## 12. Hot reload as a later goal
 

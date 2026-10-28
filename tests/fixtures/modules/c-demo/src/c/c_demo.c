@@ -4,18 +4,11 @@
  * The inputs sit in `c_demo_in` (initialised data, read through volatile) so the compiler cannot fold anything; the
  * results are stored as big-endian word pairs (high, low) in `c_demo_out`, which `dkm_init` logs the address of. */
 
-typedef unsigned int u32;
+#include <dk/api.h>
+
+typedef uint32_t u32;
 typedef unsigned long long u64;
 typedef long long s64;
-
-struct api {
-    u32 version, size, device, runtime;
-    u32 (*import)(const char *name);
-    void *(*alloc)(u32 size);
-    void (*free)(void *p);
-    int (*store_read)(const char *path, void *dst, u32 cap);
-    void (*log)(const char *msg, u32 value);
-};
 
 /* [0] udivisor / dividend pair, see dkm_init */
 volatile u64 c_demo_in[4] = {
@@ -35,7 +28,7 @@ static void put(int i, u64 v)
     c_demo_out[3 + 2 * i] = (u32)v;
 }
 
-int dkm_init(const struct api *api)
+int32_t dkm_init(const dk_api *api)
 {
     u64 a = c_demo_in[0], b = c_demo_in[1];
     s64 c = (s64)c_demo_in[2], d = (s64)c_demo_in[3];
@@ -51,6 +44,6 @@ int dkm_init(const struct api *api)
     put(7, (u64)(c >> n2)); /* __ashrdi3 */
     put(8, (u64)(c * d));   /* __muldi3, signed */
     c_demo_out[0] = 0x43444D4F; /* "CDMO" */
-    api->log("c-demo results", (u32)c_demo_out);
+    api->log((const uint8_t *)"c-demo results", (u32)c_demo_out);
     return 0;
 }

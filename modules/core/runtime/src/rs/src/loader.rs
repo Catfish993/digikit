@@ -11,6 +11,8 @@ use dkrt_sdk::*;
 
 const MAGIC: u32 = 0x444b_4d46; // "DKMF"
 const HEADER: u32 = 0xa0;
+/// The header of a module with a `dkm_menu`: the menu address follows the 0xa0 bytes.
+const HEADER_MENU: u32 = 0xa4;
 const NONE: u32 = 0xffff_ffff;
 const SPIN: u32 = 2_000_000;
 
@@ -39,6 +41,7 @@ const H_REG_OFF: usize = 0x90;
 const H_REG_SIZE: usize = 0x94;
 const H_DSP_OFF: usize = 0x98;
 const H_DSP_SIZE: usize = 0x9c;
+const H_MENU: usize = 0xa0; // only when the header size is HEADER_MENU
 
 unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
     off <= size && len <= size - off
@@ -121,7 +124,8 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     if size < HEADER || rd32(f) != MAGIC || rd32(f.add(4)) != 1 {
         return E_FORMAT;
     }
-    if rd32(f.add(H_SIZE)) != size || rd32(f.add(H_HDRSIZE)) != HEADER {
+    let hdr = rd32(f.add(H_HDRSIZE));
+    if rd32(f.add(H_SIZE)) != size || (hdr != HEADER && hdr != HEADER_MENU) || size < hdr {
         return E_FORMAT;
     }
     // the file's own sha256, over the file with the sha field read as zeros
@@ -172,6 +176,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     let import_n = rd32(f.add(H_IMPORT_N));
     let init = rd32(f.add(H_INIT));
     let fini = rd32(f.add(H_FINI));
+    let menu = if hdr == HEADER_MENU { rd32(f.add(H_MENU)) } else { NONE };
     let slot_off = rd32(f.add(H_SLOT_OFF));
     let slot_n = rd32(f.add(H_SLOT_N));
     if align == 0
@@ -195,7 +200,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         return E_FORMAT;
     }
     let total = image_size + bss;
-    if (init != NONE && init >= image_size) || (fini != NONE && fini >= image_size) {
+    if (init != NONE && init >= image_size) || (fini != NONE && fini >= image_size) || (menu != NONE && menu >= image_size) {
         return E_FORMAT;
     }
     // imports: every name must be in the runtime's table
@@ -347,6 +352,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     m.base = base;
     m.size = total;
     m.fini = if fini == NONE { 0 } else { base + fini };
+    (*addr_of_mut!(crate::DKRT_MENUS))[rec] = if menu == NONE { 0 } else { base + menu };
     m.slot_mask = 0;
     let mut fns = [0u32; SLOTS];
     i = 0;
@@ -514,5 +520,6 @@ unsafe fn unload_rec_inner(rec: usize) -> i32 {
     arena::free(m.base as *mut u8);
     m.used = 0;
     m.slot_mask = 0;
+    (*addr_of_mut!(crate::DKRT_MENUS))[rec] = 0;
     OK
 }

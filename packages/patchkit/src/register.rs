@@ -80,35 +80,18 @@ pub fn effect_id(module: &str, effect: &str) -> u32 {
     if f == 0 { 1 } else { f }
 }
 
-/// The machine key a `.dkm` carries where a stock machine has its type: the hash in the upper 24 bits and the machine's `type_hint` in the
-/// low byte (0: no preference, "assign a type at load"). A page and a DSP voice name their machine by the same key.
-pub fn machine_key(module: &str, machine: &str, type_hint: u32) -> u32 {
-    machine_hash(module, machine) << 8 | (type_hint & 0xff)
+/// The machine key a `.dkm` carries where a stock machine has its type: the hash in the upper 24 bits and a low byte of 0 ("assign a type
+/// at load"). A page and a DSP voice name their machine by the same key.
+pub fn machine_key(module: &str, machine: &str) -> u32 {
+    machine_hash(module, machine) << 8
 }
 
-/// A type field as `dkm-info` prints it: a machine key as `h<hash>` (six hex digits) with `+<hint>` when it has a type hint, a plain type
-/// number (hash 0) as decimal.
+/// A type field as `dkm-info` prints it: a machine key as `h<hash>` (six hex digits), a plain type number (hash 0) as decimal.
 pub fn fmt_type(t: u32) -> String {
-    match (t >> 8, t & 0xff) {
-        (0, _) => t.to_string(),
-        (h, 0) => format!("h{h:06x}"),
-        (h, hint) => format!("h{h:06x}+{hint}"),
+    match t >> 8 {
+        0 => t.to_string(),
+        h => format!("h{h:06x}"),
     }
-}
-
-/// The `type_hint` of every machine of `r` must lie in the device's run-time range `first ..= last` (0: none).
-pub fn check_type_hints(r: &DevResolved, module: &str, first: i64, last: i64) -> Result<()> {
-    for m in &r.machines {
-        let h = m.type_hint as i64;
-        if h != 0 && !(first..=last).contains(&h) {
-            return Err(err!(
-                "{module}: machine {}: type_hint {h} is outside the run-time range {first}..={last} of {}",
-                m.id,
-                r.dev
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// The id digikit gives a device (`[digikit] id` of the device file).
@@ -195,7 +178,7 @@ fn f32_bits(what: &str, v: f64) -> Result<u32> {
     Ok(f.to_bits())
 }
 
-/// The effect page of `[[fx]]` number `fx` (its index in the device's effect list), or None when it declares no `tab`. A knob's default is a float in
+/// The effect page of effect number `fx` (its index in the device's effect list), or None when it declares no `tab`. A knob's default is a float in
 /// [min, max]; positions are distinct, 0 to 7.
 pub fn effect_page(module: &str, fx: usize, d: &crate::typed::FxDef) -> Result<Option<EffectPage>> {
     let Some(tab) = &d.tab else {
@@ -259,7 +242,7 @@ pub fn effect_page(module: &str, fx: usize, d: &crate::typed::FxDef) -> Result<O
     Ok(Some(e))
 }
 
-/// The routes of `[[fx]]` `d` as (mask of `dkmdsp::ROUTE_*`, default route). `route` is `"master"` (the default when left out) or `"send"`. `routes` lists the routes the user may
+/// The routes of effect `d` as (mask of `dkmdsp::ROUTE_*`, default route). `route` is `"master"` (the default when left out) or `"send"`. `routes` lists the routes the user may
 /// choose in DIGIKIT > FX ROUTES; left out it is `["master"]`, and `["send", "master"]` when `route = "send"` (so a send effect falls back to the master when the send slots
 /// are taken, and a master effect is a master effect). A send-only effect says `routes = ["send"]`. Refused: a name that is not `master` or `send`, an empty `routes`, a route twice,
 /// and a `route` that `routes` does not list.
@@ -395,14 +378,7 @@ impl Register {
     /// Lower one device's resolved typed sections of module `module`. A machine's `type_no` is its machine key (`machine_key`):
     /// the runtime assigns the type number at load.
     pub fn lower(r: &DevResolved, module: &str) -> Result<Register> {
-        let key = |machine: &str| {
-            let hint = r
-                .machines
-                .iter()
-                .find(|m| m.id == machine)
-                .map_or(0, |m| m.type_hint);
-            machine_key(module, machine, hint)
-        };
+        let key = |machine: &str| machine_key(module, machine);
         let mut reg = Register {
             device: device_id(&r.dev)?,
             ..Default::default()
@@ -420,12 +396,6 @@ impl Register {
             });
         }
         for m in &r.machines {
-            if m.position.is_some_and(|p| p != POS_END as i64) {
-                return Err(err!(
-                    "machine {}: a run-time machine is listed after the built-in ones; drop `position`",
-                    m.id
-                ));
-            }
             let t = key(&m.id);
             if t == 0 {
                 return Err(err!("machine {}: its id hashes to 0; rename it", m.id));
@@ -787,10 +757,8 @@ mod tests {
         // low 24 bits of FNV-1a 32 of "<module id>:<machine id>" (docs/design/module-sdk.md 11.5 D7); the runtime and the test tools compute the same
         assert_eq!(machine_hash("a", "b"), 0xbd8540);
         assert_eq!(machine_hash("digikit/pluck", "pluck"), 0x734543);
-        assert_eq!(machine_key("digikit/pluck", "pluck", 0), 0x7345_4300);
-        assert_eq!(machine_key("digikit/pluck", "pluck", 18), 0x7345_4312);
-        assert_eq!(fmt_type(machine_key("a", "b", 0)), "hbd8540");
-        assert_eq!(fmt_type(machine_key("a", "b", 18)), "hbd8540+18");
+        assert_eq!(machine_key("digikit/pluck", "pluck"), 0x7345_4300);
+        assert_eq!(fmt_type(machine_key("a", "b")), "hbd8540");
         assert_eq!(fmt_type(18), "18");
     }
 
@@ -947,7 +915,7 @@ mod tests {
                 .0
                 .contains("needs a `tab`")
         );
-        // the manifest reader takes the two keys and no other spelling
+        // the TOML form of an effect takes the two keys and no other spelling
         let m: crate::typed::FxDef = toml::from_str(
             "id = \"g\"\nprocess = \"p\"\ndesc = \"d\"\ntab = \"GAN\"\ntitle = \"T\"\nroute = \"send\"\nroutes = [\"send\"]\n",
         )

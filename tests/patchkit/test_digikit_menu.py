@@ -4,7 +4,6 @@ The emulator proof is tools/coldfire/digikit_menu_proof.py (minutes); these are 
 
 import json
 import subprocess
-import tomllib
 
 import pytest
 from support.paths import REPO_ROOT
@@ -14,9 +13,9 @@ ROOT = REPO_ROOT
 from tools.coldfire import arena_safety, digikit_menu_proof  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
-from tools.patchkit import pk_build, pk_menu_rules, pk_toolchains  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
-MODULE = ROOT / "modules/core/digikit-menu"
+MODULE = ROOT / "modules/core/apps/digikit-menu"
 IMAGES = {
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
@@ -24,32 +23,11 @@ IMAGES = {
 
 
 def test_committed_objects_are_current_and_plain_coldfire():
-    for name in ("digikit-menu-rs", "digikit-menu-cf"):
-        obj = json.loads((MODULE / "build" / f"{name}.dko.json").read_text())
-        assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
-    if not pk_toolchains.codegen_gcc_ready():
-        pytest.skip("Rust-for-ColdFire toolchain not installed")
-    pk_build.build_module(MODULE, check=True)
-
-
-def test_every_rule_resolves_on_every_port():
-    """Each anchor of pk_menu_rules is in all four port files, with the same length."""
-    names = {n for n, _a, _l, _k in pk_menu_rules.SITES}
-    lens = {n: ln for n, _a, ln, _k in pk_menu_rules.SITES}
-    for image in IMAGES:
-        port = tomllib.loads((ROOT / "devices" / "ports" / f"{image}.toml").read_text())
-        have = {a["name"]: a for a in port["anchor"]}
-        assert names <= set(have), (image, names - set(have))
-        for n in names:
-            assert have[n]["len"] == lens[n], (image, n)
-
-
-def test_module_toml_rules_are_the_generated_ones():
-    """The [[anchor_rule]] blocks of module.toml are the output of pk_menu_rules (one place for the sites)."""
-    text = (MODULE / "module.toml").read_text()
-    assert text.strip().endswith(
-        pk_menu_rules.render(pk_menu_rules.build_rules("dt2-1.16")).strip()
-    )
+    obj = json.loads((MODULE / "build" / "digikit-menu.dko.json").read_text())
+    assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
+    if pk_toolchains.m68k_bin("gcc") is None:
+        pytest.skip("m68k-elf toolchain not installed")
+    front_end.build_module(MODULE, check=True)
 
 
 def patchkit(*args):
@@ -88,11 +66,11 @@ def test_hook_displaces_the_selection_restore(image, tmp_path):
         for h in json.loads(plan_path.read_text())["hooks"]
         if h["anchor"]
         not in (
-            "dkrt.hook.boot",
-            "dkrt.hook.midi_rx",
+            "cf.rtos.site.main_os_task",
+            "cf.midi.site.rx",
         )  # the runtime's own hooks (boot, upload)
     ]
-    assert len(hooks) == 1 and hooks[0]["anchor"] == "cf.menu.settings_tail"
+    assert len(hooks) == 1 and hooks[0]["anchor"] == "cf.menu.site.settings_list.tail"
     assert [i.split(None, 2)[2] for i in hooks[0]["displaced_insns"]] == [
         "movea.l (a2),a0",
         "pea.l (0x2).w",
@@ -107,7 +85,7 @@ def test_plan_helpers(tmp_path):
                 "base": {"device": "dt2", "version": "1.17"},
                 "regions": {"cf.expansion": [0x1000, 0x100000]},
                 "symbols": {
-                    "core/digikit-menu@0.1.0:.sec..bss._RNvCsAbC_15pk_digikit_menu4TICK": 0x47E8C100,
+                    "core/digikit-menu@0.1.0:TICK": 0x47E8C100,
                     "core/runtime@0.1.0:DKRT_STATE": 0x47E8C200,
                 },
             }

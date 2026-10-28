@@ -299,9 +299,7 @@ def run_card(c: Any) -> None:
             for _ in range(8):
                 tap("DOWN", 200)
             tap("YES", 700)  # DIGIKIT
-            tap("DOWN", 300)  # FX ROUTES
-            tap("DOWN", 300)  # ABOUT
-            tap("YES", 800)
+            tap("YES", 800)  # ABOUT, the first row
             rows = about_rows(rig, plan)
             png = c.work / "about-foreign.png"
             png.write_bytes(rig.emu.frame_png())
@@ -665,12 +663,11 @@ def run_debug(c: Any) -> None:
 
 
 def part_modules(c: Any, img: Any) -> None:
-    """MODULES (protocol command 3, docs/design/digikit-upload.md): after a boot with a module with DSP code (pluck) and a ColdFire-only one (xslice),
+    """MODULES (protocol command 3, docs/design/digikit-upload.md): after a boot with two modules with DSP code (pluck and sine),
     the reply lists both with ranges inside the arena and the DSP area, the contract bytes and version of the file, the assigned machine types and
     the voice rows; paging by start index; it is not logged as an UPLOAD event."""
     files = {
-        m: c.pack(m, m.split("/")[-1] + ".dkm")
-        for m in ("digikit/pluck", "test/dyn-xslice")
+        m: c.pack(m, m.split("/")[-1] + ".dkm") for m in ("digikit/pluck", "test/sine")
     }
     card = c.card(list(files.values()))
     with c.rig(img, card, "modules") as rig:
@@ -685,7 +682,7 @@ def part_modules(c: Any, img: Any) -> None:
         m = up.modules()
         names = [x["name"] for x in m["modules"]]
         pl = next(x for x in m["modules"] if x["name"] == "digikit/pluck")
-        xs = next(x for x in m["modules"] if x["name"] == "test/dyn-xslice")
+        xs = next(x for x in m["modules"] if x["name"] == "test/sine")
         st = M.sym(rig.plan, "core/runtime", "DKRT_STATE")
         arena_lo, arena_hi = rig.w(st + 28), rig.w(st + 32)
         dkm = {
@@ -700,7 +697,7 @@ def part_modules(c: Any, img: Any) -> None:
         c.check(
             "MODULES lists the two loaded modules by record index, with the file's version and contract bytes",
             m["total"] == 2
-            and names == ["digikit/pluck", "test/dyn-xslice"]
+            and names == ["digikit/pluck", "test/sine"]
             and [x["index"] for x in m["modules"]] == [0, 1]
             and all(
                 x["version"] == hdr(x["name"])[0]
@@ -727,26 +724,31 @@ def part_modules(c: Any, img: Any) -> None:
             f"arena {arena_lo:#x}..{arena_hi:#x}, {m['arena_free']} free, {[(hex(x['cf_base']), x['cf_size']) for x in m['modules']]}",
         )
         c.check(
-            "the DSP part: pluck has a range (and the free figure leaves room for it), xslice has none",
+            "the DSP part: pluck and sine each have a range inside the DSP area (and the free figure leaves room), the ranges do not overlap",
             pl["dsp_len"] > 0
-            and xs["dsp_len"] == 0
+            and xs["dsp_len"] > 0
             and m["dsp_free"] > 0
             and 0 < m["dsp_largest"] <= m["dsp_free"]
-            and pl["dsp_off"] + pl["dsp_len"] > pl["dsp_off"],
-            f"dsp free {m['dsp_free']}, pluck {pl['dsp_off']:#x}+{pl['dsp_len']:#x}",
+            and (
+                pl["dsp_off"] + pl["dsp_len"] <= xs["dsp_off"]
+                or xs["dsp_off"] + xs["dsp_len"] <= pl["dsp_off"]
+            ),
+            f"dsp free {m['dsp_free']}, pluck {pl['dsp_off']:#x}+{pl['dsp_len']:#x}, sine {xs['dsp_off']:#x}+{xs['dsp_len']:#x}",
         )
         t_pl = rig.dyn_type("digikit/pluck", "pluck")
-        t_xs = rig.dyn_type("test/dyn-xslice", "xslice_d")
+        t_xs = rig.dyn_type("test/sine", "sine")
         rows = {k: r[0] for k, r in enumerate(rig.voice_rows())}
         pl_rows = [k for k in range(8) if pl["rows"] >> k & 1]
+        xs_rows = [k for k in range(8) if xs["rows"] >> k & 1]
         c.check(
-            "the assigned machine types are the ones in the boot's table; pluck owns the one voice row, with its type; xslice owns none",
+            "the assigned machine types are the ones in the boot's table; pluck and sine each own one voice row, with their type",
             pl["types"] == [t_pl]
             and xs["types"] == [t_xs]
-            and (t_pl, t_xs) == (18, 16)  # their type_hints
+            and (t_pl, t_xs) == (16, 17)  # lowest free, in load order
             and len(pl_rows) == 1
+            and len(xs_rows) == 1
             and rows[pl_rows[0]] == t_pl
-            and xs["rows"] == 0,
+            and rows[xs_rows[0]] == t_xs,
             f"{pl['types']} {xs['types']} rows {pl['rows']:#x} {xs['rows']:#x}",
         )
         c.check(
@@ -785,10 +787,10 @@ def part_modules(c: Any, img: Any) -> None:
             str(cap),
         )
         c.check(
-            "CAPACITY use agrees with MODULES: two modules, one voice row, two machine types, the arena and DSP figures equal",
+            "CAPACITY use agrees with MODULES: two modules, two voice rows, two machine types, the arena and DSP figures equal",
             cap["MODULES"]["used"] == 2
             and cap["SELECTION"]["used"] == 2
-            and cap["VOICE_ROWS"]["used"] == 1
+            and cap["VOICE_ROWS"]["used"] == 2
             and cap["MACHINE_ROWS"]["used"] == 2
             and cap["MAP_ENTRIES"]["used"] == 2
             and cap["PARAM_ROWS"]["used"] > 0
@@ -798,7 +800,7 @@ def part_modules(c: Any, img: Any) -> None:
             and cap["DSP_AREA"]["largest"] == m["dsp_largest"],
             str(cap),
         )
-        # paging: from record index 1 only xslice; past the end nothing
+        # paging: from record index 1 only sine; past the end nothing
         b1 = up._ok(DK.CMD_MODULES, "modules", bytes((1,)))
         b9 = up._ok(DK.CMD_MODULES, "modules", bytes((9,)))
         c.check(
@@ -816,25 +818,23 @@ def part_modules(c: Any, img: Any) -> None:
 
 
 def key_of(module: str, machine: str) -> int:
-    """The key of a machine in the sticky map (its entry is this | type): the 24-bit hash above a zero type byte. In a .dkm the low byte is the
-    machine's type_hint."""
+    """The key of a machine in the sticky map (its entry is this | type): the 24-bit hash above a zero type byte, as in a .dkm."""
     return M.machine_hash(module, machine) << 8
 
 
 def run_sticky(c: Any) -> None:
     """Sticky machine type numbers (docs/design/module-sdk.md 11.5 D7): the runtime gives a run-time machine a number in 16..23 at the boot load and the card
-    remembers it in the selection record's map (8 entries of hash24 << 8 | type). Without a map entry a machine takes its manifest's type_hint
-    (pluck 18, xslice 16, params 17 on the Digitakt) when that number is free and no other machine's entry references it, else the lowest free one
-    (docs/findings/52-sticky-machine-ids.md). On ColdFire-only rigs, one boot after the other on the card the previous boot left: (1) pluck and
-    xslice: their hints, written; (2) only xslice: it keeps its number, nothing is written; (3) xslice and params: the new machine takes its hint, not the
-    number of the absent pluck; (4) the same set again: the map survived; (5) a forged full map: the new machine drops the lowest entry of a machine that
+    remembers it in the selection record's map (8 entries of hash24 << 8 | type). Without a map entry a machine takes the lowest free number that no
+    other machine's entry references (docs/findings/52-sticky-machine-ids.md). On ColdFire-only rigs, one boot after the other on the card the previous boot left: (1) pluck and
+    sine: 16 and 17, written; (2) only sine: it keeps its number, nothing is written; (3) sine and params: the new machine takes the lowest number
+    no entry references, not the number of the absent pluck; (4) the same set again: the map survived; (5) a forged full map: the new machine drops the lowest entry of a machine that
     is not in this boot, and the entry of a machine that is in it is safe; (6) the same with the entry in slot 0 protected; (7) a fresh card: pluck gets
-    its hint; (8) its hint is another machine's entry: the lowest free number; (9) its own entry beats its hint."""
+    16; (8) another machine's entry holds 16..: the lowest unreferenced number; (9) its own entry wins."""
     from tools.patchkit.pk_digikit_project import card_after, export
 
     PL, XS, PA = (
         ("digikit/pluck", "pluck"),
-        ("test/dyn-xslice", "xslice_d"),
+        ("test/sine", "sine"),  # sine has a DSP section; the rigs are cf_only
         ("test/dyn-params", "dynp"),
     )
     files = {m: c.pack(m, m.split("/")[-1] + ".dkm") for m in (PL[0], XS[0], PA[0])}
@@ -875,19 +875,19 @@ def run_sticky(c: Any) -> None:
     got, (m, tb), asg, _ev, after1 = boot(card1, "st1", [PL, XS])
     a, b = got[PL], got[XS]
     c.check(
-        "boot 1 (pluck, xslice): both take their type_hint (18, 16), the events say rule 2 (hint), and the map on the card holds both entries",
-        (a, b) == (18, 16)
+        "boot 1 (pluck, sine): they take the lowest free numbers in load order (16, 17), the events say rule 0, and the map on the card holds both entries",
+        (a, b) == (16, 17)
         and m[:2] == [key_of(*PL) | a, key_of(*XS) | b]
         and m[2:] == [0] * 6
         and tb["dirty"] == 1
-        and [x[:4] for x in asg] == [(h(PL), a, 0, 2), (h(XS), b, 0, 2)],
+        and [x[:4] for x in asg] == [(h(PL), a, 0, 0), (h(XS), b, 0, 0)],
         f"types {got}, map {[hex(x) for x in m]}, events {asg}",
     )
-    # 2: only xslice, on the card boot 1 left (the selection is the builder's, the map is kept: as SELECT does)
+    # 2: only sine, on the card boot 1 left (the selection is the builder's, the map is kept: as SELECT does)
     card2 = c.card([files[XS[0]]], base=after1)
     got, (m2, tb), asg, _ev, after2 = boot(card2, "st2", [XS])
     c.check(
-        "boot 2 (xslice only): xslice keeps its number (sticky), the map is unchanged and not rewritten",
+        "boot 2 (sine only): sine keeps its number (sticky), the map is unchanged and not rewritten",
         got[XS] == b
         and m2 == m
         and tb["dirty"] == 0
@@ -898,26 +898,26 @@ def run_sticky(c: Any) -> None:
     card3 = c.card([files[XS[0]], files[PA[0]]], base=after2)
     got, (m3, tb), asg, _ev, after3 = boot(card3, "st3", [XS, PA])
     c.check(
-        "boot 3 (xslice, params): params takes its hint (17), not pluck's remembered number (18); xslice keeps its own",
+        "boot 3 (sine, params): params takes the lowest number no entry references (18), not pluck's remembered number (16); sine keeps its own",
         got[XS] == b
-        and got[PA] == 17
+        and got[PA] == 18
         and a not in got.values()
         and tb["dirty"] == 1
-        and m3[:3] == [key_of(*PL) | a, key_of(*XS) | b, key_of(*PA) | 17],
+        and m3[:3] == [key_of(*PL) | a, key_of(*XS) | b, key_of(*PA) | 18],
         f"types {got}, map {[hex(x) for x in m3]}",
     )
     # 4: the same set again (the map written by boot 3 is on the card), then pluck back: it gets its own number again
     card4 = c.card([files[PA[0]], files[PL[0]], files[XS[0]]], base=after3)
     got, (m4, tb), asg, _ev, _after4 = boot(card4, "st4", [PA, PL, XS])
     c.check(
-        "boot 4 (params, pluck, xslice): every machine has the number the card remembered, whatever the load order; nothing is rewritten",
-        (got[PA], got[PL], got[XS]) == (17, a, b)
+        "boot 4 (params, pluck, sine): every machine has the number the card remembered, whatever the load order; nothing is rewritten",
+        (got[PA], got[PL], got[XS]) == (18, a, b)
         and tb["dirty"] == 0
         and m4 == m3
         and all(x[2] == 1 for x in asg),
         f"types {got}, events {asg}",
     )
-    # 5: a forged map of eight entries: slot 2 is xslice's (a machine of this boot), the others belong to no module
+    # 5: a forged map of eight entries: slot 2 is sine's (a machine of this boot), the others belong to no module
     fakes = [0x111100 + 0x100 * i for i in range(8)]
     forged = [fakes[i] | (16 + i) for i in range(8)]
     forged[2] = key_of(*XS) | 18
@@ -926,7 +926,7 @@ def run_sticky(c: Any) -> None:
     got, (m5, tb), asg, ev, _after5 = boot(card5, "st5", [PL, XS])
     want_ev = [(fakes[0] >> 8, 16)]
     c.check(
-        "boot 5 (a full map): xslice keeps its entry's number (18); pluck drops the lowest entry of a machine that is not in this boot (slot 0, logged as an error event), takes its number and records its own entry there",
+        "boot 5 (a full map): sine keeps its entry's number (18); pluck drops the lowest entry of a machine that is not in this boot (slot 0, logged as an error event), takes its number and records its own entry there",
         got[XS] == 18
         and got[PL] == 16
         and [tuple(e[4][:2]) for e in ev] == want_ev
@@ -943,7 +943,7 @@ def run_sticky(c: Any) -> None:
     card6 = c.card(None, recs=(rec, rec))
     got, (m6, tb), asg, ev, _after6 = boot(card6, "st6", [PL, XS])
     c.check(
-        "boot 6 (a full map, xslice in slot 0): the entry of a machine that loads in this boot is never the one dropped: slot 1 goes and pluck takes its number (17)",
+        "boot 6 (a full map, sine in slot 0): the entry of a machine that loads in this boot is never the one dropped: slot 1 goes and pluck takes its number (17)",
         got[XS] == 16
         and got[PL] == 17
         and [tuple(e[4][:2]) for e in ev] == [(fakes[1] >> 8, 17)]
@@ -951,34 +951,34 @@ def run_sticky(c: Any) -> None:
         and m6[1] == key_of(*PL) | 17,
         f"types {got}, map {[hex(x) for x in m6]}, evicted {[e[4][:2] for e in ev]}",
     )
-    # 7: a fresh card, pluck alone: its hint (18), recorded
+    # 7: a fresh card, pluck alone: the lowest number (16), recorded
     card7 = c.card([files[PL[0]]])
     got, (m7, tb), asg, _ev, _after7 = boot(card7, "st7", [PL])
     c.check(
-        "boot 7 (fresh card, pluck): the hint 18 is free and unreferenced: pluck gets 18 by rule 2 and the entry is written",
-        got[PL] == 18
-        and [x[:4] for x in asg] == [(h(PL), 18, 0, 2)]
-        and m7 == [key_of(*PL) | 18, *[0] * 7]
+        "boot 7 (fresh card, pluck): pluck gets the lowest number 16 by rule 0 and the entry is written",
+        got[PL] == 16
+        and [x[:4] for x in asg] == [(h(PL), 16, 0, 0)]
+        and m7 == [key_of(*PL) | 16, *[0] * 7]
         and tb["dirty"] == 1,
         f"types {got}, map {[hex(x) for x in m7]}, events {asg}",
     )
-    # 8: pluck's hint (18) is the number of xslice's entry (xslice is not in this boot): pluck takes the lowest number no entry references
-    rec = B.make_record([files[PL[0]]], 1, 0, 0, 0, [key_of(*XS) | 18] + [0] * 7)
+    # 8: 16 is the number of sine's entry (sine is not in this boot): pluck takes the lowest number no entry references
+    rec = B.make_record([files[PL[0]]], 1, 0, 0, 0, [key_of(*XS) | 16] + [0] * 7)
     card8 = c.card(None, recs=(rec, rec))
     got, (m8, tb), asg, _ev, _after8 = boot(card8, "st8", [PL])
     c.check(
-        "boot 8 (xslice's entry holds 18): pluck does not take its hint but the lowest free number (16), by rule 0; xslice's entry stays",
-        got[PL] == 16
-        and [x[:4] for x in asg] == [(h(PL), 16, 0, 0)]
-        and m8[:2] == [key_of(*XS) | 18, key_of(*PL) | 16],
+        "boot 8 (sine's entry holds 16): pluck takes the lowest unreferenced number (17), by rule 0; sine's entry stays",
+        got[PL] == 17
+        and [x[:4] for x in asg] == [(h(PL), 17, 0, 0)]
+        and m8[:2] == [key_of(*XS) | 16, key_of(*PL) | 17],
         f"types {got}, map {[hex(x) for x in m8]}, events {asg}",
     )
-    # 9: pluck's own entry (20) beats its hint (18)
+    # 9: pluck's own entry (20) beats the lowest free number (16)
     rec = B.make_record([files[PL[0]]], 1, 0, 0, 0, [key_of(*PL) | 20] + [0] * 7)
     card9 = c.card(None, recs=(rec, rec))
     got, (m9, tb), asg, _ev, _after9 = boot(card9, "st9", [PL])
     c.check(
-        "boot 9 (pluck's own entry holds 20): the map beats the hint: pluck gets 20 (rule 1) and nothing is rewritten",
+        "boot 9 (pluck's own entry holds 20): the map beats the lowest free number: pluck gets 20 (rule 1) and nothing is rewritten",
         got[PL] == 20
         and [x[:4] for x in asg] == [(h(PL), 20, 1, 1)]
         and m9[0] == key_of(*PL) | 20

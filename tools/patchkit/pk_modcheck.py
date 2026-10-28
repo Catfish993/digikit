@@ -6,8 +6,7 @@
 NAME is a module id (`digikit/pluck`) or its last part (`pluck`). An effect module runs tests/modules/test_fx_conformance.py. A machine module (tools/patchkit/pk_conform.py) runs the conformance
 suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/test_*.py`, and until the tests move there, the test files under tests/ whose file name carries the
 module's name (`pluck` -> tests/patchkit/test_pluck*.py). One pytest process runs all of them; the exit code is pytest's.
-Own tests may build or launch an emulator. Service/raw modules with neither conformance nor own tests return success
-with nothing to run. This command does not prove every module loads in patched firmware.
+Own tests may build or launch an emulator. A service/raw module with no own tests has its objects checked against their sources, then gets the size and fit lines; it returns success. This command does not prove every module loads in patched firmware.
 """
 
 from __future__ import annotations
@@ -171,7 +170,17 @@ def main() -> int:
         else "module (no machine or effect DSP: no conformance suite)"
     )
     print(f"{mid}: {kind}; pytest {' '.join(paths) or '(nothing to run)'}", flush=True)
+    devices = [a.device] if a.device else list(pk_conform.DEVICES)
     if not paths:
+        from tools.patchkit import patchkit
+
+        try:
+            patchkit.build_module(modroots.module_dir(mid), check=True)
+        except patchkit.BuildError as e:
+            print(f"{mid}: {e}", file=sys.stderr)
+            return 1
+        for line in size_lines(mid, devices):
+            print(line, flush=True)
         return 0
     cmd = [
         sys.executable,
@@ -185,9 +194,7 @@ def main() -> int:
     ]
     rc = subprocess.run(cmd, cwd=ROOT, env={**os.environ, **env}).returncode
     if rc == 0:
-        for line in size_lines(
-            mid, [a.device] if a.device else list(pk_conform.DEVICES)
-        ):
+        for line in size_lines(mid, devices):
             print(line, flush=True)
     return rc
 

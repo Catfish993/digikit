@@ -1,4 +1,4 @@
-// digikit/freqshift: a frequency shifter, an effect of the FX contract (sdk/dk_fx.h), loaded at run time on the Digitakt II (docs/findings/55-fx-adapter.md,
+// digikit/freqshift: a frequency shifter, an effect of the FX contract (<dk/fx.h>), loaded at run time on the Digitakt II (docs/findings/55-fx-adapter.md,
 // 61-fx-pages.md). It moves every frequency of the master up or down by the same number of Hz (single sideband modulation, not a pitch shift). The float32
 // reference, which defines the arithmetic operation for operation, is tools/patchkit/freqshift_ref.py; the notes below say what the routine does.
 //
@@ -18,6 +18,7 @@
 // the one-sample delay buffers of the two channels (a carry word, then the 32 outputs of chain P), 102 to 165 cos and sin of the 32 samples.
 
 #include "dk_fx.inc"
+#include "freqshift.h"
 #define FS_PHASE 0
 #define FS_INC 1
 #define FS_FXIN 2
@@ -42,7 +43,7 @@ _fs_process:                              // R4 = state, R8 = dk_fx_in, R12 = th
     I5 = R4;
     DM(FS_FXIN, I5) = R8;
     I1 = R12;
-    R0 = DM(0, I1);                       // p0, the SHIFT word
+    R0 = DM(FSHIFT_SHIFT_WORD, I1);       // p0, the SHIFT word
     // ---- the increment of this block: f = KHZ (2^x - 1), x = min(|v|, 64) / 5.5 ----
     F9 = PASS F0;
     F0 = ABS F0;
@@ -328,7 +329,7 @@ _fs_pq: DM(I1, M6) = R12;
 .GLOBAL _fs_desc;
 .VAR _fs_desc = DK_FX_MAGIC;
 .VAR _fs_desc1 = DK_FX_V1;
-.VAR _fs_desc2 = 1;
+.VAR _fs_desc2 = FSHIFT_KNOBS;
 .VAR _fs_desc3 = FS_STATE_BYTES;
 .VAR _fs_desc4 = 4200;
 .VAR _fs_desc5 = 1;

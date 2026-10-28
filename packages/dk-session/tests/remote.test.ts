@@ -1,7 +1,7 @@
 // digikit/remote and the screenshot in the pure TypeScript client (`DkSession`, dkupload-core.ts) against a fake device that frames its replies byte for byte.
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { DkError, DkSession, decode8in7, decodeScreen, encode8in7, frame, screenPixel } from '@digi/dk-session';
+import { DkSession, decode8in7, decodeScreen, encode8in7, frame, screenPixel } from '@digi/dk-session';
 import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 
 const concat = (...p: Uint8Array[]) => Uint8Array.from(Buffer.concat(p.map((x) => Buffer.from(x))));
@@ -14,16 +14,14 @@ const reply = (cmd: number, seq: number, status: number, body: number[] = []) =>
     Uint8Array.of(0xf7),
   );
 
-/** The device: digikit/remote with the switch `enabled`, a firmware that clamps a TURN to `limit`, and the stock screenshot. */
+/** The device: digikit/remote loaded, a firmware that clamps a TURN to `limit`, and the stock screenshot. */
 class FakeRemote {
-  enabled: boolean;
   limit: number;
   seen: string[] = [];
   queue: Uint8Array[] = [];
   held = new Set<number>();
   screen: Uint8Array;
-  constructor({ enabled = true, limit = 30 } = {}) {
-    this.enabled = enabled;
+  constructor({ limit = 30 } = {}) {
     this.limit = limit;
     this.seen = [];
     this.queue = [];
@@ -46,9 +44,7 @@ class FakeRemote {
     const body = decode8in7(msg.subarray(7, msg.length - 1));
     const names = Object.fromEntries(Object.entries(SERVICE_CMD).map(([k, v]) => [v, k]));
     this.seen.push(names[cmd]!);
-    if (cmd === SERVICE_CMD.REMOTE_STATE)
-      return void this.queue.push(reply(cmd, seq, 0, [this.enabled ? 1 : 0, 1, this.limit]));
-    if (!this.enabled) return void this.queue.push(reply(cmd, seq, -65));
+    if (cmd === SERVICE_CMD.REMOTE_STATE) return void this.queue.push(reply(cmd, seq, 0, [1, 1, this.limit]));
     if (cmd === SERVICE_CMD.REMOTE_KEY) {
       if (body[1]) this.held.add(body[0]);
       else this.held.delete(body[0]);
@@ -90,13 +86,6 @@ test('state, key, a paced turn and release', async () => {
   assert.deepEqual(dev.seen.filter((x) => x === 'REMOTE_TURN').length, 4); // 30 + 30 + 30 + 10
   await s.remoteRelease();
   assert.equal(dev.held.size, 0);
-});
-
-test('a switch that is off: state is answered, the others are E_DISABLED', async () => {
-  const s = new DkSession(new FakeRemote({ enabled: false }), { timeoutMs: 200 });
-  assert.equal((await s.remoteState()).enabled, false);
-  await assert.rejects(s.remoteKey(2, true), (e) => e instanceof DkError && e.status === 'E_DISABLED');
-  await assert.rejects(s.remoteTurn(1, 5, 0), (e) => e instanceof DkError && e.status === 'E_DISABLED');
 });
 
 test('the screenshot is decoded and pixel (x, y) reads the buffer', async () => {

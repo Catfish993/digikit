@@ -2,7 +2,7 @@
 
 Steps 1 to 5 (findings 62 to 66) gave the Digitakt II the send route of `core/fx`, the settings store, the send page of the FX key, the manifest's routes with DIGIKIT > FX ROUTES and `digikit/freqshift` as a send effect. This finding records what the
 Digitone II needed: the DSP send mix over its voice slots, the `core/fxpages` hooks and the Sound array index for the send knob, and the proofs. Marks: **[D]** measured or read once by the author (no second agent has checked the image bytes yet, so nothing here is
-**[V]**), **[O]** open. Pieces: `modules/core/fx/src/dsp/fxsend-dn2.s` (with `fxsend-a.inc`, `fxsend-slots.inc`, `fxsend-b.inc`; the Digitakt II object is `fxsend.s` with `fxsend-tracks.inc` over the same two parts), `modules/core/fx/module.toml`, `modules/core/fxpages/src/cf/fxpages-dn2.s`,
+**[V]**), **[O]** open. Pieces: `modules/core/adapters/fx/src/dsp/fxsend-dn2.s` (with `fxsend-a.inc`, `fxsend-slots.inc`, `fxsend-b.inc`; the Digitakt II object is `fxsend.s` with `fxsend-tracks.inc` over the same two parts), `modules/core/adapters/fx/module.toml`, `modules/core/adapters/fxpages/src/cf/fxpages-dn2.s`,
 `devices/digitone-ii.toml` (`[fx]`, `[limits] send_slots = 1`), `devices/ports/dn2-1.11.toml` and `dn2-1.12.toml`, the scenarios `fx-send-dn2`, `fx-route-dn2`, `fx-routes-dn2`, `fx-freqshift-dn2` and the tool `tools/patchkit/pk_idx65_poke.py`. The runtime needed no change except the device facts: it
 already reads the Sound objects a byte at a time (the Digitone II's kit objects are not aligned).
 

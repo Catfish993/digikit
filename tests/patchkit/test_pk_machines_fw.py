@@ -18,7 +18,17 @@ from tools.patchkit import (  # noqa: E402
 )
 
 SYX = config.stock("Digitakt_II_OS1.17.syx")
-SRC = ROOT / "modules" / "core" / "machines" / "src" / "cf" / "dt2" / "machines.s"
+SRC = (
+    ROOT
+    / "modules"
+    / "core"
+    / "adapters"
+    / "machines"
+    / "src"
+    / "cf"
+    / "dt2"
+    / "machines.s"
+)
 ROWSIZE = 64
 FIRST = 7
 ROWS = 0x47EC0000
@@ -407,16 +417,18 @@ def test_stock_table_copies_append_the_clones_row():
     from tools.patchkit.pk_expr import evaluate
 
     m = tomllib.loads(
-        (ROOT / "modules" / "core" / "machines" / "module.toml").read_text()
+        (
+            ROOT / "modules" / "core" / "adapters" / "machines" / "module.toml"
+        ).read_text()
     )
     secs = {s["name"]: s for s in m["section"]}
     # a fake image: the anchors' tables
     anchors = {
-        "cf.machines.tab.names": 0x1000,
-        "cf.machines.tab.permit": 0x2000,
-        "cf.machines.tab.pertype": 0x3000,
-        "dsp.machines.selector_data": 0x4000,
-        "cf.machines.dispatch": 0x9000,
+        "cf.machine.data.name.table": 0x1000,
+        "cf.machine.data.permit.table": 0x2000,
+        "cf.machine.data.pertype.table": 0x3000,
+        "dsp.machine.data.selector.table": 0x4000,
+        "cf.machine.fn.dispatch": 0x9000,
     }
     img = {}
     for t in range(FIRST):
@@ -456,7 +468,9 @@ def test_row_size_of_the_manifest_matches_the_assembly():
     import tomllib
 
     m = tomllib.loads(
-        (ROOT / "modules" / "core" / "machines" / "module.toml").read_text()
+        (
+            ROOT / "modules" / "core" / "adapters" / "machines" / "module.toml"
+        ).read_text()
     )
     fields = m["registry"][0]["field"]
     assert all(f["kind"] in ("u32", "cstr") for f in fields)

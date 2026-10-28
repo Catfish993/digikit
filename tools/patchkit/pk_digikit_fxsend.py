@@ -37,7 +37,7 @@ GAIN = 0.5  # test/dyn-fx-gain
 SLOT_BUS, SLOT_BYTES = (
     0x257EE8,
     256,
-)  # DN2: the 16 voice slots' buses (anchor dsp.fx.slotbus; 32 left then 32 right floats each)
+)  # DN2: the 16 voice slots' buses (anchor dsp.fx.value.send.slot_bus; 32 left then 32 right floats each)
 
 
 def aligned(ref: np.ndarray, run: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

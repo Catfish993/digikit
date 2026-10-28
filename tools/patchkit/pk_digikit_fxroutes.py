@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""The `fxroutes` kind of the digikit scenarios: SETTINGS > DIGIKIT > FX ROUTES and the manifest's route fields (FX routing step 4; docs/findings/65-fx-routes.md).
+"""The `fxroutes` kind of the digikit scenarios: SETTINGS > DIGIKIT > MODULES > side panel > ROUTE... and the manifest's route fields (FX routing step 4; docs/findings/65-fx-routes.md).
 
-Run by `tools/patchkit/pk_digikit_scen.py` (scenarios `fx-routes-dt2` and `fx-routes-dn2`). The image is the runtime with `core/dynfx`, `core/fxpages` and `core/digikit-menu`; the sound is the run-time machine
+Run by `tools/patchkit/pk_digikit_scen.py` (scenarios `fx-routes-dt2` and `fx-routes-dn2`). The image is the runtime with `core/dynfx`, `core/fxpages` and `core/digikit-menu` (and `core/ui` that it requires); the sound is the run-time machine
 `test/sine`, the effects are `test/dyn-fx-gain` (no route fields: master only, the module before the fields), `test/dyn-fx-gain-send` (`route = "send"`: allowed send and master, default
 send) and `test/dyn-fx-gain-sendonly` (`routes = ["send"]`), and the first again under another name. The settings record (`fx/route/<module id>`) is put on the card before a boot,
-as the runtime's settings copy A (step 2's record format), where a part needs a stored route. Boots, each in its own daemon:
+as the runtime's settings copy A (step 2's record format), where a part needs a stored route. All five files are in the card's store, so MODULES has five rows (`m0` to `m4`, in name order).
+The side panel of a loaded effect has the row ROUTE..., which opens a choice of the routes that the effect allows (SEND, MASTER) and that the free send slots leave; the menu keeps the panel's rows
+(`DK_PANEL`), the routes the choice offered (`DK_ROUTE_ITEM`) and the pending routes (`DK_FXR_PEND`). Boots, each in its own daemon:
 
   dry       the sine alone: the reference PCM.
-  none      no effect: the page says NO EFFECTS LOADED (screenshot).
+  none      no effect: no row of MODULES has a ROUTE... panel row (screenshot).
   list      a master-only and a send-default effect, no stored route: the send one starts as a send effect (route word, FX key page, CAPACITY); Function + FX lists the send effect before the master one (the
-            list the runtime hands the firmware, and the screenshots); FX ROUTES lists `GAN  MASTER` and `GSN  SEND`; YES on the master-only one says `GAN: MASTER ONLY`; YES on the other
-            switches the pending route and offers APPLY & RESTART, YES again switches back and the offer goes.
-  sendonly  a send-only effect: `GSO: SEND ONLY`, the pending route does not change.
+            list the runtime hands the firmware, and the screenshots); the pending routes are MASTER and SEND; ROUTE... on the master-only one offers MASTER only and changes nothing; on the other it
+            offers SEND and MASTER, MASTER is a pending change (NO asks APPLY & RESTART? with 1 CHANGE, NO answers it and drops the change), SEND again is no change.
+  sendonly  a send-only effect: ROUTE... offers SEND only, the pending route does not change.
   fallback  stored routes that the effect does not allow (send for a master-only one, master for a send-only one): the default holds.
-  full      one effect more than the device has send slots (three on the Digitakt II, two on the Digitone II): `NO SEND SLOT` on the last (nothing changes); the pending routes count, so moving a send effect to the master frees the slot.
-  apply     a send-default effect: PCM = dry (send, no amounts); FX ROUTES, YES to MASTER, APPLY & RESTART (a popup on the first press, the write and the restart on the second); after the restart the
+  full      one effect more than the device has send slots (three on the Digitakt II, two on the Digitone II): ROUTE... on the last offers MASTER only (no free slot, nothing changes); the pending routes count, so moving a send effect to the master frees the slot.
+  apply     a send-default effect: PCM = dry (send, no amounts); ROUTE... to MASTER, NO, YES on APPLY & RESTART? (the settings are written and the device restarts); after the restart the
             route is the master (row word, no send page on the FX key, PCM = dry x gain) and `patchkit store dump` shows the key.
   back      the same effect with a stored `master`: the other way, to SEND, after a restart (row word, FX key page 2, `patchkit store dump`, PCM = dry). A boot of its own: two restarts inside the first
             30 s of a session are two unstable boots in a row, and the third boot would be safe mode.
@@ -94,11 +96,6 @@ def run_fxroutes(c: Any) -> None:
     # the effects of the `full` boot: one more than the device has send slots (the second slot of the Digitakt II goes to the send-only effect)
     full_mods = [snd, so, snd3] if send_slots > 1 else [snd, snd3]
     full_routes = [1] * send_slots + [0]
-    full_rows = (
-        ["GSN  SEND", "GSO  SEND", "GSN  MASTER"]
-        if send_slots > 1
-        else ["GSN  SEND", "GSN  MASTER"]
-    )
     full_pending = [SENDR] * send_slots + [MASTER]
     card_full = seeded([(route_key(SEND3), b"\x00")], full_mods)
     card_apply = c.card([sine, snd])
@@ -111,30 +108,72 @@ def run_fxroutes(c: Any) -> None:
     def sym(rig: Any, owner: str, name: str) -> int:
         return M.sym(rig.plan, owner, name)
 
-    def fxr_rows(rig: Any) -> list[str]:
-        """The rows of the FX ROUTES page as the menu kept them."""
-        base = sym(rig, "core/digikit-menu", "DK_FXR")
-        n = rig.w(sym(rig, "core/digikit-menu", "DK_FXR_N"))
-        return text_rows(rig.w, base, n, 24)
-
     def pending(rig: Any) -> list[int]:
         w = rig.w(sym(rig, "core/digikit-menu", "DK_FXR_PEND"))
         return [(w >> (24 - 8 * k)) & 0xFF for k in range(4)]
 
-    def popup_text(rig: Any) -> str:
-        return text_rows(rig.w, sym(rig, "core/digikit-menu", "DK_POPUP"), 1, 48)[0]
+    def popup(rig: Any) -> tuple[str, str]:
+        """The title and the text of the last dialog the menu opened."""
+        title = text_rows(rig.w, sym(rig, "core/digikit-menu", "DK_POPUP"), 1, 48)[0]
+        text = text_rows(rig.w, sym(rig, "core/digikit-menu", "DK_POPUP_TEXT"), 1, 48)[
+            0
+        ]
+        return title, text
 
-    def to_fxr(rig: Any) -> None:
-        """SETTINGS > DIGIKIT (the ninth row) > FX ROUTES (the row after MODULES)."""
+    def popups(rig: Any) -> int:
+        return rig.w(sym(rig, "core/digikit-menu", "DK_POPUPS"))
+
+    def applies(rig: Any) -> int:
+        """Times APPLY & RESTART was answered with YES."""
+        return rig.w(sym(rig, "core/digikit-menu", "DK_APPLIES"))
+
+    def to_modules(rig: Any) -> None:
+        """SETTINGS > DIGIKIT (the ninth row) > MODULES (the fourth row)."""
         tap(rig, "NO", 400)
         tap(rig, "SETTINGS", 600)
         for _ in range(8):
             tap(rig, "DOWN", 200)
         tap(rig, "YES", 700)
-        tap(rig, "DOWN", 300)
-        tap(rig, "YES", 800)
+        for _ in range(3):
+            tap(rig, "DOWN", 200)
+        tap(rig, "YES", 900)
+
+    def goto(rig: Any, row: int) -> None:
+        """The cursor on MODULES row ROW (the list has five rows)."""
+        for _ in range(5):
+            tap(rig, "UP", 150)
+        for _ in range(row):
+            tap(rig, "DOWN", 150)
+
+    def panel_rows(rig: Any) -> list[str]:
+        base = sym(rig, "core/digikit-menu", "DK_PANEL")
+        return text_rows(
+            rig.w, base, rig.w(sym(rig, "core/digikit-menu", "DK_PANEL_N")), 24
+        )
+
+    def open_panel(rig: Any, row: int) -> list[str]:
+        """RIGHT on MODULES row ROW: the side panel; its rows."""
+        goto(rig, row)
+        tap(rig, "RIGHT", 400)
+        return panel_rows(rig)
+
+    def route_choice(rig: Any, row: int) -> list[int]:
+        """The panel of an effect, ROUTE... (its second row): the choice opens; the routes it offers, in the order shown (1 master, 2 send)."""
+        open_panel(rig, row)
+        tap(rig, "DOWN", 250)
+        tap(rig, "YES", 500)
+        n = rig.w(sym(rig, "core/digikit-menu", "DK_ROUTE_N"))
+        w = rig.w(sym(rig, "core/digikit-menu", "DK_ROUTE_ITEM"))
+        return [(w >> (24 - 8 * k)) & 0xFF for k in range(n)]
+
+    def pick(rig: Any, index: int) -> None:
+        """Item INDEX of the open choice."""
+        for _ in range(index):
+            tap(rig, "DOWN", 250)
+        tap(rig, "YES", 500)
 
     def leave_menu(rig: Any) -> None:
+        """From the MODULES list without pending changes: back to the DIGIKIT menu, SETTINGS and the main screen."""
         for _ in range(3):
             tap(rig, "NO", 400)
 
@@ -179,18 +218,13 @@ def run_fxroutes(c: Any) -> None:
         with c.rig(img, card_none, "none") as rig:
             rig.boot_info()
             shots = Shots(c.work, "step4")
-            to_fxr(rig)
+            to_modules(rig)
+            rows = [open_panel(rig, r) for r in (0, 1, 2)]
             shots.take(rig, "none")
             c.check(
-                "none: with no effect loaded the page says NO EFFECTS LOADED",
-                fxr_rows(rig) == ["NO EFFECTS LOADED"],
-                f"{fxr_rows(rig)}",
-            )
-            tap(rig, "YES", 400)
-            c.check(
-                "none: YES on that row changes nothing",
-                fxr_rows(rig) == ["NO EFFECTS LOADED"],
-                f"{fxr_rows(rig)}",
+                "none: with no effect loaded no row of MODULES has a ROUTE... panel row",
+                rows == [["LOAD", "INFO"]] * 3,
+                f"{rows}",
             )
             c.done(rig)
 
@@ -233,37 +267,78 @@ def run_fxroutes(c: Any) -> None:
                 page_down(rig)
                 shots.take(rig, f"fxview-{k}")
             leave_menu(rig)
-            to_fxr(rig)
-            shots.take(rig, "list")
+            to_modules(rig)
+            sine_row, gain_row, snd_row = 0, 1, 2  # the files m0, m1, m2
+            p_sine = open_panel(rig, sine_row)
+            tap(rig, "NO", 300)  # NO closes the panel
+            p_gain = open_panel(rig, gain_row)
+            tap(rig, "NO", 300)
             c.check(
-                "list: the page has a row for each effect: the tab and the route (GAN MASTER, GSN SEND)",
-                fxr_rows(rig) == ["GAN  MASTER", "GSN  SEND"]
-                and pending(rig)[:2] == [MASTER, SENDR],
-                f"{fxr_rows(rig)} {pending(rig)}",
+                "list: the side panel of a loaded tool has UNLOAD and INFO, the panel of an effect has ROUTE... too",
+                p_sine == ["UNLOAD", "INFO"]
+                and p_gain == ["UNLOAD", "ROUTE...", "INFO"],
+                f"{p_sine} {p_gain}",
             )
-            tap(rig, "YES", 400)  # the master-only effect
+            c.check(
+                "list: the pending routes are the routes that hold: MASTER for the master-only effect, SEND for the send-default one",
+                pending(rig)[:2] == [MASTER, SENDR],
+                f"{pending(rig)}",
+            )
+            n0 = popups(rig)
+            items = route_choice(rig, gain_row)
             shots.take(rig, "master-only")
             c.check(
-                "list: YES on the master-only effect says `GAN: MASTER ONLY` and changes nothing (no APPLY & RESTART)",
-                fxr_rows(rig) == ["GAN  MASTER", "GSN  SEND", "GAN: MASTER ONLY"]
-                and pending(rig)[:2] == [MASTER, SENDR],
-                f"{fxr_rows(rig)} {pending(rig)}",
+                "list: ROUTE... on the master-only effect offers MASTER only",
+                items == [MASTER],
+                f"{items}",
             )
-            tap(rig, "DOWN", 300)
-            tap(rig, "YES", 400)  # the send effect goes to the master
-            shots.take(rig, "switched")
+            pick(rig, 0)
+            tap(rig, "NO", 500)  # nothing changed: back to the DIGIKIT menu at once
             c.check(
-                "list: YES on the send effect switches the pending route to the master (`GSN  MASTER`), clears the message and offers APPLY & RESTART; nothing is saved",
-                fxr_rows(rig) == ["GAN  MASTER", "GSN  MASTER", "APPLY & RESTART"]
-                and pending(rig)[:2] == [MASTER, MASTER],
-                f"{fxr_rows(rig)} {pending(rig)}",
+                "list: choosing it changes nothing: NO goes back and asks nothing",
+                pending(rig)[:2] == [MASTER, SENDR] and popups(rig) == n0,
+                f"{pending(rig)} {popups(rig)} {n0}",
             )
-            tap(rig, "YES", 400)  # and back
+            tap(rig, "YES", 900)  # MODULES again
+            items = route_choice(rig, snd_row)
+            shots.take(rig, "route-choice")
             c.check(
-                "list: YES again switches back to send and the offer goes",
-                fxr_rows(rig) == ["GAN  MASTER", "GSN  SEND"]
-                and pending(rig)[:2] == [MASTER, SENDR],
-                f"{fxr_rows(rig)} {pending(rig)}",
+                "list: ROUTE... on the send-default effect offers SEND and MASTER",
+                items == [SENDR, MASTER],
+                f"{items}",
+            )
+            pick(rig, 1)  # MASTER
+            c.check(
+                "list: MASTER is a pending change; nothing is saved",
+                pending(rig)[:2] == [MASTER, MASTER] and applies(rig) == 0,
+                f"{pending(rig)} {applies(rig)}",
+            )
+            tap(rig, "NO", 700)
+            shots.take(rig, "apply-question")
+            c.check(
+                "list: NO with the change pending asks `APPLY & RESTART?` (1 CHANGE)",
+                popups(rig) == n0 + 1
+                and popup(rig) == ("APPLY & RESTART?", "1 CHANGE"),
+                f"{popups(rig)} {popup(rig)}",
+            )
+            tap(
+                rig, "NO", 700
+            )  # NO on the question drops the change and closes the list
+            c.check(
+                "list: NO on the question drops the pending route (SEND again)",
+                pending(rig)[:2] == [MASTER, SENDR],
+                f"{pending(rig)}",
+            )
+            tap(rig, "YES", 900)  # the DIGIKIT menu is on top: MODULES again
+            route_choice(rig, snd_row)
+            pick(rig, 1)
+            route_choice(rig, snd_row)
+            pick(rig, 0)  # back to SEND
+            tap(rig, "NO", 500)
+            c.check(
+                "list: SEND again is no change: NO asks nothing",
+                pending(rig)[:2] == [MASTER, SENDR] and popups(rig) == n0 + 1,
+                f"{pending(rig)} {popups(rig)}",
             )
             c.done(rig)
 
@@ -282,20 +357,27 @@ def run_fxroutes(c: Any) -> None:
                 allow == [SENDR, MASTER] and dflt == [SENDR, MASTER],
                 f"allow {allow} default {dflt}",
             )
-            to_fxr(rig)
+            to_modules(rig)
             shots = Shots(c.work, "step4")
             c.check(
-                "sendonly: the rows are `GSO  SEND`, `GAN  MASTER`",
-                fxr_rows(rig) == ["GSO  SEND", "GAN  MASTER"],
-                f"{fxr_rows(rig)}",
+                "sendonly: the pending routes are SEND (the send-only effect), MASTER",
+                pending(rig)[:2] == [SENDR, MASTER],
+                f"{pending(rig)}",
             )
-            tap(rig, "YES", 400)
+            n0 = popups(rig)
+            items = route_choice(rig, 3)  # the file m3 holds the send-only effect
             shots.take(rig, "send-only")
             c.check(
-                "sendonly: YES on the send-only effect says `GSO: SEND ONLY` and changes nothing",
-                fxr_rows(rig) == ["GSO  SEND", "GAN  MASTER", "GSO: SEND ONLY"]
-                and pending(rig)[:2] == [SENDR, MASTER],
-                f"{fxr_rows(rig)} {pending(rig)}",
+                "sendonly: ROUTE... on the send-only effect offers SEND only",
+                items == [SENDR],
+                f"{items}",
+            )
+            pick(rig, 0)
+            tap(rig, "NO", 500)
+            c.check(
+                "sendonly: choosing it changes nothing: NO asks nothing",
+                pending(rig)[:2] == [SENDR, MASTER] and popups(rig) == n0,
+                f"{pending(rig)} {popups(rig)}",
             )
             c.done(rig)
 
@@ -313,11 +395,11 @@ def run_fxroutes(c: Any) -> None:
                 routes(rig, 2) == [0, 1] and send_used(rig)["used"] == 1,
                 f"{routes(rig, 2)} {send_used(rig)}",
             )
-            to_fxr(rig)
+            to_modules(rig)
             c.check(
-                "fallback: the page shows the routes that hold: `GAN  MASTER`, `GSO  SEND`",
-                fxr_rows(rig) == ["GAN  MASTER", "GSO  SEND"],
-                f"{fxr_rows(rig)}",
+                "fallback: the pending routes are the routes that hold: MASTER, SEND",
+                pending(rig)[:2] == [MASTER, SENDR],
+                f"{pending(rig)}",
             )
             c.done(rig)
 
@@ -338,41 +420,55 @@ def run_fxroutes(c: Any) -> None:
                 == {"limit": send_slots, "used": send_slots, "largest": 0},
                 f"{routes(rig, n)} {send_used(rig)}",
             )
-            to_fxr(rig)
+            to_modules(rig)
             shots = Shots(c.work, "step4")
+            first, last = (
+                2,
+                4,
+            )  # the files m2 (the first send effect) and m4 (the last effect)
             c.check(
-                f"full: the rows are {', '.join(f'`{x}`' for x in full_rows)}",
-                fxr_rows(rig) == full_rows,
-                f"{fxr_rows(rig)}",
+                f"full: the pending routes are the routes that hold ({full_pending})",
+                pending(rig)[:n] == full_pending,
+                f"{pending(rig)}",
             )
-            for _ in range(n - 1):
-                tap(rig, "DOWN", 250)
-            tap(rig, "YES", 400)  # the last effect to send: every slot is taken
+            items = route_choice(rig, last)  # every slot is taken: no SEND
             shots.take(rig, "no-send-slot")
             c.check(
-                "full: YES on the last effect says `NO SEND SLOT` and changes nothing",
-                fxr_rows(rig) == [*full_rows, "NO SEND SLOT"]
-                and pending(rig)[:n] == full_pending,
-                f"{fxr_rows(rig)} {pending(rig)}",
+                "full: ROUTE... on the last effect offers MASTER only (no send slot is free)",
+                items == [MASTER],
+                f"{items}",
             )
-            for _ in range(n - 1):
-                tap(rig, "UP", 250)
-            tap(rig, "YES", 400)  # the first one to the master: a slot is free
-            for _ in range(n - 1):
-                tap(rig, "DOWN", 250)
-            tap(rig, "YES", 400)  # now the last may take it
-            shots.take(rig, "pending-counts")
-            after_rows = [
-                "GSN  MASTER",
-                *(["GSO  SEND"] if send_slots > 1 else []),
-                "GSN  SEND",
-                "APPLY & RESTART",
-            ]
+            pick(rig, 0)
             c.check(
-                f"full: the pending routes count: after the first goes to the master the last may go to send ({', '.join(f'`{x}`' for x in after_rows[:-1])}), and APPLY & RESTART is offered",
-                fxr_rows(rig) == after_rows
-                and pending(rig)[:n] == [MASTER, *full_pending[1:-1], SENDR],
-                f"{fxr_rows(rig)} {pending(rig)}",
+                "full: choosing it changes nothing",
+                pending(rig)[:n] == full_pending,
+                f"{pending(rig)}",
+            )
+            items = route_choice(rig, first)  # a send effect may always stay on send
+            c.check(
+                "full: ROUTE... on an effect that runs on send offers SEND and MASTER",
+                items == [SENDR, MASTER],
+                f"{items}",
+            )
+            pick(rig, 1)  # the first one to the master: a slot is free
+            items = route_choice(rig, last)
+            c.check(
+                "full: the pending routes count: after the first goes to the master the last may go to send",
+                items == [SENDR, MASTER],
+                f"{items}",
+            )
+            pick(rig, 0)  # now the last takes it
+            shots.take(rig, "pending-counts")
+            c.check(
+                "full: the pending routes are the first on the master and the last on send",
+                pending(rig)[:n] == [MASTER, *full_pending[1:-1], SENDR],
+                f"{pending(rig)}",
+            )
+            tap(rig, "NO", 700)
+            c.check(
+                "full: NO asks `APPLY & RESTART?` (2 CHANGES)",
+                popup(rig) == ("APPLY & RESTART?", "2 CHANGES"),
+                f"{popup(rig)}",
             )
             c.done(rig)
 
@@ -392,28 +488,36 @@ def run_fxroutes(c: Any) -> None:
                 return str(e["value"])
         return None
 
-    def apply_flow(rig: Any, shots: Shots, tag: str, want_text: list[str]) -> None:
-        """On the FX ROUTES page with one effect: YES switches the route, then APPLY & RESTART with its two presses; waits for the restart."""
-        tap(rig, "YES", 400)
-        shots.take(rig, f"{tag}-switched")
+    def apply_flow(
+        rig: Any, shots: Shots, tag: str, pick_index: int, want: int
+    ) -> None:
+        """On the MODULES list with one effect (the file m2): ROUTE... and the item PICK_INDEX, then NO asks APPLY & RESTART? (nothing is written yet),
+        YES writes the route and restarts; waits for the restart."""
+        items = route_choice(rig, 2)
+        shots.take(rig, f"{tag}-choice")
+        pick(rig, pick_index)
         c.check(
-            f"apply {tag}: YES switched the pending route and offered APPLY & RESTART",
-            fxr_rows(rig) == want_text,
-            f"{fxr_rows(rig)}",
+            f"apply {tag}: ROUTE... offered SEND and MASTER and the choice is a pending change",
+            items == [SENDR, MASTER] and pending(rig)[0] == want,
+            f"{items} {pending(rig)}",
         )
-        tap(rig, "DOWN", 300)
-        applies = rig.w(sym(rig, "core/digikit-menu", "DK_FXR_APPLIES"))
-        tap(rig, "YES", 700)  # the first press: the popup
-        shots.take(rig, f"{tag}-popup")
+        done0 = applies(rig)
+        tap(rig, "NO", 700)
+        shots.take(rig, f"{tag}-question")
         c.check(
-            f"apply {tag}: the first press shows a popup that the device restarts and writes nothing",
-            popup_text(rig) == "DEVICE WILL RESTART"
-            and rig.w(sym(rig, "core/digikit-menu", "DK_FXR_APPLIES")) == applies,
-            f"{popup_text(rig)!r}",
+            f"apply {tag}: NO asks `APPLY & RESTART?` (1 CHANGE) and writes nothing",
+            popup(rig) == ("APPLY & RESTART?", "1 CHANGE") and applies(rig) == done0,
+            f"{popup(rig)}",
         )
-        tap(rig, "NO", 500)
         rig.emu.drain_events()
-        tap(rig, "YES", 300)  # the second press: put, flush, restart
+        tap(rig, "YES", 300)  # YES: put, flush, restart
+        c.check(
+            f"apply {tag}: YES wrote the route (the settings put and the flush answered 0)",
+            applies(rig) == done0 + 1
+            and rig.w(sym(rig, "core/digikit-menu", "DK_FXR_SET")) == 0
+            and rig.w(sym(rig, "core/digikit-menu", "DK_FXR_FLUSH")) == 0,
+            f"{applies(rig)}",
+        )
         D._wait_restart(rig)
 
     def part_apply() -> None:
@@ -442,14 +546,14 @@ def run_fxroutes(c: Any) -> None:
                 fx_a != fx_b,
                 f"{fx_a[:8]} {fx_b[:8]}",
             )
-            to_fxr(rig)
+            to_modules(rig)
             shots.take(rig, "apply-start")
             c.check(
-                "apply: the page shows `GSN  SEND`",
-                fxr_rows(rig) == ["GSN  SEND"],
-                f"{fxr_rows(rig)}",
+                "apply: the pending route is SEND",
+                pending(rig)[0] == SENDR,
+                f"{pending(rig)}",
             )
-            apply_flow(rig, shots, "to-master", ["GSN  MASTER", "APPLY & RESTART"])
+            apply_flow(rig, shots, "to-master", 1, MASTER)
             info = rig.boot_info()
             c.check(
                 "apply: after the restart the module loaded again",
@@ -473,12 +577,12 @@ def run_fxroutes(c: Any) -> None:
             shots.take(rig, "apply-fx1-master")
             tap(rig, "FX", 400)
             shots.take(rig, "apply-fx1-master-again")
-            to_fxr(rig)
+            to_modules(rig)
             shots.take(rig, "apply-master")
             c.check(
-                "apply: the page shows the saved route (`GSN  MASTER`) and offers nothing",
-                fxr_rows(rig) == ["GSN  MASTER"],
-                f"{fxr_rows(rig)}",
+                "apply: the saved route is MASTER and NO asks nothing",
+                pending(rig)[0] == MASTER,
+                f"{pending(rig)}",
             )
             c.done(rig)
 
@@ -495,13 +599,13 @@ def run_fxroutes(c: Any) -> None:
                 f"{info['results']} {routes(rig, 1)} {count_cell(rig)} {send_used(rig)}",
             )
             shots = Shots(c.work, "step4")
-            to_fxr(rig)
+            to_modules(rig)
             c.check(
-                "back: the page shows `GSN  MASTER`",
-                fxr_rows(rig) == ["GSN  MASTER"],
-                f"{fxr_rows(rig)}",
+                "back: the pending route is MASTER",
+                pending(rig)[0] == MASTER,
+                f"{pending(rig)}",
             )
-            apply_flow(rig, shots, "to-send", ["GSN  SEND", "APPLY & RESTART"])
+            apply_flow(rig, shots, "to-send", 0, SENDR)
             info = rig.boot_info()
             c.check(
                 "back: after the restart the module loaded again",

@@ -2,26 +2,37 @@
 """Resolve the anchors and regions of one firmware into its port lockfile.
 
     uv run python -m tools.patchkit.port_resolve resolve FIRMWARE.syx [--out devices/ports/NAME.toml]
-    uv run python -m tools.patchkit.port_resolve resolve-all [--root DIR]      # the four supported firmwares
-    uv run python -m tools.patchkit.port_resolve rule-sharc IMAGE PC [--len N] # print an anchor_rule for a SHARC pc
+    uv run python -m tools.patchkit.port_resolve resolve-all [--root DIR]      # the supported firmwares: DT2 1.17, DN2 1.12, DN2 1.11
+    uv run python -m tools.patchkit.port_resolve rule-sharc IMAGE PC [--len N] # print a devices/fw rule for a SHARC pc
+    (for a rule of either CPU and a declaration entry, see tools/firmware/catalog.py: emit-rule, declare)
 
 A port (devices/ports/<short>-<version>.toml) records, for one stock `.syx` (keyed by its sha256), the
 named anchors the modules and frameworks need (address, length, sha256 of the bytes there; never the bytes),
 the allocatable regions and the container limits. patchkit only reads it and verifies the hashes.
 
-Anchors are declared by the modules that need them, as `[[anchor_rule]]` entries in module.toml:
+Anchors are declared in devices/fw/<subsystem>.toml (docs/design/firmware-decls.md), not in module manifests. One
+entry is one declaration; its `rule` is shared, or `rule.dt2` / `rule.dn2` give one rule per device:
 
-    [[anchor_rule]]
-    name = "dsp.master.q31_call"     # the anchor's name
-    devices = ["dt2"]                # rules are per device; the same name may have one rule per device
-    kind = "sharc_func"              # see below
-    ...
+    [[fn]]
+    name = "dsp.master.fn.q31_converter"   # <cpu>.<subsystem>.<kind>.<name>; the kind is the table, the
+                                           # subsystems are listed in devices/fw/subsystems.toml
+    cpu = "sharc"
+    devices = ["dt2"]                # the devices that have it; the entry is skipped on the others
+    rule = { kind = "sharc_func", reloc_hash = "...", offset = 0x0, len = 6 }   # kind: see below
+    mark = "D"
+
+The tables fn, site, data and value hold single anchors and sites holds multi-site rules. The table struct is not
+resolved. A `[[hook]]` names a declared `site` (and an optional `offset`) and a `mode`; the port file lists each hook
+whose site resolves on that device. An unknown table is an error. A renamed entry lists its former names in
+`was = [...]`; they are for reading older docs, never resolve, and must not be a current name.
 
 Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py):
 
-  sharc_func     reloc_hash = <hash of the containing function>, offset = <parcels from its entry>, len = <bytes>.
-                 The function is found by its relocation-insensitive hash (it must be unique in the image);
-                 the anchor is the `len` bytes at entry + offset. SHARC `pm` is the entry + offset pc.
+  sharc_func     reloc_hash = <hash of the containing function>, offset = <parcels from its entry>, len = <bytes>,
+                 ordinal = <index among the functions with that hash, in entry address order>.
+                 The function is found by its relocation-insensitive hash (it must be unique in the image unless the
+                 rule gives an ordinal; the same holds for the three kinds below); the anchor is the `len` bytes at
+                 entry + offset. SHARC `pm` is the entry + offset pc.
   sharc_literal  as sharc_func, but the instruction at entry + offset loads a constant (a literal in the
                  sharcdb): the anchor's value is that constant (a data address); `src` is the instruction.
 
@@ -40,6 +51,11 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py
                  hash, in address order; default 0>, offset = <bytes from its entry>, len = <bytes>: a code
                  anchor. The hash masks address operands, so one rule serves relinked builds; a hash with fewer
                  functions than the ordinal needs is an error. Needs the image's cfdb (out/cfdb/<image>-emac).
+
+  cf_vtable_slot class = <RTTI class name>, slot = <vtable slot>, offset_to_top = <0 for the primary vtable, default 0;
+                 negative for a secondary one>, offset = <bytes from the function entry; default 0>, len = <bytes>: a
+                 code anchor on the function in that slot, for virtual functions whose hash is not unique. Exactly
+                 one cfdb vtables row must match the class, offset_to_top and slot. Needs the image's cfdb.
 
   cf_params_t1   the parameter descriptor table (60-byte rows), found by the 36-byte signature of its reader (finding 02,
                  exactly one match): a data anchor over all rows (the row count is the length / 60).
@@ -68,6 +84,7 @@ matches nothing or more than one place is an error, so a firmware that moved cod
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import re
 import sys
@@ -75,7 +92,6 @@ import tomllib
 from pathlib import Path
 
 from tools.firmware import config
-from tools.patchkit import modroots
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -123,18 +139,125 @@ def ported_firmware(root: Path = ROOT) -> list[str]:
     return [p["filename"] for p in load_profiles(root).values() if p["port"]]
 
 
-def module_rules(root: Path) -> list[dict]:
+RULE_TABLES = ("fn", "site", "data", "value", "sites")
+UNRESOLVED_TABLES = ("struct",)
+HOOK_MODES = ("before", "replace", "retarget")
+SUBSYSTEMS = "subsystems.toml"
+NAME_SEGMENT = re.compile(r"[a-z0-9_]+")
+
+
+def load_subsystems(root: Path) -> dict[str, set[str]]:
+    """cpu -> the allowed subsystem words, from devices/fw/subsystems.toml."""
+    d = tomllib.loads((root / "devices" / "fw" / SUBSYSTEMS).read_text())
+    return {cpu: set(words) for cpu, words in d.items()}
+
+
+def check_name(name: str, table: str, vocab: dict[str, set[str]]) -> None:
+    """A declaration name is `<cpu>.<subsystem>.<kind>.<name>`: the cpu and subsystem are in VOCAB, the kind is the
+    entry's TABLE, and the rest is dot-separated segments of [a-z0-9_] (so `clone.0.alt` is allowed)."""
+    parts = name.split(".")
+    if len(parts) < 4:
+        raise ResolveError(
+            f"{name}: a name has the form <cpu>.<subsystem>.<kind>.<name>"
+        )
+    cpu, subsystem, kind, *rest = parts
+    if cpu not in vocab:
+        raise ResolveError(f"{name}: cpu {cpu!r} is not one of {sorted(vocab)}")
+    if subsystem not in vocab[cpu]:
+        raise ResolveError(
+            f"{name}: {subsystem!r} is not a {cpu} subsystem in devices/fw/{SUBSYSTEMS}"
+        )
+    if kind != table:
+        raise ResolveError(
+            f"{name}: the kind {kind!r} differs from its table [[{table}]]"
+        )
+    for segment in rest:
+        if not NAME_SEGMENT.fullmatch(segment):
+            raise ResolveError(
+                f"{name}: segment {segment!r} must be lower case letters, digits and _"
+            )
+
+
+def fw_rules(root: Path) -> list[dict]:
+    """The rules of devices/fw/**/*.toml, one dict per device filter, with `_source` = "fw/<file without .toml>".
+    Each has the declaration's `was` (former names, never resolved; empty by default)."""
+    fw = root / "devices" / "fw"
+    vocab = load_subsystems(root)
+    former: list[tuple[str, str]] = []  # (a former name, the declaration it was)
     rules = []
-    for m in (
-        m for r in modroots.REPO_ROOTS for m in sorted((root / r).rglob("module.toml"))
-    ):
-        d = tomllib.loads(m.read_text())
-        for r in d.get("anchor_rule", []):
-            rules.append({**r, "_module": d["module"]["id"]})
+    hook_names: set[str] = set()
+    for f in sorted(fw.rglob("*.toml")):
+        if f == fw / SUBSYSTEMS:
+            continue
+        source = "fw/" + f.relative_to(fw).with_suffix("").as_posix()
+        for table, entries in tomllib.loads(f.read_text()).items():
+            if table == "hook":
+                # a hook makes no rule; its names take part in the former-name check
+                for e in entries:
+                    check_name(e["name"], table, vocab)
+                    former += [(n, e["name"]) for n in e.get("was", [])]
+                    hook_names.add(e["name"])
+                continue
+            if table in UNRESOLVED_TABLES:
+                continue
+            if table not in RULE_TABLES:
+                raise ResolveError(f"{f}: unknown table [[{table}]]")
+            for e in entries:
+                check_name(e["name"], table, vocab)
+                was = list(e.get("was", []))
+                former += [(n, e["name"]) for n in was]
+                rule = e["rule"]
+                if "kind" in rule:
+                    shared = [(e.get("devices"), rule)]
+                else:
+                    shared = [([dev], r) for dev, r in rule.items()]
+                for devices, r in shared:
+                    out = {"name": e["name"], "was": was}
+                    if "cpu" in e:
+                        out["cpu"] = e["cpu"]
+                    out.update({k: v for k, v in r.items() if k != "mark"})
+                    out["mark"] = r.get("mark", e.get("mark", "D"))
+                    if devices:
+                        out["devices"] = devices
+                    out["_source"] = source
+                    rules.append(out)
+    current = {r["name"] for r in rules} | hook_names
+    for n, name in former:
+        if n in current:
+            raise ResolveError(f"{n}: a former name of {name} is a current name")
     return rules
 
 
-def sections_of(syx: Path) -> dict[int, bytes]:
+def fw_hooks(root: Path) -> list[dict]:
+    """The `[[hook]]` entries of devices/fw/**/*.toml: name, site, offset (default 0), mode, cpu, devices (when the entry has
+    them) and `_source` as in fw_rules."""
+    fw = root / "devices" / "fw"
+    hooks = []
+    for f in sorted(fw.rglob("*.toml")):
+        if f == fw / SUBSYSTEMS:
+            continue
+        source = "fw/" + f.relative_to(fw).with_suffix("").as_posix()
+        for e in tomllib.loads(f.read_text()).get("hook", []):
+            if e["mode"] not in HOOK_MODES:
+                raise ResolveError(
+                    f"{e['name']}: mode {e['mode']!r} is not one of {list(HOOK_MODES)}"
+                )
+            hook = {
+                "name": e["name"],
+                "site": e["site"],
+                "offset": int(e.get("offset", 0)),
+                "mode": e["mode"],
+                "cpu": e.get("cpu", "cf" if e["name"].startswith("cf.") else "sharc"),
+            }
+            if "devices" in e:
+                hook["devices"] = e["devices"]
+            hook["_source"] = source
+            hooks.append(hook)
+    return hooks
+
+
+def sections_of(syx: Path, only: tuple[int, ...] | None = None) -> dict[int, bytes]:
+    """The depacked sections of SYX; with ONLY, just those section ids (depacking is the slow part)."""
     from tools.firmware.container import sections
     from tools.firmware.elz import depack_section
     from tools.firmware.extract import classify
@@ -142,37 +265,79 @@ def sections_of(syx: Path) -> dict[int, bytes]:
     c, table = sections(str(syx))
     out = {}
     for sid, off, clen, _dest in table:
+        if only is not None and sid not in only:
+            continue
         kind, payload = classify(bytes(c[off : off + clen]))
         out[sid] = depack_section(payload) if kind == "packed" else bytes(payload)
     return out
 
 
-class Dsp:
+class SharcFuncs:
+    """The functions of one DSP image, from its sharcdb."""
+
+    def __init__(self, image: str):
+        from tools.sharc_dev import sharc
+
+        self.db = sharc.load(image)
+        self.image = image
+
+    def funcs_by_hash(self, reloc_hash: str) -> list[int]:
+        """Entries of the functions whose relocation-insensitive hash is RELOC_HASH, in address order."""
+        rows = self.db.sql(
+            "SELECT entry_sw FROM func_hash WHERE image=? AND reloc_hash=? ORDER BY entry_sw",
+            self.image,
+            reloc_hash,
+        )
+        return [int(r[0]) for r in rows]
+
+    def func_by_hash(self, reloc_hash: str, ordinal: int | None = None) -> int:
+        return select_by_ordinal(
+            self.funcs_by_hash(reloc_hash),
+            ordinal,
+            f"reloc_hash {reloc_hash[:12]}..",
+            self.image,
+        )
+
+    def func_at(self, pc: int) -> tuple[int, str] | None:
+        """(entry, reloc_hash) of the function that contains PC, or None."""
+        rows = self.db.sql(
+            "SELECT f.entry_sw, h.reloc_hash FROM functions f JOIN func_hash h"
+            " ON h.image=f.image AND h.entry_sw=f.entry_sw"
+            " WHERE f.image=? AND f.entry_sw<=? AND f.end_sw>?",
+            self.image,
+            pc,
+            pc,
+        )
+        return (int(rows[0][0]), rows[0][1]) if rows else None
+
+
+class Dsp(SharcFuncs):
     """The DSP boot stream plus its sharcdb."""
 
     def __init__(self, blob: bytes, image: str):
         from tools.patchkit import dsp_patch
-        from tools.sharc_dev import sharc
 
+        super().__init__(image)
         self.stream = dsp_patch.Stream(blob)
-        self.db = sharc.load(image)
-        self.image = image
         self._dsp_patch = dsp_patch
 
     def byte_addr(self, pc: int) -> int:
         return self._dsp_patch.pc_address(pc, self.stream.present)
 
-    def func_by_hash(self, reloc_hash: str) -> int:
-        rows = self.db.sql(
-            "SELECT entry_sw FROM func_hash WHERE image=? AND reloc_hash=?",
-            self.image,
-            reloc_hash,
+
+def select_by_ordinal(
+    entries: list[int], ordinal: int | None, what: str, where: str
+) -> int:
+    """The function to use among ENTRIES (address order): the ORDINAL-th, or the only one when ORDINAL is None."""
+    if ordinal is None:
+        if len(entries) != 1:
+            raise ResolveError(f"{what} matches {len(entries)} functions in {where}")
+        return entries[0]
+    if not 0 <= ordinal < len(entries):
+        raise ResolveError(
+            f"{what} matches {len(entries)} function(s) in {where} (ordinal {ordinal})"
         )
-        if len(rows) != 1:
-            raise ResolveError(
-                f"reloc_hash {reloc_hash[:12]}.. matches {len(rows)} functions in {self.image}"
-            )
-        return int(rows[0][0])
+    return entries[ordinal]
 
 
 class CfFacts:
@@ -182,25 +347,75 @@ class CfFacts:
         from tools.coldfire import regions
 
         self.name = name
-        self.analysis = regions.analyse(name)
-        self.reset = self.analysis["reset"]
         self.main = main
         self.base = regions.MAIN_BASE
+
+    @functools.cached_property
+    def analysis(self) -> dict:
+        """The region analysis of the image (slow: it scans the whole image); only the reset and cave rules need it."""
+        from tools.coldfire import regions
+
+        return regions.analyse(self.name)
+
+    @functools.cached_property
+    def reset(self) -> dict:
+        return self.analysis["reset"]
+
+    @functools.cached_property
+    def db(self):
+        from tools.coldfire import cf
+
+        return cf.load(f"{self.name}-emac").db
 
     def bytes_at(self, addr: int, n: int) -> bytes:
         return self.main[addr - self.base : addr - self.base + n]
 
     def funcs_by_hash(self, h: str) -> list[int]:
         """Entries of the functions whose cfdb h_strict is H, in address order."""
-        from tools.coldfire import cf
-
         image = f"{self.name}-emac"
-        db = cf.load(image).db
         return [
             r[0]
-            for r in db.execute(
+            for r in self.db.execute(
                 "SELECT entry FROM func_hash WHERE image=? AND h_strict=? ORDER BY entry",
                 (image, h),
+            )
+        ]
+
+    def func_at(self, addr: int) -> tuple[int, str | None] | None:
+        """(entry, h_strict) of the cfdb function that contains ADDR (h_strict None without a hash), or None."""
+        image = f"{self.name}-emac"
+        db = self.db
+        row = db.execute(
+            "SELECT entry FROM functions WHERE image=? AND entry<=? AND end>?",
+            (image, addr, addr),
+        ).fetchone()
+        if row is None:
+            return None
+        h = db.execute(
+            "SELECT h_strict FROM func_hash WHERE image=? AND entry=?",
+            (image, row[0]),
+        ).fetchone()
+        return (int(row[0]), h[0] if h else None)
+
+    def vtable_slot(self, cls: str, slot: int, offset_to_top: int = 0) -> list[int]:
+        """Targets of the cfdb vtables rows for CLS, OFFSET_TO_TOP and SLOT."""
+        image = f"{self.name}-emac"
+        return [
+            int(r[0])
+            for r in self.db.execute(
+                "SELECT target FROM vtables WHERE image=? AND class=? AND offset_to_top=? AND slot=?",
+                (image, cls, offset_to_top, slot),
+            )
+        ]
+
+    def own_vtable_slots(self, entry: int) -> list[tuple[str, int, int]]:
+        """(class, offset_to_top, slot) of the vtables rows that point at ENTRY and whose owner is the class itself."""
+        image = f"{self.name}-emac"
+        return [
+            (r[0], int(r[1]), int(r[2]))
+            for r in self.db.execute(
+                "SELECT class, offset_to_top, slot FROM vtables WHERE image=? AND target=? AND owner=class",
+                (image, entry),
             )
         ]
 
@@ -358,6 +573,24 @@ def cf_func_addr(cf: CfFacts, rule: dict) -> int:
     return hits[ordinal] + int(rule["offset"])
 
 
+def pick_vtable_target(targets: list[int], what: str, where: str) -> int:
+    """The one target among the vtables rows TARGETS for WHAT; none or several is an error."""
+    if len(targets) != 1:
+        raise ResolveError(f"{what} matches {len(targets)} vtables rows in {where}")
+    return targets[0]
+
+
+def cf_vtable_addr(cf: CfFacts, rule: dict) -> int:
+    """Address `offset` bytes into the function in slot `slot` of the vtable of `class` (at `offset_to_top`)."""
+    ott = int(rule.get("offset_to_top", 0))
+    target = pick_vtable_target(
+        cf.vtable_slot(rule["class"], int(rule["slot"]), ott),
+        f"{rule['name']}: class {rule['class']} slot {rule['slot']} offset_to_top {ott}",
+        cf.name,
+    )
+    return target + int(rule.get("offset", 0))
+
+
 def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     kind = rule["kind"]
     if kind == "cf_params_t1":
@@ -392,8 +625,8 @@ def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
             "src": src,
             "sha256": sha(cf.bytes_at(target, n)),
         }
-    if kind == "cf_func":
-        addr = cf_func_addr(cf, rule)
+    if kind in ("cf_func", "cf_vtable_slot"):
+        addr = cf_func_addr(cf, rule) if kind == "cf_func" else cf_vtable_addr(cf, rule)
         n = int(rule["len"])
         return {
             "kind": "code",
@@ -421,10 +654,14 @@ def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     raise ResolveError(f"{rule['name']}: unknown rule kind {kind!r}")
 
 
+def rule_ordinal(rule: dict) -> int | None:
+    return int(rule["ordinal"]) if "ordinal" in rule else None
+
+
 def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
     kind = rule["kind"]
     if kind in ("sharc_func", "sharc_literal"):
-        entry = dsp.func_by_hash(rule["reloc_hash"])
+        entry = dsp.func_by_hash(rule["reloc_hash"], rule_ordinal(rule))
         pc = entry + int(rule.get("offset", 0))
         addr = dsp.byte_addr(pc)
         if kind == "sharc_func":
@@ -458,7 +695,7 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
     if kind == "sharc_table":
         # a table the code reaches through a literal: the instruction at entry + offset loads its address; the anchor is
         # the table in the DSP stream (`len` bytes, at the software alias 0x28000000 + the literal)
-        entry = dsp.func_by_hash(rule["reloc_hash"])
+        entry = dsp.func_by_hash(rule["reloc_hash"], rule_ordinal(rule))
         pc = entry + int(rule.get("offset", 0))
         rows = dsp.db.sql(
             "SELECT value FROM literals WHERE image=? AND sw=?", dsp.image, pc
@@ -477,7 +714,7 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
             "sha256": sha(dsp.stream.read(addr, n)),
         }
     if kind == "sharc_mem_addr":
-        entry = dsp.func_by_hash(rule["reloc_hash"])
+        entry = dsp.func_by_hash(rule["reloc_hash"], rule_ordinal(rule))
         pc = entry + int(rule.get("offset", 0))
         rows = dsp.db.sql(
             "SELECT abs_address FROM mem_access WHERE image=? AND sw=? AND abs_address IS NOT NULL",
@@ -508,9 +745,13 @@ def expansion_excludes(excludes: list, start: int, end: int) -> list:
     out = sorted([int(a), int(b)] for a, b in excludes)
     for i, (a, b) in enumerate(out):
         if not start <= a < b <= end:
-            raise ResolveError(f"cf_expansion_excludes [{a:#x}, {b:#x}] is not inside cf.expansion [{start:#x}, {end:#x}]")
+            raise ResolveError(
+                f"cf_expansion_excludes [{a:#x}, {b:#x}] is not inside cf.expansion [{start:#x}, {end:#x}]"
+            )
         if i and a < out[i - 1][1]:
-            raise ResolveError(f"cf_expansion_excludes [{a:#x}, {b:#x}] overlaps the range before it")
+            raise ResolveError(
+                f"cf_expansion_excludes [{a:#x}, {b:#x}] overlaps the range before it"
+            )
     return out
 
 
@@ -536,7 +777,14 @@ def toml_int(v: int) -> str:
     return f"0x{v:x}" if v >= 10 else str(v)
 
 
-def render(port: dict, limits: dict, regions: list[dict], anchors: list[dict]) -> str:
+def render(
+    port: dict,
+    limits: dict,
+    regions: list[dict],
+    anchors: list[dict],
+    hooks: list[dict],
+) -> str:
+    """The port file text: header, limits, regions, the anchors and then the hooks (both sorted by name)."""
     o = [
         "# Generated by tools/patchkit/port_resolve.py: do not edit by hand. Addresses and sha256 of bytes only.",
         "",
@@ -572,10 +820,16 @@ def render(port: dict, limits: dict, regions: list[dict], anchors: list[dict]) -
         o.append(f'sha256 = "{a["sha256"]}"')
         o.append(f'mark = "{a["mark"]}"')
         o.append(f'rule = "{a["rule"]}"')
+    for h in sorted(hooks, key=lambda x: x["name"]):
+        o += ["", "[[hook]]", f'name = "{h["name"]}"', f'site = "{h["site"]}"']
+        if h["offset"]:
+            o.append(f"offset = {toml_int(h['offset'])}")
+        o.append(f'mode = "{h["mode"]}"')
     return "\n".join(o) + "\n"
 
 
 def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
+    """(port name, port file text) of SYX: its anchors, then the hooks whose site resolves on its device."""
     raw = syx.read_bytes()
     digest = sha(raw)
     prof = load_profiles(root).get(digest)
@@ -587,7 +841,7 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
     cf = CfFacts(f"{device}-{version}", secs[3])
     anchors = []
     pending = []
-    for rule in module_rules(root):
+    for rule in fw_rules(root):
         if rule.get("devices") and device not in rule["devices"]:
             continue
         if rule.get("kind") in MULTI_KINDS:
@@ -598,28 +852,26 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
             if rule.get("cpu") == "cf"
             else resolve_anchor(dsp, rule)
         )
-        anchors.append(
-            {
-                "name": rule["name"],
-                "cpu": rule.get("cpu", "sharc"),
-                "mark": rule.get("mark", "D"),
-                "rule": f"{rule['_module']}:{rule['kind']}",
-                **a,
-            }
-        )
+        anchor = {
+            "name": rule["name"],
+            "cpu": rule.get("cpu", "sharc"),
+            "mark": rule.get("mark", "D"),
+            "rule": f"{rule['_source']}:{rule['kind']}",
+            **a,
+        }
+        anchors.append(anchor)
     known = {a["name"]: a for a in anchors}
     for rule in pending:
         for i, a in enumerate(resolve_cf_multi(cf, rule, known)):
-            anchors.append(
-                {
-                    "name": f"{rule['name']}.{i}",
-                    "cpu": "cf",
-                    "mark": rule.get("mark", "D"),
-                    "rule": f"{rule['_module']}:{rule['kind']}",
-                    **a,
-                }
-            )
-    # one anchor name may be declared by several modules; they must agree
+            anchor = {
+                "name": f"{rule['name']}.{i}",
+                "cpu": "cf",
+                "mark": rule.get("mark", "D"),
+                "rule": f"{rule['_source']}:{rule['kind']}",
+                **a,
+            }
+            anchors.append(anchor)
+    # one anchor name may be declared more than once; the resolved anchors must agree
     seen: dict[str, dict] = {}
     unique = []
     for a in anchors:
@@ -630,9 +882,7 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
         elif {k: v for k, v in prev.items() if k != "rule"} != {
             k: v for k, v in a.items() if k != "rule"
         }:
-            raise ResolveError(
-                f"anchor {a['name']} resolves differently for two modules"
-            )
+            raise ResolveError(f"anchor {a['name']} resolves differently for two rules")
     # Built-in anchor: the whole MAIN OS image, for modules that write at fixed offsets of one pinned firmware.
     main_dest = prof["patch"]["main_dest"]
     anchors.append(
@@ -648,6 +898,21 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
         }
     )
     unique.append(anchors[-1])
+    by_name = {a["name"]: a for a in unique}
+    hooks = []
+    for h in fw_hooks(root):
+        if h.get("devices") and device not in h["devices"]:
+            continue
+        site = by_name.get(h["site"])
+        if site is None:
+            raise ResolveError(
+                f"{h['name']}: site {h['site']} does not resolve on {device}"
+            )
+        if site["cpu"] != h["cpu"]:
+            raise ResolveError(
+                f"{h['name']}: cpu {h['cpu']} differs from the cpu {site['cpu']} of site {h['site']}"
+            )
+        hooks.append({k: h[k] for k in ("name", "site", "offset", "mode")})
     cave = cf.cave()
     exp = cf.analysis["expansion"]
     regions = [
@@ -664,7 +929,9 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
             "cpu": "cf",
             "start": exp["start"],
             "end": exp["end"],
-            "excludes": expansion_excludes(prof["cf_expansion_excludes"], exp["start"], exp["end"]),
+            "excludes": expansion_excludes(
+                prof["cf_expansion_excludes"], exp["start"], exp["end"]
+            ),
             "mark": "D",
         },
         dsp_l2_region(dsp.stream, prof["patch"]),
@@ -678,33 +945,122 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
         "resolved_by": RESOLVED_BY,
     }
     limits = {k: prof["patch"][k] for k in LIMIT_KEYS}
-    return f"{device}-{version}", render(port, limits, regions, unique)
+    return f"{device}-{version}", render(port, limits, regions, unique, hooks)
+
+
+def stock_profile(name: str, root: Path = ROOT) -> tuple[Path, dict]:
+    """(stock file, profile) of the firmware called NAME (`<device>-<version>`, e.g. "dt2-1.17"), found through the
+    `[[firmware]]` entries of devices/*.toml."""
+    for prof in load_profiles(root).values():
+        if f"{prof['device']}-{prof['version']}" == name:
+            f = prof["filename"]
+            return (Path(f) if Path(f).exists() else config.stock(f)), prof
+    raise ResolveError(f"{name}: not a firmware listed in devices/*.toml")
+
+
+@functools.cache
+def load_cf(name: str, root: Path = ROOT) -> CfFacts:
+    """The ColdFire facts of the stock firmware NAME; depacks only the MAIN OS section."""
+    syx, _prof = stock_profile(name, root)
+    return CfFacts(name, sections_of(syx, (3,))[3])
+
+
+@functools.cache
+def load_dsp(name: str, root: Path = ROOT) -> Dsp:
+    """The DSP of the stock firmware NAME; depacks only the DSP section."""
+    syx, prof = stock_profile(name, root)
+    return Dsp(sections_of(syx, (7,))[7], prof["dsp"])
+
+
+def load_image(name: str, root: Path = ROOT) -> tuple[CfFacts, Dsp]:
+    """The ColdFire facts and the DSP of the stock firmware called NAME."""
+    return load_cf(name, root), load_dsp(name, root)
+
+
+def cf_rule_at(cf: CfFacts, addr: int, length: int) -> dict:
+    """A `cf_func` rule for the LENGTH bytes at ADDR: the cfdb function that contains ADDR, found by its h_strict
+    hash (with `ordinal` when other functions share the hash) and ADDR's offset from the entry. When more than
+    MAX_SAME_HASH functions share the hash, a `cf_vtable_slot` rule on a class whose own virtual function it is."""
+    found = cf.func_at(addr)
+    if found is None:
+        raise ResolveError(f"no function contains {addr:#x} in {cf.name}")
+    entry, h = found
+    if h is None:
+        raise ResolveError(f"the function at {entry:#x} in {cf.name} has no hash")
+    hits = cf.funcs_by_hash(h)
+    from tools.firmware.catalog import MAX_SAME_HASH
+
+    if len(hits) > MAX_SAME_HASH:
+        own = sorted(
+            cf.own_vtable_slots(entry), key=lambda s: (s[1] != 0, abs(s[1]), s[0])
+        )
+        if not own:
+            raise ResolveError(
+                f"the function at {entry:#x} in {cf.name}: hash shared by {len(hits)} functions"
+                " and not a class's own virtual function"
+            )
+        cls, ott, slot = own[0]
+        rule = {"kind": "cf_vtable_slot", "class": cls, "slot": slot}
+        if ott:
+            rule["offset_to_top"] = ott
+        rule["offset"] = addr - entry
+        rule["len"] = length
+        return rule
+    rule = {"kind": "cf_func", "hash": h}
+    if len(hits) > 1:
+        rule["ordinal"] = hits.index(entry)
+    rule["offset"] = addr - entry
+    rule["len"] = length
+    return rule
+
+
+def sharc_rule_at(dsp: SharcFuncs, pc: int, length: int) -> dict:
+    """A `sharc_func` rule for the LENGTH bytes at the pc PC: the function that contains PC, found by its reloc_hash
+    (with `ordinal` when other functions share it) and PC's offset in parcels from the entry. LENGTH 0 omits `len`."""
+    found = dsp.func_at(pc)
+    if found is None:
+        raise ResolveError(f"no function contains pc {pc:#x} in {dsp.image}")
+    entry, h = found
+    rule: dict = {"kind": "sharc_func", "reloc_hash": h}
+    hits = dsp.funcs_by_hash(h)
+    if len(hits) > 1:
+        rule["ordinal"] = hits.index(entry)
+    rule["offset"] = pc - entry
+    if length:
+        rule["len"] = length
+    return rule
+
+
+def check_rule(image_name: str, rule: dict, cpu: str, root: Path = ROOT) -> int:
+    """Resolve RULE on the stock image IMAGE_NAME and return the address it finds: the entry + offset for a ColdFire
+    rule, the pc for a SHARC `sharc_func` rule (any other SHARC kind: the resolved address). Raises ResolveError."""
+    named = {"name": "rule", **rule}
+    if cpu == "cf":
+        return resolve_cf_anchor(load_cf(image_name, root), named)["addr"]
+    a = resolve_anchor(load_dsp(image_name, root), named)
+    return a.get("pm", a["addr"])
+
+
+def format_rule(rule: dict) -> str:
+    """RULE as a TOML inline table: offset in hex, other integers in decimal."""
+    parts = []
+    for k, v in rule.items():
+        if isinstance(v, str):
+            parts.append(f'{k} = "{v}"')
+        elif k == "offset":
+            parts.append(f"{k} = {v:#x}")
+        else:
+            parts.append(f"{k} = {v}")
+    return "{ " + ", ".join(parts) + " }"
 
 
 def cmd_rule_sharc(a: argparse.Namespace) -> int:
-    from tools.patchkit import dsp_patch
-    from tools.sharc_dev import sharc
-
-    img = sharc.load(a.image)
-    fn = img.func(a.pc)
-    if fn is None:
-        raise SystemExit(f"no function contains pc {a.pc:#x} in {a.image}")
-    entry = int(fn["entry_sw"], 16)
-    end = int(fn["end_sw"], 16)
-    h = img.sql(
-        "SELECT reloc_hash FROM func_hash WHERE image=? AND entry_sw=?", a.image, entry
-    )[0][0]
-    n = img.sql(
-        "SELECT count(*) FROM func_hash WHERE image=? AND reloc_hash=?", a.image, h
-    )[0][0]
-    print(
-        f"# {a.image}: function {entry:#x}..{end:#x}; {n} function(s) share this hash"
-    )
-    print(f'reloc_hash = "{h}"')
-    print(f"offset = {a.pc - entry:#x}")
-    if a.len:
-        print(f"len = {a.len}")
-    del dsp_patch
+    dsp = SharcFuncs(a.image)
+    rule = sharc_rule_at(dsp, a.pc, a.len or 0)
+    n = len(dsp.funcs_by_hash(rule["reloc_hash"]))
+    entry = a.pc - rule["offset"]
+    print(f"# {a.image}: function at {entry:#x}; {n} function(s) share this hash")
+    print(f"rule = {format_rule(rule)}")
     return 0
 
 
@@ -722,7 +1078,7 @@ def main() -> int:
     rs.add_argument("pc", type=lambda s: int(s, 0))
     rs.add_argument("--len", type=int)
     argv = sys.argv[1:]
-    # `mise run patch:port [-- X.syx]`: a firmware resolves that one, nothing resolves all four
+    # `mise run patch:port [-- X.syx]`: a firmware resolves that one, nothing resolves them all
     if not argv:
         argv = ["resolve-all"]
     elif argv[0] not in ("resolve", "resolve-all", "rule-sharc") and not argv[

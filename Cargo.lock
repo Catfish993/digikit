@@ -1129,6 +1129,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "dkfw"
+version = "0.1.0"
+
+[[package]]
 name = "dkneeds"
 version = "0.1.0"
 
@@ -1147,6 +1151,13 @@ version = "0.1.0"
 [[package]]
 name = "dksample"
 version = "0.1.0"
+
+[[package]]
+name = "dkui-host"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "dkupload"
@@ -2975,6 +2986,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "object"
+version = "0.37.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3071,10 +3091,16 @@ dependencies = [
  "dkupload",
  "dt2-firmware-loader",
  "emmc-card",
+ "object",
  "plusdrive-format",
+ "regex-lite",
+ "selas",
+ "selelf",
+ "selinstr",
  "serde",
  "serde_json",
  "sha2",
+ "sharc-rt",
  "toml 0.9.12+spec-1.1.0",
 ]
 
@@ -3454,6 +3480,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-lite"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
+
+[[package]]
 name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3630,6 +3662,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "selas"
+version = "0.1.0"
+source = "git+https://github.com/js216/selache?rev=2b26d3b75c53063575bc5c820fa0d38879335187#2b26d3b75c53063575bc5c820fa0d38879335187"
+dependencies = [
+ "selelf",
+ "selinstr",
+]
+
+[[package]]
 name = "selectors"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3647,6 +3688,16 @@ dependencies = [
  "servo_arc",
  "smallvec",
 ]
+
+[[package]]
+name = "selelf"
+version = "0.1.0"
+source = "git+https://github.com/js216/selache?rev=2b26d3b75c53063575bc5c820fa0d38879335187#2b26d3b75c53063575bc5c820fa0d38879335187"
+
+[[package]]
+name = "selinstr"
+version = "0.1.0"
+source = "git+https://github.com/js216/selache?rev=2b26d3b75c53063575bc5c820fa0d38879335187#2b26d3b75c53063575bc5c820fa0d38879335187"
 
 [[package]]
 name = "semver"

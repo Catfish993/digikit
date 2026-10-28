@@ -9,6 +9,8 @@ use patchkit::verify;
 use std::path::{Path, PathBuf};
 
 #[cfg(not(target_arch = "wasm32"))]
+mod build_cli;
+#[cfg(not(target_arch = "wasm32"))]
 mod storedump;
 
 const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
@@ -23,8 +25,10 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   preflight OUT.syx                      before flashing: known stock base, sections 2/4/5/8 identical, checksum, HMAC, limits;
                                          exit 1 on any failure (stock files are looked up in firmware/ by sha256)
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
-  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm
+  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm;
+                                         builds the objects that are stale first (content modules: cache out/cache/dko)
                                          (a `dynamic = true` module: its machine and param records for --device)
+  desc    MODULE_ID                      the effects the module declares (the DK_FX records of its ColdFire object), as JSON
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
                                          the spec keys are in packages/patchkit/src/dkmsynth.rs)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
@@ -35,9 +39,28 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   store dump IMAGE [--device dt2|dn2] [--overlay FILE] [--base-sector N] [--json]   digikit's own data on a card image or a raw sector dump:
                                          the store header and files, the selection record, the settings record (both copies, the one in use,
                                          every entry decoded); `store dump --record FILE` reads one settings record file (docs/design/digikit-store.md)
+  build   [MODULE...] [--check] [--force] [--define NAME]... [--out DIR] [--status] [--tree DIR]
+                                         module sources -> objects: build/*.dko.json for a core/* module (committed), else the cache
+                                         out/cache/dko/<module id>/<path> (ColdFire C, asm and Rust, and SHARC+ with Selache as a
+                                         library: all in this process). MODULE is a directory or a module id; none: every module.
+                                         An object whose stored source_sha256 equals the hash of its sources is not compiled
+                                         (--force compiles it). --check writes nothing and fails on a stale object.
+                                         --define NAME[=V] selects an #ifdef of the DSP sources (needs --out; the stored objects
+                                         stay). --status prints {module: \"unchanged\"|\"needs build\"} as JSON and builds nothing.
+                                         --tree DIR: every module under DIR only.
+  dko show FILE.dko.json [--relocs]      arch, toolchain record, sections, symbols and relocations of an object
+  dko isa-digest FILE.dko.json           the ISA check record the object's bytes need (toolchain.isa_check)
+  dko isa-check FILE...                  ColdFire V4e ISA check of .dko.json (cf), ELF objects and ar archives
+  sharc text|asm|link|shift-check ...    the SHARC+ build for the Python test rigs: expanded source text, an assembled object as JSON, an
+                                         object placed at a short-word address and verified, the shift-immediate rule on hex words
+  cf-link SRC... --base HEX [--sym NAME=HEX]... [-I DIR]... [--bin OUT] [--json OUT]
+                                         compile, link at BASE against the symbols, ISA-check (unit tests of C routines)
   list                                   modules under modules/ and ports under devices/ports/
   gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
                                          a SHARC include per device, gallery JSON
+  reference [-o OUT.html] [--fragment]   the searchable firmware reference page (default out/reference/fw.html) from
+                                         modules/core/fw/reference.json (written by `gen`); --fragment writes the
+                                         page body without the document tags, for publishing
 ";
 
 struct Args {
@@ -71,9 +94,21 @@ fn registry(root: &Path) -> Result<Registry> {
 }
 
 /// `modules/` and `tests/fixtures/modules/` of the repository, then the extra roots of `--modules-dir DIR` and the PATCHKIT_MODULES
-/// environment variable (a path list), in that order. Generated modules (derived from a firmware) live there.
+/// environment variable (a path list), in that order. Generated modules (derived from a firmware) live there. Content modules get their
+/// objects from the cache `out/cache/dko`; a stale object is built.
 fn library(root: &Path, rest: &[String]) -> Result<Library> {
-    let mut lib = Library::scan_repo(root)?;
+    library_with(root, rest, false, None)
+}
+
+/// `library`; with `lenient`, a module whose object files are missing still loads (for `gen`); with `only`, the objects of these
+/// content modules only are loaded or built (`pack`: the others load without objects).
+fn library_with(
+    root: &Path,
+    rest: &[String],
+    lenient: bool,
+    only: Option<&[String]>,
+) -> Result<Library> {
+    let mut lib = Library::scan_repo_for(root, lenient, only)?;
     let mut extra: Vec<PathBuf> = flag(rest, "--modules-dir")
         .into_iter()
         .map(PathBuf::from)
@@ -81,9 +116,10 @@ fn library(root: &Path, rest: &[String]) -> Result<Library> {
     if let Some(v) = std::env::var_os("PATCHKIT_MODULES") {
         extra.extend(std::env::split_paths(&v));
     }
+    let build = patchkit::module::Build { root, only };
     for d in extra {
         if d.is_dir() {
-            lib.extend_unique(Library::scan(&d)?.modules)?;
+            lib.extend_unique(Library::scan_in(Some(build), &d, lenient)?.modules)?;
         }
     }
     lib.lower(&patchkit::typed::Models::from_dir(&root.join("devices"))?)?;
@@ -164,6 +200,14 @@ fn run(a: Args) -> Result<()> {
             }
             storedump::run(&rest[1..]).map_err(Error)?;
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        "build" => build_cli::build(&a.root, rest)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        "dko" => build_cli::dko(rest)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        "cf-link" => build_cli::cf_link(&a.root, rest)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        "sharc" => build_cli::sharc(&a.root, rest)?,
         "list" => {
             let reg = registry(&a.root)?;
             for p in &reg.ports {
@@ -245,7 +289,8 @@ fn run(a: Args) -> Result<()> {
             }
         }
         "gen" => {
-            let lib = library(&a.root, rest)?;
+            // the generated files are inputs of the build: nothing is built here
+            let lib = library_with(&a.root, rest, true, Some(&[]))?;
             let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
             let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
             let only: Vec<String> = flag(rest, "--modules")
@@ -291,6 +336,28 @@ fn run(a: Args) -> Result<()> {
                     println!("stale    {}", path.display());
                     stale += 1;
                 } else {
+                    if let Some(d) = path.parent() {
+                        std::fs::create_dir_all(d)
+                            .map_err(|e| Error(format!("{}: {e}", d.display())))?;
+                    }
+                    write(&path.to_string_lossy(), text.as_bytes())?;
+                    println!("wrote    {}", path.display());
+                }
+            }
+            for (rel, text) in patchkit::fwgen::generate_with_ports(&a.root)? {
+                let path = a.root.join(&rel);
+                let have = std::fs::read_to_string(&path).ok();
+                if have.as_deref() == Some(text.as_str()) {
+                    continue;
+                }
+                if check {
+                    println!("stale    {}", path.display());
+                    stale += 1;
+                } else {
+                    if let Some(d) = path.parent() {
+                        std::fs::create_dir_all(d)
+                            .map_err(|e| Error(format!("{}: {e}", d.display())))?;
+                    }
                     write(&path.to_string_lossy(), text.as_bytes())?;
                     println!("wrote    {}", path.display());
                 }
@@ -300,6 +367,24 @@ fn run(a: Args) -> Result<()> {
                     "{stale} generated file(s) are stale: run `patchkit gen`"
                 )));
             }
+        }
+        "reference" => {
+            let src = a.root.join(patchkit::fwgen::REFERENCE_OUT);
+            let json = std::fs::read_to_string(&src)
+                .map_err(|_| Error(format!("{}: missing: run `patchkit gen`", src.display())))?;
+            let frag = include_str!("fwref.html").replace("__DATA__", &json.replace("</", "<\\/"));
+            let page = if rest.iter().any(|x| x == "--fragment") {
+                frag
+            } else {
+                format!("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n</head>\n<body>\n{frag}\n</body>\n</html>\n")
+            };
+            let out = PathBuf::from(flag(rest, "-o").unwrap_or_else(|| "out/reference/fw.html".into()));
+            let out = if out.is_absolute() { out } else { a.root.join(out) };
+            if let Some(d) = out.parent() {
+                std::fs::create_dir_all(d).map_err(|e| Error(format!("{}: {e}", d.display())))?;
+            }
+            write(&out.to_string_lossy(), page.as_bytes())?;
+            println!("{}", out.display());
         }
         "explain" => {
             let fwp = flag(rest, "--firmware").ok_or_else(|| Error(USAGE.into()))?;
@@ -412,7 +497,8 @@ plan.json {}",
         "pack" => {
             let id = need(rest)?;
             let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
-            let lib = library(&a.root, rest)?;
+            // builds what is stale (the objects of this module only) and packs the objects as they are in memory
+            let lib = library_with(&a.root, rest, false, Some(std::slice::from_ref(id)))?;
             let m = lib
                 .get(id)
                 .ok_or_else(|| Error(format!("no module {id}")))?;
@@ -448,6 +534,14 @@ plan.json {}",
                         patchkit::devdata::short_list()
                     ))
                 })?;
+                // `ports` is the only device restriction of a module
+                let ports = &m.manifest.module.ports;
+                if !ports.is_empty() && !ports.iter().any(|p| p.split('-').next() == Some(dev.as_str())) {
+                    return Err(Error(format!(
+                        "{id} is not built for {dev}: its ports are {}",
+                        ports.join(", ")
+                    )));
+                }
                 let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
                 let res = patchkit::typed::resolve(&m.manifest, &models)?;
                 // the DSP object of the device, if any: its voices are the `[[voice]]` entries (type from the machine)
@@ -469,10 +563,7 @@ plan.json {}",
                 let resolved = res.iter().find(|r| r.dev == dev);
                 let mut voices = vec![];
                 for v in resolved.map(|r| r.voices.as_slice()).unwrap_or_default() {
-                    let hint = resolved
-                        .and_then(|r| r.machines.iter().find(|m| m.id == v.machine))
-                        .map_or(0, |m| m.type_hint);
-                    let t = patchkit::register::machine_key(id, &v.machine, hint);
+                    let t = patchkit::register::machine_key(id, &v.machine);
                     let ranges = resolved
                         .map(|r| patchkit::typed::voice_ranges(r, &v.machine))
                         .unwrap_or([0; 8]);
@@ -484,10 +575,10 @@ plan.json {}",
                         ranges,
                     });
                 }
-                // the effects of the device (`[[fx]]`): process routine and descriptor in the DSP object; a page's knobs set the first words of the row
-                let dev_fx: Vec<_> = m
-                    .manifest
-                    .fx
+                // the effects of the device (the `DK_FX` records of the ColdFire object): process routine and descriptor in the DSP object;
+                // a page's knobs set the first words of the row
+                let all_fx = patchkit::desc::module_fx(m)?;
+                let dev_fx: Vec<_> = all_fx
                     .iter()
                     .filter(|f| f.devices.is_empty() || f.devices.iter().any(|d| *d == dev))
                     .collect();
@@ -523,11 +614,7 @@ plan.json {}",
                     None => {}
                 }
                 let mut regs = match resolved {
-                    Some(r) => {
-                        let (first, last) = patchkit::devgen::dyn_range(&lib, &dev)?;
-                        patchkit::register::check_type_hints(r, id, first, last)?;
-                        Some(patchkit::register::Register::lower(r, id)?)
-                    }
+                    Some(r) => Some(patchkit::register::Register::lower(r, id)?),
                     None if !dsp.is_empty() => None,
                     None => return Err(Error(format!("{id}: nothing for device {dev}"))),
                 };
@@ -543,7 +630,9 @@ plan.json {}",
             } else {
                 vec![]
             };
-            let file = patchkit::dkm::pack_full(cf.first().map(|c| c.0), &reg, &dsp, &opts)?;
+            // the descriptor records stay behind: the object of the .dkm has no `.dk.desc` section
+            let cf_obj = cf.first().and_then(|c| patchkit::desc::strip(c.0));
+            let file = patchkit::dkm::pack_full(cf_obj.as_ref(), &reg, &dsp, &opts)?;
             write(&out, &file)?;
             let d = patchkit::dkm::Dkm::parse(&file)?;
             println!(
@@ -557,6 +646,25 @@ plan.json {}",
                 d.sha256
             );
             println!("size     {out}: {}", d.size_summary(file.len()));
+        }
+        "desc" => {
+            let id = need(rest)?;
+            let lib = library(&a.root, rest)?;
+            let m = lib
+                .get(id)
+                .ok_or_else(|| Error(format!("no module {id}")))?;
+            let fx = patchkit::desc::module_fx(m)?;
+            let mf = &m.manifest;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "fx": fx,
+                    "machines": mf.machine,
+                    "params": mf.param,
+                    "pages": mf.page,
+                    "voices": mf.voice,
+                }))?
+            );
         }
         "dkm-dsp-image" => {
             // the DSP image of a .dkm placed at the L2 byte address BASE, imports as NAME=VALUE: the reference loader

@@ -1,0 +1,1025 @@
+<title>digikit Firmware Reference</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+/>
+<style>
+  /* Layout: subsystem index on the left, the selected subsystem's declarations on the right. */
+  :root {
+    --bg: #f3f5f2;
+    --surface: #ffffff;
+    --sunk: #e9ece8;
+    --ink: #1b2220;
+    --muted: #5a6762;
+    --line: #d5dbd6;
+    --accent: #2b6b5a;
+    --accent-ink: #ffffff;
+    --chip: #e2ebe6;
+    --mark-v: #2c7a4b;
+    --mark-d: #5a6762;
+    --mark-o: #9a6a12;
+    --mark-c: #9b3a3a;
+    --f-display: 'IBM Plex Sans Condensed', 'Arial Narrow', system-ui, sans-serif;
+    --f-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --f-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #111513;
+      --surface: #181e1b;
+      --sunk: #0d110f;
+      --ink: #e3e9e5;
+      --muted: #93a29b;
+      --line: #29322e;
+      --accent: #62bfa0;
+      --accent-ink: #0d1a15;
+      --chip: #213029;
+      --mark-v: #5cc489;
+      --mark-d: #93a29b;
+      --mark-o: #d9a648;
+      --mark-c: #e07a7a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #111513;
+    --surface: #181e1b;
+    --sunk: #0d110f;
+    --ink: #e3e9e5;
+    --muted: #93a29b;
+    --line: #29322e;
+    --accent: #62bfa0;
+    --accent-ink: #0d1a15;
+    --chip: #213029;
+    --mark-v: #5cc489;
+    --mark-d: #93a29b;
+    --mark-o: #d9a648;
+    --mark-c: #e07a7a;
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 {
+    font-size: 1.6rem;
+    letter-spacing: 0.01em;
+  }
+  h2 {
+    font-size: 1.25rem;
+  }
+  h3 {
+    font-size: 1rem;
+    color: var(--muted);
+  }
+  .mono {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+    overflow-wrap: anywhere;
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .wrap {
+    max-width: 1320px;
+    margin: 0 auto;
+    display: grid;
+    gap: 14px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 16px 40px;
+  }
+  .wrap > * {
+    min-width: 0;
+  }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .sub {
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .controls input[type='search'] {
+    flex: 1 1 260px;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  .controls select {
+    max-width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  .kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .kinds button {
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .kinds button[aria-pressed='true'] {
+    background: var(--chip);
+    color: var(--ink);
+    border-color: var(--accent);
+  }
+  .kinds button:hover {
+    background: var(--sunk);
+  }
+  .main {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+  }
+  nav.groups {
+    position: sticky;
+    top: 8px;
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    min-width: 0;
+  }
+  nav.groups h3 {
+    padding: 8px 12px 4px;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--line);
+  }
+  nav.groups button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    width: 100%;
+    text-align: left;
+    padding: 8px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    cursor: pointer;
+  }
+  nav.groups button:hover {
+    background: var(--sunk);
+  }
+  nav.groups button[aria-current='true'] {
+    background: var(--chip);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  nav.groups .gl {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  nav.groups .gc {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  nav.groups .gm {
+    grid-column: 1 / -1;
+    font-size: 0.8rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  section.detail {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+  .ghead {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 3px 12px;
+    font-size: 0.88rem;
+    margin: 0;
+  }
+  .kv dt {
+    color: var(--muted);
+  }
+  .kv dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    align-items: baseline;
+  }
+  .rows {
+    display: grid;
+    gap: 10px;
+  }
+  article.row {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 8px;
+    scroll-margin-top: 16px;
+    min-width: 0;
+  }
+  article.row.flash {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .rtop {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: baseline;
+    min-width: 0;
+  }
+  .rname {
+    font-family: var(--f-mono);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+    user-select: all;
+    min-width: 0;
+  }
+  .chip {
+    font-size: 0.75rem;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: var(--chip);
+    color: var(--ink);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .chip.was {
+    color: var(--muted);
+    font-family: var(--f-mono);
+  }
+  .chip.mark {
+    font-family: var(--f-mono);
+    font-weight: 600;
+    color: var(--muted);
+    box-shadow: inset 0 0 0 1px currentColor;
+    background: transparent;
+  }
+  .chip.mark.m-V {
+    color: var(--mark-v);
+  }
+  .chip.mark.m-D {
+    color: var(--mark-d);
+  }
+  .chip.mark.m-O {
+    color: var(--mark-o);
+  }
+  .chip.mark.m-C {
+    color: var(--mark-c);
+  }
+  button.chip {
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.75rem;
+  }
+  button.chip:hover {
+    background: var(--sunk);
+  }
+  button.mini {
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    border-radius: 4px;
+    padding: 1px 8px;
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  button.mini:hover {
+    background: var(--sunk);
+  }
+  a.lk {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .doc {
+    margin: 0;
+  }
+  .sig {
+    margin: 0;
+  }
+  .tbl {
+    overflow-x: auto;
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .tbl table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.86rem;
+  }
+  .tbl th,
+  .tbl td {
+    text-align: left;
+    padding: 3px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .tbl th {
+    color: var(--muted);
+    font-weight: 500;
+    background: var(--sunk);
+  }
+  .tbl td.off {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--f-mono);
+    white-space: nowrap;
+  }
+  .tbl tr:last-child td {
+    border-bottom: 0;
+  }
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+  }
+  .count {
+    color: var(--muted);
+  }
+  footer {
+    color: var(--muted);
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 760px) {
+    .main {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    nav.groups {
+      position: static;
+      max-height: 40vh;
+      overflow: auto;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+    article.row {
+      transition: border-color 0.2s;
+    }
+    article.row.flash {
+      animation: fwflash 1.4s ease-out;
+    }
+  }
+  @keyframes fwflash {
+    from {
+      outline-offset: 6px;
+    }
+    to {
+      outline-offset: 2px;
+    }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">digikit</div>
+    <h1>Firmware Reference</h1>
+    <div class="sub" id="subtitle"></div>
+  </header>
+
+  <div class="controls" role="search">
+    <input
+      type="search"
+      id="q"
+      placeholder="Name, former name, address, signature, user…"
+      aria-label="Search declarations"
+      autocomplete="off"
+    />
+    <div class="kinds" id="kinds" role="group" aria-label="Kinds"></div>
+    <select id="dev" aria-label="Device"></select>
+  </div>
+
+  <div class="main">
+    <nav class="groups" id="groups" aria-label="Subsystems"></nav>
+    <section class="detail" id="detail" aria-live="polite"></section>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+  const DATA = __DATA__;
+  const KINDS = [
+    ['fn', 'Functions', 'Functions'],
+    ['site', 'Sites', 'Sites'],
+    ['data', 'Data', 'Data'],
+    ['value', 'Values', 'Values'],
+    ['sites', 'Site lists', 'Site lists'],
+    ['hook', 'Hooks', 'Hooks'],
+    ['struct', 'Structs', 'Structs'],
+  ];
+  const MARKS = { V: 'verified on the image', D: 'measured or read once', O: 'open', C: 'corrects an earlier claim' };
+  const MODES = {
+    before: 'The hook runs, then the displaced instructions, then the rest of the function.',
+    replace: 'The displaced instructions are dropped; the hook decides where to continue.',
+    retarget: 'The target of the existing call at the site is replaced.',
+  };
+  const state = { sub: null, kinds: new Set(KINDS.map((k) => k[0])), dev: '', tokens: [], timer: 0 };
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, attrs, ...kids) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === 'class') e.className = v;
+      else if (k === 'text') e.textContent = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+    return e;
+  }
+
+  const subKey = (cpu, name) => (cpu === 'sharc' ? 'dsp' : cpu) + '.' + name;
+  const keyOf = (e) => subKey(e.cpu, e.subsystem);
+  const portLabel = (p) => p.device.toUpperCase() + ' ' + p.version;
+  const short = (name) => name.split('.').pop();
+  const byName = new Map(DATA.entries.map((e) => [e.name, e]));
+  const subByKey = new Map(DATA.subsystems.map((s) => [subKey(s.cpu, s.name), s]));
+  const structs = new Map();
+  for (const e of DATA.entries) if (e.kind === 'struct' && !structs.has(short(e.name))) structs.set(short(e.name), e);
+  const hooks = DATA.entries.filter((e) => e.kind === 'hook');
+  const wordRe = (w) => new RegExp('(^|[^A-Za-z0-9_])' + w.replace(/[^A-Za-z0-9_]/g, '\\$&') + '(?![A-Za-z0-9_])');
+
+  function modeList(m) {
+    if (!m) return [];
+    if (Array.isArray(m)) return m.map((x) => (typeof x === 'string' ? x : JSON.stringify(x)));
+    return Object.entries(m).map(([k, v]) => k + ' = ' + v);
+  }
+
+  for (const e of DATA.entries) {
+    const h = [e.name, ...(e.was || []), e.doc, e.sig, ...(e.users || []), e.bind, e.file, e.site, e.mode, e.kind];
+    if (e.bindings) h.push(...Object.values(e.bindings));
+    for (const list of Object.values(e.at || {}))
+      for (const a of list) h.push(a.addr, String(a.addr).replace(/^0x/i, ''));
+    for (const r of Object.values(e.rule || {})) h.push(r.kind);
+    if (e.regs) h.push(...(e.regs.in || []), ...(e.regs.clobbers || []), ...modeList(e.regs.modes));
+    if (e.handler) h.push(e.handler.sig, ...(e.handler.args || []));
+    for (const f of e.fields || []) h.push(f.name, f.type);
+    e._h = h
+      .filter((x) => x != null)
+      .join('\n')
+      .toLowerCase();
+  }
+
+  function visible(e) {
+    if (!state.kinds.has(e.kind)) return false;
+    if (state.dev && !(e.at && e.at[state.dev])) return false;
+    return state.tokens.every((t) => e._h.includes(t));
+  }
+  const searching = () => state.tokens.length > 0;
+  const kindRank = (k) => KINDS.findIndex((x) => x[0] === k);
+  const sorted = (list) =>
+    [...list].sort((a, b) => kindRank(a.kind) - kindRank(b.kind) || a.name.localeCompare(b.name));
+
+  function link(name, text) {
+    return el(
+      'a',
+      {
+        class: 'lk mono',
+        href: '#' + name,
+        onclick: (ev) => {
+          ev.preventDefault();
+          jump(name);
+        },
+      },
+      text || name,
+    );
+  }
+
+  function copy(text, node) {
+    return el('button', {
+      type: 'button',
+      class: 'mini',
+      'aria-label': 'Copy ' + text,
+      text: 'Copy',
+      onclick: (ev) => {
+        const btn = ev.currentTarget;
+        const select = () => {
+          const r = document.createRange();
+          r.selectNodeContents(node);
+          const s = getSelection();
+          s.removeAllRanges();
+          s.addRange(r);
+        };
+        let p;
+        try {
+          p = navigator.clipboard.writeText(text);
+        } catch (err) {
+          p = Promise.reject(err);
+        }
+        p.then(() => {
+          btn.textContent = 'Copied';
+          setTimeout(() => {
+            btn.textContent = 'Copy';
+          }, 1200);
+        }, select);
+      },
+    });
+  }
+
+  function sigNode(sig) {
+    const out = [];
+    let last = 0;
+    for (const m of sig.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
+      const s = structs.get(m[0]);
+      if (!s) continue;
+      out.push(sig.slice(last, m.index), link(s.name, m[0]));
+      last = m.index + m[0].length;
+    }
+    out.push(sig.slice(last));
+    return el('p', { class: 'sig mono' }, out);
+  }
+
+  function addrBlock(e) {
+    const rows = [];
+    for (const p of DATA.ports) {
+      const list = e.at && e.at[p.id];
+      const rule = e.rule && e.rule[p.device];
+      const dd = [];
+      if (!list && !rule) dd.push(el('span', { class: 'muted', text: 'not on this device' }));
+      (list || []).forEach((a, i) => {
+        if (i) dd.push(', ');
+        dd.push(el('span', { class: 'mono', text: a.addr + (a.len != null ? ' · ' + a.len + ' bytes' : '') }));
+        if (a.pm) dd.push(el('span', { class: 'chip', title: 'Program memory', text: 'PM' }));
+      });
+      if (rule) {
+        const t =
+          rule.kind +
+          (rule.offset > 0 ? ' +0x' + rule.offset.toString(16) : '') +
+          (rule.len != null ? ' len ' + rule.len : '');
+        dd.push(el('span', { class: 'chip', title: 'Device rule', text: 'rule: ' + t }));
+        if (rule.mark) dd.push(markChip(rule.mark));
+      }
+      rows.push(el('dt', { text: portLabel(p) }), el('dd', {}, dd));
+    }
+    return el('dl', { class: 'kv' }, rows);
+  }
+
+  function markChip(m) {
+    return el('span', { class: 'chip mark m-' + m, title: MARKS[m] || m, text: m });
+  }
+
+  function chips(list, cls) {
+    return list.length
+      ? list.map((x) => el('span', { class: 'chip mono ' + (cls || ''), text: x }))
+      : [el('span', { class: 'muted', text: 'nothing' })];
+  }
+
+  function renderEntry(e) {
+    const nameEl = el('span', { class: 'rname', text: e.name });
+    const kind = KINDS.find((k) => k[0] === e.kind);
+    const kids = [
+      el(
+        'div',
+        { class: 'rtop' },
+        nameEl,
+        el('span', { class: 'chip', text: kind ? kind[1].replace(/s$/, '').toLowerCase() : e.kind }),
+        e.mark ? markChip(e.mark) : null,
+        copy(e.name, nameEl),
+      ),
+      e.sig ? sigNode(e.sig) : null,
+      e.doc ? el('p', { class: 'doc', text: e.doc }) : el('p', { class: 'doc muted', text: 'No description yet.' }),
+    ];
+    if (e.kind !== 'struct') kids.push(addrBlock(e));
+    const kv = [];
+    if (e.was && e.was.length)
+      kv.push(
+        el('dt', { text: 'Former names' }),
+        el(
+          'dd',
+          {},
+          e.was.map((w) => el('span', { class: 'chip was', text: w })),
+        ),
+      );
+    if (e.users && e.users.length)
+      kv.push(
+        el('dt', { text: 'Users' }),
+        el(
+          'dd',
+          {},
+          e.users.map((u) =>
+            el('button', {
+              type: 'button',
+              class: 'chip mono',
+              title: 'Search for ' + u,
+              text: u,
+              onclick: () => {
+                $('q').value = u;
+                run();
+              },
+            }),
+          ),
+        ),
+      );
+    for (const [k, lab] of [
+      ['rust', 'Rust'],
+      ['c', 'C'],
+      ['gas', 'GAS'],
+    ]) {
+      const v = e.bindings && e.bindings[k];
+      if (!v) continue;
+      const t = el('span', { class: 'mono', text: v });
+      kv.push(el('dt', { text: lab }), el('dd', {}, t, copy(v, t)));
+    }
+    if (e.kind === 'hook') {
+      const site = byName.get(e.site);
+      kv.push(
+        el('dt', { text: 'Site' }),
+        el(
+          'dd',
+          {},
+          site ? link(e.site) : el('span', { class: 'mono', text: e.site || '' }),
+          e.offset ? el('span', { class: 'mono', text: '+' + e.offset }) : null,
+        ),
+      );
+      kv.push(
+        el('dt', { text: 'Mode' }),
+        el(
+          'dd',
+          {},
+          el('span', { class: 'mono', text: e.mode || '' }),
+          el('span', { class: 'muted', text: MODES[e.mode] || '' }),
+        ),
+      );
+      const r = e.regs || {};
+      kv.push(el('dt', { text: 'Reads' }), el('dd', {}, chips(r.in || [])));
+      kv.push(el('dt', { text: 'May change' }), el('dd', {}, chips(r.clobbers || [])));
+      const ml = modeList(r.modes);
+      if (ml.length) kv.push(el('dt', { text: 'DSP state' }), el('dd', {}, chips(ml)));
+      if (e.handler)
+        kv.push(
+          el('dt', { text: 'Handler' }),
+          el(
+            'dd',
+            {},
+            el('span', { class: 'mono', text: e.handler.sig }),
+            (e.handler.args || []).length
+              ? el('span', { class: 'mono muted', text: 'args: ' + e.handler.args.join(', ') })
+              : null,
+          ),
+        );
+    }
+    if (e.kind === 'fn' || e.kind === 'site' || e.kind === 'sites') {
+      const hs = hooks.filter(
+        (h) => h.site === e.name || (e.kind === 'sites' && h.site && h.site.startsWith(e.name + '.')),
+      );
+      if (hs.length)
+        kv.push(
+          el('dt', { text: 'Hooks on this site' }),
+          el(
+            'dd',
+            {},
+            hs.map((h) => link(h.name)),
+          ),
+        );
+    }
+    if (e.kind === 'struct') {
+      const sn = short(e.name);
+      const re = wordRe(sn);
+      const used = DATA.entries.filter(
+        (x) => x !== e && ((x.sig && re.test(x.sig)) || (x.fields || []).some((f) => re.test(f.type || ''))),
+      );
+      kv.push(
+        el('dt', { text: 'Size' }),
+        el('dd', {
+          class: 'mono',
+          text: e.size != null ? '0x' + e.size.toString(16) + ' (' + e.size + ' bytes)' : 'unknown',
+        }),
+      );
+      if (used.length)
+        kv.push(
+          el('dt', { text: 'Used in' }),
+          el(
+            'dd',
+            {},
+            used.map((x) => link(x.name)),
+          ),
+        );
+    }
+    if (kv.length) kids.push(el('dl', { class: 'kv' }, kv));
+    if (e.kind === 'struct' && e.fields && e.fields.length) {
+      const rows = e.fields.map((f) => {
+        const ts = structs.get(
+          (f.type || '')
+            .replace(/[^A-Za-z0-9_]/g, ' ')
+            .trim()
+            .split(/\s+/)
+            .find((w) => structs.has(w)) || '',
+        );
+        return el(
+          'tr',
+          {},
+          el('td', { class: 'off', text: typeof f.off === 'number' ? '0x' + f.off.toString(16) : f.off }),
+          el('td', { class: 'mono', text: f.name }),
+          el('td', { class: 'mono' }, ts ? [...sigNode(f.type).childNodes] : f.type),
+        );
+      });
+      kids.push(
+        el(
+          'div',
+          { class: 'tbl' },
+          el(
+            'table',
+            {},
+            el(
+              'thead',
+              {},
+              el('tr', {}, el('th', { text: 'Offset' }), el('th', { text: 'Field' }), el('th', { text: 'Type' })),
+            ),
+            el('tbody', {}, rows),
+          ),
+        ),
+      );
+    }
+    return el('article', { class: 'row', id: e.name }, kids);
+  }
+
+  function renderGroups() {
+    const nav = $('groups');
+    const counts = new Map();
+    let total = 0;
+    for (const e of DATA.entries)
+      if (visible(e)) {
+        total++;
+        counts.set(keyOf(e), (counts.get(keyOf(e)) || 0) + 1);
+      }
+    const btn = (key, label, meaning, n) =>
+      el(
+        'button',
+        { type: 'button', 'aria-current': state.sub === key ? 'true' : 'false', onclick: () => selectSub(key) },
+        el('span', { class: 'gl', text: label }),
+        el('span', { class: 'gc', text: n }),
+        meaning ? el('span', { class: 'gm', text: meaning, title: meaning }) : null,
+      );
+    const kids = [btn(null, 'All subsystems', '', total)];
+    for (const [cpu, title] of [
+      ['cf', 'ColdFire'],
+      ['sharc', 'SHARC'],
+    ]) {
+      const subs = DATA.subsystems.filter((s) => s.cpu === cpu);
+      if (!subs.length) continue;
+      kids.push(el('h3', { text: title }));
+      for (const s of subs) {
+        const k = subKey(s.cpu, s.name);
+        kids.push(btn(k, s.name, s.meaning, counts.get(k) || 0));
+      }
+    }
+    nav.replaceChildren(...kids);
+  }
+
+  function group(title, list) {
+    return [el('h2', { text: title }), el('div', { class: 'rows' }, list.map(renderEntry))];
+  }
+
+  function renderDetail() {
+    const d = $('detail');
+    const out = [];
+    if (searching()) {
+      const hits = DATA.entries.filter(visible);
+      if (!hits.length) {
+        d.replaceChildren(
+          el('div', {
+            class: 'empty',
+            text:
+              'No declaration matches “' +
+              $('q').value.trim() +
+              '”. Search covers names, former names, docs, addresses and signatures.',
+          }),
+        );
+        return;
+      }
+      out.push(el('div', { class: 'count', text: hits.length + (hits.length === 1 ? ' match' : ' matches') }));
+      for (const s of DATA.subsystems) {
+        const k = subKey(s.cpu, s.name);
+        const list = sorted(hits.filter((e) => keyOf(e) === k));
+        if (list.length) out.push(el('h3', { text: k }), el('div', { class: 'rows' }, list.map(renderEntry)));
+      }
+      d.replaceChildren(...out);
+      return;
+    }
+    const s = state.sub && subByKey.get(state.sub);
+    const all = DATA.entries.filter((e) => !s || keyOf(e) === state.sub);
+    const head = el('div', { class: 'ghead' });
+    if (s) {
+      const kv = [el('dt', { text: 'File' }), el('dd', { class: 'mono', text: s.file })];
+      if (all.some((e) => e.bindings)) {
+        kv.push(
+          el('dt', { text: 'Rust' }),
+          el('dd', { class: 'mono', text: 'dkfw::' + s.name }),
+          el('dt', { text: 'C' }),
+          el('dd', { class: 'mono', text: 'dk_fw_' + s.name + '.h' }),
+        );
+        if (all.some((e) => (e.kind === 'hook' || e.kind === 'struct') && e.bindings && e.bindings.gas))
+          kv.push(el('dt', { text: 'GAS' }), el('dd', { class: 'mono', text: 'dk_fw_' + s.name + '.inc' }));
+      }
+      head.append(
+        el('h2', { class: 'mono', text: s.cpu + '.' + s.name }),
+        el('div', { text: s.meaning }),
+        el('dl', { class: 'kv' }, kv),
+      );
+    } else {
+      head.append(
+        el('h2', { text: 'All subsystems' }),
+        el('div', {
+          class: 'muted',
+          text: DATA.subsystems.length + ' subsystems, ' + DATA.entries.length + ' declarations.',
+        }),
+      );
+    }
+    out.push(head);
+    const vis = all.filter(visible);
+    if (!vis.length) out.push(el('div', { class: 'empty', text: 'No declaration matches the filters.' }));
+    for (const [k, title] of KINDS.map((x) => [x[0], x[2]])) {
+      const list = vis.filter((e) => e.kind === k).sort((a, b) => a.name.localeCompare(b.name));
+      if (list.length) out.push(...group(title, list));
+    }
+    d.replaceChildren(...out);
+  }
+
+  function render() {
+    renderGroups();
+    renderDetail();
+  }
+
+  function setHash(h) {
+    try {
+      history.replaceState(null, '', h ? '#' + h : location.pathname + location.search);
+    } catch (err) {}
+  }
+
+  function selectSub(key) {
+    state.sub = key;
+    render();
+    setHash(key);
+    $('detail').scrollIntoView({
+      block: 'start',
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+  }
+
+  function run() {
+    state.tokens = $('q').value.toLowerCase().split(/\s+/).filter(Boolean);
+    render();
+  }
+
+  function jump(name, instant = false) {
+    const e = byName.get(name);
+    if (!e) return;
+    if (!visible(e)) {
+      $('q').value = '';
+      state.tokens = [];
+      state.kinds = new Set(KINDS.map((k) => k[0]));
+      state.dev = '';
+      $('dev').value = '';
+      renderKinds();
+    }
+    if (state.sub && state.sub !== keyOf(e)) state.sub = keyOf(e);
+    render();
+    const t = document.getElementById(name);
+    if (!t) return;
+    t.scrollIntoView({
+      block: 'start',
+      behavior: instant || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+    t.classList.add('flash');
+    setTimeout(() => t.classList.remove('flash'), 1400);
+    setHash(name);
+  }
+
+  function renderKinds() {
+    const n = {};
+    for (const e of DATA.entries) n[e.kind] = (n[e.kind] || 0) + 1;
+    $('kinds').replaceChildren(
+      ...KINDS.map(([k, label]) =>
+        el('button', {
+          type: 'button',
+          'aria-pressed': state.kinds.has(k) ? 'true' : 'false',
+          onclick: () => {
+            if (state.kinds.has(k)) state.kinds.delete(k);
+            else state.kinds.add(k);
+            renderKinds();
+            render();
+          },
+          text: label + ' ' + (n[k] || 0),
+        }),
+      ),
+    );
+  }
+
+  $('subtitle').textContent = DATA.ports.map(portLabel).join(' · ') + ' · ' + DATA.entries.length + ' declarations';
+  $('dev').append(
+    el('option', { value: '', text: 'All devices' }),
+    ...DATA.ports.map((p) => el('option', { value: p.id, text: portLabel(p) })),
+  );
+  $('dev').addEventListener('change', () => {
+    state.dev = $('dev').value;
+    render();
+  });
+  $('q').addEventListener('input', () => {
+    clearTimeout(state.timer);
+    state.timer = setTimeout(run, 120);
+  });
+  $('foot').textContent = DATA.generated_by + '. Marks: V verified · D measured or read once · O open · C correction';
+  renderKinds();
+
+  const hash = decodeURIComponent(location.hash.replace(/^#/, ''));
+  if (byName.has(hash)) {
+    state.sub = keyOf(byName.get(hash));
+    render();
+    requestAnimationFrame(() => requestAnimationFrame(() => jump(hash, true)));
+  } else if (subByKey.has(hash)) {
+    state.sub = hash;
+    render();
+  } else {
+    state.sub = subByKey.has('cf.menu')
+      ? 'cf.menu'
+      : DATA.subsystems[0]
+        ? subKey(DATA.subsystems[0].cpu, DATA.subsystems[0].name)
+        : null;
+    render();
+  }
+</script>

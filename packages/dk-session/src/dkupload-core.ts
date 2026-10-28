@@ -612,7 +612,7 @@ export function decodeScreen(payload: Uint8Array): Uint8Array | null {
 export const screenPixel = (buf: Uint8Array, x: number, y: number): boolean =>
   ((buf[7 - (y >> 3) + 8 * x]! >> (y & 7)) & 1) === 1;
 
-/** The state of digikit/remote (REMOTE_STATE): the DIGIKIT > REMOTE switch, the state format and how many detents one TURN takes. */
+/** The state of digikit/remote (REMOTE_STATE): enabled (always true while the module is loaded), the state format and how many detents one TURN takes. */
 export interface RemoteState {
   enabled: boolean;
   format: number;
@@ -886,12 +886,12 @@ export class DkSession {
   }
 
   // ---- digikit/remote (docs/plans/remote-control.md): the commands of a run-time service module -----------------------------------
-  /** REMOTE_STATE: answered while the switch is off; E_PROTO when digikit/remote is not loaded. */
+  /** REMOTE_STATE: E_PROTO when digikit/remote is not loaded. */
   async remoteState(): Promise<RemoteState> {
     const b = await this.ok(SERVICE_CMD.REMOTE_STATE, 'remote state');
     return { enabled: b[0] === 1, format: b[1]!, turnLimit: b[2]! };
   }
-  /** REMOTE_KEY: press (`down`) or release the key with the device file's panel code. E_DISABLED while the switch is off. */
+  /** REMOTE_KEY: press (`down`) or release the key with the device file's panel code. */
   async remoteKey(code: number, down: boolean): Promise<void> {
     await this.ok(SERVICE_CMD.REMOTE_KEY, 'remote key', Uint8Array.of(code, down ? 1 : 0));
   }

@@ -1,4 +1,4 @@
-"""Boot-time loading of run-time modules (finding 37): the selection record, the anchors of the boot hook on the four ports, the
+"""Boot-time loading of run-time modules (finding 37): the selection record, the anchors of the boot hook on the two ports, the
 packed test modules; and, slow, the emulator proof (tools/patchkit/pk_dkrt_boot.py)."""
 
 import hashlib
@@ -12,8 +12,8 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.firmware import config  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import (  # noqa: E402
-    pk_build,
     pk_device,
     pk_dkrt,
     pk_dkrt_boot,
@@ -71,7 +71,7 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
     # the record (4 tests), the version 3 store: format, table stream, free space, power cuts, header copies, a read against a commit (finding 43), the card-write range (finding 46),
-    # and the settings record (15 tests, the shared vectors included: the test reads sdk/settings-vectors.json)
+    # and the settings record (15 tests, the shared vectors included: the test reads sdk/vectors/settings-vectors.json)
     assert r.returncode == 0 and "35 passed; 0 failed" in r.stdout, r.stdout
 
 
@@ -107,16 +107,16 @@ def test_the_boot_anchors_sit_on_the_prologue_of_the_main_os_task_and_the_block_
     }
     main = port_resolve.sections_of(syx)[3]
     base = 0x40000400
-    boot = anchors["dkrt.hook.boot"]
+    boot = anchors["cf.rtos.site.main_os_task"]
     # `link a6,#-0xa8; movem.l d2-d7/a2-a5,(sp)`: the 8 bytes the hook displaces
     assert main[boot["addr"] - base : boot["addr"] - base + 8] == bytes.fromhex(
         "4e56ff5848d73cfc"
     )
     assert boot["len"] == 8
     # the block write is a function (it starts with `lea -N(sp),sp`, like the block read), the queue literal sits in a `pea <queue>`
-    w = anchors["dkrt.fw.block_write"]["addr"]
+    w = anchors["cf.storage.fn.block.write"]["addr"]
     assert main[w - base : w - base + 2] == bytes.fromhex("4fef")
-    q = anchors["dkrt.ui.queue_lit"]["addr"]
+    q = anchors["cf.view.site.ui_loop.queue_lit"]["addr"]
     assert main[q - base - 2 : q - base] == bytes.fromhex("4879") and main[
         q - base + 4 : q - base + 6
     ] == bytes.fromhex("4eb9")
@@ -141,13 +141,13 @@ def test_the_upload_hook_sits_on_the_router_call_of_the_midi_task_and_the_send_f
     }
     main = port_resolve.sections_of(syx)[3]
     base = 0x40000400
-    hook = anchors["dkrt.hook.midi_rx"]
+    hook = anchors["cf.midi.site.rx"]
     at = hook["addr"] - base
     assert hook["len"] == 6 and main[at : at + 6] == bytes.fromhex("20721c004e90")
     assert main[at + 6 : at + 10] == bytes.fromhex(
         "4fef000c"
     )  # lea 12(sp),sp: pops msg, len, source
-    send = anchors["dkrt.fw.midi_send"]["addr"]
+    send = anchors["cf.midi.fn.send"]["addr"]
     assert main[send - base : send - base + 4] == bytes.fromhex("4feffff4")
 
 
@@ -177,7 +177,7 @@ def test_the_clock_and_tx_literals_sit_in_the_instructions_that_read_the_words(i
         at = a["addr"] - base
         return main[at - 2 : at], int.from_bytes(main[at : at + 4], "big")
 
-    op, counter = lit("dkrt.fw.block_counter_lit")
+    op, counter = lit("cf.link.site.block_isr.counter_lit")
     assert op == bytes.fromhex("52b9") and 0x40000000 <= counter < 0x48000000
     getter = main.find(
         bytes.fromhex("2039") + counter.to_bytes(4, "big") + bytes.fromhex("4e75")
@@ -185,7 +185,7 @@ def test_the_clock_and_tx_literals_sit_in_the_instructions_that_read_the_words(i
     assert getter > 0, (
         "the counter has no one-line getter: the word is not the block counter"
     )
-    op, flight = lit("dkrt.fw.tx_inflight_lit")
+    op, flight = lit("cf.midi.site.tx_inflight_lit")
     assert op == bytes.fromhex("2079") and 0x40000000 <= flight < 0x48000000
     # the transfer-complete callback subtracts the length: `move.l 4(sp),d0; sub.l d0,<flight>; rts`
     sub = main.find(
@@ -199,9 +199,9 @@ def test_the_clock_and_tx_literals_sit_in_the_instructions_that_read_the_words(i
 def test_committed_runtime_objects_are_current():
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
-    pk_build.build_module(RUNTIME, check=True)
-    pk_build.build_module(ROOT / "tests/fixtures/modules/dyn-fault", check=True)
-    pk_build.build_module(ROOT / "tests/fixtures/modules/dyn-fault-late", check=True)
+    front_end.build_module(RUNTIME, check=True)
+    front_end.build_module(ROOT / "tests/fixtures/modules/dyn-fault", check=True)
+    front_end.build_module(ROOT / "tests/fixtures/modules/dyn-fault-late", check=True)
 
 
 def test_the_fault_module_packs_for_both_devices(tmp_path):

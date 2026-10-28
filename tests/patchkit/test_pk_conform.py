@@ -29,7 +29,9 @@ def test_pluck_parameters_come_from_the_manifest_and_the_device_frame():
     ]
     assert dn2.frame.hw(3, 1) == dn2.frame.base + 3 * dn2.frame.stride + 1
     # a run-time machine has no fixed number: the rig takes the first number of the run-time range of the device (core/machines types.toml)
-    types = tomllib.loads((c.ROOT / "modules/core/machines/types.toml").read_text())
+    types = tomllib.loads(
+        (c.ROOT / "modules/core/adapters/machines/types.toml").read_text()
+    )
     assert dt2.machine_type == types["dt2"]["dynamic_first"]
     assert dn2.machine_type == types["dn2"]["dynamic_first"]
     assert [p.default for p in dn2.params] == [0x4000, 0x2000, 0x5000, 0x2800]
@@ -45,7 +47,6 @@ def test_machines_are_found_and_the_framework_is_not():
     } <= labels
     assert not any(label.startswith("core/") for label in labels)
     assert "test/dyn-dsp-hang@dt2" in {s.label for s in c.machine_specs(negative=True)}
-    assert not c.is_machine_module("test/xslice")  # a machine row without a DSP routine
 
 
 def test_the_budget_follows_the_headroom_of_the_device():
@@ -97,7 +98,7 @@ def test_fx_specs_find_the_fixtures_and_keep_the_negative_apart():
 
 
 def test_fx_specs_include_run_time_effects_and_turn_case_values_into_knob_floats():
-    """A `[[fx]]` record (a run-time effect: no state symbol, the page's knobs give the floats of the words) is an effect spec too."""
+    """A `DK_FX` record (a run-time effect: no state symbol, the page's knobs give the floats of the words) is an effect spec too."""
     import struct
 
     s = c.fx_spec("digikit/freqshift")

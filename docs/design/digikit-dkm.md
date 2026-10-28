@@ -4,6 +4,10 @@ Status: built, 2026-10-16 (packer `packages/patchkit/src/dkm.rs`, loader `module
 `docs/plans/digikit-runtime.md` (Module file, Load sequence). Runtime: `docs/design/digikit-runtime.md`. Store the file lives in:
 `docs/design/digikit-store.md`.
 
+Note (2026-10-27): where this file says `[[machine]]`, `[[param]]`, `[[page]]` or `[[voice]]` in `module.toml`, machines are now declared in C
+with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` (`sdk/include/dk/machine.h`). The packer reads these records and the `.dkm` format is unchanged.
+See `docs/MODULE-AUTHORING.md`, section 5.2.
+
 A `.dkm` is one ColdFire module in a form the runtime can load at run time. It holds no firmware address and no host path: the
 same file serves every image whose runtime has the imports it names. It is made from the module's `.dko` object (the object
 `patchkit` links at patch time) by `patchkit pack`:
@@ -25,7 +29,7 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x00 | 4 | magic `DKMF` (0x444b4d46) |
 | 0x04 | 4 | format version = 1 |
 | 0x08 | 4 | file size in bytes |
-| 0x0c | 4 | header size = 0xa0 |
+| 0x0c | 4 | header size = 0xa0, or 0xa4 when the file has the `menu` field (below) |
 | 0x10 | 32 | sha256 of the whole file with these 32 bytes read as zeros |
 | 0x30 | 4 | `runtime_min`: informational, the runtime version the module was built for (packed semantic version; informational; `dkrt_sdk::RUNTIME_VERSION`, now 0.1.0); since runtime 0.1.0 the loader does not refuse on it (the contract bytes at 0x38 decide) |
 | 0x34 | 4 | module version, `major << 16 \| minor << 8 \| patch` |
@@ -47,6 +51,7 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x94 | 4 | `register_size` (0: none) |
 | 0x98 | 4 | `dsp_off`: offset of the DSP section (0: none) |
 | 0x9c | 4 | `dsp_size`: its size in bytes |
+| 0xa0 | 4 | `menu`: image offset of `dkm_menu`. Only a module that exports `dkm_menu` has this field: its header size (0x0c) is 0xa4 instead of 0xa0, and the tables follow the header. Readers take the header size from the file and accept both |
 
 After the header, in this order, each table where its offset says: imports, relocations, slot bindings, the `register` records,
 the DSP section (16-byte aligned), padding to 16, then the image. A file with a DSP section carries the machine contract at 0x38 (a section of version 2; runtime 5 and later also load version 1).
@@ -71,7 +76,7 @@ the DSP section (16-byte aligned), padding to 16, then the image. A file with a 
   `A` for kind 1.
 
 Exports by name (symbols of the object): `dkm_init(const Api *) -> i32` (0 = ok), `dkm_fini(const Api *)`,
-`dkm_slot_N(const Api *)`. At least one must exist. `init` runs once after the copy, relocation and cache flush; if it returns
+`dkm_slot_N(const Api *)` and `dkm_menu(dk_ui_menu *, void *)` (the module's settings: `DK_MENU(fill)` of `<dk/ui.h>`; the DIGIKIT menu calls it when the user opens SETTINGS... of the module). At least one must exist. `init` runs once after the copy, relocation and cache flush; if it returns
 non-zero the load is undone (`E_INIT`).
 
 ## Needs are inferred from the contents
@@ -79,7 +84,7 @@ non-zero the load is undone (`E_INIT`).
 A module does not say what a load of it takes of the device. The needs are worked out from the file's own contents, by one function, `needs_of(source)` of
 the crate `packages/dkneeds` (no_std, no dependency). Why: a module that reported its own needs could misreport them, by mistake or on purpose, and every reader
 (the menu, the host app, the tools) would have to trust it; a contributed or hand-built `.dkm` has no field to lie in. The runtime enforces the same limits when it
-loads (its loader reads the real tables), so the inferred needs are the answer before the load, never the check itself. There is no needs block in the header: the header is the 0xa0-byte
+loads (its loader reads the real tables), so the inferred needs are the answer before the load, never the check itself. There is no needs block in the header: the header is the 0xa0-byte (or, with a menu, 0xa4-byte)
 header of format 1, and every format 1 file has needs.
 
 `needs_of` reads the file through a byte source (`dkneeds::Bytes`: a size and a read at an offset), so the device can feed it from store sector reads without staging the file and a host from a
@@ -104,10 +109,10 @@ It does not read the image, the tables' entries, the records' bodies or the DSP 
 
 Names that are capacity kinds (`[capacity.kinds]` of `sdk/sdk.toml`) are in the unit of that kind's CAPACITY entry, so "fits" is need <= limit - used, with the largest free block for the arena and the DSP area.
 
-Who calls it: the DIGIKIT menu (`modules/core/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
+Who calls it: the DIGIKIT menu (`modules/core/apps/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
 `patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`, `pk_capacity`). The arithmetic exists once.
 
-The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit`, `dkfit.ts`, `dkfit.py`, vectors in `sdk/fit-vectors.json`; the compare is written three times, the needs once): the staging buffer holds the file, a module record and a selection path are free,
+The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit`, `dkfit.ts`, `dkfit.py`, vectors in `sdk/vectors/fit-vectors.json`; the compare is written three times, the needs once): the staging buffer holds the file, a module record and a selection path are free,
 the DSP range (with up to `DSP_ALIGN - 8` bytes for alignment) is at most the largest free range, the arena holds the module's block and the block of its DSP image together (each block at most the largest free block), and every row count is at most
 limit - used. A kind that a device's CAPACITY lacks is not judged.
 `tests/digikit/scenarios/inferred-needs-*.toml` (`tools/patchkit/pk_digikit_capacity.py run_inferred_needs`) loads every run-time module and fixture that packs
@@ -157,9 +162,9 @@ All integers are big endian. Offsets are from the start of the section.
   `core/dsp-voice` (finding 51), two reserved words. The type is in the run-time range 16 to 23, not used by a loaded module. The routine's pc at placement `B` is `0xb80000 + (B - 0x20000000 + entry) / 2`.
   Version 3 voices are 64 bytes: 0 `type`, 4 render entry, 8 note_on entry (image byte offsets; note_on 0: none), 12 `state_bytes` (per voice),
   16 `clear_bytes` (zeroed at note-on), 20 to 51 the eight ranges, 52 `voices` (number of voice states to reserve), 56 to 63 reserved 0. The packer
-  takes them from `[[voice]] render, note_on, desc` (`desc`: a `dk_machine_desc` data symbol; `entry` still means render). The runtime reserves
+  takes them from `[[voice]] render, note_on, desc` (`desc`: a `dk_machine_desc` data symbol). The runtime reserves
   `align8(image + bss)` plus, per voice record, `voices * align8(state_bytes)` for state, in record order, in the module's range.
-- **Effects** (version 4): 64 bytes each, the effects of the FX contract (`sdk/dk_fx.h`) that the module brings, from the manifest's `[[fx]]` (`id`, `process`: the process
+- **Effects** (version 4): 64 bytes each, the effects of the FX contract (`<dk/fx.h>`) that the module brings, from the effect's `DK_FX` record (`sdk/include/dk/fx.h`; this section says `[[fx]]` for its fields) (`id`, `process`: the process
   routine's global symbol, `desc`: the `dk_fx_desc` data symbol, `defaults`: the words p0 ... of the row, at most `n_params`, the words the DSP reads as they are;
   `devices`). Record: 0 `process` (image byte offset of the routine), 4 `desc` (image byte offset of its `dk_fx_desc`), 8 `state_bytes`, 12 `n_params` (both
   from the descriptor, which the packer reads and checks: magic `DKFX`, contract 1, `n_params` at most 8, `state_bytes` a multiple of 4), 16 flags (the routes, below; 0 = master only), 20 to 51 the words

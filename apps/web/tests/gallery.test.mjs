@@ -52,7 +52,7 @@ test('bundle carries the device knob models and the gallery JSON of typed module
   assert.equal(bundle.devices.length, 2);
   assert.ok(bundle.devices.every((t) => 'modules' in parse(t)));
   const pluck = bundle.modules.find((m) => m.manifest.includes('id = "digikit/pluck"'));
-  assert.ok(pluck.manifest.includes('[[machine]]') && !pluck.manifest.includes('[[entry]]'));
+  assert.ok(!pluck.manifest.includes('[[entry]]'));
   const g = JSON.parse(pluck.files['build/gen/gallery.json']);
   assert.equal(g.module, 'digikit/pluck');
   const m = g.machines[0];

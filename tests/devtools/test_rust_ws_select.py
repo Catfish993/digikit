@@ -31,7 +31,7 @@ def test_whole_workspace_files():
 def test_no_rust_relevance():
     assert sel("docs/x.md") == []
     assert (
-        sel("tools/patchkit/pk_build.py", "tests/devtools/test_x.py", "mise.toml") == []
+        sel("tools/patchkit/pk_new.py", "tests/devtools/test_x.py", "mise.toml") == []
     )
     assert sel("tools/emulator/fast_regions.json") == []
     assert sel("modules/core/runtime/README.md") == []

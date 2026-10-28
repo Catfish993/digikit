@@ -47,10 +47,12 @@ MANY = 700
 
 
 def block_read(syx: pathlib.Path) -> int:
-    """The firmware's block read (sector, bytes, buffer): anchor dkrt.fw.block_read of the image's port file."""
+    """The firmware's block read (sector, bytes, buffer): anchor cf.storage.fn.block.read of the image's port file."""
     image = config.image_key(syx)
     port = tomllib.loads((ROOT / "devices" / "ports" / f"{image}.toml").read_text())
-    return next(a["addr"] for a in port["anchor"] if a["name"] == "dkrt.fw.block_read")
+    return next(
+        a["addr"] for a in port["anchor"] if a["name"] == "cf.storage.fn.block.read"
+    )
 
 
 def write_wav(path: pathlib.Path) -> None:

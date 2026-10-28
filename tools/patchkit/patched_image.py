@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build a harmless test image: stock Digitakt II firmware plus one visible string change in MAIN OS.
 
-    uv run python -m tools.patchkit.patched_image [--syx firmware/Digitakt_II_OS1.16.syx] [--string OLD=NEW]
-        [--out out/patch/dt2-1.16-harmless.syx] [--png FRAME.png] [--no-boot] [--no-bootstrap]
+    uv run python -m tools.patchkit.patched_image [--syx firmware/Digitakt_II_OS1.17.syx] [--string OLD=NEW]
+        [--out out/patch/dt2-1.17-harmless.syx] [--png FRAME.png] [--no-boot] [--no-bootstrap]
 
 The string must occur exactly once in section 3, NUL-delimited, and keep its length. The default turns the default
 project name UNTITLED, shown at the top of the main screen of a new project, into PATCHKIT. Every other section is
@@ -143,11 +143,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--syx", default=str(config.stock("Digitakt_II_OS1.16.syx")))
+    ap.add_argument("--syx", default=str(config.stock("Digitakt_II_OS1.17.syx")))
     ap.add_argument(
         "--string", default="=".join(DEFAULT_STRING), help="OLD=NEW, same length"
     )
-    ap.add_argument("--out", default=str(ROOT / "out/patch/dt2-1.16-harmless.syx"))
+    ap.add_argument("--out", default=str(ROOT / "out/patch/dt2-1.17-harmless.syx"))
     ap.add_argument("--png", help="main-screen picture (default: next to --out)")
     ap.add_argument("--no-boot", action="store_true", help="skip the emulator boot")
     ap.add_argument(

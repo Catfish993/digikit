@@ -4,9 +4,9 @@ import { test } from 'vitest';
 import { DkError, type DkSession } from '@digi/dk-session';
 import { deviceOfPort, remoteNotice, remoteRuntime } from '../src/remote-core.ts';
 
-test('the notice: nothing when REMOTE is on, how to switch it on, how to load the module', () => {
+test('the notice: nothing when the module is on, where to check it, how to load the module', () => {
   assert.equal(remoteNotice({ enabled: true, format: 1, turnLimit: 30 }), '');
-  assert.match(remoteNotice({ enabled: false, format: 1, turnLimit: 30 }), /SETTINGS > DIGIKIT > REMOTE/);
+  assert.match(remoteNotice({ enabled: false, format: 1, turnLimit: 30 }), /SETTINGS > DIGIKIT > MODULES/);
   assert.match(remoteNotice(undefined), /Reading/);
   const noModule = new DkError({ error: 'remote state: E_PROTO', kind: 'device', status: 'E_PROTO' });
   assert.match(remoteNotice(undefined, noModule), /not loaded.*Transfer page/);

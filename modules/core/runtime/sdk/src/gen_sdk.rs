@@ -118,7 +118,6 @@ pub mod proto {
     pub const E_INUSE: i32 = -62;
     pub const E_PEEK: i32 = -63;
     pub const E_CMD_RANGE: i32 = -64;
-    pub const E_DISABLED: i32 = -65;
     pub const E_SET_KEY: i32 = -66;
     pub const E_SET_FULL: i32 = -67;
     pub const E_SET_NOKEY: i32 = -68;
@@ -150,11 +149,10 @@ pub mod proto {
     pub const CAPK_STORE: u8 = 12;
     pub const CAPK_SETTINGS: u8 = 13;
     pub const CAPK_SEND_SLOTS: u8 = 14;
-    /// The command ranges a module may register, as (first, last, guarded).
-    /// The third field: the runtime refuses the range's commands while the REMOTE switch is off.
-    pub const RANGES: [(u8, u8, bool); 2] = [
-        (0x38, 0x3d, true), // remote
-        (0x3e, 0x3f, false), // remote_state
+    /// The command ranges a module may register, as (first, last).
+    pub const RANGES: [(u8, u8); 2] = [
+        (0x38, 0x3d), // remote
+        (0x3e, 0x3f), // remote_state
     ];
     pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
     pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);
@@ -200,4 +198,178 @@ pub mod load {
     pub const E_CARD_RO: i32 = -47;
     pub const E_CONTRACT: i32 = -48;
     pub const E_TABLE: i32 = -49;
+}
+
+/// The table `init` receives (`[api]`; also reachable as `dkrt_api`). Appended-to only; check `size`.
+pub mod api {
+    /// The function type `service_cmd` of `[api.types]`.
+    pub type ServiceCmd = unsafe extern "C" fn(cmd: u32, seq: u32, body: *const u8, len: u32, out: *mut u8) -> i32;
+
+    #[repr(C)]
+    pub struct Api {
+        /// Version of the `Api` table layout (`API_VERSION`).
+        pub version: u32,
+        /// `size_of::<Api>()` in the runtime that built it.
+        pub size: u32,
+        /// The device's `[digikit] id`.
+        pub device: u32,
+        /// The runtime version, packed major << 16 | minor << 8 | patch.
+        pub runtime: u32,
+        /// Address of a firmware function or runtime helper by name (NUL-terminated); 0 when the image has none.
+        pub import: unsafe extern "C" fn(name: *const u8) -> u32,
+        /// 16-byte aligned block from the module arena (zero is not guaranteed); null when full.
+        pub alloc: unsafe extern "C" fn(size: u32) -> *mut u8,
+        /// Give back a block of `alloc`.
+        pub free: unsafe extern "C" fn(p: *mut u8),
+        /// Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code.
+        pub store_read: unsafe extern "C" fn(path: *const u8, dst: *mut u8, cap: u32) -> i32,
+        /// Append `msg` (NUL-terminated, 24 bytes kept) and `value` to the runtime's log ring.
+        pub log: unsafe extern "C" fn(msg: *const u8, value: u32),
+        /// Address of the runtime's memcpy.
+        pub memcpy: usize,
+        /// Address of the runtime's memset.
+        pub memset: usize,
+        /// Address of the runtime's memcmp.
+        pub memcmp: usize,
+        /// Address of the runtime's __muldi3.
+        pub muldi3: usize,
+        /// Address of the runtime's __udivdi3.
+        pub udivdi3: usize,
+        /// Address of the runtime's __umoddi3.
+        pub umoddi3: usize,
+        /// (api 1.1) Like `log`, with a level: 0 error, 1 warn, 2 info, 3 debug, 4 trace (above 4: 4).
+        pub log_lv: unsafe extern "C" fn(level: u32, msg: *const u8, value: u32),
+        /// (api 1.2) Register the SysEx commands `first .. first + count` with `handler` (docs/design/module-sdk.md, "Service commands"). The range must lie inside one of the ranges sdk/sdk.toml `[protocol.ranges]` reserves and overlap no registered one; else it returns `proto::E_CMD_RANGE`. Call it from `init`; the range is released when the module's `fini` has run. Returns 0.
+        pub register_cmds: unsafe extern "C" fn(first: u32, count: u32, handler: Option<ServiceCmd>) -> i32,
+    }
+
+    /// The names a module may import, in the order of the runtime's table (`[[import]]`).
+    pub const IMPORT_NAMES: [&str; 28] = [
+        "fw_block_read",
+        "fw_alloc",
+        "fw_free",
+        "memcpy",
+        "memset",
+        "memcmp",
+        "__muldi3",
+        "__udivdi3",
+        "__umoddi3",
+        "input_key",
+        "input_turn",
+        "dk_ui_has",
+        "dk_ui_menu_new",
+        "dk_ui_open",
+        "dk_ui_close",
+        "dk_ui_is_open",
+        "dk_ui_refresh",
+        "dk_ui_action",
+        "dk_ui_submenu",
+        "dk_ui_text",
+        "dk_ui_toggle",
+        "dk_ui_value",
+        "dk_ui_check",
+        "dk_ui_checked",
+        "dk_ui_confirm",
+        "dk_ui_choice",
+        "dk_ui_toast",
+        "dkrt_blocks",
+    ];
+
+    /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`.
+    pub const BUILTIN_NAMES: [&str; 10] = [
+        "fw_block_read",
+        "fw_alloc",
+        "fw_free",
+        "memcpy",
+        "memset",
+        "memcmp",
+        "__muldi3",
+        "__udivdi3",
+        "__umoddi3",
+        "dkrt_blocks",
+    ];
+
+    /// `input_key`: Press or release a panel key.
+    pub type InputKeyFn = unsafe extern "C" fn(code: u32, down: u32) -> i32;
+
+    /// `input_turn`: Turn an encoder by `delta`.
+    pub type InputTurnFn = unsafe extern "C" fn(encoder: u32, delta: i32) -> i32;
+
+    /// `dkrt_blocks`: The 1500 Hz block clock, for a module that wants to measure time.
+    pub type DkrtBlocksFn = unsafe extern "C" fn() -> u32;
+}
+
+/// The imports that another module provides (`[[import]] requires`): the external functions, the stubs for an absent module and
+/// the table of both. Expand it once in the runtime's object; its symbols must be in the `optional` list of the runtime's module.toml.
+#[macro_export]
+macro_rules! optional_imports {
+    () => {
+        #[allow(dead_code, trivial_numeric_casts)]
+        pub mod optional {
+            extern "C" {
+                pub fn input_key(code: u32, down: u32) -> i32;
+                pub fn input_turn(encoder: u32, delta: i32) -> i32;
+                pub fn dk_ui_has(cap: i32) -> i32;
+                pub fn dk_ui_menu_new(desc: *const u8) -> *mut u8;
+                pub fn dk_ui_open(menu: *mut u8) -> i32;
+                pub fn dk_ui_close(menu: *mut u8);
+                pub fn dk_ui_is_open(menu: *const u8) -> i32;
+                pub fn dk_ui_refresh(menu: *mut u8);
+                pub fn dk_ui_action(menu: *mut u8, text: *const u8, run: *mut u8, ctx: *mut u8, arg: i32);
+                pub fn dk_ui_submenu(menu: *mut u8, text: *const u8, sub: *mut u8);
+                pub fn dk_ui_text(menu: *mut u8, text: *const u8);
+                pub fn dk_ui_toggle(menu: *mut u8, text: *const u8, value: *mut i32, changed: *mut u8, ctx: *mut u8);
+                pub fn dk_ui_value(menu: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: *mut u8, ctx: *mut u8);
+                pub fn dk_ui_check(list: *mut u8, row: i32, on: i32);
+                pub fn dk_ui_checked(list: *const u8, row: i32) -> i32;
+                pub fn dk_ui_confirm(title: *const u8, text: *const u8, done: *mut u8, ctx: *mut u8) -> i32;
+                pub fn dk_ui_choice(title: *const u8, items: *mut u8, n: i32, done: *mut u8, ctx: *mut u8) -> i32;
+                pub fn dk_ui_toast(text: *const u8) -> i32;
+            }
+
+            /// What an absent module's import calls: the failure value of the API.
+            pub mod absent {
+                pub unsafe extern "C" fn dk_ui_has(_a0: i32) -> i32 { 0 as _ }
+                pub unsafe extern "C" fn dk_ui_menu_new(_a0: *const u8) -> *mut u8 { 0 as _ }
+                pub unsafe extern "C" fn dk_ui_open(_a0: *mut u8) -> i32 { -1 as _ }
+                pub unsafe extern "C" fn dk_ui_close(_a0: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_is_open(_a0: *const u8) -> i32 { 0 as _ }
+                pub unsafe extern "C" fn dk_ui_refresh(_a0: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_action(_a0: *mut u8, _a1: *const u8, _a2: *mut u8, _a3: *mut u8, _a4: i32) { }
+                pub unsafe extern "C" fn dk_ui_submenu(_a0: *mut u8, _a1: *const u8, _a2: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_text(_a0: *mut u8, _a1: *const u8) { }
+                pub unsafe extern "C" fn dk_ui_toggle(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: *mut u8, _a4: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_value(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: i32, _a4: i32, _a5: *mut u8, _a6: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_check(_a0: *mut u8, _a1: i32, _a2: i32) { }
+                pub unsafe extern "C" fn dk_ui_checked(_a0: *const u8, _a1: i32) -> i32 { 0 as _ }
+                pub unsafe extern "C" fn dk_ui_confirm(_a0: *const u8, _a1: *const u8, _a2: *mut u8, _a3: *mut u8) -> i32 { -1 as _ }
+                pub unsafe extern "C" fn dk_ui_choice(_a0: *const u8, _a1: *mut u8, _a2: i32, _a3: *mut u8, _a4: *mut u8) -> i32 { -1 as _ }
+                pub unsafe extern "C" fn dk_ui_toast(_a0: *const u8) -> i32 { -1 as _ }
+            }
+
+            /// (name, address from the module or 0, address of the stub or 0)
+            pub fn table() -> [(&'static str, usize, usize); 18] {
+                [
+                    ("input_key", core::hint::black_box(input_key as usize), 0),
+                    ("input_turn", core::hint::black_box(input_turn as usize), 0),
+                    ("dk_ui_has", core::hint::black_box(dk_ui_has as usize), absent::dk_ui_has as usize),
+                    ("dk_ui_menu_new", core::hint::black_box(dk_ui_menu_new as usize), absent::dk_ui_menu_new as usize),
+                    ("dk_ui_open", core::hint::black_box(dk_ui_open as usize), absent::dk_ui_open as usize),
+                    ("dk_ui_close", core::hint::black_box(dk_ui_close as usize), absent::dk_ui_close as usize),
+                    ("dk_ui_is_open", core::hint::black_box(dk_ui_is_open as usize), absent::dk_ui_is_open as usize),
+                    ("dk_ui_refresh", core::hint::black_box(dk_ui_refresh as usize), absent::dk_ui_refresh as usize),
+                    ("dk_ui_action", core::hint::black_box(dk_ui_action as usize), absent::dk_ui_action as usize),
+                    ("dk_ui_submenu", core::hint::black_box(dk_ui_submenu as usize), absent::dk_ui_submenu as usize),
+                    ("dk_ui_text", core::hint::black_box(dk_ui_text as usize), absent::dk_ui_text as usize),
+                    ("dk_ui_toggle", core::hint::black_box(dk_ui_toggle as usize), absent::dk_ui_toggle as usize),
+                    ("dk_ui_value", core::hint::black_box(dk_ui_value as usize), absent::dk_ui_value as usize),
+                    ("dk_ui_check", core::hint::black_box(dk_ui_check as usize), absent::dk_ui_check as usize),
+                    ("dk_ui_checked", core::hint::black_box(dk_ui_checked as usize), absent::dk_ui_checked as usize),
+                    ("dk_ui_confirm", core::hint::black_box(dk_ui_confirm as usize), absent::dk_ui_confirm as usize),
+                    ("dk_ui_choice", core::hint::black_box(dk_ui_choice as usize), absent::dk_ui_choice as usize),
+                    ("dk_ui_toast", core::hint::black_box(dk_ui_toast as usize), absent::dk_ui_toast as usize),
+                ]
+            }
+        }
+    };
 }

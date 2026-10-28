@@ -12,6 +12,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# The built objects of content modules (every module but category "core"): packages/patchkit/src/build/mod.rs `cache_dir`.
+OBJECT_CACHE = ROOT / "out" / "cache" / "dko"
+
 # module roots inside a repository, relative to its root
 REPO_ROOTS = ("modules", "tests/fixtures/modules")
 
@@ -61,3 +64,13 @@ def module_id(path: Path | str) -> str | None:
         if p == d.resolve() or d.resolve() in p.parents:
             return mid
     return None
+
+
+def object_path(manifest: dict, moddir: Path, obj: dict) -> Path:
+    """Where the built object `obj` (an `[[object]]` table of the parsed `module.toml` MANIFEST in MODDIR) is. A core module keeps its
+    objects in its tree (committed); any other module's objects are build output in `out/cache/dko/<module id>/<path>`
+    (`patchkit build` and `patchkit pack` write them there). An object without `sources` is a file of the module."""
+    mod = manifest["module"]
+    if mod["category"] != "core" and obj.get("sources"):
+        return OBJECT_CACHE / mod["id"] / obj["path"]
+    return moddir / obj["path"]
