@@ -3,12 +3,12 @@
 import { parse } from 'smol-toml';
 import type { DeviceId } from './device-profiles';
 
-const manifests = import.meta.glob('../../../../modules/*/*/module.toml', {
+const manifests = import.meta.glob('../../../../modules/**/module.toml', {
   query: '?raw',
   import: 'default',
   eager: true,
 }) as Record<string, string>;
-const icons = import.meta.glob('../../../../modules/*/*/gallery/icon.svg', {
+const icons = import.meta.glob('../../../../modules/**/gallery/icon.svg', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -16,7 +16,7 @@ const icons = import.meta.glob('../../../../modules/*/*/gallery/icon.svg', {
 
 // `patchkit gen` writes build/gen/gallery.json for a module with typed sections ([[machine]], [[param]]): the
 // machines it adds and their parameters, per device. Committed; apps/web/tests/gallery.test.mjs checks the shape.
-const galleries = import.meta.glob('../../../../modules/*/*/build/gen/gallery.json', {
+const galleries = import.meta.glob('../../../../modules/**/build/gen/gallery.json', {
   query: '?raw',
   import: 'default',
   eager: true,

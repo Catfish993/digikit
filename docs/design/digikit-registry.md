@@ -2,7 +2,7 @@
 
 Status: built for Digitakt II 1.16 and 1.17 (2026-10-16) and Digitone II 1.11 and 1.12 (2026-10-17; pages, `own_dsp`, finding 33), ColdFire side only, emulator only. Plan: `docs/plans/digikit-runtime.md`
 (Phase 5, ColdFire side). **Since the Phase 6 archive commit the rows are filled by the boot-time load only**: the unload, the in-use refusal and the machine-view hook and rebuild described for hot reload below are archived (docs/plans/digikit-hot-reload.md, tag `digikit-hot-reload-v1`); the paragraphs that describe them are marked. Results and evidence: `docs/findings/30-runtime-machines.md` (Digitakt II) and `docs/findings/33-runtime-machines-dn2.md` (Digitone II, unload refusal). File: `docs/design/digikit-dkm.md`. Runtime:
-`docs/design/digikit-runtime.md`. Code: `modules/core/dynreg` (patch time), `modules/core/runtime/src/rs/src/registry.rs` (run time),
+`docs/design/digikit-runtime.md`. Code: `modules/core/adapters/dynreg` (patch time), `modules/core/runtime/src/rs/src/registry.rs` (run time),
 `packages/patchkit/src/register.rs` (records, packer).
 
 Note (2026-10-27): the typed manifest sections named below (`[[machine]]`, `[[param]]`, `[[voice]]`, `[[page]]`) are replaced by `DK_MACHINE`,

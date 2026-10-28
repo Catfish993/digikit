@@ -256,6 +256,17 @@ pub enum ModuleKind {
     Framework,
 }
 
+/// What a `core/*` module is in the layering (docs/ARCHITECTURE.md): the loader and policy owner, the reset-time installer, an adapter to
+/// one firmware plug-in point, or an app that uses the adapters' APIs. Checked by `tools/devtools/layercheck.py`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModuleRole {
+    Runtime,
+    Installer,
+    Adapter,
+    App,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ModuleInfo {
     /// `category/name`; unique in a library (it need not equal the directory)
@@ -263,6 +274,9 @@ pub struct ModuleInfo {
     pub version: String,
     pub name: String,
     pub category: String,
+    /// The layer of a `core` module (required for `category = "core"`, see `ModuleRole`)
+    #[serde(default)]
+    pub role: Option<ModuleRole>,
     /// What the module is; `framework` is internal (core modules)
     #[serde(rename = "type")]
     pub kind: ModuleKind,
@@ -480,6 +494,12 @@ impl Module {
         lenient: bool,
     ) -> Result<Module> {
         let mut manifest: Manifest = toml::from_str(manifest_text)?;
+        if manifest.module.category == "core" && manifest.module.role.is_none() {
+            return Err(err!(
+                "{}: a core module needs `role = \"runtime\" | \"installer\" | \"adapter\" | \"app\"` in [module]",
+                manifest.module.id
+            ));
+        }
         if manifest.fx.is_some() {
             return Err(err!(
                 "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"

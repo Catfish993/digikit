@@ -50,7 +50,7 @@ The two files differ in the engine ABI, not in the algorithm.
 
 ### 1.4 The two device ABIs of the routine
 
-Both wrappers are in `modules/core/dsp-voice/src/dsp/`. A routine is entered with `JUMP (M13, I12)` and returns with `JUMP (M13, I13)`
+Both wrappers are in `modules/core/adapters/dsp-voice/src/dsp/`. A routine is entered with `JUMP (M13, I12)` and returns with `JUMP (M13, I13)`
 (`dsp-voice.s:18`, `dsp-voice-dn2.s:19`). Both pin M5=0, M6=1, M7=-1, M13=0, M14=1, M15=-1, L0-L5=0, MODE1 = SIMD off, ALUSAT and TRUNCATE clear, RND32 set
 (`dsp-voice.s:26-33`, `dsp-voice-dn2.s:24-32`) and save the firmware's values. Both: the routine may clobber R0-R15, I0-I5, I13, M1-M4 (DT2 also B3; DN2 also I12)
 and must keep I6-I12/I14/I15, M0, M5-M15, the L registers and MODE1 (`dsp-voice.s:23-25`, `dsp-voice-dn2.s:20-23`).

@@ -280,6 +280,11 @@ typedef struct DkrtDiag {
     uint32_t dsp_crumb;                          /* the DSP's last breadcrumb when the watch decided it stopped (0 before): stage | voice << 8 | machine type << 16 (finding 48) */
 } DkrtDiag;
 
+/* dkrt_module_header result: what the DIGIKIT menu shows of a .dkm header. The layout only grows at the end. */
+typedef struct DkrtModuleHeader {
+    uint32_t version;                            /* the module's version, major << 16 | minor << 8 | patch */
+} DkrtModuleHeader;
+
 /* One .dkm file of the store as dkrt_scan found it: where it is, what its header says and the needs inferred from its contents (dkneeds). The need_* fields are valid when SCAN_NEEDS is set. */
 typedef struct DkrtScan {
     uint8_t path[64];                            /* store path, NUL-terminated, for example modules/dyn-demo.dkm */
@@ -424,6 +429,8 @@ _Static_assert(offsetof(DkrtDiag, crash_pc) == 56, "DkrtDiag.crash_pc");
 _Static_assert(offsetof(DkrtDiag, crash_vec) == 60, "DkrtDiag.crash_vec");
 _Static_assert(offsetof(DkrtDiag, ram_kept) == 64, "DkrtDiag.ram_kept");
 _Static_assert(offsetof(DkrtDiag, dsp_crumb) == 68, "DkrtDiag.dsp_crumb");
+_Static_assert(sizeof(DkrtModuleHeader) == 4, "DkrtModuleHeader size");
+_Static_assert(offsetof(DkrtModuleHeader, version) == 0, "DkrtModuleHeader.version");
 _Static_assert(sizeof(DkrtScan) == 116, "DkrtScan size");
 _Static_assert(offsetof(DkrtScan, path) == 0, "DkrtScan.path");
 _Static_assert(offsetof(DkrtScan, first) == 64, "DkrtScan.first");
@@ -487,8 +494,8 @@ int32_t dkrt_debug_set(uint32_t on);
 /* The files of the module store whose path starts with prefix (NUL-terminated), sorted by path, at most max into out: the count, or a negative code (E_NOT_FOUND: no store). */
 int32_t dkrt_store_list(const uint8_t *prefix, DkrtStoreEntry *out, uint32_t max);
 
-/* One sector of the store (relative to its start) into out (512 bytes, 16-byte aligned); OK or a negative code. */
-int32_t dkrt_store_read_sector(uint32_t rel, uint8_t *out);
+/* The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself. */
+int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out);
 
 /* The REMOTE switch (the commands of the remote range are answered only while it is on; not saved): 1 on, 0 off, -1 when the image has no input adapter (core/input) and so no remote control. */
 int32_t dkrt_remote_get(void);

@@ -69,7 +69,7 @@ device. The arena and DSP-area figures are the runtime's own (`arena::stats`, `d
 
 ## Interfaces
 
-- `core/health` (`modules/core/health`, requires `core/runtime`): `health_read(HealthRaw *)`, `health_heap(HealthRaw *)`; exported state `health_hs`,
+- `core/health` (`modules/core/adapters/health`, requires `core/runtime`): `health_read(HealthRaw *)`, `health_heap(HealthRaw *)`; exported state `health_hs`,
   `health_idle_line`, `health_off` (the proof's A/B switch).
 - Runtime C ABI, additive (`dkrt-sdk`, docs/design/digikit-runtime.md): `void dkrt_health(DkrtHealth *)` (24 words; flags `HEALTH_MODULE/CPU/DSP/HEAP/
   HEAP_CUT/HEAP_BAD`), `u32 dkrt_blocks(void)` (DSP blocks since boot: a 1500 Hz clock, 0 without core/health), `void dkrt_poll_set(fn)` (the UI-loop tick calls

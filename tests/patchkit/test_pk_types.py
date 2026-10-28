@@ -1,4 +1,4 @@
-"""The permanent machine type numbers (modules/core/machines/types.toml)."""
+"""The permanent machine type numbers (modules/core/adapters/machines/types.toml)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ ROOT = REPO_ROOT
 
 from tools.patchkit import modroots, pk_conform  # noqa: E402
 
-TYPES = ROOT / "modules" / "core" / "machines" / "types.toml"
+TYPES = ROOT / "modules" / "core" / "adapters" / "machines" / "types.toml"
 STOCK_TYPES = {"dt2": 7, "dn2": 5}  # the first number that is not a stock type
 
 

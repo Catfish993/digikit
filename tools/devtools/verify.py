@@ -33,7 +33,7 @@ for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups in
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
 check-no-aot runs 17 native FX assertions even with --full (--all-no-aot: 61 normally, 191 with --full).
 Normal routing includes relevant stock, runtime and module acceptance; full tier sweeps stay explicit.
-python-tests runs the PY_CHECKS commands (ruff, ruff format, mypy, pathcheck), the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
+python-tests runs the PY_CHECKS commands (ruff, ruff format, mypy, pathcheck, layercheck), the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
 every changed tests/**/test_*.py, and the
@@ -107,6 +107,8 @@ PY_CHECKS: tuple[tuple[str, list[str]], ...] = (
     ("ruff-format", [sys.executable, "-m", "ruff", "format", "--check", "--no-cache"]),
     ("mypy", [sys.executable, "-m", "mypy"]),
     ("pathcheck", [sys.executable, "-m", "tools.devtools.pathcheck"]),
+    # the module layering (docs/ARCHITECTURE.md): reads manifests, sources and built objects, under a second
+    ("layercheck", [sys.executable, "-m", "tools.devtools.layercheck"]),
 )
 PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
@@ -186,8 +188,10 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "tools/patchkit/pk_proofs.py",
             "tools/devtools/benchlock.py",
             "tools/devtools/test_outcomes.py",
+            "tools/devtools/layercheck.py",
         ),
         (
+            "tests/devtools/test_layercheck.py",
             "tests/devtools/test_verify.py",
             "tests/devtools/test_verify_budget.py",
             "tests/devtools/test_changed_tests.py",
@@ -314,6 +318,7 @@ UI_ONLY: tuple[str, ...] = (
 SMOKE_EXEMPT: dict[str, str] = {
     "tools/devtools/agent_guard.py": "agent guard",
     "tools/devtools/pathcheck.py": "path checker",
+    "tools/devtools/layercheck.py": "layer checker",
     ".claude/settings.json": "agent settings",
 }
 # Host Vitest test files (vitest.host.projects.json). The host config runs them without a device, so

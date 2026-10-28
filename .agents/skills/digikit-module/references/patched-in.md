@@ -23,5 +23,5 @@ The browser patch page lists patched-in modules only; a `.dkm` goes to the devic
 | edit loop | `mise run module:dev -- --modules fx/NAME [--device dt2\|dn2]` |
 | test | `mise run patch:test -- --cell "dt2-1.17:fx/NAME"` (a new module set needs `-- --update` once for frame goldens) |
 
-A patched-in machine has a permanent type number in `modules/core/machines/types.toml`. Documents: `docs/PATCHING.md`, `modules/README.md`,
+A patched-in machine has a permanent type number in `modules/core/adapters/machines/types.toml`. Documents: `docs/PATCHING.md`, `modules/README.md`,
 `docs/findings/21-patchkit-core.md`.

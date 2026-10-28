@@ -46,6 +46,7 @@ def test_ui_only_change_skips_smoke() -> None:
 SMOKE_EXEMPT_FILES = [
     "tools/devtools/agent_guard.py",
     "tools/devtools/pathcheck.py",
+    "tools/devtools/layercheck.py",
     ".claude/settings.json",
 ]
 
@@ -732,7 +733,7 @@ CONFORMANCE = "tests/modules/test_machine_conformance.py"
         "modules/machines/pluck/src/dsp/pluck.s",
         "tests/fixtures/modules/sine/src/dsp/sine.s",
         "tests/fixtures/modules/sine/module.toml",
-        "modules/core/dsp-voice/src/dsp/dsp-voice-dn2.s",
+        "modules/core/adapters/dsp-voice/src/dsp/dsp-voice-dn2.s",
     ],
 )
 def test_a_machine_change_selects_the_conformance_suite(path: str) -> None:
@@ -741,7 +742,8 @@ def test_a_machine_change_selects_the_conformance_suite(path: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["modules/fx/master-gain/module.toml", "modules/core/params/module.toml"]
+    "path",
+    ["modules/fx/master-gain/module.toml", "modules/core/adapters/params/module.toml"],
 )
 def test_other_modules_do_not_select_the_conformance_suite(path: str) -> None:
     assert CONFORMANCE not in selected(path)
@@ -765,8 +767,8 @@ def test_the_conformance_machinery_selects_the_conformance_suite(path: str) -> N
     [
         "tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s",
         "tests/fixtures/modules/fx-gain/module.toml",
-        "modules/core/fx/src/dsp/fx.s",
-        "modules/core/fx/module.toml",
+        "modules/core/adapters/fx/src/dsp/fx.s",
+        "modules/core/adapters/fx/module.toml",
         "tools/patchkit/pk_conform.py",
         "tests/support/fx_rig.py",
         "tests/support/fx_conform_worker.py",
@@ -777,7 +779,8 @@ def test_an_effect_change_selects_the_fx_conformance_suite(path: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["modules/machines/pluck/module.toml", "modules/core/params/module.toml"]
+    "path",
+    ["modules/machines/pluck/module.toml", "modules/core/adapters/params/module.toml"],
 )
 def test_other_modules_do_not_select_the_fx_conformance_suite(path: str) -> None:
     assert verify_route.FX_CONFORMANCE not in selected(path)
@@ -927,7 +930,7 @@ def test_runtime4_merge_runs_no_pcm_step() -> None:
     """The range 457f515b..29086ff7 (one mise.toml task, device tools, runtime objects) ran all 13
     steps; its files now select web, Rust and Python tests, without PCM steps."""
     files = [
-        "modules/core/digikit-menu/build/digikit-menu.dko.json",
+        "modules/core/apps/digikit-menu/build/digikit-menu.dko.json",
         "modules/core/runtime/build/runtime.dko.json",
         "modules/core/runtime/src/rs/src/upload.rs",
         "tests/fixtures/modules/dyn-demo/build/dyn-demo.dko.json",

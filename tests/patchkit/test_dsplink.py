@@ -15,7 +15,7 @@ from tools.firmware import config
 from tools.patchkit import pk_build, pk_device, pk_link, pk_toolchains
 
 ROOT = REPO_ROOT
-MOD = ROOT / "modules" / "core" / "dsp-link"
+MOD = ROOT / "modules" / "core" / "adapters" / "dsp-link"
 IMAGES = {
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",

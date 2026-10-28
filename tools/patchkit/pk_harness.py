@@ -12,7 +12,7 @@ empty), spawns a daemon on the stock firmware's ready inputs, loads the image (`
 a MAIN change by the cached coupled cold boot), and runs *tours*: `tests/patchkit/smoke/tours/smoke.toml` (boot to the
 readiness contract, track and pattern change, audition, play/stop with the sequencer running, machine menu open and
 close, save project and reload, a seeded random-input stress) and the tests of the modules in the set
-(`modules/*/*/tests/*.toml`). Every segment starts from `restart`, so segments do not depend on each other.
+(`modules/**/tests/*.toml`). Every segment starts from `restart`, so segments do not depend on each other.
 
 After every input and every segment the harness asserts: no `fault` (status.cf.error, GUEST_FAULT), no DSP halt, no
 main-loop stall (status.heartbeat, the controller's `stall` events), and its own checks: `expect_frame` against the

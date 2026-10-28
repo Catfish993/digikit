@@ -194,4 +194,5 @@ Syntakt adapter (S3, S4).
 menu is unchanged (goldens match). Then the list-view anchors, `<dk/ui.h>`, core/ui (demo fixture
 `test/ui-demo`, screenshots and a flat heap on dt2 and dn2) and the host harness `dkui-host`.
 Then the digikit menu in C on core/ui (the Rust menu crate is deleted; core/ui is in the
-runtime sets of both devices); Em approved the new goldens. Phase 3 done. Next: phase 4.
+runtime sets of both devices); Em approved the new goldens. Phase 3 done. Then core modules grouped by role
+(`adapters/`, `apps/`, `role` in module.toml), docs/ARCHITECTURE.md and `mise run check:layers`. Next: phase 4.

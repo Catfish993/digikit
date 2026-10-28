@@ -97,14 +97,15 @@ READS: list[tuple[str, list[str], bool]] = [
     # files, include! in src/lib.rs:106-121); packages/emulator/sharc/build.rs:26 reads the same
     # dir. out/native/*/gen is untracked; listed for local edits.
     (r"^out/native/[^/]+/gen/", ["sharc-gen", "sharc-native"], True),
-    # modules/core/ui/host/build.rs compiles its modules/core/ui/host/tests/c sources against sdk/include (rerun-if-changed on the dir); modules/core/ui/host/tests/c/menu_fake.c includes the C source of
-    # core/digikit-menu and builds it with the runtime's header, core/ui's core-only header and the generated dk_fw_mem.h.
+    # modules/core/adapters/ui/host/build.rs compiles its modules/core/adapters/ui/host/tests/c sources against sdk/include (rerun-if-changed on the dir); modules/core/adapters/ui/host/tests/c/menu_fake.c includes the C source of
+    # core/digikit-menu and builds it with the runtime's header and core/ui's core-only header.
     (r"^sdk/include/", ["dkui-host"], False),
     (
-        r"^modules/core/(digikit-menu/src/menu\.c|runtime/include/dkrt\.h|ui/include/|fw/include/dk_fw_mem\.h)",
+        r"^modules/core/(runtime/include/dkrt\.h|adapters/ui/include/)",
         ["dkui-host"],
         False,
     ),
+    (r"^modules/core/apps/digikit-menu/src/", ["dkui-host"], False),
     # apps/desktop/src-tauri/tauri.conf.json frontendDist = ../ui/dist (embedded by tauri_build).
     (r"^apps/desktop/ui/dist/", ["digiemu-desktop"], True),
 ]

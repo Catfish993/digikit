@@ -16,7 +16,17 @@ from tools.patchkit import (  # noqa: E402
 )
 
 SYX = config.stock("Digitakt_II_OS1.17.syx")
-SRC = ROOT / "modules" / "core" / "machines" / "src" / "cf" / "dn2" / "machines.s"
+SRC = (
+    ROOT
+    / "modules"
+    / "core"
+    / "adapters"
+    / "machines"
+    / "src"
+    / "cf"
+    / "dn2"
+    / "machines.s"
+)
 ROWSIZE = 64
 FIRST = 5
 ROWS = 0x47EC0000

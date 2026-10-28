@@ -1,4 +1,4 @@
-"""core/fx, the send route (modules/core/fx/src/dsp/fxsend.s, finding 62): the send hook and the master hook on the concrete SHARC+ core.
+"""core/fx, the send route (modules/core/adapters/fx/src/dsp/fxsend.s, finding 62): the send hook and the master hook on the concrete SHARC+ core.
 
 The first group needs only the assembler (tests/support/fx_rig.py); the last one patches the stock Digitakt II image (skipped when it is not in the repository).
 The model of the send bus is the routine's own float32 arithmetic: gain (byte / 127) squared, ramped by adding the step per sample, tracks summed in order."""

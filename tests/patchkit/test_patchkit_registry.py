@@ -15,7 +15,7 @@ ROOT = REPO_ROOT
 from tools.patchkit import pk_build, pk_dkrt, pk_toolchains  # noqa: E402
 from tools.patchkit.pk_dkrt_machine import machine_hash  # noqa: E402
 
-DYNREG = ROOT / "modules/core/dynreg"
+DYNREG = ROOT / "modules/core/adapters/dynreg"
 RUNTIME = ROOT / "modules/core/runtime"
 
 

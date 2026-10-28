@@ -12,7 +12,7 @@ ROOT = REPO_ROOT
 from tools.coldfire import digikit_health_proof as hp  # noqa: E402
 from tools.patchkit import pk_build, pk_toolchains  # noqa: E402
 
-MODULE = ROOT / "modules/core/health"
+MODULE = ROOT / "modules/core/adapters/health"
 IMAGES = ("dt2-1.17", "dn2-1.12")
 ANCHORS = {
     "cf.rtos.site.idle": 6,

@@ -31,8 +31,8 @@ from tools.patchkit import pk_build, pk_conform, pk_sharc
 
 ROOT = pk_conform.ROOT
 WRAPPER = {
-    "dt2": ROOT / "modules/core/dsp-voice/src/dsp/dsp-voice.s",
-    "dn2": ROOT / "modules/core/dsp-voice/src/dsp/dsp-voice-dn2.s",
+    "dt2": ROOT / "modules/core/adapters/dsp-voice/src/dsp/dsp-voice.s",
+    "dn2": ROOT / "modules/core/adapters/dsp-voice/src/dsp/dsp-voice-dn2.s",
 }
 CODE_BASE = 0xB90000
 CODE_END = dv.STOCK_BP  # code must end below the stand-ins at STOCK_BP / RETURN_SW

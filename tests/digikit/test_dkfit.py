@@ -67,7 +67,7 @@ def test_empty_caps_on_the_vector():
 
 
 def test_the_menu_lines_are_the_ones_the_page_shows():
-    # the runtime's fit texts (DkrtFitRow.reason and .brief, shown by modules/core/digikit-menu): the long form and the compact form
+    # the runtime's fit texts (DkrtFitRow.reason and .brief, shown by modules/core/apps/digikit-menu): the long form and the compact form
     assert F.menu_line(("DSP_AREA", 409600, 260096)) == "DSP 400K > 254K FREE"
     assert F.menu_line(("DSP_AREA", 409601, 260096), compact=True) == "DSP 401K>254K"
     assert F.menu_line(("ARENA", 600000, 100)) == "CPU 586K > 0K FREE"

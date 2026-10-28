@@ -25,7 +25,7 @@ A stock type (below 7, the engine's own) leaves only stage 1: its cost is 6 inst
 types (counted at stage 4) and routines that returned (at stage 5). `dispatches - returns` is 0 between calls, 1 while a routine runs, and stays 1 when
 the core stops inside one.
 
-**Layout of the reply-record diagnostics, now 17 words** (`dl_diag`, `modules/core/dsp-link/README.md`, `src/dsp/dsp-link.inc`): words 0 to 13 as in
+**Layout of the reply-record diagnostics, now 17 words** (`dl_diag`, `modules/core/adapters/dsp-link/README.md`, `src/dsp/dsp-link.inc`): words 0 to 13 as in
 finding 45 (header `0xD1A6 | count << 16` with count **17**, the link hook's beat, the voice hook's beat, M5 M6 M7 M13 M14 M15, I6 I7 B7 L7 MODE1), and
 
 | word | content | record bytes |
@@ -87,7 +87,7 @@ depending on which record the copy came from: the last voice entered (`HOOK_ENTE
 and in any case every ten seconds. On `DSP_STOPPED` the event carries `heartbeat, voice_beat, breadcrumb, dispatches, resumed` and the whole diagnostic set follows
 as error events (kept when DEBUG is off); for 400 UI passes the poll then reads the reply on every pass and logs each distinct one (the two records). The
 heartbeat watch counts only a larger value as a beat: with two records in play a stopped DSP would otherwise look alive (the alternating words differ).
-The ABOUT page (`DkrtDiag::dsp_crumb`, `modules/core/digikit-menu`) adds `LAST: CALL V0 T19` under `DSP STOPPED`. `dklog.py` decodes the breadcrumb as stage name, voice
+The ABOUT page (`DkrtDiag::dsp_crumb`, `modules/core/apps/digikit-menu`) adds `LAST: CALL V0 T19` under `DSP STOPPED`. `dklog.py` decodes the breadcrumb as stage name, voice
 and type. **[D]** `debug-log` full tier: 16 `DSP_DIAG` events in 32 s (four sets: the first poll and three ten-second ones), against over 25 before.
 
 ## 4. Cost **[D]**

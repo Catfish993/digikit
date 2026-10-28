@@ -7,7 +7,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 from tools.patchkit import pk_build, pk_sharc  # noqa: E402
 
-CORE = ROOT / "modules" / "core" / "dsp-voice" / "src" / "dsp" / "dsp-voice.s"
+CORE = (
+    ROOT / "modules" / "core" / "adapters" / "dsp-voice" / "src" / "dsp" / "dsp-voice.s"
+)
 # a sine routine of the raw (no contract) form
 SINE = ROOT / "tests" / "support" / "raw_sine.s"
 CORE_BASE, SINE_BASE = 0xB90000, 0xB92000

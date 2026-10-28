@@ -16,7 +16,7 @@ conflicts = []
 "dn2-1.12" = "experimental"
 
 # Test fixture (docs/design/digikit-registry.md, finding 33): a machine of its own type (the permanent number is
-# modules/core/machines/types.toml, [dn2.dynamic] "test/dyn-dn2:dyn_pluck") with one parameter page, as digikit/pluck has
+# modules/core/adapters/machines/types.toml, [dn2.dynamic] "test/dyn-dn2:dyn_pluck") with one parameter page, as digikit/pluck has
 # on the Digitone II, but loaded from the card. The declaration is in src/module.c (DK_MACHINE, DK_PARAM, DK_PAGE).
 # `patchkit pack test/dyn-dn2 --device dn2 -o FILE.dkm` reads it into MACHINE, PARAM and PAGE records. The DSP is test/sine's, read from its folder.
 [[object]]

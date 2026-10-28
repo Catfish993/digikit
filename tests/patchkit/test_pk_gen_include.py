@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(
     reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
 
-MOD = REPO_ROOT / "modules" / "core" / "dsp-voice"
+MOD = REPO_ROOT / "modules" / "core" / "adapters" / "dsp-voice"
 
 
 def test_include_expansion():

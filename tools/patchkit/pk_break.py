@@ -35,7 +35,7 @@ from tools.patchkit import modroots, patchkit  # noqa: E402
 # kind -> (module manifest relative to the copied root, old text, new text); the old text must occur exactly once
 BREAKS = {
     "persist": (
-        "modules/core/machines/module.toml",
+        "modules/core/adapters/machines/module.toml",
         'value = "image.u8(cf.machine.site.sound_load_type_bound + 1) + machines.count"',
         'value = "image.u8(cf.machine.site.sound_load_type_bound + 1)"',
     ),

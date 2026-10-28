@@ -163,7 +163,7 @@ arg is a register from `regs.in` or `sp+N` (the entry stack; N is a multiple of 
 - a C typedef `dk_fw_<sub>_<name>_hook` in the header;
 - a Rust type `<Name>Hook` in the `dkfw` crate.
 
-Five stubs use the macros: `dk_hook` (core/digikit-menu), `dkrt_loop_hook` and `dkrt_boot_hook` (core/runtime),
+Five stubs use the macros: `dk_hook` (core/ui), `dkrt_loop_hook` and `dkrt_boot_hook` (core/runtime),
 `health_block_hook` (core/health) and `dl_frame_hook` (core/dsp-link). `pk_build` adds `modules/core/fw/inc` to the
 ColdFire include path.
 

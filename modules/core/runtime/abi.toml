@@ -403,6 +403,13 @@ fields = [
 ]
 
 [[struct]]
+name = "DkrtModuleHeader"
+doc = "dkrt_module_header result: what the DIGIKIT menu shows of a .dkm header. The layout only grows at the end."
+fields = [
+    "u32 version // the module's version, major << 16 | minor << 8 | patch",
+]
+
+[[struct]]
 name = "DkrtScan"
 doc = "One .dkm file of the store as dkrt_scan found it: where it is, what its header says and the needs inferred from its contents (dkneeds). The need_* fields are valid when SCAN_NEEDS is set."
 derive = ["Clone", "Copy"]
@@ -504,9 +511,9 @@ sig = "i32 dkrt_store_list(const u8 *prefix, DkrtStoreEntry *out, u32 max)"
 doc = "The files of the module store whose path starts with prefix (NUL-terminated), sorted by path, at most max into out: the count, or a negative code (E_NOT_FOUND: no store)."
 
 [[fn]]
-name = "dkrt_store_read_sector"
-sig = "i32 dkrt_store_read_sector(u32 rel, u8 *out)"
-doc = "One sector of the store (relative to its start) into out (512 bytes, 16-byte aligned); OK or a negative code."
+name = "dkrt_module_header"
+sig = "i32 dkrt_module_header(u32 first, DkrtModuleHeader *out)"
+doc = "The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself."
 
 [[fn]]
 name = "dkrt_remote_get"

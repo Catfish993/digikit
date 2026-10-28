@@ -12,7 +12,7 @@ execution requirements, not levels. A successful boot proves only what the run a
 | Level | What | Command |
 | --- | --- | --- |
 | Static (JS/TS) | oxlint, Prettier check, host Vitest, `pnpm -r run typecheck` | `mise run verify:host` |
-| Static (Python) | ruff check and format over pyproject `[tool.ruff] include`; mypy over `[tool.mypy] files` | `mise run lint:py`; `uv run python -m tools.devtools.pathcheck` |
+| Static (Python) | ruff check and format over pyproject `[tool.ruff] include`; mypy over `[tool.mypy] files` | `mise run lint:py`; `uv run python -m tools.devtools.pathcheck`; `mise run check:layers` (module layering, docs/ARCHITECTURE.md) |
 | Fast preflight | Changed files only; no builds, no devices | `mise run test:changed` |
 | Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `mise run test:host` |
 | Unit (web) | Web app Node suites in `apps/web/tests` | `mise run web:test` |
@@ -194,7 +194,7 @@ tier-quick, tier-sweep, python-tests, rust-tests, card, smoke, dt2-tone, dt2-che
 dt2-tier-sweep.
 
 - `host` runs `pnpm verify:host`. `web` depends on `host`.
-- `python-tests` runs ruff, ruff format, mypy and pathcheck as commands, then
+- `python-tests` runs ruff, ruff format, mypy, pathcheck and layercheck as commands, then
   `tests/patchkit/test_pk_current.py` (module and port staleness), then the selected test files, one
   process per file. Selected files are the tests that reach a changed module in the import graph
   (`changed_tests.gate_tests`), the files changed, and the `PY_SUITES` the change triggers.

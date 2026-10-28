@@ -13,7 +13,7 @@ from tools.patchkit import modroots, pk_device, port_resolve
 
 ROOT = REPO_ROOT
 TYPES = tomllib.loads(
-    (ROOT / "modules" / "core" / "machines" / "types.toml").read_text()
+    (ROOT / "modules" / "core" / "adapters" / "machines" / "types.toml").read_text()
 )
 
 

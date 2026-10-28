@@ -33,7 +33,7 @@ one captured block.
 ## 2. Audit of the machine path
 
 Every register the machine path touches, and what the code does now. "pinned": saved in the frame (DT2) or in `_dv_ctx` (DN2), set to
-the value, restored when the routine returns. Files: `modules/core/dsp-voice/src/dsp/dsp-voice.s` (DT2), `dsp-voice-dn2.s` (DN2).
+the value, restored when the routine returns. Files: `modules/core/adapters/dsp-voice/src/dsp/dsp-voice.s` (DT2), `dsp-voice-dn2.s` (DN2).
 
 | register | used by | now |
 | --- | --- | --- |
@@ -56,7 +56,7 @@ M5. Not changed and audited: `core/dsp-link`'s hook (now pins M5, M6, L2, L3 aro
 `digikit/master-drive` (M5 = 0, M6 = 1 at the converter call they replace; the stock converter itself uses the same registers there,
 finding 06 on the Q31 converter, so the site is as safe as stock) **[O]**.
 
-The ABI is written where authors read it: the headers of both wrapper sources, `modules/core/dsp-voice/README.md` and the new section
+The ABI is written where authors read it: the headers of both wrapper sources, `modules/core/adapters/dsp-voice/README.md` and the new section
 "The register contract of a DSP voice routine" in docs/MODULE-AUTHORING.md. **[C]** The older statements "M5 = 0, M6 = 1, M7 = -1,
 M13 = 0, M14 = 1, M15 = -1 hold on entry" (finding 06, sections on the routine ABI) described the emulator's and the rigs' assumption;
 the wrapper now guarantees them by setting them.
@@ -145,7 +145,7 @@ of the first voice of each block (DT2 voice 0, DN2 slot 0), before it pins anyth
 block, after the record is built) counts its own beat and copies the block, with a header, into the reply record that the ColdFire
 already receives each block. 14 words (since finding 48: 17, with a breadcrumb, a dispatch count and a return count, rows 1 to 9), two per slot row in rows 1 to 7 at record bytes `0x1c + 0x54 row + 0x44` and `+ 0x48`: entries 11
 and 12 of those rows, which no DSP code writes and the ColdFire reads only for parameters 36 to 39 (the acknowledgement uses the same
-two words of row 0, finding 31). The word layout is in `modules/core/dsp-link/README.md` and `src/dsp/dsp-link.inc`: word 0 =
+two words of row 0, finding 31). The word layout is in `modules/core/adapters/dsp-link/README.md` and `src/dsp/dsp-link.inc`: word 0 =
 `0xD1A6 | 14 << 16`, 1 = link-hook beat, 2 = voice-hook beat, 3-8 = M5, M6, M7, M13, M14, M15, 9-13 = I6, I7, B7, L7, MODE1.
 
 **ColdFire side.** `int dl_diag(u32 *out, u32 n)` in `core/dsp-link` (C ABI, also an optional extern for other modules): writes up to

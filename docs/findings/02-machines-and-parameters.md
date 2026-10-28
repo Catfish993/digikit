@@ -1013,7 +1013,7 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 
 ## core.machines: N added machine types on Digitakt II 1.17 (patchkit Phase 3)
 
-Plan: `docs/plans/patchkit.md` (Phase 3). Code: `a1cf1df^:native/patchkit/src/machines.rs` (the Rust generator, removed in a1cf1df), `modules/core/machines`,
+Plan: `docs/plans/patchkit.md` (Phase 3). Code: `a1cf1df^:native/patchkit/src/machines.rs` (the Rust generator, removed in a1cf1df), `modules/core/adapters/machines`,
 `tests/fixtures/modules/xslice`, `tests/fixtures/modules/machine-clone`, `c4d86e4e:tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
 `tools/emulator/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
 stated. A second agent verified **[V]** the static facts: the 24-site count, the list allocation sites (`pea 0x1c` and
@@ -1144,7 +1144,7 @@ the eMMC as sparse sectors) so a card with a patched firmware's project can be m
 ## core.params: parameter descriptors for added machines (patchkit) **[D]**
 
 Plan: `docs/plans/patchkit.md` (Phase 3 and 4.2 results). Code: `a1cf1df^:native/patchkit/src/params.rs` (with `a1cf1df^:native/patchkit/tests/params.rs`, 5
-integration tests on the real ports and images, 3 unit tests), `[[param]]` in `module.rs`, `modules/core/params`,
+integration tests on the real ports and images, 3 unit tests), `[[param]]` in `module.rs`, `modules/core/adapters/params`,
 `tools/patchkit/port_resolve.py` (three rule kinds), `modules/machines/pluck`, `tools/patchkit/pk_proof_pluck.py`. One agent, emulator only,
 nothing flashed, not checked by a second agent: **[D]** unless stated. A second agent verified **[V]** the static site
 counts (56 reference + 55 bound sites; the 3 `bne` and 1 `beq` compares are left alone) and the T1/T2 shapes (the T2
@@ -1438,8 +1438,8 @@ moves the slot's word; before any note no block changes). See finding 06, "DN2 v
 
 **[C]** to the code references above: `a1cf1df^:native/patchkit/src/machines.rs`, `machines/dn2.rs`, `params.rs`, their tests, and the
 manifest keys `[[machine]]`, `[[param]]`, `[[table]]`, `op = "register"` and `op = "jump"` were deleted. The frameworks are
-ordinary modules now: ColdFire assembly (`modules/core/machines/src/cf/dt2/machines.s`, `.../dn2/machines.s`,
-`modules/core/params/src/cf/dt2/params.s`), a manifest with registries (`machines`, `params`, `voices`), P1 copies of the
+ordinary modules now: ColdFire assembly (`modules/core/adapters/machines/src/cf/dt2/machines.s`, `.../dn2/machines.s`,
+`modules/core/adapters/params/src/cf/dt2/params.s`), a manifest with registries (`machines`, `params`, `voices`), P1 copies of the
 stock tables (`[[section]]` with one appended row per entry), bound and reference writes (P3, P6) and hooks (P4). The sites,
 the behaviour and the evidence above stand; what changed is who builds the tables and how a site is reached.
 
@@ -1470,9 +1470,9 @@ the behaviour and the evidence above stand; what changed is who builds the table
 ## DN2 own parameter pages: built (patchkit, lane b) **[D]**
 
 Emulator only, one agent, not checked by a second one: **[D]**. Realises "DN2 parameter pages" above as modules; the research
-there stands except where marked **[C]**. Code: `modules/core/machines` (DN2 assembly `src/cf/dn2/machines.s`, registry `pages`),
-`modules/core/params` (the Digitone II side: registry, `pf_table` section, hooks and writes for 321 rows, rules in
-`modules/core/params/module.toml`), `tests/fixtures/modules/dn2-pages` (the content proof), `tools/patchkit/pk_proof_pages_dn2.py` (quick and full),
+there stands except where marked **[C]**. Code: `modules/core/adapters/machines` (DN2 assembly `src/cf/dn2/machines.s`, registry `pages`),
+`modules/core/adapters/params` (the Digitone II side: registry, `pf_table` section, hooks and writes for 321 rows, rules in
+`modules/core/adapters/params/module.toml`), `tests/fixtures/modules/dn2-pages` (the content proof), `tools/patchkit/pk_proof_pages_dn2.py` (quick and full),
 `tests/patchkit/test_pk_machines_dn2_fw.py` (the routines on the ColdFire call harness, 5 new tests). No change in `packages/patchkit`.
 
 **What a content module writes.** Parameters as on the Digitakt (`registry = "params"`: `name`, `short`, `template` = a stock code
@@ -1557,7 +1557,7 @@ the note's end is the engine's amplitude envelope and gate, so a long DECAY is h
 all a project stores ("Persistence of machine types", point 2), so the same project loaded as a different machine, or as
 type 0, as soon as another machine module was added or removed. The old rule is replaced.
 
-**Rule.** A machine's type is its row in `modules/core/machines/types.toml`: per device, `"<module id>:<entry id>" = number`,
+**Rule.** A machine's type is its row in `modules/core/adapters/machines/types.toml`: per device, `"<module id>:<entry id>" = number`,
 and `last`, the highest number the framework supports. Numbers are committed with the module, never reused or changed; a
 removed machine keeps its number retired. patchkit (generic, no machine code): the registry key `index_table` names the file,
 `[registry.gap]` gives the field values of a filler row. It refuses an entry without a number (the message names the key to

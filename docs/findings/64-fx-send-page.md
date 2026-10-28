@@ -3,7 +3,7 @@
 A digikit effect is a master insert or a send (finding 62). The amounts of a send are set like the stock sends: the track FX key (page 12: BR, OVER, SRR, SR.RT, DEL, REV, CHR, OD.RT) gets a **second page** with one knob for each send effect, for the current track.
 The label is the effect's tab (`GAN`), and while the knob turns the title says `GAN Send=40` (0 to 127, default 0). Press FX again, or UP and DOWN, to change the page; the title shows `FX (2/2)`. The effect's own settings page stays in FUNC + FX (finding 61). No p-lock, no LFO, no MIDI CC
 on these knobs. The page exists only when at least one loaded effect is routed send. This finding records the firmware facts, the machinery, the flow at run time and the proof. Marks: **[D]** measured or read once by the author (no second agent has checked the image bytes
-yet, so nothing here is **[V]**), **[O]** open. Pieces: `modules/core/fxpages` (three hooks, a page row, two parameter rows), `modules/core/runtime/src/rs/src/fxsend.rs` (the route, the cells, the amounts), `dsp.rs` (the route and amount words of a row),
+yet, so nothing here is **[V]**), **[O]** open. Pieces: `modules/core/adapters/fxpages` (three hooks, a page row, two parameter rows), `modules/core/runtime/src/rs/src/fxsend.rs` (the route, the cells, the amounts), `dsp.rs` (the route and amount words of a row),
 `registry.rs` (`write_send_param_row`), `[fx]` and `[limits] send_slots` of `devices/digitakt-ii.toml`, the scenario `tests/digikit/scenarios/fx-route-dt2.toml` (`tools/patchkit/pk_digikit_fxroute.py`).
 
 ## Firmware facts **[D]**

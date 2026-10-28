@@ -40,6 +40,23 @@ unsafe fn file_word(first: u32, off: u32) -> Option<u32> {
     )
 }
 
+/// `dkrt_module_header(first, out)`: the header fields of the `.dkm` at store sector `first` (the version, header 0x34), read by one sector read.
+pub unsafe fn module_header(first: u32, out: *mut DkrtModuleHeader) -> i32 {
+    let r = store::read_sector(first, sect());
+    if r != OK {
+        return r;
+    }
+    let rd = |off: usize| -> u32 {
+        let p = sect().add(off);
+        ((*p as u32) << 24) | ((*p.add(1) as u32) << 16) | ((*p.add(2) as u32) << 8) | (*p.add(3) as u32)
+    };
+    if rd(0) != DKM_MAGIC {
+        return E_FORMAT;
+    }
+    (*out).version = rd(0x34);
+    OK
+}
+
 /// Whether the file at store sector `first` can be loaded by this runtime on this device, judged from its header: the `.dkm`
 /// format's SDK contracts (header 0x38..0x3f, the loader's rule: a declared contract with another major or a minor above the
 /// runtime's refuses), and the device of its register records (docs/design/digikit-dkm.md; a module without records runs on

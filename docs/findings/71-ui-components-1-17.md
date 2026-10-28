@@ -559,7 +559,7 @@ selection bar; the glyph 0x1b.
 
 ## 9. core/ui on the device (first run)
 
-Written while building `modules/core/ui` and checked in the emulator on DT2 1.17 and DN2 1.12 with `test/ui-demo`
+Written while building `modules/core/adapters/ui` and checked in the emulator on DT2 1.17 and DN2 1.12 with `test/ui-demo`
 (`tools/patchkit/pk_uidemo.py`). Marks: **[D]** seen in the emulator or read once; none is **[V]**.
 
 - **View vtable, not the Menu vtable [C].** The key and paint of a Menu view are reached from the View manager through the View

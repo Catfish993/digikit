@@ -25,7 +25,7 @@ profiling first, precise compiled-region invalidation if supported by measuremen
   `core/machines`, `core/params`, `core/dsp-voice` (DT2 and DN2 assembly side by side).
 - **Content modules**: `digikit/master-gain`, `digikit/master-drive`, `test/xslice`, `digikit/pluck` (Karplus-Strong, DT2
   and DN2, own parameters; DN2 own pages), plus test modules.
-- **Machine type numbers are permanent**: `modules/core/machines/types.toml` (DT2 7..23, DN2 5..23); unselected numbers
+- **Machine type numbers are permanent**: `modules/core/adapters/machines/types.toml` (DT2 7..23, DN2 5..23); unselected numbers
   are gap rows; `mise run patch:new -- machines/X --machine` allocates the next number. The CLI adds `requires`.
 - **Firmware**: DT2 1.16/1.17, DN2 1.11/1.12 supported (only MAIN OS and META differ between those pairs).
 - **Emulator**: runs the real bootstrap (recovery proven: [FUNC] at power-on, [TRIG 4], MIDI DIN); coupled cold boot

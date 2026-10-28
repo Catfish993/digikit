@@ -447,6 +447,7 @@ def plan(
             "no changed TYPED files",
         ),
         ("pathcheck", [*verify.PY, "-m", "tools.devtools.pathcheck"], ""),
+        ("layercheck", [*verify.PY, "-m", "tools.devtools.layercheck"], ""),
         (
             "python-tests",
             verify.python_tests_command(

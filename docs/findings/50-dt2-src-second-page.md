@@ -25,7 +25,7 @@ parameter names.
 An added machine has no sample to show (its knobs are its own parameters), so **both pages are the knob page**. `core/machines` (Digitakt II) hooks the test
 at `SourcePageView::vfunc_4 + 0x22` (`addq.l #4,SP; tst.b D0; bne.w knob_page`, 8 bytes, after `jsr FUN_4005b076`): `mf_srcpage` takes the knob-page branch also when
 `FUN_4005f6bc(view)` is `>= machines.first` (signed, so -1 without a track stays on the stock path). Types 0 to 6 fall through to the stock code
-(the frames of SAMPLE, WERP and REPITCH are still the sample view, checked). Data: three anchor rules in `modules/core/machines/module.toml`
+(the frames of SAMPLE, WERP and REPITCH are still the sample view, checked). Data: three anchor rules in `modules/core/adapters/machines/module.toml`
 (`cf.machines.srcpage` +0x22 len 8, `.alt` +0x1fe the branch target, `.type` the function `FUN_4005f6bc`; the rules are also in
 `c4d86e4e:tools/patchkit/pk_machine_rules.py`; resolved into `devices/ports/dt2-1.1{6,7}.toml`, 1.16 and 1.17 have the same addresses, each hash unique). No
 registry field and no module data: every type from `machines.first` up takes the knob page, which includes the run-time rows 16 to 23 and the gap rows.
@@ -59,8 +59,8 @@ machine has one SRC page**, unless it has enough parameters to spill onto a seco
   For any other type (0 to 6 and -1) it puts the vector back to two entries if it has exactly one, then runs the stock test (page 0 to the knob page, otherwise on at `0x40016ec4`).
   One hook covers the dots (both draw sites read the vector), the page keys (a one-entry vector does not flip) and the page index; it needs no change of shared code. A key that arrives between a track change and the next
   draw can flip the index once; the next draw resets it. The sample-view hook of the first fix (`+0x22`) is gone. Anchors: `cf.machines.srcpage` (function `cbe8bf9e...` + 0x10, len 8, `0x40016ebc`), `.alt`
-  (+0x1fe, `0x400170aa`), `.type` (`FUN_4005f6bc`), in `modules/core/machines/module.toml` and `c4d86e4e:tools/patchkit/pk_machine_rules.py`, resolved in `devices/ports/dt2-1.1{6,7}.toml`. Digitone II is untouched.
-- **Where the page count lives**: it is a constant of the routine (`SRC_PAGES = 1` in `modules/core/machines/src/cf/dt2/machines.s`), the same for the patched-in rows and the run-time rows 16 to 23; nothing is in the row.
+  (+0x1fe, `0x400170aa`), `.type` (`FUN_4005f6bc`), in `modules/core/adapters/machines/module.toml` and `c4d86e4e:tools/patchkit/pk_machine_rules.py`, resolved in `devices/ports/dt2-1.1{6,7}.toml`. Digitone II is untouched.
+- **Where the page count lives**: it is a constant of the routine (`SRC_PAGES = 1` in `modules/core/adapters/machines/src/cf/dt2/machines.s`), the same for the patched-in rows and the run-time rows 16 to 23; nothing is in the row.
   A per-machine count would be a new registry field (the row is 16 words, shared with the Digitone II by `ROWSIZE`, so a DN2 pin would move), a new byte in the `register` MACHINE record (`0x6c` bytes, finding 32) and
   in the runtime's registry code, a new `.dkm` format version: not worth it while no machine can use a second page.
 - **A second DT2 page is not possible yet** **[D]** (static): a page shows eight of the **ten** parameter slots of a machine (sound-array slots 25 to 34, `mf_slotmap`; the row's `f0..f7`), so a second knob page has no slots of its own

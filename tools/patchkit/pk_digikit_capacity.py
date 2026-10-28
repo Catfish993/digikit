@@ -435,7 +435,7 @@ def run_inferred_needs(c: Any) -> None:
 
 
 def fit_rows(names: list[str], files: list[bytes], cap: dict) -> list[str]:
-    """The module rows of SETTINGS > DIGIKIT > MODULES for a store (`module_row` of modules/core/digikit-menu): the name (without `.dkm`, upper case, at most 12
+    """The module rows of SETTINGS > DIGIKIT > MODULES for a store (`module_row` of modules/core/apps/digikit-menu): the name (without `.dkm`, upper case, at most 12
     characters), the kind (FX, MACH or TOOL, from the needs) and the memory the module takes in K, right aligned to 23 characters. CAP is the CAPACITY reply."""
     from tools.device import dkneeds as N
 
@@ -611,7 +611,7 @@ def run_fits(c: Any) -> None:
 
 def run_menu_open(c: Any) -> None:
     """Opening SETTINGS > DIGIKIT > MODULES reads the needs of each file of the store by sector reads (`dkneeds`, `read_needs` of
-    modules/core/digikit-menu), once per open. A store of `[debug] modules` (default 12) synthetic modules, a third with DSP code and records, the rest
+    modules/core/apps/digikit-menu), once per open. A store of `[debug] modules` (default 12) synthetic modules, a third with DSP code and records, the rest
     ColdFire-only, is opened; the same names with files that are not `.dkm` (the same sizes: the scan reads only their first sector) are opened as the
     baseline. Measured from the press that opens the page to the moment its last row is written (`DK_LOAD_N`): emulated milliseconds and busy ColdFire
     instructions, and the extra the needs cost, and the sector reads the needs reader made (`DK_NEEDS_READS`; the emulated card answers at once, so

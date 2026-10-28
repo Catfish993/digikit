@@ -122,7 +122,9 @@ class Geometry:
 
 def dyn_range(dev: str) -> tuple[int, int]:
     """`dynamic_first ..= last` of the device in core/machines types.toml: the run-time machine type numbers."""
-    t = tomllib.loads((ROOT / "modules/core/machines/types.toml").read_text())[dev]
+    t = tomllib.loads((ROOT / "modules/core/adapters/machines/types.toml").read_text())[
+        dev
+    ]
     return t["dynamic_first"], t["last"]
 
 

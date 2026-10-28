@@ -213,9 +213,9 @@ def _type_number(mid: str, man: dict, device: str, literal: str | None) -> int:
         and str(literal)[0].isdigit()
     ):
         return int(literal, 0)
-    types = tomllib.loads((ROOT / "modules/core/machines/types.toml").read_text())[
-        device
-    ]
+    types = tomllib.loads(
+        (ROOT / "modules/core/adapters/machines/types.toml").read_text()
+    )[device]
     recs = desc_records(mid) if man.get("module", {}).get("type") == "machine" else {}
     mach = (recs.get("machines") or [{}])[0].get("id") or (recs.get("voices") or [{}])[
         0

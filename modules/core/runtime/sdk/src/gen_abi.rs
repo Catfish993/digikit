@@ -412,6 +412,15 @@ const _: () = assert!(offset_of!(DkrtDiag, crash_vec) == 60, "DkrtDiag.crash_vec
 const _: () = assert!(offset_of!(DkrtDiag, ram_kept) == 64, "DkrtDiag.ram_kept");
 const _: () = assert!(offset_of!(DkrtDiag, dsp_crumb) == 68, "DkrtDiag.dsp_crumb");
 
+/// dkrt_module_header result: what the DIGIKIT menu shows of a .dkm header. The layout only grows at the end.
+#[repr(C)]
+pub struct DkrtModuleHeader {
+    /// the module's version, major << 16 | minor << 8 | patch
+    pub version: u32,
+}
+const _: () = assert!(size_of::<DkrtModuleHeader>() == 4, "DkrtModuleHeader size");
+const _: () = assert!(offset_of!(DkrtModuleHeader, version) == 0, "DkrtModuleHeader.version");
+
 /// One .dkm file of the store as dkrt_scan found it: where it is, what its header says and the needs inferred from its contents (dkneeds). The need_* fields are valid when SCAN_NEEDS is set.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -531,8 +540,8 @@ pub mod sig {
     /// The files of the module store whose path starts with prefix (NUL-terminated), sorted by path, at most max into out: the count, or a negative code (E_NOT_FOUND: no store).
     pub type dkrt_store_list = unsafe extern "C" fn(prefix: *const u8, out: *mut DkrtStoreEntry, max: u32) -> i32;
 
-    /// One sector of the store (relative to its start) into out (512 bytes, 16-byte aligned); OK or a negative code.
-    pub type dkrt_store_read_sector = unsafe extern "C" fn(rel: u32, out: *mut u8) -> i32;
+    /// The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself.
+    pub type dkrt_module_header = unsafe extern "C" fn(first: u32, out: *mut DkrtModuleHeader) -> i32;
 
     /// The REMOTE switch (the commands of the remote range are answered only while it is on; not saved): 1 on, 0 off, -1 when the image has no input adapter (core/input) and so no remote control.
     pub type dkrt_remote_get = unsafe extern "C" fn() -> i32;

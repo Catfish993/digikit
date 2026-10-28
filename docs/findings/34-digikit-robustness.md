@@ -66,7 +66,7 @@ Not built: the margin does not ask for it.
 
 ## 2. Menu: popup, texts, UNLOAD, loading state, greyed rows **[D]**
 
-All in `modules/core/digikit-menu`; proof `uv run python -m tools.coldfire.digikit_menu_proof run --image IMAGE [--quick]` on all four
+All in `modules/core/apps/digikit-menu`; proof `uv run python -m tools.coldfire.digikit_menu_proof run --image IMAGE [--quick]` on all four
 images: 4 scripts each, frames pinned in `tests/golden/digikit_menu_frames.json`, module state read back, write-watch over all of
 `cf.expansion` (except the staging buffer): 0 events; flush check 0 hits. The stock SETTINGS and project scripts of finding 25
 (`--regress`) give the same frames and card writes on the patched and the stock image: DT2 1.16 (10 scripts) and DN2 1.11 (9) re-run

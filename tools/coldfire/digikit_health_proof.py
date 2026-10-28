@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emulator proof of SETTINGS > DIGIKIT > HEALTH (modules/core/health, finding 41-digikit-health.md).
+"""Emulator proof of SETTINGS > DIGIKIT > HEALTH (modules/core/adapters/health, finding 41-digikit-health.md).
 
     uv run python -m tools.coldfire.digikit_health_proof run [--image dt2-1.16] [--quick] [--no-cost]
 
@@ -553,7 +553,7 @@ class HealthProof:
             poll != 0 and r0 >= 1,
             f"poll {poll:#x} redraws {r0}",
         )
-        # DK_HEALTH_MENU is the core/ui menu object (dk_ui_menu, modules/core/ui/src/ui.c): the firmware's view is the pointer at +4
+        # DK_HEALTH_MENU is the core/ui menu object (dk_ui_menu, modules/core/adapters/ui/src/ui.c): the firmware's view is the pointer at +4
         view = self.w(self.w(self.sym("DK_HEALTH_MENU")) + 4)
         dirty_off, parent_off = 0x38 + 0x14, 0x38 + 0x2C
         p0, i0 = self.w(self.sym("DK_POLLS")), self.icount()

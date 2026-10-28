@@ -1,7 +1,7 @@
 # 32. A machine with its own DSP code, loaded at run time (digikit runtime, Phase 5, DSP side)
 
 Plan: `docs/plans/digikit-runtime.md` (Phase 5). Design: `docs/design/digikit-dkm.md` ("DSP section"), `docs/design/digikit-runtime.md` ("DSP code of a
-module"). Code: `modules/core/runtime/src/rs/src/dsp.rs`, `loader.rs`; `modules/core/dsp-link` (windows); `modules/core/dyndsp` (new);
+module"). Code: `modules/core/runtime/src/rs/src/dsp.rs`, `loader.rs`; `modules/core/adapters/dsp-link` (windows); `modules/core/adapters/dyndsp` (new);
 `packages/patchkit/src/dkmdsp.rs`; `tests/fixtures/modules/dyn-pluck`, `tests/fixtures/modules/dyn-sine-dn2`; proof `tools/patchkit/pk_dkrt_machine.py`.
 Lane r4, 2026-10-17, one agent, native emulator. Everything is **[D]** (measured here once; no second agent has checked it against the image
 bytes). Nothing ran on a device.

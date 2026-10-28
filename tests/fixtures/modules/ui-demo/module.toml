@@ -15,19 +15,9 @@ ports = ["dt2-1.17", "dn2-1.12"]
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# Hooks the SETTINGS rebuild like core/digikit-menu (it conflicts: one DIGIKIT row). The row opens the demo menu.
+# Adds the DIGIKIT row through core/ui's SETTINGS hook (dk_app_settings_rows), like core/digikit-menu (it conflicts: one DIGIKIT row).
+# The row opens the demo menu.
 [[object]]
 path = "build/ui-demo.dko.json"
-sources = ["src/ui_demo.c", "src/shim.s"]
+sources = ["src/ui_demo.c"]
 place = "cf.expansion"
-
-[object.externs]
-_dk_tail = "hook.cf.menu.site.settings_list.tail.tail"
-
-[[op]]
-op = "hook"
-hook = "cf.menu.hook.settings_list.tail"
-to = "dk_hook"
-
-[[claim]]
-resource = "cf.menu.site.settings_list.tail"

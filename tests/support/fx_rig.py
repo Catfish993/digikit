@@ -4,7 +4,7 @@
     b = rig.block(master)                                # master: 64 floats (32 left, 32 right) before the hook
     b.master                                             # the 64 floats after the hook; b.instructions, b.returned, b.ctx_bad, b.regs_bad
 
-The adapter (modules/core/fx/src/dsp/fx.s) and the effect sources are assembled and linked the way the patch does: the table at TABLE, the master
+The adapter (modules/core/adapters/fx/src/dsp/fx.s) and the effect sources are assembled and linked the way the patch does: the table at TABLE, the master
 block at MASTER, the hook's tail (the stock function's second instruction) at STOCK_BP. Data symbols (`.PKDATA`, `.PKBSS`, `.VAR`) go to free L2;
 `.PKBSS` memory (the effects' states) starts poisoned, so an effect that reads a state the adapter did not zero shows. Every call draws a hostile
 context (M5 ... MODE1) and fills the registers the stock function expects back with markers; both must come back unchanged.
@@ -21,10 +21,12 @@ import support.dsp_voice_rig as dv
 from tools.patchkit import pk_build, pk_sharc
 
 ROOT = dv.ROOT
-ADAPTER = ROOT / "modules/core/fx/src/dsp/fx.s"
-SEND = ROOT / "modules/core/fx/src/dsp/fxsend.s"  # the send route's hook (Digitakt II)
+ADAPTER = ROOT / "modules/core/adapters/fx/src/dsp/fx.s"
+SEND = (
+    ROOT / "modules/core/adapters/fx/src/dsp/fxsend.s"
+)  # the send route's hook (Digitakt II)
 SEND_DN2 = (
-    ROOT / "modules/core/fx/src/dsp/fxsend-dn2.s"
+    ROOT / "modules/core/adapters/fx/src/dsp/fxsend-dn2.s"
 )  # the same with the slot mix (Digitone II)
 EFFECTS = ROOT / "tests/support/fx_effects.s"
 CODE_BASE = 0xB90000

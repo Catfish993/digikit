@@ -14,7 +14,8 @@
     "Cargo.lock",
     "pnpm-lock.yaml",
     "tests/devtools/test_test_outcomes.py",
-    "tests/devtools/test_pathcheck.py"
+    "tests/devtools/test_pathcheck.py",
+    "tests/devtools/test_layercheck.py"
   ],
   "generated": [
     "out/",

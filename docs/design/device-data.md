@@ -14,7 +14,7 @@ assumes exactly two devices. Syntakt is not added here.
 | Device id and name digikit uses (runtime, `core/dynreg`, `core/dyndsp`, `.dkm`, the INFO reply) | `[digikit] id`, `name` (at most 3 characters) | patchkit `register.rs`, `dkmdsp.rs`; the device objects | `devdata.rs` (embedded); `DEVICE_ID`, `DEVICE_NAME_WORD` in `build/gen/device-<dev>.inc` |
 | Module store: first sector, length, header B, selection record copies | `[card.store]` | runtime (`dkrt_sdk::store`, `sel`), tools | `modules/core/runtime/sdk/src/device.rs` (`STORE_*`); Python: `tools/patchkit/pk_device.py` |
 | Working-project sector (firmware area above the store) | `[[card.regions]]` role `working-project` | `pk_digikit_scen.py` | `pk_device.working_project_sector()` |
-| Run-time machine type range (`dynamic_first ..= last`) and with it the number of reserved machine rows and voice rows | `modules/core/machines/types.toml` | runtime `dsp.rs`, `core/dynreg`, `core/dyndsp` | `DYN_TYPE_FIRST`, `DYN_TYPE_LAST`, `DYN_TYPES` in the generated files |
+| Run-time machine type range (`dynamic_first ..= last`) and with it the number of reserved machine rows and voice rows | `modules/core/adapters/machines/types.toml` | runtime `dsp.rs`, `core/dynreg`, `core/dyndsp` | `DYN_TYPE_FIRST`, `DYN_TYPE_LAST`, `DYN_TYPES` in the generated files |
 | DSP area size (window 0) and frame tail geometry | `[digikit] dsp_area_bytes`, `dsp_tail_off`, `dsp_tail_words` | `core/dsp-link` DSP object, `core/dyndsp` table | `DL_AREA_BYTES`, `DL_AREA_WORDS`, `DL_TAIL_*` in `build/gen/device-<dev>.inc` (SHARC `#define`s and gas `.equ`s) |
 | Console UART, DDR window and uncached alias, eSDHC controller | `[board]` | `tramp.s` (soft reset), `boot.rs` (`key_held`), `lib.rs` (`card_busy`) | `CONSOLE_UART_BASE`, `DDR_*`, `ESDHC_BASE` in `device.rs` / `build/gen/device.inc` |
 | Safe-mode key (a panel control code) | `[digikit] safe_key` | runtime boot | `SAFE_KEY_CODE` |
@@ -56,7 +56,7 @@ shared file until it is done.
 2. The container seal key of the device in `SEALS` (`packages/patchkit/src/syx.rs`). It is key material of the firmware format, not
    device-profile data, and the device files are published as they are, so it stays in code; a device without an entry is
    refused with a message that says so.
-3. `modules/core/machines/types.toml`: a `[<dev>]` table (`last`, `dynamic_first`, `alloc`, `dynamic`).
+3. `modules/core/adapters/machines/types.toml`: a `[<dev>]` table (`last`, `dynamic_first`, `alloc`, `dynamic`).
 4. Modules that have per-device sources add an `[[object]]` with `devices = ["<dev>"]` and a small source for the device (the
    device objects of `core/runtime`, `core/dynreg`, `core/dyndsp`, `core/dsp-link` include the generated `device-<dev>.inc`).
    `core/dynreg` and `core/dyndsp` need `DYN_TYPES` rows each (`tests/patchkit/test_pk_device.py` checks it).

@@ -108,7 +108,7 @@ It does not read the image, the tables' entries, the records' bodies or the DSP 
 
 Names that are capacity kinds (`[capacity.kinds]` of `sdk/sdk.toml`) are in the unit of that kind's CAPACITY entry, so "fits" is need <= limit - used, with the largest free block for the arena and the DSP area.
 
-Who calls it: the DIGIKIT menu (`modules/core/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
+Who calls it: the DIGIKIT menu (`modules/core/apps/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
 `patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`, `pk_capacity`). The arithmetic exists once.
 
 The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit`, `dkfit.ts`, `dkfit.py`, vectors in `sdk/vectors/fit-vectors.json`; the compare is written three times, the needs once): the staging buffer holds the file, a module record and a selection path are free,

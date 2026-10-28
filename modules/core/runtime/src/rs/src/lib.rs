@@ -553,7 +553,7 @@ extern "C" {
     fn health_heap();
 }
 
-/// What core/health fills (`HealthRaw` of modules/core/health/src/cf/health.c): 20 words.
+/// What core/health fills (`HealthRaw` of modules/core/adapters/health/src/cf/health.c): 20 words.
 #[repr(C)]
 struct HealthRaw {
     magic: u32,
@@ -644,11 +644,12 @@ pub unsafe extern "C" fn dkrt_store_list(prefix: *const u8, out: *mut DkrtStoreE
     store::list(prefix, out, max)
 }
 
-/// One sector of the store (`rel` sectors from its start) into `out` (512 bytes, 16-byte aligned): 0 or a negative code.
+/// The header fields of the `.dkm` at store sector `first` (`DkrtScan.first`) into `out`, for the INFO page of the DIGIKIT menu: 0, `E_FORMAT` when
+/// the file is not a `.dkm`, or the read error. The runtime reads the sector into its own DMA-safe buffer. Task context.
 #[no_mangle]
-pub unsafe extern "C" fn dkrt_store_read_sector(rel: u32, out: *mut u8) -> i32 {
+pub unsafe extern "C" fn dkrt_module_header(first: u32, out: *mut DkrtModuleHeader) -> i32 {
     init_once();
-    store::read_sector(rel, out)
+    scan::module_header(first, out)
 }
 
 /// `dkrt_health` without the store figures (which can read the card) and, when `walk_heap` is false, without the heap walk: what the log's

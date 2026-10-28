@@ -58,7 +58,8 @@ def test_sound_types_joins_adjacent_sectors():
 
 def test_framework_rules_are_declared_once_per_site():
     with open(
-        os.path.join(ROOT, "modules", "core", "machines", "module.toml"), "rb"
+        os.path.join(ROOT, "modules", "core", "adapters", "machines", "module.toml"),
+        "rb",
     ) as f:
         m = tomllib.load(f)
     # the rules are declared in devices/fw/; a site may have one rule per device (the Digitone II rules reuse the names)

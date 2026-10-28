@@ -22,7 +22,7 @@ packages/
   dksample/         WAV, native sample format and hashing
   dkneeds/          Module resource requirements
 modules/
-  core/             Shared module runtime and framework
+  core/             Layers: runtime/, expansion/, adapters/, apps/, fw/ (docs/ARCHITECTURE.md)
   machines/         Instrument modules
   fx/               Effect modules
   tools/            Device utility modules
@@ -71,7 +71,7 @@ The gate manages one CPU budget. Do not start another gate or Cargo build while 
 
 ## Development and analysis
 
-Iterate with `dk:dev` ([testing](docs/TESTING.md) "Fast iteration"), not with harness runs or fresh boots; run the harness once for the proof. Prefer existing tooling and shared helpers over custom runners or wrappers. Use fast unit tests for logic and integration tests for real boundaries. New host/device scenarios use TypeScript/Vitest; analysis, decompilation and devtools use Python. Avoid unrelated refactors.
+Iterate with `dk:dev` ([testing](docs/TESTING.md) "Fast iteration"), not with harness runs or fresh boots; run the harness once for the proof. Respect the layers in docs/ARCHITECTURE.md; `mise run check:layers`. Prefer existing tooling and shared helpers over custom runners or wrappers. Use fast unit tests for logic and integration tests for real boundaries. New host/device scenarios use TypeScript/Vitest; analysis, decompilation and devtools use Python. Avoid unrelated refactors.
 
 Run Python tools from the repository root as `uv run python -m tools.<owner>.<module>`. Import through `tools`; never modify `sys.path`. Child tools use `[sys.executable, "-m", ...]` with `env=tools.python_env()`. Find tasks with `mise tasks` and options with `mise run TASK -- --help`.
 

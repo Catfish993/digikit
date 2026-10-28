@@ -73,6 +73,7 @@ Numbers can be written as TOML integers or as strings holding an *expression* (s
 | `version` | module version, `major.minor.patch` |
 | `name` | display name in the gallery |
 | `category` | `core`, `fx`, `machines`, `ui`, `tools` or `test` |
+| `role` | layer of a `core` module, required for them: `runtime` (`core/runtime`), `installer` (`core/expansion`), `adapter` (`core/adapters/*`) or `app` (`core/apps/*`). It must fit the folder; `tools/devtools/layercheck.py` checks it ([docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)) |
 | `type` | `machine`, `fx`, `service`, `raw` or `framework` (`framework` is internal, for core modules) |
 | `author` | who wrote the module (`digikit` for the modules of this repository) |
 | `status` | `experimental` or `stable` |
@@ -80,7 +81,7 @@ Numbers can be written as TOML integers or as strings holding an *expression* (s
 | `requires` | module ids that must be selected too (frameworks) |
 | `conflicts` | module ids that must not be selected |
 | `ports` | optional: only these ports, for example `["dt2-1.17"]` (empty: any firmware whose anchors resolve) |
-| `dynamic` | optional, default false: a run-time module (a content module, see [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md)). It is never patched into an image (patchkit refuses it). `patchkit pack` makes a `.dkm` from it. Its machines have no number in `core/machines/types.toml`: the runtime assigns a type in 16 to 23 when it loads the module (docs/design/digikit-registry.md "Machine keys") |
+| `dynamic` | optional, default false: a run-time module (a content module, see [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md)). It is never patched into an image (patchkit refuses it). `patchkit pack` makes a `.dkm` from it. Its machines have no number in `modules/core/adapters/machines/types.toml`: the runtime assigns a type in 16 to 23 when it loads the module (docs/design/digikit-registry.md "Machine keys") |
 
 ```toml
 [module]
@@ -333,7 +334,7 @@ The typed sections (`[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]`) were lo
   (`[param.dt2]`, `[param.dn2]`).
 - `knobs` in a shared `[[machine]]` holds parameter names only. A per-device table may give an explicit layout with stock codes and `0`.
 - Parameter codes follow the order of the `[[param]]` sections (`params.<id>.index`). Type numbers stay permanent
-  (`core/machines/types.toml`); the lowering needs none.
+  (`modules/core/adapters/machines/types.toml`); the lowering needs none.
 - Lowered rows, per device: `voices` (`type = machines.<id>.index`, `pc = render`), `machines`, `params`, `pages`.
   On a device whose knobs go to the machine row (`to = "machine"`: Digitakt II) the machine row gets `f0..f7` and the
   level `f8`. On a device whose knobs go to a page (`to = "page"`: Digitone II) the `[[page]]` gets `c0..c7`, the slots
@@ -496,7 +497,7 @@ of its own: three frameworks do the firmware work, and the module only declares 
   stock row to copy the formatter and value class from (the profile's `plain` row), `slot` (the engine slot the value travels in), `min`, `max`
   and `default`.
 - **No numbers of the firmware's types.** The machine's type number is permanent: its row in
-  `modules/core/machines/types.toml`, added by hand. The
+  `modules/core/adapters/machines/types.toml`, added by hand. The
   parameter indices are assigned in canonical module order. The voice row and the machine row both name `machines.pluck.index`, so they always agree.
 - **Tests.** `tests/select.toml` opens the machine list, selects PLUCK, checks the committed type, the SRC page frame,
   that a trig sounds, that the DSP knows the type and that turning a knob changes the page. `tests/smoke.toml` checks
@@ -505,7 +506,7 @@ of its own: three frameworks do the firmware work, and the module only declares 
 
 ### An effect: `[[entry]] registry = "fx"`
 
-An effect module requires `core/fx` (the effects adapter, `modules/core/fx/`) and adds one row to its registry `fx`; the chain runs in module order, at most
+An effect module requires `core/fx` (the effects adapter, `modules/core/adapters/fx/`) and adds one row to its registry `fx`; the chain runs in module order, at most
 `DK_FX_MAX` (4) effects. The routine, its `dk_fx_desc` and its state block are symbols of the module's DSP object (`<dk/fx.h>`,
 [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), section 7.2):
 
@@ -526,8 +527,8 @@ reserves, and `core/fxpages` reserves the pages. Its manifest, pages and routes 
 sections 5.4 and 7.2. The format is `docs/design/digikit-dkm.md`; the design of the pages is "Effect pages" in `docs/design/digikit-registry.md`.
 Example and fixture: `tests/fixtures/modules/dyn-fx-gain`.
 
-The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
-tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and
-`modules/core/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,
+The frameworks themselves are ordinary modules: `modules/core/adapters/machines/` (about 24 ColdFire anchors, six copied
+tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/adapters/params/` and
+`modules/core/adapters/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,
 `tests/patchkit/test_pk_machines_fw.py`, `tests/patchkit/test_pk_params_fw.py`), and the proofs are `tools/patchkit/pk_proof_machines.py` and
 `tools/patchkit/pk_proof_pluck.py`. Contract and evidence: [finding 02](../docs/findings/02-machines-and-parameters.md).

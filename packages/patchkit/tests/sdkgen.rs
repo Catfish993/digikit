@@ -20,11 +20,11 @@ fn the_fx_chain_cap_is_the_registrys() {
         .unwrap()
         .value;
     let man =
-        std::fs::read_to_string(root().join("modules/core/fx/module.toml")).unwrap_or_default();
+        std::fs::read_to_string(root().join("modules/core/adapters/fx/module.toml")).unwrap_or_default();
     if !man.is_empty() {
         assert!(
             man.contains(&format!("max = {max}")),
-            "modules/core/fx/module.toml: the fx registry has max = {max}"
+            "modules/core/adapters/fx/module.toml: the fx registry has max = {max}"
         );
     }
 }

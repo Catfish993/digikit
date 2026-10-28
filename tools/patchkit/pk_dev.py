@@ -6,7 +6,7 @@
 One daemon stays up on the stock firmware's ready inputs (DT2 with a one-sample card). Each time a file under a
 module's `src/` or its `module.toml` changes, the loop runs: `pk_build` (src -> .dko), `patchkit patch` (from the stock
 image), `firmware.load` into the daemon (a DSP-only change is injected hot in about 0.1 s; a MAIN change cold-boots the
-ColdFire with DSP audio, cached by MAIN hash), then the quick tests of the modules (`modules/*/*/tests/*.toml`, the
+ColdFire with DSP audio, cached by MAIN hash), then the quick tests of the modules (`modules/**/tests/*.toml`, the
 `[test] quick = true` ones) from the ready state. One summary line per iteration:
 
     12:01:09 OK   build 1.9 s  patch 1.1 s  load 0.2 s (hot-dsp)  tests 2/2 6.8 s   edit->running 3.3 s  edit->tested 10.1 s

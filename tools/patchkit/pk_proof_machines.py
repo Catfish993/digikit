@@ -58,7 +58,9 @@ SLICE_DOWNS = (
     4  # presses of DOWN from the top of the machine list to SLICE, XSLICE, XClone
 )
 XCLONE_DOWNS = 8  # the list position of XClone
-XCLONE_TYPE = 8  # "test/machine-clone:xclone" in modules/core/machines/types.toml
+XCLONE_TYPE = (
+    8  # "test/machine-clone:xclone" in modules/core/adapters/machines/types.toml
+)
 FW = "1.17"  # --fw
 MODS_ONE = ["core/machines", "test/machine-clone"]
 

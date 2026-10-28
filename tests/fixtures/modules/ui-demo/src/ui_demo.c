@@ -141,8 +141,8 @@ static void open_main(void *ctx, int arg)
         dk_ui_open(g_main);
 }
 
-/* Called from the hook at the end of the SETTINGS rebuild (shim.s). */
-void dk_add_item(uint8_t *settings_menu)
+/* Called from the hook at the end of the SETTINGS rebuild (core/ui). */
+void dk_app_settings_rows(uint8_t *settings_menu)
 {
     dk_ui_stock_row(settings_menu, "DIGIKIT", open_main, 0);
 }

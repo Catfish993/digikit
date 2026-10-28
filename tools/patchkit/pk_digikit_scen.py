@@ -1156,7 +1156,7 @@ def run_transfer(
 
 
 def memory_rows(cap: dict[str, dict[str, int]]) -> list[str]:
-    """The rows the MEMORY page shows for a CAPACITY reply (modules/core/digikit-menu `fill_mem`): label, ten-character bar, percent or used/limit."""
+    """The rows the MEMORY page shows for a CAPACITY reply (modules/core/apps/digikit-menu `fill_mem`): label, ten-character bar, percent or used/limit."""
     out = []
     for kind, label, pct in (
         ("DSP_AREA", "DSP   ", True),
