@@ -36,10 +36,13 @@ parameters and machine types. `core/params` and `core/machines` raise the same o
 - The start-up: dnfw's platform loader and `core/expansion` both take `cf.reset.init_calls` (`0x4000053e`).
 
 So the two cannot share an image by keeping apart: the sites are the same because the job is the same. One framework must own
-them, and the other must add its machines and parameters through it. **[O]** Which way, and how, is open. Two shapes:
+them, and the other must add its machines and parameters through it.
 
-1. dnfw's mods register through `core/machines` and `core/params` (a static module or a provider interface).
-2. patchkit takes dnfw's bus as the owner of those sites, and `core/machines` registers through it.
+**Decision (2026-10-28, the dnfw owner and Em):** `core/machines` and `core/params` own these sites. dnfw's mods move to digikit
+modules and add their machines and parameters through them. A machine that does not use the SDK goes in as a `raw` module
+(`docs/design/module-sdk.md` D2: no contract, only the generic load checks). Em's proposal on top: make the module's type and its
+category two fields, so a module can be a raw machine, a machine that bypasses the SDK. **[O]** That split is not designed yet.
+Until the port, dnfw keeps its own framework, so the two still do not go in one image.
 
 ## RAM
 
@@ -54,5 +57,5 @@ stream as one range today, so the tool cannot tell whether the ranges meet. Wave
 
 ## Open
 
-- **[O]** The ownership of the shared sites (above).
+- **[O]** The type and category split for raw machines (above).
 - **[O]** The same comparison on DN2 1.12, and with `core/fx` and `core/fxpages`.
