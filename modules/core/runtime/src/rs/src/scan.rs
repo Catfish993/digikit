@@ -11,10 +11,9 @@ use dkrt_sdk::*;
 /// The files under `modules/` as the store listed them, before the `.dkm` ones are picked.
 static mut LIST: [DkrtStoreEntry; SCAN_MAX] = unsafe { core::mem::zeroed() };
 
-/// 512 bytes, 16-byte aligned: the block reader's buffer for the header words and the needs.
-#[repr(C, align(16))]
-struct Sect([u8; 512]);
-static mut SECT: Sect = Sect([0; 512]);
+/// 512 bytes, 16-byte aligned, in the firmware heap: the block reader's buffer for the header words and the needs. The card DMA fills it,
+/// and module RAM stays free of writes by the firmware (the write watch of the memory audit counts DMA too). Allocated once, on the first read.
+static mut SECT: *mut u8 = core::ptr::null_mut();
 
 /// The sector reads the last scan made to read the needs.
 static mut READS: u32 = 0;
@@ -23,7 +22,10 @@ const DKM_MAGIC: u32 = 0x444b_4d46; // "DKMF"
 const REG_MAGIC: u32 = 0x444b_5247; // "DKRG"
 
 unsafe fn sect() -> *mut u8 {
-    addr_of_mut!(SECT) as *mut u8
+    if (*addr_of!(SECT)).is_null() {
+        *addr_of_mut!(SECT) = dkfw::mem::new(512);
+    }
+    *addr_of!(SECT)
 }
 
 /// A header word at byte `off` of the file starting at store sector `first`, read through the block reader; None on an error.

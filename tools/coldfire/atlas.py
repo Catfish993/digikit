@@ -48,7 +48,7 @@ import sqlite3
 import sys
 import time
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -1251,12 +1251,10 @@ def catalog_rows(
                 "group": -1,
             }
         )
-    ids = louvain_groups(
-        [r["addr"] for r in rows],
-        group_edges([r["addr"] for r in rows], d.callee_n),
-    )
-    for r in rows:
-        r["group"] = ids.get(r["addr"], -1)
+    addrs = [cast(int, r["addr"]) for r in rows]
+    ids = louvain_groups(addrs, group_edges(addrs, d.callee_n))
+    for r, a in zip(rows, addrs, strict=True):
+        r["group"] = ids.get(a, -1)
     return rows
 
 
@@ -1338,8 +1336,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "catalog":
         return catalog(args.image, args.other, args.out_dir)
     for image in args.images:
-        c = build(image, args.out_dir)
-        print("%s: %s" % (image, ", ".join("%s=%s" % kv for kv in c.items())))
+        counts = build(image, args.out_dir)
+        print("%s: %s" % (image, ", ".join("%s=%s" % kv for kv in counts.items())))
     return 0
 
 

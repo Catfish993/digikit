@@ -23,7 +23,7 @@ import re
 import sys
 import tomllib
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from tools.coldfire import fw
 from tools.firmware import catalog as shared
@@ -477,11 +477,10 @@ def dsp_rows(
                 "hints": ";".join(dsp_hints(d, f, label)),
             }
         )
-    ids = louvain_groups(
-        [r["addr"] for r in rows], group_edges([r["addr"] for r in rows], d.callee_n)
-    )
-    for r in rows:
-        r["group"] = ids.get(r["addr"], -1)
+    addrs = [cast(int, r["addr"]) for r in rows]
+    ids = louvain_groups(addrs, group_edges(addrs, d.callee_n))
+    for r, a in zip(rows, addrs, strict=True):
+        r["group"] = ids.get(a, -1)
     return rows
 
 

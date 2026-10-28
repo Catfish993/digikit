@@ -138,9 +138,9 @@ def build_payload(
     keep_groups, small = select_groups(groups, labelled_groups, min_group)
     members: dict[int, list[Row]] = {int(g["id"]): [] for g in keep_groups}
     for r in rows:
-        g = int(r["group"])
-        if g in members:
-            members[g].append(r)
+        gi = int(r["group"])
+        if gi in members:
+            members[gi].append(r)
     picked = pick_rows(members, row_labels, per_group)
     picked = [
         r
