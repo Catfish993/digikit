@@ -25,7 +25,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   preflight OUT.syx                      before flashing: known stock base, sections 2/4/5/8 identical, checksum, HMAC, limits;
                                          exit 1 on any failure (stock files are looked up in firmware/ by sha256)
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
-  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm
+  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm;
+                                         builds the objects that are stale first (content modules: cache out/cache/dko)
                                          (a `dynamic = true` module: its machine and param records for --device)
   desc    MODULE_ID                      the effects the module declares (the DK_FX records of its ColdFire object), as JSON
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
@@ -39,15 +40,17 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          the store header and files, the selection record, the settings record (both copies, the one in use,
                                          every entry decoded); `store dump --record FILE` reads one settings record file (docs/design/digikit-store.md)
   build   [MODULE...] [--check] [--force] [--define NAME]... [--out DIR] [--status] [--tree DIR]
-                                         module sources -> build/*.dko.json (ColdFire C, asm and Rust in this process; SHARC+ through
+                                         module sources -> objects: build/*.dko.json for a core/* module (committed), else the cache
+                                         out/cache/dko/<module id>/<path> (ColdFire C, asm and Rust in this process; SHARC+ through
                                          tools/patchkit/pk_sharc.py). MODULE is a directory or a module id; none: every module.
-                                         An object whose committed source_sha256 equals the hash of its sources is not compiled
+                                         An object whose stored source_sha256 equals the hash of its sources is not compiled
                                          (--force compiles it). --check writes nothing and fails on a stale object.
-                                         --define NAME[=V] selects an #ifdef of the DSP sources (needs --out; the committed objects
+                                         --define NAME[=V] selects an #ifdef of the DSP sources (needs --out; the stored objects
                                          stay). --status prints {module: \"unchanged\"|\"needs build\"} as JSON and builds nothing.
                                          --tree DIR: every module under DIR only.
   dko show FILE.dko.json [--relocs]      arch, toolchain record, sections, symbols and relocations of an object
   dko isa-digest FILE.dko.json           the ISA check record the object's bytes need (toolchain.isa_check)
+  dko isa-check FILE...                  ColdFire V4e ISA check of .dko.json (cf), ELF objects and ar archives
   cf-link SRC... --base HEX [--sym NAME=HEX]... [-I DIR]... [--bin OUT] [--json OUT]
                                          compile, link at BASE against the symbols, ISA-check (unit tests of C routines)
   list                                   modules under modules/ and ports under devices/ports/
@@ -89,14 +92,21 @@ fn registry(root: &Path) -> Result<Registry> {
 }
 
 /// `modules/` and `tests/fixtures/modules/` of the repository, then the extra roots of `--modules-dir DIR` and the PATCHKIT_MODULES
-/// environment variable (a path list), in that order. Generated modules (derived from a firmware) live there.
+/// environment variable (a path list), in that order. Generated modules (derived from a firmware) live there. Content modules get their
+/// objects from the cache `out/cache/dko`; a stale object is built.
 fn library(root: &Path, rest: &[String]) -> Result<Library> {
-    library_with(root, rest, false)
+    library_with(root, rest, false, None)
 }
 
-/// `library`; with `lenient`, a module whose object files are missing still loads (for `gen`).
-fn library_with(root: &Path, rest: &[String], lenient: bool) -> Result<Library> {
-    let mut lib = Library::scan_repo_with(root, lenient)?;
+/// `library`; with `lenient`, a module whose object files are missing still loads (for `gen`); with `only`, the objects of these
+/// content modules only are loaded or built (`pack`: the others load without objects).
+fn library_with(
+    root: &Path,
+    rest: &[String],
+    lenient: bool,
+    only: Option<&[String]>,
+) -> Result<Library> {
+    let mut lib = Library::scan_repo_for(root, lenient, only)?;
     let mut extra: Vec<PathBuf> = flag(rest, "--modules-dir")
         .into_iter()
         .map(PathBuf::from)
@@ -104,9 +114,10 @@ fn library_with(root: &Path, rest: &[String], lenient: bool) -> Result<Library> 
     if let Some(v) = std::env::var_os("PATCHKIT_MODULES") {
         extra.extend(std::env::split_paths(&v));
     }
+    let build = patchkit::module::Build { root, only };
     for d in extra {
         if d.is_dir() {
-            lib.extend_unique(Library::scan_with(&d, lenient)?.modules)?;
+            lib.extend_unique(Library::scan_in(Some(build), &d, lenient)?.modules)?;
         }
     }
     lib.lower(&patchkit::typed::Models::from_dir(&root.join("devices"))?)?;
@@ -274,7 +285,8 @@ fn run(a: Args) -> Result<()> {
             }
         }
         "gen" => {
-            let lib = library_with(&a.root, rest, true)?;
+            // the generated files are inputs of the build: nothing is built here
+            let lib = library_with(&a.root, rest, true, Some(&[]))?;
             let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
             let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
             let only: Vec<String> = flag(rest, "--modules")
@@ -481,7 +493,8 @@ plan.json {}",
         "pack" => {
             let id = need(rest)?;
             let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
-            let lib = library(&a.root, rest)?;
+            // builds what is stale (the objects of this module only) and packs the objects as they are in memory
+            let lib = library_with(&a.root, rest, false, Some(std::slice::from_ref(id)))?;
             let m = lib
                 .get(id)
                 .ok_or_else(|| Error(format!("no module {id}")))?;

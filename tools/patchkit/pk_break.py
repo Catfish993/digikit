@@ -46,7 +46,7 @@ BREAKS = {
         'DK_PARAM(pluck, 0, pluck_pick, "Pick position", "PICK", 0, 127, 32);',
     ),
 }
-# kinds whose edit is in a C source: the module's objects are rebuilt in the copied root (patchkit reads the committed objects)
+# kinds whose edit is in a C source: the module's objects are rebuilt for the copied root (the cache is keyed by the source hash)
 REBUILD = {"rows": "tests/fixtures/modules/patched-pluck"}
 FIRMWARE = {
     ("dt2", "1.17"): "Digitakt_II_OS1.17.syx",
@@ -61,7 +61,9 @@ def build(kind: str, mods: str, device: str, fw: str, out: Path) -> Path:
         shutil.rmtree(root)
     for r in modroots.REPO_ROOTS:
         shutil.copytree(ROOT / r, root / r)
-    (root / "devices").symlink_to(ROOT / "devices")
+    # the toolchain, the object cache and the SDK headers are the repository's: patchkit builds the stale objects of the copied modules
+    for top in ("devices", "out", "sdk"):
+        (root / top).symlink_to(ROOT / top)
     path = root / manifest
     text = path.read_text()
     if text.count(old) != 1:

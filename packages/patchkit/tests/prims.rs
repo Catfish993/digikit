@@ -30,12 +30,27 @@ macro_rules! need_image {
     };
 }
 
+/// The content modules are built on demand (`Library::scan_repo`): a test that needs one skips without the toolchain.
+macro_rules! need_toolchain {
+    () => {
+        if patchkit::build::toolchain::Env::new(&root())
+            .m68k("gcc")
+            .is_err()
+        {
+            eprintln!("SKIP: the m68k-elf toolchain is not installed");
+            return;
+        }
+    };
+}
+
 fn registry() -> Registry {
     Registry::from_dir(&root().join("devices/ports")).unwrap()
 }
 
 fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    // without the toolchain the content modules are left out; the tests that need one start with `need_toolchain!()`
+    let mut lib = Library::scan_repo_or_skip(&root())
+        .unwrap_or_else(|| Library::scan_repo_for(&root(), true, Some(&[])).unwrap());
     lib.modules.extend(extra);
     lib
 }
@@ -1269,6 +1284,7 @@ fn explain_lists_registries_sections_and_hooks() {
 #[test]
 fn old_plans_do_not_grow_new_keys() {
     need_image!(DT2);
+    need_toolchain!();
     let out = run(&library(vec![]), &["digikit/master-gain"]).unwrap();
     let j = serde_json::to_value(&out.plan).unwrap();
     for k in ["registries", "sections", "hooks"] {

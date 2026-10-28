@@ -4,7 +4,7 @@
 use patchkit::build::cf::{self, BASE};
 use patchkit::build::elf::{self, RelocTo};
 use patchkit::build::toolchain::Env;
-use patchkit::build::{self, BuildOptions, Status, canon, rust, sharc};
+use patchkit::build::{self, BuildOptions, Status, rust, sharc};
 use patchkit::dko::Dko;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -42,15 +42,13 @@ fn find_objects(dir: &Path, out: &mut Vec<PathBuf>) {
 #[test]
 fn committed_objects_are_in_the_canonical_form() {
     let mut files = vec![];
-    for r in ["modules", "tests/fixtures/modules"] {
-        find_objects(&root().join(r), &mut files);
-    }
-    assert!(files.len() > 40, "{} objects", files.len());
+    find_objects(&root().join("modules/core"), &mut files);
+    assert!(files.len() > 20, "{} objects", files.len());
     for f in files {
         let text = std::fs::read_to_string(&f).unwrap();
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert!(
-            canon::to_string(&v) == text,
+            build::pretty(&v).unwrap() == text,
             "{} is not canonical",
             f.display()
         );
@@ -64,6 +62,64 @@ fn local_binary_hashes_are_not_part_of_the_comparison() {
     assert_eq!(base, build::comparable(make("s2", "r1", "00")));
     assert_ne!(base, build::comparable(make("s1", "r2", "00")));
     assert_ne!(base, build::comparable(make("s1", "r1", "01")));
+}
+
+/// Symbols the ColdFire libgcc defines that the compiler never calls for code a module compiles (trampolines, thread-local storage,
+/// stack hardening, internal tables): `is_helper` rightly refuses them.
+const LIBGCC_NOT_CALLED: [&str; 14] = [
+    "___trampoline",
+    "__transfer_from_trampoline",
+    "__enable_execute_stack",
+    "__clear_cache",
+    "__clear_sticky_bit",
+    "__emutls_get_address",
+    "__emutls_register_common",
+    "__gcc_bcmp",
+    "__hardcfr_check",
+    "__strub_enter",
+    "__strub_leave",
+    "__strub_update",
+    "_fpCCR",
+    "$_exception_handler",
+];
+
+/// `is_helper` against the symbol list of the libgcc archive that module builds link (`out/tools/m68k-elf/lib/libgcc-cf54418.a`): every
+/// routine the archive defines is a helper, except the ones listed above. A new symbol in a newer libgcc fails this test.
+#[test]
+fn compiler_helper_names_match_libgcc() {
+    let Some(env) = toolchain() else { return };
+    let Some(lib) = env.libgcc_cf() else {
+        eprintln!("SKIP: libgcc-cf54418.a is not built (uv run python -m tools.patchkit.pk_toolchains libgcc-cf)");
+        return;
+    };
+    let out = std::process::Command::new(env.m68k("nm").unwrap())
+        .args(["-g", "--defined-only"])
+        .arg(&lib)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let text = String::from_utf8(out.stdout).unwrap();
+    let defined: std::collections::BTreeSet<&str> = text
+        .lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            (f.len() == 3).then(|| f[2])
+        })
+        .collect();
+    assert!(defined.contains("__udivdi3"), "{} symbols", defined.len());
+    let missed: Vec<_> = defined
+        .iter()
+        .filter(|n| !rust::is_helper(n) && !LIBGCC_NOT_CALLED.contains(n))
+        .collect();
+    assert!(
+        missed.is_empty(),
+        "libgcc defines routines that is_helper refuses: {missed:?}"
+    );
+    let wrong: Vec<_> = LIBGCC_NOT_CALLED
+        .iter()
+        .filter(|n| rust::is_helper(n) || !defined.contains(**n))
+        .collect();
+    assert!(wrong.is_empty(), "stale LIBGCC_NOT_CALLED entries: {wrong:?}");
 }
 
 #[test]
@@ -282,6 +338,26 @@ fn the_object_carries_its_isa_record() {
     assert!(text.starts_with("{\n \"arch\": \"cf\",\n \"format\": 1,\n"));
 }
 
+/// The check of unlinked code (`patchkit dko isa-check`): a 68020 form in a text blob is refused with its place; the ColdFire libgcc
+/// archive (members read by `elf::ar_members`) passes.
+#[test]
+fn isa_check_of_blobs_and_archives() {
+    // divs.l d1,d2:d0 (64-bit dividend), bfextu: 68020 forms with no ColdFire encoding
+    let bad = vec![(".text".to_string(), vec![0x4c, 0x41, 0x0c, 0x02, 0xe9, 0xc0, 0x10, 0x00, 0x4e, 0x75])];
+    let e = cf::check_text(&bad, "x: ").unwrap_err().0;
+    assert!(e.contains("x: .text+0x0:") && e.contains("outside ISA_A/B/C+EMAC"), "{e}");
+    let ok = vec![(".text".to_string(), vec![0x4e, 0x75])];
+    assert_eq!(cf::check_text(&ok, "").unwrap().values().sum::<u32>(), 1);
+    let Some(env) = toolchain() else { return };
+    let Some(lib) = env.libgcc_cf() else { return };
+    let members = elf::ar_members(&std::fs::read(lib).unwrap()).unwrap();
+    assert!(members.len() > 50, "{} members", members.len());
+    for (name, body) in members {
+        let secs = elf::text_sections(&body).unwrap();
+        cf::check_text(&secs, &format!("{name}: ")).unwrap();
+    }
+}
+
 #[test]
 fn a_68020_form_is_refused() {
     let Some(env) = toolchain() else { return };
@@ -341,7 +417,7 @@ fn a_module_builds_once_and_then_is_unchanged() {
     std::fs::create_dir_all(d.join("src")).unwrap();
     std::fs::write(
         d.join("module.toml"),
-        "[module]\nid = \"test/tiny\"\n\n[[object]]\npath = \"build/tiny.dko.json\"\nsources = [\"src/t.c\"]\n",
+        "[module]\nid = \"test/tiny\"\ncategory = \"core\"\n\n[[object]]\npath = \"build/tiny.dko.json\"\nsources = [\"src/t.c\"]\n",
     )
     .unwrap();
     std::fs::write(
@@ -416,6 +492,53 @@ fn a_module_builds_once_and_then_is_unchanged() {
     );
     let _ = std::fs::remove_dir_all(&d);
     let _ = std::fs::remove_dir_all(&out);
+}
+
+/// A content module (any category but `core`) keeps its objects in the cache `out/cache/dko/<id>/<path>`, not in the module; the
+/// library builds a stale or missing one on demand and leaves out the objects of modules it was not asked for.
+#[test]
+fn a_content_module_builds_into_the_cache_on_demand() {
+    use patchkit::module::{Build, Library};
+    let Some(_) = toolchain() else { return };
+    let id = format!("test/cache-{}", std::process::id());
+    let d = build_dir("content");
+    let moddir = d.join("m");
+    std::fs::create_dir_all(moddir.join("src")).unwrap();
+    std::fs::write(
+        moddir.join("module.toml"),
+        format!(
+            "[module]\nid = \"{id}\"\nversion = \"0.1.0\"\nname = \"x\"\ncategory = \"test\"\ntype = \"raw\"\nauthor = \"x\"\nstatus = \"experimental\"\nsummary = \"x\"\n\n[[object]]\npath = \"build/tiny.dko.json\"\nplace = \"cf.expansion\"\nsources = [\"src/t.c\"]\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(moddir.join("src/t.c"), "int twice(int x) { return x + x; }\n").unwrap();
+    let cached = build::cache_dir(&root()).join(&id).join("build/tiny.dko.json");
+    let _ = std::fs::remove_dir_all(build::cache_dir(&root()).join(&id));
+    let scan = |only: Option<&[String]>| {
+        Library::scan_in(Some(Build { root: &root(), only }), &d, false).unwrap()
+    };
+
+    // asked for nothing: no object, nothing built
+    assert!(scan(Some(&[])).get(&id).unwrap().objects.is_empty());
+    assert!(!cached.exists());
+    // a missing object is built into the cache, never into the module
+    assert_eq!(scan(None).get(&id).unwrap().objects.len(), 1);
+    assert!(cached.is_file() && !moddir.join("build").exists());
+    let text = std::fs::read_to_string(&cached).unwrap();
+    let stamp = std::fs::metadata(&cached).unwrap().modified().unwrap();
+    // a current object is read, not built again
+    assert_eq!(scan(Some(&[id.clone()])).get(&id).unwrap().objects.len(), 1);
+    assert_eq!(std::fs::metadata(&cached).unwrap().modified().unwrap(), stamp);
+    // a changed source makes it stale; the next scan builds it again
+    std::fs::write(moddir.join("src/t.c"), "int twice(int x) { return 2 * x + 1; }\n").unwrap();
+    assert_eq!(scan(None).get(&id).unwrap().objects.len(), 1);
+    assert_ne!(std::fs::read_to_string(&cached).unwrap(), text);
+    // `patchkit build` finds it current
+    let r = build::build_module(&moddir, &BuildOptions { root: root(), ..Default::default() }).unwrap();
+    assert_eq!(r.objects[0].status, Status::Unchanged);
+    assert_eq!(r.objects[0].path, std::fs::canonicalize(&cached).unwrap());
+    let _ = std::fs::remove_dir_all(build::cache_dir(&root()).join(&id));
+    let _ = std::fs::remove_dir_all(&d);
 }
 
 #[test]

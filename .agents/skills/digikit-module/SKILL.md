@@ -29,7 +29,7 @@ The guide is `docs/MODULE-AUTHORING.md`. Read the section you need there; this f
    `DK_FX_PARAM`, `DK_PAGE` (`<dk/fx.h>`). Word numbers go in a shared `src/NAME.h`. `patchkit desc AUTHOR/NAME` prints the records as JSON.
    A manifest with `[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]` or `[[fx]]` is refused.
 3. After a change to `module.toml`, `src/module.c`, `devices/*.toml` or `sdk/sdk.toml`: `mise run gen:modules` (`-- --check` lists stale files). Never edit `build/gen/`.
-4. Build: `mise run module:build -- PATH [--check]` (`patchkit build`; `patchkit dko show build/NAME.dko.json` shows an object).
+4. Build: `mise run module:build -- PATH [--check]` (`patchkit build`; the objects go to `out/cache/dko/<id>/`, `patchkit dko show FILE` shows one). Pack and `dk:run` build what is stale, so this step is optional.
 5. Check, no emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (guide 8).
 6. Pack: `mise run module:pack -- AUTHOR/NAME --device dt2|dn2 [-o FILE.dkm]`.
 7. Run: start `mise run workbench` in another shell, then `mise run dk:run -- AUTHOR/NAME --emu --seconds 10`. On a device with the runtime:
@@ -44,7 +44,7 @@ Each task takes `-- --help`.
 - **No firmware bytes in the repository.** Modules hold our code and hashes only. Patched images and anything derived from firmware stay under `out/`.
   Never name, copy or quote the vendor DSP toolchain's files.
 - **Reserved authors.** `core` and `test` are reserved. Use `digikit` or your own author. `module:new` refuses `core` and `framework`.
-- **Commit `build/`**, including `build/gen/` (only `gallery.json` is generated there). Do not edit it by hand (guide 4, 6).
+- **Commit `build/gen/`** (only `gallery.json` is generated there); do not edit it by hand (guide 4, 6). Do not commit built objects: a content module has no `build/*.dko.json` (they are cache in `out/cache/dko`; only `core/*` commits objects).
 - **Knobs and parameters.** A machine has at most 4 `DK_PARAM` words (0 to 3, in order, knob units 0 to 127) and at most one `DK_PAGE` with `DK_KNOB` only.
   The adapter places word w on a fixed knob (Digitakt II 1, 2, 4, 5; Digitone II 0 to 3). The word is the slot, so a released parameter keeps its word.
   Effect knobs may sit at any position 0 to 7 (`DK_KNOB_AT`). No data-only machines; `clone_of` is fixed by the profile (guide 5.2, 5.3, 5.7).

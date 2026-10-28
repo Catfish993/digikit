@@ -94,18 +94,82 @@ pub fn build(root: &Path, rest: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// The instructions of one `.dko.json` (ColdFire), ELF object or `ar` archive, checked against the ColdFire V4e ISA; `None` for an
+/// object that is not ColdFire.
+fn isa_check_file(file: &str) -> Result<Option<u32>> {
+    let name = Path::new(file)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if file.ends_with(".json") {
+        let o = Dko::parse(
+            &std::fs::read_to_string(file).map_err(|e| Error(format!("{file}: {e}")))?,
+        )?;
+        if o.arch != "cf" {
+            return Ok(None);
+        }
+        let mut secs = vec![];
+        for s in o.sections.iter().filter(|s| s.kind == "text") {
+            secs.push((s.name.clone(), patchkit::error::unhex(&s.hex)?));
+        }
+        let hist = cf::check_text(&secs, &format!("{name}: "))?;
+        return Ok(Some(hist.values().sum()));
+    }
+    let blob = std::fs::read(file).map_err(|e| Error(format!("{file}: {e}")))?;
+    let members = if blob.starts_with(b"!<arch>\n") {
+        build::elf::ar_members(&blob)?
+    } else {
+        vec![(name.clone(), blob)]
+    };
+    let (mut total, mut bad) = (0u32, vec![]);
+    for (member, body) in members {
+        let checked = build::elf::text_sections(&body)
+            .and_then(|secs| cf::check_text(&secs, &format!("{name}: {member}:")));
+        match checked {
+            Ok(h) => total += h.values().sum::<u32>(),
+            Err(e) => bad.push(e.0.split_once('\n').map_or(e.0.clone(), |x| x.1.trim().to_string())),
+        }
+    }
+    if !bad.is_empty() {
+        return Err(Error(format!(
+            "instructions outside ISA_A/B/C+EMAC:\n  {}",
+            bad.join("\n  ")
+        )));
+    }
+    Ok(Some(total))
+}
+
 pub fn dko(rest: &[String]) -> Result<()> {
-    const U: &str =
-        "usage: patchkit dko show FILE.dko.json [--relocs] | patchkit dko isa-digest FILE.dko.json";
+    const U: &str = "usage: patchkit dko show FILE.dko.json [--relocs] | patchkit dko isa-digest FILE.dko.json | patchkit dko isa-check FILE...";
     let cmd = rest.first().map(String::as_str);
-    if !matches!(cmd, Some("show" | "isa-digest")) {
+    if !matches!(cmd, Some("show" | "isa-digest" | "isa-check")) {
         return Err(Error(U.into()));
     }
-    let file = positional(&rest[1..], &[])
-        .into_iter()
-        .next()
-        .ok_or_else(|| Error(U.into()))?;
-    let text = std::fs::read_to_string(&file).map_err(|e| Error(format!("{file}: {e}")))?;
+    let files = positional(&rest[1..], &[]);
+    if files.is_empty() {
+        return Err(Error(U.into()));
+    }
+    if cmd == Some("isa-check") {
+        // the ColdFire ISA allow-list lives in `build::cf` only; one line per file, a failure at the end
+        let mut failed = false;
+        for f in &files {
+            match isa_check_file(f) {
+                Ok(Some(n)) => println!("ok   {f}: {n} instructions"),
+                Ok(None) => println!("ok   {f}: no cf code"),
+                Err(e) => {
+                    failed = true;
+                    println!("FAIL {f}\n  {e}");
+                }
+            }
+        }
+        return if failed {
+            Err(Error("ISA check failed".into()))
+        } else {
+            Ok(())
+        };
+    }
+    let file = &files[0];
+    let text = std::fs::read_to_string(file).map_err(|e| Error(format!("{file}: {e}")))?;
     let o = Dko::parse(&text)?;
     if cmd == Some("isa-digest") {
         println!("{}", o.isa_digest()?);

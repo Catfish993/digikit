@@ -283,7 +283,7 @@ modules/<category>/<name>/
   module.toml          manifest
   src/cf/*.c|*.s       ColdFire sources (m68k-elf gcc, -mcpu=54418, freestanding)
   src/dsp/*.s          SHARC+ sources (algebraic syntax)
-  build/*.dko.json     built objects, committed; `patch:build --check` keeps them current
+  build/*.dko.json     built objects: committed for core/* modules; any other module has them in out/cache/dko (build output)
   tests/*.toml         harness tests
   README.md            notes: what it does, devices, limits
   gallery/icon.svg     the gallery card's icon

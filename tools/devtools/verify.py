@@ -1427,7 +1427,7 @@ def explain(
                 step == "runtime-fixture" and runtime_pack_modules(selected)
             ):
                 print(
-                    f"{step}: prerequisite patchkit build --check, then fresh patchkit pack into its run directory; "
+                    f"{step}: prerequisite patchkit build (stale objects only), then fresh patchkit pack into its run directory; "
                     "may build module toolchains/patchkit CLI, never emulator daemons"
                 )
             if step == "runtime-fixture" and (
@@ -1518,12 +1518,12 @@ def finish_python(gate: Gate) -> None:
 
 
 def prepare_acceptance_modules(gate: Gate, step: str, modules: list[str]) -> Path:
-    """Check existing objects and pack fresh DKMs; each acceptance node owns its directory/logs."""
+    """Build the stale objects (they are cached in out/cache/dko) and pack fresh DKMs; each acceptance node owns its directory/logs."""
     directory = gate.out / step / "modules"
-    checks = []
+    builds = []
     for mid in modules:
-        name = f"{step}-check-{mid.rsplit('/', 1)[-1]}"
-        checks.append(name)
+        name = f"{step}-build-{mid.rsplit('/', 1)[-1]}"
+        builds.append(name)
         gate.run(
             name,
             [
@@ -1532,13 +1532,10 @@ def prepare_acceptance_modules(gate: Gate, step: str, modules: list[str]) -> Pat
                 "tools.patchkit.patchkit",
                 "build",
                 str(modroots.module_dir(mid)),
-                "--check",
             ],
         )
-    if any(name in gate.failed for name in checks):
-        raise RuntimeError(
-            f"{step} requires current module build objects; see check logs"
-        )
+    if any(name in gate.failed for name in builds):
+        raise RuntimeError(f"{step} requires module build objects; see build logs")
     packs = []
     for device in ("dt2", "dn2"):
         (directory / device).mkdir(parents=True, exist_ok=True)

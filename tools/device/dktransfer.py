@@ -15,7 +15,7 @@ dev tooling; the app starts no process.
 
 `list` is one merged view for the target's device (INFO): the repo's run-time modules that pack for it (never `core/*`; `test/` ones are
 marked), with group (machine, fx or service contract in the packed header: Machines, Effects, Tools), version, sizes, build state
-(`unchanged` = the committed objects carry the hash of their sources; `needs build`), whether the file is on the card (LIST, same sha256),
+(`unchanged` = the built objects carry the hash of their sources; `needs build`), whether the file is on the card (LIST, same sha256),
 whether it is loaded (MODULES), and whether it fits (CAPACITY; a warning only). Card files that match no repo module are listed with
 their group, read from the 0xa0-byte header (READ, runtime 0.2.4).
 
@@ -113,14 +113,17 @@ def candidates() -> list[str]:
 
 
 def inputs_mtime(moddir: Path) -> float:
-    """The newest modification time among everything a pack of the module reads: its directory, the patchkit sources, the device files
-    and the SDK numbers."""
+    """The newest modification time among everything a pack of the module reads: its directory, its built objects, the patchkit sources, the
+    device files and the SDK numbers."""
     newest = 0.0
     roots = [
         (moddir, "*"),
         (R.ROOT / "packages" / "patchkit" / "src", "*.rs"),
         (R.ROOT / "devices", "*.toml"),
     ]
+    mid = modroots.module_id(moddir)
+    if mid:  # the built objects of a content module are cached outside its directory
+        roots.append((R.ROOT / "out" / "cache" / "dko" / mid, "*"))
     for root, pat in roots:
         for f in root.rglob(pat):
             if f.is_file() and "__pycache__" not in f.parts:

@@ -18,13 +18,28 @@ fn image(name: &str) -> Option<Vec<u8>> {
 
 const DT2: &str = "Digitakt_II_OS1.17.syx";
 
+/// The content modules are built on demand (`Library::scan_repo`): a test that needs one skips without the toolchain.
+macro_rules! need_toolchain {
+    () => {
+        if patchkit::build::toolchain::Env::new(&root())
+            .m68k("gcc")
+            .is_err()
+        {
+            eprintln!("SKIP: the m68k-elf toolchain is not installed");
+            return;
+        }
+    };
+}
+
 fn registry() -> Registry {
     Registry::from_dir(&root().join("devices/ports")).unwrap()
 }
 
 /// The real library (core/expansion, digikit/master-gain, ...) plus synthetic modules.
 fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+    // without the toolchain the content modules are left out; the tests that need one start with `need_toolchain!()`
+    let mut lib = Library::scan_repo_or_skip(&root())
+        .unwrap_or_else(|| Library::scan_repo_for(&root(), true, Some(&[])).unwrap());
     lib.modules.extend(extra);
     lib
 }
@@ -157,6 +172,7 @@ fn a_region_over_capacity_is_refused() {
 #[test]
 fn an_anchor_hash_mismatch_is_refused() {
     need_image!();
+    need_toolchain!();
     let mut reg = registry();
     for p in reg
         .ports
@@ -186,6 +202,7 @@ fn a_module_for_another_firmware_is_refused() {
 #[test]
 fn the_container_cap_is_enforced() {
     need_image!();
+    need_toolchain!();
     let mut reg = registry();
     for p in reg
         .ports
@@ -211,6 +228,7 @@ fn sections_2_4_and_8_can_never_change() {
 #[test]
 fn a_patched_image_has_no_port() {
     need_image!();
+    need_toolchain!();
     let out = run(&library(vec![]), &["digikit/master-gain"]).unwrap();
     let lib = library(vec![]);
     let again = apply::apply(

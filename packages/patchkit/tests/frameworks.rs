@@ -22,10 +22,10 @@ fn registry() -> Registry {
     Registry::from_dir(&root().join("devices/ports")).unwrap()
 }
 
-fn library(extra: Vec<Module>) -> Library {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+fn library(extra: Vec<Module>) -> Option<Library> {
+    let mut lib = Library::scan_repo_or_skip(&root())?;
     lib.modules.extend(extra);
-    lib
+    Some(lib)
 }
 
 fn run(file: &str, lib: &Library, ids: &[&str]) -> Option<patchkit::Result<Applied>> {
@@ -144,7 +144,9 @@ const PL: [&str; 4] = [
 
 #[test]
 fn the_selection_order_does_not_change_the_bytes() {
-    let lib = library(vec![]);
+    let Some(lib) = library(vec![]) else {
+        return;
+    };
     let Some(r1) = run(DT2_117, &lib, &PL) else {
         return;
     };
@@ -164,7 +166,9 @@ fn the_selection_order_does_not_change_the_bytes() {
 
 #[test]
 fn every_instruction_the_framework_places_decodes() {
-    let lib = library(vec![]);
+    let Some(lib) = library(vec![]) else {
+        return;
+    };
     for (file, ids) in [
         (DT2_117, &PL[..]),
         (DN2_112, &["core/machines", "test/dn2-clone"][..]),
@@ -196,7 +200,9 @@ fn every_instruction_the_framework_places_decodes() {
 
 #[test]
 fn digitone_ii_clone_gets_type_5() {
-    let lib = library(vec![]);
+    let Some(lib) = library(vec![]) else {
+        return;
+    };
     for file in [DN2_112] {
         let Some(r) = run(file, &lib, &["core/machines", "test/dn2-clone"]) else {
             continue;
@@ -238,7 +244,9 @@ fn digitone_ii_clone_gets_type_5() {
 
 #[test]
 fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
-    let lib = library(vec![]);
+    let Some(lib) = library(vec![]) else {
+        return;
+    };
     for file in [DT2_117] {
         let Some(r) = run(
             file,

@@ -1,5 +1,4 @@
-"""Minimal ELF32 relocatable-object reader for the SHARC+ builder (tools/patchkit/pk_sharc.py) and the ColdFire ISA scan of ELF files
-(tools/coldfire/isacheck.py).
+"""Minimal ELF32 relocatable-object reader for the SHARC+ builder (tools/patchkit/pk_sharc.py).
 
 Reads sections, symbols and REL/RELA relocations from either byte order. No writing, no dependency on any toolchain. The ColdFire
 module build reads ELF in Rust (packages/patchkit/src/build/elf.rs).

@@ -13,16 +13,18 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn library() -> Library {
-    let mut lib = Library::scan_repo(&root()).unwrap();
+fn library() -> Option<Library> {
+    let mut lib = Library::scan_repo_or_skip(&root())?;
     lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
         .unwrap();
-    lib
+    Some(lib)
 }
 
 #[test]
 fn a_dynamic_module_is_not_lowered_and_not_patched() {
-    let lib = library();
+    let Some(lib) = library() else {
+        return;
+    };
     let m = lib.get("test/sine").unwrap();
     assert!(m.manifest.module.dynamic);
     assert!(
@@ -43,7 +45,9 @@ fn a_dynamic_module_is_not_lowered_and_not_patched() {
 
 #[test]
 fn the_register_records_are_the_lowered_typed_sections() {
-    let lib = library();
+    let Some(lib) = library() else {
+        return;
+    };
     let m = lib.get("test/sine").unwrap();
     let models = Models::from_dir(&root().join("devices")).unwrap();
     let res = resolve(&m.manifest, &models).unwrap();
@@ -109,7 +113,9 @@ fn the_run_time_type_range_is_checked() {
 /// runtime alone still patches (its link to the table is optional).
 #[test]
 fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
-    let lib = library();
+    let Some(lib) = library() else {
+        return;
+    };
     let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
     let mut ran = 0;
     for file in ["Digitakt_II_OS1.17.syx"] {
@@ -157,7 +163,9 @@ fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
 /// A machine key keeps the low byte 0: the runtime assigns the type number at load.
 #[test]
 fn a_machine_key_has_no_type_byte() {
-    let lib = library();
+    let Some(lib) = library() else {
+        return;
+    };
     let models = Models::from_dir(&root().join("devices")).unwrap();
     let m = lib.get("digikit/pluck").unwrap();
     let res = resolve(&m.manifest, &models).unwrap();

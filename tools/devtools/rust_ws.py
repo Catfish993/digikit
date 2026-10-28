@@ -72,7 +72,8 @@ READS: list[tuple[str, list[str], bool]] = [
     (r"^devices/ports/", ["patchkit", "elektron-native-boot"], False),
     # packages/emulator/control/src/load.rs:18 include_str! devices/cycle-factors.json.
     (r"^devices/cycle-factors\.json$", ["digi-control"], True),
-    # Library::scan_repo (modules/, tests/fixtures/modules/) reads every module.toml and its build/*.dko.json:
+    # Library::scan_repo (modules/, tests/fixtures/modules/) reads every module.toml, the committed build/*.dko.json of core/* and builds
+    # the objects of content modules from their sources into out/cache/dko:
     # packages/patchkit/tests/devdata.rs:19, conflicts.rs:27, frameworks.rs:27, dynamic.rs:17,
     # typed.rs:186 (tests/fixtures/modules/patched-pluck); packages/emulator/boot/tests/patched_boot.rs:15.
     # Markdown under modules/ is documentation only.

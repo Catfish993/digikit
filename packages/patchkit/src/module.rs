@@ -662,10 +662,26 @@ impl Library {
     }
 }
 
+/// How a scan of the module roots gets the objects of content modules (`category` other than `core`): they are build output in the cache
+/// `out/cache/dko` (`crate::build`), not files of the module. A stale or missing object is built on demand with the toolchain.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy)]
+pub struct Build<'a> {
+    /// The repository root: the toolchain and the cache are there.
+    pub root: &'a std::path::Path,
+    /// Load the objects of the content modules with these ids only (built when stale); the other content modules load without objects
+    /// (as in `from_parts_lenient`), so nothing is hashed or built for them and no toolchain is needed. `None`: all content modules.
+    pub only: Option<&'a [String]>,
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl Library {
     /// Every `module.toml` under `root` (a module root), without lowering.
-    fn read_root(root: &std::path::Path, lenient: bool) -> Result<Vec<Module>> {
+    fn read_root(
+        root: &std::path::Path,
+        lenient: bool,
+        build: Option<(&crate::build::toolchain::Env, Build)>,
+    ) -> Result<Vec<Module>> {
         fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else {
                 return;
@@ -686,11 +702,30 @@ impl Library {
         for p in found {
             let dir = p.parent().unwrap().to_path_buf();
             let text = std::fs::read_to_string(&p).map_err(|e| err!("{}: {e}", p.display()))?;
+            // a content module's objects come from the cache (built when stale); the others are files of the module
+            let built = match build {
+                Some((env, b)) => {
+                    let m = crate::build::ModuleToml::parse(&text)
+                        .map_err(|e| err!("{}: {e}", p.display()))?;
+                    let allow = b.only.is_none_or(|ids| ids.iter().any(|i| i == m.id()));
+                    Some((env, m, allow))
+                }
+                None => None,
+            };
             let read = |rel: &str| -> Result<String> {
+                if let Some((env, m, allow)) = &built
+                    && m.builds(rel)
+                {
+                    if !allow {
+                        return Err(err!("{rel}: not loaded"));
+                    }
+                    return crate::build::load_object(env, &dir, m, rel);
+                }
                 std::fs::read_to_string(dir.join(rel))
                     .map_err(|e| err!("{}: {e}", dir.join(rel).display()))
             };
-            let mut m = Module::from_parts_with(&text, &read, lenient)
+            let skip_missing = lenient || built.as_ref().is_some_and(|(_, _, allow)| !allow);
+            let mut m = Module::from_parts_with(&text, &read, skip_missing)
                 .map_err(|e| err!("{}: {e}", p.display()))?;
             m.dir = dir;
             modules.push(m);
@@ -714,32 +749,76 @@ impl Library {
         Ok(())
     }
 
-    /// The default module roots of a repository: `modules/` and `tests/fixtures/modules/`, lowered with `devices/`.
+    /// The default module roots of a repository: `modules/` and `tests/fixtures/modules/`, lowered with `devices/`. Content modules whose
+    /// object is stale in the cache are built (it needs the toolchain: `uv run python -m tools.patchkit.pk_toolchains m68k`).
     pub fn scan_repo(root: &std::path::Path) -> Result<Library> {
         Self::scan_repo_with(root, false)
     }
 
+    /// `scan_repo` for tests: building the content modules needs the m68k-elf toolchain (`uv run python -m tools.patchkit.pk_toolchains
+    /// m68k`). Without it the test cannot run: this prints why and returns `None`. Any other error panics.
+    pub fn scan_repo_or_skip(root: &std::path::Path) -> Option<Library> {
+        Self::scan_repo_for_or_skip(root, None)
+    }
+
+    /// [`Library::scan_repo_or_skip`] that loads (and builds) the objects of the content modules `only` names (see [`Build::only`]).
+    pub fn scan_repo_for_or_skip(root: &std::path::Path, only: Option<&[String]>) -> Option<Library> {
+        if crate::build::toolchain::Env::new(root).m68k("gcc").is_err() {
+            eprintln!(
+                "SKIP: the m68k-elf toolchain is not installed, so the content modules cannot be built (uv run python -m tools.patchkit.pk_toolchains m68k)"
+            );
+            return None;
+        }
+        Some(Self::scan_repo_for(root, false, only).unwrap_or_else(|e| panic!("{e}")))
+    }
+
     /// `scan_repo`; with `lenient`, a missing object file is left out (see `Module::from_parts_lenient`).
     pub fn scan_repo_with(root: &std::path::Path, lenient: bool) -> Result<Library> {
+        Self::scan_repo_for(root, lenient, None)
+    }
+
+    /// `scan_repo_with`; with `only`, the objects of these content modules only are loaded (see [`Build::only`]).
+    pub fn scan_repo_for(
+        root: &std::path::Path,
+        lenient: bool,
+        only: Option<&[String]>,
+    ) -> Result<Library> {
+        let env = crate::build::toolchain::Env::new(root);
+        let b = Build { root, only };
         let mut lib = Library::default();
-        lib.extend_unique(Self::read_root(&root.join("modules"), lenient)?)?;
+        lib.extend_unique(Self::read_root(
+            &root.join("modules"),
+            lenient,
+            Some((&env, b)),
+        )?)?;
         lib.extend_unique(Self::read_root(
             &root.join("tests/fixtures/modules"),
             lenient,
+            Some((&env, b)),
         )?)?;
         lib.lower(&crate::typed::Models::from_dir(&root.join("devices"))?)?;
         Ok(lib)
     }
 
-    /// Every `module.toml` under `root` (a module root); lowered when `devices/` sits next to it.
+    /// Every `module.toml` under `root` (a module root); lowered when `devices/` sits next to it. Objects are only read from files.
     pub fn scan(root: &std::path::Path) -> Result<Library> {
         Self::scan_with(root, false)
     }
 
     /// `scan`; with `lenient`, a missing object file is left out (see `Module::from_parts_lenient`).
     pub fn scan_with(root: &std::path::Path, lenient: bool) -> Result<Library> {
+        Self::scan_in(None, root, lenient)
+    }
+
+    /// `scan_with`; with `build`, the content modules of the root get their objects from the cache like in `scan_repo_for`.
+    pub fn scan_in(build: Option<Build>, root: &std::path::Path, lenient: bool) -> Result<Library> {
+        let env = build.map(|b| crate::build::toolchain::Env::new(b.root));
         let mut lib = Library::default();
-        lib.extend_unique(Self::read_root(root, lenient)?)?;
+        lib.extend_unique(Self::read_root(
+            root,
+            lenient,
+            env.as_ref().zip(build),
+        )?)?;
         // the device models sit next to `modules/` (`devices/*.toml`); an extra module root without them
         // is lowered by the caller
         let devices = root.parent().map(|p| p.join("devices"));

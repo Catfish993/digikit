@@ -5,7 +5,8 @@
     uv run python -m tools.device.dkpackall --force    # rebuild the objects whose source hash is unchanged
 
 The desktop workbench's Transfer page does not build: it reads this folder (apps/desktop/src-tauri/src/library.rs). Only what changed
-costs time: `patchkit build` skips an object whose committed `source_sha256` equals the hash of its sources (`patchkit.module_status`), and
+costs time: `patchkit build` skips an object whose stored `source_sha256` equals the hash of its sources (`patchkit.module_status`; the objects are
+cached in out/cache/dko), and
 `dktransfer.pack_for_transfer` reuses a packed file newer than everything a pack reads. A file is rewritten only when its bytes change, and
 files of modules that no longer pack for a device are removed. A module that does not pack for a device (no DSP object for it, no
 register records for it) is left out of that device's folder.

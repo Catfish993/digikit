@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 
 from tools.patchkit import modroots, patchkit
@@ -24,15 +25,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def make(module: str, defines: list[str], label: str) -> Path:
+    moddir = modroots.module_dir(module)
+    if (
+        tomllib.loads((moddir / "module.toml").read_text())["module"]["category"]
+        != "core"
+    ):
+        raise SystemExit(
+            f"{module} is a content module: its objects are cached by source hash (out/cache/dko), so a build with options cannot be "
+            "an overlay; variants are for core/* modules"
+        )
     base = ROOT / "out" / "variants" / label
     if base.exists():
         shutil.rmtree(base)
     (base / "modules").mkdir(parents=True)
-    for top in ("devices", "firmware"):
+    for top in ("devices", "firmware", "out", "sdk"):
         (base / top).symlink_to(ROOT / top)
     # module directories (same place as in the repository): every one linked, the variant's a real directory
     # (its sources linked, its objects built)
-    moddir = modroots.module_dir(module)
     dest_of = {}
     for d in modroots.manifests().values():
         dest = base / d.relative_to(ROOT)

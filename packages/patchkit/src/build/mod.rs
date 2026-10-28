@@ -5,12 +5,16 @@
 //! the canonical object JSON and written to the object's `path`. Every instruction is re-decoded by our own decoders, so a toolchain
 //! encoding bug cannot reach an image (ColdFire: [`cf::check_isa`], in this process; SHARC+: `pk_sharc`).
 //!
-//! An object whose committed `source_sha256` equals the hash of its sources now is not compiled ("unchanged"). `--check` rebuilds and
-//! compares with the committed object, ignoring the `*_sha256` keys of the toolchain record (they name the local binaries).
+//! Where an object is written: a `core/*` module (`category = "core"`) keeps its objects in the module (`build/x.dko.json`, committed: the
+//! workbench and the browser patch without a toolchain). Every other module (content modules, test fixtures, imported modules) is
+//! build output: its objects go to the cache `out/cache/dko/<module id>/<object path>`. [`object_file`] names the file.
 //!
-//! Library entry points for the command line and the desktop app: [`build_module`], [`module_status`], [`link_sources`].
+//! An object whose `source_sha256` equals the hash of its sources now is not compiled ("unchanged"). `--check` rebuilds and
+//! compares with the stored object, ignoring the `*_sha256` keys of the toolchain record (they name the local binaries).
+//!
+//! Library entry points for the command line and the desktop app: [`build_module`], [`module_status`], [`link_sources`], and
+//! [`load_object`], which the module library uses to build a stale object on demand.
 
-pub mod canon;
 pub mod cf;
 pub mod elf;
 pub mod rust;
@@ -82,10 +86,18 @@ impl BuildReport {
     }
 }
 
+/// The parts of a `module.toml` the build reads.
 #[derive(Deserialize)]
-struct ModuleToml {
+pub struct ModuleToml {
+    module: ModuleHead,
     #[serde(default)]
     object: Vec<ObjectToml>,
+}
+
+#[derive(Deserialize)]
+struct ModuleHead {
+    id: String,
+    category: String,
 }
 
 #[derive(Deserialize)]
@@ -95,9 +107,47 @@ struct ObjectToml {
     sources: Vec<String>,
 }
 
+impl ModuleToml {
+    pub fn parse(text: &str) -> Result<ModuleToml> {
+        toml::from_str(text).map_err(|e| err!("module.toml: {e}"))
+    }
+
+    pub fn id(&self) -> &str {
+        &self.module.id
+    }
+
+    /// A content module: its objects are build output (the cache), not committed.
+    pub fn is_content(&self) -> bool {
+        self.module.category != "core"
+    }
+
+    /// Is the object at `path` of a content module built from sources (and so stored in the cache)?
+    pub fn builds(&self, path: &str) -> bool {
+        self.is_content()
+            && self
+                .object
+                .iter()
+                .any(|o| o.path == path && !o.sources.is_empty())
+    }
+}
+
 fn manifest(moddir: &Path) -> Result<ModuleToml> {
     let p = moddir.join("module.toml");
-    toml::from_str(&toolchain::read_text(&p)?).map_err(|e| err!("{}: {e}", p.display()))
+    ModuleToml::parse(&toolchain::read_text(&p)?).map_err(|e| err!("{}: {e}", p.display()))
+}
+
+/// The object cache of a repository: `out/cache/dko`.
+pub fn cache_dir(root: &Path) -> PathBuf {
+    root.join("out/cache/dko")
+}
+
+/// Where the object `o` of a module is stored: in the module for `core/*`, else in the cache.
+fn object_file(root: &Path, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> PathBuf {
+    if m.is_content() {
+        cache_dir(root).join(&m.module.id).join(&o.path)
+    } else {
+        moddir.join(&o.path)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -156,28 +206,38 @@ fn committed_hash(path: &Path) -> Option<String> {
     v.get("source_sha256")?.as_str().map(String::from)
 }
 
-fn object_unchanged(env: &Env, moddir: &Path, o: &ObjectToml) -> bool {
-    let out = moddir.join(&o.path);
+fn object_unchanged(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> bool {
+    let out = object_file(&env.root, moddir, m, o);
     match source_hash(env, moddir, &o.sources) {
         Ok(want) => committed_hash(&out).is_some_and(|h| h == want),
         Err(_) => false,
     }
 }
 
-/// Is the committed object of every object with sources current with its sources? One entry per such object: (its path, unchanged).
+/// Is the stored object of every object with sources current with its sources? One entry per such object: (its path, unchanged).
 pub fn module_status(root: &Path, moddir: &Path) -> Result<Vec<(String, bool)>> {
     let env = Env::new(root);
     let m = manifest(moddir)?;
     Ok(m.object
         .iter()
         .filter(|o| !o.sources.is_empty())
-        .map(|o| (o.path.clone(), object_unchanged(&env, moddir, o)))
+        .map(|o| (o.path.clone(), object_unchanged(&env, moddir, &m, o)))
         .collect())
+}
+
+/// Canonical JSON: keys sorted (the map of `serde_json::Value` is ordered), one space of indent per level, a newline at the end.
+pub fn pretty(v: &Value) -> Result<String> {
+    use serde::Serialize;
+    let mut buf = Vec::new();
+    let fmt = serde_json::ser::PrettyFormatter::with_indent(b" ");
+    v.serialize(&mut serde_json::Serializer::with_formatter(&mut buf, fmt))?;
+    buf.push(b'\n');
+    String::from_utf8(buf).map_err(|e| err!("{e}"))
 }
 
 /// An object as the canonical JSON text.
 pub fn to_text(o: &Dko) -> Result<String> {
-    Ok(canon::to_string(&serde_json::to_value(o)?))
+    pretty(&serde_json::to_value(o)?)
 }
 
 /// The committed object with the local binary hashes of the toolchain record left out.
@@ -215,7 +275,45 @@ fn build_object(env: &Env, moddir: &Path, o: &ObjectToml, defines: &[String]) ->
     }
 }
 
-/// Build every object of a module that lists sources. With `defines` (build options for the DSP sources) the committed objects are not
+/// Write an object file in one step (a rename), so a reader that runs at the same time never sees half a file.
+fn write_object(path: &Path, text: &str) -> Result<()> {
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d).map_err(|e| err!("{}: {e}", d.display()))?;
+    }
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("tmp-{}-{n}", std::process::id()));
+    std::fs::write(&tmp, text).map_err(|e| err!("{}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| err!("{}: {e}", path.display()))
+}
+
+/// The text of the object `rel` of the content module in `moddir`, for the module library: the stored object when its `source_sha256`
+/// is the hash of the sources now, else a fresh build, which is also stored. The error names the missing toolchain when there is one.
+pub fn load_object(env: &Env, moddir: &Path, m: &ModuleToml, rel: &str) -> Result<String> {
+    // threads of one process (the tests) that need the same object build it once
+    static BUILDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one_at_a_time = BUILDING.lock().unwrap_or_else(|e| e.into_inner());
+    let o = m
+        .object
+        .iter()
+        .find(|o| o.path == rel)
+        .ok_or_else(|| err!("{rel}: not an object of the module"))?;
+    let file = object_file(&env.root, moddir, m, o);
+    let want = source_hash(env, moddir, &o.sources)
+        .map_err(|e| err!("{}: {rel}: cannot hash the sources: {e}", moddir.display()))?;
+    if committed_hash(&file).is_some_and(|h| h == want)
+        && let Ok(t) = std::fs::read_to_string(&file)
+    {
+        return Ok(t);
+    }
+    let obj = build_object(env, moddir, o, &[])
+        .map_err(|e| err!("{}: {rel}: build failed: {e}", moddir.display()))?;
+    let text = to_text(&obj)?;
+    write_object(&file, &text)?;
+    Ok(text)
+}
+
+/// Build every object of a module that lists sources. With `defines` (build options for the DSP sources) the stored objects are not
 /// touched: the objects go under `out` at their `path`.
 pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
     if !opts.defines.is_empty() && (opts.check || opts.out.is_none()) {
@@ -227,21 +325,24 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
     let m = manifest(moddir)?;
     let mut report = BuildReport::default();
     for o in m.object.iter().filter(|o| !o.sources.is_empty()) {
-        let committed = moddir.join(&o.path);
+        let stored = object_file(&env.root, moddir, &m, o);
         if !opts.check
             && opts.defines.is_empty()
             && !opts.force
-            && object_unchanged(&env, moddir, o)
+            && object_unchanged(&env, moddir, &m, o)
         {
             report.objects.push(ObjectReport {
-                path: committed,
+                path: stored,
                 status: Status::Unchanged,
                 instructions: None,
             });
             continue;
         }
         let obj = build_object(&env, moddir, o, &opts.defines)?;
-        let out = opts.out.as_deref().unwrap_or(moddir).join(&o.path);
+        let out = match &opts.out {
+            Some(d) => d.join(&o.path),
+            None => stored,
+        };
         let n = obj
             .toolchain
             .get("instructions_redecoded")
@@ -267,10 +368,7 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
                 instructions: n,
             });
         } else {
-            if let Some(d) = out.parent() {
-                std::fs::create_dir_all(d).map_err(|e| err!("{}: {e}", d.display()))?;
-            }
-            std::fs::write(&out, to_text(&obj)?).map_err(|e| err!("{}: {e}", out.display()))?;
+            write_object(&out, &to_text(&obj)?)?;
             report.objects.push(ObjectReport {
                 path: out,
                 status: Status::Built,

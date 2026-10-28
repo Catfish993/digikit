@@ -26,15 +26,36 @@ needs_gcc = pytest.mark.skipif(
 def test_every_committed_coldfire_object_is_plain_v4e():
     objs = isacheck.committed_objects(ROOT)
     assert objs
-    for path in objs:
+    for path in [*objs, *isacheck.cached_objects(ROOT)]:
         isacheck.check_file(path)  # raises IsaError with the refused forms
 
 
 def test_the_checker_refuses_a_68020_form(tmp_path):
     # divs.l d1,d2:d0 (64-bit dividend) and bfextu: 68020 forms with no ColdFire encoding
     blob = bytes.fromhex("4c41 0c02 e9c0 1000 4e75".replace(" ", ""))
+    obj = tmp_path / "bad.dko.json"
+    obj.write_text(
+        json.dumps(
+            {
+                "format": 1,
+                "arch": "cf",
+                "source_sha256": "0" * 64,
+                "sections": [
+                    {
+                        "name": ".text",
+                        "kind": "text",
+                        "align": 4,
+                        "size": len(blob),
+                        "hex": blob.hex(),
+                    }
+                ],
+                "symbols": [],
+                "relocs": [],
+            }
+        )
+    )
     with pytest.raises(isacheck.IsaError):
-        isacheck.check_sections([(".text", blob)])
+        isacheck.check_file(obj)
 
 
 @needs_gcc
@@ -60,13 +81,14 @@ def test_the_stock_libgcc_is_refused_and_the_coldfire_one_passes():
 def test_c_demo_object_is_current_and_self_contained():
     if pk_toolchains.libgcc_cf() is None:
         pytest.skip("pk_toolchains libgcc-cf not run")
-    front_end.build_module(DEMO, check=True)
-    obj = json.loads((DEMO / "build/c-demo.dko.json").read_text())
+    front_end.build_module(DEMO)
+    built = ROOT / "out/cache/dko/test/c-demo/build/c-demo.dko.json"
+    obj = json.loads(built.read_text())
     assert [s["name"] for s in obj["symbols"] if s["section"] is None] == []
     exported = {s["name"] for s in obj["symbols"] if s["global"]}
     assert exported == {"dkm_init", "c_demo_in", "c_demo_n", "c_demo_out"}
     assert {r["type"] for r in obj["relocs"]} <= {"cf.32", "cf.pc32"}
-    isacheck.check_file(DEMO / "build/c-demo.dko.json")
+    isacheck.check_file(built)
 
 
 @pytest.mark.parametrize("image", ["dt2-1.17", "dn2-1.12"])

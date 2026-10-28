@@ -241,8 +241,28 @@ def test_listed_firmware_patch_modules_keep_their_anchors(tree: Path) -> None:
         '\n[[object]]\npath = "build/p.dko.json"\nplace = "dsp.l2"\n'
         '\n[object.externs]\n_q = "dsp.master.fn.q31"\n',
     )
-    dko(tree, "modules/fx/patch/build/p.dko.json", ["_q"])
+    dko(tree, "out/cache/dko/digikit/master-gain/build/p.dko.json", ["_q"])
     assert layercheck.check(tree) == []
+
+
+def test_a_content_module_may_not_commit_an_object(tree: Path) -> None:
+    dko(tree, "modules/fx/patch/build/p.dko.json", [])
+    module(
+        tree,
+        "modules/fx/patch",
+        "digikit/patch",
+        "fx",
+        None,
+        '\n[[object]]\npath = "build/p.dko.json"\nplace = "cf.expansion"\n',
+    )
+    (v,) = layercheck.check(tree)
+    assert v.rule == "objects" and "object file in its tree" in v.message
+    assert v.where == "modules/fx/patch/build/p.dko.json:1"
+    # the cache is the place for it; the symbols are still checked there
+    (tree / "modules/fx/patch/build/p.dko.json").unlink()
+    dko(tree, "out/cache/dko/digikit/patch/build/p.dko.json", ["_fw_private"])
+    (v,) = layercheck.check(tree)
+    assert v.rule == "objects" and "_fw_private" in v.message
 
 
 def test_the_repository_itself_holds() -> None:

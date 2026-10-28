@@ -13,8 +13,8 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.firmware import config  # noqa: E402
+from tools.patchkit import modroots, pk_cfcall, pk_toolchains  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
-from tools.patchkit import pk_cfcall, pk_toolchains  # noqa: E402
 
 IMAGES = [
     "Digitakt_II_OS1.17.syx",
@@ -97,15 +97,18 @@ def code_range(sym):
     return min(text), min(after)
 
 
-def test_committed_object_is_current_and_plain_coldfire():
+def test_built_object_is_current_and_plain_coldfire():
     """The object is a fresh build (needs the Rust toolchain) and every relocation is R_68K_32."""
-    obj = json.loads((MODULE / "build/rust-demo.dko.json").read_text())
+    if not pk_toolchains.codegen_gcc_ready():
+        pytest.skip("Rust-for-ColdFire toolchain not installed")
+    front_end.build_module(MODULE)  # a stale object is rebuilt into out/cache/dko
+    front_end.build_module(MODULE, check=True)
+    obj = json.loads(
+        (modroots.OBJECT_CACHE / "test/rust-demo/build/rust-demo.dko.json").read_text()
+    )
     assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
     assert int(obj["toolchain"]["instructions_redecoded"]) > 100
     assert obj["toolchain"]["rustc_codegen_gcc"] == pk_toolchains.CG_REV
-    if not pk_toolchains.codegen_gcc_ready():
-        pytest.skip("Rust-for-ColdFire toolchain not installed")
-    front_end.build_module(MODULE, check=True)
 
 
 @pytest.mark.parametrize("name", IMAGES)

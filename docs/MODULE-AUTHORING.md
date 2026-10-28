@@ -41,7 +41,7 @@ Never commit these files.
 Check the setup after you create your first module (section 3):
 
 ```sh
-mise run module:build -- modules/machines/NAME --check     # fails when build/*.dko.json is stale
+mise run module:build -- modules/machines/NAME --check     # fails when the built object in out/cache/dko is stale
 ```
 
 ## 3. Start a module
@@ -96,12 +96,13 @@ src/c/NAME.c       ColdFire C (service)
 tests/             the module's own tests: test_*.py
 README.md          for a player: what the module does, in one or two sentences
 gallery/icon.svg   optional card icon
-build/             built objects: *.dko.json
 build/gen/         the generated gallery.json (section 6)
 ```
 
-Commit `build/`, including `build/gen/`. The browser build has no compilers: it builds firmware and `.dkm` files from these objects. A diff of
-`build/` also proves what a source change did.
+Commit `build/gen/`. Do not commit built objects: a content module has no `build/*.dko.json` in its tree. `patchkit build` and `patchkit pack` keep
+the objects in the cache `out/cache/dko/<module id>/<object path>`, keyed by the hash of the sources, and build what is stale. Only `core/*`
+modules commit their objects (`mise run check:layers` fails when a content module has one). The browser has no compilers: the web build runs
+`patchkit build` and puts the objects from the cache into the gallery bundle.
 
 Do not edit anything in `build/gen/`. A `.dkmod` export leaves out `build/` (section 10).
 
@@ -500,10 +501,10 @@ wait. The request body is at most 160 bytes. The reply body is at most 879 bytes
 
 | Task | Command | What it does |
 | --- | --- | --- |
-| Build | `mise run module:build -- PATH [--check]` | Compiles the sources to `build/*.dko.json` (`patchkit build`). `PATH` is the module folder or the module id; no path builds every module. An object whose sources did not change is skipped. `--check` fails when the objects are stale; `--force` compiles anyway. `patchkit dko show FILE` prints what an object holds. |
+| Build | `mise run module:build -- PATH [--check]` | Compiles the sources to objects in `out/cache/dko/<id>/` (`patchkit build`). `PATH` is the module folder or the module id; no path builds every module. An object whose sources did not change is skipped. `--check` fails when the objects are stale; `--force` compiles anyway. `patchkit dko show FILE` prints what an object holds. |
 | Check | `mise run module:check -- ID [--device dt2\|dn2]` | See below. |
 | Memory audit | `mise run module:audit -- NAME [--device dt2\|dn2]` | Loads the module on a ColdFire-only emulator, drives the UI and reports ColdFire stores outside the module's blocks. About 10 to 30 s per device. |
-| Pack | `mise run module:pack -- ID --device dt2\|dn2 [-o FILE]` | Makes the `.dkm`. Default: `out/patch/NAME-DEVICE.dkm`. It refuses a bad declaration, a bad route and a send without a page. |
+| Pack | `mise run module:pack -- ID --device dt2\|dn2 [-o FILE]` | Builds the objects that are stale and makes the `.dkm` from them in one command (no separate build step). Default: `out/patch/NAME-DEVICE.dkm`. It refuses a bad declaration, a bad route and a send without a page. |
 | Pack all | `mise run module:pack-all [-- --force]` | Packs every run-time module for every device into `out/modules/<device>/<id>.dkm`. |
 | Emulator | `mise run workbench` | Starts the emulator. Run it in another shell. |
 | Run | `mise run dk:run -- ID --emu` | Builds, packs, uploads, selects, restarts and follows the log. |

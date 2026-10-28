@@ -122,7 +122,8 @@ pub fn prepare(root: &Path, stock: &[u8], set: &str) -> Result<Outcome, String> 
     let device = devdata::by_short(fw.device.short())
         .ok_or_else(|| format!("runtime: no device file for {}", fw.device.short()))?;
     let roots = device.patch_set(set).map_err(e)?;
-    let lib = Library::scan_repo(root).map_err(e)?;
+    // the patch set is `core/*` modules: their objects are committed, and no content module is built (no toolchain needed)
+    let lib = Library::scan_repo_for(root, false, Some(roots)).map_err(e)?;
     let (modules, _) = lib.with_requires(roots).map_err(e)?;
     let key = cache_key(root, &lib, &modules, &fw.syx_sha256, set)?;
     let file = cache_file(root, &fw.syx_sha256, set, &key);
@@ -170,7 +171,8 @@ pub struct Reapplied {
 /// and the plan that places them: what `dev.reload` compares with the running image. Nothing is cached or written.
 pub fn reapply(root: &Path, stock: &[u8], ids: &[String], needs: &[&str]) -> Result<Reapplied, String> {
     let e = |x: patchkit::Error| x.to_string();
-    let lib = Library::scan_repo(root).map_err(e)?;
+    // objects are loaded for the modules of the record only; a content module of it is built when stale
+    let lib = Library::scan_repo_for(root, false, Some(ids)).map_err(e)?;
     let reg = Registry::from_dir(&root.join("devices/ports")).map_err(e)?;
     let requirers = lib
         .modules
@@ -198,8 +200,8 @@ mod tests {
     }
 
     fn lib_and_modules() -> (Library, Vec<String>) {
-        let lib = Library::scan_repo(&root()).unwrap();
         let roots = devdata::by_short("dt2").unwrap().patch_set("emulator").unwrap();
+        let lib = Library::scan_repo_for(&root(), false, Some(roots)).unwrap();
         let (modules, _) = lib.with_requires(roots).unwrap();
         (lib, modules)
     }

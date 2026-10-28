@@ -352,6 +352,31 @@ def check_sources(root: Path, mods: list[Module]) -> list[Violation]:
     return out
 
 
+def object_path(root: Path, m: Module, rel_path: str) -> Path:
+    """Where the built object `rel_path` of the module is: in the module for `core/*`, else in the cache (packages/patchkit/src/build/mod.rs)."""
+    if classify(root, m) == "core":
+        return m.dir / rel_path
+    return root / "out/cache/dko" / m.id / rel_path
+
+
+def check_committed_objects(root: Path, mods: list[Module]) -> list[Violation]:
+    """Objects of content modules and fixtures are build output (the cache); only `core/*` objects are committed."""
+    out = []
+    for m in mods:
+        if classify(root, m) == "core":
+            continue
+        for f in sorted(m.dir.rglob("*.dko.json")):
+            out.append(
+                Violation(
+                    f"{rel(root, f)}:1",
+                    "objects",
+                    f"{m.id} is a content module and has an object file in its tree",
+                    "delete it; `patchkit build` and `patchkit pack` keep the objects in out/cache/dko",
+                )
+            )
+    return out
+
+
 def check_objects(root: Path, mods: list[Module]) -> list[Violation]:
     out = []
     imports, sdk_externs = sdk_symbols(root)
@@ -371,7 +396,7 @@ def check_objects(root: Path, mods: list[Module]) -> list[Violation]:
                         "call an SDK import or an adapter export; anchors are resolved only by adapters",
                     )
                 )
-            path = m.dir / obj.get("path", "")
+            path = object_path(root, m, obj.get("path", ""))
             if not path.is_file():
                 continue  # not built: nothing to read
             try:
@@ -477,6 +502,7 @@ def check(root: Path = ROOT) -> list[Violation]:
     return [
         *check_roles(root, mods),
         *check_sources(root, mods),
+        *check_committed_objects(root, mods),
         *check_objects(root, mods),
         *check_apps(root, mods),
         *check_imports(root),

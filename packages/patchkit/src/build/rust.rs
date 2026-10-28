@@ -350,8 +350,8 @@ fn build_staticlib(env: &Env, manifest: &Path, out_dir: &Path) -> Result<PathBuf
     Ok(dst)
 }
 
-/// Names of the compiler's own helpers (`HELPER` of the Python builder): `mem(cpy|move|set|cmp)`, `bcmp`, the integer and
-/// floating-point routines of libgcc, and the 64/128-bit ones.
+/// Names of the compiler's own helpers: `mem(cpy|move|set|cmp)`, `bcmp`, the integer and floating-point routines of libgcc, and the
+/// 64/128-bit ones. `packages/patchkit/tests/build.rs` checks the rule against the symbols of the ColdFire libgcc archive.
 pub fn is_helper(n: &str) -> bool {
     let word = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '_');
     if let Some(r) = n.strip_prefix("mem")
@@ -365,8 +365,9 @@ pub fn is_helper(n: &str) -> bool {
     let Some(r) = n.strip_prefix("__") else {
         return false;
     };
-    const A: [&str; 10] = [
-        "mul", "div", "udiv", "mod", "umod", "ashl", "lshr", "ashr", "clz", "ctz",
+    const A: [&str; 17] = [
+        "mul", "div", "udiv", "mod", "umod", "ashl", "lshr", "ashr", "clz", "ctz", "absv", "clrsb",
+        "cmp", "ffs", "parity", "powi", "unord",
     ];
     if A.iter().any(|p| r.strip_prefix(p).is_some_and(word))
         || ["popcount", "bswap"]

@@ -369,13 +369,23 @@ pub fn link(proto: &Proto, base: u32, symmap: &HashMap<String, u32>) -> Result<L
 /// tools/coldfire/cfisa/coldfire.json); returns the form histogram. Anything that is not ISA_A/B/C or EMAC (a 68020+ form, an FPU form,
 /// a privileged form other than the ones a module may use, an illegal word) is an error listing every such instruction.
 pub fn check_isa(l: &Linked) -> Result<BTreeMap<String, u32>> {
+    check_ranges(&l.image, l.base, &l.text_ranges, &|a| format!("{a:08x}"))
+}
+
+/// [`check_isa`] over code ranges `(lo, hi)` of `image` loaded at `base`; `at` names an address in the error.
+fn check_ranges(
+    image: &[u8],
+    base: u32,
+    ranges: &[(u32, u32)],
+    at: &dyn Fn(u32) -> String,
+) -> Result<BTreeMap<String, u32>> {
     let mut hist: BTreeMap<String, u32> = BTreeMap::new();
     let mut bad: Vec<String> = vec![];
-    for &(lo, hi) in &l.text_ranges {
+    for &(lo, hi) in ranges {
         let mut addr = lo;
         while addr < hi {
-            let off = addr.wrapping_sub(l.base) as usize;
-            match coldfire::decode_at(&l.image, l.base, off) {
+            let off = addr.wrapping_sub(base) as usize;
+            match coldfire::decode_at(image, base, off) {
                 Some(i) => {
                     let form = i.id();
                     *hist.entry(form.to_string()).or_default() += 1;
@@ -383,14 +393,15 @@ pub fn check_isa(l: &Linked) -> Result<BTreeMap<String, u32>> {
                     let priv_ = i.privileged();
                     if !ALLOWED_UNITS.contains(&unit) || (priv_ && !PRIVILEGED_OK.contains(&form)) {
                         bad.push(format!(
-                            "{addr:08x}: {form} ({unit}{})",
+                            "{}: {form} ({unit}{})",
+                            at(addr),
                             if priv_ { ", privileged" } else { "" }
                         ));
                     }
                     addr += (i.len as u32).max(2);
                 }
                 None => {
-                    bad.push(format!("{addr:08x}: illegal encoding"));
+                    bad.push(format!("{}: illegal encoding", at(addr)));
                     addr += 2;
                 }
             }
@@ -403,6 +414,28 @@ pub fn check_isa(l: &Linked) -> Result<BTreeMap<String, u32>> {
         ));
     }
     Ok(hist)
+}
+
+/// [`check_isa`] over code blobs `(name, bytes)` that are not linked (the text sections of an object or of the members of an archive).
+/// `label` is put before each section name in the error.
+pub fn check_text(sections: &[(String, Vec<u8>)], label: &str) -> Result<BTreeMap<String, u32>> {
+    let mut image: Vec<u8> = vec![];
+    let mut ranges = vec![];
+    let mut starts: Vec<(u32, &str)> = vec![];
+    for (name, blob) in sections {
+        while image.len() % 4 != 0 {
+            image.push(0);
+        }
+        let lo = image.len() as u32;
+        image.extend_from_slice(blob);
+        ranges.push((lo, image.len() as u32));
+        starts.push((lo, name));
+    }
+    let at = |a: u32| {
+        let (lo, name) = starts.iter().rev().find(|s| s.0 <= a).copied().unwrap_or((0, "?"));
+        format!("{label}{name}+{:#x}", a - lo)
+    };
+    check_ranges(&image, 0, &ranges, &at)
 }
 
 /// The object a finished prototype becomes: linked once at `BASE` with placeholder externs (so PC16 and PC8 calls reach), checked, and

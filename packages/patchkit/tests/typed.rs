@@ -18,8 +18,8 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn library() -> Library {
-    Library::scan_repo(&root()).unwrap()
+fn library() -> Option<Library> {
+    Library::scan_repo_or_skip(&root())
 }
 
 /// SHA-256 over the id, length and data of every section except 7 (the SHARC DSP stream), in container order.
@@ -50,7 +50,9 @@ const PINS: &[(&str, &str, &str)] = &[
 
 #[test]
 fn declared_machines_patch_to_the_pinned_images() {
-    let lib = library();
+    let Some(lib) = library() else {
+        return;
+    };
     let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
     let mut ran = 0;
     for (file, mods, want) in PINS {
@@ -73,7 +75,9 @@ fn declared_machines_patch_to_the_pinned_images() {
 /// The committed `build/gen/` files equal fresh ones (`patchkit gen` rewrites them).
 #[test]
 fn generated_files_are_current() {
-    let lib = library();
+    let Some(lib) = library() else {
+        return;
+    };
     let models = Models::from_dir(&root().join("devices")).unwrap();
     let mut n = 0;
     for m in &lib.modules {
@@ -96,7 +100,9 @@ fn generated_files_are_current() {
 /// slots; pluck.s: `0x6d + 48 t`, offsets 1, 2, 6, 7; pluck_dn2.s: `0x6d + 0x49 v`, offsets 0 .. 3).
 #[test]
 fn device_models_match_the_hard_coded_frame_layout_of_pluck() {
-    let lib = library();
+    let Some(lib) = library() else {
+        return;
+    };
     let models = Models::from_dir(&root().join("devices")).unwrap();
     let m = lib.get("test/patched-pluck").unwrap();
     let res = patchkit::typed::resolve(&m.manifest, &models).unwrap();
@@ -156,14 +162,19 @@ fn bundle_lowering_matches_the_scan() {
         texts.push(std::fs::read_to_string(root().join("devices").join(f)).unwrap());
     }
     let models = Models::from_texts(texts.iter().map(|s| s.as_str())).unwrap();
+    let Some(scanned) = library() else {
+        return;
+    };
     let dir = root().join("tests/fixtures/modules/patched-pluck");
     let text = std::fs::read_to_string(dir.join("module.toml")).unwrap();
-    let read =
-        |p: &str| std::fs::read_to_string(dir.join(p)).map_err(|e| patchkit::Error(e.to_string()));
+    // the objects of a content module are in the cache (the scan above built them); the gallery bundle holds them as texts
+    let cache = root().join("out/cache/dko/test/patched-pluck");
+    let read = |p: &str| {
+        std::fs::read_to_string(cache.join(p)).map_err(|e| patchkit::Error(e.to_string()))
+    };
     let m = patchkit::module::Module::from_parts(&text, &read).unwrap();
     let mut lib = Library { modules: vec![m] };
     lib.lower(&models).unwrap();
-    let scanned = library();
     let a: Vec<_> = lib
         .get("test/patched-pluck")
         .unwrap()

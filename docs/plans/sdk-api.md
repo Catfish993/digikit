@@ -174,17 +174,21 @@ child processes.
       SHARC through `pk_sharc`. `patchkit dko show FILE`. Proof: every module's and fixture's
       `.dko.json` is text-identical to the Python build. Then `pk_build`, `pk_link`, `pk_rust` and the
       ColdFire part of `pk_elf` are deleted and their callers use `patchkit build`.
-- [ ] 5b. `patchkit build` and `pack` share the object in memory: a content module goes from source to
+- [x] 5b. `patchkit build` and `pack` share the object in memory: a content module goes from source to
       `.dkm` in one command. Content-module and fixture `.dko.json` become a cache in `out/` (by source
       hash; used by `module:pack-all`, the Rust tests and the web gallery); only `core/*` objects stay
       committed (the workbench and the browser patch without a toolchain).
+      Also: `serde_json`'s pretty printer replaces `canon.rs` (one reformat of committed objects if
+      needed); `isacheck.py` calls patchkit instead of its own ISA allow-list.
       Proof: every packed `.dkm` and patched image is byte-identical.
 - [ ] 5c. The workbench Reload modules button builds first (ColdFire in-process; a SHARC change says
       to run `dk:dev`).
 
 ### Phase 6: build in the browser
 
-- [ ] 6a. Own SHARC+ assembler in Rust. Proof: byte-identical against `selas` on every module.
+- [ ] 6a. SHARC in the browser: first build Selache's `selas` (Rust) for wasm and port the wrapper
+      (`pk_sharc`: encoding-bug guards, width fix-ups, cross-check) to Rust. Only if that fails, an own
+      SHARC+ assembler in Rust. Proof: byte-identical against the native build on every module.
 - [ ] 6b. Spike, at most one day: gcc `cc1` and `as` for `wasm32-wasi`. If it fails, plan an own
       C compiler for ColdFire in Rust.
 - [ ] 6c. `pk_build` and `pk_pack` in `patchkit.wasm`. One Transfer flow for desktop and web:

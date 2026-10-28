@@ -297,7 +297,7 @@ description = "Create a run-time module from a template in sdk/templates and bui
 
 [tasks."module:build"]
 run = "uv run python -m tools.patchkit.patchkit build"
-description = "Compile module sources to build/*.dko.json: mise run module:build [-- modules/fx/NAME] [--check]"
+description = "Compile module sources to objects (core/* modules: build/*.dko.json, committed; every other module: the cache out/cache/dko): mise run module:build [-- modules/fx/NAME] [--check]. Pack, dk:run and the Rust tests build stale objects themselves"
 
 [tasks."module:check"]
 run = "uv run python -m tools.patchkit.pk_modcheck"
@@ -313,7 +313,7 @@ description = "Build and pack every run-time module for every device into out/mo
 
 [tasks."module:pack"]
 run = "uv run python -m tools.patchkit.patchkit pack"
-description = "Pack a run-time module as a .dkm: mise run module:pack -- digikit/pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"
+description = "Build the stale objects and pack a run-time module as a .dkm in one command: mise run module:pack -- digikit/pluck --device dt2 [-o FILE] (default out/patch/<name>-<device>.dkm)"
 
 [tasks."module:export"]
 run = "uv run python -m tools.patchkit.pk_package export"

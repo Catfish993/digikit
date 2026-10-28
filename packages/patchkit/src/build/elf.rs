@@ -97,6 +97,60 @@ pub fn is_empty(blob: &[u8]) -> Result<bool> {
         .any(|s| s.sh_flags(e) & elf::SHF_ALLOC != 0 && s.sh_size(e) > 0))
 }
 
+/// The executable sections `(name, bytes)` of a relocatable m68k ELF.
+pub fn text_sections(blob: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
+    check_machine(blob)?;
+    let h = Hdr::parse(blob).map_err(bad)?;
+    let e = h.endian().map_err(bad)?;
+    let secs = h.sections(e, blob).map_err(bad)?;
+    let mut out = vec![];
+    for (i, s) in secs.iter().enumerate() {
+        if s.sh_type(e) == elf::SHT_PROGBITS
+            && s.sh_flags(e) & elf::SHF_EXECINSTR != 0
+            && s.sh_size(e) > 0
+        {
+            let sec = secs.section(object::SectionIndex(i)).map_err(bad)?;
+            let name = String::from_utf8_lossy(secs.section_name(e, sec).map_err(bad)?).into_owned();
+            out.push((name, s.data(e, blob).map_err(bad)?.to_vec()));
+        }
+    }
+    Ok(out)
+}
+
+/// The members of a GNU or BSD `ar` archive that are ELF objects: `(name, bytes)`. The symbol table and the long-name table are skipped.
+pub fn ar_members(blob: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
+    if !blob.starts_with(b"!<arch>\n") {
+        return Err(err!("not an ar archive"));
+    }
+    let (mut out, mut pos, mut longnames) = (vec![], 8usize, &blob[..0]);
+    while pos + 60 <= blob.len() {
+        let hdr = &blob[pos..pos + 60];
+        let field = |a: usize, b: usize| String::from_utf8_lossy(&hdr[a..b]).trim().to_string();
+        let mut name = field(0, 16);
+        let size: usize = field(48, 58)
+            .parse()
+            .map_err(|_| err!("ar: bad member size"))?;
+        let body = blob
+            .get(pos + 60..pos + 60 + size)
+            .ok_or_else(|| err!("ar: member runs past the end"))?;
+        pos += 60 + size + (size & 1);
+        if name == "//" {
+            longnames = body;
+            continue;
+        }
+        if name == "/" || name == "/SYM64/" {
+            continue;
+        }
+        if let Some(n) = name.strip_prefix('/').and_then(|n| n.parse::<usize>().ok()) {
+            let tail = longnames.get(n..).unwrap_or(&[]);
+            let end = tail.windows(2).position(|w| w == b"/\n").unwrap_or(tail.len());
+            name = String::from_utf8_lossy(&tail[..end]).into_owned();
+        }
+        out.push((name.trim_end_matches('/').to_string(), body.to_vec()));
+    }
+    Ok(out)
+}
+
 pub fn proto_from_elf(blob: &[u8]) -> Result<Proto> {
     check_machine(blob)?;
     let h = Hdr::parse(blob).map_err(bad)?;

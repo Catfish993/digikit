@@ -1206,7 +1206,7 @@ def test_runtime_fixture_explicit_plan_never_builds_but_waits_for_existing_build
     assert deps["runtime-fixture"] == ("build-daemons",)
 
 
-def test_stale_module_objects_stop_before_pack_or_acceptance(
+def test_a_failed_module_build_stops_before_pack_or_acceptance(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     gate = verify.Gate(
@@ -1219,18 +1219,9 @@ def test_stale_module_objects_stop_before_pack_or_acceptance(
         gate.failed.append(name)
 
     monkeypatch.setattr(gate, "run", fail)
-    with pytest.raises(RuntimeError, match="current module build objects"):
+    with pytest.raises(RuntimeError, match="module build objects"):
         verify.run_step(gate, "module-load")
-    assert calls == [
-        [
-            *verify.PY,
-            "-m",
-            "tools.patchkit.patchkit",
-            "build",
-            str(modroots.module_dir("digikit/pluck")),
-            "--check",
-        ]
-    ]
+    assert len(calls) == 1  # the build of the one module; no pack ran after it
 
 
 def test_runtime_fixture_host_paths_do_not_select_device_acceptance() -> None:

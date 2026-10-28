@@ -219,15 +219,20 @@ def bundle(extra: list[Path] | None = None) -> dict:
     """Ports and modules as texts: the input of `pk_apply` in patchkit.wasm.
 
     Only the committed module roots by default (modules/ and the fixtures); `extra` roots (e.g. out/modules for generated
-    oracles) are for tests, never for the published page.
+    oracles) are for tests, never for the published page. Builds the content modules' objects first (they are cached in out/cache/dko).
     """
     ports = [p.read_text() for p in sorted((ROOT / "devices" / "ports").glob("*.toml"))]
     modules = []
     roots = [*(ROOT / r for r in modroots.REPO_ROOTS), *(extra or [])]
+    # the objects of content modules are build output: build what is stale, then read them from the cache
+    r = _build_cmd(["build"])
+    if r.returncode:
+        raise BuildError((r.stderr or r.stdout).strip().removeprefix("patchkit: "))
     for m in (m for r in roots for m in sorted(r.rglob("module.toml"))):
         d = tomllib.loads(m.read_text())
         files = {
-            o["path"]: (m.parent / o["path"]).read_text() for o in d.get("object", [])
+            o["path"]: modroots.object_path(d, m.parent, o).read_text()
+            for o in d.get("object", [])
         }
         for r in d.get("registry", []):  # the permanent-number tables of frameworks
             if r.get("index_table"):

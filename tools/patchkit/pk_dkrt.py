@@ -29,6 +29,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import tomllib
 import zlib
 from pathlib import Path
 
@@ -156,7 +157,12 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
         for ln in man.splitlines()
         if ln.startswith("path =")
     )
-    obj = json.loads((modroots.module_dir(module) / obj_path).read_text())
+    # the object is build output (`pack` of the good file built it); the edited copy is a module without sources
+    parsed = tomllib.loads(man)
+    built = modroots.object_path(
+        parsed, modroots.module_dir(module), parsed["object"][0]
+    )
+    obj = json.loads(built.read_text())
     good = folder / "modules" / "dyn-demo.dkm"
     bad = bytearray(good.read_bytes())
     bad[-1] ^= (
@@ -186,10 +192,13 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
     tmp = work / "mods" / "test" / "dyn-demo-import"
     (tmp / "build").mkdir(parents=True, exist_ok=True)
     (tmp / "build" / "o.dko.json").write_text(json.dumps(imp))
+    no_sources = "".join(
+        ln for ln in man.splitlines(keepends=True) if not ln.startswith("sources =")
+    )
     (tmp / "module.toml").write_text(
-        man.replace('id = "test/dyn-demo"', 'id = "test/dyn-demo-import"').replace(
-            obj_path, "build/o.dko.json"
-        )
+        no_sources.replace(
+            'id = "test/dyn-demo"', 'id = "test/dyn-demo-import"'
+        ).replace(obj_path, "build/o.dko.json")
     )
     r = tools.run(tools.patchkit, "--root", ROOT, "pack", "test/dyn-demo-import", "--modules-dir", work / "mods",
                   "-o", folder / "modules" / "bad-import.dkm", "--name", "bad-import")  # fmt: skip

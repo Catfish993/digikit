@@ -22,7 +22,8 @@ modules/<category>/<name>/
   module.toml          the manifest (this file's reference)
   src/cf/*.c|*.s       ColdFire sources (m68k-elf gcc, -mcpu=54418, freestanding, relocatable)
   src/dsp/*.s          SHARC+ sources (algebraic syntax; every assembled word is re-decoded by our decoder)
-  build/*.dko.json     built objects; committed
+  build/*.dko.json     built objects of a core/* module only (committed); the objects of any other module are build output in
+                       out/cache/dko/<module id>/ (not committed; `patchkit build` and `patchkit pack` make them)
   tests/*.toml         harness tests
   README.md            notes: what it does, devices, limits
   gallery/icon.svg     the gallery card's icon
@@ -444,7 +445,7 @@ Workflow:
    and later runs compare against them. A change that is invisible on screen must give the stock frames.
 5. A module that changes sound needs a proof against a reference (PCM level, pitch, bit-identity at the neutral
    setting). The proofs are `tools/patchkit/pk_proof_*.py`; write one the same way and report numbers in a finding.
-6. `mise run module:build -- --check` must pass (committed objects equal fresh builds).
+6. `mise run module:build -- --check` must pass (the built objects equal fresh builds; only `core/*` objects are committed).
 
 ## Worked example 1: `digikit/master-gain` (SHARC+ only, both devices)
 

@@ -188,7 +188,7 @@ def menu_path(
     emu.subscribe()
     up = D.Uploader(D.EmuTransport(emu))
     for module in modules:
-        dkm = dkrun.build_pack(module, device, build=False)
+        dkm = dkrun.build_pack(module, device)
         dkrun.upload_if_changed(up, dkrun.module_path(module), dkm.read_bytes())
     stored = [path for path, _, _ in up.ls() if path.startswith("modules/")]
     panel.tap("NO", 400)
