@@ -1,0 +1,309 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 25,
+              "stock": 202
+            },
+            {
+              "param": "acid_cutoff",
+              "slot": 26
+            },
+            {
+              "param": "acid_reso",
+              "slot": 27
+            },
+            null,
+            {
+              "param": "acid_envmod",
+              "slot": 29
+            },
+            {
+              "param": "acid_decay",
+              "slot": 30
+            },
+            {
+              "param": "acid_dtype",
+              "slot": 31
+            },
+            {
+              "param": "acid_drive",
+              "slot": 32
+            }
+          ],
+          "level": 10,
+          "name": "Acid Saw",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "ACID",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "acid_cutoff",
+              "slot": 1
+            },
+            {
+              "param": "acid_reso",
+              "slot": 2
+            },
+            null,
+            {
+              "param": "acid_envmod",
+              "slot": 4
+            },
+            {
+              "param": "acid_decay",
+              "slot": 5
+            },
+            {
+              "param": "acid_dtype",
+              "slot": 6
+            },
+            {
+              "param": "acid_drive",
+              "slot": 7
+            }
+          ],
+          "level": 10,
+          "name": "Acid Saw",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "ACID",
+          "type": null
+        }
+      },
+      "id": "acid",
+      "name": "Acid Saw",
+      "short": "ACID"
+    },
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 25,
+              "stock": 202
+            },
+            {
+              "param": "acid_cutoff",
+              "slot": 26
+            },
+            {
+              "param": "acid_reso",
+              "slot": 27
+            },
+            null,
+            {
+              "param": "acid_envmod",
+              "slot": 29
+            },
+            {
+              "param": "acid_decay",
+              "slot": 30
+            },
+            {
+              "param": "acid_dtype",
+              "slot": 31
+            },
+            {
+              "param": "acid_drive",
+              "slot": 32
+            }
+          ],
+          "level": 10,
+          "name": "Acid Square",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "ACSQ",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "acid_cutoff",
+              "slot": 1
+            },
+            {
+              "param": "acid_reso",
+              "slot": 2
+            },
+            null,
+            {
+              "param": "acid_envmod",
+              "slot": 4
+            },
+            {
+              "param": "acid_decay",
+              "slot": 5
+            },
+            {
+              "param": "acid_dtype",
+              "slot": 6
+            },
+            {
+              "param": "acid_drive",
+              "slot": 7
+            }
+          ],
+          "level": 10,
+          "name": "Acid Square",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "ACSQ",
+          "type": null
+        }
+      },
+      "id": "acid_sq",
+      "name": "Acid Square",
+      "short": "ACSQ"
+    }
+  ],
+  "module": "josh/acid",
+  "params": {
+    "dn2": [
+      {
+        "default": 8192,
+        "id": "acid_cutoff",
+        "max": 32512,
+        "min": 0,
+        "name": "Cutoff",
+        "short": "CUT",
+        "slot": 26,
+        "template": 209
+      },
+      {
+        "default": 20480,
+        "id": "acid_reso",
+        "max": 32512,
+        "min": 0,
+        "name": "Resonance",
+        "short": "RES",
+        "slot": 27,
+        "template": 209
+      },
+      {
+        "default": 16384,
+        "id": "acid_envmod",
+        "max": 32512,
+        "min": 0,
+        "name": "Env Mod",
+        "short": "ENV",
+        "slot": 29,
+        "template": 209
+      },
+      {
+        "default": 12288,
+        "id": "acid_decay",
+        "max": 32512,
+        "min": 0,
+        "name": "Decay",
+        "short": "DEC",
+        "slot": 30,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "acid_dtype",
+        "max": 32512,
+        "min": 0,
+        "name": "Dist Type",
+        "short": "DTYP",
+        "slot": 31,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "acid_drive",
+        "max": 32512,
+        "min": 0,
+        "name": "Drive",
+        "short": "DRIV",
+        "slot": 32,
+        "template": 209
+      }
+    ],
+    "dt2": [
+      {
+        "default": 8192,
+        "id": "acid_cutoff",
+        "max": 32512,
+        "min": 0,
+        "name": "Cutoff",
+        "short": "CUT",
+        "slot": 1,
+        "template": 209
+      },
+      {
+        "default": 20480,
+        "id": "acid_reso",
+        "max": 32512,
+        "min": 0,
+        "name": "Resonance",
+        "short": "RES",
+        "slot": 2,
+        "template": 209
+      },
+      {
+        "default": 16384,
+        "id": "acid_envmod",
+        "max": 32512,
+        "min": 0,
+        "name": "Env Mod",
+        "short": "ENV",
+        "slot": 4,
+        "template": 209
+      },
+      {
+        "default": 12288,
+        "id": "acid_decay",
+        "max": 32512,
+        "min": 0,
+        "name": "Decay",
+        "short": "DEC",
+        "slot": 5,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "acid_dtype",
+        "max": 32512,
+        "min": 0,
+        "name": "Dist Type",
+        "short": "DTYP",
+        "slot": 6,
+        "template": 209
+      },
+      {
+        "default": 0,
+        "id": "acid_drive",
+        "max": 32512,
+        "min": 0,
+        "name": "Drive",
+        "short": "DRIV",
+        "slot": 7,
+        "template": 209
+      }
+    ]
+  }
+}
