@@ -1,12 +1,12 @@
 [module]
 id = "josh/acid"
-version = "0.1.0"
+version = "0.2.0"
 name = "Acid"
 category = "machines"
 type = "machine"
 author = "josh"
 status = "experimental"
-summary = "A TB-303-style bass: saw through a squelchy resonant filter with its own envelope, accent on high-velocity trigs."
+summary = "A TB-303-style bass: saw or square through a squelchy resonant filter, accents, slide, and a diode drive."
 dynamic = true
 ports = ["dt2-1.17"]
 requires = []
@@ -34,21 +34,21 @@ render = "_acid_sq_render"
 note_on = "_acid_note_on"
 desc = "_acid_desc"
 
-# SAMPLE's TUNE (0xca) on knob 0; knob 3 is the sample slot and stays empty; DTYPE and DRIVE on knobs 6 and 7 (needs
-# param_slots [1, 2, 4, 5, 6, 7]; the track level stays on the AMP page). Both machines share the knobs.
+# SAMPLE's TUNE (0xca) and LEV (0xd1) at the ends; knob 3 is the sample slot and stays empty; DRIVE on knob 6 (needs param_slots
+# [1, 2, 4, 5, 6, ...]). Knob 7 must stay LEV: the engine applies knob 7 of a SAMPLE clone as the level. Both machines share the knobs.
 [[machine]]
 id = "acid"
 name = "Acid Saw"
 short = "ACID"
 clone_of = 0
-knobs = [0xca, "acid_cutoff", "acid_reso", 0, "acid_envmod", "acid_decay", "acid_dtype", "acid_drive"]
+knobs = [0xca, "acid_cutoff", "acid_reso", 0, "acid_envmod", "acid_decay", "acid_drive", 0xd1]
 
 [[machine]]
 id = "acid_sq"
 name = "Acid Square"
 short = "ACSQ"
 clone_of = 0
-knobs = [0xca, "acid_cutoff", "acid_reso", 0, "acid_envmod", "acid_decay", "acid_dtype", "acid_drive"]
+knobs = [0xca, "acid_cutoff", "acid_reso", 0, "acid_envmod", "acid_decay", "acid_drive", 0xd1]
 
 [[param]]
 id = "acid_cutoff"
@@ -87,17 +87,8 @@ max = 0x7f00
 default = 0x3000
 
 [[param]]
-id = "acid_dtype"
-name = "Dist Type"
-short = "DTYP"
-template = 0xd1
-min = 0
-max = 0x7f00
-default = 0
-
-[[param]]
 id = "acid_drive"
-name = "Drive"
+name = "Drive (dry/wet)"
 short = "DRIV"
 template = 0xd1
 min = 0

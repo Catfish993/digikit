@@ -27,12 +27,12 @@
               "slot": 30
             },
             {
-              "param": "acid_dtype",
+              "param": "acid_drive",
               "slot": 31
             },
             {
-              "param": "acid_drive",
-              "slot": 32
+              "slot": 32,
+              "stock": 209
             }
           ],
           "level": 10,
@@ -68,12 +68,12 @@
               "slot": 5
             },
             {
-              "param": "acid_dtype",
+              "param": "acid_drive",
               "slot": 6
             },
             {
-              "param": "acid_drive",
-              "slot": 7
+              "slot": 7,
+              "stock": 209
             }
           ],
           "level": 10,
@@ -116,12 +116,12 @@
               "slot": 30
             },
             {
-              "param": "acid_dtype",
+              "param": "acid_drive",
               "slot": 31
             },
             {
-              "param": "acid_drive",
-              "slot": 32
+              "slot": 32,
+              "stock": 209
             }
           ],
           "level": 10,
@@ -157,12 +157,12 @@
               "slot": 5
             },
             {
-              "param": "acid_dtype",
+              "param": "acid_drive",
               "slot": 6
             },
             {
-              "param": "acid_drive",
-              "slot": 7
+              "slot": 7,
+              "stock": 209
             }
           ],
           "level": 10,
@@ -224,22 +224,12 @@
       },
       {
         "default": 0,
-        "id": "acid_dtype",
-        "max": 32512,
-        "min": 0,
-        "name": "Dist Type",
-        "short": "DTYP",
-        "slot": 31,
-        "template": 209
-      },
-      {
-        "default": 0,
         "id": "acid_drive",
         "max": 32512,
         "min": 0,
-        "name": "Drive",
+        "name": "Drive (dry/wet)",
         "short": "DRIV",
-        "slot": 32,
+        "slot": 31,
         "template": 209
       }
     ],
@@ -286,22 +276,12 @@
       },
       {
         "default": 0,
-        "id": "acid_dtype",
-        "max": 32512,
-        "min": 0,
-        "name": "Dist Type",
-        "short": "DTYP",
-        "slot": 6,
-        "template": 209
-      },
-      {
-        "default": 0,
         "id": "acid_drive",
         "max": 32512,
         "min": 0,
-        "name": "Drive",
+        "name": "Drive (dry/wet)",
         "short": "DRIV",
-        "slot": 7,
+        "slot": 6,
         "template": 209
       }
     ]

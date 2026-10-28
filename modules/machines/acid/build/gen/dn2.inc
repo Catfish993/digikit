@@ -47,17 +47,10 @@
 #define ACID_DECAY_MIN 0
 #define ACID_DECAY_MAX 32512
 #define ACID_DECAY_DEFAULT 12288
-#define ACID_DTYPE_KNOB 6 // knob position
-#define ACID_DTYPE_SLOT 31 // engine or sound-array slot
-#define ACID_DTYPE_FRAME_OFF 6 // halfwords from knob 0 of the same track
-#define ACID_DTYPE_MIRROR 31 // index in the parameter table
-#define ACID_DTYPE_MIN 0
-#define ACID_DTYPE_MAX 32512
-#define ACID_DTYPE_DEFAULT 0
-#define ACID_DRIVE_KNOB 7 // knob position
-#define ACID_DRIVE_SLOT 32 // engine or sound-array slot
-#define ACID_DRIVE_FRAME_OFF 7 // halfwords from knob 0 of the same track
-#define ACID_DRIVE_MIRROR 32 // index in the parameter table
+#define ACID_DRIVE_KNOB 6 // knob position
+#define ACID_DRIVE_SLOT 31 // engine or sound-array slot
+#define ACID_DRIVE_FRAME_OFF 6 // halfwords from knob 0 of the same track
+#define ACID_DRIVE_MIRROR 31 // index in the parameter table
 #define ACID_DRIVE_MIN 0
 #define ACID_DRIVE_MAX 32512
 #define ACID_DRIVE_DEFAULT 0

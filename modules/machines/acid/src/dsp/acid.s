@@ -7,11 +7,9 @@
 //   2 RESO    feedback 0 .. 3.9 (self-oscillation sits at 4)
 //   4 ENVMOD  how far the filter envelope opens the cutoff: 0 .. 5 octaves
 //   5 DECAY   filter envelope time 0.15 s .. 2.4 s (the envelope falls to 1/e^3 in that time)
-//   6 DTYPE   distortion type in four zones: 0..31 SOFT (cubic), 32..63 HARD (clip), 64..95 FOLD (triangle folder),
-//             96..127 RECT (soft clip with the negative half at 40 %: even harmonics)
-//   7 DRIVE   distortion drive 1x .. 32x after the filter, with 1/sqrt(drive) makeup; the shaped signal fades in over the first
-//             quarter of the knob, so 0 is clean for every type
-// (knobs 6 and 7 need param_slots [1, 2, 4, 5, 6, 7] in devices/digitakt-ii.toml)
+//   6 DRIVE   dry/wet into a diode distortion after the filter: 0 dry, 127 fully distorted
+// (knob 6 needs param_slots [1, 2, 4, 5, 6, ...] in devices/digitakt-ii.toml). Knob 7 stays SAMPLE's LEV: on the device the engine
+// applies knob 7 of a SAMPLE clone as the level, so a module parameter there doubles as a volume (measured 2026-10-28).
 // Accent comes from the trig velocity: 112 and above. It replaces DECAY with 0.2 s and adds 60 % level, as the 303's accent does
 // (there it also bypasses the decay pot). Its filter sweep goes through the 303's "accent sweep" smoothing: a charge c follows
 // A x envelope with a 100 ms time constant and opens the cutoff by 5 c octaves. A single accent gives a rounded rise; accents in a
@@ -29,15 +27,13 @@
 //   osc = saw(p) - W saw(p + 1/2)   W = 0 for ACID SAW, 1 for ACID SQR (two band-limited saws half a cycle apart: a square)
 //   u   = clip(osc - k s4, 1.5);  u = u (1 - 4/27 u^2)      cubic soft clip, |u| <= 1: bounds the loop at any RESO
 //   s1 += g (u - s1); s2 += g (s1 - s2); s3 += g (s2 - s3); s4 += g (s3 - s4)
-//   x = s4 drive;  y = (w_soft soft(x) + w_hard clip(x, 1) + w_fold fold(x) + w_rect rect(x)) / sqrt(drive)
-//   out = (s4 + m (y - s4)) level, m = min(1, 4 DRIVE)
-//   soft(x) = c (1 - 4/27 c^2), c = clip(x, 1.5);  fold(x) = 1 - 4 |frac((x + 1) / 4) - 1/2|;  rect(x) = s - 0.6 min(s, 0), s = soft(x)
-//   The weights are one-hot, set per block from DTYPE, so the loop has no branch.
+//   x = 30 s4;  d = max(soft(x), 0) + min(soft(2x) / 2, 0)   an asymmetric diode pair: +1 on one side, -1/2 on the other
+//   soft(x) = c (1 - 4/27 c^2), c = clip(x, 1.5);  y = MAKEUP (d - z), z += 0.0013 (d - z)   (a 10 Hz DC blocker)
+//   out = (s4 + m (y - s4)) level, m = DRIVE
 //
 // State (16 words = 64 bytes, all cleared at note-on): 0 phase, 1..4 the filter stages, 5 the filter envelope (note_on sets 1.0),
 // 6 W (the machine's waveform, written by its render entry every block), 7 the gliding pitch in octaves (0 = not started),
-// and per block for the loop: 8 drive, 9..12 the weights of SOFT, HARD, FOLD, RECT, 13 level, 14 the wet amount m,
-// 15 1 / sqrt(drive).
+// 9 the DC blocker's z, and per block for the loop: 13 level, 14 the wet amount m (8, 10..12 and 15 are unused).
 //
 // Registers through the sample loop: F13 phase, F4 increment, F5 1/increment, F6 g, F7 k, F8..F11 s1..s4,
 // F14 1.0, F15 0.0, I4 the constant table, I3 the state, I0 the output; F0..F3 and F12 are scratch. _dv_exp2 clobbers R0..R3 only.
@@ -205,58 +201,13 @@ _acid_glide:
     F8 = F8 * F0;
     DM(5, I3) = R8;                       // the envelope for the next block
 
-    // ---- distortion: drive = 2^(5 DRIVE), 1 / sqrt(drive), the wet amount, the level, and the type's one-hot weight ----
+    // ---- distortion: the level and the wet amount for the loop ----
     DM(13, I3) = R12;                     // level
-    R0 = DM(5, I1);                       // DRIVE (knob 7)
-    F0 = FLOAT R0;
-    R1 = 0x38010204;                      // 1 / 32512
-    F10 = F0 * F1;                        // (CUTOFF is used up)
-    R1 = 0x40800000;                      // 4.0
-    F0 = F10 * F1;
-    R1 = 0x3f800000;                      // 1.0
-    F0 = MIN(F0, F1);
-    DM(14, I3) = R0;                      // m = min(1, 4 DRIVE)
-    R1 = 0x40a00000;                      // 5.0
-    F0 = F10 * F1;
-    CALL _dv_exp2;
-    DM(8, I3) = R0;                       // drive
-    R1 = 0xc0200000;                      // -2.5
-    F0 = F10 * F1;
-    CALL _dv_exp2;
-    DM(15, I3) = R0;                      // 1 / sqrt(drive)
-    R0 = DM(4, I1);                       // DTYPE (knob 6)
+    R0 = DM(4, I1);                       // DRIVE (knob 6)
     F0 = FLOAT R0;
     R1 = 0x38010204;                      // 1 / 32512
     F0 = F0 * F1;
-    R1 = 0x40800000;                      // 4.0
-    F2 = F0 * F1;
-    R0 = TRUNC F2;                        // zone 0 .. 4 (127 gives 4: counted as 3 below)
-    R2 = 0;
-    DM(9, I3) = R2;
-    DM(10, I3) = R2;
-    DM(11, I3) = R2;
-    DM(12, I3) = R2;
-    R1 = 0x3f800000;                      // 1.0
-    R3 = 1;
-    COMP(R0, R3);
-    IF LT JUMP _acid_dsoft;
-    R3 = 2;
-    COMP(R0, R3);
-    IF LT JUMP _acid_dhard;
-    R3 = 3;
-    COMP(R0, R3);
-    IF LT JUMP _acid_dfold;
-    DM(12, I3) = R1;                      // RECT
-    JUMP _acid_ddone;
-_acid_dsoft:
-    DM(9, I3) = R1;
-    JUMP _acid_ddone;
-_acid_dhard:
-    DM(10, I3) = R1;
-    JUMP _acid_ddone;
-_acid_dfold:
-    DM(11, I3) = R1;
-_acid_ddone:
+    DM(14, I3) = R0;                      // m = DRIVE
 
     // ---- the sample loop ----
     R0 = DM(DK_IN_W_OUT, I2);
@@ -328,9 +279,9 @@ _acid_ddone:
         F1 = F10 - F11;
         F1 = F1 * F6;
         F11 = F11 + F1;
-        // distortion: the four shapes of x = s4 drive, weighted (one weight is 1, the rest 0)
-        F2 = DM(8, I3);                   // drive
-        F2 = F11 * F2;                    // x
+        // diode distortion of x = 30 s4: the positive half soft-clips at +1, the negative half at -1/2
+        F3 = DM(3, I4);                   // 30.0
+        F2 = F11 * F3;                    // x
         F3 = DM(0, I4);                   // 1.5
         F0 = CLIP F2 BY F3;
         F1 = F0 * F0;
@@ -338,38 +289,28 @@ _acid_ddone:
         F1 = F1 * F3;
         F1 = F14 - F1;
         F0 = F0 * F1;                     // soft(x)
-        F3 = DM(9, I3);
-        F12 = F0 * F3;                    // w_soft soft
-        F1 = MIN(F0, F15);
-        F3 = DM(3, I4);                   // 0.6
+        F12 = MAX(F0, F15);               // the positive side
+        F2 = F2 + F2;                     // 2x
+        F3 = DM(0, I4);                   // 1.5
+        F0 = CLIP F2 BY F3;
+        F1 = F0 * F0;
+        F3 = DM(1, I4);                   // 4/27
         F1 = F1 * F3;
-        F0 = F0 - F1;                     // rect(x)
-        F3 = DM(12, I3);
-        F0 = F0 * F3;
-        F12 = F12 + F0;                   // + w_rect rect
-        F0 = CLIP F2 BY F14;              // clip(x, 1)
-        F3 = DM(10, I3);
-        F0 = F0 * F3;
-        F12 = F12 + F0;                   // + w_hard clip
-        F0 = F2 + F14;
-        F3 = DM(4, I4);                   // 0.25
-        F0 = F0 * F3;
-        F3 = DM(5, I4);                   // 64.0: keeps the argument positive for TRUNC
-        F0 = F0 + F3;
-        R1 = TRUNC F0;
-        F1 = FLOAT R1;
-        F0 = F0 - F1;                     // frac((x + 1) / 4)
+        F1 = F14 - F1;
+        F0 = F0 * F1;                     // soft(2x)
         F3 = DM(2, I4);                   // 0.5
-        F0 = F0 - F3;
-        F0 = ABS F0;
-        F0 = F0 + F0;
-        F0 = F0 + F0;
-        F0 = F14 - F0;                    // fold(x)
-        F3 = DM(11, I3);
         F0 = F0 * F3;
-        F12 = F12 + F0;                   // + w_fold fold
-        F3 = DM(15, I3);                  // 1 / sqrt(drive)
-        F12 = F12 * F3;                   // y
+        F0 = MIN(F0, F15);                // the negative side
+        F12 = F12 + F0;                   // d
+        // the DC the asymmetry makes: y = d - z, z += a (d - z)
+        F3 = DM(9, I3);                   // z
+        F0 = F12 - F3;
+        F1 = DM(5, I4);                   // a = 1 - exp(-2 pi 10 / 48000)
+        F1 = F0 * F1;
+        F3 = F3 + F1;
+        DM(9, I3) = R3;
+        F3 = DM(4, I4);                   // makeup
+        F12 = F0 * F3;                    // y
         F12 = F12 - F11;
         F3 = DM(14, I3);                  // m
         F12 = F12 * F3;
@@ -402,10 +343,10 @@ _acid_note_on:
 // the sample loop's constants (I4)
 .VAR _acid_k = 0x3fc00000;                // 1.5: the soft clip's input bound
 .VAR _acid_k1 = 0x3e17b426;               // 4/27
-.VAR _acid_k2 = 0x3f000000;               // 0.5: the square's second saw, the folder's centre
-.VAR _acid_k3 = 0x3f19999a;               // 0.6: RECT's cut of the negative half
-.VAR _acid_k4 = 0x3e800000;               // 0.25: the folder's period
-.VAR _acid_k5 = 0x42800000;               // 64.0: the folder's offset
+.VAR _acid_k2 = 0x3f000000;               // 0.5: the square's second saw, the diode's negative side
+.VAR _acid_k3 = 0x41f00000;               // 30.0: the diode's input gain
+.VAR _acid_k4 = 0x3eb33333;               // 0.35: the diode's makeup (rig: 0.5 put full wet 3.1 dB over dry on a held note)
+.VAR _acid_k5 = 0x3aab75ea;              // 1 - exp(-2 pi 10 / 48000): the DC blocker
 
 // the accent memory: 16 tags (state addresses), their 16 charges, 16 spare words; cleared on first use (bss is not
 // zero on the rig)
@@ -417,7 +358,7 @@ _acid_note_on:
 .GLOBAL _acid_desc;
 .VAR _acid_desc = DK_MAGIC;
 .VAR _acid_desc1 = DK_MACHINE_V1;
-.VAR _acid_desc2 = 6;
+.VAR _acid_desc2 = 5;
 .VAR _acid_desc3 = DK_MAX_VOICES;
 .VAR _acid_desc4 = 64;
 .VAR _acid_desc5 = 64;
