@@ -1,0 +1,129 @@
+{
+ "arch": "sharc",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 4,
+   "section": "seg_pmco",
+   "symbol": "_acid_body",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 34,
+   "section": "seg_pmco",
+   "symbol": "_dv_exp2",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 44,
+   "section": "seg_pmco",
+   "symbol": "_dv_exp2",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 129,
+   "section": "seg_pmco",
+   "symbol": "_dv_exp2",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 138,
+   "section": "seg_pmco",
+   "symbol": "_dv_exp2",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 170,
+   "section": "seg_pmco",
+   "symbol": "_dv_exp2",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 185,
+   "section": "seg_pmco",
+   "symbol": "_dv_exp2",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 195,
+   "section": "seg_pmco",
+   "symbol": "_acid_k",
+   "type": "sharc.abs32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 8,
+   "hex": "7e70bf09800f00003e06000000007e70bf09000f803f000008970600be703f09fe70bf08089400008c0100a0010ffe4600008e010110010faa39abaa930101078a017010be0600000000010f3239629a930101048a017020be0600000000010fb745e37793010105089401008c0100a0010fe0c6000001c8010f803b000001cf810f00008e010120010f803f00008e0101190f0f01380402089200008c0100a093010f0a089201008c0100a093010f0b089202008c0100a093010f0c089203008c0100a093010f0d08960504010fa04000009301c100010f204000009301910101c808cf010fe04000009301a10101c8010faa403c4d01c8010f5841dccf8e010110be0600000000010f4639970501cf8a010020be0600000000010f803f000088011026010f79409a999301b107010f193f9a9993019100010f803f000001c8010fe63e66669301010c010f80c000009301d100be0600000000010f9dbcad9493010103010f6cbc045f13c919cf88013110be060000000080cf08970504089403003e703f08140f0000000008968006089601040896820408960305089684050e0f803f00008f0f0000000c0020b1003e011300d5003e010800e0203e010e000f203e01130000003e010800ed213e01130015013e010800e1213e010e001f213e01130011013e01080001203e010800dd123e0108002e223e010800201203a8000002003e010800d3133e0108003e2022010a0000133e01130035003e010800e0203e010e000f203e01130000003e010800e3213e01130015013e010800e1213e010e001f213e01130011013e01080001203e01080033113e0108001e213e010800101100a6000006003e01130010013e01080021223e011300b7013e010800212203a8000000003e010e0023323e011300220103a8000001003e01130013013e010800e1213e01130021023e01080028213e01130016013e01080081183e01080089213e01130016013e01080091193e0108009a213e01130016013e010800a11a3e010800ab213e01130016013e010800b11b3e011300bc013e010800d41d3e010800de2222010a00201dbe51808000000897800608970104089782040897030508978405800f00003f083f687e70bf09000f803f000008970500800f00003f083f68",
+   "kind": "text",
+   "name": "seg_pmco",
+   "size": 836
+  },
+  {
+   "align": 8,
+   "hex": "0000c03f26b4173e0000003f414d4b440100000004000000100000001c0000001c000000b80b00001c0c00000200000000000000",
+   "kind": "data",
+   "name": "seg_dmda",
+   "size": 52
+  }
+ ],
+ "source_sha256": "6d568418f5488b84bb90b5fad4c8a6138dd4c85df82f77c309a3e4151ca4a7f8",
+ "symbols": [
+  {
+   "global": false,
+   "name": "_acid_body",
+   "section": "seg_pmco",
+   "value": 12
+  },
+  {
+   "global": true,
+   "name": "_acid_note_on",
+   "section": "seg_pmco",
+   "value": 407
+  },
+  {
+   "global": true,
+   "name": "_acid_render",
+   "section": "seg_pmco",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_acid_sq_render",
+   "section": "seg_pmco",
+   "value": 7
+  },
+  {
+   "global": true,
+   "name": "_acid_desc",
+   "section": "seg_dmda",
+   "value": 12
+  },
+  {
+   "global": false,
+   "name": "_acid_k",
+   "section": "seg_dmda",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_exp2",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "instructions_redecoded": "168",
+  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
+  "selas_sha256": "955a85b480033d1b43fd4809900faa12c3e1d38986bbae80fc3d4e36ec9c53a4",
+  "seldump_sha256": "a9c10617c712bffeb9005805db921d639f5438b6564acf55bafaf4d6017d84f3"
+ }
+}

@@ -1,0 +1,86 @@
+[module]
+id = "josh/acid"
+version = "0.1.0"
+name = "Acid"
+category = "machines"
+type = "machine"
+author = "josh"
+status = "experimental"
+summary = "A TB-303-style bass: saw through a squelchy resonant filter with its own envelope, accent on high-velocity trigs."
+dynamic = true
+ports = ["dt2-1.17"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+
+# `patchkit pack josh/acid --device dt2 -o acid.dkm` makes the .dkm; the digikit runtime sends the DSP object to the DSP and
+# publishes the voice row and the machine row.
+[[object]]
+path = "build/acid-dsp.dko.json"
+sources = ["src/dsp/acid.s"]
+place = "dsp.l2"
+
+[[voice]]
+machine = "acid"
+render = "_acid_render"
+note_on = "_acid_note_on"
+desc = "_acid_desc"
+
+[[voice]]
+machine = "acid_sq"
+render = "_acid_sq_render"
+note_on = "_acid_note_on"
+desc = "_acid_desc"
+
+# SAMPLE's TUNE (0xca) and LEV (0xd1) at the ends; knob 3 is the sample slot and stays empty. Both machines share the knobs.
+[[machine]]
+id = "acid"
+name = "Acid Saw"
+short = "ACID"
+clone_of = 0
+knobs = [0xca, "acid_cutoff", "acid_reso", 0, "acid_envmod", "acid_decay", 0, 0xd1]
+
+[[machine]]
+id = "acid_sq"
+name = "Acid Square"
+short = "ACSQ"
+clone_of = 0
+knobs = [0xca, "acid_cutoff", "acid_reso", 0, "acid_envmod", "acid_decay", 0, 0xd1]
+
+[[param]]
+id = "acid_cutoff"
+name = "Cutoff"
+short = "CUT"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x2000
+
+[[param]]
+id = "acid_reso"
+name = "Resonance"
+short = "RES"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x5000
+
+[[param]]
+id = "acid_envmod"
+name = "Env Mod"
+short = "ENV"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x4000
+
+[[param]]
+id = "acid_decay"
+name = "Decay"
+short = "DEC"
+template = 0xd1
+min = 0
+max = 0x7f00
+default = 0x3000
