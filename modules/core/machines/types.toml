@@ -18,19 +18,15 @@
 #   selection record; docs/design/module-sdk.md 11.5 D7). `core/dynreg` reserves one row per number of that range (keys
 #   "core/dynreg:dyn<N>" in `alloc`); a built-in machine never takes a number in it.
 
-# This fork patches machines in and never ships the run-time loader: the run-time range of both devices (16 ..= 23,
-# core/dynreg) is retired and its numbers are allocated to built-in machines: dynamic_first past `last` leaves it empty.
-# Digitakt II 11, 16, 17, 18 and 20 are reserved (taken by machines kept out of this repository); never allocate them.
+# This branch keeps the run-time range (16 ..= 23, core/dynreg) for run-time modules such as josh/acid. Of tom/* only TB303 is
+# here, on 12 (outside the range); tom/para, tom/chord, tom/parasmp and tom/wtstack took 19, 21, 22, 23 inside it and stay
+# on boourns/digikit publish/tom-machines.
 [dt2]
 last = 23
-dynamic_first = 24
+dynamic_first = 16
 
 [dt2.alloc]
 "tom/tb303:tb303" = 12
-"tom/para:para" = 19
-"tom/chord:chord" = 21
-"tom/parasmp:parasmp" = 22
-"tom/wtstack:wtstack" = 23
 "fadedlimes/bd:bd" = 15
 "fadedlimes/pd:pd" = 14
 "fadedlimes/analog:analog" = 13
@@ -38,11 +34,19 @@ dynamic_first = 24
 "test/machine-clone:xclone" = 8
 "test/patched-pluck:pluck" = 9
 "test/twin-xslice:xslice_d" = 10
+"core/dynreg:dyn16" = 16
+"core/dynreg:dyn17" = 17
+"core/dynreg:dyn18" = 18
+"core/dynreg:dyn19" = 19
+"core/dynreg:dyn20" = 20
+"core/dynreg:dyn21" = 21
+"core/dynreg:dyn22" = 22
+"core/dynreg:dyn23" = 23
 
 
 [dn2]
 last = 23
-dynamic_first = 24
+dynamic_first = 16
 
 [dn2.alloc]
 "tom/tb303:tb303" = 12
@@ -54,4 +58,12 @@ dynamic_first = 24
 # 7 and 8 are retired (test/dn2-sine and test/dn2-edge, removed): a gap row, never reused (the next free number is above 10).
 "test/patched-pluck:pluck" = 9
 "test/twin-dn2:dyn_pluck" = 10
+"core/dynreg:dyn16" = 16
+"core/dynreg:dyn17" = 17
+"core/dynreg:dyn18" = 18
+"core/dynreg:dyn19" = 19
+"core/dynreg:dyn20" = 20
+"core/dynreg:dyn21" = 21
+"core/dynreg:dyn22" = 22
+"core/dynreg:dyn23" = 23
 
