@@ -20,7 +20,8 @@ body {
 /* Toolbar and status icons; the panel drawing sizes itself. */
 .topbar svg,
 .statusbar svg,
-.drawer svg {
+.drawer svg,
+.log-drawer svg {
   width: 13px;
   height: 13px;
   flex-shrink: 0;
@@ -39,10 +40,13 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-width: 80px;
+  min-width: 48px;
+  flex: 0 1 auto;
+  overflow: hidden;
   color: var(--ink-3);
 }
 .topbar .path {
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--ink);
@@ -125,6 +129,27 @@ body {
   color: var(--ink-3);
   cursor: not-allowed;
 }
+.tb .lbl {
+  white-space: nowrap;
+}
+.tag.opt .short {
+  display: none;
+}
+/* a narrow window: the buttons keep their icons and lose their words (the tooltips stay), the runtime option gets short */
+@media (max-width: 1340px) {
+  .topbar .tb .lbl {
+    display: none;
+  }
+  .topbar .tb {
+    padding-inline: 8px;
+  }
+  .tag.opt .long {
+    display: none;
+  }
+  .tag.opt .short {
+    display: inline;
+  }
+}
 .tb.icon {
   width: 30px;
   padding: 0;
@@ -187,8 +212,16 @@ body {
   border: 0;
 }
 .statusbar .muted {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ink-3);
   border-right: 0;
+}
+/* a long status line gives way: the Log and Metrics buttons stay in view */
+.statusbar > button {
+  flex-shrink: 0;
 }
 .statusbar .warn,
 .drawer .warn {
@@ -243,9 +276,9 @@ body {
 .drawer {
   position: absolute;
   right: 12px;
-  bottom: 44px;
+  bottom: calc(44px + var(--dock-h, 0px));
   width: min(400px, calc(100% - 24px));
-  max-height: calc(100% - 120px);
+  max-height: calc(100% - 120px - var(--dock-h, 0px));
   overflow-y: auto;
   background: #15171a;
   border: 1px solid #2c2f35;
@@ -373,4 +406,165 @@ body {
 .emu-row > .stage {
   flex: 1;
   min-width: 0;
+}
+
+/* the Log dock: a panel along the bottom, full width, above the status bar; the page above it takes the rest of the height */
+.sb .badge {
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 9px;
+  color: #1b0c0b;
+  background: #ff8b82;
+}
+.log-drawer {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: #15171a;
+  border-top: 1px solid #2c2f35;
+  min-height: 0;
+}
+/* the top edge: a thin grab area over the border; the page above shrinks as the dock grows */
+.dock-handle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  z-index: 2;
+  cursor: row-resize;
+  touch-action: none;
+}
+.dock-handle:hover,
+.console.dock-dragging .dock-handle {
+  background: rgba(243, 181, 44, 0.55);
+  height: 3px;
+  top: -1px;
+}
+.dock-handle:focus-visible {
+  outline: 2px solid var(--amber, #f3b52c);
+  outline-offset: -2px;
+}
+.console.dock-dragging {
+  cursor: row-resize;
+  user-select: none;
+}
+.log-drawer header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid #23262b;
+}
+.log-drawer header .count {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.log-drawer select {
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid #2c2f35;
+  background: #1a1c20;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 6px;
+}
+.tb.small {
+  height: 26px;
+  padding-inline: 9px;
+  font-size: 12px;
+}
+.tb.on {
+  background: #2a2d33;
+  border-color: #4a4e56;
+}
+.log-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.log-list li {
+  padding: 0 14px;
+}
+.log-list li:hover {
+  background: #191b1f;
+}
+.log-list .row {
+  display: grid;
+  grid-template-columns: 64px 86px minmax(0, 1fr) 22px;
+  gap: 0 10px;
+  align-items: baseline;
+  min-height: 22px;
+  line-height: 22px;
+}
+.log-list time,
+.log-list .src {
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.log-list .text {
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.log-list li.bad .src,
+.log-list li.bad .text {
+  color: #ffa39b;
+}
+.log-list .more {
+  grid-column: 4;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.log-list .more:hover {
+  background: #23262b;
+  color: var(--ink);
+}
+.log-list .detail {
+  margin: 0 0 6px 74px;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: 6px;
+  background: #0f1012;
+  border: 1px solid #23262b;
+  color: var(--ink-2);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.log-list .empty {
+  padding: 14px;
+  color: var(--ink-3);
+  font-family: inherit;
+}
+@media (max-width: 960px) {
+  .log-list .row {
+    grid-template-columns: 56px 86px minmax(0, 1fr) 22px;
+    gap: 0 8px;
+  }
+  .log-list .detail {
+    margin-left: 0;
+  }
 }

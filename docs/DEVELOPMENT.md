@@ -93,6 +93,8 @@ disabled ("desktop only for now"). Headless: the control socket's `card.load {di
 `card.status`; `uv run python -m tools.emulator.card_check` checks that trigs 1-3 play a 220 Hz sine, an
 880 Hz sine and noise from three generated files.
 
+**Log panel (desktop app).** The "Log" button in the status bar, or ⌘J (Ctrl+J on other systems), opens a panel with the events of this window: module reloads and builds, firmware loads, card changes, Transfer runs, emulator resets, and guest faults, stalls and DSP halts. Each entry has a time, a source, one line, and for long output (a compiler log) a ▸ button that shows it in full. The panel has a source filter, "Errors only", "Copy" (the entries shown, with details) and "Clear". It keeps the last 500 entries in memory. It opens by itself for a failed reload or build and for a guest fault, stall or DSP halt; other errors add to the badge on the Log button. The Log is a panel docked along the bottom of the window, full width: the page above it gets smaller, nothing is covered. Drag its top edge to change the height (double click resets it; the height is remembered). Metrics stays a small popover above the status bar. The app polls the controller for stalls and halts once a second, so they can show up to a second late.
+
 ## Web panel
 
 ```sh

@@ -161,6 +161,11 @@ export interface RuntimePatch {
 export interface FirmwareInfo {
   runtime: RuntimePatch | null;
 }
+/** The controller's heartbeat (`status.heartbeat`): whether the guest's main loop has stopped, and the stall threshold in emulated ms. */
+export interface RuntimeHealth {
+  stalled: boolean;
+  stall_ms: number;
+}
 export interface EmulatorRuntime {
   /** Browser worker only, and only with a core built with the `sharc` feature. */
   loadCoupled?(files: CoupledFiles, audioPort: MessagePort): Promise<RuntimeSnapshot>;
@@ -180,6 +185,8 @@ export interface EmulatorRuntime {
   loadPath?(path: string, options?: LoadOptions): Promise<RuntimeSnapshot>;
   /** Native desktop only: what the running image got from the digikit runtime patch (`status.firmware.runtime`). */
   firmwareInfo?(): Promise<FirmwareInfo | undefined>;
+  /** Native desktop only: the heartbeat of the running image (`status.heartbeat`), or undefined while a job runs. */
+  health?(): Promise<RuntimeHealth | undefined>;
   /** The emulator's own reset of the running firmware (the browser worker boots the file again). Not the device RESTART command. */
   restart(): Promise<RuntimeSnapshot>;
   /** Native desktop only: `dev.reload`. The controller applies the modules again from the objects on disk and brings the running
@@ -574,6 +581,10 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     async firmwareInfo() {
       const status = await call<{ firmware: { runtime?: RuntimePatch | null } | null }>('status');
       return { runtime: status.firmware?.runtime ?? null };
+    },
+    async health() {
+      const status = await call<{ heartbeat?: RuntimeHealth }>('status');
+      return status.heartbeat;
     },
     async restart() {
       if (!loaded || activeSession === undefined) throw new Error('No firmware selected');

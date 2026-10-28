@@ -2,7 +2,7 @@
 // `mise run workbench -- FILE` starts it on FILE; with "watching" on, a change to FILE on disk reloads it, so a
 // module can be patched from the command line and heard here a second later.
 import { invoke } from '@tauri-apps/api/core';
-import { Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import LivePanel, { type LivePanelApi } from '@web/components/LivePanel';
 import { panels } from '@web/data/faceplates';
 import {
@@ -14,6 +14,23 @@ import {
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
 import { bumpCardRefresh } from './card-state';
+import { DOCK_KEY_STEP, clampDock, dockAt, parseDock, startDock } from './dock-core';
+import {
+  LOG_SOURCES,
+  copyText,
+  duration,
+  failureEntry,
+  filterEntries,
+  firmwareEntry,
+  formatTime,
+  healthChanges,
+  healthStart,
+  reloadEntry,
+  reloadFailureEntry,
+  unseenErrors,
+  type LogSource,
+} from './log-core';
+import { clearLog, logEvent, logInput, logOpen, logState, setLogOpen } from './log-state';
 import SidePanels from './SidePanels';
 import RemotePage from './RemotePage';
 import { emulatorSession, target } from './target';
@@ -40,6 +57,24 @@ const writeRuntimePref = (on: boolean) => {
     localStorage.setItem(RUNTIME_KEY, on ? 'on' : 'off');
   } catch {
     /* the choice lasts until the window closes */
+  }
+};
+
+// The height of the Log dock in px; kept per browser profile of the app (none saved: a share of the window).
+const DOCK_KEY = 'digikit.logHeight';
+const readDockPref = () => {
+  try {
+    return parseDock(localStorage.getItem(DOCK_KEY));
+  } catch {
+    return undefined;
+  }
+};
+const writeDockPref = (px: number | undefined) => {
+  try {
+    if (px === undefined) localStorage.removeItem(DOCK_KEY);
+    else localStorage.setItem(DOCK_KEY, String(px));
+  } catch {
+    /* the height lasts until the window closes */
   }
 };
 
@@ -108,12 +143,20 @@ export default function Console() {
   const [opened, setOpened] = createSignal('');
   const [watching, setWatching] = createSignal(true);
   const [reloadNote, setReloadNote] = createSignal('');
-  // the compiler output of a failed build (`error` is reset by every display frame, so it cannot hold it)
-  const [reloadDetail, setReloadDetail] = createSignal('');
   const [modulesBusy, setModulesBusy] = createSignal(false);
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
   const [rate, setRate] = createSignal<number>();
   const [drawer, setDrawer] = createSignal(false);
+  // the Log drawer: its filter, the entries shown in full, the last entry seen (the badge counts the errors after it), a copy note
+  const [logSource, setLogSource] = createSignal<LogSource | 'all'>('all');
+  const [errorsOnly, setErrorsOnly] = createSignal(false);
+  const [expanded, setExpanded] = createSignal<ReadonlySet<number>>(new Set<number>());
+  const [seenId, setSeenId] = createSignal(0);
+  const [copied, setCopied] = createSignal(false);
+  // the Log dock: its height (undefined: the default share of the window), the window height, and a drag in progress
+  const [dockSaved, setDockSaved] = createSignal(readDockPref());
+  const [windowPx, setWindowPx] = createSignal(window.innerHeight);
+  const [dockDrag, setDockDrag] = createSignal(false);
   const [page, setPage] = createSignal<'emulator' | 'transfer' | 'remote'>('emulator');
   const [sidebarOpen, setSidebarOpen] = createSignal(readSidebarPref());
   const [card, setCard] = createSignal<CardStatus>();
@@ -126,6 +169,10 @@ export default function Console() {
   let lastAudio: { produced: number; wall: number } | undefined;
   let lastModified: number | undefined;
   let reloading = false;
+  let health = healthStart();
+  let logList: HTMLOListElement | undefined;
+  let dockEl: HTMLElement | undefined;
+  let stickToEnd = true;
   const timers: number[] = [];
 
   // a memo: `status` is set once per display frame, and the panels must hear of a change of this value only
@@ -144,6 +191,13 @@ export default function Console() {
     live?.show(event.snapshot);
     setStatus(event.snapshot.status);
     setError(event.snapshot.status.error ?? '');
+    watchHealth({ error: event.snapshot.status.error });
+  };
+  /** Log a guest fault, stall or DSP halt when it starts (the app polls the status; it gets no events from the controller). */
+  const watchHealth = (reading: Parameters<typeof healthChanges>[1]) => {
+    const seen = healthChanges(health, reading);
+    health = seen.health;
+    seen.entries.forEach(logInput);
   };
 
   /** What the running image got from the runtime patch, for the header. */
@@ -155,24 +209,39 @@ export default function Console() {
     }
   };
   /** Start a new firmware session with `start` (every load goes through the controller's `firmware.load`). */
-  const boot = async (start: (r: EmulatorRuntime) => Promise<RuntimeSnapshot>) => {
+  const boot = async (start: (r: EmulatorRuntime) => Promise<RuntimeSnapshot>, name: string) => {
     const r = runtime();
     if (!r) return;
     live?.releaseAll();
     live?.clear();
     setError('');
+    health = healthStart();
+    const began = performance.now();
     try {
       update({ type: 'snapshot', snapshot: await start(r) });
       setPaused(false);
       await refreshInfo();
+      const s = status();
+      if (s)
+        logInput(
+          firmwareEntry({
+            name,
+            device: s.device,
+            version: s.version,
+            runtime: bootRuntime(),
+            patch: info()?.runtime,
+            ms: performance.now() - began,
+          }),
+        );
       // another firmware may be another device: its card folder and its memory (the runtime needs a moment to load its modules)
       bumpCardRefresh();
       window.setTimeout(bumpCardRefresh, 2500);
     } catch (e) {
       setError(message(e));
+      logInput(failureEntry('firmware', `loading ${name}`, message(e)));
     }
   };
-  const load = (bytes: Uint8Array, name: string) => boot((r) => r.load(bytes, name, { runtime: bootRuntime() }));
+  const load = (bytes: Uint8Array, name: string) => boot((r) => r.load(bytes, name, { runtime: bootRuntime() }), name);
   /** Boot the startup file again: the controller reads it from its path. */
   const reload = async (why: string) => {
     const path = source()?.path;
@@ -180,8 +249,9 @@ export default function Console() {
     reloading = true;
     try {
       setOpened('');
-      await boot((r) =>
-        r.loadPath ? r.loadPath(path, { runtime: bootRuntime() }) : Promise.reject(new Error('no reload')),
+      await boot(
+        (r) => (r.loadPath ? r.loadPath(path, { runtime: bootRuntime() }) : Promise.reject(new Error('no reload'))),
+        source()?.name ?? path,
       );
       setReloadNote(`${why} ${new Date().toLocaleTimeString()}`);
     } catch (e) {
@@ -191,23 +261,25 @@ export default function Console() {
     }
   };
   /** `dev.reload {build: true}`: the controller builds the stale ColdFire objects, applies the modules again from the objects on disk
-   * and swaps module code into a restored main screen, or boots the new image; the result goes to the status area. A build error
-   * is one short line there and the compiler output in the alert above. */
+   * and swaps module code into a restored main screen, or boots the new image; the result goes to the status area and the Log. A build
+   * error is one short line in the status area; the Log has it with the compiler output as its detail. */
   const reloadModules = async () => {
     const r = runtime();
     if (!r?.reloadModules || modulesBusy()) return;
     setModulesBusy(true);
     setError('');
     setReloadNote('Reloading modules…');
-    setReloadDetail('');
     try {
-      setReloadNote(reloadLine(await r.reloadModules()));
+      const report = await r.reloadModules();
+      setReloadNote(reloadLine(report));
+      logInput(reloadEntry(report));
+      health = healthStart();
       setPaused(false);
       await refreshInfo();
     } catch (e) {
       const failure = reloadError(e);
       setReloadNote(failure.status);
-      setReloadDetail(failure.full);
+      logInput(reloadFailureEntry(failure));
     } finally {
       setModulesBusy(false);
     }
@@ -228,6 +300,7 @@ export default function Console() {
     try {
       const a = await runtime()?.nativeAudio?.();
       setAudio(a);
+      watchHealth({ halted: a?.halted ?? null });
       const produced = a?.source_audio_seconds,
         wall = a?.session_wall_seconds;
       if (produced === undefined || wall === undefined) return;
@@ -239,7 +312,35 @@ export default function Console() {
     }
   };
 
+  /** The heartbeat, once a second: a stalled main loop shows nowhere else. */
+  const pollHealth = async () => {
+    try {
+      const beat = await runtime()?.health?.();
+      if (beat) watchHealth({ stalled: beat.stalled, stallMs: beat.stall_ms });
+    } catch {
+      /* a replaced session has no status */
+    }
+  };
+
+  const toggleLog = () => setLogOpen(!logOpen());
+  const toggleMetrics = () => setDrawer(!drawer());
+  const dockPx = () => startDock(dockSaved(), windowPx());
+  const dockDragTo = (clientY: number) => {
+    if (!dockEl) return;
+    setDockSaved(dockAt(clientY, dockEl.getBoundingClientRect().bottom, windowPx()));
+  };
+  const dockNudge = (delta: number) => {
+    setDockSaved(clampDock(dockPx() + delta, windowPx()));
+    writeDockPref(dockSaved());
+  };
+  const onResize = () => setWindowPx(window.innerHeight);
   const onKey = (e: KeyboardEvent) => {
+    // ⌘J / Ctrl+J opens and closes the Log.
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') {
+      e.preventDefault();
+      toggleLog();
+      return;
+    }
     // ⌘R / Ctrl+R reloads the firmware file, not the page; with Shift it reloads the modules into the running session.
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'r') {
       e.preventDefault();
@@ -262,12 +363,15 @@ export default function Console() {
       })();
       timers.push(window.setInterval(() => void pollSource(), 1000));
       timers.push(window.setInterval(() => void pollAudio(), 1000));
+      timers.push(window.setInterval(() => void pollHealth(), 1000));
     });
     window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
   });
   onCleanup(() => {
     timers.forEach((t) => window.clearInterval(t));
     window.removeEventListener('keydown', onKey);
+    window.removeEventListener('resize', onResize);
     void runtime()?.stop();
     runtime()?.dispose();
   });
@@ -278,17 +382,22 @@ export default function Console() {
     if (paused()) r.resume();
     else r.pause();
     setPaused(!paused());
+    logEvent('emulator', 'info', paused() ? 'paused' : 'resumed');
   };
   const restart = async () => {
+    health = healthStart();
+    const began = performance.now();
     try {
       const s = await runtime()?.restart();
       if (s) update({ type: 'snapshot', snapshot: s });
       setPaused(false);
       await refreshInfo();
+      logEvent('reset', 'info', `emulator reset · ${duration(performance.now() - began)}`);
       bumpCardRefresh();
       window.setTimeout(bumpCardRefresh, 2500);
     } catch (e) {
       setError(message(e));
+      logInput(failureEntry('reset', 'reset', message(e)));
     }
   };
   const saveDiagnostics = async () => {
@@ -296,11 +405,15 @@ export default function Console() {
       const r = runtime();
       const report = await r?.diagnostics();
       if (!r?.saveDiagnostics || !report) return;
-      setReloadNote(
-        `Diagnostics saved to ${await r.saveDiagnostics(`digiemu-${report.device}-diagnostics.json`, JSON.stringify(report, null, 2))}`,
+      const path = await r.saveDiagnostics(
+        `digiemu-${report.device}-diagnostics.json`,
+        JSON.stringify(report, null, 2),
       );
+      setReloadNote(`Diagnostics saved to ${path}`);
+      logEvent('emulator', 'info', `diagnostics saved to ${path}`);
     } catch (e) {
       setError(`Diagnostics failed: ${message(e)}`);
+      logInput(failureEntry('emulator', 'diagnostics', message(e)));
     }
   };
   const chooseSamples = async (list: FileList | null) => {
@@ -310,6 +423,7 @@ export default function Console() {
     if (folderInput) folderInput.value = '';
     if (files.length === 0) {
       setCard({ state: 'error', message: 'No files in that folder.' });
+      logEvent('card', 'error', 'sample folder: no files in that folder');
       return;
     }
     setCardBusy(true);
@@ -321,14 +435,54 @@ export default function Console() {
         const s = await runtime()!.cards!.status();
         setCard(s);
         if (s.state === 'working') window.setTimeout(() => void poll(), 400);
-        else setCardBusy(false);
+        else {
+          setCardBusy(false);
+          logEvent('card', s.state === 'error' ? 'error' : 'info', cardLine(s));
+        }
       };
       void poll();
     } catch (e) {
       setCardBusy(false);
       setCard({ state: 'error', message: message(e) });
+      logInput(failureEntry('card', 'sample folder', message(e)));
     }
   };
+
+  // the Log drawer
+  const visibleLog = createMemo(() =>
+    filterEntries(logState().entries, { source: logSource(), errorsOnly: errorsOnly() }),
+  );
+  const badge = () => (logOpen() ? 0 : unseenErrors(logState().entries, seenId()));
+  const mac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
+  const logKey = mac ? '⌘J' : 'Ctrl+J';
+  const toggleExpanded = (id: number) =>
+    setExpanded((set) => {
+      const next = new Set(set);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const copyLog = async () => {
+    try {
+      await navigator.clipboard.writeText(copyText(visibleLog()));
+      setCopied(true);
+      timers.push(window.setTimeout(() => setCopied(false), 1500));
+    } catch {
+      /* the clipboard may be blocked; the entries stay on screen */
+    }
+  };
+  // an open drawer has seen everything logged so far
+  createEffect(() => {
+    const entries = logState().entries;
+    if (logOpen()) setSeenId(entries.at(-1)?.id ?? 0);
+  });
+  // newest at the bottom: follow it while the list is at the bottom
+  createEffect(() => {
+    visibleLog();
+    if (logOpen())
+      queueMicrotask(() => {
+        if (logList && stickToEnd) logList.scrollTop = logList.scrollHeight;
+      });
+  });
 
   const fileLabel = () => opened() || source()?.path || 'No firmware file';
   /** The last three parts of the path; the full path is the tooltip. */
@@ -346,7 +500,15 @@ export default function Console() {
   const sink = () => audio()?.sink ?? undefined;
 
   return (
-    <div class="console" style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}>
+    <div
+      class="console"
+      classList={{ 'dock-dragging': dockDrag() }}
+      style={{
+        '--accent': panel().accent,
+        '--func-legend': panel().func_legend,
+        '--dock-h': logOpen() ? `${dockPx()}px` : '0px',
+      }}
+    >
       <header class="topbar">
         <span class="file" title={fileLabel()}>
           <Icon d={FOLDER} />
@@ -409,7 +571,8 @@ export default function Console() {
               writeRuntimePref(e.currentTarget.checked);
             }}
           />
-          Boot with digikit runtime
+          <span class="long">Boot with digikit runtime</span>
+          <span class="short">Runtime</span>
         </label>
         <input
           ref={fileInput}
@@ -424,43 +587,59 @@ export default function Console() {
             await load(new Uint8Array(await f.arrayBuffer()), f.name);
           }}
         />
-        <button type="button" class="tb" onClick={() => fileInput?.click()}>
+        <button
+          type="button"
+          class="tb"
+          aria-label="Open firmware file"
+          title="Open a firmware file"
+          onClick={() => fileInput?.click()}
+        >
           <Icon d={FOLDER} />
-          Open…
+          <span class="lbl">Open…</span>
         </button>
         <button
           type="button"
           class="tb"
           disabled={!source()}
+          aria-label="Reload"
           title="Reload the startup file (⌘R)"
           onClick={() => void reload('Reloaded at')}
         >
           <Icon d={RELOAD} />
-          Reload
+          <span class="lbl">Reload</span>
         </button>
         <button
           type="button"
           class="tb"
           disabled={!status() || modulesBusy()}
+          aria-label="Reload modules"
           title="Build the stale module objects, then apply the modules into the running session, without a boot when only UI modules changed (⇧⌘R). A changed SHARC+ source still needs mise run dk:dev."
           onClick={() => void reloadModules()}
         >
           <Icon d={MODULES} />
-          Reload modules
-        </button>
-        <button type="button" class="tb" disabled={!status()} onClick={togglePause}>
-          <Icon d={paused() ? PLAY : PAUSE} />
-          {paused() ? 'Resume' : 'Pause'}
+          <span class="lbl">Reload modules</span>
         </button>
         <button
           type="button"
           class="tb"
           disabled={!status()}
+          aria-label={paused() ? 'Resume' : 'Pause'}
+          title={paused() ? 'Resume the emulator' : 'Pause the emulator'}
+          onClick={togglePause}
+        >
+          <Icon d={paused() ? PLAY : PAUSE} />
+          <span class="lbl">{paused() ? 'Resume' : 'Pause'}</span>
+        </button>
+        <button
+          type="button"
+          class="tb"
+          disabled={!status()}
+          aria-label="Reset (emulator)"
           title="Reset the running firmware to its ready state (the emulator's reset; not the device's RESTART command)"
           onClick={() => void restart()}
         >
           <Icon d={RESTART} />
-          Reset (emulator)
+          <span class="lbl">Reset (emulator)</span>
         </button>
         <button
           type="button"
@@ -477,12 +656,6 @@ export default function Console() {
       <Show when={error() || outsideApp()}>
         <p class="alert" role="alert">
           {outsideApp() ? 'This page is the desktop app’s console; start it with mise run workbench.' : error()}
-        </p>
-      </Show>
-
-      <Show when={reloadDetail()}>
-        <p class="alert" role="alert">
-          {reloadDetail()}
         </p>
       </Show>
 
@@ -561,6 +734,134 @@ export default function Console() {
           </Show>
         </div>
       </div>
+
+      <Show when={logOpen()}>
+        <section class="log-drawer" aria-label="Log" ref={dockEl} style={{ height: `${dockPx()}px` }}>
+          <div
+            class="dock-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize the Log"
+            aria-valuemin={0}
+            aria-valuenow={dockPx()}
+            tabIndex={0}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setDockDrag(true);
+            }}
+            onPointerMove={(e) => dockDrag() && dockDragTo(e.clientY)}
+            onPointerUp={() => {
+              if (dockDrag()) writeDockPref(dockSaved());
+              setDockDrag(false);
+            }}
+            onPointerCancel={() => setDockDrag(false)}
+            onDblClick={() => {
+              setDockSaved(undefined);
+              writeDockPref(undefined);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowUp') dockNudge(DOCK_KEY_STEP);
+              else if (e.key === 'ArrowDown') dockNudge(-DOCK_KEY_STEP);
+              else return;
+              e.preventDefault();
+            }}
+          />
+          <header>
+            <strong>Log</strong>
+            <span class="count">
+              {visibleLog().length === logState().entries.length
+                ? `${logState().entries.length} entries`
+                : `${visibleLog().length} of ${logState().entries.length}`}
+            </span>
+            <span class="sp" />
+            <select
+              aria-label="Source"
+              value={logSource()}
+              onChange={(e) => setLogSource(e.currentTarget.value as LogSource | 'all')}
+            >
+              <option value="all">All</option>
+              <For each={LOG_SOURCES}>{(name) => <option value={name}>{name}</option>}</For>
+            </select>
+            <button
+              type="button"
+              class="tb small"
+              classList={{ on: errorsOnly() }}
+              aria-pressed={errorsOnly()}
+              onClick={() => setErrorsOnly(!errorsOnly())}
+            >
+              Errors only
+            </button>
+            <button
+              type="button"
+              class="tb small"
+              disabled={visibleLog().length === 0}
+              title="Copy the entries shown, with their details"
+              onClick={() => void copyLog()}
+            >
+              {copied() ? 'Copied' : 'Copy'}
+            </button>
+            <button
+              type="button"
+              class="tb small"
+              disabled={logState().entries.length === 0}
+              onClick={() => {
+                clearLog();
+                setExpanded(new Set<number>());
+              }}
+            >
+              Clear
+            </button>
+          </header>
+          <ol
+            class="log-list"
+            ref={logList}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              stickToEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+            }}
+          >
+            <For
+              each={visibleLog()}
+              fallback={
+                <li class="empty">
+                  {logState().entries.length ? 'No entry matches the filter.' : 'Nothing logged yet.'}
+                </li>
+              }
+            >
+              {(entry) => (
+                <li classList={{ bad: entry.level === 'error' }}>
+                  <div class="row">
+                    <time>{formatTime(entry.at)}</time>
+                    <span class="src">
+                      {entry.source}
+                      {entry.level === 'error' ? ' ✕' : ''}
+                    </span>
+                    <span class="text" title={entry.text}>
+                      {entry.text}
+                    </span>
+                    <Show when={entry.detail}>
+                      <button
+                        type="button"
+                        class="more"
+                        aria-expanded={expanded().has(entry.id)}
+                        aria-label={expanded().has(entry.id) ? 'Hide the full output' : 'Show the full output'}
+                        title={expanded().has(entry.id) ? 'Hide the full output' : 'Show the full output'}
+                        onClick={() => toggleExpanded(entry.id)}
+                      >
+                        {expanded().has(entry.id) ? '▾' : '▸'}
+                      </button>
+                    </Show>
+                  </div>
+                  <Show when={entry.detail && expanded().has(entry.id)}>
+                    <pre class="detail">{entry.detail}</pre>
+                  </Show>
+                </li>
+              )}
+            </For>
+          </ol>
+        </section>
+      </Show>
 
       <Show when={drawer()}>
         <section class="drawer" aria-label="Metrics">
@@ -674,9 +975,20 @@ export default function Console() {
         </Show>
         <span class="sp" />
         <Show when={reloadNote() && !drawer()}>
-          <span class="muted">{reloadNote()}</span>
+          <span class="muted" title={reloadNote()}>
+            {reloadNote()}
+          </span>
         </Show>
-        <button type="button" class="sb" aria-expanded={drawer()} onClick={() => setDrawer(!drawer())}>
+        <button type="button" class="sb" aria-expanded={logOpen()} title={`Log (${logKey})`} onClick={toggleLog}>
+          Log
+          <Show when={badge() > 0}>
+            <b class="badge" aria-label={`${badge()} new error${badge() === 1 ? '' : 's'}`}>
+              {badge()}!
+            </b>
+          </Show>
+          <Icon d={logOpen() ? DOWN : UP} />
+        </button>
+        <button type="button" class="sb" aria-expanded={drawer()} onClick={toggleMetrics}>
           Metrics
           <Icon d={drawer() ? DOWN : UP} />
         </button>

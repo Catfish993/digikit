@@ -20,6 +20,8 @@ import {
   type CardFolder,
 } from './card-core';
 import { cardRefresh } from './card-state';
+import { cardEntry, failureEntry } from './log-core';
+import { logInput } from './log-state';
 import { cardOpen as open, setCardOpen } from './panel-open';
 import './card-panel.css';
 
@@ -69,31 +71,38 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
   const sync = async () => {
     setBusy(true);
     try {
-      setCard(await call<CardFolder>('card.sync'));
+      const next = await call<CardFolder>('card.sync');
+      setCard(next);
       setError('');
+      logInput(cardEntry('synced', next));
     } catch (e) {
       setError(errorLine(e));
+      logInput(failureEntry('card', 'sync', errorLine(e)));
     } finally {
       setBusy(false);
       setNow(Date.now());
     }
   };
   /** Run a call that answers with the folder state. */
-  const change = async (run: () => Promise<CardFolder | undefined>) => {
+  const change = async (what: string, run: () => Promise<CardFolder | undefined>) => {
     setBusy(true);
     try {
       const next = await run();
-      if (next) setCard(next);
+      if (next) {
+        setCard(next);
+        logInput(cardEntry(what, next));
+      }
       setError('');
     } catch (e) {
       setError(errorLine(e));
+      logInput(failureEntry('card', what, errorLine(e)));
     } finally {
       setBusy(false);
       setNow(Date.now());
     }
   };
   const choose = () =>
-    change(async () => {
+    change('folder chosen', async () => {
       const c = card();
       const dir = await invoke<string | null>('local_pick_folder', {
         start: c ? pickStart(c) : null,
@@ -101,9 +110,9 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
       });
       return dir ? call<CardFolder>('card.folder_set', { dir }) : undefined;
     });
-  const useDefault = () => change(() => call<CardFolder>('card.folder_set', {}));
+  const useDefault = () => change('default folder', () => call<CardFolder>('card.folder_set', {}));
   const reloadNow = () =>
-    change(async () => {
+    change('card reloaded', async () => {
       await props.reload?.();
       return call<CardFolder>('card.folder');
     });
