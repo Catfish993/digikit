@@ -13,7 +13,7 @@ ROOT = REPO_ROOT
 from tools.coldfire import arena_safety, digikit_menu_proof  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
-from tools.patchkit import pk_build, pk_toolchains  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
 MODULE = ROOT / "modules/core/apps/digikit-menu"
 IMAGES = {
@@ -27,7 +27,7 @@ def test_committed_objects_are_current_and_plain_coldfire():
     assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
     if pk_toolchains.m68k_bin("gcc") is None:
         pytest.skip("m68k-elf toolchain not installed")
-    pk_build.build_module(MODULE, check=True)
+    front_end.build_module(MODULE, check=True)
 
 
 def patchkit(*args):

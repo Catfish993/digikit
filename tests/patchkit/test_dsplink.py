@@ -12,7 +12,8 @@ import pytest
 from support.paths import REPO_ROOT
 
 from tools.firmware import config
-from tools.patchkit import pk_build, pk_device, pk_link, pk_toolchains
+from tools.patchkit import patchkit as front_end  # noqa: E402
+from tools.patchkit import pk_device, pk_toolchains
 
 ROOT = REPO_ROOT
 MOD = ROOT / "modules" / "core" / "adapters" / "dsp-link"
@@ -72,7 +73,7 @@ def main_os(image: str) -> bytes:
 
 
 def test_objects_are_current():
-    pk_build.build_module(MOD, check=True)
+    front_end.build_module(MOD, check=True)
 
 
 def test_constants_agree_between_the_two_sides():
@@ -194,9 +195,9 @@ def built():
         "dl_rec_lit": RECLIT,
         "dl_stock_send": BASE + 0x100,
     }
-    return pk_link.build([MOD / "src/cf/dsp-link.c"], BASE, syms, [MOD / "build/gen"])[
-        1
-    ]
+    return front_end.cf_link(
+        [MOD / "src/cf/dsp-link.c"], BASE, syms, [MOD / "build/gen"]
+    )
 
 
 @pytest.fixture(scope="module")

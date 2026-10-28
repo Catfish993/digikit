@@ -5,7 +5,7 @@
 
 A store through an index register (Types 3a, 3b, 3d, 15a, 15b) cannot take a source register of the same DAG: `DM(x, Ia) = Ureg` not a
 DAG1 register, `PM(x, Ic) = Ureg` not a DAG2 register (finding 49 section 10; the rule is `pk_sharc.ureg_class_problems`, the same one
-`pk_build` fails a module build on). The stock images have none. `mise run patch:preflight` runs this scan after the Rust checks.
+`patchkit build` fails a module build on). The stock images have none. `mise run patch:preflight` runs this scan after the Rust checks.
 
 The scan decodes the code blocks of the boot stream with the aligned decoder that built the sharcdb databases (`sharcflow.aligned`):
 the stock code blocks (`sharcinv.CODE_BLOCKS`, the layout of the DT2 images; the Digitone II list of `sharcdb.schema.KNOWN_CODE_BLOCKS`)

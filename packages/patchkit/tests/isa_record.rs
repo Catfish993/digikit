@@ -1,4 +1,4 @@
-//! The ISA check record of ColdFire objects (`tools/patchkit/pk_build.py` writes it, `patchkit pack` verifies it).
+//! The ISA check record of ColdFire objects (`patchkit build` writes it, `patchkit pack` verifies it).
 
 use patchkit::dkm;
 use patchkit::error::{hex, unhex};

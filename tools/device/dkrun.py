@@ -5,7 +5,7 @@
     uv run python -m tools.device.dkrun digikit/pluck --emu            # the running emulator (desktop app or `mise run emu:serve`)
     mise run dk:run -- digikit/pluck --port Digitakt --seconds 30
 
-Steps, one line each: INFO (the runtime must be 4 or newer; its device id picks the pack target), build (`pk_build`) and pack
+Steps, one line each: INFO (the runtime must be 4 or newer; its device id picks the pack target), build (`patchkit build`) and pack
 (`patchkit pack`), upload to `modules/<name>.dkm` (skipped when LIST shows the same sha256), SELECT (the selection becomes this module
 only), RESTART, wait for the new boot, then the boot's MOD_LOAD / MOD_DSP results, then the log for `--seconds`.
 
@@ -46,12 +46,13 @@ def say(msg: str) -> None:
 
 
 def build_objects(module: str) -> None:
-    """Compile the module's objects (`pk_build` skips an object whose source hash is unchanged)."""
+    """Compile the module's objects (`patchkit build` skips an object whose source hash is unchanged)."""
     r = subprocess.run(
         [
             sys.executable,
             "-m",
-            "tools.patchkit.pk_build",
+            "tools.patchkit.patchkit",
+            "build",
             str(modroots.module_dir(module)),
         ],
         cwd=ROOT,

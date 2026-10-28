@@ -162,9 +162,9 @@ def repo_rows(
 ) -> list[dict[str, Any]]:
     """The repo modules that pack for DEVICE (a dry-run pack of each: the packer is the truth, `ports` is not), one dict per module with its
     packed file (`dkm`), header fields and build state. A module that does not pack for the device is left out."""
-    from tools.patchkit import pk_build
+    from tools.patchkit import patchkit
 
-    status = status or (lambda mid: pk_build.module_status(modroots.module_dir(mid)))
+    status = status or (lambda mid: patchkit.module_status(modroots.module_dir(mid)))
     rows = []
     for mid in ids if ids is not None else candidates():
         try:

@@ -105,16 +105,16 @@ def test_registry_demo_boots_and_the_hook_runs_the_displaced_instructions(tmp_pa
 
 
 def test_build_options_select_ifdef_alternatives():
-    """pk_build.apply_conditionals: `#ifdef`/`#ifndef`/`#else`/`#endif` lines; with no define the text is the source without the option's lines."""
-    from tools.patchkit import pk_build
+    """pk_sharc.apply_conditionals: `#ifdef`/`#ifndef`/`#else`/`#endif` lines; with no define the text is the source without the option's lines."""
+    from tools.patchkit import pk_sharc
 
     src = "a\n#ifdef X\nb\n#else\nc\n#endif\n#ifndef X\nd\n#endif\ne"
-    assert pk_build.apply_conditionals(src) == "a\nc\nd\ne"
-    assert pk_build.apply_conditionals(src, frozenset({"X"})) == "a\nb\ne"
+    assert pk_sharc.apply_conditionals(src) == "a\nc\nd\ne"
+    assert pk_sharc.apply_conditionals(src, frozenset({"X"})) == "a\nb\ne"
     nested = "#ifdef X\n#ifdef Y\ny\n#else\nnoy\n#endif\n#endif\nz"
-    assert pk_build.apply_conditionals(nested, frozenset({"X"})) == "noy\nz"
-    assert pk_build.apply_conditionals(nested, frozenset({"Y"})) == "z"
-    with pytest.raises(pk_build.BuildError):
-        pk_build.apply_conditionals("#ifdef X\na")
-    with pytest.raises(pk_build.BuildError):
-        pk_build.apply_conditionals("#endif")
+    assert pk_sharc.apply_conditionals(nested, frozenset({"X"})) == "noy\nz"
+    assert pk_sharc.apply_conditionals(nested, frozenset({"Y"})) == "z"
+    with pytest.raises(pk_sharc.PkSharcError):
+        pk_sharc.apply_conditionals("#ifdef X\na")
+    with pytest.raises(pk_sharc.PkSharcError):
+        pk_sharc.apply_conditionals("#endif")

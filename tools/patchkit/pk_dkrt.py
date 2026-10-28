@@ -179,11 +179,9 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
     )
     # the edited object carries the build's ISA check record for its new bytes: the instructions are the checked ones, only a relocation is
     # added (`patchkit pack` refuses an object whose record does not match its bytes)
-    from tools.patchkit import pk_build
+    from tools.patchkit import patchkit
 
-    imp["toolchain"][pk_build.ISA_CHECK_KEY] = pk_build.isa_digest(
-        imp["sections"], imp["symbols"], imp["relocs"]
-    )
+    imp["toolchain"][patchkit.ISA_CHECK_KEY] = patchkit.isa_digest(imp)
     # the dyn-demo object has a .rodata string section of 14+ bytes: reuse it as the place of the new reloc
     tmp = work / "mods" / "test" / "dyn-demo-import"
     (tmp / "build").mkdir(parents=True, exist_ok=True)

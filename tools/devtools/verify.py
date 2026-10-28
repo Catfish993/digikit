@@ -1427,7 +1427,7 @@ def explain(
                 step == "runtime-fixture" and runtime_pack_modules(selected)
             ):
                 print(
-                    f"{step}: prerequisite pk_build --check, then fresh patchkit pack into its run directory; "
+                    f"{step}: prerequisite patchkit build --check, then fresh patchkit pack into its run directory; "
                     "may build module toolchains/patchkit CLI, never emulator daemons"
                 )
             if step == "runtime-fixture" and (
@@ -1529,7 +1529,7 @@ def prepare_acceptance_modules(gate: Gate, step: str, modules: list[str]) -> Pat
             [
                 *PY,
                 "-m",
-                "tools.patchkit.pk_build",
+                "tools.patchkit.patchkit",
                 "build",
                 str(modroots.module_dir(mid)),
                 "--check",

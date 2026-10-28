@@ -14,7 +14,7 @@ ROOT = REPO_ROOT
 
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
-from tools.patchkit import pk_build, pk_cfcall, pk_toolchains  # noqa: E402
+from tools.patchkit import pk_cfcall, pk_toolchains  # noqa: E402
 
 IMAGES = [
     "Digitakt_II_OS1.17.syx",
@@ -105,7 +105,7 @@ def test_committed_object_is_current_and_plain_coldfire():
     assert obj["toolchain"]["rustc_codegen_gcc"] == pk_toolchains.CG_REV
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
-    pk_build.build_module(MODULE, check=True)
+    front_end.build_module(MODULE, check=True)
 
 
 @pytest.mark.parametrize("name", IMAGES)

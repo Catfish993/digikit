@@ -13,7 +13,8 @@ from support.paths import REPO_ROOT
 
 from tools.coldfire import isacheck
 from tools.firmware import config
-from tools.patchkit import pk_build, pk_cdemo, pk_dkrt, pk_toolchains
+from tools.patchkit import patchkit as front_end  # noqa: E402
+from tools.patchkit import pk_cdemo, pk_dkrt, pk_toolchains
 
 ROOT = REPO_ROOT
 DEMO = ROOT / "tests/fixtures/modules/c-demo"
@@ -59,7 +60,7 @@ def test_the_stock_libgcc_is_refused_and_the_coldfire_one_passes():
 def test_c_demo_object_is_current_and_self_contained():
     if pk_toolchains.libgcc_cf() is None:
         pytest.skip("pk_toolchains libgcc-cf not run")
-    pk_build.build_module(DEMO, check=True)
+    front_end.build_module(DEMO, check=True)
     obj = json.loads((DEMO / "build/c-demo.dko.json").read_text())
     assert [s["name"] for s in obj["symbols"] if s["section"] is None] == []
     exported = {s["name"] for s in obj["symbols"] if s["global"]}

@@ -6,6 +6,8 @@
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx [--set NAME]   no --modules: the device's patch set (default `device`)
     uv run python -m tools.patchkit.patchkit explain --firmware X.syx --modules a,b              site-by-site account
     uv run python -m tools.patchkit.patchkit list|inspect|check|verify|preflight|gen|desc ...                  passed through
+    uv run python -m tools.patchkit.patchkit build [MODULE...] [--check] [--force] [--define NAME --out DIR] [--status]   module sources -> build/*.dko.json
+    uv run python -m tools.patchkit.patchkit dko show FILE.dko.json [--relocs]   an object's arch, toolchain, sections, symbols, relocations
     uv run python -m tools.patchkit.patchkit needs [--json] FILE.dkm...   what a load of each file takes (arena, DSP area, rows), inferred from its contents
     uv run python -m tools.patchkit.patchkit pack MODULE --device dt2|dn2 [-o OUT.dkm]  pack a run-time module (default out/patch/<name>-<device>.dkm)
     uv run python -m tools.patchkit.patchkit bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
@@ -27,6 +29,7 @@ import re
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -88,6 +91,117 @@ def run(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
         capture_output=capture,
         text=True,
     )
+
+
+class BuildError(RuntimeError):
+    """`patchkit build` failed (the message is the binary's)."""
+
+
+def _build_cmd(args: list[str]) -> subprocess.CompletedProcess:
+    # always the real repository: the toolchains, caches and shared include directories are in it (DIGI_PK_ROOT names a module variant)
+    return subprocess.run(
+        [str(binary()), "--root", str(ROOT), *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+
+def build_module(
+    moddir: Path,
+    check: bool = False,
+    defines: frozenset[str] | set[str] = frozenset(),
+    out_root: Path | None = None,
+    force: bool = False,
+) -> list[str]:
+    """`patchkit build MODDIR`: every object of the module that lists sources; returns one message per object. With `defines` (build
+    options of the DSP sources) the objects go under `out_root` at their `path` and the committed ones stay. Raises BuildError."""
+    args = ["build", str(moddir)]
+    args += ["--check"] if check else []
+    args += ["--force"] if force else []
+    for d in sorted(defines):
+        args += ["--define", d]
+    args += ["--out", str(out_root)] if out_root else []
+    r = _build_cmd(args)
+    if r.returncode:
+        raise BuildError((r.stderr or r.stdout).strip().removeprefix("patchkit: "))
+    return r.stdout.splitlines()
+
+
+def module_statuses(moddirs: list[Path]) -> dict[Path, str]:
+    """`patchkit build --status`: "unchanged" when every object of the module that has sources carries the hash of its sources now,
+    else "needs build". Builds nothing."""
+    r = _build_cmd(["build", *map(str, moddirs), "--status"])
+    if r.returncode:
+        raise BuildError((r.stderr or r.stdout).strip().removeprefix("patchkit: "))
+    by_name = json.loads(r.stdout)
+    return {d: by_name[str(d)] for d in moddirs}
+
+
+def module_status(moddir: Path) -> str:
+    return module_statuses([moddir])[moddir]
+
+
+def isa_digest(obj: dict) -> str:
+    """The ISA check record (`toolchain.isa_check`) of an object with these sections, symbols and relocations: `patchkit pack` takes a
+    ColdFire object only when the record matches its bytes. For tests that edit a built object after the build."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="pk-isa-") as d:
+        f = Path(d) / "o.dko.json"
+        f.write_text(json.dumps(obj))
+        r = _build_cmd(["dko", "isa-digest", str(f)])
+    if r.returncode:
+        raise BuildError((r.stderr or r.stdout).strip().removeprefix("patchkit: "))
+    return r.stdout.strip()
+
+
+ISA_CHECK_KEY = "isa_check"
+
+
+@dataclass
+class CfLinked:
+    """C and assembly sources linked at `base` (`patchkit cf-link`)."""
+
+    base: int
+    image: bytes  # text, rodata and data at base; bss (zeros) follows
+    bss_size: int
+    symbols: dict[str, int]
+    text_ranges: list[tuple[int, int]]
+    relocs_applied: dict[str, int]
+    histogram: dict[str, int]
+
+
+def cf_link(
+    sources: list[Path],
+    base: int,
+    symbols: dict[str, int],
+    include_dirs: list[Path] | None = None,
+) -> CfLinked:
+    """Compile, link at `base` against `symbols` (every extern the sources leave undefined) and ISA-check ColdFire sources: for unit
+    tests of C routines against firmware addresses. Raises BuildError."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="pk-cflink-") as d:
+        binp, jsonp = Path(d) / "image.bin", Path(d) / "link.json"
+        args = ["cf-link", *map(str, sources), "--base", f"{base:x}"]
+        for n, v in symbols.items():
+            args += ["--sym", f"{n}={v:x}"]
+        for i in include_dirs or []:
+            args += ["-I", str(i)]
+        r = _build_cmd([*args, "--bin", str(binp), "--json", str(jsonp)])
+        if r.returncode:
+            raise BuildError((r.stderr or r.stdout).strip().removeprefix("patchkit: "))
+        j = json.loads(jsonp.read_text())
+        return CfLinked(
+            j["base"],
+            binp.read_bytes(),
+            j["bss_size"],
+            j["symbols"],
+            [tuple(x) for x in j["text_ranges"]],
+            j["relocs_applied"],
+            j["histogram"],
+        )
 
 
 def flag(args: list[str], name: str) -> str | None:
@@ -330,6 +444,11 @@ def main(argv: list[str]) -> int:
 
             rc = pk_isacheck.main(files[:1]) or rc
         return rc
+    if cmd in ("build", "dko", "cf-link"):
+        r = _build_cmd([cmd, *args])
+        sys.stdout.write(r.stdout)
+        sys.stderr.write(r.stderr)
+        return r.returncode
     if cmd in (
         "list",
         "inspect",

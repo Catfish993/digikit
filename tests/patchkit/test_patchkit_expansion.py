@@ -15,7 +15,6 @@ from tools.firmware import config  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_cfcall,  # noqa: E402
-    pk_link,  # noqa: E402
     pk_toolchains,  # noqa: E402
 )
 
@@ -48,7 +47,7 @@ def test_loader_copies_segments_and_zeroes_bss():
     """Run modules/core/expansion's loader on the core with stub helpers, over a region filled with 0xA5."""
     base, segs, h1, h2 = REGION, REGION + 0x1000, REGION + 0x2000, REGION + 0x2002
     d1, d2 = REGION + 0x4000, REGION + 0x5000
-    _, linked, _ = pk_link.build(
+    linked = front_end.cf_link(
         [ROOT / "modules/core/expansion/src/cf/loader.s"],
         base,
         {"pk_segs": segs, "pk_copy_helper": h1, "pk_clear_helper": h2},

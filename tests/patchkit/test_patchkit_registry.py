@@ -12,7 +12,8 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.patchkit import pk_build, pk_dkrt, pk_toolchains  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
+from tools.patchkit import pk_dkrt, pk_toolchains  # noqa: E402
 from tools.patchkit.pk_dkrt_machine import machine_hash  # noqa: E402
 
 DYNREG = ROOT / "modules/core/adapters/dynreg"
@@ -23,9 +24,9 @@ def test_committed_objects_are_current_and_plain_coldfire():
     for dev in ("dt2", "dn2"):
         obj = json.loads((DYNREG / f"build/dynreg-{dev}.dko.json").read_text())
         assert {r["type"] for r in obj["relocs"]} <= {"cf.32", "cf.pc32", "cf.pc16"}
-    pk_build.build_module(DYNREG, check=True)
+    front_end.build_module(DYNREG, check=True)
     if pk_toolchains.codegen_gcc_ready():
-        pk_build.build_module(RUNTIME, check=True)
+        front_end.build_module(RUNTIME, check=True)
 
 
 def test_pack_lowers_the_typed_sections_deterministically(tmp_path):

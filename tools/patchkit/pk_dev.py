@@ -4,7 +4,7 @@
     mise run module:dev -- --modules fx/my-drive[,test/cf-demo] [--device dt2] [--firmware 1.17] [--once] [--no-tests]
 
 One daemon stays up on the stock firmware's ready inputs (DT2 with a one-sample card). Each time a file under a
-module's `src/` or its `module.toml` changes, the loop runs: `pk_build` (src -> .dko), `patchkit patch` (from the stock
+module's `src/` or its `module.toml` changes, the loop runs: `patchkit build` (src -> .dko), `patchkit patch` (from the stock
 image), `firmware.load` into the daemon (a DSP-only change is injected hot in about 0.1 s; a MAIN change cold-boots the
 ColdFire with DSP audio, cached by MAIN hash), then the quick tests of the modules (`modules/**/tests/*.toml`, the
 `[test] quick = true` ones) from the ready state. One summary line per iteration:
@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools import python_env  # noqa: E402
-from tools.patchkit import modroots, pk_build  # noqa: E402
+from tools.patchkit import modroots, patchkit  # noqa: E402
 from tools.patchkit import pk_harness as h  # noqa: E402
 
 POLL_S = 0.25
@@ -74,7 +74,7 @@ class Dev:
     def build(self) -> float:
         started = time.monotonic()
         for mod in self.cell.modules:
-            pk_build.build_module(modroots.module_dir(mod), check=False)
+            patchkit.build_module(modroots.module_dir(mod), check=False)
         return time.monotonic() - started
 
     def patch(self) -> float:
@@ -112,7 +112,7 @@ class Dev:
             t = time.monotonic()
             report = self.session.load(self.out)
             tl = time.monotonic() - t
-        except (pk_build.BuildError, Exception) as e:  # noqa: BLE001 - one line per failure, the loop goes on
+        except (patchkit.BuildError, Exception) as e:  # noqa: BLE001 - one line per failure, the loop goes on
             kind = "load" if isinstance(e, h.LoadFailure) else "build/patch"
             return f"{stamp} FAIL {kind}: {e}"
         running = time.time() - edited_at

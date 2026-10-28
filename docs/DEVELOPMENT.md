@@ -179,9 +179,10 @@ mise run web                            # the gallery at /patch: patch in the br
 ## Module loop
 
 1. Create the module: `mise run module:new -- KIND AUTHOR/NAME [--dir DIR]` (`KIND` is `machine`, `fx` or `service`). Guide: docs/MODULE-AUTHORING.md.
-2. Check it without an emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
-3. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
-4. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
+2. Build it: `mise run module:build -- AUTHOR/NAME [--check]` (`patchkit build`: ColdFire C, assembly and Rust in the `patchkit` binary, SHARC+ through `tools/patchkit/pk_sharc.py`; an object whose sources did not change is skipped). `patchkit dko show FILE` prints what an object holds. `module:check` fails on a stale object; `dk:run` builds first.
+3. Check it without an emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
+4. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
+5. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
 
 Log levels: `mise run dk:log -- --port Digitakt level` prints them, `level debug` sets the default, `level --module NAME=trace` sets one module (`NAME=default` clears it), `follow --level L --module NAME` filters the display. Levels are not stored on the card.
 

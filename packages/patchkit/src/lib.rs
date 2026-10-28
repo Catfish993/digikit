@@ -20,6 +20,7 @@ pub use error::{Error, Result};
 pub mod abigen;
 pub mod apply;
 pub mod bootrom;
+pub mod build;
 pub mod dkm;
 pub mod dkmdsp;
 pub mod dkmsynth;

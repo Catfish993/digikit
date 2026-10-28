@@ -9,6 +9,8 @@ use patchkit::verify;
 use std::path::{Path, PathBuf};
 
 #[cfg(not(target_arch = "wasm32"))]
+mod build_cli;
+#[cfg(not(target_arch = "wasm32"))]
 mod storedump;
 
 const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
@@ -36,6 +38,18 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   store dump IMAGE [--device dt2|dn2] [--overlay FILE] [--base-sector N] [--json]   digikit's own data on a card image or a raw sector dump:
                                          the store header and files, the selection record, the settings record (both copies, the one in use,
                                          every entry decoded); `store dump --record FILE` reads one settings record file (docs/design/digikit-store.md)
+  build   [MODULE...] [--check] [--force] [--define NAME]... [--out DIR] [--status] [--tree DIR]
+                                         module sources -> build/*.dko.json (ColdFire C, asm and Rust in this process; SHARC+ through
+                                         tools/patchkit/pk_sharc.py). MODULE is a directory or a module id; none: every module.
+                                         An object whose committed source_sha256 equals the hash of its sources is not compiled
+                                         (--force compiles it). --check writes nothing and fails on a stale object.
+                                         --define NAME[=V] selects an #ifdef of the DSP sources (needs --out; the committed objects
+                                         stay). --status prints {module: \"unchanged\"|\"needs build\"} as JSON and builds nothing.
+                                         --tree DIR: every module under DIR only.
+  dko show FILE.dko.json [--relocs]      arch, toolchain record, sections, symbols and relocations of an object
+  dko isa-digest FILE.dko.json           the ISA check record the object's bytes need (toolchain.isa_check)
+  cf-link SRC... --base HEX [--sym NAME=HEX]... [-I DIR]... [--bin OUT] [--json OUT]
+                                         compile, link at BASE against the symbols, ISA-check (unit tests of C routines)
   list                                   modules under modules/ and ports under devices/ports/
   gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
                                          a SHARC include per device, gallery JSON
@@ -173,6 +187,12 @@ fn run(a: Args) -> Result<()> {
             }
             storedump::run(&rest[1..]).map_err(Error)?;
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        "build" => build_cli::build(&a.root, rest)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        "dko" => build_cli::dko(rest)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        "cf-link" => build_cli::cf_link(&a.root, rest)?,
         "list" => {
             let reg = registry(&a.root)?;
             for p in &reg.ports {

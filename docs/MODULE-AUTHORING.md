@@ -500,7 +500,7 @@ wait. The request body is at most 160 bytes. The reply body is at most 879 bytes
 
 | Task | Command | What it does |
 | --- | --- | --- |
-| Build | `mise run module:build -- PATH [--check]` | Compiles the sources to `build/*.dko.json`. `PATH` is the module folder. `--check` fails when the objects are stale. |
+| Build | `mise run module:build -- PATH [--check]` | Compiles the sources to `build/*.dko.json` (`patchkit build`). `PATH` is the module folder or the module id; no path builds every module. An object whose sources did not change is skipped. `--check` fails when the objects are stale; `--force` compiles anyway. `patchkit dko show FILE` prints what an object holds. |
 | Check | `mise run module:check -- ID [--device dt2\|dn2]` | See below. |
 | Memory audit | `mise run module:audit -- NAME [--device dt2\|dn2]` | Loads the module on a ColdFire-only emulator, drives the UI and reports ColdFire stores outside the module's blocks. About 10 to 30 s per device. |
 | Pack | `mise run module:pack -- ID --device dt2\|dn2 [-o FILE]` | Makes the `.dkm`. Default: `out/patch/NAME-DEVICE.dkm`. It refuses a bad declaration, a bad route and a send without a page. |

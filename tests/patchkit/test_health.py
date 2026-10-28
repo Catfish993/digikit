@@ -10,7 +10,8 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.coldfire import digikit_health_proof as hp  # noqa: E402
-from tools.patchkit import pk_build, pk_toolchains  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
 MODULE = ROOT / "modules/core/adapters/health"
 IMAGES = ("dt2-1.17", "dn2-1.12")
@@ -31,7 +32,7 @@ def test_committed_object_is_current_and_plain_coldfire():
     assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
     if not pk_toolchains.m68k_bin("gcc") is not None:
         pytest.skip("m68k toolchain not installed")
-    pk_build.build_module(MODULE, check=True)
+    front_end.build_module(MODULE, check=True)
 
 
 @pytest.mark.parametrize("image", IMAGES)

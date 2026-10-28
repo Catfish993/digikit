@@ -1,5 +1,5 @@
 //! `.dko.json`: a relocatable object in canonical JSON (sorted keys, integers only), made by
-//! `tools/patchkit/pk_build.py` from a toolchain's output and consumed by the linker.
+//! `patchkit build` (`crate::build`) from a toolchain's output and consumed by the linker.
 //!
 //! Units: ColdFire sections and symbols are bytes. SHARC+ text sections hold the instruction parcels in
 //! boot-stream order (each 16-bit parcel little endian); text symbol values and relocation offsets count
@@ -56,12 +56,12 @@ pub struct DkoReloc {
     pub addend: i64,
 }
 
-/// The key of `Dko::toolchain` that records the ISA check (`tools/patchkit/pk_build.py` writes it after `check_isa` passed): the digest of the
+/// The key of `Dko::toolchain` that records the ISA check (`patchkit build` writes it after `build::cf::check_isa` passed): the digest of the
 /// object's sections, symbols and relocations. `patchkit pack` takes a ColdFire object only when the record matches the bytes it holds.
 pub const ISA_CHECK_KEY: &str = "isa_check";
 
 impl Dko {
-    /// SHA-256 over the object's code and data and what ties it together, in a fixed framing (`pk_build.isa_digest` computes the same):
+    /// SHA-256 over the object's code and data and what ties it together, in a fixed framing (`patchkit build` computes it with this function):
     /// "dko-isa-v1", then sections (name, kind, align, size, bytes), symbols (name, section, defined flag, value, global) and relocations
     /// (section, offset, type, symbol, addend). Strings and byte strings are a u32 length and the bytes; numbers are big endian.
     pub fn isa_digest(&self) -> Result<String> {
@@ -99,7 +99,7 @@ impl Dko {
         Ok(hex(&h.finalize()))
     }
 
-    /// Record the ISA check for the bytes the object holds now. The build calls its own checker first (`pk_link.check_isa`); this is for tests
+    /// Record the ISA check for the bytes the object holds now. The build calls its own checker first (`build::cf::check_isa`); this is for tests
     /// that make an object by hand.
     pub fn stamp_isa(&mut self) {
         let d = self.isa_digest().expect("object hex");
@@ -115,7 +115,7 @@ impl Dko {
         }
         match self.toolchain.get(ISA_CHECK_KEY) {
             None => Err(err!(
-                "the ColdFire object has no ISA check record: build it with `mise run module:build` (tools/patchkit/pk_build.py)"
+                "the ColdFire object has no ISA check record: build it with `mise run module:build` (`patchkit build`)"
             )),
             Some(r) if *r == self.isa_digest()? => Ok(()),
             Some(_) => Err(err!(

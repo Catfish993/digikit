@@ -8,7 +8,7 @@ Every executable section is decoded with our own decoder (`cfdis`, generated fro
 68020+ form (`divs.l` 64-bit, `bfextu`, `cmp2`, ...), an FPU form, a privileged form other than `cpushl` and an
 illegal word are refused. A 68020-only word that the trap handler of a V4e meets is an illegal-instruction exception,
 so a module with one crashes the device when the code runs, not when it loads. The same check runs inside the module
-build (tools/patchkit/pk_link.py `check_isa`) and over the libgcc helper archive (tools/patchkit/pk_toolchains.py).
+build (packages/patchkit/src/build/cf.rs `check_isa`, in process) and over the libgcc helper archive (tools/patchkit/pk_toolchains.py).
 Only text sections are decoded: data in a text section (jump tables) would be decoded as code.
 """
 

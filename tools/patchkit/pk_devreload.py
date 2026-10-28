@@ -6,7 +6,7 @@
 MODULE_OR_SET is a patch set of devices/<device>.toml (`emulator`), or module ids separated by commas (`test/ui-demo`); the modules
 they require are added. Per device the tool
 
-1. builds the objects of every module in the set whose sources changed (`pk_build`: unchanged objects cost nothing),
+1. builds the objects of every module in the set whose sources changed (`patchkit build`: unchanged objects cost nothing),
 2. keeps one daemon per device and module set alive between runs (run directory out/runs/patchkit/run-devreload-<device>-<set>; the first run
    starts it and boots the patched image, `--stop` ends it) and calls `dev.reload` (docs/CONTROL.md): the daemon applies the
    modules again, compares the image with the running one and either swaps the module bytes into a restored main-screen state
@@ -40,7 +40,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools.control.digi_client import Emu, EmuError, oled_png  # noqa: E402
-from tools.patchkit import modroots, pk_build  # noqa: E402
+from tools.patchkit import modroots, patchkit  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 
 FIRMWARE = {"dt2": "1.17", "dn2": "1.12"}
@@ -77,7 +77,7 @@ def build(modules: list[str]) -> tuple[float, list[str]]:
     started = time.monotonic()
     rebuilt = []
     for mid in modules:
-        messages = pk_build.build_module(modroots.module_dir(mid), check=False)
+        messages = patchkit.build_module(modroots.module_dir(mid), check=False)
         if any("unchanged" not in m for m in messages):
             rebuilt.append(mid)
     return time.monotonic() - started, rebuilt
@@ -384,7 +384,7 @@ def main(argv: list[str]) -> int:
         H.HarnessError,
         H.LoadFailure,
         H.Failure,
-        pk_build.BuildError,
+        patchkit.BuildError,
         EmuError,
     ) as e:
         print(f"dk:dev: {e}", file=sys.stderr)

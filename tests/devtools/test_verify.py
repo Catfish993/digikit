@@ -1056,7 +1056,7 @@ def test_smoke_alone_with_only(capsys: pytest.CaptureFixture[str]) -> None:
         ("tools/patchkit/freqshift_ref.py", set()),
         ("devices/digitakt-ii-leds.toml", set()),
         ("devices/digitone-ii-leds.toml", set()),
-        ("tools/patchkit/pk_link.py", {"runtime-fixture", "module-load"}),
+        ("tools/patchkit/patchkit.py", {"runtime-fixture", "module-load"}),
         ("tools/devtools/stablebin.py", {"runtime-fixture", "module-load"}),
         ("tools/emulator/card_overlay.py", {"runtime-fixture"}),
         ("tools/emulator/fast_regions.json", {"runtime-fixture", "module-load"}),
@@ -1225,7 +1225,7 @@ def test_stale_module_objects_stop_before_pack_or_acceptance(
         [
             *verify.PY,
             "-m",
-            "tools.patchkit.pk_build",
+            "tools.patchkit.patchkit",
             "build",
             str(modroots.module_dir("digikit/pluck")),
             "--check",

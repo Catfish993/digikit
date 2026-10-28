@@ -188,7 +188,6 @@ def acceptance_python(step: str) -> set[str]:
     # patchkit.binary and sharc_disasm from pk_sharc.verify.
     roots = {
         "tools",
-        "tools.patchkit.pk_build",
         "tools.patchkit.patchkit",
         "tools.devtools.stablebin",
         "tools.sharc_dev.sharc_disasm",

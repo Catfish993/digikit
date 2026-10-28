@@ -46,8 +46,9 @@ A manifest that still uses a removed form is refused with a message that names t
    `[[object]]`, `[[op]]` and `[[claim]]` remain for `core/*` only.
 7. A `.dkmod` holds source only, never prebuilt objects. The receiver compiles it, so what runs is
    what the user can read.
-8. The binary `.dko` replaces `.dko.json`. Content-module objects are build output in `out/` and
-   are not committed. `core/*` objects stay committed.
+8. Objects stay `.dko.json` (decided 2026-10-28: a binary `.dko` gains little once content objects
+   are not committed; the device only sees the `.dkm`). Content-module objects are build output in
+   `out/` and are not committed. `core/*` objects stay committed.
 9. ColdFire C stays on gcc 16.2 `m68k-elf`. For the browser, first try gcc `cc1` and `as` built
    for wasm; fall back to an own C compiler for ColdFire in Rust.
 10. Content modules follow module-sdk.md D1 (knob slots by position) and D4 (one compiled module
@@ -164,11 +165,22 @@ MODULES check marks); a module owns only its own settings.
 
 ### Phase 5: `patchkit build` in Rust
 
-- [ ] `patchkit build MODULE` builds the ColdFire and SHARC objects in one command. gcc, as and
-      selas run as child processes. This replaces `pk_build.py`, `pk_link.py` and `pk_sharc.py`.
-- [ ] Binary `.dko`. Content objects go to `out/`; `build/` leaves content modules.
-- [ ] `patchkit pack` reads sources or `.dko` directly.
-- [ ] Proof: the objects of every module are byte-identical to the Python build.
+ColdFire builds move to Rust. SHARC stays in `pk_sharc.py` until 6a (its fix-ups need the Python
+SHARC decoder; the own assembler of 6a replaces them). gcc, as, ld, objcopy, cargo and selas stay
+child processes.
+
+- [x] 5a. `patchkit build MODULE`: C, asm and Rust crates for ColdFire in Rust (ELF through the
+      `object` crate, the ISA check in-process through the `coldfire` crate, the same `source_sha256`);
+      SHARC through `pk_sharc`. `patchkit dko show FILE`. Proof: every module's and fixture's
+      `.dko.json` is text-identical to the Python build. Then `pk_build`, `pk_link`, `pk_rust` and the
+      ColdFire part of `pk_elf` are deleted and their callers use `patchkit build`.
+- [ ] 5b. `patchkit build` and `pack` share the object in memory: a content module goes from source to
+      `.dkm` in one command. Content-module and fixture `.dko.json` become a cache in `out/` (by source
+      hash; used by `module:pack-all`, the Rust tests and the web gallery); only `core/*` objects stay
+      committed (the workbench and the browser patch without a toolchain).
+      Proof: every packed `.dkm` and patched image is byte-identical.
+- [ ] 5c. The workbench Reload modules button builds first (ColdFire in-process; a SHARC change says
+      to run `dk:dev`).
 
 ### Phase 6: build in the browser
 

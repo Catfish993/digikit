@@ -456,14 +456,13 @@ def test_candidates_are_the_run_time_modules_and_pack_to_a_dkm(tmp_path):
     assert rows[0]["file_size"] > 0
 
 
-def test_pk_build_hash_matches_the_committed_objects():
+def test_source_hash_matches_the_committed_objects():
     # the skip-if-unchanged hash is the one the builders write: every committed object of the repo carries it
-    from tools.patchkit import modroots, pk_build
+    from tools.patchkit import modroots, patchkit
 
+    dirs = list(modroots.manifests().values())
     stale = [
-        str(d)
-        for d in modroots.manifests().values()
-        if pk_build.module_status(d) != "unchanged"
+        str(d) for d, s in patchkit.module_statuses(dirs).items() if s != "unchanged"
     ]
     assert stale == []
 
@@ -582,7 +581,7 @@ def test_pack_all_writes_one_folder_per_device_and_only_what_changed(
     monkeypatch.setattr(P.T, "candidates", lambda: ["digikit/a", "test/b"])
     monkeypatch.setattr(P.T, "pack_for_transfer", fake_pack)
     monkeypatch.setattr(
-        P.pk_build,
+        P.patchkit,
         "module_status",
         lambda d: "needs build" if d.name == "a" else "unchanged",
     )

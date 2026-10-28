@@ -7,7 +7,7 @@ publish = false
 [lib]
 crate-type = ["staticlib"]
 
-# This crate sits inside the repository's cargo workspace but is built on its own (tools/patchkit/pk_rust.py).
+# This crate sits inside the repository's cargo workspace but is built on its own (`patchkit build`).
 [workspace]
 
 [profile.release]

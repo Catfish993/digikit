@@ -15,7 +15,8 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.firmware import config  # noqa: E402
-from tools.patchkit import pk_build, pk_dkrt, pk_toolchains  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
+from tools.patchkit import pk_dkrt, pk_toolchains  # noqa: E402
 
 RUNTIME = ROOT / "modules/core/runtime"
 DEMO = ROOT / "tests/fixtures/modules/dyn-demo"
@@ -32,8 +33,8 @@ def test_committed_objects_are_current_and_plain_coldfire():
         assert int(obj["toolchain"]["instructions_redecoded"]) > 10, path
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
-    pk_build.build_module(RUNTIME, check=True)
-    pk_build.build_module(DEMO, check=True)
+    front_end.build_module(RUNTIME, check=True)
+    front_end.build_module(DEMO, check=True)
 
 
 def test_pack_is_deterministic_and_the_file_checks_itself(tmp_path):

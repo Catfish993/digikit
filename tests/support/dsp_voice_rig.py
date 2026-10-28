@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from tools.patchkit import pk_build, pk_sharc  # noqa: E402
+from tools.patchkit import pk_sharc  # noqa: E402
 
 CORE = (
     ROOT / "modules" / "core" / "adapters" / "dsp-voice" / "src" / "dsp" / "dsp-voice.s"
@@ -134,11 +134,11 @@ class Rig:
     ) -> None:
         self.ctx_rng = random.Random(seed)
         self.last_ctx: dict[str, int] = {}
-        # `defines`: the build options of the wrapper (`#ifdef`, tools/patchkit/pk_build.py), e.g. DV_BISECT_C2
+        # `defines`: the build options of the wrapper (`#ifdef`, tools/patchkit/pk_sharc.py), e.g. DV_BISECT_C2
         self.core = pk_sharc.assemble(
-            pk_build.expand_includes(
-                pk_build.apply_conditionals(CORE.read_text(), defines),
-                [*pk_build.sharc_include_dirs(CORE.parents[2]), CORE.parent],
+            pk_sharc.expand_includes(
+                pk_sharc.apply_conditionals(CORE.read_text(), defines),
+                [*pk_sharc.sharc_include_dirs(CORE.parents[2]), CORE.parent],
             )
         )
         self.sine = pk_sharc.assemble(SINE.read_text())

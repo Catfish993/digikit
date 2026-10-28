@@ -6,7 +6,7 @@ device. Marks: **[D]** measured or read once, **[O]** open.
 ## What ran **[D]**
 
 - `tests/fixtures/modules/rust-demo` is a `#![no_std]`, `panic = "abort"` crate (`src/rs/`, 6 exported symbols) built with
-  rustc_codegen_gcc for `-mcpu=54418`, converted by `tools/patchkit/pk_build` into a committed
+  rustc_codegen_gcc for `-mcpu=54418`, converted by `patchkit build` (`REF:tools/patchkit/pk_build.py`) into a committed
   `build/rust-demo.dko.json` and placed in `cf.expansion` by the stock patchkit linker (no linker change).
   Functions: a bss counter that stores a magic and a count, a 64-bit FNV-1a hash (u64 multiply), a `match` with a
   function-pointer table, a u64 multiply and a u64 divide, and a self test that runs a slice iterator sum, the hash and
@@ -40,7 +40,7 @@ driver so `m68k-elf-as` accepts ColdFire forms). The target is `tools/patchkit/t
   reused). S1b needed about 75 min including debugging; a scripted run is untimed **[O]**. Its macOS-specific part
   (the `make -C gcc all` workaround after `all-gcc` stops in `jit/`) is transcribed from the S1b notes and untested
   as code **[O]**. The libgccjit stage needs Homebrew gmp, mpfr, libmpc, isl, zstd and Apple clang.
-- Module build: a Cargo.toml as the only entry of `sources` selects `tools/patchkit/pk_rust.py`:
+- Module build: a Cargo.toml as the only entry of `sources` selects the Rust path of `patchkit build` (`packages/patchkit/src/build/rust.rs`; earlier `REF:tools/patchkit/pk_rust.py`):
   `cargo +nightly rustc --release -Zbuild-std=core,compiler_builtins -Zbuild-std-features=compiler-builtins-mem`,
   then `ld -r --gc-sections -u <the crate's global symbols>` over the staticlib, `objcopy -L '_R*'` and
   `strip --strip-unneeded`. `-Zlocation-detail=none` removes source paths from panic data. 6 s cold, 0.9 s for

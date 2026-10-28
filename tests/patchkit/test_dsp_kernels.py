@@ -12,7 +12,6 @@ ROOT = REPO_ROOT
 
 from tools.patchkit import (  # noqa: E402
     dsp_ref,
-    pk_build,
     pk_sharc,
     pk_toolchains,
 )
@@ -86,7 +85,7 @@ def kernel(
             "",
         ]
     )
-    text = pk_build.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"])
+    text = pk_sharc.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"])
     _, linked = pk_sharc.build(text, BASE)
     dm = {}
     for base, vec in zip((IN0, IN1), inputs, strict=False):
@@ -253,7 +252,7 @@ def test_biquad_from_assembly_two_blocks_in_a_row():
                 ]
             )
             _, linked = pk_sharc.build(
-                pk_build.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+                pk_sharc.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
                 BASE,
             )
             regs = {**BQ_SAVED, **BQ_CONSTS, "I6": BQ_STACK, "I7": BQ_STACK}
@@ -300,7 +299,7 @@ def test_biquad_never_reads_past_the_input_block():
         ]
     )
     _, linked = pk_sharc.build(
-        pk_build.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]), BASE
+        pk_sharc.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]), BASE
     )
     regs = {**BQ_SAVED, **BQ_CONSTS, "I6": BQ_STACK, "I7": BQ_STACK}
     # the watch is a read watchpoint of the core's driver (CallSession.record_reads); the control range proves that it fires
@@ -329,7 +328,7 @@ void run(int x, int y, int st) { dk_biquad(x, y, st); }
     )
     kbase = BASE + 0x1000
     _, kernel = pk_sharc.build(
-        pk_build.expand_includes(kernel_text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+        pk_sharc.expand_includes(kernel_text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
         kbase,
     )
     caller = pk_sharc.link(
@@ -406,7 +405,7 @@ def block_calls(inc, name, args, entry):
 def build_calls(inc, name, args, externs=None):
     text = block_calls(inc, name, args, "_h")
     return pk_sharc.build(
-        pk_build.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+        pk_sharc.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
         BASE,
         externs,
     )[1]

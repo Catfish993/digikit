@@ -12,8 +12,8 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.firmware import config  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import (  # noqa: E402
-    pk_build,
     pk_device,
     pk_dkrt,
     pk_dkrt_boot,
@@ -199,9 +199,9 @@ def test_the_clock_and_tx_literals_sit_in_the_instructions_that_read_the_words(i
 def test_committed_runtime_objects_are_current():
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
-    pk_build.build_module(RUNTIME, check=True)
-    pk_build.build_module(ROOT / "tests/fixtures/modules/dyn-fault", check=True)
-    pk_build.build_module(ROOT / "tests/fixtures/modules/dyn-fault-late", check=True)
+    front_end.build_module(RUNTIME, check=True)
+    front_end.build_module(ROOT / "tests/fixtures/modules/dyn-fault", check=True)
+    front_end.build_module(ROOT / "tests/fixtures/modules/dyn-fault-late", check=True)
 
 
 def test_the_fault_module_packs_for_both_devices(tmp_path):

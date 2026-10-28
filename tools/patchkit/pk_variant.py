@@ -4,7 +4,7 @@
     DIGI_PK_ROOT=$(uv run python -m tools.patchkit.pk_variant make core/dsp-voice DV_BISECT_C2 dv-c2) \
         mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules ... -o out/patch/X.syx
 
-`make MODULE NAME[,NAME] LABEL` builds the module's objects with the options (tools/patchkit/pk_build.py `--define`; the committed
+`make MODULE NAME[,NAME] LABEL` builds the module's objects with the options (`patchkit build --define`; the committed
 objects stay as they are) into out/variants/LABEL/ and prints that directory: a root whose `devices/` and `firmware/` are the
 repository's and whose `modules/` is the repository's with MODULE replaced by the variant. `patchkit`, the proof rigs
 (`pk_dkrt.Tools`) and `mise run patch|preflight|pack` use it when the environment variable DIGI_PK_ROOT names it. The directory is
@@ -18,7 +18,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from tools.patchkit import modroots, pk_build
+from tools.patchkit import modroots, patchkit
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -47,7 +47,7 @@ def make(module: str, defines: list[str], label: str) -> Path:
                 (dest / child.name).symlink_to(child)
         if (d / "build").is_dir():
             shutil.copytree(d / "build", dest / "build")
-    for line in pk_build.build_module(
+    for line in patchkit.build_module(
         moddir, False, frozenset(defines), dest_of[moddir]
     ):
         print(line, file=sys.stderr)

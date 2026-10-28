@@ -1,6 +1,6 @@
 //! test/rust-demo: Rust on the ColdFire. Placed in cf.expansion; called in place by the test harness.
 //!
-//! Built with rustc_codegen_gcc for -mcpu=54418 (tools/patchkit/pk_rust.py, finding 26). Every exported function
+//! Built with rustc_codegen_gcc for -mcpu=54418 (`patchkit build`, finding 26). Every exported function
 //! takes and returns integers or pointers: no struct results on the C boundary (finding 23, S1b).
 #![no_std]
 

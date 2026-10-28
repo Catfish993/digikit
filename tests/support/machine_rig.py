@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import support.dsp_voice_rig as dv
-from tools.patchkit import pk_build, pk_conform, pk_sharc
+from tools.patchkit import pk_conform, pk_sharc
 
 ROOT = pk_conform.ROOT
 WRAPPER = {
@@ -92,9 +92,9 @@ class _Built:
 
 
 def _assemble(path: Path, moddir: Path) -> pk_sharc.SharcObject:
-    """A DSP source the way tools/patchkit/pk_build.py reads it: `#include` from the module's build/gen, the SDK and the source's directory."""
-    dirs = [*pk_build.sharc_include_dirs(moddir), path.parent]
-    return pk_sharc.assemble(pk_build.expand_includes(path.read_text(), dirs))
+    """A DSP source the way tools/patchkit/pk_sharc.py reads it: `#include` from the module's build/gen, the SDK and the source's directory."""
+    dirs = [*pk_sharc.sharc_include_dirs(moddir), path.parent]
+    return pk_sharc.assemble(pk_sharc.expand_includes(path.read_text(), dirs))
 
 
 def _externs_fixed(device: str, spec: pk_conform.MachineSpec) -> dict[str, int]:

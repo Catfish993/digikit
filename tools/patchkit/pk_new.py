@@ -8,7 +8,7 @@
 The templates are the source trees in sdk/templates/<kind>/. The tokens `__ID__`, `__AUTHOR__`, `__NAME__` (lower snake),
 `__UPPER__`, `__TITLE__`, `__SHORT__` and `__TAB__` (the first 3 characters of the short name) are replaced in file names and file contents. The module goes to
 modules/machines/NAME, modules/fx/NAME or modules/tools/NAME, or to `DIR/NAME` with `--dir` (a folder that PATCHKIT_MODULES
-names finds it). Then the objects are built with tools/patchkit/pk_build.py and `patchkit gen` writes the generated
+names finds it). Then the objects are built with `patchkit build` and `patchkit gen` writes the generated
 headers, so the template is known to compile. A run-time machine has no permanent type number: the runtime assigns one at
 load (docs/design/module-sdk.md 11.5 D7). `core` and `framework` are refused as author.
 """
@@ -119,7 +119,7 @@ def main(argv: list[str]) -> int:
     print(f"created {shown}")
     import os
 
-    from tools.patchkit import patchkit, pk_build
+    from tools.patchkit import patchkit
 
     roots = [str(base.parent.resolve()), os.environ.get("PATCHKIT_MODULES", "")]
     os.environ["PATCHKIT_MODULES"] = os.pathsep.join(r for r in roots if r)
@@ -133,12 +133,12 @@ def main(argv: list[str]) -> int:
         return 1
     if not a.no_build:
         try:
-            for line in pk_build.build_module(base, check=False):
+            for line in patchkit.build_module(base, check=False):
                 print(line)
-        except pk_build.BuildError as e:
+        except patchkit.BuildError as e:
             print(e, file=sys.stderr)
             print(
-                f"build failed; {shown} is left in place: fix it, then run `uv run python -m tools.patchkit.pk_build build {base}`",
+                f"build failed; {shown} is left in place: fix it, then run `mise run module:build -- {base}`",
                 file=sys.stderr,
             )
             return 1

@@ -296,7 +296,7 @@ run = "uv run python -m tools.patchkit.pk_new"
 description = "Create a run-time module from a template in sdk/templates and build it: mise run module:new -- machine|fx|service AUTHOR/NAME [--dir DIR] (docs/MODULE-AUTHORING.md)"
 
 [tasks."module:build"]
-run = "uv run python -m tools.patchkit.pk_build"
+run = "uv run python -m tools.patchkit.patchkit build"
 description = "Compile module sources to build/*.dko.json: mise run module:build [-- modules/fx/NAME] [--check]"
 
 [tasks."module:check"]

@@ -27,6 +27,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 toml = "0.9.12"
+# `patchkit build`: reads the ELF objects of the ColdFire toolchain. Read-only, no_std features: builds for wasm32.
+object = { version = "0.37", default-features = false, features = ["read_core", "elf"] }
 # The settings record's decoder (the code the runtime uses); no_std, builds for every target.
 dkrt-sdk = { path = "../../modules/core/runtime/sdk" }
 

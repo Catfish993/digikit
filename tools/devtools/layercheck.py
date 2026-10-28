@@ -37,6 +37,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 CORE = "modules/core"
+# the include search path of the module builds: the tool's own copy, whatever tree is checked
+PINS = Path(__file__).resolve().parents[2] / "tools/patchkit/toolchain/pins.toml"
 # Content module roots (relative to the repository root).
 CONTENT_ROOTS = (
     "modules/machines",
@@ -173,18 +175,14 @@ def check_roles(root: Path, mods: list[Module]) -> list[Violation]:
 
 
 class Resolver:
-    """Finds the file an include names, with the search path of the module builds (tools/patchkit/pk_build.py)."""
+    """Finds the file an include names, with the search path of the module builds (the lists in
+    tools/patchkit/toolchain/pins.toml, which `patchkit build` also reads)."""
 
     def __init__(self, root: Path):
         self.root = root
+        pins = tomllib.loads(PINS.read_text(encoding="utf-8"))["include"]
         self.global_dirs = [
-            root / "sdk/include",
-            root / "sdk/asm",
-            root / "sdk",
-            root / CORE / "fw/include",
-            root / CORE / "fw/inc",
-            root / CORE / "runtime/include",
-            *sorted((root / CORE / "adapters").glob("*/include")),
+            root / d for d in dict.fromkeys([*pins["cf"], *pins["sharc"]])
         ]
 
     def find(self, name: str, file: Path, mod: Module, quoted: bool) -> Path | None:

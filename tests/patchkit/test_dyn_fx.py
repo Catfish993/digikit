@@ -13,12 +13,12 @@ ROOT = REPO_ROOT
 from tools.device import dkfit, dkneeds  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     modroots,
-    pk_build,
     pk_device,
     pk_dkrt,
     pk_dkrt_machine,
     pk_toolchains,
 )
+from tools.patchkit import patchkit as front_end  # noqa: E402
 
 needs_selache = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None, reason="SHARC+ assembler not installed"
@@ -40,7 +40,7 @@ def packed(tmp_path_factory):
 @needs_selache
 @pytest.mark.parametrize("mod", ["core/dynfx", FX, "test/dyn-fx-gain-b"])
 def test_committed_objects_are_current(mod):
-    pk_build.build_module(modroots.module_dir(mod), check=True)
+    front_end.build_module(modroots.module_dir(mod), check=True)
 
 
 def test_the_header_says_fx_and_not_machine(packed):

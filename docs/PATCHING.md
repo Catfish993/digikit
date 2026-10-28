@@ -340,7 +340,7 @@ stored size at most `0x100000`, decompressed size at most `0xfffff`; usable appe
 
 ### Linking and `.dko` objects
 
-`tools/patchkit/pk_build.py` compiles a module's sources with the pinned toolchain and writes a `.dko.json` object in
+`patchkit build` (`packages/patchkit/src/build/`) compiles a module's sources with the pinned toolchain and writes a `.dko.json` object in
 canonical JSON: sections as hex, symbols, relocations with explicit addends (`cf.32`, `cf.pc32`, `cf.pc16`,
 `cf.pc8`, `sharc.abs24`, `sharc.abs32`), the source hash and the toolchain version. Our own decoders re-decode every
 instruction at build time, so a toolchain encoding error cannot reach an image. At patch time patchkit links the

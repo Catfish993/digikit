@@ -8,7 +8,7 @@
 //!   device object). Written file: one, with no `{dev}` in the path.
 //! - `gas-shared`: the same constants as `.equ NAME, value` lines for ColdFire assembly shared by all devices (one file).
 //! - `gas`: `.equ NAME, value` lines for ColdFire assembly, one file per device (`#include "device-<dev>.inc"` in a source of
-//!   the module; pk_build expands it, `.include` also works).
+//!   the module; `patchkit build` expands it, `.include` also works).
 //! - `sharc`: `#define NAME value` lines for SHARC+ assembly, one file per device (decimal values: the assembler upper-cases
 //!   macro text, which breaks `0x` literals after `+`).
 //! - `sharc-adapter`: `#define ADM_*` lines for the machine adapter's SHARC+ assembly, one file per device, from `[adapter.machine]`

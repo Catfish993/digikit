@@ -17,6 +17,11 @@ Relocations Selache emits (offsets and symbol values are in 16-bit parcels, the 
 Both carry the symbol's short-word address; the addend is encoded in the symbol name ("sym + 4").
 
     uv run python -m tools.patchkit.pk_sharc module.s --base 0xB90000 [--extern name=0xADDR ...] [--json OUT]
+    uv run python -m tools.patchkit.pk_sharc object --text FILE      # the `.dko.json` object of an expanded source text, as JSON on stdout
+
+`patchkit build` (packages/patchkit/src/build/) expands the `#include` lines and `#ifdef` alternatives of a module's DSP sources,
+hashes the text, and runs `object` on it. ``expand_includes``, ``apply_conditionals``, ``sharc_include_dirs`` and ``sharc_object``
+do the same for the test rigs that assemble a module's DSP source themselves.
 """
 
 from __future__ import annotations
@@ -27,10 +32,12 @@ import json
 import re
 import subprocess
 import tempfile
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent
 
 from tools.patchkit import (  # noqa: E402
     pk_elf,  # noqa: E402
@@ -892,7 +899,171 @@ class CallSession:
         }
 
 
+# --- module objects: the glue `patchkit build` runs for a DSP object ---
+
+FORMAT = 1
+SHARC_TYPES = {R_ABS24: "sharc.abs24", R_ABS32: "sharc.abs32"}
+INCLUDE = re.compile(r'^#include\s+"([^"]+)"[ \t]*$', re.M)
+COND = re.compile(r"^#(ifdef|ifndef|else|endif)(?:[ \t]+(\w+))?[ \t]*$")
+
+
+def sharc_include_dirs(moddir: Path) -> list[Path]:
+    """The include directories of a SHARC+ object of the module: its generated and own sources, then the shared ones listed in
+    tools/patchkit/toolchain/pins.toml (the file `patchkit build` reads). The directories of the sources come after these."""
+    pins = tomllib.loads((HERE / "toolchain" / "pins.toml").read_text())
+    return [
+        moddir / "build" / "gen",
+        moddir / "src",
+        *(ROOT / d for d in pins["include"]["sharc"]),
+    ]
+
+
+def expand_includes(text: str, dirs: list[Path], depth: int = 0) -> str:
+    """Replace `#include "name"` lines by the file's text (searched in `dirs`; the generated includes of
+    `patchkit gen` are in the module's `build/gen/`). The assembler is run on a temporary copy, so it cannot
+    find includes itself."""
+    if depth > 4:
+        raise PkSharcError("#include nests deeper than 4 levels")
+
+    def one(m: re.Match) -> str:
+        for d in dirs:
+            f = d / m.group(1)
+            if f.is_file():
+                return expand_includes(f.read_text(), dirs, depth + 1)
+        raise PkSharcError(
+            f'#include "{m.group(1)}" not found in {[str(d) for d in dirs]}'
+        )
+
+    return INCLUDE.sub(one, text)
+
+
+def apply_conditionals(text: str, defines: frozenset[str] = frozenset()) -> str:
+    """Build options: `#ifdef NAME` / `#ifndef NAME` / `#else` / `#endif` lines (alone on their line, nestable). A line outside the
+    taken branches is dropped together with the directive lines, so with no define the text is the source without the option's
+    alternatives, and a source that gains an option stays byte-identical to the old one when the option is off (the object's
+    `source_sha256` hashes this text)."""
+    out: list[str] = []
+    stack: list[bool] = []  # per open #ifdef: its current branch is taken
+    for n, line in enumerate(text.split("\n"), 1):
+        m = COND.match(line)
+        if not m:
+            if all(stack):
+                out.append(line)
+            continue
+        kind, name = m.groups()
+        if kind in ("ifdef", "ifndef"):
+            if not name:
+                raise PkSharcError(f"line {n}: #{kind} needs a name")
+            stack.append((name in defines) == (kind == "ifdef"))
+        elif not stack:
+            raise PkSharcError(f"line {n}: #{kind} without #ifdef")
+        elif kind == "else":
+            stack[-1] = not stack[-1]
+        else:
+            stack.pop()
+    if stack:
+        raise PkSharcError("#ifdef without #endif")
+    return "\n".join(out)
+
+
+def object_from_text(text: str) -> dict:
+    """The `.dko.json` object (a dict) of an expanded source text: assembled, linked at a placeholder base with placeholder externs,
+    every instruction re-decoded and every relocated field read back."""
+    obj = assemble(text)
+    undefined = sorted({r.symbol for r in obj.relocs} - set(obj.symbols))
+    externs = {n: 0xB90000 + 0x40 * i for i, n in enumerate(undefined)}
+    for i, name in enumerate(obj.data_symbols):
+        externs[name] = 0x20090000 + 0x10 * i
+    linked = link(obj, 0xB90000, externs)
+    sections = []
+    code_boot = sel.swap_parcels(obj.section)
+    sections.append(
+        {
+            "name": SECTION,
+            "kind": "text",
+            "align": 8,
+            "size": len(code_boot),
+            "hex": code_boot.hex(),
+        }
+    )
+    for name, (blob, align, bss) in obj.data.items():
+        sections.append(
+            {
+                "name": name,
+                "kind": "bss" if bss else "data",
+                "align": align,
+                "size": len(blob),
+                # bss is reserved by size (dko.rs does not read its hex)
+                "hex": "" if bss else blob.hex(),
+            }
+        )
+    symbols = []
+    for name, (off, glob) in sorted(obj.symbols.items()):
+        symbols.append({"name": name, "section": SECTION, "value": off, "global": glob})
+    for name, (sec, off, glob) in sorted(obj.data_symbols.items()):
+        symbols.append({"name": name, "section": sec, "value": off, "global": glob})
+    for name in undefined:
+        if name not in obj.data_symbols:
+            symbols.append({"name": name, "section": None, "value": 0, "global": True})
+    relocs = [
+        {
+            "section": SECTION,
+            "offset": r.parcel,
+            "type": SHARC_TYPES[r.rtype],
+            "symbol": r.symbol,
+            "addend": r.addend,
+        }
+        for r in obj.relocs
+    ]
+    if linked.ureg_class:
+        # a store through an index register whose source register the ISA excludes (ureg_class_problems): the silicon does not run it
+        raise PkSharcError(
+            f"{len(linked.ureg_class)} store(s) the ISA does not allow (finding 49 section 10): "
+            + "; ".join(linked.ureg_class)
+        )
+    return {
+        "format": FORMAT,
+        "arch": "sharc",
+        "source_sha256": obj.source_sha256,
+        "toolchain": {**obj.toolchain, "instructions_redecoded": str(linked.checked)},
+        "sections": sections,
+        "symbols": symbols,
+        "relocs": relocs,
+    }
+
+
+def sharc_object(
+    sources: list[Path],
+    include_dirs: list[Path] | None = None,
+    defines: frozenset[str] = frozenset(),
+) -> dict:
+    """One or more `.s` files, concatenated into one translation unit, to an object. `defines` select the `#ifdef` alternatives."""
+    dirs = [*(include_dirs or []), *{p.parent for p in sources}]
+    text = apply_conditionals(
+        expand_includes("\n".join(p.read_text() for p in sources), dirs), defines
+    )
+    return object_from_text(text)
+
+
+def object_main(argv: list[str]) -> int:
+    import sys
+
+    ap = argparse.ArgumentParser(prog="pk_sharc object")
+    ap.add_argument("--text", type=Path, required=True)
+    a = ap.parse_args(argv)
+    try:
+        print(json.dumps(object_from_text(a.text.read_text())))
+    except PkSharcError as e:
+        print(f"pk_sharc: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main() -> None:
+    import sys
+
+    if sys.argv[1:2] == ["object"]:
+        raise SystemExit(object_main(sys.argv[2:]))
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("source")
     ap.add_argument(

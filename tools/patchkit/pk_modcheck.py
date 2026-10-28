@@ -172,11 +172,11 @@ def main() -> int:
     print(f"{mid}: {kind}; pytest {' '.join(paths) or '(nothing to run)'}", flush=True)
     devices = [a.device] if a.device else list(pk_conform.DEVICES)
     if not paths:
-        from tools.patchkit import pk_build
+        from tools.patchkit import patchkit
 
         try:
-            pk_build.build_module(modroots.module_dir(mid), check=True)
-        except pk_build.BuildError as e:
+            patchkit.build_module(modroots.module_dir(mid), check=True)
+        except patchkit.BuildError as e:
             print(f"{mid}: {e}", file=sys.stderr)
             return 1
         for line in size_lines(mid, devices):

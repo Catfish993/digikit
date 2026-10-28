@@ -29,7 +29,7 @@ The guide is `docs/MODULE-AUTHORING.md`. Read the section you need there; this f
    `DK_FX_PARAM`, `DK_PAGE` (`<dk/fx.h>`). Word numbers go in a shared `src/NAME.h`. `patchkit desc AUTHOR/NAME` prints the records as JSON.
    A manifest with `[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]` or `[[fx]]` is refused.
 3. After a change to `module.toml`, `src/module.c`, `devices/*.toml` or `sdk/sdk.toml`: `mise run gen:modules` (`-- --check` lists stale files). Never edit `build/gen/`.
-4. Build: `mise run module:build -- PATH [--check]`.
+4. Build: `mise run module:build -- PATH [--check]` (`patchkit build`; `patchkit dko show build/NAME.dko.json` shows an object).
 5. Check, no emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (guide 8).
 6. Pack: `mise run module:pack -- AUTHOR/NAME --device dt2|dn2 [-o FILE.dkm]`.
 7. Run: start `mise run workbench` in another shell, then `mise run dk:run -- AUTHOR/NAME --emu --seconds 10`. On a device with the runtime:

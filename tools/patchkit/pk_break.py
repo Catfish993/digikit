@@ -28,7 +28,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-from tools import python_env  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import modroots, patchkit  # noqa: E402
 
@@ -71,12 +70,10 @@ def build(kind: str, mods: str, device: str, fw: str, out: Path) -> Path:
         )
     path.write_text(text.replace(old, new))
     if kind in REBUILD:
-        b = subprocess.run(
-            [sys.executable, "-m", "tools.patchkit.pk_build", "build", str(root / REBUILD[kind])],
-            cwd=ROOT, env=python_env(), capture_output=True, text=True,
-        )  # fmt: skip
-        if b.returncode:
-            raise SystemExit(f"pk_build failed:\n{(b.stderr or b.stdout)[-1500:]}")
+        try:
+            patchkit.build_module(root / REBUILD[kind])
+        except patchkit.BuildError as e:
+            raise SystemExit(f"patchkit build failed:\n{str(e)[-1500:]}") from e
     out.parent.mkdir(parents=True, exist_ok=True)
     plan = out.with_suffix(".plan.json")
     r = subprocess.run(

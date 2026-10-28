@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import support.dsp_voice_rig as dv
-from tools.patchkit import pk_build, pk_sharc
+from tools.patchkit import pk_sharc
 
 ROOT = dv.ROOT
 ADAPTER = ROOT / "modules/core/adapters/fx/src/dsp/fx.s"
@@ -151,12 +151,12 @@ _BUILT: dict[tuple, _Built] = {}
 
 
 def _assemble(path: Path) -> pk_sharc.SharcObject:
-    """A DSP source the way tools/patchkit/pk_build.py reads it: `#include` from the module's directories, the SDK
+    """A DSP source the way tools/patchkit/pk_sharc.py reads it: `#include` from the module's directories, the SDK
     and the source's directory (a source outside a module: the SDK and its directory)."""
     mods = [p for p in path.parents if (p / "module.toml").exists()]
     sdk = [ROOT / "sdk" / "asm", ROOT / "sdk"]
-    dirs = [*(pk_build.sharc_include_dirs(mods[0]) if mods else sdk), path.parent]
-    return pk_sharc.assemble(pk_build.expand_includes(path.read_text(), dirs))
+    dirs = [*(pk_sharc.sharc_include_dirs(mods[0]) if mods else sdk), path.parent]
+    return pk_sharc.assemble(pk_sharc.expand_includes(path.read_text(), dirs))
 
 
 def build(sources: tuple[Path, ...] = (EFFECTS,), device: str = "dt2") -> _Built:
